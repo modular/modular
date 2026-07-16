@@ -34,12 +34,12 @@ constexpr llvm::StringLiteral kStructElemLayoutError =
 // ArgConvention
 //===----------------------------------------------------------------------===//
 
-/// Return a string like "read" or "mut".
+/// Return a string like "imm" or "mut".
 const char *KGEN::getUserSyntax(ArgConvention convention) {
   switch (convention) {
   case ArgConvention::ReadReg:
   case ArgConvention::ReadMem:
-    return "read";
+    return "imm";
   case ArgConvention::OwnedReg:
   case ArgConvention::OwnedMem:
     return "var";

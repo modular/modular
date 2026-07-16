@@ -643,6 +643,7 @@ def generate_tokens(
         "var": VAR,
         "__mlir_region": MLIR_REGION,
         "read": READ,
+        "imm": IMM,
         "mut": MUT,
         "out": OUT,
         "deinit": DEINIT,
@@ -806,7 +807,7 @@ def generate_tokens(
                 return False
             # Context sensitive arg conventions are only a keyword if followed
             # by an identifier letter or a variadic.
-            if token_value not in ["out", "read", "mut", "deinit"]:
+            if token_value not in ["out", "read", "imm", "mut", "deinit"]:
                 return True
             next_token = line[token_end:].lstrip()  # noqa: B023
             if token_value == "out" and next_token.startswith("["):

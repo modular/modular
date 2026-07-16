@@ -110,7 +110,7 @@ def changeIt(mut aString: String):
 
 
 def nestedCaptureAll(mut aString: String) raises:
-    def aFinalThing(x:Int) {read}:
+    def aFinalThing(x:Int) {imm}:
         # expected-error @below {{invalid call to 'changeIt': value passed to mutable argument 'aString' must be mutable}}
         changeIt(aString)
 
@@ -216,7 +216,7 @@ def incompatible_param_signature() raises:
     var x = 42
 
     @always_inline
-    def my_func[param_only: Int]() {read x}:
+    def my_func[param_only: Int]() {imm x}:
         _print(x)
 
     # expected-error @below {{does not conform to trait 'def() -> None'}}
@@ -252,7 +252,7 @@ def default_capture_convention_violation():
     var y = 20
     var x = 10
 
-    def my_fn() {read, mut y}:
+    def my_fn() {imm, mut y}:
         # Assigning to `y` work
         y = 20
         # expected-error @below {{expression must be mutable in assignment}}
@@ -263,7 +263,7 @@ def default_capture_convention_violation():
 # ===----------------------------------------------------------------------=== #
 
 def capture_RTP(x : Int) :
-    # expected-error @below{{register passible value 'x' can not be captured by 'mut'. Do you mean 'read'?}}
+    # expected-error @below{{register passible value 'x' can not be captured by 'mut'. Do you mean 'imm'?}}
     def my_func() {mut x}:
         pass
 

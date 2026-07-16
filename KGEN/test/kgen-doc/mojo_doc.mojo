@@ -210,7 +210,7 @@ def fn_that_raises() raises -> Int:
 # CHECK:          "name": "ownedArg"
 # CHECK:          "path": "/std/builtin/simd/#int"
 # CHECK:          "type": "Int"
-# CHECK:          "convention": "read"
+# CHECK:          "convention": "imm"
 # CHECK:          "description": "This is a borrowedArg."
 # CHECK:          "name": "borrowedArg"
 # CHECK:          "path": "/std/builtin/simd/#int"
@@ -223,7 +223,7 @@ def fn_with_args(
     arg: Int,
     mut inoutArg: Int,
     var ownedArg: Int,
-    read borrowedArg: Int,
+    imm borrowedArg: Int,
 ):
     """This is a function summary.
 

@@ -94,7 +94,7 @@ def foo(x: def[a: Int] () thin -> None):
     pass
 
 # expected-error @below {{non-owned variadic keyword arguments are not supported yet}}
-def borrowed_kwargs(read **kwargs: Int):
+def borrowed_kwargs(imm **kwargs: Int):
     pass
 
 # expected-error @below {{'//' marker cannot be used at the start of the parameter list}}

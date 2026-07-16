@@ -151,7 +151,7 @@ def testDefConditional(cond: __mlir_type.`!kgen.scalar<bool>`):
 
 # CHECK-LABEL: lit.fn @"testUseConditionalReference
 
-def testUseConditionalReference(cond: __mlir_type.`!kgen.scalar<bool>`, imm: MemExample):
+def testUseConditionalReference(cond: __mlir_type.`!kgen.scalar<bool>`, immArg: MemExample):
   # CHECK: %a = lit.var.decl {{.*}} : !lit.ref<!MemExample, mut *"a`1">
   # CHECK: lit.call {{.*}}__init__{{.*}}(%a)
 
@@ -191,10 +191,10 @@ def testUseConditionalReference(cond: __mlir_type.`!kgen.scalar<bool>`, imm: Mem
   # CHECK-NEXT: lifetime.end %a
 
   # Pointer can bind to immutable things as well, no problem.
-  # CHECK-NEXT: [[IMMRV:%.*]] = lit.call tail @std::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%imm)
+  # CHECK-NEXT: [[IMMRV:%.*]] = lit.call tail @std::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%immArg)
   # CHECK-NEXT: %immref = lit.var.decl "immref"
   # CHECK: lit.ref.store [[IMMRV]], %immref
-  var immref = Pointer(to=imm)
+  var immref = Pointer(to=immArg)
   immref[].noop()
 
 # ===----------------------------------------------------------------------=== #

@@ -46,7 +46,7 @@ capture_list: capture_item (',' capture_item)* [',']
 # Support both specific captures (e.g., "var x", "var x^", "mut y") and
 # global capture modes (e.g., "var", "var^", "read"). The move marker '^'
 # follows either VAR or a bare name ("var x^", "var^", "x^").
-capture_item: (VAR [NAME ['^'] | '^' [NAME]]) | (READ [NAME]) | (MUT [NAME]) | (REF [NAME]) | (NAME ['^' | NAME])
+capture_item: (VAR [NAME ['^'] | '^' [NAME]]) | (READ [NAME]) | (IMM [NAME]) | (MUT [NAME]) | (REF [NAME]) | (NAME ['^' | NAME])
 metaparams: '[' [typedargslist] ']'
 parameters: '(' [typedargslist] ')'
 result_type: [REF '[' test [',' test [',']] ']'] (functype | or_expr)
@@ -65,7 +65,7 @@ result_type: [REF '[' test [',' test [',']] ']'] (functype | or_expr)
 #
 # It needs to be fully expanded to allow our LL(1) parser to work on it.
 
-convention: VAR | (OUT ['[' test [',' test [',']] ']']) | READ | MUT | DEINIT | (REF ['[' test [',' test [',']] ']'])
+convention: VAR | (OUT ['[' test [',' test [',']] ']']) | READ | IMM | MUT | DEINIT | (REF ['[' test [',' test [',']] ']'])
 #tname: NAME [metaparams] [':' test]
 
 typedargslist: ((([convention] ['**'|'*'] tfpdef ['=' test])|'/'|'*'|'//') [','])*

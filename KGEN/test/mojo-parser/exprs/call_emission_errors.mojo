@@ -347,7 +347,7 @@ def inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     take_two_owned(s^, s^)
 
     # expected-error @below {{argument of 'mutate_one_read_one' call allows reading a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'origin_of(s.a)' value is passed through aliasing 'read' argument}}
+    # expected-note @below {{'origin_of(s.a)' value is passed through aliasing 'imm' argument}}
     mutate_one_read_one(s, s.a)
 
     # expected-error @below {{argument of 'mutate_two_AnyLifetime' call allows writing a memory location previously writable through another aliased argument}}
@@ -395,7 +395,7 @@ def capture_exclusivity(var x: MemExample):
 
     # FIXME(MOCO-3241): Re-enable this.
     # xpected-error @below {{argument of call allows reading a memory location previously writable through implicit closure captures}}
-    # xpected-note @below {{'origin_of(x)' value is passed through aliasing 'read' argument}}
+    # xpected-note @below {{'origin_of(x)' value is passed through aliasing 'imm' argument}}
     capture_and_read(x)
 
 

@@ -3087,7 +3087,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
     shared.emitError(location, "register passible value '")
         << name << "' can not be captured by "
         << (mutability.has_value() ? "'mut'" : "'ref'")
-        << ". Do you mean 'read'?";
+        << ". Do you mean 'imm'?";
     return {};
   };
 

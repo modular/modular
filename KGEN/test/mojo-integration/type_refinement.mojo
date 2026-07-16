@@ -492,7 +492,7 @@ def test_type_value_parameter_refinement():
 
 def call_greet_read[
     T: AnyType
-](read x: T) -> String where conforms_to(T, Greetable):
+](imm x: T) -> String where conforms_to(T, Greetable):
     return x.greet()
 
 
@@ -528,7 +528,7 @@ def test_conventions():
 
 def copyable_and_greetable[
     T: Copyable & ImplicitlyDeletable
-](read x: T) -> String where conforms_to(T, Greetable):
+](imm x: T) -> String where conforms_to(T, Greetable):
     var y = x.copy()
     return y.greet()
 
@@ -814,13 +814,13 @@ struct RegDescGreeter(Describable, Greetable, TrivialRegisterPassable):
 
 def reg_read[
     T: TrivialRegisterPassable
-](read x: T) -> String where conforms_to(T, Greetable):
+](imm x: T) -> String where conforms_to(T, Greetable):
     return x.greet()
 
 
 def reg_conjunction[
     T: TrivialRegisterPassable
-](read x: T,) -> String where conforms_to(T, Greetable) and conforms_to(
+](imm x: T,) -> String where conforms_to(T, Greetable) and conforms_to(
     T, Describable
 ):
     return x.greet() + " | " + x.describe()
@@ -1108,14 +1108,14 @@ def test_pointer_deref():
 
 def local_ref_binding[
     T: AnyType
-](read x: T) -> String where conforms_to(T, Greetable):
+](imm x: T) -> String where conforms_to(T, Greetable):
     ref y = x
     return y.greet()
 
 
 def local_var_copy[
     T: Copyable & ImplicitlyDeletable
-](read x: T) -> String where conforms_to(T, Greetable):
+](imm x: T) -> String where conforms_to(T, Greetable):
     var y: T = x.copy()
     return y.greet()
 
@@ -1129,14 +1129,14 @@ def local_var_move[
 
 def tuple_from_refined_args[
     T: Copyable & ImplicitlyDeletable
-](read a: T, read b: T) -> String where conforms_to(T, Greetable):
+](imm a: T, imm b: T) -> String where conforms_to(T, Greetable):
     var t = (a.copy(), b.copy())
     return t[0].greet() + " and " + t[1].greet()
 
 
 def nested_comptime_outer_binding_refinement[
     T: Copyable & ImplicitlyDeletable
-](read x: T) where conforms_to(T, Greetable) and conforms_to(T, Describable):
+](imm x: T) where conforms_to(T, Greetable) and conforms_to(T, Describable):
     var val: T = x.copy()
     print("outer:", val.greet())
     comptime if conforms_to(T, Describable):
@@ -1147,7 +1147,7 @@ def nested_comptime_outer_binding_refinement[
 
 def nested_comptime_inner_shadow_refinement[
     T: Copyable & ImplicitlyDeletable
-](read y: T) where conforms_to(T, Greetable) and conforms_to(T, Describable):
+](imm y: T) where conforms_to(T, Greetable) and conforms_to(T, Describable):
     comptime if conforms_to(T, Describable):
         # Inner scope adds Describable on top of the where-clause Greetable.
         var val: T = y.copy()
@@ -1157,7 +1157,7 @@ def nested_comptime_inner_shadow_refinement[
 
 def nested_comptime_fallback_refinement[
     T: Copyable & ImplicitlyDeletable
-](read x: T, read y: T) where conforms_to(T, Greetable):
+](imm x: T, imm y: T) where conforms_to(T, Greetable):
     var val: T = x.copy()
     print("outer:", val.greet())
     comptime if not conforms_to(T, Describable):
@@ -1284,7 +1284,7 @@ def test_refined_implicitly_destructible():
 # incompatible with `needs_greetable`.
 def downcast_preserves_refinement_read[
     T: AnyType
-](read x: T) -> String where conforms_to(T, Describable):
+](imm x: T) -> String where conforms_to(T, Describable):
     var before = needs_describable(x)
     ref y = rebind[downcast[T, Greetable]](x)
     var mid = needs_greetable(y)

@@ -1716,7 +1716,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // into.  This will synthesize the VarDeclOp from the inferred result type,
   // which will be in scope for the body that we will parse.
   ExprDest indvarDest(targetExpr, EC_ForIterator);
-  // Lexically scope the indvarDest as a 'bind' pattern like a 'read' arg.
+  // Lexically scope the indvarDest as a 'bind' pattern like an 'imm' arg.
   indvarDest.setPatternDeclKind(PatternDeclKind::kBind);
 
   // Now that we have the iterator (and its type), find the  __next__ method to

@@ -207,7 +207,7 @@ def demo_origin_closure[
 ](ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC,],):
     var immut_ptr = ptr.as_immutable()
 
-    def read() {read immut_ptr}:
+    def read() {imm immut_ptr}:
         print("read only", immut_ptr[0])
 
     must_be_read_only_with_origin(read, immut_ptr)
@@ -223,7 +223,7 @@ def main() raises:
 
     # Ensure origins are lowered
     # CHECK: True
-    def closure[T: MutOrigin](_bar: TypeWithOrigin[T]) {read}:
+    def closure[T: MutOrigin](_bar: TypeWithOrigin[T]) {imm}:
         print(_bar.isMutable)
 
     hasOrigin(closure)

@@ -473,7 +473,7 @@ def test_diamond_reordered_constraint():
 
 
 trait ViolatedPrecedenceTrait:
-    def get_label(read self) -> Int:
+    def get_label(imm self) -> Int:
         return 0
 
 
@@ -492,7 +492,7 @@ struct ViolatedTakesPrecedence[T: ImplicitlyDeletable & Movable](
     # Copyable, but this requires NOT Copyable).
     # The method should be Violated (rejected), not Unprovable (error).
     def get_label(
-        read self,
+        imm self,
     ) -> Int where conforms_to(Self.T, Intable) where not conforms_to(
         Self.T, Copyable
     ):

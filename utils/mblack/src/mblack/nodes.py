@@ -128,6 +128,7 @@ TYPED_NAMES: Final = {syms.tname, syms.tname_star}
 CONVENTIONS: Final = {
     token.VAR,
     token.READ,
+    token.IMM,
     token.MUT,
     token.OUT,
     token.REF,
