@@ -319,6 +319,12 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `String` and `StringSlice` now have `is_ascii_alpha()`, `is_ascii_alnum()`,
+  `capitalize()`, and `title()` methods:
+  String("hello world").capitalize()        # "Hello world"
+  StringSlice("hello world").title()        # "Hello World"
+  String("abc").is_ascii_alpha()            # True
+  StringSlice("abc123").is_ascii_alnum()    # True
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
   `destroy_func`, so it can clear a `Dict` whose key or value type is not
