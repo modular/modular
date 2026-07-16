@@ -29,7 +29,12 @@ thin pass-through with no behavior change.
 from __future__ import annotations
 
 import json
-from typing import Any, Protocol, TypeVar
+import logging
+import os
+import time
+from collections.abc import Callable
+from functools import wraps
+from typing import Any, Protocol, TypeVar, cast
 
 import llguidance
 import llguidance.hf
@@ -49,6 +54,46 @@ from max.pipelines.context import GrammarMatcher
 from max.pipelines.context.exceptions import InputError
 from max.pipelines.sampling import DEFAULT_STRUCTURED_OUTPUT_BACKEND
 from transformers import PreTrainedTokenizerBase, PreTrainedTokenizerFast
+
+logger = logging.getLogger("max.pipelines")
+
+# Log a line whenever a grammar compile exceeds this threshold (milliseconds).
+# Compilation runs synchronously on the decode thread, so a cold build stalls
+# co-batched requests. Override via ``MAX_GRAMMAR_COMPILE_LOG_MS``; the 10ms
+# default surfaces real cold compiles without spamming the warm path.
+_GRAMMAR_COMPILE_LOG_MS = float(
+    os.environ.get("MAX_GRAMMAR_COMPILE_LOG_MS", "10.0")
+)
+
+_CompileFn = TypeVar("_CompileFn", bound=Callable[..., Any])
+
+
+def _log_if_slow(fn: _CompileFn) -> _CompileFn:
+    """Time a backend compile method and log when it exceeds the threshold.
+
+    Wraps the compile entry points (``create_matcher`` /
+    ``compile_json_schema``) so every caller -- decode-thread setup and
+    admission-time validation alike -- surfaces a slow compile without
+    per-call-site timing. Logs the backend name, method, and duration only;
+    the schema/grammar body is never logged (may be large or sensitive).
+    """
+
+    @wraps(fn)
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        start = time.perf_counter()
+        try:
+            return fn(self, *args, **kwargs)
+        finally:
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            if elapsed_ms > _GRAMMAR_COMPILE_LOG_MS:
+                logger.info(
+                    "grammar %s took %.1fms (%s backend)",
+                    fn.__name__,
+                    elapsed_ms,
+                    self.name,
+                )
+
+    return cast(_CompileFn, wrapper)
 
 
 class _TikTokenAdapter:
@@ -246,12 +291,14 @@ class LlguidanceBackend(GrammarBackend[Any]):
             tokenizer_info = LLTokenizer(wrapper, n_vocab=vocab_size)
         return cls(tokenizer_info)
 
+    @_log_if_slow
     def compile_json_schema(self, json_schema: str) -> Any:
         """Compile a JSON schema to a grammar handle for this backend."""
         return LLMatcher.grammar_from_json_schema(
             json_schema, overrides={"whitespace_pattern": ""}
         )
 
+    @_log_if_slow
     def create_matcher(self, grammar: Any) -> GrammarMatcher:
         """Build a matcher from a compiled grammar (backend-specific handle)."""
         return LLMatcher(self._tokenizer_info, grammar)
@@ -359,6 +406,7 @@ class XgrammarBackend(GrammarBackend[Any]):
             )
         return cls(xgrammar.GrammarCompiler(tokenizer_info))
 
+    @_log_if_slow
     def compile_json_schema(self, json_schema: Any) -> Any:
         """Compile a JSON schema (str or dict) to a grammar handle."""
         schema = (
@@ -372,6 +420,7 @@ class XgrammarBackend(GrammarBackend[Any]):
         # ':'/',' and would reject compact output. This matches vLLM's default.
         return self._compiler.compile_json_schema(schema, any_whitespace=True)
 
+    @_log_if_slow
     def create_matcher(self, grammar: Any) -> GrammarMatcher:
         """Build a matcher from a compiled grammar or structural-tag JSON."""
         if isinstance(grammar, xgrammar.CompiledGrammar):
