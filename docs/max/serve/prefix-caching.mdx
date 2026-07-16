@@ -4,10 +4,11 @@ sidebar_label: Prefix caching
 description: Use prefix caching and PagedAttention when serving a model with the MAX CLI
 ---
 
-Prefix caching is a technique that caches the key-value (KV) cache of existing
-inference requests so that new queries can reuse the context encoded in the KV
-cache if they share the same prefix. This eliminates redundant computations and
-improves performance for workloads with repeated prefixes.
+[Prefix caching](https://handbook.modular.com/inference-optimization/prefix-caching/)
+is a technique that caches the key-value (KV) cache of existing inference
+requests so that new queries can reuse the context encoded in the KV cache if
+they share the same prefix. This eliminates redundant computations and improves
+performance for workloads with repeated prefixes.
 
 Prefix caching is enabled by default when serving a model with the [`max
 serve`](/max/cli/serve) CLI command. It can be disabled using the
@@ -45,8 +46,10 @@ not provide additional benefit in the following cases:
 
 Prefix caching works by storing the key-value (KV) cache for a prefix and
 applying it to future prompts that include the same prefix, reducing redundant
-computation. It's built on PagedAttention, which MAX uses by default to manage
-the KV cache. The following flags control prefix caching behavior:
+computation. It's built on
+[PagedAttention](https://handbook.modular.com/inference-optimization/pagedattention/),
+which MAX uses by default to manage the KV cache. The following flags control
+prefix caching behavior:
 
 - `--enable-prefix-caching`: enables prefix caching. This is on by default, so
   you only need it to re-enable caching after disabling it. Use

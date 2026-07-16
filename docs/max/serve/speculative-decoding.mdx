@@ -7,11 +7,12 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import InstallOpenAI from '../../_includes/install-openai.mdx';
 
-Speculative decoding accelerates LLM token generation without changing the
-model's outputs. A smaller, faster draft step proposes several candidate
-tokens, and the larger target model verifies them in one forward pass. MAX
-accepts the prefix the target agrees with and resamples at the first
-disagreement, so quality matches running the target alone.
+[Speculative decoding](https://handbook.modular.com/inference-optimization/speculative-decoding/)
+accelerates LLM token generation without changing the model's outputs. A
+smaller, faster draft step proposes several candidate tokens, and the larger
+target model verifies them in one forward pass. MAX accepts the prefix the
+target agrees with and resamples at the first disagreement, so quality matches
+running the target alone.
 
 The speedup comes from batching verification across `K` candidate positions.
 When the target accepts all `K` drafts, you get `K+1` tokens per step instead
