@@ -134,9 +134,11 @@ public:
 
   /// Return true if this type is provably implicitly 'trivially' copyable, as
   /// defined by its '__copy_ctor_is_trivial' member and whether or not it
-  /// adheres to the ImplicitlyCopyable trait.
+  /// adheres to the ImplicitlyCopyable trait. `scope` is required for the
+  /// same reason as `isImplicitlyCopyable`'s.
   bool isProvablyImplicitlyTriviallyCopyable(llvm::SMLoc loc,
-                                             SharedState &shared) const;
+                                             SharedState &shared,
+                                             ASTDecl &scope) const;
   /// Return true if this type is provably 'trivially' moveable, as defined by
   /// its '__move_ctor_is_trivial' member.
   bool isProvablyTriviallyMoveable(llvm::SMLoc loc, SharedState &shared) const;
@@ -148,24 +150,23 @@ public:
   /// it is trivial or conforms to (Implicitly)Copyable trait. Note:
   /// this resolves the body of a struct type.
   ///
-  /// When `scope` is provided, where-clause assumptions from the scope are
-  /// used to prove conditional conformances (e.g., a synthesized copy ctor's
+  /// `scope` is required so where-clause assumptions from the scope are used
+  /// to prove conditional conformances (e.g., a synthesized copy ctor's
   /// where-clause can prove that an alias-resolved field type is Copyable).
   bool isCopyable(llvm::SMLoc loc, SharedState &shared, bool isImplicit,
-                  ASTDecl *scope = nullptr) const;
+                  ASTDecl &scope) const;
   bool isImplicitlyCopyable(llvm::SMLoc loc, SharedState &shared,
-                            ASTDecl *scope = nullptr) const;
+                            ASTDecl &scope) const;
   bool isExplicitlyCopyable(llvm::SMLoc loc, SharedState &shared,
-                            ASTDecl *scope = nullptr) const;
+                            ASTDecl &scope) const;
 
   /// Return true if this type is movable from its own type, either because it
   /// is trivial or has a move constructor from self. Note: this resolves the
   /// body of a struct type.
   ///
-  /// When `scope` is provided, where-clause assumptions from the scope are
-  /// used to prove conditional conformances.
-  bool isMovable(llvm::SMLoc loc, SharedState &shared,
-                 ASTDecl *scope = nullptr) const;
+  /// `scope` is required so where-clause assumptions from the scope are used
+  /// to prove conditional conformances.
+  bool isMovable(llvm::SMLoc loc, SharedState &shared, ASTDecl &scope) const;
 
   /// Return true if this type is register passable or conforms to
   /// RegisterPassable trait.

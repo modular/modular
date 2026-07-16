@@ -296,7 +296,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
         // be able to return ref but still conform to Iterator.  Remove this
         // when we have more strong origin support in traits.
         !actualResultType.isCopyable(expr->getLoc(), shared,
-                                     /*isImplicit=*/false))
+                                     /*isImplicit=*/false, state.declScope))
       return error(MatchFailure::Unclassified{});
   }
 

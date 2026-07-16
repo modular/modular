@@ -1385,7 +1385,7 @@ DeclResolver::createSelfContainedSignature(FnTypeGeneratorType original) {
 }
 
 static bool allCopyable(ArrayRef<Capture> captures, SharedState &shared,
-                        SMLoc loc) {
+                        SMLoc loc, ASTDecl &scope) {
   for (const Capture &capture : captures) {
     switch (capture.getCaptureConvention()) {
     case CaptureConvention::kConventionCopy:
@@ -1395,7 +1395,8 @@ static bool allCopyable(ArrayRef<Capture> captures, SharedState &shared,
     case CaptureConvention::kConventionMut:
       continue;
     default:
-      if (!capture.getValue().getRValueType().isCopyable(loc, shared, true))
+      if (!capture.getValue().getRValueType().isCopyable(loc, shared, true,
+                                                         scope))
         return false;
     }
   }
@@ -1436,7 +1437,7 @@ emitClosureInstance(ArrayRef<Capture> captures, ASTDecl &nestedFnDecl,
 
   ASTDecl *closureTrait =
       shared.getOrCreateClosureTrait(loc, *moduleDecl, closureSig);
-  bool isCopyable = allCopyable(captures, shared, loc);
+  bool isCopyable = allCopyable(captures, shared, loc, nestedFnDecl);
 
   ClosureEmitter &emitter = shared.getClosureEmitter();
   // Merge in parameter captures found in the body (from runtime capture types,

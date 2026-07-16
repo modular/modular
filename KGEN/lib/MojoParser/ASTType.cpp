@@ -852,8 +852,9 @@ TriState ASTType::isSpecialFunctionTrivial(llvm::SMLoc loc,
 }
 
 bool ASTType::isProvablyImplicitlyTriviallyCopyable(llvm::SMLoc loc,
-                                                    SharedState &shared) const {
-  return isImplicitlyCopyable(loc, shared) &&
+                                                    SharedState &shared,
+                                                    ASTDecl &scope) const {
+  return isImplicitlyCopyable(loc, shared, scope) &&
          isSpecialFunctionTrivial(loc, SpecialFunctionKind::kCopyCtor,
                                   shared) == TriState::yes();
 }
@@ -892,7 +893,7 @@ bool ASTType::mightBeRegisterPassable(llvm::SMLoc loc,
 }
 
 bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared, bool isImplicit,
-                         ASTDecl *scope) const {
+                         ASTDecl &scope) const {
   ASTDecl *typeDecl = getDecl(shared);
   if (!typeDecl)
     return true; // MLIR Types are copyable.
@@ -907,14 +908,14 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared, bool isImplicit,
   // depends on unresolved constraints (`unknown`), return false and let
   // the constraint system prove it in the appropriate context.
   return provenConformsToBuiltinTrait(traitName, typeDecl->getLoc(), shared,
-                                      ASTDecl::getAssumptionsFromScope(scope));
+                                      ASTDecl::getAssumptionsFromScope(&scope));
 }
 
 /// Return true if this type is implicitly copyable, either because it is
 /// trivial or conforms to ImplicitlyCopyable trait. Note: this resolves the
 /// body of a struct type.
 bool ASTType::isImplicitlyCopyable(llvm::SMLoc loc, SharedState &shared,
-                                   ASTDecl *scope) const {
+                                   ASTDecl &scope) const {
   return isCopyable(loc, shared, /*isImplicit=*/true, scope);
 }
 
@@ -922,7 +923,7 @@ bool ASTType::isImplicitlyCopyable(llvm::SMLoc loc, SharedState &shared,
 /// trivial or conforms to the Copyable trait. Note: this resolves the
 /// body of a struct type.
 bool ASTType::isExplicitlyCopyable(llvm::SMLoc loc, SharedState &shared,
-                                   ASTDecl *scope) const {
+                                   ASTDecl &scope) const {
   return isCopyable(loc, shared, /*isImplicit=*/false, scope);
 }
 
@@ -930,7 +931,7 @@ bool ASTType::isExplicitlyCopyable(llvm::SMLoc loc, SharedState &shared,
 /// is trivial or has a move constructor from self. Note: this resolves the
 /// body of a struct type.
 bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared,
-                        ASTDecl *scope) const {
+                        ASTDecl &scope) const {
   ASTDecl *typeDecl = getDecl(shared);
   if (!typeDecl)
     return true; // MLIR types are movable.
@@ -944,7 +945,7 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared,
   // concrete parameter bindings are available to evaluate conditional
   // conformance constraints — matching isCopyable's behavior.
   return provenConformsToBuiltinTrait("Movable", typeDecl->getLoc(), shared,
-                                      ASTDecl::getAssumptionsFromScope(scope));
+                                      ASTDecl::getAssumptionsFromScope(&scope));
 }
 
 TriState
