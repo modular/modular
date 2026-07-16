@@ -319,6 +319,8 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `FileHandle` now supports `tell()` to query the current file position, similar
+  to Python's `file.tell()`.
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
   `destroy_func`, so it can clear a `Dict` whose key or value type is not
