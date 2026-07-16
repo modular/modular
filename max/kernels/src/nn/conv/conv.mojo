@@ -3522,7 +3522,7 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
 
     # Cache key fields
     var is_set: Bool
-    var in_dtype: DType
+    var in_dtype: Optional[DType]
     var in_: Tuple[Int, Int, Int, Int]
     var filt: Tuple[Int, Int, Int, Int]
     var out: Tuple[Int, Int, Int, Int]
@@ -3567,7 +3567,7 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
         )
 
         self.is_set = False
-        self.in_dtype = DType.invalid
+        self.in_dtype = None
         self.in_ = (0, 0, 0, 0)
         self.filt = (0, 0, 0, 0)
         self.out = (0, 0, 0, 0)
@@ -3863,7 +3863,7 @@ struct CachedMIOpenMeta[conv_rank: Int](Movable):
 
     # Cache key fields
     var is_set: Bool
-    var input_dtype: DType
+    var input_dtype: Optional[DType]
     var input_shape: InlineArray[UInt64, Self.tensor_rank]
     var filter_shape: InlineArray[UInt64, Self.tensor_rank]
     var output_shape: InlineArray[UInt64, Self.tensor_rank]
@@ -3909,7 +3909,7 @@ struct CachedMIOpenMeta[conv_rank: Int](Movable):
         self.workspace_size = 0
 
         self.is_set = False
-        self.input_dtype = DType.invalid
+        self.input_dtype = None
         self.input_shape = InlineArray[UInt64, Self.tensor_rank](fill=0)
         self.filter_shape = InlineArray[UInt64, Self.tensor_rank](fill=0)
         self.output_shape = InlineArray[UInt64, Self.tensor_rank](fill=0)

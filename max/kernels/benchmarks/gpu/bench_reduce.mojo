@@ -178,7 +178,7 @@ def reduce_add[
 def main() raises:
     comptime dtype = DType._from_str(
         get_defined_string["dtype", "DType.float16"]()
-    )
+    ).value()
 
     comptime shape_in_list = get_defined_shape["shape", "1x1x4096"]()
     comptime shape = int_list_to_tuple[shape_in_list]()

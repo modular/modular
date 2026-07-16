@@ -631,7 +631,7 @@ struct KVCacheScalesMHAOperand[
     """
 
     comptime dtype = Self.cache_t.scale_dtype
-    comptime scale_dtype = DType.invalid
+    comptime scale_dtype = Self.dtype
     comptime page_size = Self.cache_t.page_size_
     comptime quantization_enabled = Self.cache_t.quantization_enabled
     comptime quantization_granularity = Self.cache_t.quantization_granularity
@@ -1196,7 +1196,7 @@ struct RaggedMHAOperand[
     dtype_: DType,
     layout: TensorLayout,
     cache_layout: TensorLayout,
-    scale_dtype_: DType = DType.invalid,
+    scale_dtype_: DType = dtype_,
     scale_layout: TensorLayout = RowMajorLayout[
         *Coord[Int64, Int64].element_types
     ],

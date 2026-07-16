@@ -40,12 +40,12 @@ from .smem import SM100AttentionSMem
 @always_inline
 def fa4_correction[
     qkv_dtype: DType,
-    rope_dtype: DType,
-    scale_dtype: DType,
+    rope_dtype_: Optional[DType],
+    scale_dtype_: Optional[DType],
     MaskType: MHAMask,
     //,
     config: FA4Config[
-        qkv_dtype, rope_dtype=rope_dtype, scale_dtype=scale_dtype
+        qkv_dtype, rope_dtype_=rope_dtype_, scale_dtype_=scale_dtype_
     ],
     page_size: Int,
 ](

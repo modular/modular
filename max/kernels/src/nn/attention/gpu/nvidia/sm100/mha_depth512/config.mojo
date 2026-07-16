@@ -38,13 +38,17 @@ from nn.attention.gpu.nvidia.sm100.attention import SM100_RESERVED_SMEM_BYTES
 struct Depth512SM100Config[
     qkv_dtype: DType,
     *,
-    rope_dtype: DType = DType.invalid,
-    scale_dtype: DType = DType.invalid,
+    rope_dtype_: Optional[DType] = None,
+    scale_dtype_: Optional[DType] = None,
 ](TrivialRegisterPassable):
-    # --- Type sizes ---
+    # --- Type sizes (0 when the optional dtype is unset) ---
     comptime qkv_dtype_size: Int = size_of[Self.qkv_dtype]()
-    comptime rope_dtype_size: Int = size_of[Self.rope_dtype]()
-    comptime scale_dtype_size: Int = size_of[Self.scale_dtype]()
+    comptime rope_dtype_size: Int = size_of[
+        Self.rope_dtype_.value()
+    ]() if Self.rope_dtype_ else 0
+    comptime scale_dtype_size: Int = size_of[
+        Self.scale_dtype_.value()
+    ]() if Self.scale_dtype_ else 0
 
     # --- MMA geometry ---
     comptime MMA_K: Int = 16 if Self.qkv_dtype.is_half_float() else 32

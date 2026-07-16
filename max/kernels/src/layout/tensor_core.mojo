@@ -224,7 +224,7 @@ struct TensorCore[
         )
         and Self.shape == shape_16x8x32
     ) if is_nvidia_gpu() else (
-        Self.in_type
+        Optional[DType](Self.in_type)
         in (
             get_amd_fp8_dtype(),
             get_amd_bf8_dtype(),
@@ -364,10 +364,10 @@ struct TensorCore[
         comptime fp8_dtype = get_amd_fp8_dtype()
         comptime bf8_dtype = get_amd_bf8_dtype()
 
-        comptime assert Self.in_type in (
-            DType.float32,
-            DType.bfloat16,
-            DType.float16,
+        comptime assert Optional[DType](Self.in_type) in (
+            Optional[DType](DType.float32),
+            Optional[DType](DType.bfloat16),
+            Optional[DType](DType.float16),
             fp8_dtype,
             bf8_dtype,
         ), String(
@@ -387,7 +387,7 @@ struct TensorCore[
             )
             or (
                 reg_per_thread in (8,)
-                and (Self.in_type in (fp8_dtype, bf8_dtype))
+                and (Optional[DType](Self.in_type) in (fp8_dtype, bf8_dtype))
             )
         ), "No valid mma shape to load matrix fragment"
 
@@ -540,10 +540,10 @@ struct TensorCore[
             mma_n, WARP_SIZE // mma_n
         ) if Self.transpose_b else Layout.row_major(WARP_SIZE // mma_n, mma_n)
 
-        comptime assert Self.in_type in (
-            DType.float32,
-            DType.bfloat16,
-            DType.float16,
+        comptime assert Optional[DType](Self.in_type) in (
+            Optional[DType](DType.float32),
+            Optional[DType](DType.bfloat16),
+            Optional[DType](DType.float16),
             fp8_dtype,
             bf8_dtype,
         ), String(
@@ -563,7 +563,7 @@ struct TensorCore[
             )
             or (
                 reg_per_thread in (8,)
-                and (Self.in_type in (fp8_dtype, bf8_dtype))
+                and (Optional[DType](Self.in_type) in (fp8_dtype, bf8_dtype))
             )
         ), "No valid mma shape to load matrix fragment b"
 

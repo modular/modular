@@ -48,9 +48,7 @@ comptime float_dtypes = [
     DType.float64,
 ]
 
-comptime all_dtypes = (
-    [DType.bool] + integral_dtypes + float_dtypes + [DType.invalid]
-)
+comptime all_dtypes = [DType.bool] + integral_dtypes + float_dtypes
 
 
 def test_equality() raises:
@@ -102,8 +100,8 @@ def test_from_str() raises:
     assert_equal(DType._from_str("bfloat16"), DType.bfloat16)
     assert_equal(DType._from_str("DType.bfloat16"), DType.bfloat16)
 
-    assert_equal(DType._from_str("blahblah"), DType.invalid)
-    assert_equal(DType._from_str("DType.blahblah"), DType.invalid)
+    assert_false(DType._from_str("blahblah"))
+    assert_false(DType._from_str("DType.blahblah"))
 
     comptime for dt in all_dtypes:
         assert_equal(DType._from_str(String(dt)), dt)

@@ -162,7 +162,7 @@ struct Backend(Equatable, TrivialRegisterPassable, Writable):
 
 
 def _resolve_backend[
-    backend: Backend, dtype: DType = DType.invalid
+    backend: Backend, dtype: Optional[DType] = None
 ]() -> Backend:
     comptime if backend is not Backend.AUTOMATIC:
         return backend
@@ -173,7 +173,9 @@ def _resolve_backend[
         return Backend.HIPBLASLT
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
     # Replace this with float4-e2m1fn when GENAI-337 is fixed.
-    elif dtype.is_float8() or dtype == DType.uint8:
+    elif (
+        dtype.value().is_float8() if dtype else False
+    ) or dtype == DType.uint8:
         return Backend.CUBLASLT
     return Backend.CUBLAS
 
@@ -384,7 +386,7 @@ def matmul[
     comptime assert b.flat_rank == 2, "b must be of rank 2"
 
     with ctx.push_context() as cur_ctx:
-        return matmul[use_tf32=use_tf32, scales_type=DType.invalid](
+        return matmul[use_tf32=use_tf32](
             cur_ctx,
             _get_global_handle[a.dtype](ctx),
             c,
@@ -408,7 +410,7 @@ def matmul[
     b_layout: Layout,
     *,
     use_tf32: Bool = False,
-    scales_type: DType = DType.invalid,
+    scales_type: DType = a_type,
     a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
     b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
@@ -554,7 +556,7 @@ def matmul[
     a_type: DType,
     b_type: DType,
     use_tf32: Bool = False,
-    scales_type: DType = DType.invalid,
+    scales_type: DType = a_type,
     a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
     b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
@@ -958,7 +960,7 @@ def _cublasLt_matmul[
     d_type: DType,
     a_type: DType,
     b_type: DType,
-    scales_type: DType = DType.invalid,
+    scales_type: DType = a_type,
     a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
     b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
@@ -1431,7 +1433,7 @@ def _hipblasLt_matmul[
     d_type: DType,
     a_type: DType,
     b_type: DType,
-    scales_type: DType = DType.invalid,
+    scales_type: DType = a_type,
     a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
     b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](

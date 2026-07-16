@@ -24,8 +24,8 @@ Split-mode memory layout (low to high address):
     [correction: 2 * WARPGROUP_SIZE Float32 entries (= BM in 2Q; doubled
                   to 2*BM in 1Q so each softmax thread tid in [0, 255]
                   has a dedicated slot)]
-    [q_scale: BM * scale_dtype (0 when scale_dtype is invalid)]
-    [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when invalid)]
+    [q_scale: BM * scale_dtype (0 when scale_dtype is unset)]
+    [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when unset)]
     [mbars: FA4MiscMBars.size SharedMemBarriers]
     [tmem_addr: 1 UInt32]
 
@@ -38,8 +38,8 @@ Fused-mode memory layout (low to high address):
     [correction: 2 * WARPGROUP_SIZE Float32 entries (= BM in 2Q; doubled
                   to 2*BM in 1Q so each softmax thread tid in [0, 255]
                   has a dedicated slot)]
-    [q_scale: BM * scale_dtype (0 when scale_dtype is invalid)]
-    [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when invalid)]
+    [q_scale: BM * scale_dtype (0 when scale_dtype is unset)]
+    [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when unset)]
     [mbars: FA4MiscMBars.size SharedMemBarriers]
     [tmem_addr: 1 UInt32]
 
@@ -69,11 +69,11 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 
 struct SM100AttentionSMem[
     qkv_dtype: DType,
-    rope_dtype: DType,
-    scale_dtype: DType,
+    rope_dtype_: Optional[DType],
+    scale_dtype_: Optional[DType],
     //,
     config: FA4Config[
-        qkv_dtype, rope_dtype=rope_dtype, scale_dtype=scale_dtype
+        qkv_dtype, rope_dtype_=rope_dtype_, scale_dtype_=scale_dtype_
     ],
     *,
     use_order_barriers: Bool = EnableForcedOrdering,
@@ -87,11 +87,18 @@ struct SM100AttentionSMem[
 
     Parameters:
         qkv_dtype: Element type of Q/K/V data in shared memory.
-        rope_dtype: Element type of Q and K rope.
-        scale_dtype: Element type of the per-token scale used for Q and K.
+        rope_dtype_: Element type of Q and K rope (unset when there is no rope).
+        scale_dtype_: Element type of the per-token scale used for Q and K
+            (unset when there is no per-token scaling).
         config: FA4 configuration (tile sizes, depths, staging counts, etc.).
         use_order_barriers: Whether forced-ordering barriers are allocated.
     """
+
+    # Concrete scale/rope dtypes for `Scalar[...]`/pointer reads. Fall back to
+    # `qkv_dtype` when unset so the type is always well-formed; presence is
+    # signalled by `rope_dt_size`/`_scale_dt_size` being 0.
+    comptime rope_dtype = Self.rope_dtype_.or_else(Self.qkv_dtype)
+    comptime scale_dtype = Self.scale_dtype_.or_else(Self.qkv_dtype)
 
     # ---- comptime byte offsets ------------------------------------------------
     # Every offset is relative to the beginning of dynamic shared memory.
@@ -99,7 +106,7 @@ struct SM100AttentionSMem[
     comptime _qkv_dt_size: Int = size_of[Self.qkv_dtype]()
 
     comptime rope_dt_size: Int = (
-        size_of[Self.rope_dtype]() if Self.rope_dtype != DType.invalid else 0
+        size_of[Self.rope_dtype_.value()]() if Self.rope_dtype_ else 0
     )
     comptime q_byte_offset: Int = 0
     # Q_nope SMEM region: width is the non-rope Q/K depth (`padded_nope_depth`),
@@ -186,7 +193,7 @@ struct SM100AttentionSMem[
 
     # Scale regions (per-token scale only; zero-sized when scale_dtype is invalid).
     comptime _scale_dt_size: Int = (
-        size_of[Self.scale_dtype]() if Self.scale_dtype != DType.invalid else 0
+        size_of[Self.scale_dtype_.value()]() if Self.scale_dtype_ else 0
     )
     comptime q_scale_bytes: Int = Self.config.BM * Self._scale_dt_size
     comptime q_scale_byte_offset: Int = (
@@ -256,7 +263,7 @@ struct SM100AttentionSMem[
     def __init__(out self):
         """Obtain the base pointer from the kernel's dynamic shared memory."""
 
-        comptime assert Self.rope_dtype != DType.invalid or Self.rope_depth == 0
+        comptime assert Self.rope_dtype_ or Self.rope_depth == 0
         self.base = external_memory[
             Scalar[DType.uint8],
             address_space=AddressSpace.SHARED,

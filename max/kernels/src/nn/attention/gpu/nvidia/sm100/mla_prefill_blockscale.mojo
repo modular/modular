@@ -530,7 +530,7 @@ __extension SM100MLA:
         comptime KVPipeType = MLAKVLayouts[
             Self.KVLUTType.dtype,
             Self.KRopeType.dtype,
-            DType.invalid,
+            None,
             Self.config,
         ]
 

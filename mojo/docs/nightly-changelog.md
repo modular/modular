@@ -873,6 +873,11 @@ This version is still a work in progress.
 - Removed the deprecated `GPUAddressSpace` alias for `AddressSpace`. Use
   `AddressSpace` directly.
 
+- Removed the `DType.invalid` sentinel alias. Code that used it to represent an
+  absent or optional dtype should use `Optional[DType]` instead. Accordingly,
+  `DType._from_str()` now returns an `Optional[DType]` (`None` when the string
+  does not name a dtype) rather than `DType.invalid`.
+
 ## Fixed
 
 - [#6755](https://github.com/modular/modular/issues/6755) - Volatile loads are

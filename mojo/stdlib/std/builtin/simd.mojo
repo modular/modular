@@ -255,7 +255,6 @@ def _simd_construction_checks[dtype: DType, size: SIMDSize]():
       dtype: The data type of SIMD vector elements.
       size: The number of elements in the SIMD vector. The size must not be greater than 2**15.
     """
-    comptime assert dtype != DType.invalid, "simd type cannot be DType.invalid"
     comptime assert size.is_power_of_two(), "simd width must be power of 2"
     # MOCO-1388: Until LLVM's issue #122571 is fixed, LLVM's SelectionDAG has
     # a limit of 2^15 for the number of operands of the instruction.
