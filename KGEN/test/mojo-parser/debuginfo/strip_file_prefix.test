@@ -13,6 +13,6 @@
 # DIRECT: "strip_file_prefix_input.mojo"
 # DIRECT: "local_import.mojo"
 
-# RUN: %parse-mojo-isolated %S/inputs/strip_file_prefix_input.mojo -strip-file-prefix=%S/foo -mlir-print-debuginfo | FileCheck %s -check-prefix=NON-PARENT --implicit-check-not='"inputs/strip_file_prefix_input' --implicit-check-not='"strip_file_prefix_input'
+# RUN: %parse-mojo-isolated %S/inputs/strip_file_prefix_input.mojo -strip-file-prefix=%S/foo -mlir-print-debuginfo | FileCheck %s -check-prefix=NON-PARENT --implicit-check-not='"inputs/strip_file_prefix_input' --implicit-check-not='"strip_file_prefix_input.mojo'
 # NON-PARENT: "/{{.+}}/inputs/strip_file_prefix_input.mojo"
 # NON-PARENT: "/{{.+}}/inputs/local_import.mojo"

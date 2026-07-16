@@ -342,13 +342,16 @@ def LIT_FileModuleOp : LITOp<"file_module", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
-    OptionalAttr<LIT_DocStringAttr>:$docString
+    OptionalAttr<LIT_DocStringAttr>:$docString,
+    OptionalAttr<StrAttr>:$sourceName
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
     /// Return the file name as it appears in the source code (not mangled).
-    StringAttr getDeclName() { return getSymNameAttr(); }
+    StringAttr getDeclName() {
+      return getSourceNameAttr() ? getSourceNameAttr() : getSymNameAttr();
+    }
   }];
 
   let builders = [
@@ -389,13 +392,16 @@ def LIT_PackageOp : LITOp<"package", [
     OptionalAttr<LIT_DocStringAttr>:$docString,
     // References to the dependencies of this package.
     OptionalAttr<KGEN_LinkDependencyArrayAttr>:$dependencies,
-    OptionalAttr<LIT_DenseResourceElementsArrayAttr>:$externLLVMBitcodeModules
+    OptionalAttr<LIT_DenseResourceElementsArrayAttr>:$externLLVMBitcodeModules,
+    OptionalAttr<StrAttr>:$sourceName
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
     /// Return the package name as it appears in the source code (not mangled).
-    StringAttr getDeclName() { return getSymNameAttr(); }
+    StringAttr getDeclName() {
+      return getSourceNameAttr() ? getSourceNameAttr() : getSymNameAttr();
+    }
   }];
 
   let builders = [
