@@ -319,6 +319,8 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `math.hypot()` now supports variadic and `Span` overloads for computing the
+  Euclidean norm of N values, matching Python's `math.hypot(*coordinates)`.
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
   `destroy_func`, so it can clear a `Dict` whose key or value type is not
