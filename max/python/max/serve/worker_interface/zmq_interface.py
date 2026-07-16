@@ -17,7 +17,7 @@ import asyncio
 import contextlib
 import logging
 import time
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Any, Generic
 
 from max.pipelines.context import (
@@ -75,28 +75,23 @@ class ZmqModelWorkerProxy(
         """Total responses buffered across all pending output queues."""
         return sum(q.qsize() for q in self.pending_out_queues.values())
 
-    @contextlib.asynccontextmanager
-    async def _open_channel(
+    async def stream(
         self, req_id: RequestID, data: BaseContextType
-    ) -> AsyncGenerator[
-        asyncio.Queue[tuple[float, SchedulerResult[PipelineOutputType]]]
-    ]:
-        """
-        Async context manager to open a communication channel for a specific request.
+    ) -> AsyncGenerator[list[PipelineOutputType], None]:
+        """Submit a request to the model worker and return a response generator.
 
-        Registers a new asyncio.Queue for the given request ID, sends the request data
-        through the request push socket, and yields the queue for streaming results. Upon
-        exiting the context, the queue is cleaned up from the pending output queues.
+        Awaiting this coroutine registers an output queue for ``req_id`` and
+        puts ``data`` on the request queue (the handoff to the model worker). A
+        failure during that put — for example a dead worker socket — raises
+        here, before any response is streamed, and the queue registration is
+        rolled back. The returned async generator drains responses until the
+        request completes.
 
-        Args:
-            req_id: The unique identifier for the request.
-            data: The input data associated with the request.
-
-        Yields:
-            asyncio.Queue: The queue to receive streamed results for the request.
+        The yielded lists are guaranteed to be non-empty and ordered.
 
         Raises:
-            RuntimeError: If a queue for the given req_id already exists, indicating a duplicate request.
+            RuntimeError: If a queue for the given ``req_id`` already exists,
+                indicating a duplicate request.
         """
         if req_id in self.pending_out_queues:
             raise RuntimeError(
@@ -111,28 +106,27 @@ class ZmqModelWorkerProxy(
         self.pending_out_queues[req_id] = out_queue
         try:
             await self.request_queue.put(data)
-            yield out_queue
         except BaseException:
-            try:
-                self.cancel(req_id)
-            except Exception:
-                pass
-            raise
-        finally:
+            # Submission failed before any response streamed; roll back the
+            # registration and cancel so the worker drops any partial state.
             del self.pending_out_queues[req_id]
+            with contextlib.suppress(Exception):
+                self.cancel(req_id)
+            raise
 
-    async def stream(
-        self, req_id: RequestID, data: BaseContextType
-    ) -> AsyncIterator[list[PipelineOutputType]]:
+        return self._drain_responses(req_id, out_queue)
+
+    async def _drain_responses(
+        self,
+        req_id: RequestID,
+        queue: asyncio.Queue[tuple[float, SchedulerResult[PipelineOutputType]]],
+    ) -> AsyncGenerator[list[PipelineOutputType], None]:
+        """Drain the output queue for a submitted request until it completes.
+
+        Cleans up the pending output queue on exit and cancels the request with
+        the worker if the stream is abandoned before completing normally.
         """
-        Asynchronously streams results for a given request ID and input data.
-
-        Opens a channel for the request, drains the queue to build output batches,
-        and closes the channel when the stream ends.
-
-        The yielded lists are guaranteed to be non-empty and ordered.
-        """
-        async with self._open_channel(req_id, data) as queue:
+        try:
             # queue.get() will wait until an item is available.
             # This will exit when no result is passed in the SchedulerResult.
             # or the SchedulerResult states that we should stop the stream.
@@ -170,6 +164,14 @@ class ZmqModelWorkerProxy(
 
                 if should_stop:
                     break
+        except BaseException:
+            # The consumer abandoned the stream (e.g. client disconnect) or an
+            # error occurred mid-stream; tell the worker to stop generating.
+            with contextlib.suppress(Exception):
+                self.cancel(req_id)
+            raise
+        finally:
+            del self.pending_out_queues[req_id]
 
     def cancel(self, req_id: RequestID) -> None:
         """

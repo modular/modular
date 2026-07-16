@@ -23,6 +23,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from typing import cast
 
 from max.experimental.cascade.core.interfaces import Runtime, Worker
+from max.experimental.cascade.core.type_hints import arg_types
 from max.support._taskgroups import CancelGroup
 
 
@@ -83,6 +84,31 @@ class LocalRuntime(Runtime):
         self._workers[worker_id] = live_worker
         return worker_id
 
+    def _resolve_method(
+        self, worker_id: str, func_name: str
+    ) -> tuple[Worker, Callable[..., object]]:
+        """Look up a worker and one of its public methods by name."""
+        if worker_id not in self._workers:
+            raise KeyError(f"Unknown worker id: {worker_id!r}")
+        worker = self._workers[worker_id]
+        method = (
+            getattr(worker, func_name, None)
+            if not func_name.startswith("_")
+            else None
+        )
+        if not callable(method):
+            raise ValueError(
+                f"Unknown worker method: {type(worker).__name__}.{func_name}"
+            )
+        return worker, cast(Callable[..., object], method)
+
+    async def get_func_args_type(
+        self, worker_id: str, func_name: str
+    ) -> dict[str, object | None]:
+        """Resolve the parameter type hints of a worker method by name."""
+        _, method = self._resolve_method(worker_id, func_name)
+        return arg_types(method)
+
     @asynccontextmanager
     async def call_method(
         self,
@@ -101,12 +127,9 @@ class LocalRuntime(Runtime):
         no task is needed -- exit just drops the iterator from the
         registry.
         """
-        if worker_id not in self._workers:
-            raise KeyError(f"Unknown worker id: {worker_id!r}")
         if self._task_group is None:
             raise RuntimeError("LocalRuntime context not entered")
-        worker = self._workers[worker_id]
-        method = cast(Callable[..., object], getattr(worker, func_name))
+        worker, method = self._resolve_method(worker_id, func_name)
         cls_name = type(worker).__name__
         result_id = f"{cls_name}.{func_name}-{next(self._resid_counter)}"
 
@@ -162,6 +185,8 @@ class LocalRuntime(Runtime):
 
     async def get_result(self, result_id: str) -> object:
         """Await a single (non-streaming) result.
+
+        In-process results are the native Python object already.
 
         Raises :py:class:`KeyError` if ``result_id`` does not name a
         value-typed result (either unknown, already freed, or registered

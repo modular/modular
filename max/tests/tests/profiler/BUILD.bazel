@@ -10,6 +10,7 @@ modular_py_test(
     name = "tests",
     srcs = glob(
         ["*.py"],
+        exclude = ["test_hta_import.py"],
     ),
     env = {
         "MODULAR_ENABLE_PROFILING": "1",
@@ -20,5 +21,32 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/profiler",
         requirement("pytest-asyncio"),
+    ],
+)
+
+# HTA cross-tool contract test — pinned to Linux x86_64 + NVIDIA GPU because
+# the temporal-breakdown assertion requires a real CUDA kernel launch in the
+# captured trace (HTA's temporal breakdown classifies time as
+# idle/compute/non-compute from CUPTI activity records). HTA is imported via
+# pytest.importorskip in the test itself, so the target builds without
+# `requirement("hta")` and the test skips cleanly if HTA is absent from the
+# runner's pip env. Nothing in CI installs HTA today, so on stock runners
+# this import-skips; run it in an environment that provides HTA (`pip
+# install HolisticTraceAnalysis`) to exercise the contract.
+modular_py_test(
+    name = "test_hta_import",
+    srcs = ["test_hta_import.py"],
+    env = {
+        "MODULAR_ENABLE_PROFILING": "1",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:nvidia_gpu"],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
     ],
 )

@@ -289,6 +289,7 @@ class PagedKVCacheManager:
             replica_kv_memory=replica_kv_memory,
             total_num_host_blocks=total_num_host_pages,
             kv_hash_algo=params.kv_hash_algo,
+            params=params,
         )
 
         persistent_buffers: list[_PersistentKVDeviceInputBuffers] = [

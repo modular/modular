@@ -12,20 +12,41 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.random import random_float64
-from std.sys import align_of, get_defined_dtype
+from std.sys import (
+    align_of,
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_string,
+)
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, coord, row_major
 from nn.normalization import layer_norm_gpu, rms_norm_gpu
 
 from std.utils.index import Index, IndexList
 
 
+# The shape `Coord` is passed in (built by the caller) rather than constructed
+# here: a statically-shaped `Coord` (outer dims as `ComptimeInt`, what the graph
+# compiler's `input.shape_coord()` yields) folds the per-row row->n-D divisors to
+# magic-multiply + shift, while an all-runtime `Coord` emits a runtime integer
+# divide. Same kernel either way; passing the `Coord` in lets one bench function
+# measure both arms and isolate the static-divisor folding. `shape` (comptime)
+# still drives host buffer sizing and the `BenchId`.
 def bench_layer_norm_gpu[
-    rank: Int, //, dtype: DType, shape: IndexList[rank]
-](ctx: DeviceContext, mut b: Bench, fn_name: String) raises:
+    rank: Int,
+    //,
+    dtype: DType,
+    shape: IndexList[rank],
+    static_shape: Bool = False,
+](
+    ctx: DeviceContext,
+    mut b: Bench,
+    fn_name: String,
+    shape_coord: Coord,
+) raises:
     comptime cols = shape[rank - 1]
     comptime rows = shape.flattened_length() // cols
 
@@ -56,13 +77,15 @@ def bench_layer_norm_gpu[
     ctx.enqueue_copy(gamma_d, gamma_h)
     ctx.enqueue_copy(beta_d, beta_h)
 
+    # `layer_norm_gpu` migrated to a `Coord` shape boundary (mirror of
+    # `rms_norm_gpu` / softmax migration). `gamma_fn` stays n-D `IndexList`-form.
     @__copy_capture(data_buf)
     @always_inline
     @parameter
     def input_fn[
-        width: Int, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
+        width: Int, alignment: Int
+    ](coords: Coord) -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
 
         return data_buf.raw_load[width=width, alignment=alignment](idx)
 
@@ -80,27 +103,31 @@ def bench_layer_norm_gpu[
     @__copy_capture(data_buf)
     @parameter
     def output_fn[
-        width: SIMDSize, rank_: Int, alignment: Int
-    ](coords: IndexList[rank_], val: SIMD[dtype, width]) -> None:
-        var idx = data_buf.layout(Coord(coords))
+        width: SIMDSize, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+        var idx = data_buf.layout(coords)
 
         data_buf.raw_store[width=width, alignment=alignment](idx, val)
 
     @always_inline
-    @__copy_capture(shape, beta, epsilon, data_buf)
+    @__copy_capture(shape_coord, beta, epsilon, data_buf)
     @parameter
     def bench_fn(mut b: Bencher) raises:
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
-            layer_norm_gpu[input_fn, gamma_fn, output_fn](
-                shape, beta, epsilon, ctx=ctx
+            layer_norm_gpu[rank, input_fn, gamma_fn, output_fn](
+                shape_coord, beta, epsilon, ctx=ctx
             )
 
         b.iter_custom[kernel_launch](ctx)
 
+    comptime shape_tag = "static" if static_shape else "dynamic"
     b.bench_function[bench_fn](
-        BenchId("layer_norm", input_id=String(fn_name, dtype, shape, sep="/"))
+        BenchId(
+            "layer_norm",
+            input_id=String(fn_name, shape_tag, dtype, shape, sep="/"),
+        )
     )
 
     ctx.synchronize()
@@ -201,12 +228,42 @@ def main() raises:
     comptime shape = int_list_to_tuple[
         get_defined_shape["shape", "256x256"]()
     ]()
+    # Which kernel to benchmark. Default preserves the historical dispatch
+    # (rank-2 -> layer_norm, rank-3 -> rms_norm); pass `kernel=layer_norm` to
+    # benchmark `layer_norm_gpu` at rank-3 (e.g. `[B, S, H]` vision shapes),
+    # which the default dispatch could not reach.
+    comptime kernel = get_defined_string["kernel", "auto"]()
+    # For `layer_norm`, also run a statically-shaped arm so the static-divisor
+    # folding path (the optimization that motivated the `Coord` boundary) is
+    # measured, not just the runtime-divide path.
+    comptime want_static = get_defined_bool["static", True]()
 
     var m = Bench(BenchConfig(num_repetitions=1))
     with DeviceContext() as ctx:
-        comptime if len(shape) == 2:
-            bench_layer_norm_gpu[dtype, shape](ctx, m, "layer_norm_gpu")
-        elif len(shape) == 3:
+        comptime if kernel == "rms_norm" or (
+            kernel == "auto" and len(shape) == 3
+        ):
             bench_rms_norm_gpu[dtype, shape](ctx, m, "rms_norm_gpu")
+        else:
+            # `layer_norm`: always run the dynamic (runtime-divide) arm; add the
+            # static (folded-divisor) arm so the two are directly comparable. The
+            # `Coord`s are built here (at `main` scope, where `shape[i]` folds at
+            # comptime): `Coord(shape)` erases dims to runtime; `coord[...]`
+            # keeps them as `ComptimeInt`.
+            bench_layer_norm_gpu[dtype, shape, static_shape=False](
+                ctx, m, "layer_norm_gpu", Coord(shape)
+            )
+            comptime if want_static:
+                comptime if len(shape) == 2:
+                    bench_layer_norm_gpu[dtype, shape, static_shape=True](
+                        ctx, m, "layer_norm_gpu", coord[shape[0], shape[1]]
+                    )
+                elif len(shape) == 3:
+                    bench_layer_norm_gpu[dtype, shape, static_shape=True](
+                        ctx,
+                        m,
+                        "layer_norm_gpu",
+                        coord[shape[0], shape[1], shape[2]],
+                    )
 
     m.dump_report()

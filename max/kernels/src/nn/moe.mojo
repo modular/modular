@@ -18,6 +18,7 @@ from std.math.uutils import umod
 from std.memory import stack_allocation
 
 from std.atomic import Atomic
+from std.sys import has_apple_gpu_accelerator, is_apple_gpu
 from std.sys.info import simd_width_of
 
 import std.gpu.primitives.warp as warp
@@ -190,31 +191,66 @@ def _get_index_and_offset(
     total_writes: UInt32,
     aligned_total_writes: UInt32,
 ) -> Tuple[UInt32, UInt32, UInt32]:
-    var expert_idx_and_offsets: UInt64 = 0
+    # in order to write back to gmem we need to know the current available
+    # offset so we use atomics to get the next available offset.
 
-    # in order to write back to gmem we need to know the current available offset
-    # so we use atomics to get the next available offset
+    comptime if is_apple_gpu():
+        # Apple AGX has no 64-bit device atomics: a u64 Atomic.fetch_add
+        # crashes the Metal shader compiler (AGCLLVMAirBuiltins::buildAtomic).
+        # Pack the expert counter and the token-write offset into a SINGLE
+        # 32-bit atomic so (expert_idx, base_g_offset) stay jointly consistent
+        # -- the CSR expert_start_indices build at the call site requires
+        # base_g_offset to be the prefix sum in expert_idx order, which a
+        # single atomic guarantees (two separate atomics would race):
+        #   bits [31:23] expert counter (<= 512 experts)
+        #   bits  [22:0] total writes   (<= 8_388_607 grouped tokens)
+        # The aligned offset feeds only the FP8/block-scaled `scales_offset_p`
+        # path, which has no Apple kernel (Apple serves bf16 MoE), so it is not
+        # tracked here; returning base_g_offset makes the (unused) call-site
+        # subtraction a benign zero.
+        #
+        # The packing ceilings -- <= 512 experts (9-bit counter), <= 8_388_607
+        # grouped tokens (23-bit offset field, which overflows on the
+        # ACCUMULATED offset, not a single expert's delta), and no scales
+        # offset -- are enforced on the host in `moe_create_indices`, not with a
+        # device `debug_assert` here: device asserts are a no-op on Apple GPU
+        # (MOCO-2405), and all three quantities are known before launch.
+        _ = aligned_total_writes
+        var packed: UInt32 = 0
+        if thread_idx.x == 0:
+            # bitcast: the u64 lock's low 32-bit word IS the packed u32 counter
+            # (valid because Apple GPUs are little-endian).
+            packed = Atomic.fetch_add(
+                lock.ptr.bitcast[UInt32](),
+                (UInt32(1) << 23) | (total_writes & 0x007FFFFF),
+            )
+        packed = warp.broadcast(packed)
+        var expert_idx = packed >> 23
+        var base_g_offset = packed & 0x007FFFFF
+        return expert_idx, base_g_offset, base_g_offset
+    else:
+        var expert_idx_and_offsets: UInt64 = 0
 
-    if thread_idx.x == 0:
-        # Pack expert index (12 bits), current total writes (26 bits), and
-        # aligned total writes (26 bits) into single atomic update
-        # Upper 12 bits: expert counter (which expert slot to use)
-        # Middle 26 bits: current total writes
-        # Lower 26 bits: aligned total writes
-        expert_idx_and_offsets = Atomic.fetch_add(
-            lock.ptr,
-            (UInt64(1) << 52)
-            | (UInt64(total_writes) << 26)
-            | UInt64(aligned_total_writes),
-        )
+        if thread_idx.x == 0:
+            # Pack expert index (12 bits), current total writes (26 bits), and
+            # aligned total writes (26 bits) into single atomic update
+            # Upper 12 bits: expert counter (which expert slot to use)
+            # Middle 26 bits: current total writes
+            # Lower 26 bits: aligned total writes
+            expert_idx_and_offsets = Atomic.fetch_add(
+                lock.ptr,
+                (UInt64(1) << 52)
+                | (UInt64(total_writes) << 26)
+                | UInt64(aligned_total_writes),
+            )
 
-    # Broadcast the atomic result to all threads in the warp
-    expert_idx_and_offsets = warp.broadcast(expert_idx_and_offsets)
-    var expert_idx = UInt32(expert_idx_and_offsets >> 52)
-    var base_g_offset = UInt32(expert_idx_and_offsets >> 26) & 0x03FFFFFF
-    var aligned_g_offset = UInt32(expert_idx_and_offsets) & 0x03FFFFFF
+        # Broadcast the atomic result to all threads in the warp
+        expert_idx_and_offsets = warp.broadcast(expert_idx_and_offsets)
+        var expert_idx = UInt32(expert_idx_and_offsets >> 52)
+        var base_g_offset = UInt32(expert_idx_and_offsets >> 26) & 0x03FFFFFF
+        var aligned_g_offset = UInt32(expert_idx_and_offsets) & 0x03FFFFFF
 
-    return expert_idx, base_g_offset, aligned_g_offset
+        return expert_idx, base_g_offset, aligned_g_offset
 
 
 @always_inline
@@ -551,6 +587,32 @@ def moe_create_indices[
     comptime assert is_gpu[
         target
     ](), "Creating MoE indices is only supported on GPU"
+
+    comptime if has_apple_gpu_accelerator():
+        # Apple AGX has no 64-bit device atomics, so `_get_index_and_offset`
+        # packs the CSR bookkeeping into a single 32-bit atomic: a 9-bit expert
+        # counter (bits [31:23]) and a 23-bit grouped-token offset (bits
+        # [22:0]). That caps the Apple path at 512 experts and 8_388_607
+        # grouped tokens and leaves no bits to track the FP8/block-scaled
+        # aligned-scale offset. Enforce those limits here on the host: a device
+        # `debug_assert` is a no-op on Apple GPU (MOCO-2405), so it could not
+        # fail loudly, and all three quantities are known before launch.
+        if expert_ids.dim(0) > 512:
+            raise Error(
+                t"Apple MoE: num_experts={expert_ids.dim(0)} exceeds the"
+                t" 512-expert cap of the 32-bit-atomic path"
+            )
+        if topk_ids.dim(0) > 0x007FFFFF:
+            raise Error(
+                t"Apple MoE: {topk_ids.dim(0)} grouped tokens exceed the"
+                t" 8_388_607-token cap of the 32-bit-atomic path"
+            )
+        if scales_offset_p:
+            raise Error(
+                t"Apple MoE: FP8/block-scaled scales_offset is unsupported on"
+                t" the 32-bit-atomic path (the aligned scale offset is not"
+                t" tracked)"
+            )
 
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.create_indices", task_id=Int(context.id())

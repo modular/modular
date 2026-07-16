@@ -1126,16 +1126,16 @@ def test_list_fill_constructor() raises:
 def test_uninit_ctor() raises:
     var list = List[String](unsafe_uninit_length=2)
 
-    UnsafePointer(to=list[0]).init_pointee_move("hello ")
-    UnsafePointer(to=list[1]).init_pointee_move("world")
+    UnsafePointer(to=list[0]).unsafe_write("hello ")
+    UnsafePointer(to=list[1]).unsafe_write("world")
     assert_equal(list[0], "hello ")
     assert_equal(list[1], "world")
 
     # Resize with uninitialized memory.
     var list2 = List[String]()
     list2.resize(unsafe_uninit_length=2)
-    (list2.unsafe_ptr() + 0).init_pointee_move("hello ")
-    (list2.unsafe_ptr() + 1).init_pointee_move("world")
+    (list2.unsafe_ptr() + 0).unsafe_write("hello ")
+    (list2.unsafe_ptr() + 1).unsafe_write("world")
     assert_equal(list2[0], "hello ")
     assert_equal(list2[1], "world")
 
@@ -1250,7 +1250,7 @@ def test_list_with_explicit_destroy_type() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    list^.destroy_with(destroy_closure)
+    list^.deinit_with(destroy_closure)
 
     assert_equal(destroyed, [0, 1])
 
@@ -1264,7 +1264,7 @@ def test_empty_list_with_explicit_destroy_type() raises:
         destroyed += 1
         e^.destroy()
 
-    list^.destroy_with(destroy_closure)
+    list^.deinit_with(destroy_closure)
 
     assert_equal(destroyed, 0)
 
@@ -1280,7 +1280,7 @@ def test_extend_list_with_explicit_destroy_type() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    list1^.destroy_with(destroy_closure)
+    list1^.deinit_with(destroy_closure)
     assert_equal(destroyed, [0, 1, 2])
 
 

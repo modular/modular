@@ -487,7 +487,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
 struct ProducerStage[
     pipeline_origin: MutOrigin,
     num_stages: Int,
-](Movable):
+](ImplicitlyDeletable where False, Movable):
     """Unified handle for producing to a pipeline stage.
 
     Works as both a linear type (direct use) and within context managers.
@@ -598,7 +598,7 @@ struct ProduceContext[
 struct ConsumerStage[
     pipeline_origin: MutOrigin,
     num_stages: Int,
-](Movable):
+](ImplicitlyDeletable where False, Movable):
     """Unified handle for consuming from a pipeline stage.
 
     Works as both a linear type (direct use) and within context managers.

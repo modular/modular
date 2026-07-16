@@ -55,6 +55,16 @@ _EXPERT_SCALE_RE = re.compile(
     r"\.(?P<proj>gate_proj|up_proj|down_proj)\.weight_scale$"
 )
 
+_SHARED_EXPERT_WEIGHT_RE = re.compile(
+    r"^(?P<prefix>(?:.+\.)?layers\.\d+\.mlp\.shared_experts)"
+    r"\.(?P<proj>gate_proj|up_proj|down_proj)\.weight$"
+)
+
+_SHARED_EXPERT_SCALE_RE = re.compile(
+    r"^(?P<prefix>(?:.+\.)?layers\.\d+\.mlp\.shared_experts)"
+    r"\.(?P<proj>gate_proj|up_proj|down_proj)\.weight_scale$"
+)
+
 
 def _as_shuffleable_mxfp4_b(wd: WeightData) -> np.ndarray | None:
     """Return ``wd`` as a numpy view if it's a shuffleable MXFP4 B weight.
@@ -140,6 +150,8 @@ def _shuffle_scale_4d(src: np.ndarray, dst: np.ndarray) -> None:
 
 def preshuffle_mxfp4_b_experts(
     state_dict: dict[str, WeightData],
+    *,
+    include_shared_weights: bool = False,
 ) -> None:
     """MXFP4 B preshuffle of all per-expert weights in-place on CPU.
 
@@ -158,6 +170,12 @@ def preshuffle_mxfp4_b_experts(
     for name in state_dict:
         if m := _EXPERT_WEIGHT_RE.match(name):
             groups[m["prefix"], m["proj"]].append(name)
+            continue
+
+        if include_shared_weights:
+            if m := _SHARED_EXPERT_WEIGHT_RE.match(name):
+                groups[m["prefix"], m["proj"]].append(name)
+                continue
 
     if not groups:
         return
@@ -195,6 +213,8 @@ def preshuffle_mxfp4_b_experts(
 
 def preshuffle_mxfp4_b_scales(
     state_dict: dict[str, WeightData],
+    *,
+    include_shared_weights: bool = False,
 ) -> None:
     """MXFP4 B-scale preshuffle of all per-expert scales in-place on CPU.
 
@@ -212,6 +232,12 @@ def preshuffle_mxfp4_b_scales(
     for name in state_dict:
         if m := _EXPERT_SCALE_RE.match(name):
             groups[m["prefix"], m["proj"]].append(name)
+            continue
+
+        if include_shared_weights:
+            if m := _SHARED_EXPERT_SCALE_RE.match(name):
+                groups[m["prefix"], m["proj"]].append(name)
+                continue
 
     if not groups:
         return

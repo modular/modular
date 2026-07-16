@@ -16,10 +16,10 @@ from std.math.uutils import umod, ufloordiv
 from std.sys import align_of, size_of
 
 from std.gpu import WARP_SIZE, barrier
-from std.gpu.primitives.cluster import block_rank_in_cluster
+from std.gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx, lane_id, thread_idx, warp_id as get_warp_id
+from std.gpu import block_idx, lane_id, warp_id as get_warp_id
 from std.gpu.memory import external_memory
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
@@ -205,7 +205,9 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
     mma_mbar = tma_mbar + 1
 
-    var elect_one_thread = thread_idx.x == 0
+    var warp_id = get_warp_id()
+    var elect_one_warp = warp_id == 0
+    var elect_one_thread = elect_one_warp and elect_one_sync()
 
     if elect_one_thread:
         tma_mbar[0].init()
@@ -213,9 +215,6 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
-
-    var warp_id = get_warp_id()
-    var elect_one_warp = warp_id == 0
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     comptime max_tmem_cols = 512
 

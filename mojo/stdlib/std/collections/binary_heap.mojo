@@ -85,13 +85,11 @@ struct BinaryHeap[T: Copyable & Comparable & ImplicitlyDeletable](
                 break
 
             # copy the parent element into the (vacant) hole
-            (data_ptr + pos).init_pointee_move(
-                (data_ptr + parent).take_pointee()
-            )
+            (data_ptr + pos).unsafe_write((data_ptr + parent).take_pointee())
             pos = parent
 
         # fill the hole back in
-        (data_ptr + pos).init_pointee_move(element^)
+        (data_ptr + pos).unsafe_write(element^)
 
     def _heapify_down(mut self, var pos: Int):
         """Restores the heap property.
@@ -106,19 +104,15 @@ struct BinaryHeap[T: Copyable & Comparable & ImplicitlyDeletable](
         var child = 2 * pos + 1
         while child <= max(len(self) - 2, 0):
             child += 1 if data_ptr[child] <= data_ptr[child + 1] else 0
-            (data_ptr + pos).init_pointee_move(
-                (data_ptr + child).take_pointee()
-            )
+            (data_ptr + pos).unsafe_write((data_ptr + child).take_pointee())
             pos = child
             child = 2 * pos + 1
 
         if child == len(self) - 1:
-            (data_ptr + pos).init_pointee_move(
-                (data_ptr + child).take_pointee()
-            )
+            (data_ptr + pos).unsafe_write((data_ptr + child).take_pointee())
             pos = child
 
-        (data_ptr + pos).init_pointee_move(element^)
+        (data_ptr + pos).unsafe_write(element^)
 
         self._heapify_up(start, pos)
 

@@ -43,6 +43,24 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_stream_chunk_coalescing",
+    size = "small",
+    srcs = [
+        "test_stream_chunk_coalescing.py",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max/pipelines/context",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/pipelines",
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
     name = "tests_cpu_hf",
     size = "large",
     srcs = [
@@ -162,6 +180,11 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
+    ignore_extra_deps = [
+        # SmolLM (Llama arch) is loaded via registry string lookup.
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+    ],
     tags = [
         "gpu",
         "no-sandbox",
@@ -172,6 +195,8 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
@@ -190,6 +215,56 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_batch_determinism_gpu",
+    size = "enormous",
+    srcs = [
+        "__init__.py",
+        "conftest.py",
+        "test_batch_determinism_gpu.py",
+    ],
+    exec_properties = {
+        # Ensure the test has at least 23GB of GPU memory available.
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = [
+        "//:has_gpu",
+        "//:nvidia_gpu",
+    ] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    ignore_extra_deps = [
+        # SmolLM (Llama arch) is loaded via registry string lookup.
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+    ],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+        # Manual until the determinism CI lane is wired (test plan Slice 4).
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/serve",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/pipelines",
+        "//max/python/max/serve/telemetry",
+        requirement("async-asgi-testclient"),
+        requirement("pytest-asyncio"),
+        requirement("sse-starlette"),
+        requirement("fastapi"),
+    ],
+)
+
+modular_py_test(
     name = "test_warm_cache_target",
     size = "large",
     srcs = [
@@ -199,7 +274,6 @@ modular_py_test(
         "//max/python/max/_entrypoints:pipelines",
     ],
     tags = [
-        "AITLIB-293",
         "manual",
         "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
@@ -212,6 +286,7 @@ modular_py_test(
     }),
     deps = [
         "//max/python/max/_entrypoints",
+        "//max/tests/integration:hf_repo_lock",
     ],
 )
 
@@ -226,6 +301,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/llama3",
     ],
     tags = [
+        "no-sandbox",
         "requires-network",
     ],
     # TODO(GEX-3155): Times out on remote macOS CI (~374s due to model compilation)
@@ -238,8 +314,8 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/llama3",
-        "//max/python/max/pipelines/lib",
         "//max/python/max/serve:config",
+        "//max/tests/integration:hf_repo_lock",
         requirement("httpx"),
         requirement("pytest-asyncio"),
     ],

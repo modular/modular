@@ -410,13 +410,13 @@ def test_binary_search() raises:
         assert_true(view._binary_search_index(Scalar[dtype](max_val)))
         assert_equal(
             view._binary_search_index(Scalar[dtype](max_val)).value(),
-            UInt(max_val),
+            max_val,
         )
         view = Span(data)[: len(data) - 1]
         assert_true(view._binary_search_index(Scalar[dtype](max_val - 1)))
         assert_equal(
             view._binary_search_index(Scalar[dtype](max_val - 1)).value(),
-            UInt(max_val - 1),
+            max_val - 1,
         )
 
     _test[DType.uint8]()
@@ -596,21 +596,21 @@ struct HashableOnly(Hashable, ImplicitlyDeletable, Movable):
 
 def test_span_hashable_non_copyable() raises:
     var ptr = alloc[HashableOnly](2)
-    ptr.init_pointee_move(HashableOnly(1))
-    (ptr + 1).init_pointee_move(HashableOnly(2))
+    ptr.unsafe_write(HashableOnly(1))
+    (ptr + 1).unsafe_write(HashableOnly(2))
     var span = Span(ptr=ptr, length=2)
     _ = hash(span)
-    (ptr + 1).destroy_pointee()
-    ptr.destroy_pointee()
+    (ptr + 1).unsafe_deinit_pointee()
+    ptr.unsafe_deinit_pointee()
     ptr.free()
 
 
 def test_span_with_move_only_type() raises:
     var ptr = alloc[MoveOnly[Int]](1)
-    ptr.init_pointee_move(MoveOnly(42))
+    ptr.unsafe_write(MoveOnly(42))
     var span = Span(ptr=ptr, length=1)
     assert_equal(span[0].data, 42)
-    ptr.destroy_pointee()
+    ptr.unsafe_deinit_pointee()
     ptr.free()
 
 

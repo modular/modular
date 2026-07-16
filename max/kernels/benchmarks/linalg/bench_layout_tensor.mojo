@@ -312,11 +312,10 @@ def bench[
     var C = Matrix[M, N]()
 
     @always_inline
-    @parameter
-    def test_fn():
+    def test_fn() {mut C, read A, read B}:
         _ = func(C, A, B)
 
-    var secs = std.benchmark.run[test_fn](max_runtime_secs=0.5).mean()
+    var secs = std.benchmark.run(test_fn, max_runtime_secs=0.5).mean()
 
     A.data.free()
     B.data.free()

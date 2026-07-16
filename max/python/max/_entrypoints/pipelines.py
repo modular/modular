@@ -145,6 +145,28 @@ class ModelGroup(click.Group):
         )
 
 
+def _handle_import_error(
+    e: ImportError, subcommand: str, suggestion: tuple[str, str]
+) -> None:
+    """Gives actionable feedback on import errors.
+
+    Args:
+        e: The raised error
+        subcommand: The subcommand that was run (i.e. "serve" for `max serve`)
+        suggestion: Which package to install, first item is when using conda, second is for wheels.
+    """
+
+    if sys.version_info < (3, 11):
+        # Backport `add_note()`
+        import exceptiongroup  # noqa: F401
+
+    suggest = suggestion[0] if os.getenv("CONDA_PREFIX") else suggestion[1]
+    e.add_note(  # type: ignore
+        f"To use the `max {subcommand}` command, install the `{suggest}` package."
+    )
+    raise e
+
+
 @click.command(cls=ModelGroup)
 @click.option(
     "--version",
@@ -173,12 +195,21 @@ def main(ctx: click.Context, log_level: str = "INFO") -> None:
 
     # Some subcommands opt out of telemetry.
     if ctx.invoked_subcommand not in _TELEMETRY_OPT_OUT_COMMANDS:
-        configure_telemetry()
+        configure_telemetry(ctx.invoked_subcommand or "")
 
 
-def configure_telemetry(color: str | None = None) -> None:
-    from max.serve.config import Settings
-    from max.serve.telemetry.common import configure_metrics
+def configure_telemetry(subcommand: str) -> None:
+    try:
+        from max.serve.config import Settings
+        from max.serve.telemetry.common import configure_metrics
+    except ImportError as e:
+        # Note: most commands import main(), and thus run this, so this catches most subcommands.
+        _handle_import_error(
+            e,
+            subcommand,
+            # All subcommands that invoke telemetry need serve deps anyways, so always suggest these.
+            ("max-pipelines", "max[serve]"),
+        )
 
     settings = Settings()
     configure_metrics(settings)
@@ -246,8 +277,9 @@ def cli_serve(
     """
     from max._entrypoints.cli.serve import serve_api_server_and_model_worker
     from max._entrypoints.workers import start_workers
-    from max.pipelines import PipelineConfig
+    from max.pipelines import PipelineArgs
     from max.pipelines.context import SamplingParams, SamplingParamsInput
+    from max.pipelines.lib import MAXModelConfig
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging
 
@@ -270,15 +302,16 @@ def cli_serve(
 
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
-    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
 
     # Log Pipeline and Sampling Configuration
     if pretty_print_config:
         # Log Default Sampling Configuration (only for single-model pipelines)
-        if "main" in pipeline_config.models:
+        if pipeline_args.model_path:
+            model_config = MAXModelConfig.from_pipeline_args(pipeline_args)
             sampling_params = SamplingParams.from_input_and_generation_config(
                 SamplingParamsInput(),
-                sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
+                sampling_params_defaults=model_config.sampling_params_defaults,
             )
             sampling_params.log_sampling_info()
 
@@ -291,11 +324,11 @@ def cli_serve(
     if headless:
         start_workers(
             settings=settings,
-            pipeline_config=pipeline_config,
+            pipeline_args=pipeline_args,
         )
     else:
         serve_api_server_and_model_worker(
-            settings=settings, pipeline_config=pipeline_config
+            settings=settings, pipeline_args=pipeline_args
         )
 
 
@@ -382,7 +415,6 @@ def cli_pipeline(
     accepting image inputs for multimodal models.
     """
     from max._entrypoints.cli.generate import generate_text_for_pipeline
-    from max.pipelines import PipelineConfig
     from max.pipelines.context import SamplingParams, SamplingParamsInput
     from max.profiler import maybe_reexec_under_nsys
 
@@ -412,12 +444,16 @@ def cli_pipeline(
     )
 
     # Load tokenizer & pipeline.
-    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
+    from max.pipelines import PipelineArgs
+    from max.pipelines.lib import MAXModelConfig
+
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    model_config = MAXModelConfig.from_pipeline_args(pipeline_args)
     generate_text_for_pipeline(
-        pipeline_config,
+        pipeline_args,
         sampling_params=SamplingParams.from_input_and_generation_config(
             params,
-            sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
+            sampling_params_defaults=model_config.sampling_params_defaults,
         ),
         prompt=prompt,
         image_urls=image_url,
@@ -448,11 +484,11 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
     embeddings that can be used for various downstream tasks.
     """
     from max._entrypoints.cli.encode import pipeline_encode
-    from max.pipelines import PipelineConfig
+    from max.pipelines import PipelineArgs
 
     # Load tokenizer & pipeline.
-    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
-    pipeline_encode(pipeline_config, prompt=prompt, num_warmups=num_warmups)
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    pipeline_encode(pipeline_args, prompt=prompt, num_warmups=num_warmups)
 
 
 @main.command(name="warm-cache", cls=WithLazyPipelineOptions)
@@ -468,7 +504,7 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
 )
 def cli_warm_cache(target: str | None, **config_kwargs) -> None:
     """Load and compile the model to prepare caches."""
-    from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+    from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 
     # Log what we're doing if target mode is enabled
     if target:
@@ -479,8 +515,8 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
             f"Compiling for target: {api} ({target_arch}) using virtual devices"
         )
 
-    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
-    _ = PIPELINE_REGISTRY.retrieve(pipeline_config)
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    PIPELINE_REGISTRY.retrieve(PipelineConfig.from_args(pipeline_args))
 
 
 @main.command(name="warm-interpreter-cache")
@@ -532,10 +568,14 @@ def cli_list(json: bool) -> None:
     This command displays information about all registered pipelines and their
     configurations. Output can be formatted as human-readable text or JSON.
     """
-    from max._entrypoints.cli.list import (
-        list_pipelines_to_console,
-        list_pipelines_to_json,
-    )
+    try:
+        from max._entrypoints.cli.list import (
+            list_pipelines_to_console,
+            list_pipelines_to_json,
+        )
+    except ImportError as e:
+        # This one does not enable telemetry, and this is the first import, so we have to handle this here.
+        _handle_import_error(e, "list", ("max-pipelines", "max[serve]"))
 
     if json:
         list_pipelines_to_json()
@@ -609,8 +649,14 @@ def cli_benchmark(
     #
     # Import lazily to avoid importing benchmark modules at module load
     # time.
-    from max.benchmark.sweep_benchmark_serving import main as sweep_main
-    from max.profiler import oneshot
+    try:
+        from max.benchmark.sweep_benchmark_serving import main as sweep_main
+        from max.profiler import oneshot
+    except ImportError as e:
+        # This one does not enable telemetry, and this is the first import, so we have to handle this here.
+        _handle_import_error(
+            e, "benchmark", ("max-benchmark", "max[benchmark]")
+        )
 
     args = list(args)
     profile_path: str | None = None

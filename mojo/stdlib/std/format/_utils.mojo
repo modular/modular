@@ -27,7 +27,7 @@ from std.sys.defines import get_defined_int
 from std.ffi import CStringSlice
 
 from std.bit import byte_swap
-from std.memory import Span, bitcast, memcpy
+from std.memory import Span, bitcast, unsafe_memcpy
 
 
 def constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
@@ -391,9 +391,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
 comptime HEAP_BUFFER_BYTES = get_defined_int["HEAP_BUFFER_BYTES", 2048]()
 """How much memory to pre-allocate for the heap buffer, will abort if exceeded."""
 
-comptime STACK_BUFFER_BYTES = UInt(
-    get_defined_int["STACK_BUFFER_BYTES", 4096]()
-)
+comptime STACK_BUFFER_BYTES = get_defined_int["STACK_BUFFER_BYTES", 4096]()
 """The size of the stack buffer for IO operations from CPU."""
 
 
@@ -403,11 +401,13 @@ struct _WriteBufferHeap(Writable, Writer):
 
     def __init__(out self):
         comptime alignment: Int = align_of[Byte]()
-        self._data = __mlir_op.`pop.stack_allocation`[
-            count=HEAP_BUFFER_BYTES.__mlir_index__(),
-            _type=type_of(self._data)._mlir_type,
-            alignment=alignment.__mlir_index__(),
-        ]()
+        self._data = {
+            _mlir_value = __mlir_op.`pop.stack_allocation`[
+                count=HEAP_BUFFER_BYTES.__mlir_index__(),
+                _type=type_of(self._data)._mlir_type,
+                alignment=alignment.__mlir_index__(),
+            ]()
+        }
         self._pos = 0
 
     def write_list[
@@ -435,7 +435,7 @@ struct _WriteBufferHeap(Writable, Writer):
                 " HEAP_BUFFER_BYTES=4096`\n"
             ]()
             abort()
-        memcpy(
+        unsafe_memcpy(
             dest=self._data + self._pos,
             src=string.unsafe_ptr(),
             count=len_bytes,
@@ -480,7 +480,7 @@ struct _WriteBufferStack[
     origin: MutOrigin,
     W: Writer,
     //,
-    stack_buffer_bytes: UInt = STACK_BUFFER_BYTES,
+    stack_buffer_bytes: Int = STACK_BUFFER_BYTES,
 ](Writer):
     var data: InlineArray[UInt8, Int(Self.stack_buffer_bytes)]
     var pos: Int
@@ -525,7 +525,7 @@ struct _WriteBufferStack[
         elif self.pos + len_bytes > Int(Self.stack_buffer_bytes):
             self.flush()
         # Continue writing to buffer
-        memcpy(
+        unsafe_memcpy(
             dest=self.data.unsafe_ptr() + self.pos,
             src=string.unsafe_ptr(),
             count=len_bytes,

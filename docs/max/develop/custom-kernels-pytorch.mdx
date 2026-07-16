@@ -46,7 +46,7 @@ the interface.
 Create a new file called `grayscale.py` and add the following code:
 
 ```python title="grayscale.py"
-from std.pathlib import Path
+from pathlib import Path
 import torch
 
 @torch.compile
@@ -71,7 +71,7 @@ which allows you to load and use compiled Mojo operations directly in PyTorch.
 Update the `grayscale.py` file to include the following code:
 
 ```python title="grayscale.py"
-from std.pathlib import Path
+from pathlib import Path
 import torch
 from max.experimental.torch import CustomOpLibrary
 
@@ -98,21 +98,34 @@ manage build steps.
 ## Implement the Mojo kernel
 
 Now for the core implementation—our high-performance Mojo kernel. We'll create a
-Mojo package that defines our grayscale conversion operation
+Mojo package that defines our grayscale conversion operation.
 
-Create a new file called `grayscale.mojo` inside the `operations` folder and add
-the following code:
+First, create an empty file called `__init__.mojo` inside the `operations`
+folder. This file marks the folder as a Mojo package, which `CustomOpLibrary`
+requires:
+
+```bash
+touch operations/__init__.mojo
+```
+
+Then create a new file called `grayscale.mojo` inside the `operations` folder
+and add the following code:
 
 ```mojo title="grayscale.mojo"
-from compiler import register
-from max.tensor import InputTensor, OutputTensor, foreach
-from std.gpu.host import DeviceContext
+import compiler
 
-@register("grayscale")
+from std.gpu.host import DeviceContext
+from extensibility import InputTensor, OutputTensor, foreach
+
+from std.utils.coord import Coord, coord_to_index_list
+from std.utils.index import IndexList
+
+
+@compiler.register("grayscale")
 struct Grayscale:
     @staticmethod
     def execute[
-        target: StaticString,
+        target: StaticString,  # "cpu" or "gpu"
     ](
         img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
         img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
@@ -124,16 +137,19 @@ struct Grayscale:
             simd_width: Int
         ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
             @parameter
-            def load(idx: Coord) -> SIMD[DType.float32, simd_width]:
+            def load(
+                idx: IndexList[img_in.rank],
+            ) -> SIMD[DType.float32, simd_width]:
                 return img_in.load[simd_width](idx).cast[DType.float32]()
 
-            var row = idx[0]
-            var col = idx[1]
+            var idx_l = coord_to_index_list(idx)
+            var row = idx_l[0]
+            var col = idx_l[1]
 
             # Load RGB values
-            var r = load((row, col, 0))
-            var g = load((row, col, 1))
-            var b = load((row, col, 2))
+            var r = load(IndexList[3](row, col, 0))
+            var g = load(IndexList[3](row, col, 1))
+            var b = load(IndexList[3](row, col, 2))
 
             # Apply standard grayscale conversion formula
             var gray = 0.21 * r + 0.71 * g + 0.07 * b
@@ -142,18 +158,15 @@ struct Grayscale:
         foreach[color_to_grayscale, target=target, simd_width=1](img_out, ctx)
 ```
 
-First, the `@register("grayscale")` decorator makes this operation available to
-PyTorch under the name `grayscale`. This is the `ops.grayscale(output, pic)`
-function called in the PyTorch model.
+First, the `@compiler.register("grayscale")` decorator makes this operation
+available to PyTorch under the name `grayscale`. This is the
+`ops.grayscale(output, pic)` function called in the PyTorch model.
 
-Then, the
+The `color_to_grayscale` function takes a coordinate into the output tensor and
+returns a SIMD vector of the grayscale value. The
 [`foreach`](/max/api/kernels/extensibility/managed_tensor_slice/foreach/)
 primitive automatically parallelizes the operation across available compute
 units.
-
-The `color_to_grayscale` function takes an index list and returns a SIMD vector
-of the grayscale value. The `foreach` primitive automatically parallelizes the
-operation across available compute units.
 
 Finally, the `target` parameter allows the same code to run on both CPU and GPU.
 

@@ -1268,14 +1268,6 @@ class MLAKVCacheParams(KVCacheParams):
             + list(range(granularity, max_cache_length, granularity))
             + [max_cache_length]
         )
-        if q_max_seq_len > 1:
-            # With spec decoding, probe a few more entries to hit all viable
-            # (num_partition, draft_num_partition) pairs. Determined
-            # experimentally; brute-forcing all pairs would inflate capture
-            # time significantly.
-            probe_lengths.extend(
-                range(granularity - 1, max_cache_length, granularity)
-            )
         return _filter_tiny_cache_lengths(probe_lengths, self.num_draft_tokens)
 
     def _get_symbolic_inputs_for_replica(

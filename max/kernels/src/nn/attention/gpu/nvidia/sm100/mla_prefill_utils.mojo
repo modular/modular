@@ -123,7 +123,7 @@ struct MLAConfig[
         depth: Int,
         page_size: Int,
         v_depth: Int = -1,
-        num_qo: Int = 2,
+        num_q: Int = 2,
         single_o: Bool = False,
         bn_cap: Int = 0,
     ):
@@ -178,7 +178,7 @@ struct MLAConfig[
             swizzle_mode = self.qkv_swizzle_mode,
             page_size = page_size,
             is_mla = True,
-            num_qo = num_qo,
+            num_q = num_q,
             nope_depth = nope_depth,
             single_o = single_o,
             bn_cap = bn_cap,
@@ -209,25 +209,25 @@ struct MLAConfig[
         self.TMEM_P1 = self.fa4_config.TMEM_P1
 
     @always_inline
-    def num_qo(self) -> Int:
-        return self.fa4_config.num_qo
+    def num_q(self) -> Int:
+        return self.fa4_config.num_q
 
     @always_inline
     def q_tile_rows(self) -> Int:
-        """Rows per Q TMA tile / per-half MMA — `BM // num_qo`.
+        """Rows per Q TMA tile / per-half MMA — `BM // num_q`.
 
         128 in both modes: one of two BM=256 halves in 2Q, the single full
         BM=128 tile in 1Q. The Q (and per-token q_scale) TMA boxes and the
         ragged output store all fold to this value, which is why their op
         types match across the 1Q/2Q configs.
         """
-        return self.BM // self.fa4_config.num_qo
+        return self.BM // self.fa4_config.num_q
 
     @always_inline
-    def with_num_qo(self, num_qo: Int) -> Self:
-        """Reconstruct this config with a different `num_qo` (single-CTA).
+    def with_num_q(self, num_q: Int) -> Self:
+        """Reconstruct this config with a different `num_q` (single-CTA).
 
-        Mirrors `FA4Config.with_num_qo`, but simpler: MLA pins
+        Mirrors `FA4Config.with_num_q`, but simpler: MLA pins
         `num_qk_stages == 1` (is_mla), so there is no staging knob to
         match between the 1Q and 2Q variants.
 
@@ -243,19 +243,19 @@ struct MLAConfig[
             depth=self.qk_depth,
             page_size=self.fa4_config.page_size,
             v_depth=self.fa4_config.ov_depth,
-            num_qo=num_qo,
+            num_q=num_q,
             # Preserve single-O only when reconstructing as 1Q (it implies 1Q).
-            single_o=self.fa4_config.single_o and num_qo == 1,
+            single_o=self.fa4_config.single_o and num_q == 1,
         )
 
     @always_inline
     def switch_1q_config(self) -> Self:
         """The 1Q variant used by the in-kernel per-sequence 1Q/2Q switch.
 
-        Identical to `with_num_qo(1)` (see `with_num_qo` for why MLA has
+        Identical to `with_num_q(1)` (see `with_num_q` for why MLA has
         no staging-pinning concern, unlike `FA4Config.switch_1q_config`).
         """
-        return self.with_num_qo(1)
+        return self.with_num_q(1)
 
     @always_inline
     def can_switch_to_1q(self) -> Bool:
@@ -264,11 +264,11 @@ struct MLAConfig[
 
         True only when this is a 2Q config AND the 1Q variant is valid.
         The TMA-op types fold between the two configs by construction:
-        the Q TMA / ragged-store `BM // num_qo` is 128 in both modes, and
+        the Q TMA / ragged-store `BM // num_q` is 128 in both modes, and
         the K_nope/K_rope/V TMA shapes are BM-independent (BN's formula
-        does not reference `num_qo`).
+        does not reference `num_q`).
         """
-        if self.fa4_config.num_qo != 2 or self.fa4_config.pair_cta:
+        if self.fa4_config.num_q != 2 or self.fa4_config.pair_cta:
             return False
         var cfg1 = self.switch_1q_config()
         return cfg1.supported() and cfg1.fa4_config.supported()
@@ -361,7 +361,7 @@ def select_mla_prefill_config[
     width == nope width" (the DeepSeek shape). The standard 2-O config is tried
     first, so when `v_head_dim == qk_nope_head_dim` the result is byte-identical
     to the pre-decoupling path. A wide V (e.g. `v_head_dim=256`) overflows the
-    2-O TMEM layout (standard BN=0), so fall back to a single-O (`num_qo=1`)
+    2-O TMEM layout (standard BN=0), so fall back to a single-O (`num_q=1`)
     config at the TMEM-max BN, then to a BN capped at the `supported()` floor so
     >= 2 KV stages still fit shared memory. If none is supported, return the
     standard config so the caller's `supported()` assert reports the real dims.
@@ -388,7 +388,7 @@ def select_mla_prefill_config[
         depth=depth,
         page_size=page_size,
         v_depth=v_depth,
-        num_qo=1,
+        num_q=1,
         single_o=True,
     )
     var singleo_floor = Config(
@@ -397,7 +397,7 @@ def select_mla_prefill_config[
         depth=depth,
         page_size=page_size,
         v_depth=v_depth,
-        num_qo=1,
+        num_q=1,
         single_o=True,
         bn_cap=bn_floor,
     )
@@ -881,7 +881,9 @@ struct SM100MLA[
         use_order_barriers=EnableForcedOrdering,
         use_fused_kv=Self.config.fa4_config.use_fused_kv,
         pair_cta=Self.config.fa4_config.pair_cta,
-        num_qo=Self.config.fa4_config.num_qo,
+        num_q=Self.config.fa4_config.num_q,
+        splitk_partitions=Self.config.fa4_config.splitk_partitions,
+        BM=Self.config.fa4_config.BM,
     ]
 
     @staticmethod
@@ -906,7 +908,7 @@ struct SM100MLA[
     def descriptor_q(
         q_smem: SharedMemPointer[Scalar[Self.qkv_dtype]],
     ) -> MMASmemDescriptorPair:
-        # `BM // num_qo` = 128 in both modes: one of two Q halves in 2Q,
+        # `BM // num_q` = 128 in both modes: one of two Q halves in 2Q,
         # the single full-BM Q tile in 1Q.
         return smem_descriptor[
             BMN=Self.config.q_tile_rows(),

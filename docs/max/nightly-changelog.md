@@ -45,6 +45,15 @@ This version is still a work in progress.
   strict-match ~0.70. Decode is optimized with an in-place SSM state-pool
   read-modify-write that writes only the active slots (+52% output tok/s at
   concurrency 32).
+- Extended Nemotron-H with the Nemotron-3-Nano-30B-A3B hybrid MoE variant (a
+  sigmoid-plus-bias top-6 router over 128 routed experts plus a shared expert)
+  and enabled the Nemotron-H architecture on Apple silicon GPUs in bfloat16.
+  The MoE path on Metal uses an integer-domain expert-gather index
+  (`ops.floor_div`, avoiding a 64-bit-float divide) and a 32-bit
+  `moe_create_indices` atomic (Apple GPUs lack 64-bit atomics), and adds an
+  Apple FP4 (W4A16) decode GEMV with an f16-domain E2M1 decode plus a
+  redesigned varlen causal-conv1d kernel. Verified on M5: the 30B-A3B MoE
+  serves in bfloat16 at GSM8K 8-shot ~0.85.
 - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
 - Added tool-calling, reasoning, and structured-output (`response_format`)
   support to GLM-5.1 / GLM-5.2, enabled with
@@ -70,6 +79,12 @@ This version is still a work in progress.
   the thinking back into the `content` field wrapped in `<think>...</think>`
   tags, matching the official MiniMax M3 endpoint. The field is a no-op for
   every other model.
+- FLUX.2 diffusion pipelines now support both denoising-cache backends to skip
+  redundant transformer passes during generation: `--taylorseer` (Taylor-series
+  step skipping — the recommended default, with `balanced` and `fast` presets)
+  and `--first-block-caching` (first-block-residual reuse — zero-tuning and
+  data-adaptive). The two are mutually exclusive and both off by default. See
+  the [image generation guide](/max/inference/image-generation).
 - Gemma 4 with multi-token prediction (MTP) speculative decoding
   (`UnifiedMTPGemma4ForCausalLM`) now supports image and video input.
   Previously this path was served text-only: image tokens were ingested by
@@ -81,6 +96,29 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added `--no-enable-tool-call-constrained-decode` (config key
+  `sampling.enable_tool_call_constrained_decode`, default enabled) to decouple
+  tool-call parsing from constrained decoding. When disabled, a configured
+  `--tool-parser` still parses tool calls out of the generated text, but no
+  server-generated grammar is produced and the bitmask constrained-decode path
+  is skipped for tool calls. Note that with it disabled, `tool_choice=required`
+  or a named function can no longer force a tool call. This is independent of
+  `--enable-structured-output`, which continues to gate user-supplied
+  `response_format` JSON schemas.
+- Fixed the `code` label on the `maxserve_request_count` metric so it reports
+  the HTTP status code actually returned to the client. The count is now
+  recorded from the HTTP layer, so failures rejected before generation (for
+  example a request with an unreachable image URL) are counted with their real
+  status code instead of being labeled `200` or dropped entirely. Liveness and
+  observability endpoints (`/health`, `/version`, `/ping`, `/metrics`) are not
+  counted.
+- Failed request submissions in the OpenAI-compatible serving endpoints now
+  surface as HTTP error responses instead of a `200 OK` streaming response that
+  carries an error payload. Request tokenization and the handoff to the model
+  worker now complete before the streaming response headers are sent, so a
+  failure at submission time (for example, a dead model worker) maps to an HTTP
+  5xx (or 4xx for input errors). Errors that occur mid-stream, after the first
+  chunk has been sent, are still serialized as an error event within the stream.
 - Added `MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S` to control how long the server
   waits for in-flight requests to finish after receiving `SIGTERM` before
   exiting (default 5 seconds). Raise it so long-running requests are drained
@@ -94,6 +132,39 @@ This version is still a work in progress.
   `host_kvcache_swap_space_gb` now sizes one shared host pool of that size for
   the whole deployment, rather than allocating a separate pool of that size per
   replica.
+- The dKV external KV-cache connector (`--kv-connector dkv`) now supports
+  data-parallel (DP) serving and shares its prefix cache across DP replicas on
+  the default single-tenant path, matching the `local` and `tiered` connectors.
+  Every replica resolves to the same replica-agnostic store, and the stored
+  block key carries no replica component, so a block offloaded through one
+  replica is served to any other.
+- The dKV external KV-cache connector now supports tensor parallelism
+  (TP greater than 1) on the multi-tenant path for head-sharded (MHA/GQA), MLA
+  (replicated-KV), and GQA head-replicated (`allow_kv_head_replication`) models.
+  Each GPU handshakes its own per-shard store, and every KV load/offload fans
+  out across the processing replica's shard clients with identical block ids and
+  hashes; a block counts as loaded only once every shard has it. The store key
+  reflects the KV-head slice each GPU holds: the TP rank when head-sharded, a
+  single shared shard for MLA, and the head-group index under head replication.
+- On the dKV multi-tenant tensor-parallel path, a KV load that returns
+  differing block counts across a replica's per-GPU shard clients now drains
+  the over-loading shards' in-flight device reads before returning the minimum
+  count. This keeps a stray in-flight host-to-device copy (into a block the
+  block manager frees because it did not land on every shard) from later
+  clobbering a reallocated block. The drain host-completes the reads on the
+  remote (NIXL) transport and enqueues a cross-stream ordering on the
+  co-located same-host (CUDA) transport, so it closes the window on both. The
+  common equal-count path is unchanged and pays no extra synchronization.
+- The dKV external KV-cache connector (`--kv-connector dkv`) now requires a
+  non-empty tenant identity (`MODULAR_DKV_TENANT_ID`, set by the deployment
+  operator); the empty-tenant "default" path is removed. Both the connector and
+  the dKV server now reject an unset/empty tenant rather than keying an unfenced
+  shared store, so every deployment (single-tenant included) routes through the
+  per-tenant region-sharded store — DP replicas of one tenant still share one
+  store. Multi-cache models (speculative draft+target, quantized values+scales)
+  now resolve on this path, folded into the handshake's `kv_config_hash`. A
+  single-tenant node spanning more than one GPU must set the dKV server's
+  `--fair-share-partitions` to its GPU count.
 - The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
   into a single `rms_norm_rope` GPU kernel even when the RMSNorm is written "in
   float32" — that is, when a `bfloat16`/`float16` activation is upcast to
@@ -118,9 +189,23 @@ This version is still a work in progress.
   with `out-of-bounds` redzone checks. Because the NaN can also surface on
   legitimately-uninitialized allocation padding, it is a manual debugging aid
   rather than a default.
+- Added a `max-benchmark` conda package for parity with the `max[benchmark]`
+  wheel extra.
 
 ### Inference server
 
+- Raised the maximum tool function name length from 64 to 1024 characters.
+  Client-supplied tool names that legitimately exceed 64 characters are now
+  accepted instead of rejected with a 400 error.
+- Added vision encoder statistics to the scheduler's per-iteration batch log
+  for multimodal models. Each batch line now includes a `Vision Encoder`
+  clause reporting the number of images encoded this iteration versus served
+  from the vision encoder cache (with the cache hit rate), and the image
+  patches and vision tokens encoded. This makes it clear when a slow
+  context-encoding iteration is driven by the vision encoder rather than the
+  language model. The same values are exported as OpenTelemetry metrics under
+  the `maxserve.vision.*` namespace. Applies to models backed by the shared
+  vision encoder cache (Gemma 4, Kimi K2.5, and Gemma 4 MTP).
 - Added an opt-in `emit_reasoning_content` server config. When enabled, chat
   completion responses emit a reasoning model's chain-of-thought under
   `reasoning_content` instead of `reasoning` (the two are never emitted
@@ -248,6 +333,12 @@ This version is still a work in progress.
 
 ### Python API
 
+- Added `max.graph.ops.floor_div` (and `F.floor_div`), element-wise floor
+  division matching Python `//`. Unlike `ops.div`, integer operands stay in
+  the integer domain instead of being promoted to `float64`, so integer floor
+  division compiles on backends without 64-bit float support (for example,
+  Metal GPUs).
+
 - Added `max.driver.set_virtual_cpu_target()` and `get_virtual_cpu_target()`.
   Set a fixed CPU codegen target (for example `"x86-64-v3"`, `"neoverse-n1"`,
   or `"generic"` for the most-portable baseline of the host arch family) before
@@ -257,20 +348,34 @@ This version is still a work in progress.
   GPUs. Leaving it unset compiles for the build host's CPU, as before.
 
 - **Preview (no-op today)**: `InferenceSession.profiling` is a new namespace
-  that will control the libkineto-backed MAX profiler. The lifecycle methods
-  are callable but do not yet produce trace files; the libkineto-backed
-  Chrome-trace JSON output (compatible with
-  [HTA](https://github.com/facebookresearch/HolisticTraceAnalysis)) and the
-  `session.debug.profiling_*` setter mirrors land in subsequent nightlies.
-  The control surface is final: `session.profiling.start()` / `.stop()` /
-  `.wait_for_trace()` and the read-only `.state` and `.is_enabled` properties.
-  This API is orthogonal to the existing `session.gpu_profiling()` (NVTX/Nsight)
-  path.
-
-- `ProfilingConfig` gains six new fields for the libkineto profiler:
+  that will control the libkineto-backed MAX profiler. The control surface is
+  final and callable — `session.profiling.start()` / `.stop()` /
+  `.wait_for_trace()` and the read-only `.state` / `.is_enabled` — but it does
+  not record yet: libkineto-backed Chrome-trace JSON capture (compatible with
+  Meta's [HTA](https://github.com/facebookresearch/HolisticTraceAnalysis))
+  lands in a later nightly. This API is orthogonal to the existing
+  `session.gpu_profiling()` (NVTX/Nsight) path; see `max/docs/profiling.md`
+  in the repository for the user guide.
+- `ProfilingConfig` gains six new fields for the libkineto profiler, each
+  configurable from Python through the matching `session.debug.profiling_*`
+  setter or its `MODULAR_MAX_DEBUG_PROFILING_*` environment variable:
   `profiling_enabled`, `profiling_output_path`, `profiling_dynolog_enabled`,
   `profiling_warmup_steps`, `profiling_active_steps`, and
   `profiling_periodic_flush_seconds`.
+- `profiling_output_path` accepts template variables (`{pid}`, `{rank}`) and a
+  directory form (`/tmp/traces/`); the path is expanded per process (keyed on
+  rank, PID, timestamp, and a sequence counter) so that, once trace capture is
+  enabled, multi-process and multi-rank runs won't collide on a single fixed
+  filename. `{rank}` resolves to `MODULAR_RANK` / `OMPI_COMM_WORLD_RANK` /
+  `"0"`.
+- `max.engine.ProfilingError` is a new exception type the profiler will raise
+  to surface trace-write failures.
+- Forking while the profiler is enabled is safe for host applications that
+  embed `InferenceSession` and fork (Python `multiprocessing` with the `fork`
+  start method, pre-fork servers, or a bare `os.fork()`) — child processes
+  start with the profiler disabled and can call `start()` again; the parent
+  retains its enabled state across the fork. (MAX Serve itself launches
+  workers with the `spawn` start method and is unaffected.)
 
 - Eager execution in `max.experimental` now routes every realization through
   the `max.experimental.executor.Executor` abstraction. The out-of-the-box
@@ -384,9 +489,46 @@ This version is still a work in progress.
   `USE_OLD_TOP_K_KERNEL` environment variable. The legacy top-k sampling
   kernel this fallback selected has been deleted; the current two-stage
   top-k kernel is now used unconditionally.
+- The `Input`, `Output`, `MutableInput`, `FusedInput`, and `FusedOutput`
+  `IOSpec` values used in custom-op signatures (for example,
+  `Tensor[Input, spec]`) are now static members of `IOSpec`
+  (`IOSpec.Input`, `IOSpec.Output`, `IOSpec.MutableInput`,
+  `IOSpec.FusedInput`, `IOSpec.FusedOutput`) instead of module-level aliases.
+  Update custom-op call sites to qualify these names under `IOSpec`, for
+  example `Tensor[IOSpec.Input, spec]`.
 
 ## Fixes
 
+- Fixed the compiled-model cache (`.max_cache`) not invalidating when the
+  Mojo kernel libraries change. The cache key previously content-hashed only
+  the two built-in kernel packages, not the packages they import
+  (`linalg`, `nn`, ...), so rebuilding after a kernel-source edit could
+  silently serve a stale compiled model — for example during back-to-back
+  kernel A/B benchmarking. The key now covers every Mojo binary package on
+  the module import path, so kernel changes correctly trigger a recompile
+  and clearing caches by hand is no longer needed.
+- Fixed the structured-output grammar backend silently defaulting to
+  `llguidance` instead of the intended global default `xgrammar` for models
+  launched via `max serve`. The `--structured-output-backend` flag hardcoded
+  `llguidance` as its default value, which shadowed the `None` "unset" sentinel
+  the resolver relies on to apply the global default (`xgrammar`) or an
+  architecture's pinned backend. The flag now defaults to unset, so any model
+  without an explicit `--structured-output-backend` (and no architecture pin)
+  correctly resolves to `xgrammar`.
+- Fixed MiniMax-M3 tool-call grammar enforcement silently disabling itself
+  when the model emits more than one tool-call section in a single response.
+  Enforcement used to switch off once the first section closed, so a second
+  section's start marker was rejected against the completed matcher
+  (`Matcher rejected N token(s)…`) and the rest of the request ran
+  unconstrained. Enforcement now stays on through the end of the turn: after
+  the single tool-call section closes, only EOS is allowed, matching the
+  model's chat template (all invocations in one section, followed
+  immediately by end of turn).
+- Fixed MiniMax-M3 streaming chat completions aborting with a 500 when the
+  model emits a malformed tool call. The streaming tool parser now fails open
+  like the non-streaming path: the raw tool-call text degrades to assistant
+  content, tool parsing is bypassed for the rest of the request, and the
+  stream terminates normally.
 - Fixed a precision loss in the normalization ops where the `epsilon` value was
   carried in the input's dtype (for example `bfloat16`) before use. A small
   epsilon such as `1e-6` is not representable in `bfloat16`, so it was silently
@@ -430,6 +572,14 @@ This version is still a work in progress.
   no-synchronization behavior, so a later `to_numpy()` on the slice triggered
   an unexpected device synchronization. Slices and views now preserve the
   `DevicePinnedBuffer` type.
+
+- Fixed virtual-device mode on macOS. Previously the
+  `max.driver.set_virtual_device_*()` settings had no effect on device
+  creation: `Accelerator()` still took the real-hardware path, so requesting
+  more devices than physically present failed and single-device
+  cross-compilation silently used the real GPU. The virtual-device state now
+  lives in a single shared library, so the setters and device creation always
+  observe the same configuration on every platform.
 
 - Fixed DeepSeek-V3.1-NVFP4 multi-token prediction (MTP) failing to load with
   `dispatch_quant_config must be specified when dispatch_dtype is not

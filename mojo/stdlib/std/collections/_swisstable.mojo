@@ -28,7 +28,7 @@ from std.memory import (
     alloc,
     dealloc,
     ThinAllocation,
-    memcpy,
+    unsafe_memcpy,
     memset,
     pack_bits,
     is_trivially_deletable,
@@ -225,8 +225,8 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 
 @fieldwise_init
 @explicit_destroy(
-    "A `SwissTableEntry` with non-`ImplicitlyDeletable` keys or values must be"
-    " explicitly destroyed with `destroy_with()`."
+    "Use `deinit_with()` to explicitly destroy a `SwissTableEntry` with"
+    " non-`ImplicitlyDeletable` keys or values"
 )
 struct SwissTableEntry[
     K: KeyElement,
@@ -283,20 +283,20 @@ struct SwissTableEntry[
         Constraints:
             Both `K` and `V` must be `ImplicitlyDeletable`. When either is not,
             the entry has no implicit destructor and must be torn down with
-            `destroy_with()`.
+            `deinit_with()`.
         """
         # The key and value are destroyed member-wise; `hash` is trivial.
         pass
 
-    def destroy_with(
-        deinit self, destroy_func: Some[def(var Self.K, var Self.V)]
+    def deinit_with(
+        deinit self, deinit_func: Some[def(var Self.K, var Self.V)]
     ):
-        """Destroy the entry's key and value using a caller-provided closure.
+        """Deinitializes the entry's key and value using a caller-provided closure.
 
         Args:
-            destroy_func: A closure that consumes the entry's key and value.
+            deinit_func: A closure that consumes the entry's key and value.
         """
-        destroy_func(self.key^, self.value^)
+        deinit_func(self.key^, self.value^)
 
     def reap_key(
         deinit self,
@@ -331,8 +331,8 @@ struct SwissTableEntry[
 
 
 @explicit_destroy(
-    "A `SwissTable` with non-`ImplicitlyDeletable` keys or values must be"
-    " explicitly destroyed with `destroy_with()`."
+    "Use `deinit_with()` to explicitly destroy a `SwissTable` with"
+    " non-`ImplicitlyDeletable` keys or values"
 )
 struct SwissTable[
     K: KeyElement,
@@ -443,7 +443,7 @@ struct SwissTable[
         self._ctrl = alloc(
             Layout[UInt8](count=self._capacity + GROUP_WIDTH)
         ).unsafe_leak()
-        memcpy(
+        unsafe_memcpy(
             dest=self._ctrl,
             src=copy._ctrl,
             count=self._capacity + GROUP_WIDTH,
@@ -456,7 +456,7 @@ struct SwissTable[
         ).unsafe_leak()
         for i in range(self._capacity):
             if is_occupied(self._ctrl[i]):
-                (self._slots + i).init_pointee_copy((copy._slots + i)[])
+                (self._slots + i).unsafe_write(copy=(copy._slots + i)[])
 
     def __del__(
         deinit self,
@@ -468,30 +468,30 @@ struct SwissTable[
         Constraints:
             Both `K` and `V` must be `ImplicitlyDeletable`. When either is not,
             the table has no implicit destructor and must be torn down with
-            `destroy_with()`.
+            `deinit_with()`.
         """
         self._delete_occupied_entries()
         self^._deallocate_storage()
 
-    def destroy_with(
-        var self, destroy_func: Some[def(var Self.K, var Self.V)], /
+    def deinit_with(
+        var self, deinit_func: Some[def(var Self.K, var Self.V)], /
     ):
-        """Destroy all entries with a caller-provided closure, then free memory.
+        """Deinitializes all entries with a caller-provided closure, then free memory.
 
         Use this to tear down a `SwissTable` whose keys or values are not
         `ImplicitlyDeletable`. The closure is called once per occupied entry.
 
         Args:
-            destroy_func: A closure that consumes each entry's key and value.
+            deinit_func: A closure that consumes each entry's key and value.
         """
-        self._delete_occupied_entries_with(destroy_func)
+        self._delete_occupied_entries_with(deinit_func)
         self^._deallocate_storage()
 
     def _deallocate_storage(deinit self):
         """Free the control and slot arrays without touching entry contents.
 
         The caller must have already destroyed or moved out every occupied
-        entry (see `__del__` and `destroy_with`).
+        entry (see `__del__` and `deinit_with`).
         """
         if self._capacity > 0:
             dealloc(
@@ -529,7 +529,7 @@ struct SwissTable[
         ]():
             for i in range(self._capacity):
                 if is_occupied(self._ctrl[i]):
-                    (self._slots + i).destroy_pointee()
+                    (self._slots + i).unsafe_deinit_pointee()
 
     @always_inline
     def _delete_occupied_entries_with(
@@ -541,7 +541,7 @@ struct SwissTable[
         """
         for i in range(self._capacity):
             if is_occupied(self._ctrl[i]):
-                (self._slots + i).take_pointee().destroy_with(destroy_func)
+                (self._slots + i).take_pointee().deinit_with(destroy_func)
 
     # ===-------------------------------------------------------------------===#
     # Core operations
@@ -783,7 +783,7 @@ struct SwissTable[
                 var h2_val = h2(entry.hash)
                 var new_slot = self.find_empty_slot(entry.hash)
                 self.set_ctrl(new_slot, h2_val)
-                (self._slots + new_slot).init_pointee_move(entry^)
+                (self._slots + new_slot).unsafe_write(entry^)
                 relocations.append((i, new_slot))
 
         if old_capacity > 0:
@@ -822,7 +822,7 @@ struct SwissTable[
             (self._ctrl + pos).store(converted)
 
         # Step 2: Refresh mirror bytes.
-        memcpy(
+        unsafe_memcpy(
             dest=self._ctrl + self._capacity,
             src=self._ctrl,
             count=GROUP_WIDTH,
@@ -846,7 +846,7 @@ struct SwissTable[
             while self._ctrl[target] == CTRL_DELETED:
                 self.set_ctrl(target, h2(entry.hash))
                 var displaced = (self._slots + target).take_pointee()
-                (self._slots + target).init_pointee_move(entry^)
+                (self._slots + target).unsafe_write(entry^)
                 slot_map[source] = Int32(target)
 
                 entry = displaced^
@@ -854,7 +854,7 @@ struct SwissTable[
                 target = self.find_empty_slot(entry.hash)
 
             self.set_ctrl(target, h2(entry.hash))
-            (self._slots + target).init_pointee_move(entry^)
+            (self._slots + target).unsafe_write(entry^)
             slot_map[source] = Int32(target)
 
         # Reset growth_left (all tombstones are now EMPTY).

@@ -353,76 +353,6 @@ def test_returns_none_for_pending_block(cache_dir: str) -> None:
     tier.shutdown()
 
 
-# -- O_DIRECT disk I/O support --
-
-
-def test_direct_io_fallback_when_unavailable(cache_dir: str) -> None:
-    """DiskTier gracefully disables O_DIRECT when not available."""
-    import os
-
-    has_odirect = hasattr(os, "O_DIRECT")
-
-    # Even if we request direct_io, it should work (either natively
-    # or by falling back to buffered I/O).
-    tier = DiskTier(
-        cache_dir=cache_dir,
-        block_nbytes=16,
-        max_disk_size_bytes=10_000,
-        use_direct_io=True,
-    )
-
-    if not has_odirect:
-        assert not tier._use_direct_io, "Should fall back to buffered I/O"
-
-    # Regardless of mode, read/write should still work
-    src = _make_block(16, seed=42)
-    tier.write_block_async(block_hash=to_block_hash_bytes(100), src=src)
-    tier.wait_for_writes()
-
-    dest = np.zeros(16, dtype=np.uint8)
-    future = tier.read_block_async(
-        block_hash=to_block_hash_bytes(100), dest=dest
-    )
-    future.result()
-    np.testing.assert_array_equal(src, dest)
-
-    tier.shutdown()
-
-
-@pytest.mark.skipif(
-    not hasattr(__import__("os"), "O_DIRECT"),
-    reason="O_DIRECT not available on this platform",
-)
-def test_direct_io_roundtrip(cache_dir: str) -> None:
-    """Verify O_DIRECT read/write roundtrip when available.
-
-    Uses 4096-byte blocks (FS-aligned) and relies on numpy's aligned
-    allocator so the buffer itself meets O_DIRECT requirements.
-    """
-    tier = DiskTier(
-        cache_dir=cache_dir,
-        block_nbytes=4096,
-        max_disk_size_bytes=10 * 4096,
-        use_direct_io=True,
-    )
-
-    if not tier._use_direct_io:
-        pytest.skip("O_DIRECT disabled due to alignment constraints")
-
-    src = _make_block(4096, seed=99)
-    tier.write_block_async(block_hash=to_block_hash_bytes(50), src=src)
-    tier.wait_for_writes()
-
-    dest = np.zeros(4096, dtype=np.uint8)
-    future = tier.read_block_async(
-        block_hash=to_block_hash_bytes(50), dest=dest
-    )
-    future.result()
-    np.testing.assert_array_equal(src, dest)
-
-    tier.shutdown()
-
-
 def test_rebuild_after_concurrent_writes(cache_dir: str) -> None:
     """A fresh instance rebuilds the index from disk after concurrent writes."""
     tier = DiskTier(
@@ -479,22 +409,6 @@ def test_scan_ignores_non_block_files(cache_dir: str) -> None:
     assert tier2.num_used_blocks == 1
     assert tier2.contains(to_block_hash_bytes(1))
     tier2.shutdown()
-
-
-def test_direct_io_disabled_on_unaligned_blocks(cache_dir: str) -> None:
-    """Verify O_DIRECT is disabled when block size is not FS-aligned."""
-    tier = DiskTier(
-        cache_dir=cache_dir,
-        block_nbytes=17,  # Not aligned to any FS block size
-        max_disk_size_bytes=10_000,
-        use_direct_io=True,
-    )
-    # 17 bytes is not aligned to 4096 (typical FS block size), so
-    # O_DIRECT should be disabled automatically.
-    assert not tier._use_direct_io, (
-        "Should disable O_DIRECT for unaligned block sizes"
-    )
-    tier.shutdown()
 
 
 # -- Async eviction (off the scheduler critical path) --

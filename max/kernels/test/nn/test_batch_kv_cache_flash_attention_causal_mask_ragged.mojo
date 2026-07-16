@@ -21,7 +21,7 @@ from kv_cache.types import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from nn.attention.cpu.mha import flash_attention_kv_cache
 from nn.attention.mha_mask import CausalMask
 from std.testing import assert_almost_equal
@@ -138,7 +138,7 @@ def execute_ragged_flash_attention[
         ragged_ptr = q_ragged.ptr + q_ragged._offset(
             IndexList[3](ragged_start_idx, 0, 0)
         )
-        memcpy(
+        unsafe_memcpy(
             dest=padded_ptr,
             src=ragged_ptr,
             count=unpadded_seq_len * num_q_heads * kv_params.head_size,

@@ -283,6 +283,23 @@ class VariadicKind(enum.Enum):
 
     kw_vararg = 3
 
+class CallableSymbolAttrInterface(Protocol):
+    """
+    This interface describes typed attributes that refer to a concrete callable
+    symbol. The underlying symbol constant keeps the declaration identity and
+    true signature, while `getType()` returns the callable type presented by the
+    attribute at the use site.
+    """
+
+    @property
+    def symbol(self) -> max._core.dialects.builtin.SymbolRefAttr: ...
+    @property
+    def param_values(
+        self,
+    ) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
 class FnMetadataAttrInterface(Protocol):
     """
     This interface describes attributes that are attached to a `!kgen.func`
@@ -814,6 +831,34 @@ class FnTypeIsCABIAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.dialects.builtin.IntegerType: ...
 
+class FuncPtrBitcastAttr(max._core.Attribute):
+    """
+    The `#kgen.func_ptr_bitcast` attribute is the compile-time analogue of a
+    `pop.pointer.bitcast` applied to a function pointer. It wraps a
+    `SymbolConstantAttr` -- which keeps the callee's true, declared signature --
+    and re-presents it under a different `FuncTypeGeneratorType`.
+
+    Example:
+
+    ```mlir
+    #kgen.func_ptr_bitcast<#kgen.symbol.constant<@bar> : !kgen.generator<(i64) -> none>>
+      : !kgen.generator<(...) -> none>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self, callee: SymbolConstantAttr, type: FuncTypeGeneratorType
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, callee: SymbolConstantAttr, type: FuncTypeGeneratorType
+    ) -> None: ...
+    @property
+    def callee(self) -> SymbolConstantAttr: ...
+    @property
+    def type(self) -> FuncTypeGeneratorType: ...
+
 class FuncSymbolAttr(max._core.Attribute):
     """
     This is a value of FuncType, which refers to a func, the `type` must
@@ -1215,7 +1260,8 @@ class LinkageNameAttr(max._core.Attribute):
     Holds a name expression (string literal or DataToStr) and a boolean `mangle`
     flag. The flag is stored but not yet acted upon — both `mangle=true` and
     `mangle=false` currently use the prefix verbatim as the symbol name
-    (with PTX sanitization applied on top for GPU targets).
+    (with target-specific name sanitization applied on top for offload
+    targets).
 
     Intended future semantics: when `mangle=true`, the final symbol name will be
     derived from the prefix and a hash of the auto-mangled parameter values,
@@ -2776,7 +2822,7 @@ class CompileOffloadOp(max._core.Operation):
     Example:
 
     ```mlir
-    %0 = kgen.compile_offload<nvptx, 0, "", : ()->() @kernel> : !kgen.none
+    %0 = kgen.compile_offload<target, 0, "", : ()->() @kernel> : !kgen.none
     ```
     """
 
@@ -3369,6 +3415,7 @@ class GeneratorOp(max._core.Operation):
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
         source_param_list: PogListAttr,
+        source_func_type_generator: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -3466,6 +3513,14 @@ class GeneratorOp(max._core.Operation):
     def source_param_list(self) -> PogListAttr | None: ...
     @source_param_list.setter
     def source_param_list(self, arg: PogListAttr, /) -> None: ...
+    @property
+    def source_func_type_generator(
+        self,
+    ) -> max._core.dialects.builtin.TypedAttr | None: ...
+    @source_func_type_generator.setter
+    def source_func_type_generator(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> None: ...
 
 class IsRunInComptimeInterpreterOp(max._core.Operation):
     """

@@ -54,11 +54,30 @@ struct Stream(Movable, Writable):
         self_ptr[]._arc[].synchronize()
 
     @staticmethod
+    def native_handle(py_self: PythonObject) raises -> PythonObject:
+        var self_ptr = Self._self_ptr(py_self)
+        var handle = self_ptr[]._arc[].native_handle()
+        if handle:
+            return PythonObject(handle.value())
+        return PythonObject(None)
+
+    @staticmethod
     def record_event(py_self: PythonObject) raises -> PythonObject:
         var self_ptr = Self._self_ptr(py_self)
         var hal_evt = self_ptr[]._arc[].record_event[EVENT_FLAG_CPU_VISIBLE]()
         var ctx_arc = self_ptr[]._arc[]._queue[]._context
         return PythonObject(alloc=Event(_hal=hal_evt^, _ctx_keepalive=ctx_arc))
+
+    @staticmethod
+    def copy(
+        py_self: PythonObject,
+        dst_obj: PythonObject,
+        src_obj: PythonObject,
+    ) raises:
+        var self_ptr = Self._self_ptr(py_self)
+        var dst_ptr = dst_obj.downcast_value_ptr[Buffer]()
+        var src_ptr = src_obj.downcast_value_ptr[Buffer]()
+        self_ptr[]._arc[].copy(dst=dst_ptr[]._hal, src=src_ptr[]._hal)
 
     @staticmethod
     def copy_to_device(
@@ -105,15 +124,11 @@ struct Stream(Movable, Writable):
         py_self: PythonObject,
         dst_obj: PythonObject,
         value_obj: PythonObject,
-        size_obj: PythonObject,
     ) raises:
         var self_ptr = Self._self_ptr(py_self)
-        var dst_ptr = dst_obj.downcast_value_ptr[Buffer]()
-        var size = UInt64(Int(py=size_obj))
+        var dst_view = dst_obj.downcast_value_ptr[BufferView]()
         var value = UInt8(Int(py=value_obj))
-        self_ptr[]._arc[].set_memory(
-            dst_ptr[]._hal.view(byte_offset=0, byte_size=size), value
-        )
+        self_ptr[]._arc[].set_memory(dst_view[]._hal, value)
 
     @staticmethod
     def fill(
@@ -121,18 +136,12 @@ struct Stream(Movable, Writable):
         dst_obj: PythonObject,
         value_obj: PythonObject,
         value_size_obj: PythonObject,
-        size_obj: PythonObject,
     ) raises:
         var self_ptr = Self._self_ptr(py_self)
-        var dst_ptr = dst_obj.downcast_value_ptr[Buffer]()
-        var size = UInt64(Int(py=size_obj))
+        var dst_view = dst_obj.downcast_value_ptr[BufferView]()
         var value = UInt64(Int(py=value_obj))
         var value_size = UInt64(Int(py=value_size_obj))
-        self_ptr[]._arc[].fill(
-            dst_ptr[]._hal.view(byte_offset=0, byte_size=size),
-            value,
-            value_size,
-        )
+        self_ptr[]._arc[].fill(dst_view[]._hal, value, value_size)
 
     @staticmethod
     def wait_for_events(py_self: PythonObject, events_obj: PythonObject) raises:

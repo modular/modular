@@ -109,13 +109,15 @@ def run_one_case(
     var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
     var epsilon = Float32(1e-5)
 
+    # `layer_norm_gpu` migrated to a `Coord` shape boundary (mirror of
+    # `rms_norm_gpu` / softmax migration); `rank` is now an explicit parameter.
     @__copy_capture(data_buf)
     @always_inline
     @parameter
     def input_fn[
-        width: Int, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank]) -> SIMD[ln_type, width]:
-        var idx = data_buf.layout(Coord(coords))
+        width: Int, alignment: Int
+    ](coords: Coord) -> SIMD[ln_type, width]:
+        var idx = data_buf.layout(coords)
         return data_buf.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(gamma)
@@ -131,14 +133,16 @@ def run_one_case(
     @always_inline
     @parameter
     def output_fn[
-        width: SIMDSize, rank_: Int, alignment: Int
-    ](coords: IndexList[rank_], val: SIMD[ln_type, width]):
-        var idx = data_buf.layout(Coord(coords))
+        width: SIMDSize, alignment: Int
+    ](coords: Coord, val: SIMD[ln_type, width]):
+        var idx = data_buf.layout(coords)
         data_buf.raw_store[width=width, alignment=alignment](
             idx, rebind[SIMD[ln_type, width]](val)
         )
 
-    layer_norm_gpu[input_fn, gamma_fn, output_fn](shape, beta, epsilon, ctx=ctx)
+    layer_norm_gpu[ln_rank, input_fn, gamma_fn, output_fn](
+        Coord(shape), beta, epsilon, ctx=ctx
+    )
     ctx.synchronize()
 
     if check:
