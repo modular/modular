@@ -899,6 +899,7 @@ modular_cc_library(
     visibility = ["//visibility:private"],
     deps = [
         ":KGENPassesIncGen",
+        "//AsyncRT:Runtime",
         "//Support:CommonCLOptions",
     ],
 )
