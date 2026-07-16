@@ -196,7 +196,7 @@ def test_linear_nvfp4_apple() -> None:
 
     scales_fp8_bytes = _fp32_to_fp8_bytes(scales_fp32, device, device_ref)
     scales_fp8_buf = Buffer.from_numpy(scales_fp8_bytes).view(
-        DType.float8_e4m3fn, Shape((N, scale_k))
+        DType.float8_e4m3fn, (N, scale_k)
     )
     weight_scale_wd = WeightData(
         scales_fp8_buf, "weight_scale", DType.float8_e4m3fn, Shape((N, scale_k))

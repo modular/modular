@@ -130,6 +130,7 @@ def bench_broadcast[
         out_multicast_ptr = (
             out_multicast_buf.multicast_buffer_for(list_of_ctx[0])
             .unsafe_ptr()
+            .unsafe_mut_cast[True]()
             .as_unsafe_any_origin()
         )
 

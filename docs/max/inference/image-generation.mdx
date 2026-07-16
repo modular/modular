@@ -267,31 +267,39 @@ number of denoising steps:
 
 Diffusion pipelines can skip redundant transformer passes during the denoising
 loop to speed up generation. MAX exposes two cache backends, configured at
-server startup.
+server startup. Both are off by default and are mutually exclusive — enable at
+most one (setting both raises an error).
 
-**First-block cache (FBCache)**: enable with `--first-block-caching` on
-[`max serve`](/max/cli/serve). FBCache reuses transformer state from the
-previous step when the first-block residual is similar enough, using the
-model-specific default reuse threshold.
+**TaylorSeer** (recommended): enable with `--taylorseer` on
+[`max serve`](/max/cli/serve). TaylorSeer runs the transformer in full for a
+short warmup, then uses a Taylor-series approximation to skip most later steps
+on a fixed schedule. It gives the larger, most predictable speedup and is
+near-lossless at the default settings. Two presets:
+
+- Balanced (default): `--taylorseer`.
+- Fast: `--taylorseer --taylorseer-warmup-steps 4` — skips more steps for a
+  larger speedup, with a bit more drift from the uncached image (still coherent
+  and on-prompt).
+
+The `--taylorseer-cache-interval`, `--taylorseer-warmup-steps`, and
+`--taylorseer-max-order` flags override the model defaults for finer control
+(interval is a fidelity dial; warmup is the speed lever).
+
+```bash
+max serve \
+  --model black-forest-labs/FLUX.2-dev \
+  --taylorseer
+```
+
+**First-block cache (FBCache)**: enable with `--first-block-caching`. FBCache
+reuses transformer state from the previous step when the first-block residual is
+similar enough (a model-specific threshold). Unlike TaylorSeer it needs no
+tuning and adapts per prompt, but the speedup is smaller and data-dependent.
 
 ```bash
 max serve \
   --model black-forest-labs/FLUX.2-dev \
   --first-block-caching
-```
-
-**TaylorSeer**: enable with `--taylorseer` on
-[`max serve`](/max/cli/serve). Available on the FLUX.2 Klein pipeline,
-TaylorSeer uses a Taylor series approximation to skip full transformer passes
-on most denoising steps after a short warmup. The
-`--taylorseer-cache-interval`, `--taylorseer-warmup-steps`, and
-`--taylorseer-max-order` flags override the model defaults if you need finer
-control.
-
-```bash
-max serve \
-  --model black-forest-labs/FLUX.2-Klein \
-  --taylorseer
 ```
 
 ## Quickstart

@@ -1063,7 +1063,7 @@ class Buffer:
         shape: Sequence[int],
         mode: numpy._MemMapModeKind = "copyonwrite",
         offset: int = 0,
-    ):
+    ) -> Buffer:
         """
         Creates a memory-mapped buffer from a binary file on disk.
 

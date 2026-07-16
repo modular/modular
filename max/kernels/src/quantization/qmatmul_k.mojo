@@ -30,7 +30,7 @@ from std.memory import (
     alloc,
     bitcast,
     dealloc,
-    memcpy,
+    unsafe_memcpy,
     stack_allocation,
     Allocation,
 )
@@ -465,7 +465,7 @@ def _pack_block_Q4_K[
     )
 
     # Scales are not currently transformed.
-    memcpy(
+    unsafe_memcpy(
         dest=q_scales_reorder_buf,
         src=q_scales_buf.unsafe_ptr(),
         count=group_count * block_n,

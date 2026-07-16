@@ -150,7 +150,7 @@ struct UnsafeMaybeUninit[T: AnyType](
         Args:
             value: The value to store in memory.
         """
-        self.unsafe_ptr().init_pointee_move(value^)
+        self.unsafe_ptr().unsafe_write(value^)
 
     @always_inline
     def unsafe_assume_init_ref(ref self) -> ref[self._array] Self.T:
@@ -207,7 +207,7 @@ struct UnsafeMaybeUninit[T: AnyType](
             D: An element type that is implicitly deletable.
 
         """
-        self.unsafe_ptr().destroy_pointee()
+        self.unsafe_ptr().unsafe_deinit_pointee()
 
 
 @always_inline

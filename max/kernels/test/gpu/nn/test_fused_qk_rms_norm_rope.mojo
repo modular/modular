@@ -38,7 +38,7 @@ from layout import (
     row_major,
 )
 from layout._fillers import random
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.kv_cache import (

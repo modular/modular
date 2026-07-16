@@ -39,8 +39,10 @@ from layout import (
     Coord,
     Idx,
     LayoutTensor,
+    PointerStorage,
     RuntimeLayout,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     coord_to_index_list,
     row_major,
@@ -227,10 +229,13 @@ def matmul_kernel_naive[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
+    c_storage: TensorStorage = PointerStorage[element_width=1],
+    a_storage: TensorStorage = PointerStorage[element_width=1],
+    b_storage: TensorStorage = PointerStorage[element_width=1],
 ](
-    c: TileTensor[c_type, c_layout_type, MutAnyOrigin],
-    a: TileTensor[a_type, a_layout_type, ImmutAnyOrigin],
-    b: TileTensor[b_type, b_layout_type, ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout_type, MutAnyOrigin, Storage=c_storage],
+    a: TileTensor[a_type, a_layout_type, ImmutAnyOrigin, Storage=a_storage],
+    b: TileTensor[b_type, b_layout_type, ImmutAnyOrigin, Storage=b_storage],
     m: Int,
     n: Int,
     k: Int,
@@ -249,11 +254,17 @@ def matmul_kernel_naive[
 
     comptime if transpose_b:
         for i in range(k):
-            accum += a[x, i].cast[s_type]() * b[y, i].cast[s_type]()
+            accum += (
+                rebind[Scalar[a_type]](a[x, i]).cast[s_type]()
+                * rebind[Scalar[b_type]](b[y, i]).cast[s_type]()
+            )
 
     else:
         for i in range(k):
-            accum += a[x, i].cast[s_type]() * b[i, y].cast[s_type]()
+            accum += (
+                rebind[Scalar[a_type]](a[x, i]).cast[s_type]()
+                * rebind[Scalar[b_type]](b[i, y]).cast[s_type]()
+            )
 
     comptime if elementwise_lambda_fn:
         comptime elementwise_lambda = elementwise_lambda_fn.value()
@@ -412,6 +423,7 @@ def _matmul_gpu[
     *,
     use_tensor_core: Bool = False,
     transpose_b: Bool = False,
+    use_tf32: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
@@ -425,6 +437,11 @@ def _matmul_gpu[
 ) raises:
     """GPU matmul dispatch entry point. Routes to the appropriate kernel
     based on hardware capabilities and tensor properties.
+
+    `use_tf32=False` requires IEEE-fp32 multiplies for fp32 inputs instead
+    of TF32 tensor-core truncation; it is implemented for the SM100 dispatch
+    only, and only for shapes the fp32 split-K GEMV supports (compile-time
+    error otherwise).
     """
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
@@ -436,6 +453,14 @@ def _matmul_gpu[
     comptime c_type = c.dtype
     comptime a_type = a.dtype
     comptime b_type = b.dtype
+
+    # Fail loudly instead of silently ignoring the precision request on
+    # targets whose fp32 matmul paths have no TF32 opt-out wired up.
+    comptime assert (
+        use_tf32
+        or a_type != DType.float32
+        or (has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05())
+    ), "use_tf32=False is only implemented for the SM100 matmul dispatch"
 
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
@@ -558,7 +583,14 @@ def _matmul_gpu[
         if (
             ctx.compute_capability() == 5
             and (not f32_in or _apple_m5_allow_lossy_f32_matmul())
-            and m >= 64
+            # m > 1 (not m >= 64): the kernel already handles a partial M tile
+            # (per-simdgroup `_bounded_load`/`_bounded_store` + the row_base>=M
+            # early return), so 1 < m < 64 (concurrent-decode batch widths) is
+            # correct here. Routing it off the naive per-row fallback onto this
+            # co-batched GEMM is 6-27x faster at real Llama decode shapes
+            # (microbench, M5 Max). m == 1 stays on the gemv path: a rank-1
+            # update wastes the simdgroup MMA, so per-row gemv wins there.
+            and m > 1
             and n >= 64
             and k >= 16
         ):
@@ -600,6 +632,9 @@ def _matmul_gpu[
                     type_of(c).LayoutType,
                     type_of(a).LayoutType,
                     type_of(b).LayoutType,
+                    type_of(c).Storage,
+                    type_of(a).Storage,
+                    type_of(b).Storage,
                     transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_wrapper,
                     BLOCK_M=64,
@@ -629,6 +664,7 @@ def _matmul_gpu[
     comptime if (has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05()):
         return matmul_dispatch_sm100[
             transpose_b=transpose_b,
+            use_tf32=use_tf32,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_lambda_wrapper=elementwise_lambda_wrapper,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -1143,6 +1179,33 @@ def _matmul_gpu[
                                 if k >= 256:
                                     return _small_m_gemm[128, 128, 256]()
 
+                # Skinny-deep fp32 (MoE router gate: N=128, K=6144) leaves
+                # the machine idle, so split the K reduction. Config is built
+                # directly because kernel_helper's warp=block//2 degenerates
+                # at BM=16.
+                comptime split_k_p = 16
+                comptime if (
+                    a_type == DType.float32
+                    and transpose_b
+                    and static_N <= 256
+                    and static_K >= 2048
+                    and static_K % (split_k_p * 64) == 0
+                ):
+                    if m > 1 and m <= 32:
+                        comptime config = MatmulConfig[
+                            a_type, b_type, c_type, transpose_b
+                        ](
+                            block_tile_shape=Index(16, 16, 64),
+                            warp_tile_shape=Index(16, 16, 64),
+                            mma_shape=_amdgpu_get_mma_shape[
+                                a_type, transpose_b
+                            ](),
+                            num_pipeline_stages=1,
+                            num_k_partitions=split_k_p,
+                            pdl_level=pdl_level,
+                        )
+                        return _multistage_gemm[config]()
+
                 comptime sm_count = ctx.default_device_info.sm_count
                 comptime block_shape_list = _amdgpu_matmul_build_block_shape_list[
                     static_N
@@ -1314,6 +1377,25 @@ def _matmul_gpu[
                 block_dim=(NUM_WARPS * WARP_SIZE,),
             )
 
+        # Large transpose_b shapes with BK=64. Two A+B tiles don't fit LDS at
+        # this size, so the kernel uses its single-buffer register-staged
+        # pipeline (which needs coalesced/transpose_b loads).
+        comptime if transpose_b:
+            if m >= 128 and n >= 128 and k >= 64 and k % 64 == 0:
+                logger.info(
+                    "Executing: RDNA WMMA MATMUL kernel (128x128, BK=64)"
+                )
+                _enqueue_rdna_kernel[
+                    BLOCK_K=64,
+                    BLOCK_M=128,
+                    BLOCK_N=128,
+                    WARPS_M=4,
+                    WARPS_N=2,
+                    WARP_TILE_M=2,
+                    WARP_TILE_N=4,
+                ]()
+                return
+
         # Large shapes with BK=32: doubles compute per load, halves iterations.
         if m >= 128 and n >= 128 and k >= 32 and k % 32 == 0:
             logger.info("Executing: RDNA WMMA MATMUL kernel (128x128, BK=32)")
@@ -1369,6 +1451,9 @@ def _matmul_gpu[
         BLOCK_DIM,
         transpose_b,
         elementwise_lambda_fn=elementwise_lambda_wrapper,
+        c_storage=type_of(c).Storage,
+        a_storage=type_of(a).Storage,
+        b_storage=type_of(b).Storage,
     ]
 
     ctx.enqueue_function[kernel](

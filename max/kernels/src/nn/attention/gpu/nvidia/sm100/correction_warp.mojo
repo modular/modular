@@ -14,6 +14,7 @@
 
 from std.sys import size_of
 from std.gpu import thread_idx
+from std.gpu.primitives.id import cluster_dim
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.compute.arch.tcgen05 import (
     tcgen05_ld,
@@ -27,7 +28,11 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
 )
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
-from nn.attention.gpu.nvidia.sm100.attention_utils import mul_ftz
+from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    mul_ftz,
+    splitk_window,
+    splitk_partition_idx,
+)
 from nn.attention.mha_mask import MHAMask
 from .smem import SM100AttentionSMem
 
@@ -77,7 +82,7 @@ def fa4_correction[
     pipeline_c1 = mbars.consumer_c1()
 
     comptime BM_mask: Int = config.PairBM_eff()
-    comptime num_qo: Int = config.num_qo
+    comptime num_q: Int = config.num_q
 
     # Pure O-rescale arithmetic (online-softmax correction of a previously
     # accumulated O tile by `c`). Depends only on `o_tmem`, `c_pair` and
@@ -234,9 +239,27 @@ def fa4_correction[
     var total_iters_runtime: UInt32 = mask.total_iters[BM_mask, BN, page_size](
         seq_id, score_row, num_keys
     )
+    # Split-K (1Q): slice the combined tile count to this partition's window
+    # before the per-WG c0/c1 split. Identical window to the other warps
+    # (total_iters == last_masked_set_end for check_mask==False masks).
+    comptime if config.num_q == 1 and config.splitk_partitions > 1:
+        var _np: UInt32 = UInt32(cluster_dim.x)
+        var _w = splitk_window(
+            total_iters_runtime,
+            _np,
+            splitk_partition_idx(_np),
+        )
+        total_iters_runtime = _w[1] - _w[0]
+        # Empty partition (front-load trailing window, T < num_partitions; or an
+        # M6 idle CTA): no tiles. Return before the c0/c1 split -- at 0 tiles
+        # `c0_iters = (0+1)//2 - 1` underflows to a huge UInt32, so the extra-c0
+        # tail would spin on `pipeline_c0/o.wait()` the producer never posts.
+        # softmax stages a neutral identity; terminal `cluster_sync()` still runs.
+        if total_iters_runtime == 0:
+            return
     var c0_iters: UInt32
     var c1_iters: UInt32
-    comptime if num_qo == 1:
+    comptime if num_q == 1:
         c0_iters = (total_iters_runtime + 1) // 2 - 1
         var t_floor: UInt32 = total_iters_runtime // 2
         c1_iters = t_floor - 1 if t_floor > 0 else 0

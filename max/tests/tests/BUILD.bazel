@@ -126,23 +126,50 @@ modular_py_test(
 modular_py_test(
     name = "test_interpreter_ops",
     timeout = "long",
-    srcs = ["test_interpreter_ops.py"],
+    # conftest.py carries the collection-time hook that points
+    # MODULAR_DERIVED_PATH at the warm dir before the import-time precompile
+    # runs. This standalone target is excluded from the max_tests glob, so it
+    # must list conftest.py (and the deps conftest.py imports) explicitly.
+    srcs = [
+        "conftest.py",
+        "test_interpreter_ops.py",
+    ],
+    # Depend on the build-time-warmed eager-GC cache so the import-time precompile
+    # force-loads it instead of cold-compiling the sweep on the executor. GPU
+    # lanes take the combined CPU+accelerator warm; CPU-only lanes take the CPU
+    # warm. No a100 branch: a100 has no CI lane. The XARCH_WARM_RLOCATION env
+    # select below must match this dep.
+    data = select({
+        "//:b200_gpu": ["//max/tests/integration/xarch_warm:compose"],
+        "//:h100_gpu": ["//max/tests/integration/xarch_warm:compose"],
+        "//:mi355_gpu": ["//max/tests/integration/xarch_warm:compose"],
+        "//conditions:default": ["//max/tests/integration/xarch_warm:warm_cpu"],
+    }),
     env = {
         # Batch-compile the GC matrix once at import rather than lazily per
         # dispatch, so the full dtype sweep doesn't time out.
         "MAX_EAGER_OP_PRECOMPILE": "1",
-    },
+        # Opt in to asserted-toolchain force-load adoption of the warm above.
+        "MODULAR_EAGER_WARM_ADOPT_ASSERTED": "1",
+    } | select({
+        "//:b200_gpu": {"XARCH_WARM_RLOCATION": "$(rlocationpath //max/tests/integration/xarch_warm:compose)"},
+        "//:h100_gpu": {"XARCH_WARM_RLOCATION": "$(rlocationpath //max/tests/integration/xarch_warm:compose)"},
+        "//:mi355_gpu": {"XARCH_WARM_RLOCATION": "$(rlocationpath //max/tests/integration/xarch_warm:compose)"},
+        "//conditions:default": {"XARCH_WARM_RLOCATION": "$(rlocationpath //max/tests/integration/xarch_warm:warm_cpu)"},
+    }),
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max:_core",
+        "//max/python/max:_mlir_context",
         "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/mlir",
         requirement("numpy"),
     ],
 )
@@ -150,13 +177,37 @@ modular_py_test(
 modular_py_test(
     name = "test_interpreter_ops_gpu",
     timeout = "long",
-    srcs = ["test_interpreter_ops_gpu.py"],
+    # conftest.py carries the collection-time hook that points
+    # MODULAR_DERIVED_PATH at the warm dir before the import-time precompile
+    # runs. This standalone target is excluded from the max_tests glob, so it
+    # must list conftest.py (and the deps conftest.py imports) explicitly.
+    srcs = [
+        "conftest.py",
+        "test_interpreter_ops_gpu.py",
+    ],
+    # Force-load the build-warmed eager-GC cache (per GPU SKU) at import-time
+    # precompile. The default is required, not a fallback: the pydeps lint
+    # aspect evaluates this select on every lane, ungated by //:nvidia_gpu, so a
+    # no-default select fails its analysis. No a100 branch (no a100 CI lane); an
+    # unwarmed NVIDIA lane (e.g. reintroduced a100) fails loudly at runtime via
+    # _require_warm_adoption, not silently.
+    data = select({
+        "//:b200_gpu": ["//max/tests/integration/xarch_warm:compose"],
+        "//:h100_gpu": ["//max/tests/integration/xarch_warm:compose"],
+        "//conditions:default": [],
+    }),
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
         # Batch-compile the GC matrix once at import rather than lazily per
         # dispatch, so the full dtype sweep doesn't time out.
         "MAX_EAGER_OP_PRECOMPILE": "1",
-    },
+        # Opt in to asserted-toolchain force-load adoption of the warm above.
+        "MODULAR_EAGER_WARM_ADOPT_ASSERTED": "1",
+    } | select({
+        "//:b200_gpu": {"XARCH_WARM_RLOCATION": "$(rlocationpath //max/tests/integration/xarch_warm:compose)"},
+        "//:h100_gpu": {"XARCH_WARM_RLOCATION": "$(rlocationpath //max/tests/integration/xarch_warm:compose)"},
+        "//conditions:default": {},
+    }),
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -168,12 +219,14 @@ modular_py_test(
     target_compatible_with = ["//:nvidia_gpu"],
     deps = [
         "//max/python/max:_core",
+        "//max/python/max:_mlir_context",
         "//max/python/max:interpreter",
         "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/mlir",
         requirement("numpy"),
         requirement("torch"),
     ],

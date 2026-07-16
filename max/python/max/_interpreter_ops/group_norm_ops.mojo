@@ -23,7 +23,7 @@ from std.algorithm.functional import IndexList
 from std.math import sqrt
 
 from extensibility import ManagedTensorSlice
-from extensibility import Input, Output
+from extensibility import IOSpec
 from extensibility import StaticTensorSpec
 from nn.normalization import group_norm as nn_group_norm
 
@@ -182,7 +182,7 @@ def _group_norm_gpu[
 
             comptime out_spec = StaticTensorSpec[dtype, rank, ...].get_unknown()
             var output_tensor = ManagedTensorSlice[
-                io_spec=Output, static_spec=out_spec
+                io_spec=IOSpec.Output, static_spec=out_spec
             ](out_ptr, shape)
 
             nn_group_norm[

@@ -20,7 +20,7 @@ from std.time import sleep
 
 from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
-comptime DUMMY_FILE_SIZE: UInt = 954
+comptime DUMMY_FILE_SIZE: Int = 954
 
 
 def test_file_read() raises:

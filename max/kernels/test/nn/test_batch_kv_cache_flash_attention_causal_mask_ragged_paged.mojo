@@ -22,7 +22,7 @@ from kv_cache.types import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from nn.attention.cpu.mha import flash_attention_kv_cache
 from nn.attention.mha_mask import CausalMask
 from std.testing import assert_almost_equal
@@ -267,7 +267,7 @@ def execute_ragged_flash_attention[
                     - dest_byte_offset
                 )
                 var src_len = kv_block_continuous.size() - src_byte_offset
-                memcpy(
+                unsafe_memcpy(
                     dest=dest,
                     src=src,
                     count=min(

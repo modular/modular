@@ -71,6 +71,7 @@ from std.sys.info import (
     _is_amd_mi300x,
     _is_sm_9x_or_newer,
     _is_sm_100x_or_newer,
+    _is_sm_120x_or_newer,
     is_32bit,
 )
 
@@ -81,7 +82,7 @@ from std.builtin.format_int import _write_int
 from std.builtin.simd_size import SIMDSize
 from std.builtin.int import _FromInt
 from std.math import DivModable, Powable
-from std.memory import bitcast, memcpy, pack_bits
+from std.memory import bitcast, unsafe_memcpy, pack_bits
 from std.python import (
     ConvertibleToPython,
     ConvertibleFromPython,
@@ -2425,7 +2426,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
 
         var ptr = UnsafePointer(to=value)
         var array = InlineArray[Byte, size_of[Self]()](uninitialized=True)
-        memcpy(
+        unsafe_memcpy(
             dest=array.unsafe_ptr(),
             src=ptr.bitcast[Byte](),
             count=size_of[Self](),
@@ -3675,7 +3676,7 @@ def _convert_float8_to_f32[
     dtype: DType,
     size: SIMDSize,
 ](val: SIMD[dtype, size]) -> SIMD[DType.float32, size]:
-    comptime if _is_sm_9x_or_newer() and dtype in (
+    comptime if _is_sm_9x_or_newer() and not _is_sm_120x_or_newer() and dtype in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
     ):
@@ -3718,7 +3719,7 @@ def _convert_float8_to_f16[
     dtype: DType,
     size: SIMDSize,
 ](val: SIMD[dtype, size]) -> SIMD[DType.float16, size]:
-    comptime if _is_sm_9x_or_newer() and dtype in (
+    comptime if _is_sm_9x_or_newer() and not _is_sm_120x_or_newer() and dtype in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
     ):
@@ -3738,7 +3739,9 @@ def _convert_f32_to_float8[
     //,
     target: DType,
 ](val: SIMD[dtype, size]) -> SIMD[target, size]:
-    comptime if (_is_sm_9x_or_newer() or _cdna_4_or_newer()) and target in (
+    comptime if (
+        _is_sm_9x_or_newer() or _cdna_4_or_newer()
+    ) and not _is_sm_120x_or_newer() and target in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
     ):
@@ -4051,7 +4054,8 @@ def _convert_float8_ue8m0_to_f32[
 def _bfloat16_to_f32_scalar(
     val: BFloat16,
 ) -> Float32:
-    # For bfloat16, we can just do a memcpy to perform the cast to float32.
+    # For bfloat16, we can just do an unsafe_memcpy to perform the cast to
+    # float32.
     comptime if is_nvidia_gpu():
         return inlined_assembly[
             "cvt.f32.bf16 $0, $1;" if _is_sm_9x_or_newer() else "mov.b32 $0, {0, $1};",

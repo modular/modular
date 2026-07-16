@@ -54,7 +54,6 @@ for squared in map[square](values):
 """
 
 import std.memory
-from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 
 
@@ -410,12 +409,6 @@ struct _Enumerate[InnerIteratorType: Iterator](
         self._inner = iterator^
         self._count = start
 
-    def __init__(
-        out self, *, copy: Self
-    ) where conforms_to(Self.InnerIteratorType, Copyable):
-        self._inner = copy._inner.copy()
-        self._count = copy._count
-
     def __iter__(
         ref self,
     ) -> Self.IteratorType[origin_of(self)] where conforms_to(
@@ -543,7 +536,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
         try:
             comptime for i in range(Self._InjectedValues.__len__()):
-                UnsafePointer(to=res[i]).init_pointee_move(
+                UnsafePointer(to=res[i]).unsafe_write(
                     rebind_var[type_of(res[i])](next(self._values[i]))
                 )
                 initialized += 1
@@ -554,7 +547,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
                     type_of(res[i]), ImplicitlyDeletable
                 )
                 if i < initialized:
-                    UnsafePointer(to=res[i]).destroy_pointee()
+                    UnsafePointer(to=res[i]).unsafe_deinit_pointee()
 
             std.memory.forget_deinit(res^)
             raise StopIteration
@@ -603,7 +596,7 @@ def zip[
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
 
     comptime for i in range(res._InjectedValues.__len__()):
-        UnsafePointer(to=res._values[i]).init_pointee_move(
+        UnsafePointer(to=res._values[i]).unsafe_write(
             rebind_var[type_of(res._values[i])](iter(iterables[i]))
         )
 
@@ -639,7 +632,7 @@ def zip[
 
     @parameter
     def init_elt[idx: Int](var elt: iterables.element_types[idx]):
-        UnsafePointer(to=res._values[idx]).init_pointee_move(
+        UnsafePointer(to=res._values[idx]).unsafe_write(
             rebind_var[type_of(res._values[idx])](iter(elt^))
         )
 
@@ -670,11 +663,6 @@ struct _MapIterator[
     comptime IteratorOwnedType: Iterator = Self
 
     var _inner: Self.InnerIteratorType
-
-    def __init__(
-        out self, *, copy: Self
-    ) where conforms_to(Self.InnerIteratorType, Copyable):
-        self._inner = copy._inner.copy()
 
     def __iter__(
         ref self,
@@ -803,16 +791,6 @@ struct _PeekableIterator[InnerIterator: Iterator](
         self._inner = inner^
         self._next = None
 
-    def __init__(
-        out self, *, copy: Self
-    ) where conforms_to(Self.InnerIterator, Copyable) and conforms_to(
-        Self.InnerIterator.Element, Copyable
-    ):
-        self._inner = copy._inner.copy()
-
-        comptime assert conforms_to(Self.Element, Copyable)
-        self._next = copy._next.copy()
-
     def __iter__(
         ref self,
     ) -> Self.IteratorType[origin_of(self)] where conforms_to(
@@ -845,7 +823,7 @@ struct _PeekableIterator[InnerIterator: Iterator](
                 self._next = next(self._inner)
             except:
                 return None
-        return Pointer(to=self._next.unsafe_value()).get_immutable()
+        return Pointer[mut=False](to=self._next.unsafe_value())
 
 
 def peekable(
@@ -976,7 +954,7 @@ def chain[
     res._idx = 0
 
     comptime for i in range(res._Iterators.__len__()):
-        UnsafePointer(to=res._iterators[i]).init_pointee_move(
+        UnsafePointer(to=res._iterators[i]).unsafe_write(
             rebind_var[type_of(res._iterators[i])](iter(iterables[i]))
         )
 
@@ -1003,7 +981,7 @@ def chain[
 
     @parameter
     def init_elt[idx: Int](var elt: iterables.element_types[idx]):
-        UnsafePointer(to=res._iterators[idx]).init_pointee_move(
+        UnsafePointer(to=res._iterators[idx]).unsafe_write(
             rebind_var[type_of(res._iterators[idx])](iter(elt^))
         )
 

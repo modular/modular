@@ -36,9 +36,9 @@ def main() raises:
     comptime bpp = 3
     var img = alloc[UInt8](pixel_count * bpp)
     for i in range(pixel_count):
-        (img + i * bpp).init_pointee_copy(UInt8(100))  # R
-        (img + i * bpp + 1).init_pointee_copy(UInt8(0))  # G
-        (img + i * bpp + 2).init_pointee_copy(UInt8(0))  # B
+        (img + i * bpp).unsafe_write(UInt8(100))  # R
+        (img + i * bpp + 1).unsafe_write(UInt8(0))  # G
+        (img + i * bpp + 2).unsafe_write(UInt8(0))  # B
 
     invert_red_channel(img, pixel_count)
 

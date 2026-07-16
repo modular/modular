@@ -60,6 +60,7 @@ from max.experimental.cascade.core import Runtime, Worker
 from . import cascade_runtime_v1_pb2 as pb
 from . import cascade_runtime_v1_pb2_grpc as rpc
 from .codec import (
+    CascadeValue,
     decode_error,
     decode_value_slot,
     encode_args,
@@ -192,8 +193,11 @@ class GrpcRuntimeClient(Runtime):
             finally:
                 call.cancel()
 
-    async def get_result(self, result_id: str) -> object:
+    async def get_result(self, result_id: str) -> CascadeValue:
         """Fetch and decode a single result from the remote server by id.
+
+        Returns raw JSON-like data (:py:data:`CascadeValue`); the owning
+        :py:class:`Result` applies any expected type on top.
 
         Args:
             result_id: The opaque result identifier returned by
@@ -226,8 +230,13 @@ class GrpcRuntimeClient(Runtime):
             raise decode_error(response.error)
         raise RuntimeError(f"Unexpected GetResult outcome {kind!r}")
 
-    async def stream_result(self, result_id: str) -> AsyncIterator[object]:
+    async def stream_result(
+        self, result_id: str
+    ) -> AsyncIterator[CascadeValue]:
         """Stream items from a bound server-side iterator, decoded one by one.
+
+        Yields raw JSON-like data (:py:data:`CascadeValue`); the owning
+        :py:class:`ResultIter` applies any expected element type on top.
 
         Args:
             result_id: The opaque result identifier for the stream.

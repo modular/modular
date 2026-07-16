@@ -26,8 +26,8 @@ each requires:
   work. This page covers it.
 - **Weight adapter** — a small adapter resolves mismatched weight or config
   field names that some fine-tuning pipelines introduce, without touching the
-  architecture implementation. Covered in the
-  [model bring-up workflow](/max/develop/model-bringup-workflow).
+  architecture implementation. Covered in
+  [Weight adapters](/max/develop/weight-adapters).
 - **Full architecture package** — required when the compute graph itself is
   new (a different attention variant, routing mechanism, or normalization
   scheme that MAX hasn't implemented). Also covered in the
@@ -83,7 +83,7 @@ tools handle the conversion from safetensors.
 The [gguf-my-repo](https://huggingface.co/spaces/ggml-org/gguf-my-repo) space on
 Hugging Face converts your merged model without any local setup: log in, select
 your merged model's repo, and choose a quantization method such as `Q4_K_M`.
-After conversion, the GGUF file appears under your HuggingFace username and can
+After conversion, the GGUF file appears under your Hugging Face username and can
 be downloaded for local use.
 
 To convert locally using the llama.cpp script instead, run the converter against

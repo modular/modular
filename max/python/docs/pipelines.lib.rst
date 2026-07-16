@@ -32,6 +32,7 @@ Configuration
    KVConnectorConfig
    MAXConfig
    MAXModelConfigBase
+   PipelineArgs
    PipelineRuntimeConfig
 
 Pipelines

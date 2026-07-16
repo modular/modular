@@ -114,8 +114,8 @@ used to select each generated token across five generation steps. It then
 reports the metrics so you can compare them against your thresholds.
 
 The script uses
-[`PipelineConfig`](/max/api/python/generated/max.pipelines.PipelineConfig/) to
-load your architecture from
+[`PipelineArgs`](/max/api/python/generated/max.pipelines.PipelineArgs/) to load
+your architecture from
 [`PIPELINE_REGISTRY`](/max/api/python/generated/max.pipelines.lib.registry.PIPELINE_REGISTRY/),
 then sends a
 [`TextGenerationRequest`](/max/api/python/generated/max.pipelines.modeling.types.TextGenerationRequest/)
@@ -140,7 +140,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 from max.pipelines.context import ProcessorInputs, SamplingParams
 from max.pipelines.modeling.types import RequestID, TextGenerationRequest
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -270,11 +270,13 @@ def print_report(results: list[LogitComparison]) -> None:
         )
 
 
-pipeline_config = PipelineConfig.from_flat_kwargs(
+pipeline_args = PipelineArgs.from_flat_kwargs(
     model_path=MODEL_PATH,
     custom_architectures=CUSTOM_ARCHITECTURES,
 )
-_, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
+_, pipeline = PIPELINE_REGISTRY.retrieve(
+    PipelineConfig.from_args(pipeline_args)
+)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 hf_tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
 hf_model = AutoModelForCausalLM.from_pretrained(

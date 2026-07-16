@@ -21,6 +21,7 @@ import torch
 from max.pipelines import (
     PIPELINE_REGISTRY,
     GenerateMixin,
+    PipelineArgs,
     PipelineConfig,
 )
 from max.pipelines.context import (
@@ -162,11 +163,13 @@ def print_report(results: list[LogitComparison]) -> None:
         )
 
 
-pipeline_config = PipelineConfig.from_flat_kwargs(
+pipeline_config = PipelineArgs.from_flat_kwargs(
     model_path=MODEL_PATH,
     custom_architectures=CUSTOM_ARCHITECTURES,
 )
-_, retrieved_pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
+_, retrieved_pipeline = PIPELINE_REGISTRY.retrieve(
+    PipelineConfig.from_args(pipeline_config)
+)
 assert isinstance(retrieved_pipeline, GenerateMixin)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 hf_tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)

@@ -181,6 +181,7 @@ def bench_reduce[
         multi_ptr = (
             multicast_buf.multicast_buffer_for(list_of_ctx[0])
             .unsafe_ptr()
+            .unsafe_mut_cast[True]()
             .as_unsafe_any_origin()
         )
         in_tensors[0] = TileTensor(

@@ -17,7 +17,7 @@ from std.random import rand, random_si64
 from std.math import ceildiv
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.host.info import MI355X
 from layout import (
     Coord,
@@ -26,13 +26,14 @@ from layout import (
     row_major,
 )
 from linalg.matmul.gpu import (
+    _amdgpu_get_mma_shape,
     _amdgpu_matmul_config_from_block_shape,
     _matmul_gpu,
     matmul_kernel_naive,
     multistage_gemm,
 )
 from linalg.utils_gpu import MatmulConfig
-from std.testing import assert_equal
+from std.testing import assert_almost_equal, assert_equal
 
 from std.utils import Index
 
@@ -432,6 +433,115 @@ def test_float32(ctx: DeviceContext) raises:
     ](ctx, 256, 256, 128)
 
 
+def _run_fp32_split_k[
+    N: Int, K: Int, num_k_partitions: Int
+](
+    ctx: DeviceContext,
+    m: Int,
+    a_dev: DeviceBuffer[DType.float32],
+    b_dev: DeviceBuffer[DType.float32],
+    mut c_dev: DeviceBuffer[DType.float32],
+) raises:
+    """Runs the skinny-deep matmul with `num_k_partitions` K-splits."""
+    var a = TileTensor(a_dev, row_major(Coord(m, Idx[K])))
+    var b = TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K])))
+    var c = TileTensor(c_dev, row_major(Coord(m, Idx[N])))
+
+    # Mirrors the fp32 split-K band's config; only num_k_partitions differs
+    # (1 = single-pass, >1 = split-K).
+    comptime config = MatmulConfig[
+        DType.float32, DType.float32, DType.float32, True
+    ](
+        block_tile_shape=Index(16, 16, 64),
+        warp_tile_shape=Index(16, 16, 64),
+        mma_shape=_amdgpu_get_mma_shape[DType.float32, True](),
+        num_pipeline_stages=1,
+        num_k_partitions=num_k_partitions,
+    )
+    multistage_gemm[transpose_b=True, config=config](
+        c, a.as_immut(), b.as_immut(), config, ctx
+    )
+
+
+def test_fp32_split_k[
+    N: Int, K: Int, P: Int
+](ctx: DeviceContext, m: Int) raises:
+    """Split-K (P) and single-pass (1) must both match an fp32 gold ref."""
+    print("  M=", m, " N=", N, " K=", K, " P=", P, sep="")
+
+    var a_dev = ctx.enqueue_create_buffer[DType.float32](m * K)
+    var b_dev = ctx.enqueue_create_buffer[DType.float32](N * K)
+    var c_ref = ctx.enqueue_create_buffer[DType.float32](m * N)
+    var c_splitk = ctx.enqueue_create_buffer[DType.float32](m * N)
+
+    with a_dev.map_to_host() as ha, b_dev.map_to_host() as hb:
+        rand(ha.unsafe_ptr(), m * K, min=-1.0, max=1.0)
+        rand(hb.unsafe_ptr(), N * K, min=-1.0, max=1.0)
+
+    ctx.enqueue_memset(c_ref, 0)
+    ctx.enqueue_memset(c_splitk, 0)
+
+    _run_fp32_split_k[N, K, 1](ctx, m, a_dev, b_dev, c_ref)
+    _run_fp32_split_k[N, K, P](ctx, m, a_dev, b_dev, c_splitk)
+
+    with a_dev.map_to_host() as ha, b_dev.map_to_host() as hb, c_ref.map_to_host() as sp, c_splitk.map_to_host() as sk:
+        for row in range(m):
+            for col in range(N):
+                var acc = Float64(0)
+                for kk in range(K):
+                    acc += Float64(ha[row * K + kk]) * Float64(hb[col * K + kk])
+                var gold = Float32(acc)
+                # fp32 accum end-to-end -> reassociation tolerance only.
+                assert_almost_equal(
+                    sp[row * N + col], gold, rtol=1e-3, atol=1e-2
+                )
+                assert_almost_equal(
+                    sk[row * N + col], gold, rtol=1e-3, atol=1e-2
+                )
+
+    _ = a_dev^
+    _ = b_dev^
+    _ = c_ref^
+    _ = c_splitk^
+
+
+def test_fp32_split_k_dispatch[
+    N: Int, K: Int
+](ctx: DeviceContext, m: Int) raises:
+    """The public dispatch must route the skinny-deep fp32 shape onto the
+    split-K band and match an fp32 gold reference."""
+    print("  dispatch M=", m, " N=", N, " K=", K, sep="")
+
+    var a_dev = ctx.enqueue_create_buffer[DType.float32](m * K)
+    var b_dev = ctx.enqueue_create_buffer[DType.float32](N * K)
+    var c_dev = ctx.enqueue_create_buffer[DType.float32](m * N)
+
+    with a_dev.map_to_host() as ha, b_dev.map_to_host() as hb:
+        rand(ha.unsafe_ptr(), m * K, min=-1.0, max=1.0)
+        rand(hb.unsafe_ptr(), N * K, min=-1.0, max=1.0)
+    ctx.enqueue_memset(c_dev, 0)
+
+    var a = TileTensor(a_dev, row_major(Coord(m, Idx[K])))
+    var b = TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K])))
+    var c = TileTensor(c_dev, row_major(Coord(m, Idx[N])))
+
+    _matmul_gpu[use_tensor_core=True, transpose_b=True](c, a, b, ctx)
+
+    with a_dev.map_to_host() as ha, b_dev.map_to_host() as hb, c_dev.map_to_host() as hc:
+        for row in range(m):
+            for col in range(N):
+                var acc = Float64(0)
+                for kk in range(K):
+                    acc += Float64(ha[row * K + kk]) * Float64(hb[col * K + kk])
+                assert_almost_equal(
+                    hc[row * N + col], Float32(acc), rtol=1e-3, atol=1e-2
+                )
+
+    _ = a_dev^
+    _ = b_dev^
+    _ = c_dev^
+
+
 def test_matmul_config_from_block_shape(ctx: DeviceContext) raises:
     # This test takes too long to execute for CI, but is maintained here as a useful
     # unit test for verifying changes to parts of the matmul dispatcher.
@@ -490,3 +600,13 @@ def main() raises:
         test_block_k(ctx)
         test_warp_k_partitions(ctx)
         test_float32(ctx)
+
+        # Skinny-deep fp32 split-K (e.g. MiniMax-M3 gate: N=128, K=6144).
+        print("=== test_fp32_split_k")
+        for m in [1, 16, 32]:
+            test_fp32_split_k[128, 6144, 4](ctx, m)
+            test_fp32_split_k[128, 6144, 8](ctx, m)
+            test_fp32_split_k[128, 6144, 16](ctx, m)
+            test_fp32_split_k[128, 6144, 32](ctx, m)
+        for m in [16, 32]:
+            test_fp32_split_k_dispatch[128, 6144](ctx, m)

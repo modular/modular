@@ -41,10 +41,10 @@ struct BufferView(Copyable, Movable):
 
 @fieldwise_init
 struct Buffer[device_spec: DeviceSpec](Movable):
-    """A device memory allocation.
+    """A memory allocation tied to the context it was allocated from.
 
-    Tracks the allocation handle, its byte size, and a strong reference to
-    the owning `Context`.
+    Tracks the allocation handle, its byte size, its residency, and a strong
+    reference to the owning `Context`.
 
     Holding the context `ArcPointer` keeps the context (and its driver) alive
     for the buffer's lifetime, and lets transport-dispatching APIs such as
@@ -59,9 +59,9 @@ struct Buffer[device_spec: DeviceSpec](Movable):
     # calls `Context.free_sync`; `_context` is carried for residency only, not
     # to drive an auto-freeing destructor. Either give Buffer a destructor or
     # document it as a non-owning view and remove `Movable`.
-
     var _handle: MemoryHandle
     var byte_size: UInt64
+    var is_host_pinned: Bool
     var _context: ArcPointer[Context[Self.device_spec]]
 
     def view(self) -> BufferView:
@@ -75,3 +75,7 @@ struct Buffer[device_spec: DeviceSpec](Movable):
             "BufferView range exceeds Buffer bounds",
         )
         return BufferView(self._handle, byte_offset, byte_size)
+
+    def _device_id(self) -> Int64:
+        """Returns the runtime id of the device this buffer resides on."""
+        return self._context[]._device[].id

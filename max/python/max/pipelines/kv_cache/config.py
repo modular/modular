@@ -70,12 +70,6 @@ class KVConnectorConfig(ConfigFileModel):
     )
     """Maximum disk space in GB for KV cache offloading."""
 
-    disk_offload_direct_io: bool = Field(
-        default=False,
-        description="Use O_DIRECT for disk I/O (bypasses OS page cache).",
-    )
-    """Whether to use O_DIRECT for disk I/O."""
-
     block_store_endpoint: str | None = Field(
         default=None,
         description=(

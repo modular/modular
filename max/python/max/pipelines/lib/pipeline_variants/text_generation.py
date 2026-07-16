@@ -90,6 +90,7 @@ from ..interfaces import (
 from ..interfaces.generate import GenerateMixin
 from ..memory_estimation import _MemoryPlan
 from ..utils import CompilationTimer
+from ..vision_encoder_cache import VisionEncoderMetrics
 
 logger = logging.getLogger("max.pipelines")
 
@@ -192,6 +193,8 @@ class TextGenerationPipeline(
         # flag and gates user-supplied JSON schemas; the bitmask-in-the-graph
         # decisions below are gated separately on
         # ``pipeline_config.needs_bitmask_constraints``.
+        # structured_output_backend is None only on an unresolved config;
+        # from_tokenizer falls back to "xgrammar" in that case.
         self._structured_output = StructuredOutputHelper.from_tokenizer(
             self.tokenizer,
             pipeline_config.sampling.enable_structured_output,
@@ -646,3 +649,15 @@ class TextGenerationPipeline(
     def kv_manager(self) -> PagedKVCacheManager:
         """Returns the KV cache manager for this pipeline."""
         return self._kv_manager
+
+    def batch_vision_metrics(self) -> VisionEncoderMetrics | None:
+        """Returns vision encoder metrics for the most recent batch.
+
+        Returns ``None`` for text-only models and for batches that did no
+        vision encoding (e.g. decode steps). The metrics come from the
+        underlying model's :class:`VisionEncoderCache`, if it has one.
+        """
+        cache = getattr(self._pipeline_model, "_ve_cache", None)
+        if cache is None:
+            return None
+        return cache.pop_metrics()

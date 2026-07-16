@@ -176,10 +176,11 @@ def _test_rope_ragged_gpu_impl[
     var q_out_device_tensor = TileTensor(q_out_device_buffer, q_layout)
 
     @always_inline
-    @__copy_capture(q_out_device_tensor)
     def output_fn[
         width: SIMDSize, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
+    ](idx: IndexList[3], val: SIMD[dtype, width]) {
+        var q_out_device_tensor
+    } -> None:
         q_out_device_tensor.store[width=width](Coord(idx), val)
 
     # Execute rope_ragged kernel on GPU
@@ -189,13 +190,13 @@ def _test_rope_ragged_gpu_impl[
             dtype,
             interleaved=True,
             target=StaticString("gpu"),
-            output_fn=output_fn,
         ](
             x=q_device_tensor.as_unsafe_any_origin(),
             input_row_offsets=input_row_offsets_device_tensor.as_unsafe_any_origin(),
             start_pos=start_pos_device_tensor.as_unsafe_any_origin(),
             freqs_cis=freqs_cis_device_tensor.as_unsafe_any_origin(),
             context=ctx,
+            output_fn=output_fn,
             position_ids=position_ids_device_tensor,
         )
     else:
@@ -204,13 +205,13 @@ def _test_rope_ragged_gpu_impl[
             dtype,
             interleaved=True,
             target=StaticString("gpu"),
-            output_fn=output_fn,
         ](
             x=q_device_tensor.as_unsafe_any_origin(),
             input_row_offsets=input_row_offsets_device_tensor.as_unsafe_any_origin(),
             start_pos=start_pos_device_tensor.as_unsafe_any_origin(),
             freqs_cis=freqs_cis_device_tensor.as_unsafe_any_origin(),
             context=ctx,
+            output_fn=output_fn,
         )
 
     # Copy results back to host for validation

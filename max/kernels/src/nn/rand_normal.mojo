@@ -24,16 +24,19 @@ def random_normal[
     dtype: DType,
     rank: Int,
     //,
-    output_fn: def[width: SIMDSize, _rank: Int](
-        idx: IndexList[_rank], val: SIMD[dtype, width]
-    ) capturing[_],
     target: StaticString,
+    OutputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: SIMDSize, _rank: Int](
+        idx: IndexList[_rank], val: SIMD[dtype, width]
+    ),
 ](
     shape: IndexList[rank],
     mean: Float32,
     stddev: Float32,
     seed_ptr: UnsafePointer[Scalar[DType.uint64], ImmutAnyOrigin],
     ctx: DeviceContext,
+    output_fn: OutputFn,
 ) raises:
     """Call `output_fn` with values from a normal distribution, matching
     PyTorch CUDA's `torch.randn` element-to-counter mapping.
@@ -54,8 +57,8 @@ def random_normal[
     Parameters:
         dtype: The data type to generate.
         rank: The rank of the underlying buffer.
-        output_fn: The function which stores the generated values.
         target: The target to run on.
+        OutputFn: The type of the function which stores the generated values.
 
     Args:
         shape: The shape of the output being stored into by output_fn.
@@ -64,6 +67,7 @@ def random_normal[
         seed_ptr: Pointer to a single uint64 in device memory containing
             the Philox seed.
         ctx: The device context.
+        output_fn: The function which stores the generated values.
     """
 
     if stddev <= 0:

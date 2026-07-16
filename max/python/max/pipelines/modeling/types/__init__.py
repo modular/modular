@@ -39,6 +39,7 @@ from .pipeline import (
 )
 from .pipeline_variants import (
     BatchType,
+    CompletedBatchStats,
     EmbeddingsContext,
     EmbeddingsGenerationContextType,
     EmbeddingsGenerationInputs,
@@ -85,6 +86,7 @@ __all__ = [
     "BatchLogitsProcessor",
     "BatchProcessorInputs",
     "BatchType",
+    "CompletedBatchStats",
     "EmbeddingsContext",
     "EmbeddingsGenerationContextType",
     "EmbeddingsGenerationInputs",
