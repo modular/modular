@@ -13,7 +13,7 @@
 
 
 def concat[
-    dtype: DType, ls_size: Int, rh_size: Int, //
+    dtype: DType, ls_size: SIMDSize, rh_size: SIMDSize, //
 ](lhs: SIMD[dtype, ls_size], rhs: SIMD[dtype, rh_size]) -> SIMD[
     dtype, ls_size + rh_size
 ]:
@@ -31,5 +31,5 @@ def main():
     var a = SIMD[DType.float32, 2](1, 2)
     var x = concat(a, a)
 
-    print("result type:", x.dtype, "length:", x.size)
+    print("result type:", x.dtype, "length:", Int(x.size))
     _ = x

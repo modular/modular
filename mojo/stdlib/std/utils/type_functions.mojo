@@ -19,6 +19,7 @@ parameters and evaluate to a type, with no runtime component.
 """
 
 
+@deprecated("Use the ternary expression `T if cond else U` instead.")
 comptime ConditionalType[
     Trait: type_of(AnyType),
     //,
@@ -50,7 +51,7 @@ Examples:
 
     struct Wrapper[T: AnyType]:
         comptime StorageType = ConditionalType[
-            Trait=ImplicitlyDestructible,
+            Trait=ImplicitlyDeletable,
             If=size_of[Self.T]() > 0,
             Then=List[Byte],
             Else=NoneType,

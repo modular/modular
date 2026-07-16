@@ -76,9 +76,9 @@ def run_cublas[
     b: UnsafePointer[mut=False, Scalar[dtype], _],
     c: UnsafePointer[mut=True, Scalar[dtype], _],
 ) raises:
-    var a_device = TileTensor(a, row_major(Idx(M), Idx(K)))
-    var b_device = TileTensor(b, row_major(Idx(K), Idx(N)))
-    var c_device_ref = TileTensor(c, row_major(Idx(M), Idx(N)))
+    var a_device = TileTensor(a, row_major(M, K))
+    var b_device = TileTensor(b, row_major(K, N))
+    var c_device_ref = TileTensor(c, row_major(M, N))
 
     with vendor_blas.Handle() as _handle:
 
@@ -207,7 +207,7 @@ def run_gemm_kernel_1[
     @always_inline
     @parameter
     def run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_experimental[func](
+        ctx.enqueue_function[func](
             a,
             b,
             c,
@@ -227,7 +227,7 @@ def run_gemm_kernel_1[
         ),
         0,
     )
-    ctx.enqueue_function_experimental[func](
+    ctx.enqueue_function[func](
         a,
         b,
         c,
@@ -322,7 +322,7 @@ def run_gemm_kernel_2[
     @always_inline
     @parameter
     def run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             a,
             b,
             c,
@@ -342,7 +342,7 @@ def run_gemm_kernel_2[
         ),
         0,
     )
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a,
         b,
         c,
@@ -473,7 +473,7 @@ def run_gemm_kernel_3[
     @always_inline
     @parameter
     def run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             a,
             b,
             c,
@@ -493,7 +493,7 @@ def run_gemm_kernel_3[
         ),
         0,
     )
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a,
         b,
         c,
@@ -641,7 +641,7 @@ def run_gemm_kernel_4[
     @always_inline
     @parameter
     def run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             a,
             b,
             c,
@@ -661,7 +661,7 @@ def run_gemm_kernel_4[
         ),
         0,
     )
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a,
         b,
         c,
@@ -808,7 +808,7 @@ def run_gemm_kernel_5[
     @always_inline
     @parameter
     def run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             a,
             b,
             c,
@@ -827,7 +827,7 @@ def run_gemm_kernel_5[
         ),
         0,
     )
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a,
         b,
         c,
@@ -999,7 +999,7 @@ def run_gemm_kernel_6[
     @always_inline
     @parameter
     def run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             a,
             b,
             c,
@@ -1018,7 +1018,7 @@ def run_gemm_kernel_6[
         ),
         0,
     )
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a,
         b,
         c,
@@ -1225,7 +1225,7 @@ def run_gemm_kernel_tc[
     @always_inline
     @parameter
     def run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             a,
             b,
             c,
@@ -1244,7 +1244,7 @@ def run_gemm_kernel_tc[
         ),
         0,
     )
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a,
         b,
         c,

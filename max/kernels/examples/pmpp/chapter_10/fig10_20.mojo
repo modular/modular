@@ -52,7 +52,7 @@ def warp_reduce(val: Float32) -> Float32:
 
 
 def coarsened_sum_reduction_kernel(
-    input: UnsafePointer[Float32, MutAnyOrigin],
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Coarsened sum reduction kernel.
@@ -96,8 +96,8 @@ def coarsened_sum_reduction_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_sum(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: UnsafePointer[mut=False, Float32, _],
+    output: UnsafePointer[mut=True, Float32, _],
     N: Int,
 ):
     """CPU reference sum implementation.
@@ -146,7 +146,7 @@ def main() raises:
         ctx.enqueue_copy(d_input, h_input)
 
         # Launch kernel (single block with coarsening)
-        ctx.enqueue_function_experimental[coarsened_sum_reduction_kernel](
+        ctx.enqueue_function[coarsened_sum_reduction_kernel](
             d_input,
             d_output,
             grid_dim=(1, 1, 1),

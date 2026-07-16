@@ -29,8 +29,8 @@ comptime NUM_THREADS = 128
 
 
 def mm_tiled_kernel_double_buffer(
-    A: UnsafePointer[Float32, MutAnyOrigin],
-    B: UnsafePointer[Float32, MutAnyOrigin],
+    A: UnsafePointer[Float32, ImmutAnyOrigin],
+    B: UnsafePointer[Float32, ImmutAnyOrigin],
     C: UnsafePointer[Float32, MutAnyOrigin],
     M: UInt32,
     N: UInt32,
@@ -240,7 +240,7 @@ def mm_tiled_kernel_double_buffer(
 def cpu_mm(
     A: UnsafePointer[Float32, _],
     B: UnsafePointer[Float32, _],
-    C: UnsafePointer[Float32, MutAnyOrigin],
+    C: UnsafePointer[mut=True, Float32, _],
     M: Int,
     N: Int,
     K: Int,
@@ -327,7 +327,7 @@ def main() raises:
         )
         print("Using LayoutTensor-based double buffering")
 
-        ctx.enqueue_function_experimental[mm_tiled_kernel_double_buffer](
+        ctx.enqueue_function[mm_tiled_kernel_double_buffer](
             d_A,
             d_B,
             d_C,

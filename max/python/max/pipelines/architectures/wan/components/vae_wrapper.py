@@ -312,11 +312,15 @@ class VaeWrapper:
             x = g.inputs[0].tensor
             # Upcast to f32 before the *255 so bf16 rounding doesn't shift
             # pixel values; matches the flux2 VAE decoder precision path.
+            # Round before the uint8 cast so the truncating cast doesn't bias
+            # every pixel down by ~0.5; diffusers' image processor does
+            # `(x * 255).round().astype(uint8)`.
             x = ops.cast(x, DType.float32)
             x = x * 0.5 + 0.5
             x = ops.max(x, 0.0)
             x = ops.min(x, 1.0)
             x = x * 255.0
+            x = ops.round(x)
             x = ops.cast(x, DType.uint8)
             # (B, C, T, H, W) -> (B, T, H, W, C).
             x = ops.permute(x, [0, 2, 3, 4, 1])

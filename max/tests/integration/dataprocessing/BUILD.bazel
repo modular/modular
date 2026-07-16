@@ -4,7 +4,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -14,7 +13,7 @@ modular_py_test(
     size = "large",
     srcs = glob(["**/*.py"]),
     deps = [
-        "//max/python/max/pipelines/dataprocessing",
+        "//max/python/max/pipelines/modeling",
         requirement("hypothesis"),
         requirement("numpy"),
     ],

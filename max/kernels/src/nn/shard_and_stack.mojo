@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.algorithm import parallelize, sync_parallelize
-from std.gpu.host import DeviceBuffer
-from std.memory import memcpy
-from std.runtime.asyncrt import DeviceContextPtrList
-from tensor import InputVariadicTensors, OutputVariadicTensors
+from std.collections import InlineArray
+from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextList
+from std.memory import unsafe_memcpy
+from extensibility import InputVariadicTensors, OutputVariadicTensors
 from std.utils import product
 
 
@@ -102,7 +102,7 @@ def _shard_and_stack_multi_device[
         rank=outputs.rank - 1,
         ...,
     ],
-    dev_ctxs_input: DeviceContextPtrList,
+    dev_ctxs_input: DeviceContextList,
 ) raises:
     """Multi-device implementation using H2D transfers.
 
@@ -191,7 +191,7 @@ def _shard_and_stack_single_device[
         ...,
     ],
 ) raises:
-    """Single-device implementation using CPU memcpy.
+    """Single-device implementation using CPU unsafe_memcpy.
 
     Parameters:
         axis: The dimension along which to shard the weights.
@@ -246,7 +246,7 @@ def _shard_and_stack_single_device[
                 var src_ptr = input_tensor.unsafe_ptr() + src_offset
                 var dst_ptr = output_tensor.unsafe_ptr() + dst_offset
 
-                memcpy(dest=dst_ptr, src=src_ptr, count=segment_elements)
+                unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=segment_elements)
 
     parallelize[process_task](inputs.size)
 
@@ -260,7 +260,7 @@ def shard_and_stack[
         rank=outputs.rank - 1,
         ...,
     ],
-    dev_ctxs_input: DeviceContextPtrList,
+    dev_ctxs_input: DeviceContextList,
 ) raises:
     """Shard weight tensors across multiple devices for tensor parallelism.
 

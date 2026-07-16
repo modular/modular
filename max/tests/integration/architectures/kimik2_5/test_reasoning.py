@@ -40,6 +40,7 @@ def _mock_tokenizer(token_map: dict[str, int | None]) -> Mock:
 THINK_START_TOKEN_ID = 1
 THINK_END_TOKEN_ID = 2
 TOOL_SECTION_START_TOKEN_ID = 3
+TOOL_CALL_START_TOKEN_ID = 4
 
 
 @pytest.mark.parametrize(
@@ -70,11 +71,25 @@ TOOL_SECTION_START_TOKEN_ID = 3
             id="think_end_token_id_only",
         ),
         pytest.param(
+            # Kimi K2.5 opens a tool-call section straight from inside the
+            # think block (no closing ``</think>``). Reasoning ends *before*
+            # the marker; the marker and everything after flow to content so
+            # the tool parser can extract the call.
             [10, TOOL_SECTION_START_TOKEN_ID, 30],
             [10],
-            [30],
+            [TOOL_SECTION_START_TOKEN_ID, 30],
             False,
-            id="tool_start_token_id_ends",
+            id="tool_section_start_ends_reasoning_marker_to_content",
+        ),
+        pytest.param(
+            # A bare ``<|tool_call_begin|>`` never starts a Kimi tool call —
+            # it only appears inside a ``<|tool_calls_section_begin|>``
+            # section — so on its own it does NOT end reasoning.
+            [10, TOOL_CALL_START_TOKEN_ID, 30],
+            [10, TOOL_CALL_START_TOKEN_ID, 30],
+            [],
+            True,
+            id="bare_tool_call_begin_does_not_end_reasoning",
         ),
         pytest.param([], [], [], True, id="empty_chunk"),
         pytest.param(
@@ -113,27 +128,91 @@ def test_stream_parsing(
     expected_is_still_reasoning: bool,
 ) -> None:
     parser = KimiK2_5ReasoningParser(
-        THINK_START_TOKEN_ID, THINK_END_TOKEN_ID, TOOL_SECTION_START_TOKEN_ID
+        THINK_START_TOKEN_ID,
+        THINK_END_TOKEN_ID,
+        TOOL_SECTION_START_TOKEN_ID,
     )
-    span, is_still_reasoning = parser.stream(tokens)
-    assert span.extract_reasoning(tokens) == expected_reasoning
-    assert span.extract_content(tokens) == expected_content
-    assert is_still_reasoning is expected_is_still_reasoning
+    delta = parser.stream(tokens)
+    assert delta.span.extract_reasoning(tokens) == expected_reasoning
+    assert delta.span.extract_content(tokens) == expected_content
+    assert delta.is_still_reasoning is expected_is_still_reasoning
 
 
-def test_stream_no_tool_start_token_id_support() -> None:
+def test_stream_no_tool_token_id_falls_back_to_think_end_only() -> None:
+    """With no section-start id resolved, only ``</think>`` ends reasoning.
+
+    Degenerate config (tokenizer did not expose the marker): the parser
+    cannot terminate on a token it can't identify, so the tool section
+    stays in the reasoning region.
+    """
     parser = KimiK2_5ReasoningParser(
         THINK_START_TOKEN_ID, THINK_END_TOKEN_ID, None
     )
     tokens = [10, TOOL_SECTION_START_TOKEN_ID, 30]
-    span, is_still_reasoning = parser.stream(tokens)
-    assert span.extract_reasoning(tokens) == [
+    delta = parser.stream(tokens)
+    assert delta.span.extract_reasoning(tokens) == [
         10,
         TOOL_SECTION_START_TOKEN_ID,
         30,
     ]
-    assert span.extract_content(tokens) == []
-    assert is_still_reasoning
+    assert delta.span.extract_content(tokens) == []
+    assert delta.is_still_reasoning
+
+
+def test_stream_tool_marker_does_not_end_prior_content() -> None:
+    """A tool marker in already-ended (content) output stays content.
+
+    When ``is_currently_reasoning=False`` and no ``<think>`` opens in this
+    chunk, the whole chunk is content — a tool marker must not retro-open a
+    reasoning span.
+    """
+    parser = KimiK2_5ReasoningParser(
+        THINK_START_TOKEN_ID,
+        THINK_END_TOKEN_ID,
+        TOOL_SECTION_START_TOKEN_ID,
+    )
+    tokens = [10, TOOL_SECTION_START_TOKEN_ID, 30]
+    delta = parser.stream(tokens, is_currently_reasoning=False)
+    assert delta.span.extract_reasoning(tokens) == []
+    assert delta.span.extract_content(tokens) == tokens
+    assert delta.is_still_reasoning is False
+
+
+def test_will_reason_after_prompt_tool_section_token_disables_reasoning() -> (
+    None
+):
+    parser = KimiK2_5ReasoningParser(
+        THINK_START_TOKEN_ID, THINK_END_TOKEN_ID, TOOL_SECTION_START_TOKEN_ID
+    )
+    # Right-to-left scan: <|tool_calls_section_begin|> is treated as an
+    # end-of-reasoning delimiter, so reasoning is disabled.
+    prompt = [10, 20, TOOL_SECTION_START_TOKEN_ID, 30]
+    assert parser.will_reason_after_prompt(prompt) is False
+
+
+def test_will_reason_after_prompt_think_end_disables_reasoning() -> None:
+    parser = KimiK2_5ReasoningParser(
+        THINK_START_TOKEN_ID, THINK_END_TOKEN_ID, TOOL_SECTION_START_TOKEN_ID
+    )
+    prompt = [10, THINK_START_TOKEN_ID, 20, THINK_END_TOKEN_ID, 30]
+    assert parser.will_reason_after_prompt(prompt) is False
+
+
+def test_will_reason_after_prompt_no_delimiters_is_inactive() -> None:
+    """A prompt with no ``<think>`` / ``</think>`` is not in reasoning.
+
+    Covers the ``chat_template_kwargs={"thinking": False}`` case: the
+    chat template suppresses the trailing ``<think>``, so a first-turn
+    prompt contains no delimiter at all.
+    """
+    parser = KimiK2_5ReasoningParser(
+        THINK_START_TOKEN_ID, THINK_END_TOKEN_ID, TOOL_SECTION_START_TOKEN_ID
+    )
+    assert parser.will_reason_after_prompt([]) is False
+    # Same contract for a non-empty prompt without any delimiters.
+    assert (
+        parser.will_reason_after_prompt([1234, 5678, 9012, 3456, 7890]) is False
+    )
 
 
 @pytest.mark.asyncio
@@ -153,8 +232,8 @@ async def test_from_tokenizer_missing_tokens_raises() -> None:
 
 
 @pytest.mark.asyncio
-async def test_from_tokenizer_with_tool_start_token_id() -> None:
-    """from_tokenizer correctly picks up tool_section_start_token_id when present."""
+async def test_from_tokenizer_with_tool_section_token_id() -> None:
+    """from_tokenizer picks up the tool-call section-start id when present."""
     mock = _mock_tokenizer(
         {
             "<think>": 100,

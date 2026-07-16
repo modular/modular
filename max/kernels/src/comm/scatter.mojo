@@ -57,7 +57,7 @@ from .sync import (
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-@__name(t"scatter_pull_{dtype}", mangle=True)
+@__name(t"scatter_pull_{dtype}")
 def scatter_pull_kernel[
     dtype: DType,
     BLOCK_SIZE: Int,
@@ -188,7 +188,7 @@ def scatter[
         dp_size,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
         input_ptrs,
         chunk_num_elems,

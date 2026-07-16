@@ -6,7 +6,7 @@ modular_py_library(
     name = "media",
     srcs = glob(["*.py"]),
     deps = [
-        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/request",
         requirement("aiofiles"),
         requirement("av"),
         requirement("numpy"),

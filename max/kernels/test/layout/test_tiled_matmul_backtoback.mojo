@@ -293,9 +293,9 @@ def matmul[
 
 def alloc_tensor[
     elt: DType, layout: Layout
-]() -> LayoutTensor[elt, layout, MutAnyOrigin]:
+]() -> LayoutTensor[elt, layout, MutUntrackedOrigin]:
     comptime size: Int = layout.size()
-    return LayoutTensor[elt, layout, MutAnyOrigin](
+    return LayoutTensor[elt, layout, MutUntrackedOrigin](
         alloc[Scalar[elt]](size, alignment=64)
     )
 
@@ -303,9 +303,9 @@ def alloc_tensor[
 def alloc_tensor[
     elt: DType, layout: Layout
 ](rtlayout: RuntimeLayout[layout, ...]) -> LayoutTensor[
-    elt, layout, MutAnyOrigin
+    elt, layout, MutUntrackedOrigin
 ]:
-    return LayoutTensor[elt, layout, MutAnyOrigin](
+    return LayoutTensor[elt, layout, MutUntrackedOrigin](
         alloc[Scalar[elt]](rtlayout.size(), alignment=64),
         rtlayout,
     )
@@ -892,15 +892,14 @@ def bench_b2b[
     matmul_naive(Drm64, ABrm64, Crm64)
 
     @always_inline
-    @parameter
-    def test_tile_fn():
+    def test_tile_fn() {var}:
         matmul[elt, M, L, K, W, Mc, Nc, Kc, Mr, Nr, Kr](ABtile, Atile, Btile)
         matmul[elt, M, N, L, W, Mc, Nc, Kc, Mr, Nr, Kr](Dtile, ABtile, Ctile)
 
     var flops = 2e-9 * Float64(M * K * L + M * L * N)
     if do_benchmark:
-        var secs_tile = std.benchmark.run[func3=test_tile_fn](
-            max_runtime_secs=1.0
+        var secs_tile = std.benchmark.run(
+            test_tile_fn, max_runtime_secs=1.0
         ).mean()
         print("GFLOPS Tile: ", flops / secs_tile)
     else:
@@ -909,15 +908,14 @@ def bench_b2b[
     check_approx_equal[DType.float32](Dtile, Drm64)
 
     @always_inline
-    @parameter
-    def test_tile_b2b_fn():
+    def test_tile_b2b_fn() {var}:
         matmulb2b[elt, M, N, K, L, W, Mc, Nc, Mr, Nr, Kr](
             Dtile, Atile, Btile, Ctileb2b
         )
 
     if do_benchmark:
-        var secs_tile_b2b = std.benchmark.run[func3=test_tile_b2b_fn](
-            max_runtime_secs=1.0
+        var secs_tile_b2b = std.benchmark.run(
+            test_tile_b2b_fn, max_runtime_secs=1.0
         ).mean()
         print("GFLOPS B2B:  ", flops / secs_tile_b2b)
     else:
