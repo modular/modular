@@ -55,9 +55,9 @@ def run_elementwise[
     rank: Int,
     //,
     dtype: DType,
-    kernel_fn: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
-        dtype, width
-    ],
+    kernel_fn: def[dtype: DType, width: SIMDSize](
+        SIMD[dtype, width]
+    ) thin -> SIMD[dtype, width],
 ](
     mut m: Bench,
     fn_name: StaticString,
@@ -106,13 +106,7 @@ def run_elementwise[
             )
 
             @always_inline
-            @__copy_capture(in_tensor, out_tensor)
-            @parameter
-            def func[
-                simd_width: Int, rank_: Int, alignment: Int = 1
-            ](idx0: IndexList[rank_]):
-                var idx = rebind[IndexList[rank]](idx0)
-                var coord = Coord(idx)
+            def func[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
                 comptime assert out_tensor.flat_rank >= coord.flat_rank
                 comptime assert in_tensor.flat_rank >= coord.flat_rank
 
@@ -123,8 +117,9 @@ def run_elementwise[
                     ),
                 )
 
-            elementwise[func, pack_size, target="gpu"](
-                dims,
+            elementwise[pack_size, target="gpu"](
+                func,
+                Coord(dims),
                 ctx,
             )
 

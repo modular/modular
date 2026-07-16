@@ -45,7 +45,6 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
-    RaggedTMA3DTile,
 )
 from nn.attention.mha_operand import kv_sub_tile_rows as _kv_sub_tile_rows
 from nn.attention.gpu.nvidia.sm90.attention import (
@@ -313,7 +312,9 @@ def mha_sm90_dispatch[
         var schedule = ctx.enqueue_create_buffer[DType.uint32](1)
         schedule.enqueue_fill(UInt32(H100.sm_count))
         ctx.synchronize()
-        var scheduler: SchedulerType = SchedulerType(schedule.unsafe_ptr())
+        var scheduler: SchedulerType = SchedulerType(
+            schedule.unsafe_ptr().as_unsafe_any_origin()
+        )
         _mha_sm90_sink_dispatch[
             SchedulerType=SchedulerType,
             KVLUTType=KVType,
@@ -831,7 +832,7 @@ def _mha_sm90_enqueue[
 
     comptime smem_use = config.shared_mem_bytes[True, sm_90=True]()
     comptime num_threads = config.num_threads[True]()
-    ctx.enqueue_function[kernel_sm90, kernel_sm90](
+    ctx.enqueue_function[kernel_sm90](
         q_tma_op,
         k_tma_op,
         v_tma_op,
@@ -860,7 +861,6 @@ def _mha_sm90_enqueue[
 )
 @__name(
     t"sm90_mha_depth{config.depth}_{KVLUTType.dtype}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
-    mangle=True,
 )
 def _mha_sm90[
     KVLUTType: MHAOperand,
@@ -1163,7 +1163,7 @@ def _mha_sm90[
         max_seq_len.as_uint32(),
     )
     var state: MHATileState = scheduler.initial_state(
-        block_idx_ptr, tile_summary
+        block_idx_ptr.as_unsafe_any_origin(), tile_summary
     )
 
     # returns `true` if we are done
@@ -1228,7 +1228,7 @@ def _mha_sm90[
         ],
     ):
         comptime sz = BN * config.padded_depth
-        k_smem = {kv_smem + UInt32(sz) * idx}
+        k_smem = {(kv_smem + UInt32(sz) * idx).as_unsafe_any_origin()}
 
     @parameter
     @always_inline
@@ -1245,7 +1245,7 @@ def _mha_sm90[
         ],
     ):
         comptime sz = BN * config.padded_depth
-        v_smem = {kv_smem + UInt32(sz) * idx}
+        v_smem = {(kv_smem + UInt32(sz) * idx).as_unsafe_any_origin()}
 
     @parameter
     @always_inline
@@ -1290,12 +1290,12 @@ def _mha_sm90[
                 q_tma_op,
                 k_tma_op,
                 v_tma_op,
-                q_smem,
-                kv_smem,
-                produced_mbar_kv,
-                consumed_mbar_kv,
-                produced_mbar_q,
-                consumed_mbar_q,
+                q_smem.as_unsafe_any_origin(),
+                kv_smem.as_unsafe_any_origin(),
+                produced_mbar_kv.as_unsafe_any_origin(),
+                consumed_mbar_kv.as_unsafe_any_origin(),
+                produced_mbar_q.as_unsafe_any_origin(),
+                consumed_mbar_q.as_unsafe_any_origin(),
                 kv_lut,
                 position,
                 partition,
@@ -1331,7 +1331,7 @@ def _mha_sm90[
             address_space=AddressSpace.SHARED,
             alignment=128,
         ]:
-            return {q_smem + UInt32(q_size) * q_idx}
+            return {(q_smem + UInt32(q_size) * q_idx).as_unsafe_any_origin()}
 
         # layout is
         # shape  = (2, num_m_mmas) x (2, num_n_mmas)
@@ -1565,7 +1565,7 @@ def _mha_sm90[
                 tid,
                 local_warp_group_idx,
                 warp_y,
-                q_smem + q_idx * q_tile_size,
+                (q_smem + q_idx * q_tile_size).as_unsafe_any_origin(),
                 output_reg_tile,
             )
             # Guard writing to shared memory.

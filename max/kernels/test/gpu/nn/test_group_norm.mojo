@@ -26,7 +26,7 @@ from std.utils.index import Index, IndexList
 
 def compute_group_stats[
     t: DType
-](vec: TileTensor[t, ...], size: Int, eps: Scalar[t]) raises -> Tuple[
+](vec: TileTensor[t, ...], size: Int, eps: Float32) raises -> Tuple[
     Float64,
     Float64,
 ]:
@@ -82,7 +82,7 @@ def run_group_norm_gpu[
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
-    var epsilon = Scalar[dtype](1e-5)
+    var epsilon = Float32(1e-5)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -121,7 +121,7 @@ def run_group_norm_gpu[
     for r in range(rows):
         var vec = TileTensor(
             data_h.unsafe_ptr() + r * cols,
-            row_major(Idx(cols)),
+            row_major(cols),
         )
         var stats = compute_group_stats(vec, cols, epsilon)
         var mean_ref = stats[0]
@@ -239,6 +239,25 @@ def main() raises:
         # Edge case from group norm layer tests
         run_group_norm_gpu[DType.float32](ctx, Index(2, 2, 4, 4), num_groups=1)
         run_group_norm_gpu[DType.float32](ctx, Index(2, 2, 16), num_groups=1)
+
+        # Zero-spatial input: the FLUX.2 VAE encoder is invoked
+        # unconditionally on a ``(0, 0, 3)`` placeholder image for
+        # text-to-image, and every ``GroupNorm`` inside the encoder sees
+        # a ``(B, C, 0, 0)`` tensor.  The kernel must early-return rather
+        # than dispatching with ``num_cols=0`` (which previously failed
+        # the ``num_cols >= simd_width`` check).
+        run_group_norm_gpu[DType.float32](
+            ctx, Index(1, 128, 0, 0), num_groups=32
+        )
+        run_group_norm_gpu[DType.float32](
+            ctx, Index(1, 512, 0, 0), num_groups=32
+        )
+        run_group_norm_gpu[DType.bfloat16](
+            ctx, Index(1, 128, 0, 0), num_groups=32
+        )
+        run_group_norm_gpu[DType.bfloat16](
+            ctx, Index(1, 512, 0, 0), num_groups=32
+        )
 
         # === Multi-Block Kernel Dispatch (large group_size, few groups) ===
 

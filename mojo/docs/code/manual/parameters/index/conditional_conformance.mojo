@@ -13,11 +13,11 @@
 
 
 @fieldwise_init
-struct Container[ElementType: Movable & ImplicitlyDestructible]:
+struct Container[ElementType: Movable & ImplicitlyDeletable]:
     var element: Self.ElementType
 
     def __str__[
-        StrElementType: Writable & Copyable & ImplicitlyDestructible, //
+        StrElementType: Writable & Copyable & ImplicitlyDeletable, //
     ](self: Container[StrElementType]) -> String:
         return String(self.element)
 

@@ -24,6 +24,9 @@ from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithStoredKVParams,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -38,49 +41,27 @@ class Olmo2Config(Llama3Config):
     Olmo2 models have an explicit head_dim field in their configuration.
     """
 
-    @staticmethod
+    @classmethod
     def construct_kv_params(
+        cls,
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        """Override the default Llama3Config.construct_kv_params to use head_dim from config.
-        Olmo2 models have an explicit head_dim field in their configuration,
-        unlike Llama models where it needs to be calculated.
-        Args:
-            huggingface_config: The HuggingFace configuration object.
-            pipeline_config: The MAX Engine pipeline configuration.
-            devices: Devices to use for the KV cache.
-            kv_cache_config: Configuration for KV cache.
-            cache_dtype: Data type for the cache.
-        Returns:
-            KVCacheParams object with the correct head_dim from config.
-        """
-        data_parallel_degree = pipeline_config.model.data_parallel_degree
-        if data_parallel_degree > 1:
+        """Olmo2 does not support data parallelism; delegate to grouped-attention default."""
+        if pipeline_config.model.data_parallel_degree > 1:
             raise ValueError(
                 "Data parallelism is not supported for Olmo2 models"
             )
-        return kv_cache_config.to_params(
-            dtype=cache_dtype,
-            n_kv_heads=getattr(huggingface_config, "num_key_value_heads"),  # noqa: B009
-            head_dim=Olmo2Config.get_head_dim(huggingface_config),
-            num_layers=Olmo2Config.get_num_layers(huggingface_config),
-            devices=devices,
-            data_parallel_degree=data_parallel_degree,
+        return ArchConfigWithStoredKVParams.construct_kv_params(
+            huggingface_config,
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
         )
-
-    @staticmethod
-    def get_head_dim(huggingface_config: AutoConfig) -> int:
-        if hasattr(huggingface_config, "head_dim"):
-            return huggingface_config.head_dim
-        else:
-            return (
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
-            )
 
     @staticmethod
     def calculate_attention_multiplier(huggingface_config: AutoConfig) -> float:

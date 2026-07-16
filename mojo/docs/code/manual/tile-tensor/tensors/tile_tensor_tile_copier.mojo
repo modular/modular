@@ -77,7 +77,7 @@ def tile_copier_example() raises:
         host_buf[i] = Float32(i)
     var tensor = TileTensor(dev_buf, input_layout)
     ctx.enqueue_copy(dev_buf, host_buf)
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         tensor,
         grid_dim=(num_row_blocks, num_col_blocks),
         block_dim=(block_size, block_size),

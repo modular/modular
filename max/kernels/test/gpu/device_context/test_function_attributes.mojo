@@ -22,7 +22,7 @@ def test_function_attributes() raises:
         x[0] = thread_idx.x
 
     with DeviceContext() as ctx:
-        var func = ctx.compile_function_experimental[kernel]()
+        var func = ctx.compile_function[kernel]()
         assert_equal(func.get_attribute(Attribute.LOCAL_SIZE_BYTES), 0)
 
 

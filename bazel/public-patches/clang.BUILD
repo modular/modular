@@ -22,8 +22,8 @@ filegroup(
 filegroup(
     name = "include",
     srcs = [
-        "lib/clang/20/include",
-        "lib/clang/20/share",  # sanitizer default ignore lists
+        "lib/clang/22/include",
+        "lib/clang/22/share",  # sanitizer default ignore lists
     ],
 )
 
@@ -34,7 +34,7 @@ directory(
 
 filegroup(
     name = "resource_directory_filegroup",
-    srcs = ["lib/clang/20"],
+    srcs = ["lib/clang/22"],
 )
 
 directory(

@@ -12,25 +12,25 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
-    var data: UnsafePointer[Self.ElementType, MutExternalOrigin]
+struct GenericArray[ElementType: Copyable & ImplicitlyDeletable]:
+    var data: UnsafePointer[Self.ElementType, MutUntrackedOrigin]
     var size: Int
 
     def __init__(out self, var *elements: Self.ElementType):
         self.size = len(elements)
         self.data = alloc[Self.ElementType](self.size)
         for i in range(self.size):
-            (self.data + i).init_pointee_move(elements[i].copy())
+            (self.data + i).unsafe_write(elements[i].copy())
 
     def __init__(out self, *, count: Int, value: Self.ElementType):
         self.size = count
         self.data = alloc[Self.ElementType](self.size)
         for i in range(self.size):
-            (self.data + i).init_pointee_copy(value)
+            (self.data + i).unsafe_write(copy=value)
 
     def __del__(deinit self):
         for i in range(self.size):
-            (self.data + i).destroy_pointee()
+            (self.data + i).unsafe_deinit_pointee()
         self.data.free()
 
     def __getitem__(self, i: Int) raises -> ref[self] Self.ElementType:
@@ -46,7 +46,9 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
 
 
 def main() raises:
+    # start-splat-usage
     var array = GenericArray[Float64].splat(8, 0)
+    # end-splat-usage
     for i in range(array.size):
         end = ", " if i < array.size - 1 else "\n"
         print(array[i], end=end)

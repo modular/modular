@@ -1,0 +1,19 @@
+{
+  "model_type": "glm_moe_dsa",
+  "num_hidden_layers": 4,
+  "quantization_config": {
+    "quant_method": "modelopt",
+    "quant_algo": "NVFP4",
+    "ignore": [
+      "lm_head",
+      "model.layers.0.mlp*",
+      "model.layers.0.self_attn*",
+      "model.layers.1.mlp*",
+      "model.layers.1.self_attn*",
+      "model.layers.2.mlp*",
+      "model.layers.2.self_attn*",
+      "model.layers.3.self_attn*",
+      "*shared_experts*"
+    ]
+  }
+}
