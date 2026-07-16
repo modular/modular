@@ -573,3 +573,16 @@ def test_call_error_location():
         # expected-error @below {{no matching function in call to 'call_error_location'}}
         ""
     )
+
+
+@__unsafe_disable_nested_origin_exclusivity
+def nested_mutability_disabled1(ref a: String, b: String): pass
+@__unsafe_disable_nested_origin_exclusivity
+def nested_mutability_disabled2(mut a: String, b: String): pass
+
+def test_nested_mutability_disabled():
+    var s : String
+    nested_mutability_disabled1(s, s) # This is ok, 'ref' is treated readonly
+    # expected-error @below {{allows reading a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'origin_of(s)' value is passed through aliasing 'read' argument}}
+    nested_mutability_disabled2(s, s)

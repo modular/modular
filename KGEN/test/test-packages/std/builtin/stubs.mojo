@@ -1345,9 +1345,13 @@ struct UnsafePointer[
         origin_of(base).get_owned_interior[name], Self.address_space
     ] Self.type:
         comptime res_origin = origin_of(base).get_owned_interior[name]
-        return self.unsafe_mut_cast[res_origin.mut]().unsafe_origin_cast[
-            res_origin
-        ]()[]
+        comptime ptr_type = Pointer[Self.type, res_origin, Self.address_space]
+        # Do this delicately since we're manufacturing an interior origin here.
+        return __get_litref_as_mvalue(
+            __mlir_op.`lit.ref.from_pointer`[_type=ptr_type._mlir_type](
+                self._mlir_value
+            )
+        )
 
     @always_inline
     def take_pointee[
