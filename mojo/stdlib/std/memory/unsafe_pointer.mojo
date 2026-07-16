@@ -618,19 +618,21 @@ struct Pointer[
             _type=type_of(self)._mlir_type
         ](other._mlir_value)
 
-    @implicit
-    @always_inline("builtin")
-    def __init__(
-        out self,
-        other: Pointer[Self.type, _, address_space=Self.address_space, _safe=_],
-    ) where Self.origin.contains[other.origin]:
-        """Implicitly casts a pointer with one origin to another origin when
-        the result origin is a superset.
+    # TODO(MOCO-4334): Make sure we cannot implicitly convert from Untracked
+    # to a named origin and make sure mutabilities are respected.
+    # @implicit
+    # @always_inline("builtin")
+    # def __init__(
+    #     out self,
+    #     other: Pointer[Self.type, _, address_space=Self.address_space, _safe=_],
+    # ) where Self.origin.contains[other.origin]:
+    #     """Implicitly casts a pointer with one origin to another origin when
+    #     the result origin is a superset.
 
-        Args:
-            other: The `Pointer` to cast.
-        """
-        self._mlir_value = rebind[Self._mlir_type](other._mlir_value)
+    #     Args:
+    #         other: The `Pointer` to cast.
+    #     """
+    #     self._mlir_value = rebind[Self._mlir_type](other._mlir_value)
 
     # TODO: Remove when the `_safe` parameter is removed from this type.
     @always_inline("builtin")

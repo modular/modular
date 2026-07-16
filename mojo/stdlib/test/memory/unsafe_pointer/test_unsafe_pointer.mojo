@@ -740,19 +740,20 @@ def test_alloc_free_many_zst() raises:
     )
 
 
-def origin_superset_conversion(
-    a: String, b: String, c: Bool
-) -> UnsafePointer[String, origin_of(a, b)]:
-    # These pointers should implicitly convert.
-    if c:
-        return UnsafePointer(to=a)
-    else:
-        return UnsafePointer(to=b)
+# TODO(MOCO-4334)
+# def origin_superset_conversion(
+#     a: String, b: String, c: Bool
+# ) -> UnsafePointer[String, origin_of(a, b)]:
+#     # These pointers should implicitly convert.
+#     if c:
+#         return UnsafePointer(to=a)
+#     else:
+#         return UnsafePointer(to=b)
 
 
-def test_implicit_conversion_to_super_origin() raises:
-    # Parse-time only test, but call it anyway.
-    _ = origin_superset_conversion("", "bar", True)
+# def test_implicit_conversion_to_super_origin() raises:
+#     # Parse-time only test, but call it anyway.
+#     _ = origin_superset_conversion("", "bar", True)
 
 
 def main() raises:
