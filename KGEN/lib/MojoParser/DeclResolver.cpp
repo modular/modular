@@ -21,6 +21,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 #include <deque>
@@ -759,14 +760,19 @@ LogicalResult DeclResolver::importModule(ASTDecl &dest, UnresolvedImportOp op,
 }
 
 StringAttr DeclResolver::getAbsoluteModuleName(ASTDecl &moduleDecl) {
-  SymbolRefAttr ref = moduleDecl.getSymbolRef();
-  if (!ref)
+  if (!isa_and_nonnull<FileModuleOp, PackageOp>(moduleDecl.getIfOperation()))
     return {};
-  SmallString<64> name(ref.getRootReference().getValue());
-  for (FlatSymbolRefAttr nested : ref.getNestedReferences()) {
-    name += '.';
-    name += nested.getValue();
+  SmallVector<StringRef> components;
+  // Work back up through the parent packages/modules to build up the full path.
+  for (ASTDecl *d = &moduleDecl;
+       d && isa_and_nonnull<FileModuleOp, PackageOp>(d->getIfOperation());
+       d = d->getParentDecl()) {
+    std::optional<StringRef> declName = d->getUserNameIfOperation();
+    if (!declName)
+      return {};
+    components.push_back(*declName);
   }
+  std::string name = llvm::join(llvm::reverse(components), ".");
   return StringAttr::get(getContext(), name);
 }
 

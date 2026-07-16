@@ -167,6 +167,7 @@ FnTypeGeneratorType LIT::getFullSignature(Operation *container,
 void FileModuleOp::build(OpBuilder &builder, OperationState &state,
                          StringAttr name) {
   state.addAttribute(getSymNameAttrName(state.name), name);
+  state.addAttribute(getSourceNameAttrName(state.name), name);
   state.addRegion()->push_back(new Block());
 }
 
@@ -180,7 +181,8 @@ ArrayRef<ParamDeclAttr> FileModuleOp::getInputParams() { return {}; }
 void PackageOp::build(OpBuilder &builder, OperationState &state,
                       StringAttr name) {
   build(builder, state, name, /*docString=*/{},
-        /*dependencies=*/{}, /*externLLVMBitcodeModules=*/{});
+        /*dependencies=*/{}, /*externLLVMBitcodeModules=*/{},
+        /*sourceName=*/name);
   assert(state.regions.size() == 1);
   state.regions.back()->push_back(new Block());
 }

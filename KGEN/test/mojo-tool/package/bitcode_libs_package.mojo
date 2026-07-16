@@ -18,7 +18,9 @@
 # Verify the package was created and contains the externLLVMBitcodeModules attribute
 # RUN: kgen-opt -mlir-print-debuginfo %t_with_bitcode.mojoc | FileCheck %s
 
-# CHECK: lit.package @{{.*}}_with_bitcode
+# Restrict the wildcard to non-space chars so it stops at the symbol name and
+# not the trailing `sourceName` attribute, keeping CHECK-SAME on the right span.
+# CHECK: lit.package @{{[^ ]*}}_with_bitcode
 # CHECK-SAME: externLLVMBitcodeModules = #lit<dense_resource_elements_array[dense_resource<[[LLVM_BITCODE_NAME:llvm_bitcode_[[:alnum:]]+]]
 # CHECK: dialect_resources:
 # CHECK: [[LLVM_BITCODE_NAME]]

@@ -318,6 +318,13 @@ struct SharedState::Impl {
   /// or modules are nested within.
   std::unique_ptr<ModuleState> topLevelModuleState;
 
+  /// The module/package being compiled. A root is not registered in the
+  /// top-level state under its own name, so that an import of that name
+  /// resolves through the import path like a regular import. Synthetic REPL/LSP
+  /// wrapper buffers are deliberately not treated as roots, so there is at most
+  /// one root per SharedState.
+  ModuleState *compilationRoot = nullptr;
+
   /// A mapping between ASTDecl and the corresponding module state.
   llvm::MapVector<ASTDecl *, ModuleState *> moduleStates;
 
@@ -682,11 +689,15 @@ struct SharedState::ModuleState {
       (void)bytecodeReader->finalize([](Operation *) { return false; });
   }
 
-  /// Insert a nested module state.
+  /// Insert a nested module state. When `registerScope` is false the state is
+  /// owned but not registered under `name` for lookup (used for the compilation
+  /// root).
   ModuleState &insertNestedModule(StringAttr name,
-                                  std::unique_ptr<ModuleState> module) {
+                                  std::unique_ptr<ModuleState> module,
+                                  bool registerScope = true) {
     nestedModuleAllocations.emplace_back(std::move(module));
-    nestedModules.insert({name, nestedModuleAllocations.back().get()});
+    if (registerScope)
+      nestedModules.insert({name, nestedModuleAllocations.back().get()});
     return *nestedModuleAllocations.back();
   }
 
@@ -1330,6 +1341,33 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
     // Otherwise, go through the normal import path.
     modulePath = resolveModulePath(name, loc);
   }
+
+  // A compilation root is not registered in nestedModules under its own name,
+  // so an import of that name reaches filesystem resolution. Resolve it to a
+  // root when either the import path lands on the root's own file, or nothing
+  // is found on the path and the name matches the root. The latter covers a
+  // package being compiled that is not itself on the search path (e.g.
+  // precompiling `std`, whose modules import `std`). A different module/package
+  // of the same name resolves elsewhere and falls through below, so they
+  // coexist.
+  if (auto *root = impl->compilationRoot;
+      parentDecl == impl->topLevelDecl && root) {
+    /// Return true if two paths refer to the same file or directory on disk.
+    /// Returns false if either does not exist or cannot be compared.
+    auto pathsReferToSameFile = [](StringRef a, StringRef b) {
+      std::error_code ec;
+      bool equal = std::filesystem::equivalent(
+          std::filesystem::path(a.str()), std::filesystem::path(b.str()), ec);
+      return !ec && equal;
+    };
+
+    bool pathIsRoot = modulePath && root->sourcePath &&
+                      pathsReferToSameFile(*modulePath, *root->sourcePath);
+    bool nameIsRoot =
+        !modulePath && root->decl->getUserNameIfOperation() == name;
+    if (pathIsRoot || nameIsRoot)
+      return rememberImportLoc(root);
+  }
   if (!modulePath)
     return notFound("unable to locate module '" + name + "'");
 
@@ -1659,25 +1697,39 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
 ASTDecl &SharedState::createModule(StringRef moduleName,
                                    const llvm::MemoryBuffer *moduleBuffer,
                                    FileLineColLoc loc) {
-  // Create a new module state.
-  ModuleState &state =
-      createModuleState(StringAttr::get(getContext(), moduleName), moduleBuffer,
-                        *impl->topLevelModuleState, loc);
+  // REPL/LSP wrapper buffers are synthetic modules that a SharedState creates
+  // many of and that reference each other by name across evaluations.
+  // Their names contain a space and so can never collide with a real import.
+  // Only a genuine file/package compilation unit is treated as a compilation
+  // root.
+  bool isWrapper = isReplOrLspBuffer(moduleName);
+  ModuleState &state = createModuleState(
+      StringAttr::get(getContext(), moduleName), moduleBuffer,
+      *impl->topLevelModuleState, loc, /*registerScope=*/isWrapper);
+  if (!isWrapper)
+    impl->compilationRoot = &state;
   return *state.decl;
 }
 
 ASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
   auto fileLoc = createLocation(getPackageInitPath(path.str()),
                                 /*line=*/1, /*column=*/1);
+  // Not registered under its own name; see createModule.
   // Note the importLoc here is empty as this is a top-level package and so
   // isn't imported from anywhere.
-  ModuleState &state =
-      createPackageState(StringAttr::get(getContext(), name), path,
-                         *impl->topLevelModuleState, fileLoc, /*importLoc=*/{});
+  ModuleState &state = createPackageState(
+      StringAttr::get(getContext(), name), path, *impl->topLevelModuleState,
+      fileLoc, /*importLoc=*/{}, /*registerScope=*/false);
+  impl->compilationRoot = &state;
   return *state.decl;
 }
 
 ASTDecl &SharedState::createBinaryPackage(StringRef path, StringRef name) {
+  // Unlike createModule/createPackage, a binary-package root is left registered
+  // under its own name and is not added to compilationRoots. Its contents are
+  // deserialized bytecode stubs rather than re-resolved source, so it has no
+  // self-referential import to recurse on, and it carries no sourcePath for the
+  // path-based root fallback to match.
   ModuleState &state =
       createBinaryPackageState(SMLoc(), StringAttr::get(getContext(), name),
                                path, *impl->topLevelModuleState);
@@ -1694,7 +1746,7 @@ std::optional<std::string> SharedState::getModuleSourcePath(ASTDecl &module) {
 SharedState::ModuleState &SharedState::createFileModuleState(
     StringAttr declName, ModuleState &parentState, FileLineColLoc loc,
     llvm::SMLoc declLoc, LexerCursor cursor, LexerCursor endCursor,
-    StringRef sourcePath) {
+    StringRef sourcePath, bool registerScope) {
   // Use createUnlistedDecl (not addDecl) so the module is NOT added to
   // parentState.decl->declsInScope. This prevents "leaky imports"; the module
   // stays navigable via ModuleState::nestedModules.
@@ -1705,20 +1757,21 @@ SharedState::ModuleState &SharedState::createFileModuleState(
   declResolver->registerDeclSymbol(&moduleDecl);
 
   ModuleState &moduleState = parentState.insertNestedModule(
-      declName, std::make_unique<ModuleState>(&moduleDecl, sourcePath.str()));
+      declName, std::make_unique<ModuleState>(&moduleDecl, sourcePath.str()),
+      registerScope);
   impl->moduleStates[&moduleDecl] = &moduleState;
   return moduleState;
 }
 
-SharedState::ModuleState &
-SharedState::createModuleState(StringAttr declName,
-                               const llvm::MemoryBuffer *moduleBuffer,
-                               ModuleState &parentState, FileLineColLoc loc) {
+SharedState::ModuleState &SharedState::createModuleState(
+    StringAttr declName, const llvm::MemoryBuffer *moduleBuffer,
+    ModuleState &parentState, FileLineColLoc loc, bool registerScope) {
   // An eagerly-opened module: its cursor points at the freshly-lexed buffer.
   Lexer lexer(diags, moduleBuffer);
   ModuleState &moduleState = createFileModuleState(
       declName, parentState, loc, lexer.getToken().getLoc(), lexer.getCursor(),
-      LexerCursor::getEOF(moduleBuffer), moduleBuffer->getBufferIdentifier());
+      LexerCursor::getEOF(moduleBuffer), moduleBuffer->getBufferIdentifier(),
+      registerScope);
 
   // Auto-import the core language modules.
   if (useBuiltinModule)
@@ -1773,7 +1826,7 @@ LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl, SMLoc loc) {
 SharedState::ModuleState &
 SharedState::createPackageState(StringAttr declName, StringRef packagePath,
                                 ModuleState &parentState, FileLineColLoc loc,
-                                SMLoc importLoc) {
+                                SMLoc importLoc, bool registerScope) {
   // Create a new decl for this module. We use createUnlistedDecl instead of
   // addDecl so the package is NOT added to parentState.decl->declsInScope.
   // This prevents "leaky imports" where importing a sub-module makes the
@@ -1792,7 +1845,8 @@ SharedState::createPackageState(StringAttr declName, StringRef packagePath,
 
   // Insert the newly created module state.
   ModuleState &moduleState = parentState.insertNestedModule(
-      declName, std::make_unique<ModuleState>(&decl, packagePath));
+      declName, std::make_unique<ModuleState>(&decl, packagePath),
+      registerScope);
   moduleState.importLoc = importLoc;
   impl->moduleStates[&decl] = &moduleState;
   impl->packageStates[packageOp] = &moduleState;
