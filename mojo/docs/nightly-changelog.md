@@ -10,6 +10,13 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Mojo now support type inference from literals initializer.
+
+  ```mojo
+  var x : List[_] = [1, 2, 3]
+  var x : List[_] = [1.0, 2.0, 3.0]
+  ```
+
 - Mojo now support `==` and `!=` for type equality check, and `_type_is_eq` is
   removed.
 
