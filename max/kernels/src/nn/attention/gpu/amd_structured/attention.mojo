@@ -28,7 +28,7 @@ from std.math.constants import log2e
 from std.memory import bitcast, stack_allocation
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.sys import align_of, simd_width_of, size_of
-from std.sys.intrinsics import _type_is_eq, readfirstlane
+from std.sys.intrinsics import readfirstlane
 from std.gpu import barrier, block_idx, lane_id, thread_idx
 from layout import TileTensor
 from layout import row_major
@@ -576,7 +576,7 @@ struct Attention[
             scale.cast[Self.accum_type]() * scaling_factor
         )
 
-        comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
+        comptime is_causal_mask = Self.mask_t == CausalMask
 
         comptime if is_causal_mask:
             self.scale = readfirstlane(scale_log2e)

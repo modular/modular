@@ -24,7 +24,7 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 
 from std.utils import IndexList, StaticTuple
 
@@ -166,9 +166,9 @@ def resize_nearest_neighbor[
         else:
             comptime assert False, "round_mode not implemented"
 
-    @__copy_capture(scales)
-    @parameter
-    def nn_interpolate[simd_width: Int, alignment: Int = 1](out_coords: Coord):
+    def nn_interpolate[
+        simd_width: Int, alignment: Int = 1
+    ](out_coords: Coord) {var}:
         var in_coords = IndexList[input.rank](0)
 
         comptime for i in range(input.rank):
@@ -191,8 +191,8 @@ def resize_nearest_neighbor[
 
         output.raw_store(out_idx, input.ptr[in_idx])
 
-    # TODO (#21439): can use memcpy when scale on inner dimension is 1
-    elementwise[nn_interpolate, 1](output.layout.shape_coord(), ctx)
+    # TODO (#21439): can use unsafe_memcpy when scale on inner dimension is 1
+    elementwise[1](nn_interpolate, output.layout.shape_coord(), ctx)
 
 
 @always_inline
@@ -318,7 +318,7 @@ def _resize[
     ) == rebind[IndexList[input.rank]](
         coord_to_index_list(output.layout.shape_coord())
     ):
-        return memcpy(
+        return unsafe_memcpy(
             dest=output.ptr, src=input.ptr, count=input.num_elements()
         )
     var scales = StaticTuple[Float32, input.rank]()

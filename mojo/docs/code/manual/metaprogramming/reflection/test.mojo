@@ -189,7 +189,7 @@ def test_field_offset_alignment() raises:
 # --- type_of ---
 
 
-def make_default[T: AnyType & Defaultable]() -> T:
+def make_default[T: Defaultable]() -> T:
     return T()
 
 
@@ -275,8 +275,7 @@ def eq[T: AnyType](a: T, b: T) -> Bool where conforms_to(T, Equatable):
 
 
 def test_eq_where_clause() raises:
-    """Check `where conforms_to(T, Equatable)` enables == without trait_downcast.
-    """
+    """Check `where conforms_to(T, Equatable)` enables `==` operator."""
     assert_true(eq(1, 1))
     assert_true(not eq(1, 2))
     assert_true(eq("hello", "hello"))

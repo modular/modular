@@ -559,6 +559,7 @@ def test_set_conditional_conformances() raises:
     assert_true(conforms_to(Set[Int], Comparable))
     assert_true(conforms_to(Set[Int], Hashable))
     assert_true(conforms_to(Set[Int], Writable))
+    assert_true(conforms_to(Set[MoveOnly[Int]], IterableOwned))
 
     # Move-only element type drops the copy-requiring conformances.
     assert_false(conforms_to(Set[MoveOnly[Int]], Copyable))
@@ -569,10 +570,15 @@ def test_set_conditional_conformances() raises:
 
 
 def test_set_iter_owned() raises:
-    var s = Set[Int](1, 2, 3)
+    # Test that owned iteration works, for non-Copyable types
+    var s = Set[MoveOnly[Int]]()
+    s.add(MoveOnly(1))
+    s.add(MoveOnly(2))
+    s.add(MoveOnly(3))
+
     var elems = List[Int]()
-    for elem in s^:
-        elems.append(elem)
+    for var elem in s^:
+        elems.append(elem.data)
 
     assert_equal(len(elems), 3)
     assert_true(1 in elems)

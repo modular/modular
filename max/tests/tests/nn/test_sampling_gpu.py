@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -497,6 +497,56 @@ def test_stochastic_acceptance_sampler_mixed_per_row_params() -> None:
     np.testing.assert_array_equal(first_rejected_np, [num_steps, 0, num_steps])
     assert np.isfinite(cast(Buffer, recovered).to_numpy()).all()
     assert np.isfinite(cast(Buffer, bonus).to_numpy()).all()
+
+
+def test_stochastic_acceptance_sampler_greedy_is_seed_independent() -> None:
+    """A ``temperature==0`` row reduces to argmax and is seed-independent.
+
+    Uses a one-ULP near-tie -- the regime where the stochastic path's coin and
+    Gumbel draws would otherwise flip with the seed.
+    """
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    graph = build_stochastic_acceptance_sampler_graph(
+        device=DeviceRef.from_device(device)
+    )
+    model = session.load(graph)
+
+    vocab_size = 4
+    num_steps = 3
+    batch_size = 1
+
+    logits = np.full(
+        (batch_size * (num_steps + 1), vocab_size), -100.0, dtype=np.float32
+    )
+    logits[:, 0] = np.float32(10.0)
+    logits[:, 1] = np.nextafter(np.float32(10.0), np.float32(20.0))
+    draft_tokens_np = np.zeros((batch_size, num_steps), dtype=np.int64)
+    temperature_np = np.zeros(batch_size, dtype=np.float32)
+
+    def _run(seed: int) -> tuple[npt.NDArray[Any], ...]:
+        outs = model.execute(
+            *_stochastic_sampler_inputs(
+                device,
+                batch_size,
+                vocab_size,
+                draft_tokens_np,
+                logits,
+                temperature_np,
+                top_k_np=np.ones(batch_size, dtype=np.int64),
+                seed=seed,
+            )
+        )
+        return tuple(cast(Buffer, o).to_numpy().copy() for o in outs)
+
+    base = _run(1)
+    for seed in (2, 3):
+        for got, expected in zip(_run(seed), base, strict=True):
+            np.testing.assert_array_equal(got, expected)
+
+    np.testing.assert_array_equal(base[0], [0])
+    np.testing.assert_array_equal(base[1], [[1, 1, 1]])
+    np.testing.assert_array_equal(base[2], [[1]])
 
 
 def test_stochastic_acceptance_sampler_bonus_token_uses_seed() -> None:

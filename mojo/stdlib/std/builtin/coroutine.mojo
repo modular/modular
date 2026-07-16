@@ -81,9 +81,9 @@ def _coro_resume_noop_callback(null: AnyCoroutine):
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy
 struct Coroutine[type: ImplicitlyDeletable, origins: OriginSet](
-    RegisterPassable
+    ImplicitlyDeletable where False,
+    RegisterPassable,
 ):
     """Represents a coroutine.
 
@@ -114,13 +114,17 @@ struct Coroutine[type: ImplicitlyDeletable, origins: OriginSet](
         comptime assert (
             size_of[_CoroutineContext]() == size_of[ctx_type]()
         ), "context size must be 16 bytes"
-        return __mlir_op.`co.get_callback_ptr`[
-            _type=__mlir_type[`!kgen.pointer<`, ctx_type, `>`]
-        ](self._handle)
+        return {
+            _mlir_value = __mlir_op.`co.get_callback_ptr`[
+                _type=__mlir_type[`!kgen.pointer<`, ctx_type, `>`]
+            ](self._handle)
+        }
 
     @always_inline
     def _set_result_slot(self, slot: UnsafePointer[mut=True, Self.type, ...]):
-        __mlir_op.`co.set_byref_error_result`(self._handle, slot.address)
+        __mlir_op.`co.set_byref_error_result`(
+            self._handle, slot._get_kgen_pointer()
+        )
 
     @always_inline
     def _set_noop_callback(self):
@@ -178,8 +182,10 @@ struct Coroutine[type: ImplicitlyDeletable, origins: OriginSet](
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy
-struct RaisingCoroutine[type: AnyType, origins: OriginSet](RegisterPassable):
+struct RaisingCoroutine[type: AnyType, origins: OriginSet](
+    ImplicitlyDeletable where False,
+    RegisterPassable,
+):
     """Represents a coroutine that can raise.
 
     Coroutines can pause execution saving the state of the program (including
@@ -209,9 +215,11 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](RegisterPassable):
         comptime assert (
             size_of[_CoroutineContext]() == size_of[ctx_type]()
         ), "context size must be 16 bytes"
-        return __mlir_op.`co.get_callback_ptr`[
-            _type=__mlir_type[`!kgen.pointer<`, ctx_type, `>`]
-        ](self._handle)
+        return {
+            _mlir_value = __mlir_op.`co.get_callback_ptr`[
+                _type=__mlir_type[`!kgen.pointer<`, ctx_type, `>`]
+            ](self._handle)
+        }
 
     @always_inline
     def _set_result_slot(
@@ -220,7 +228,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](RegisterPassable):
         err: UnsafePointer[mut=False, Error, ...],
     ):
         __mlir_op.`co.set_byref_error_result`(
-            self._handle, slot.address, err.address
+            self._handle, slot._get_kgen_pointer(), err._get_kgen_pointer()
         )
 
     @always_inline

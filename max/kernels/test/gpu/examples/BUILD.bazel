@@ -16,10 +16,17 @@ _EXTRA_CONSTRAINTS = {
     "test_tiled_matmul_backtoback.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_matmul_int.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2397
     "test_double_buffer_gemm.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2415
+    # Metal metallib compile failure on this NVIDIA/AMD-tuned warp-tiling GEMM,
+    # pre-existing on main (same class as MOCO-2397/2415).
+    "test_matmul_kernel_10.mojo": _APPLE_GPU_INCOMPATIBLE,
 }
 
 _TEST_SIZE = {
     "test_matmul_kernel_10.mojo": "large",
+}
+
+_GPU_MEMORY = {
+    "test_matmul_int.mojo": "1",
 }
 
 [
@@ -46,7 +53,7 @@ _TEST_SIZE = {
         size = _TEST_SIZE.get(src, "medium"),
         srcs = [src],
         exec_properties = {
-            "test.resources:gpu-memory": "1.5",
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "2"),
         },
         tags = ["gpu"] + (
             ["manual"] if src == "test_scatterND.mojo" else []

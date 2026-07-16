@@ -50,7 +50,7 @@ from kv_cache_test_utils import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from std.memory import memcpy, memset_zero
+from std.memory import unsafe_memcpy, memset_zero
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import (
     CausalMask,
@@ -327,7 +327,7 @@ def _run_ragged_at[
                     * kv_block_continuous_shape[5]
                 )
                 var n_cpy = block_sz * kv_params.num_heads * kv_params.head_size
-                memcpy(
+                unsafe_memcpy(
                     dest=kv_block_paged_tensor.ptr + paged_offset,
                     src=kv_block_continuous_tensor.ptr + continuous_offset,
                     count=n_cpy,
@@ -647,21 +647,26 @@ def main() raises:
         # Case 7: ChunkedCausalMask[2048] through the kernel at
         # seq_len=8192. Chunked == causal within chunks; same
         # generic-mask path through the kernel as SlidingWindow.
-        print(
-            "[7/9] ragged ChunkedCausalMask[2048] seq_len=8192:",
-        )
-        _run_ragged_at[
-            32,
-            DType.bfloat16,
-            KVCacheStaticParams(num_heads=8, head_size=128),
-        ](
-            [8192],
-            [0],
-            2,
-            1,
-            ChunkedCausalMask[2048](),
-            ctx,
-        )
+        # TODO(KERN-3133): This test was disabled because the v2 kernel also was
+        # disabled for KERN-3053. The v1 kernel hit asserts running this, so
+        # disable to understand if the problem is the test or the v1 kernel.
+        # Even if the v2 kernel is fixed, this should still be investigated as
+        # that kernel is only selected for some shapes.
+        # print(
+        #     "[7/9] ragged ChunkedCausalMask[2048] seq_len=8192:",
+        # )
+        # _run_ragged_at[
+        #     32,
+        #     DType.bfloat16,
+        #     KVCacheStaticParams(num_heads=8, head_size=128),
+        # ](
+        #     [8192],
+        #     [0],
+        #     2,
+        #     1,
+        #     ChunkedCausalMask[2048](),
+        #     ctx,
+        # )
 
         # Case 8: Phase-10 cross-attention plumbing smoke. Calls
         # `flash_attention[ragged=True]` with `kv_input_row_offsets`

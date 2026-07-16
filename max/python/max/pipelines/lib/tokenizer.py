@@ -661,6 +661,7 @@ class TextTokenizer(
             dkv_hint_instance_name=(
                 parsed_hint.instance_name if parsed_hint else ""
             ),
+            cache_salt=request.cache_salt,
         )
 
         return context

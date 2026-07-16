@@ -37,7 +37,6 @@ from std.testing.prop import PropTest
 # TODO(MOCO-522): Figure out desired behavior for importing files with only
 # extensions in them.
 from std.testing.prop.strategy import SIMD, List
-from std.sys.intrinsics import _type_is_eq
 
 
 def test_mojo_issue_698() raises:
@@ -783,14 +782,18 @@ def test_list_iter_owned_bounds() raises:
         _ = iter.__next__()
 
 
-def _test_list_iter_bounds[I: Iterator](var list_iter: I, list_len: Int) raises:
+def _test_list_iter_bounds[
+    I: Iterator
+](var list_iter: I, list_len: Int) raises where conforms_to(
+    I.Element, ImplicitlyDeletable
+):
     var iter = list_iter^
 
     for i in range(list_len):
         var lower, upper = iter.bounds()
         assert_equal(list_len - i, lower)
         assert_equal(list_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
+        _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -1160,16 +1163,16 @@ def test_list_fill_constructor() raises:
 def test_uninit_ctor() raises:
     var list = List[String](unsafe_uninit_length=2)
 
-    UnsafePointer(to=list[0]).init_pointee_move("hello ")
-    UnsafePointer(to=list[1]).init_pointee_move("world")
+    UnsafePointer(to=list[0]).unsafe_write("hello ")
+    UnsafePointer(to=list[1]).unsafe_write("world")
     assert_equal(list[0], "hello ")
     assert_equal(list[1], "world")
 
     # Resize with uninitialized memory.
     var list2 = List[String]()
     list2.resize(unsafe_uninit_length=2)
-    (list2.unsafe_ptr() + 0).init_pointee_move("hello ")
-    (list2.unsafe_ptr() + 1).init_pointee_move("world")
+    (list2.unsafe_ptr() + 0).unsafe_write("hello ")
+    (list2.unsafe_ptr() + 1).unsafe_write("world")
     assert_equal(list2[0], "hello ")
     assert_equal(list2[1], "world")
 
@@ -1221,7 +1224,7 @@ def test_list_comprehension() raises:
 def test_list_can_infer_iterable_element_type() raises:
     var string = "Mojo🔥"
     var l = List(string.codepoints())
-    assert_true(_type_is_eq[type_of(l), List[Codepoint]]())
+    assert_true(type_of(l) == List[Codepoint])
     assert_equal(
         l,
         [
@@ -1284,7 +1287,7 @@ def test_list_with_explicit_destroy_type() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    list^.destroy_with(destroy_closure)
+    list^.deinit_with(destroy_closure)
 
     assert_equal(destroyed, [0, 1])
 
@@ -1298,7 +1301,7 @@ def test_empty_list_with_explicit_destroy_type() raises:
         destroyed += 1
         e^.destroy()
 
-    list^.destroy_with(destroy_closure)
+    list^.deinit_with(destroy_closure)
 
     assert_equal(destroyed, 0)
 
@@ -1314,7 +1317,7 @@ def test_extend_list_with_explicit_destroy_type() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    list1^.destroy_with(destroy_closure)
+    list1^.deinit_with(destroy_closure)
     assert_equal(destroyed, [0, 1, 2])
 
 

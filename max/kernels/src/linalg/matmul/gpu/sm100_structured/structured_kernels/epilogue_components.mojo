@@ -24,10 +24,16 @@ The SM100 epilogue pipeline flows as:
     TMEM (accumulators) → Registers → SMEM → GMEM (via TMA)
 """
 
-from std.sys import align_of, simd_width_of
+from std.sys import align_of, size_of, simd_width_of
 
 from std.gpu import WARP_SIZE, lane_id, warp_id
-from std.gpu.memory import fence_async_view_proxy
+from std.gpu.primitives.cluster import elect_one_sync
+from std.gpu.memory import (
+    fence_async_view_proxy,
+    cp_async_bulk_tensor_reduce_global_shared_cta,
+    ReduceOp,
+)
+from std.gpu.sync import cp_async_bulk_commit_group
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from structured_kernels.barriers import WarpGroupBarrier
 from layout import (
@@ -45,7 +51,7 @@ from layout.layout import blocked_product, upcast, zipped_divide
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout.tma_async import TMATensorTile
-from std.utils.index import IndexList
+from std.utils.index import Index, IndexList
 from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
@@ -572,7 +578,7 @@ struct TMAStoreExecutor[
         lane: UInt32,
     ):
         """Execute TMA store."""
-        if store_coords.elect_one_warp and lane == 0:
+        if store_coords.elect_one_warp and elect_one_sync():
             fence_async_view_proxy()
 
             comptime if Self.transpose_c:
@@ -673,6 +679,93 @@ struct TMAStoreExecutor[
                             store_coords.coord_n,
                         ),
                     )
+
+
+# =============================================================================
+# TMAReduceExecutor - Execute TMA reduce-add stores with proper SMEM tiling
+# =============================================================================
+
+
+struct TMAReduceExecutor[
+    c_type: DType,
+    c_smem_dim0: Int,
+    c_smem_dim1: Int,
+    epc: EpilogueConfig,
+    stage_contiguous_size: Int,
+    c_swizzle: TensorMapSwizzle,
+    batched: Bool = False,
+](TrivialRegisterPassable):
+    """Execute TMA reduce-add from SMEM to GMEM.
+
+    Mirrors TMAStoreExecutor but uses cp_async_bulk_tensor_reduce_global_shared_cta (add)
+    instead of cp_async_bulk_tensor_global_shared_cta (store).
+    Takes a typed TMATensorTile value (not a raw pointer) so the
+    descriptor keeps its grid_constant provenance end-to-end -- otherwise
+    the compiler drops the constant-memory optimization and each TMA
+    issue refetches the descriptor.
+    Only supports non-transpose path.
+    """
+
+    comptime stageN = Self.epc.stageN
+    comptime cta_group = Self.epc.cta_group
+    comptime c_smem_shape0 = Self.c_smem_dim0
+    comptime CG1_TMA_BM = Self.c_smem_shape0
+    comptime CG2_TMA_BM = Self.c_smem_shape0 if Self.epc.MMA_M == 256 else Self.epc.BM
+    comptime TMA_BM = Self.CG2_TMA_BM if Self.cta_group == 2 else Self.CG1_TMA_BM
+
+    @staticmethod
+    @always_inline
+    def execute[
+        tma_rank: Int,
+        tile_shape: IndexList[tma_rank],
+        desc_shape: IndexList[tma_rank],
+    ](
+        c_smem_tile: TileTensor[
+            dtype=Self.c_type, address_space=AddressSpace.SHARED, ...
+        ],
+        store_coords: TMAStoreCoords[
+            Self.epc,
+            Self.c_smem_shape0,
+            _,
+            Self.batched,
+        ],
+        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
+        warp_id: UInt32,
+        lane: UInt32,
+    ):
+        """Execute TMA reduce-add from SMEM to GMEM via typed descriptor."""
+        comptime assert (
+            not Self.epc.transpose_c
+        ), "TMAReduceExecutor only supports non-transpose path"
+        if store_coords.elect_one_warp and elect_one_sync():
+            fence_async_view_proxy()
+
+            var c_smem_split = c_smem_tile.tile[Self.TMA_BM, Self.stageN](
+                Coord(Int(store_coords.c_smem_coord_m), Idx[0])
+            )
+
+            comptime if Self.batched:
+                cp_async_bulk_tensor_reduce_global_shared_cta[
+                    reduction_kind=ReduceOp.ADD
+                ](
+                    c_smem_split.ptr,
+                    UnsafePointer(to=c_tma_op.descriptor).bitcast[NoneType](),
+                    Index(
+                        store_coords.coord_n,
+                        store_coords.coord_m,
+                        store_coords.coord_b,
+                    ),
+                )
+            else:
+                cp_async_bulk_tensor_reduce_global_shared_cta[
+                    reduction_kind=ReduceOp.ADD
+                ](
+                    c_smem_split.ptr,
+                    UnsafePointer(to=c_tma_op.descriptor).bitcast[NoneType](),
+                    Index(store_coords.coord_n, store_coords.coord_m),
+                )
+
+            cp_async_bulk_commit_group()
 
 
 # =============================================================================
@@ -941,6 +1034,7 @@ struct EpilogueApplier[
         epilogue_dtype: DType,
         frag_size: Int,
         elementwise_lambda_fn: elementwise_epilogue_type,
+        is_in_bounds: Bool = False,
     ](
         self,
         frag: SIMD[epilogue_dtype, frag_size],
@@ -953,6 +1047,12 @@ struct EpilogueApplier[
         Unlike apply_to_fragment which uses a compute lambda that returns modified
         values, this calls an elementwise epilogue (returns None) that stores
         directly to global memory.
+
+        ``is_in_bounds=True``: caller asserts the whole tile fits in
+        ``(self.M, self.N)``; the per-position row/column checks are elided and
+        the lambda is called for every element. Default ``False`` keeps the
+        checks (needed for border tiles, where an unchecked direct store would
+        write out of bounds). Mirrors ``apply_to_fragment``'s ``is_in_bounds``.
         """
         var top = self.coords.top_upper if is_upper else self.coords.top_lower
         var bot = (
@@ -971,34 +1071,45 @@ struct EpilogueApplier[
             var elems = frag.slice[4, offset=offset]()
 
             comptime if Self.transpose_c:
-                # For N we already know that `static_N * size_of[c_type]() % 16 == 0` so we can skip the write for OOB cols
-                if top_row >= self.N or bot_row >= self.N:
-                    return
-
-                if top_col < self.M:
+                comptime if is_in_bounds:
+                    # Whole tile in bounds: store all elements, no checks.
                     elementwise_lambda_fn[epilogue_dtype](
                         IndexList[2](Int(top_col), Int(top_row)), elems[0]
                     )
                     elementwise_lambda_fn[epilogue_dtype](
-                        IndexList[2](Int(bot_col), Int(bot_row)), elems[2]
-                    )
-
-                if (top_col + 1) < self.M:
-                    elementwise_lambda_fn[epilogue_dtype](
                         IndexList[2](Int(top_col + 1), Int(top_row)), elems[1]
+                    )
+                    elementwise_lambda_fn[epilogue_dtype](
+                        IndexList[2](Int(bot_col), Int(bot_row)), elems[2]
                     )
                     elementwise_lambda_fn[epilogue_dtype](
                         IndexList[2](Int(bot_col + 1), Int(bot_row)), elems[3]
                     )
+                else:
+                    # For N we already know that `static_N * size_of[c_type]() % 16 == 0` so we can skip the write for OOB cols
+                    if top_row >= self.N or bot_row >= self.N:
+                        return
+
+                    if top_col < self.M:
+                        elementwise_lambda_fn[epilogue_dtype](
+                            IndexList[2](Int(top_col), Int(top_row)), elems[0]
+                        )
+                        elementwise_lambda_fn[epilogue_dtype](
+                            IndexList[2](Int(bot_col), Int(bot_row)), elems[2]
+                        )
+
+                    if (top_col + 1) < self.M:
+                        elementwise_lambda_fn[epilogue_dtype](
+                            IndexList[2](Int(top_col + 1), Int(top_row)),
+                            elems[1],
+                        )
+                        elementwise_lambda_fn[epilogue_dtype](
+                            IndexList[2](Int(bot_col + 1), Int(bot_row)),
+                            elems[3],
+                        )
             else:
-                # For N we already know that `static_N * size_of[c_type]() % 16 == 0` so we can skip the write for OOB cols
-                if top_col >= self.N:
-                    return
-
-                var valid_top_row = top_row < self.M
-                var valid_bot_row = bot_row < self.M
-
-                if valid_top_row:
+                comptime if is_in_bounds:
+                    # Whole tile in bounds: store all elements, no checks.
                     elementwise_lambda_fn[epilogue_dtype, 2](
                         IndexList[2](Int(top_row), Int(top_col)),
                         SIMD[epilogue_dtype, 2](
@@ -1006,8 +1117,6 @@ struct EpilogueApplier[
                             elems[1],
                         ),
                     )
-
-                if valid_bot_row:
                     elementwise_lambda_fn[epilogue_dtype, 2](
                         IndexList[2](Int(bot_row), Int(bot_col)),
                         SIMD[epilogue_dtype, 2](
@@ -1015,6 +1124,31 @@ struct EpilogueApplier[
                             elems[3],
                         ),
                     )
+                else:
+                    # For N we already know that `static_N * size_of[c_type]() % 16 == 0` so we can skip the write for OOB cols
+                    if top_col >= self.N:
+                        return
+
+                    var valid_top_row = top_row < self.M
+                    var valid_bot_row = bot_row < self.M
+
+                    if valid_top_row:
+                        elementwise_lambda_fn[epilogue_dtype, 2](
+                            IndexList[2](Int(top_row), Int(top_col)),
+                            SIMD[epilogue_dtype, 2](
+                                elems[0],
+                                elems[1],
+                            ),
+                        )
+
+                    if valid_bot_row:
+                        elementwise_lambda_fn[epilogue_dtype, 2](
+                            IndexList[2](Int(bot_row), Int(bot_col)),
+                            SIMD[epilogue_dtype, 2](
+                                elems[2],
+                                elems[3],
+                            ),
+                        )
 
     @always_inline
     def apply_elementwise_epilogue_to_both_fragments[
@@ -1022,6 +1156,7 @@ struct EpilogueApplier[
         frag_size: Int,
         elementwise_lambda_fn: elementwise_epilogue_type,
         is_lower_frag_required: Bool,
+        is_in_bounds: Bool = False,
     ](
         self,
         upper_frag: SIMD[epilogue_dtype, frag_size],
@@ -1034,18 +1169,28 @@ struct EpilogueApplier[
 
         Similar to apply_to_both_fragments but uses elementwise_epilogue_type
         which writes directly to global memory and returns None.
+
+        ``is_in_bounds`` is threaded to the per-fragment path: when ``True`` the
+        caller has asserted the whole tile fits in ``(M, N)`` and the
+        per-position bounds checks are elided.
         """
         var staged_row, staged_col = self.compute_staged_coords(
             stage, c_row, c_col
         )
 
         self.apply_elementwise_epilogue_to_fragment[
-            epilogue_dtype, frag_size, elementwise_lambda_fn
+            epilogue_dtype,
+            frag_size,
+            elementwise_lambda_fn,
+            is_in_bounds=is_in_bounds,
         ](upper_frag, staged_row, staged_col, is_upper=True)
 
         comptime if is_lower_frag_required:
             self.apply_elementwise_epilogue_to_fragment[
-                epilogue_dtype, frag_size, elementwise_lambda_fn
+                epilogue_dtype,
+                frag_size,
+                elementwise_lambda_fn,
+                is_in_bounds=is_in_bounds,
             ](
                 lower_frag,
                 staged_row,

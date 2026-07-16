@@ -31,6 +31,9 @@ draft_model:
   trust_remote_code: true
   device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
   quantization_encoding: bfloat16
+  # Override the draft sliding window (not declared in the K2.6 draft's HF
+  # config); matches the K2.6 NVFP4 production deployment.
+  sliding_window: 12288
   kv_cache:
     kv_cache_format: float8_e4m3fn
     kv_connector: tiered

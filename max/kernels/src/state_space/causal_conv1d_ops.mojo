@@ -22,7 +22,7 @@ from std.math import ceildiv
 import extensibility as compiler
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 
 
 from state_space.causal_conv1d import (
@@ -422,7 +422,9 @@ struct CausalConv1DUpdate[activation: StaticString]:
         var silu_activation = Self.activation == "silu"
 
         comptime if is_cpu[target]():
-            memcpy(dest=CS.ptr, src=CS_IN.ptr, count=total_state_elements)
+            unsafe_memcpy(
+                dest=CS.ptr, src=CS_IN.ptr, count=total_state_elements
+            )
             causal_conv1d_update_cpu[
                 X.dtype,
                 CS.dtype,

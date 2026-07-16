@@ -19,6 +19,7 @@ from std.python import PythonObject
 ```
 """
 
+from . import ConvertibleToPython
 from std.os import abort
 from std.sys import bit_width_of
 from std.ffi import _CPointer, c_double, c_long, c_size_t, c_ssize_t
@@ -1584,7 +1585,7 @@ def _unsafe_init[
      type object. Use of any other pointer is invalid.
     """
     ref mojo_obj = obj_ptr.bitcast[PyMojoObject[T]]().value()[]
-    UnsafePointer(to=mojo_obj.mojo_value).init_pointee_move(mojo_value^)
+    UnsafePointer(to=mojo_obj.mojo_value).unsafe_write(mojo_value^)
     mojo_obj.is_initialized = True
 
 

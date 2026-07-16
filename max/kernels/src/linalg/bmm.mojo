@@ -22,7 +22,6 @@ from std.sys.info import (
     is_nvidia_gpu,
     simd_width_of,
 )
-from std.sys.intrinsics import _type_is_eq
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from std.algorithm import elementwise, sync_parallelize
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
@@ -48,6 +47,8 @@ from layout import (
 from layout.tma_async import TMATensorTile, create_tensor_tile
 from layout.tile_layout import Layout as TileLayout
 from std.logger import Logger
+from std.memory import dealloc
+from std.memory.alloc import Layout as AllocLayout
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.gpu.host.info import H100, _is_sm10x_gpu
@@ -156,7 +157,6 @@ def _reshape_tile_tensor_with_batch_to_3d(
         origin=tensor.origin,
         address_space=tensor.address_space,
         linear_idx_type=tensor.linear_idx_type,
-        element_size=tensor.element_size,
     ],
 ):
     """
@@ -178,12 +178,12 @@ def _reshape_tile_tensor_with_batch_to_3d(
         comptime StrideType = out_stride_types[i]
 
         comptime if StrideType.is_static_value:
-            stride_ptr.init_pointee_copy(
+            stride_ptr.unsafe_write(
                 rebind[StrideType](Idx[StrideType.static_value])
             )
         else:
             var stride_val = tensor.layout.stride[idx]().value()
-            stride_ptr.init_pointee_copy(
+            stride_ptr.unsafe_write(
                 rebind[StrideType](Scalar[StrideType.DTYPE](stride_val))
             )
 
@@ -192,7 +192,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
         comptime ShapeType = out_shape_types[i]
 
         comptime if ShapeType.is_static_value:
-            shape_ptr.init_pointee_copy(
+            shape_ptr.unsafe_write(
                 rebind[ShapeType](Idx[ShapeType.static_value])
             )
         else:
@@ -202,10 +202,10 @@ def _reshape_tile_tensor_with_batch_to_3d(
                 comptime for batch_idx in range(rank - 3):
                     shape_val *= Int(tensor.layout.shape[batch_idx]().value())
 
-            comptime if _type_is_eq[ShapeType, Int]():
-                shape_ptr.init_pointee_copy(rebind[ShapeType](shape_val))
+            comptime if ShapeType == Int:
+                shape_ptr.unsafe_write(rebind[ShapeType](shape_val))
             else:
-                shape_ptr.init_pointee_copy(
+                shape_ptr.unsafe_write(
                     rebind[ShapeType](Scalar[ShapeType.DTYPE](shape_val))
                 )
 
@@ -414,14 +414,18 @@ def _batched_matmul_cpu[
                 return
 
             comptime if use_i8mm:
-                a_packed_ptr = alloc[Scalar[a_type]](
-                    mh * kh, alignment=alignment
+                a_packed_alloc = alloc(
+                    AllocLayout[Scalar[a_type]](
+                        count=mh * kh, alignment=alignment
+                    )
                 )
                 var a_packed = TileTensor(
-                    a_packed_ptr,
+                    a_packed_alloc.unsafe_ptr(),
                     row_major(Coord(mh, kh)),
                 )
-                packA_i8mm[a_type](0, m, k, a_view.ptr, a_packed_ptr)
+                packA_i8mm[a_type](
+                    0, m, k, a_view.ptr, a_packed_alloc.unsafe_ptr()
+                )
 
                 _submatmul_sequential_sync[
                     config,
@@ -440,7 +444,7 @@ def _batched_matmul_cpu[
                     GemmShape(sub_matmul_config.shape),
                     GemmShape(sub_matmul_config.offset),
                 )
-                a_packed_ptr.free()
+                dealloc(a_packed_alloc^)
             else:
                 _submatmul_sequential_sync[
                     config,
@@ -744,11 +748,9 @@ def _batched_matmul_gpu[
                 # SM100+ supports 32B load/store to global memory.
                 comptime simd_size = 32 // size_of[c_type]()
 
-                @parameter
-                @__copy_capture(c_tensor_reshaped)
                 def epilogue_wrapper[
                     simd_width: Int, alignment: Int = 1
-                ](idx: Coord):
+                ](idx: Coord) {var}:
                     var c_val = c_tensor_reshaped.load[
                         width=simd_width,
                         alignment=alignment * size_of[c_type](),
@@ -757,8 +759,8 @@ def _batched_matmul_gpu[
                         coord_to_index_list(idx), c_val
                     )
 
-                elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                    Coord(batch_size, m, n), ctx
+                elementwise[simd_size, target="gpu"](
+                    epilogue_wrapper, Coord(batch_size, m, n), ctx
                 )
 
             return

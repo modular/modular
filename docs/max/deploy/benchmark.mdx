@@ -8,7 +8,6 @@ is_tutorial: true
 import InstallModular from '../../_includes/install-modular.mdx';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import MDXListing from '@site/src/components/Listing/MDXListing';
 import Requirements from '@site/src/components/Requirements';
 import { requirementsWithDockerAndGPU } from '../../requirements';
 
@@ -314,13 +313,10 @@ Now that you have detailed benchmarking results for Gemma 3 on
 MAX using an NVIDIA or AMD GPU, you can explore more advanced scaling
 optimizations:
 
-export const docs = [
-        '../../deploy/cloud.mdx',
-        '../../deploy/local-to-cloud.mdx',
-        '../../serve/lora-adapters.mdx'
-    ]
-
-<MDXListing mdxList={docs} />
+- [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
+  Learn how to deploy MAX pipelines to cloud.
+- [Using LoRA adapters](/max/serve/lora-adapters): Use LoRA adapters with MAX
+  to serve task-specific, fine-tuned variants of LLMs.
 
 To read more about our performance methodology, check our blog post,
 [MAX GPU: State of the Art Throughput on a New GenAI platform](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-new-genai-platform).

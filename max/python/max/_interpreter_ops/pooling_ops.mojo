@@ -88,27 +88,7 @@ def max_pool_op[
     var out_batch_stride = out_h * out_row_stride
 
     @always_inline
-    @parameter
-    @__copy_capture(
-        out_ptr,
-        in_ptr,
-        in_h,
-        in_w,
-        channels,
-        filter_h,
-        filter_w,
-        stride_h,
-        stride_w,
-        dilation_h,
-        dilation_w,
-        pad_h,
-        pad_w,
-        in_row_stride,
-        in_batch_stride,
-        out_row_stride,
-        out_batch_stride,
-    )
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var i = Int(idx[0].value())
         var n, r = divmod(i, out_batch_stride)
         var oh, r2 = divmod(r, out_row_stride)
@@ -133,10 +113,10 @@ def max_pool_op[
         out_ptr[i] = max_val
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](Coord(total), ctx)
+        elementwise[simd_width=1](func, Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
+            elementwise[simd_width=1, target="gpu"](func, Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 

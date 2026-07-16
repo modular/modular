@@ -264,7 +264,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         comptime num_reg_other = 112
         var batch_size = Int(scalar_args.raw_load(0))
         var q_max_seq_len = Int(scalar_args.raw_load(1))
-        var num_partitions = Int(scalar_args.raw_load(2))
+        var num_partitions = mla_decode_pack.num_partitions
         mask = mla_decode_pack.mask
         valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
@@ -574,13 +574,13 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
                 # Warp 11 runs the idx producer during the main loop, then
                 # transitions into the output store epilogue.
                 var batch_d_indices_w11 = d_indices.unsafe_value() + (
-                    offset_position.batch_idx * indices_stride
+                    offset_position.q_token_idx * indices_stride
                 )
                 var batch_extra_d_indices_w11 = extra_d_indices
                 comptime if Self.has_extra_kv:
                     batch_extra_d_indices_w11 = (
                         extra_d_indices.unsafe_value()
-                        + (offset_position.batch_idx * extra_indices_stride)
+                        + (offset_position.q_token_idx * extra_indices_stride)
                     )
                 Self.idx_producer(
                     idx_bars,

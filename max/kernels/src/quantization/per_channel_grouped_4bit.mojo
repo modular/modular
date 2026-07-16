@@ -14,7 +14,7 @@ from std.math import ceil, ceildiv
 from std.sys.info import size_of
 
 from layout import Layout, LayoutTensor, TileTensor
-from std.memory import UnsafePointer, bitcast, memcpy
+from std.memory import UnsafePointer, bitcast, unsafe_memcpy
 from std.utils import IndexList, StaticTuple, product
 
 
@@ -302,7 +302,6 @@ struct Q4sym[
 
         # Read and quantize `input_tensor`` to blocked format, dump the raw
         # struct/block into `output_tensor`
-        var size_of_block = size_of[Q4sym[Self.group_size, Self.float_dtype]]()
         assert (
             input_shape[input_tensor.rank - 1] % Self.group_size == 0
         ), "Only support fully divisible dimensions right now."
@@ -335,14 +334,14 @@ struct Q4sym[
                 var flat_index_output = output_inner_stride * i + j
                 var output_ptr = base_block_ptr + flat_index_output
 
-                # TODO: use the memory more directly instead of memcpy
+                # TODO: use the memory more directly instead of unsafe_memcpy
                 var encoded_data = Q4sym[Self.group_size, Self.float_dtype](
                     loaded_group
                 )
                 var src_ptr = UnsafePointer(to=encoded_data).address_space_cast[
                     output_ptr.address_space
                 ]()
-                memcpy(
+                unsafe_memcpy(
                     dest=output_ptr,
                     src=src_ptr,
                     count=1,
@@ -410,7 +409,7 @@ struct Q4sym[
             for j in range(input_inner_dim):
                 var flat_index_input = input_inner_dim * i + j
                 var encoded = Q4sym[Self.group_size, Self.float_dtype]()
-                memcpy(
+                unsafe_memcpy(
                     dest=UnsafePointer(to=encoded),
                     src=base_block_ptr + flat_index_input,
                     count=1,
