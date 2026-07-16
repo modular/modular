@@ -1282,7 +1282,7 @@ struct ExclusivityChecker : public SharedStateUser {
         builder(emitter.builder), declScope(emitter.declScope) {
 
     // Handle __unsafe_disable_nested_origin_exclusivity.
-    isNestedOriginExclusivityCheckingDisabled =
+    originsAccessesAreReadOnly =
         sugarCast<FnTypeGeneratorType>(callee.getRValueType())
             .getIsNestedOriginExclusivityCheckingDisabled();
 
@@ -1309,8 +1309,8 @@ private:
   ASTDecl &declScope;
 
   /// True if the __unsafe_disable_nested_origin_exclusivity decorator is
-  /// on the callee.
-  bool isNestedOriginExclusivityCheckingDisabled = false;
+  /// on the callee. Nested type-embedded origins are treated as read-only.
+  bool originsAccessesAreReadOnly = false;
   /// True if the call accesses AnyOriginAttr.
   bool hasAnyOriginAccess = false;
 
@@ -1422,8 +1422,12 @@ void ExclusivityChecker::checkCaptureOrigins() {
       sugarCast<FnTypeGeneratorType>(callee.getRValueType())
           .getCaptureOrigins();
   for (TypedAttr origin : shared.cachedOriginFinder.findOriginsIn(
-           /*types=*/{}, captureOrigins))
+           /*types=*/{}, captureOrigins)) {
+    // If we are to treat all these as read-only, then strip the mutability.
+    if (originsAccessesAreReadOnly)
+      origin = OriginMutCastAttr::get(origin, false);
     checkOriginAccess(Value(), /*convention=*/{}, /*argIdx=*/{}, origin);
+  }
 }
 
 /// Given an argument value being passed with a specified convention, check to
@@ -1538,21 +1542,27 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
       return;
     }
 
-    // Don't look at nested origins if checking for them has been explicitly
-    // disabled.
-    if (isNestedOriginExclusivityCheckingDisabled) {
-      // DO check the origin of any in-memory arguments, we only ignore nested
-      // origins.
-      if (hasAddress(convention))
-        checkOriginAccess(argVal, convention, argIdx,
-                          sugarCast<RefType>(argVal.getType()).getOrigin());
-      return;
-    }
+    // When @__unsafe_disable_nested_origin_exclusivity is used, we strip
+    // mutability of nested origins and 'ref' arguments, but do not strip from
+    // 'mut', 'deinit', or result arguments.
+    auto shouldStripMutability = [&](TypedAttr origin) -> bool {
+      // Always strip nested origins.
+      if (!hasAddress(convention) ||
+          !isEqualCanon(cast<RefType>(argVal.getType()).getOrigin(), origin))
+        return true;
+      // Only strip the mutability of an arg convention origin if 'ref'.
+      return convention == ArgConvention::Ref;
+    };
 
     // Find all the of the origins that are buried in the specified type.
     for (TypedAttr origin :
-         shared.cachedOriginFinder.findOriginsIn(argVal.getType()))
+         shared.cachedOriginFinder.findOriginsIn(argVal.getType())) {
+      // Callees marked `@__unsafe_disable_nested_origin_exclusivity` promise
+      // not to mutate origins.
+      if (originsAccessesAreReadOnly && shouldStripMutability(origin))
+        origin = OriginMutCastAttr::get(origin, false);
       checkOriginAccess(argVal, convention, argIdx, origin);
+    }
   };
 
   // Normal arguments.

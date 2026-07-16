@@ -279,11 +279,18 @@ getCallOpEffects(Operation &op,
     callArguments = callArguments.drop_front();
   }
 
+  // Callees marked `@__unsafe_disable_nested_origin_exclusivity` promise to
+  // only read origins reachable through their arguments.  Model any
+  // type-embedded origins as readonly-only so CheckLifetimes extends
+  // lifetimes without treating them as exclusive mutable accesses.
+  bool originsAccessesAreReadOnly =
+      signature.getIsNestedOriginExclusivityCheckingDisabled();
+
   /// Argument conventions cause a direct use of the register of pointee, and
   /// handling them specifically allows us to be field sensitive in cases where
   /// the access is directly attributable to a Value.
-  auto getOperandEffectForConvention = [](ArgConvention conv,
-                                          Type argType) -> OperandEffect {
+  auto getOperandEffectForConvention = [&](ArgConvention conv,
+                                           Type argType) -> OperandEffect {
     switch (conv) {
     case ArgConvention::OwnedReg:
       return OperandEffect::regConsume;
@@ -299,8 +306,10 @@ getCallOpEffects(Operation &op,
       return OperandEffect::memMut;
     case ArgConvention::Ref: {
       // If the reference is guaranteed immutable, then treat it as a load,
-      // otherwise it might be a mutation.
-      bool isImmut = cast<RefType>(argType).isMutableKnown(false);
+      // otherwise it might be a mutation. If originAccessesAreReadOnly is true,
+      // then we this "ref" argument is treated as read only.
+      bool isImmut = originsAccessesAreReadOnly ||
+                     cast<RefType>(argType).isMutableKnown(false);
       return isImmut ? OperandEffect::memLoad : OperandEffect::memMut;
     }
     case ArgConvention::ByRefError:
@@ -338,8 +347,11 @@ getCallOpEffects(Operation &op,
     // In addition to the direct (field-sensitive) effect of loading/storing
     // the bits, the callee may do whatever it wants with origins embedded
     // in the type.
-    for (TypedAttr origin : originFinder.findOriginsIn({argType}))
+    for (TypedAttr origin : originFinder.findOriginsIn({argType})) {
+      if (originsAccessesAreReadOnly)
+        origin = OriginMutCastAttr::get(origin, false);
       origins.push_back({origin, arg});
+    }
   };
 
   for (auto [idx, arg, convention] :
@@ -391,8 +403,11 @@ getCallOpEffects(Operation &op,
 
   // The callee may also access origins from its capture set.
   for (TypedAttr origin :
-       originFinder.findOriginsIn({}, signature.getCaptureOrigins()))
+       originFinder.findOriginsIn({}, signature.getCaptureOrigins())) {
+    if (originsAccessesAreReadOnly)
+      origin = OriginMutCastAttr::get(origin, false);
     origins.push_back({origin, Value()});
+  }
 
   // If the result is defining an owned register value, then we treat this as
   // a definition

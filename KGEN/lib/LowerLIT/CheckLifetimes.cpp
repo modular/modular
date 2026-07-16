@@ -65,20 +65,6 @@ struct RaiseSetEntry {
 };
 } // namespace
 
-/// Return true if this operation is a call to a function marked with
-/// `@__unsafe_disable_nested_origin_exclusivity`.
-static bool isNestedOriginExclusivityDisabled(Operation &op) {
-  if (auto directCall = dyn_cast<KGENCallOpInterface>(op))
-    return directCall.getCalleeType()
-        .getBody()
-        .getIsNestedOriginExclusivityCheckingDisabled();
-  if (auto call = dyn_cast<LIT::CallIndirectOp>(op))
-    return call.getCallee()
-        .getType()
-        .getIsNestedOriginExclusivityCheckingDisabled();
-  return false;
-}
-
 namespace {
 /// FunctionLikeOp abstracts a function. It defines the interface necessary for
 /// an op to undergo a checklifetimes pass. It is either a ClosureInitOp or FnOp
@@ -2110,11 +2096,6 @@ void UninitializedValueScan::invalidateInteriorOriginsForOperand(
   if (!isDeref)
     return;
 
-  // __unsafe_disable_nested_origin_exclusivity does not invalidate internal
-  // origins, because it is a promise that they won't be accessed.
-  if (isNestedOriginExclusivityDisabled(op))
-    return;
-
   // Given a mutation of an origin "o", invalidate any interior origins derived
   // from it, like "o[]" or "o.field[]".
   interiorOriginTracker.invalidateOnMutation(
@@ -2144,15 +2125,8 @@ void UninitializedValueScan::checkUse(Value value, Operation &op,
       diagnoseUsageError(access, op);
   }
 
-  // Verify that any accessed interior origins are also live.  Callees marked
-  // `@__unsafe_disable_nested_origin_exclusivity` only model direct
-  // (field-sensitive) argument effects, not nested origins embedded in argument
-  // types, so skip interior-origin liveness checks for them.
-  //
-  // TODO(MSTDL-2844): OriginTrackable should completely ignore nested origins
-  // for such callees (not emit them in `originEffects` at all).  We cannot do
-  // that yet, so CheckLifetimes filters here instead.
-  if (!interiorOrigins.empty() && !isNestedOriginExclusivityDisabled(op)) {
+  // Verify that any accessed interior origins are also live.
+  if (!interiorOrigins.empty()) {
     for (auto origin : interiorOrigins)
       checkInteriorOriginUsage(origin, value, op);
   }
@@ -2448,15 +2422,8 @@ void UninitializedValueScan::checkOriginAccesses(TypedAttr origin,
       diagnoseUsageError(access, op);
   }
 
-  // Verify that any accessed interior origins are also live.  Callees marked
-  // `@__unsafe_disable_nested_origin_exclusivity` only model direct
-  // (field-sensitive) argument effects, not nested origins embedded in argument
-  // types, so skip interior-origin liveness checks for them.
-  //
-  // TODO(MSTDL-2844): OriginTrackable should completely ignore nested origins
-  // for such callees (not emit them in `originEffects` at all).  We cannot do
-  // that yet, so CheckLifetimes filters here instead.
-  if (!interiorOrigins.empty() && !isNestedOriginExclusivityDisabled(op)) {
+  // Verify that any accessed interior origins are also live.
+  if (!interiorOrigins.empty()) {
     for (auto origin : interiorOrigins)
       checkInteriorOriginUsage(origin, operand, op);
   }
