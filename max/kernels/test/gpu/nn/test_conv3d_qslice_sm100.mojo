@@ -24,11 +24,13 @@ time_conv 3x1x1, and the C_out F-padding paths (64/192/320).
 """
 
 from std.random import rand
+from std.sys import align_of
 
 from layout import (
+    LTToTTLayout,
     Layout,
     LayoutTensor,
-    lt_to_tt,
+    TileTensor,
 )
 from std.gpu.host import DeviceContext
 from nn.conv.conv import Naive2dConvolution
@@ -130,12 +132,16 @@ def test_conv3d_qslice_direct[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
-    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
     var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
-    var input_tt = lt_to_tt(input_lt)
-    var filter_tt = lt_to_tt(filter_lt)
-    var output_tt = lt_to_tt(output_lt)
+    var input_tt = TileTensor(
+        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
+    )
+    var filter_tt = TileTensor(
+        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
+    )
+    var output_tt = TileTensor(
+        output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
+    )
 
     comptime if with_epilogue:
 
@@ -143,19 +149,17 @@ def test_conv3d_qslice_direct[
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: Int
+            _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
-            output_lt.store[width=_width](
+            output_lt.store[
+                width=_width, store_alignment=align_of[dtype]() * _alignment
+            ](
                 rebind[IndexList[5]](coords),
                 rebind[SIMD[dtype, _width]](scaled),
             )
 
         var handled = dispatch_qslice_conv3d_sm100[
-            dtype,
-            dtype,
-            dtype,
-            filter_is_fcrs=False,
             maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
                 scale_epilogue
             ),
@@ -176,12 +180,7 @@ def test_conv3d_qslice_direct[
             _ = output_dev^
             return
     else:
-        var handled = dispatch_qslice_conv3d_sm100[
-            dtype,
-            dtype,
-            dtype,
-            filter_is_fcrs=False,
-        ](
+        var handled = dispatch_qslice_conv3d_sm100(
             input_tt,
             filter_tt,
             output_tt,

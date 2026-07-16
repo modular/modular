@@ -24,8 +24,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, overload
 
-from max._core import Attribute, Operation
-from max._core.dialects import builtin
+from max._core import Operation
 from max._mlir_context import (
     MLIRThreadPoolExecutor,
     call_with_default_mlir_context,
@@ -135,7 +134,7 @@ class CustomOpLibrary:
             ](
                 img_out: OutputTensor[dtype = DType.uint8, rank=2],
                 img_in: InputTensor[dtype = DType.uint8, rank=3],
-                ctx: DeviceContextPtr,
+                ctx: DeviceContext,
             ) raises:
                 ...
 
@@ -164,10 +163,10 @@ class CustomOpLibrary:
     value in Python. Each argument corresponding to an ``OutputTensor`` in the
     Mojo operation will be modified in-place.
 
-    For more information, see the [custom ops for PyTorch](/max/tutorials/custom-kernels-pytorch) tutorial.
+    For more information, see the [custom ops for PyTorch](/max/develop/custom-kernels-pytorch) tutorial.
 
     Args:
-        kernel_library: The path to a ``.mojo`` file or a ``.mojopkg`` with
+        kernel_library: The path to a ``.mojo`` file or a ``.mojoc``/``.mojopkg`` with
             your custom op kernels, or the corresponding library object.
     """
 
@@ -243,6 +242,14 @@ class CustomOp:
         self.name = name
         self.parameters = parameters
 
+        # Decode the kernel's execute signature once via KernelDeclAdaptor on
+        # the C++ side. Raises ValueError if the kernel is unknown or has an
+        # unsupported argument type (caught by CustomOpLibrary.__init__ for
+        # internal ops / primitives that aren't meant for PyTorch).
+        self._torch_info = library._kernel_library._analysis.kernel_torch_info(
+            name
+        )
+
         if parameters:
             suffix = "".join(
                 f"{key}_{value}" for key, value in sorted(parameters.items())
@@ -280,10 +287,7 @@ class CustomOp:
     def num_outputs(self) -> int:
         """Returns the number of outputs of the custom op."""
         # TODO(GEX-2219): support non-dps outputs
-        attrs = self.kernel.discardable_attributes
-        num_dps_outputs = attrs["mogg.num_dps_outputs"]
-        assert isinstance(num_dps_outputs, builtin.IntegerAttr)
-        return num_dps_outputs.value
+        return self._torch_info.num_dps_outputs
 
     def op(self, *args: TensorValue, result_types: Sequence[TensorType]):  # noqa: ANN201
         """Builds a MAX graph custom op with the given inputs and output types.
@@ -318,52 +322,22 @@ class CustomOp:
     def torch_signature(self) -> inspect.Signature:
         """Compute the Python-level signature of the provided custom op.
 
-        The computed signature is derived from the KGEN-level annotations on the
-        given MLIR operation. These annotations are attached to the KGEN function
-        at the MOGGPreElab stage of the compilation pipeline.
-
-        This function currently only supports tensor inputs and outputs. Computed
-        signature will have one torch.Tensor input/result for each DPS input/result
-        of the custom operation.
-
-        Args:
-            op: The MLIR operation representing the custom op (kgen.func op).
+        The computed signature is derived from the kernel's stored ``execute``
+        signature, decoded on the C++ side by ``KernelDeclAdaptor``. The
+        synthesised signature has one ``torch.Tensor`` parameter per
+        tensor-like argument (DPS outputs first, then inputs); device contexts
+        are supplied implicitly by the graph compiler and don't appear here.
 
         Returns:
             inspect.Signature: The Python-level signature for the custom op.
         """
-        op = self.kernel
-        num_dps_outputs = self.num_outputs
-
-        # TODO(GEX-2223): Expose more of MojoLibraryAnalysis so we don't need to
-        # hard code MLIR attributes.
-        arg_type_names = op.discardable_attributes["mogg.arg_type_names"]
-        assert isinstance(arg_type_names, builtin.ArrayAttr)
-        io_specs = _mogg_annotations(arg_type_names)
-
-        # Validate all argument types are supported
-        _validate_op_arg_types(io_specs, self.name)
-
-        # Filter to keep only tensor-like types
-        tensor_like_types = {
-            "tensor::ManagedTensorSlice",
-            "std::SIMD",
-        }
-        io_specs = [spec for spec in io_specs if spec in tensor_like_types]
-
-        arg_src_names = op.discardable_attributes["mogg.arg_src_names"]
-        assert isinstance(arg_src_names, builtin.ArrayAttr)
-        arg_names = _mogg_annotations(arg_src_names)
-
-        input_specs = io_specs[num_dps_outputs:]
-        nargs = len(input_specs)
         args = [
             inspect.Parameter(
                 name,
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
                 annotation=torch.Tensor,
             )
-            for name in arg_names[: nargs + num_dps_outputs]
+            for name in self._torch_info.tensor_arg_names
         ]
         return inspect.Signature(args, return_annotation=None)
 
@@ -719,53 +693,3 @@ def max_tensor_type(tensor: torch.Tensor) -> TensorType:
     shape = max_shape(tensor.shape)
     device = max_device_ref(tensor.device)
     return TensorType(dtype, shape, device=device)
-
-
-###############################################################################
-
-# Tensor Conversions
-
-###############################################################################
-
-
-def _mogg_annotations(array_attr: builtin.ArrayAttr) -> list[str]:
-    def string_value(x: Attribute) -> str:
-        if isinstance(x, builtin.StringAttr):
-            return x.value
-        assert isinstance(x, builtin.UnitAttr)
-        return ""
-
-    return [string_value(s) for s in array_attr.value]
-
-
-def _validate_op_arg_types(io_specs: list[str], op_name: str) -> None:
-    """Validate that all argument types in a custom op are supported.
-
-    Args:
-        io_specs: List of type specifications from mogg.arg_type_names
-        op_name: Name of the custom operation for error reporting
-
-    Raises:
-        ValueError: If any type is not supported (not a tensor type or
-            implicitly handled type)
-    """
-    # The set of types that are legal tensor inputs.
-    tensor_like_types = {
-        "tensor::ManagedTensorSlice",
-        "std::SIMD",
-    }
-
-    # Types that are ignored or implicitly supplied by the graph compiler.
-    types_to_ignore = {
-        "std::DeviceContextPtr",
-        "std::DeviceContextPtrList",
-        "std::Error",
-    }
-
-    # Validate that all types are either tensor-like or can be ignored
-    allowed_types = tensor_like_types | types_to_ignore
-    for spec in io_specs:
-        if spec and spec not in allowed_types:
-            raise ValueError(
-                f"Unsupported argument type '{spec}' in custom op '{op_name}'."
-            )

@@ -19,7 +19,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-def PyInit_mojo_module_b() -> PythonObject:
+def PyInit_mojo_module_b() abi("C") -> PythonObject:
     try:
         var m = PythonModuleBuilder("mojo_module_b")
         m.def_function[print_test_struct]("print_test_struct")

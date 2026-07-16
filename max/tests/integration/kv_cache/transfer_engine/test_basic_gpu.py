@@ -19,7 +19,7 @@ import pytest
 from max.driver import CPU, Accelerator
 from max.driver.buffer import Buffer
 from max.dtype import DType
-from max.kv_cache import KVTransferEngine
+from max.pipelines.kv_cache import KVTransferEngine
 
 
 def test_constructor() -> None:

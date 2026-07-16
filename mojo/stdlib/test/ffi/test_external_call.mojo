@@ -19,7 +19,7 @@ from std.testing import (
 
 
 struct RegisterPassablePointer(RegisterPassable):
-    var pointer: _CPointer[NoneType, ExternalOrigin[mut=True]]
+    var pointer: _CPointer[NoneType, UntrackedOrigin[mut=True]]
 
 
 def test_external_call_handles_rp_return_types() raises:

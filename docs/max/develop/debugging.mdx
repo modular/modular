@@ -9,6 +9,12 @@ during model development, such as numerical accuracy problems, correctness
 bugs, performance bottlenecks, and hard-to-trace runtime errors. This page
 explains how to configure debugging options.
 
+If you're bringing up a new model architecture and its output diverges from the
+original model, use the
+[`debug-model`](/max/develop/model-bringup-skills/#debug-output-divergences)
+skill to perform a per-layer comparison against the original model and localize
+the divergence.
+
 If you want to enable MAX's debugging defaults right away, you can set the
 [environment variable](/max/environment-variables/) `MODULAR_DEBUG=sensible`
 before running your model:
@@ -88,12 +94,13 @@ Graph.debug.source_tracebacks = True
 g = Graph("my_model")
 
 
-# Set before session.load() compiles the graph
+# Set before session.compile() compiles the graph
 InferenceSession.debug.nan_check = True
 InferenceSession.debug.op_log_level = "trace"
 
 session = InferenceSession()
-model = session.load(g)
+compiled = session.compile(g)
+model = session.init(compiled)
 
 # Set before calling execute()
 InferenceSession.debug.device_sync_mode = True

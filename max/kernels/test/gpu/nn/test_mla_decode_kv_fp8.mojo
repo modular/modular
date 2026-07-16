@@ -173,21 +173,15 @@ def test[
     # Construct TileTensors for Q, K, output.
     var q_tt = TileTensor(
         q_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_tt = TileTensor(
         k_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var out_tt = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     # Keep LayoutTensors for mha_gpu_naive reference path.
@@ -203,7 +197,7 @@ def test[
         _is_cache_length_accurate=True,
         is_fp8_kv=True,
     ](batch_size, num_keys, seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     @parameter
     @always_inline
@@ -211,7 +205,7 @@ def test[
         q_tt,
         k_tt,
         out_tt,
-        scalar_args_buf_lt,
+        scalar_args_buf_tt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
@@ -219,13 +213,13 @@ def test[
                 config=MHAConfig[q_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,
             ](
-                out_tt.as_any_origin(),
+                out_tt.as_unsafe_any_origin(),
                 q_tt,
                 k_tt,
                 CausalMask(),
                 scale,
                 ctx,
-                lt_to_tt(scalar_args_buf_lt),
+                scalar_args_buf_tt,
                 num_partitions=num_partitions,
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
@@ -233,13 +227,13 @@ def test[
                 config=MHAConfig[q_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,
             ](
-                out_tt.as_any_origin(),
+                out_tt.as_unsafe_any_origin(),
                 q_tt,
                 k_tt,
                 NullMask(),
                 scale,
                 ctx,
-                lt_to_tt(scalar_args_buf_lt),
+                scalar_args_buf_tt,
                 num_partitions=num_partitions,
             )
 
@@ -286,7 +280,7 @@ def test[
         ctx.enqueue_copy(k_ref_device_ptr, k_bf16_ptr)
 
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
-            var k_operand = LayoutTensorMHAOperand(k_ref_device)
+            var k_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
             var null_valid_length = LayoutTensor[
                 DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
             ](

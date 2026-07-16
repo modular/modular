@@ -152,7 +152,7 @@ def test_single_group(ctx: DeviceContext) raises:
 
     # Expected tiles: (64/16) * (64/16) = 4 * 4 = 16
     comptime expected_tiles = 16
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         problem_sizes.device_tensor(),
         Int32(1),  # num_groups
         visited_group.device_tensor(),
@@ -261,7 +261,7 @@ def test_two_groups(ctx: DeviceContext) raises:
         tile_m, tile_n, tile_k, max_groups, max_tiles
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         problem_sizes.device_tensor(),
         Int32(2),  # num_groups
         visited_group.device_tensor(),

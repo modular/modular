@@ -19,9 +19,9 @@ from std.testing import TestSuite
 
 def run_func[
     dtype: DType,
-    kernel_fn: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
-        dtype, width
-    ],
+    kernel_fn: def[dtype: DType, width: SIMDSize](
+        SIMD[dtype, width]
+    ) thin -> SIMD[dtype, width],
 ](ctx: DeviceContext, val: Scalar[dtype] = 0) raises:
     @parameter
     def kernel(
@@ -30,7 +30,7 @@ def run_func[
         output[0] = kernel_fn(input)
 
     var out = ctx.enqueue_create_buffer[dtype](1)
-    ctx.enqueue_function_experimental[kernel](out, val, grid_dim=1, block_dim=1)
+    ctx.enqueue_function[kernel](out, val, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
     _ = out
@@ -85,7 +85,7 @@ def powi_fn(val: SIMD) -> type_of(val):
 
 
 def powf_fn(val: SIMD) -> type_of(val):
-    return val**3.2
+    return val ** type_of(val)(3.2)
 
 
 def test_math() raises:
@@ -93,7 +93,7 @@ def test_math() raises:
 
         @parameter
         def test[
-            *kernel_fns: def[dtype: DType, width: Int](
+            *kernel_fns: def[dtype: DType, width: SIMDSize](
                 SIMD[dtype, width]
             ) thin -> SIMD[dtype, width]
         ](ctx: DeviceContext) raises:

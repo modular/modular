@@ -353,7 +353,10 @@ def test_next_power_of_two() raises:
     assert_equal(next_power_of_two(UInt(2)), 2)
     assert_equal(next_power_of_two(UInt(4)), 4)
     assert_equal(next_power_of_two(UInt(5)), 8)
-    assert_equal(next_power_of_two(UInt(2**59 - 3)), UInt(2) ** 59)
+    assert_equal(
+        next_power_of_two(UInt(2**59 - 3)),
+        UInt(2) ** 59,
+    )
 
 
 def test_next_power_of_two_simd() raises:
@@ -502,13 +505,6 @@ def test_rotate_bits_simd() raises:
 
 def _log2_floor(n: Int) -> Int:
     return Int(floor(log2(Float64(n))))
-
-
-@always_inline
-def _log2_ceil(n: Int) -> Int:
-    """Computes ceil(log_2(d))."""
-
-    return Int(_log2_ceil(Scalar[DType.int](n)))
 
 
 @always_inline

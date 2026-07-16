@@ -35,7 +35,7 @@ class LoRAOutputFormat(str, enum.Enum):
     """Output format for LoRA adapter configurations."""
 
     PATH = "path"  # Returns just paths
-    NAME_PATH = "name_path"  # Returns 'name=path' format for TTS benchmarks
+    NAME_PATH = "name_path"  # Returns 'name=path' format
 
 
 # TODO: make lora_configs a dataclass type than a dict[str, str]

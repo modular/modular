@@ -117,7 +117,7 @@ def test_dynamic_async_copy[
         num_rows,
     ]
 
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         input.device_tensor(),
         output.device_tensor(),
         grid_dim=(ceildiv(M, BM), ceildiv(M, BN)),
@@ -243,7 +243,7 @@ def test_swizzle_copy[
         num_threads,
     ]
 
-    ctx.enqueue_function_experimental[copy](
+    ctx.enqueue_function[copy](
         a_tensor.device_tensor(),
         b_tensor.device_tensor(),
         grid_dim=(ceildiv(M, BM), 1, 1),
@@ -357,7 +357,7 @@ def test_masked_async_copy[
         input_tensor.layout, M - skew_rows
     ]
 
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         input_tensor,
         grid_dim=(1,),
         block_dim=(8,),
@@ -482,7 +482,7 @@ def test_masked_copy[
     comptime kernel_type = masked_copy_kernel[
         input_tensor.layout, M - skew_rows
     ]
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         input_tensor, grid_dim=(1,), block_dim=(8,)
     )
 
@@ -597,7 +597,7 @@ def test_masked_copy_dram_to_local[
     comptime kernel_type = masked_copy_dram_to_local_kernel[
         layout, M - skew_rows
     ]
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         input.device_tensor(),
         output.device_tensor(),
         grid_dim=(1,),
