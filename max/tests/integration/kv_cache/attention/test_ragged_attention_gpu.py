@@ -36,7 +36,7 @@ from max.nn.kernels import (
     flash_attention_gpu,
     flash_attention_ragged_gpu,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
 from modular_graph_test import are_all_tensor_values
 from torch.nn.functional import scaled_dot_product_attention
 
@@ -391,7 +391,7 @@ def test_cross_attention_ragged_rejects_q_max_seq_len_on_gpu() -> None:
     page_size = 128
     dtype = DType.bfloat16
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
@@ -413,7 +413,8 @@ def test_cross_attention_ragged_rejects_q_max_seq_len_on_gpu() -> None:
     lookup_table_type = TensorType(
         DType.uint32, ["batch", "max_pages"], DeviceRef.GPU()
     )
-    max_lengths_type = TensorType(DType.uint32, [1], DeviceRef.CPU())
+    max_prompt_length_type = TensorType(DType.uint32, [1], DeviceRef.CPU())
+    max_cache_length_type = TensorType(DType.uint32, [1], DeviceRef.CPU())
     layer_idx_type = TensorType(DType.uint32, [1], DeviceRef.CPU())
     kv_input_row_offsets_type = TensorType(
         DType.uint32, ["kv_batch_plus_one"], DeviceRef.GPU()
@@ -430,7 +431,8 @@ def test_cross_attention_ragged_rejects_q_max_seq_len_on_gpu() -> None:
                 kv_blocks_type,
                 cache_lengths_type,
                 lookup_table_type,
-                max_lengths_type,
+                max_prompt_length_type,
+                max_cache_length_type,
                 layer_idx_type,
                 kv_input_row_offsets_type,
                 q_max_seq_len_type,
@@ -442,7 +444,8 @@ def test_cross_attention_ragged_rejects_q_max_seq_len_on_gpu() -> None:
                 kv_blocks,
                 cache_lengths,
                 lookup_table,
-                max_lengths,
+                max_prompt_length,
+                max_cache_length,
                 layer_idx,
                 kv_input_row_offsets,
                 q_max_seq_len,
@@ -453,7 +456,8 @@ def test_cross_attention_ragged_rejects_q_max_seq_len_on_gpu() -> None:
             assert isinstance(kv_blocks, BufferValue)
             assert isinstance(cache_lengths, TensorValue)
             assert isinstance(lookup_table, TensorValue)
-            assert isinstance(max_lengths, TensorValue)
+            assert isinstance(max_prompt_length, TensorValue)
+            assert isinstance(max_cache_length, TensorValue)
             assert isinstance(layer_idx, TensorValue)
             assert isinstance(kv_input_row_offsets, TensorValue)
             assert isinstance(q_max_seq_len, TensorValue)
@@ -462,7 +466,8 @@ def test_cross_attention_ragged_rejects_q_max_seq_len_on_gpu() -> None:
                 kv_blocks=kv_blocks,
                 cache_lengths=cache_lengths,
                 lookup_table=lookup_table,
-                max_lengths=max_lengths,
+                max_prompt_length=max_prompt_length,
+                max_cache_length=max_cache_length,
             )
 
             cross_attention_ragged(

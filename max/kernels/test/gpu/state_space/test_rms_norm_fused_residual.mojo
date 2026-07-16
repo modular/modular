@@ -35,15 +35,15 @@ def main() raises:
 
 def compute_rms_ref[
     dtype: DType
-](
-    data_ptr: UnsafePointer[Scalar[dtype], _], size: Int, eps: Scalar[dtype]
-) -> Scalar[DType.float32]:
+](data_ptr: UnsafePointer[Scalar[dtype], _], size: Int, eps: Float32) -> Scalar[
+    DType.float32
+]:
     """Compute reference RMS value."""
     var sum_of_squares = Float32()
     for i in range(size):
         var d = data_ptr[i].cast[DType.float32]()
         sum_of_squares += d * d
-    return sqrt((sum_of_squares / Float32(size)) + eps.cast[DType.float32]())
+    return sqrt((sum_of_squares / Float32(size)) + eps)
 
 
 def run_rms_norm_fused_residual_gpu[
@@ -114,7 +114,7 @@ def run_rms_norm_fused_residual_gpu[
     )
     var gamma_tensor = TileTensor(gamma_d, row_major(cols))
 
-    var epsilon = Scalar[dtype](1e-5)
+    var epsilon = Float32(1e-5)
     var weight_offset = Scalar[dtype](0.0)
 
     # Define input functions

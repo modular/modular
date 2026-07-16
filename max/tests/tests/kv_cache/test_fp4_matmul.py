@@ -31,6 +31,7 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import (
     KVCacheParams,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 
@@ -91,7 +92,7 @@ def test_fused_qkv_ragged_matmul_scaled_float4_valid() -> None:
     device = DeviceRef.CPU()
 
     # Create KV cache parameters
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=64,
@@ -130,8 +131,10 @@ def test_fused_qkv_ragged_matmul_scaled_float4_valid() -> None:
             TensorType(DType.uint32, shape=(2,), device=device),
             # lookup_table: [batch_size, max_pages]
             TensorType(DType.uint32, shape=(2, 8), device=device),
-            # is_cache_empty: scalar
-            TensorType(DType.uint32, shape=(), device=device),
+            # max_prompt_length: scalar
+            TensorType(DType.uint32, shape=(1,), device=device),
+            # max_cache_length: scalar
+            TensorType(DType.uint32, shape=(1,), device=device),
         ],
     ) as graph:
         (
@@ -146,14 +149,16 @@ def test_fused_qkv_ragged_matmul_scaled_float4_valid() -> None:
             blocks,
             cache_lengths,
             lookup_table,
-            is_cache_empty,
+            max_prompt_length,
+            max_cache_length,
         ) = graph.inputs
 
         kv_collection = PagedCacheValues(
             blocks.buffer,
             cache_lengths.tensor,
             lookup_table.tensor,
-            is_cache_empty.tensor,
+            max_prompt_length.tensor,
+            max_cache_length.tensor,
         )
 
         tester = FusedQKVRaggedMatmulScaledFloat4(kv_params, kv_collection, 32)

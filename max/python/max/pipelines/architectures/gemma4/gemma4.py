@@ -22,7 +22,7 @@ from max.dtype import DType
 from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear
+from max.nn.linear import MLP, ColumnParallelLinear, FusedMLP
 from max.nn.moe import MoE, MoEQuantized, make_concatenated_gated_activation_fn
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.transformer.distributed_transformer import (
@@ -39,6 +39,7 @@ from .layers.moe import Gemma4MoEGate
 from .layers.rms_norm import Gemma4RMSNorm
 from .layers.rotary_embedding import ProportionalRotaryEmbedding
 from .model_config import Gemma4ForConditionalGenerationConfig
+from .weight_adapters import gemma4_uses_fused_projections
 
 
 class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
@@ -77,6 +78,13 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         quant_config = text_config.quant_config
         if quant_config and quant_config.embedding_output_dtype:
             embedding_output_dtype = quant_config.embedding_output_dtype
+
+        # DISTINF-194: load projections pre-fused (single-device, bf16 only).
+        # The weight adapter concatenates the checkpoint projections; the graph
+        # consumes one constant, avoiding the in-graph concat that init would
+        # otherwise materialize as a second on-device weight copy. The shared
+        # predicate keeps layer selection and adapter key fusion in lockstep.
+        use_fused_projections = gemma4_uses_fused_projections(config)
 
         self.embed_tokens = ScaledWordEmbedding(
             text_config.vocab_size,
@@ -206,8 +214,17 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                         quant_config=None
                         if (is_nvfp4 and not attn_quantized)
                         else quant_config,
+                        fused_qkv=use_fused_projections,
                     ),
-                    mlp=MLP(
+                    mlp=FusedMLP(
+                        dtype=config.dtype,
+                        hidden_dim=text_config.hidden_size,
+                        feed_forward_length=text_config.intermediate_size,
+                        devices=config.devices,
+                        activation_function=text_config.hidden_activation,
+                    )
+                    if use_fused_projections
+                    else MLP(
                         dtype=unquantized_dtype if moe_nvfp4 else config.dtype,
                         quantization_encoding=None,
                         hidden_dim=text_config.hidden_size,

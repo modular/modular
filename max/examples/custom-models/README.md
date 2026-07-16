@@ -15,7 +15,7 @@ the framework.
 Registering your custom model architecture with MAX's model registry makes it
 available for loading and serving. Once a custom model has been defined in a
 directory, the flag `--custom-architectures [directory]` applied to
-`max serve`, `max generate`, or the `max.entrypoints.pipelines` entrypoint will
+`max serve` or `max generate` entrypoint will
 load the Python code for your custom MAX model and try to use it with weights
 you link to.
 
@@ -35,7 +35,7 @@ API compatible serving endpoint.
 A full invocation within an environment with MAX installed looks like:
 
 ```sh
-python -m max.entrypoints.pipelines serve --custom-architectures qwen2 --model Qwen/Qwen2.5-0.5B-Instruct
+max serve --custom-architectures qwen2 --model Qwen/Qwen2.5-0.5B-Instruct
 ```
 
 For more information, see the

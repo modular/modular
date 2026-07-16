@@ -19,6 +19,7 @@ This package provides GPU memory operations including:
 - **load/store**: Memory access operations with cache control
 - **fence operations**: Memory ordering and synchronization
 - **mbarrier**: Memory barrier operations
+- **edge-masked loads**: Apple M5 (AGX3) hardware bounds-checked vector loads
 
 These operations enable efficient data movement between different
 GPU memory spaces and coordination of memory operations across threads.
@@ -26,7 +27,6 @@ GPU memory spaces and coordination of memory operations across threads.
 
 from .memory import (
     AddressSpace,
-    GPUAddressSpace,
     CacheEviction,
     CacheOperation,
     Consistency,
@@ -42,6 +42,7 @@ from .memory import (
     cp_async_bulk_shared_cluster_global,
     cp_async_bulk_tensor_2d_gather4,
     cp_async_bulk_tensor_global_shared_cta,
+    cp_async_bulk_tensor_global_shared_cta_elect,
     cp_async_bulk_tensor_reduce_global_shared_cta,
     cp_async_bulk_tensor_shared_cluster_global,
     cp_async_bulk_tensor_shared_cluster_global_elect,
@@ -56,4 +57,10 @@ from .memory import (
     load,
     multimem_ld_reduce,
     multimem_st,
+)
+from .masked_load_apple import (
+    build_edge_mask,
+    edge_masked_load,
+    gmem_edge_masked_load,
+    smem_edge_masked_load,
 )

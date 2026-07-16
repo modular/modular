@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -85,6 +84,7 @@ modular_py_test(
 _NN_LIGHT_GPU_TESTS = [
     "test_async_host_func_gpu.py",
     "test_completion_flag_gpu.py",
+    "test_grouped_matmul_rowwise_fp8_gpu.py",
     "test_host_func_gpu.py",
     "test_moe_gpu.py",
     "test_sleep_gpu.py",
@@ -108,7 +108,9 @@ modular_py_test(
             "bench_row_mean_of_squares_gpu.py",
             "test_conv_transpose_gpu.py",
             "test_grouped_matmul_swiglu_nvfp4_gpu.py",
+            "test_int8_w8a8_apple_gpu.py",
             "test_linear_fp8_amd_gpu.py",
+            "test_linear_nvfp4_apple_gpu.py",
             "test_lora_kernels_gpu.py",
             "test_mlp_fp4_gpu.py",
             "test_moe_nvfp4_gpu.py",
@@ -342,6 +344,32 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "apple_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_int8_w8a8_apple_gpu.py",
+        "test_linear_nvfp4_apple_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = ["//:apple_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "mxfp4_scale_fusion_tests",
     size = "large",
     srcs = [
@@ -425,7 +453,7 @@ modular_py_test(
         "test_mlp_fp4_gpu.py",
     ],
     exec_properties = {
-        "test.resources:gpu-memory": "2",
+        "test.resources:gpu-memory": "1",
     },
     tags = [
         "gpu",
@@ -451,7 +479,7 @@ modular_py_test(
         "test_moe_nvfp4_gpu.py",
     ],
     exec_properties = {
-        "test.resources:gpu-memory": "2",
+        "test.resources:gpu-memory": "1",
     },
     tags = [
         "gpu",

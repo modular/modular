@@ -115,32 +115,7 @@ def conv2d_op[
     var filt_h_stride = kw * filt_w_stride
 
     @always_inline
-    @parameter
-    @__copy_capture(
-        out_ptr,
-        in_ptr,
-        filt_ptr,
-        in_h,
-        in_w,
-        in_c,
-        out_c,
-        kh,
-        kw,
-        stride_h,
-        stride_w,
-        dil_h,
-        dil_w,
-        pad_h,
-        pad_w,
-        out_h,
-        ic_per_group,
-        oc_per_group,
-        in_hw_stride,
-        out_hw_stride,
-        filt_w_stride,
-        filt_h_stride,
-    )
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var i = Int(idx[0].value())
         var n, rem1 = divmod(i, out_h * out_hw_stride)
         var oh, rem2 = divmod(rem1, out_hw_stride)
@@ -170,10 +145,10 @@ def conv2d_op[
         out_ptr[i] = accum
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](Coord(total), ctx)
+        elementwise[simd_width=1](func, Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
+            elementwise[simd_width=1, target="gpu"](func, Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 
@@ -245,31 +220,7 @@ def conv_transpose2d_op[
     var filt_h_stride = kw * filt_w_stride
 
     @always_inline
-    @parameter
-    @__copy_capture(
-        out_ptr,
-        in_ptr,
-        filt_ptr,
-        in_h,
-        in_w,
-        in_c,
-        out_c,
-        kh,
-        kw,
-        stride_h,
-        stride_w,
-        dil_h,
-        dil_w,
-        pad_h,
-        pad_w,
-        out_h,
-        in_hw_stride,
-        out_hw_stride,
-        filt_c_stride,
-        filt_w_stride,
-        filt_h_stride,
-    )
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var i = Int(idx[0].value())
         var n, rem1 = divmod(i, out_h * out_hw_stride)
         var oh, rem2 = divmod(rem1, out_hw_stride)
@@ -307,10 +258,10 @@ def conv_transpose2d_op[
         out_ptr[i] = accum
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](Coord(total), ctx)
+        elementwise[simd_width=1](func, Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
+            elementwise[simd_width=1, target="gpu"](func, Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 

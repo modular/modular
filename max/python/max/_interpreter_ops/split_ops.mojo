@@ -90,9 +90,7 @@ def split_copy_op[
     var out_stride0 = out_dim1 * dim2
 
     @always_inline
-    @parameter
-    @__copy_capture(out_ptr, in_ptr, out_stride0, dim2, axis_offset, in_stride0)
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var i = Int(idx[0].value())
         var i0, rem = divmod(i, out_stride0)
         var j, i2 = divmod(rem, dim2)
@@ -100,11 +98,11 @@ def split_copy_op[
         out_ptr[i] = in_ptr[in_flat]
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](Coord(IndexList[1](total)), ctx)
+        elementwise[simd_width=1](func, Coord(IndexList[1](total)), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](
-                Coord(IndexList[1](total)), ctx
+            elementwise[simd_width=1, target="gpu"](
+                func, Coord(IndexList[1](total)), ctx
             )
         else:
             raise Error("No GPU accelerator available")

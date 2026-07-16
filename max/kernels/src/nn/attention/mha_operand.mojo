@@ -33,7 +33,6 @@ from layout.tma_async import (
     SharedMemBarrier,
     _gather4_box_width,
     create_split_tma,
-    RaggedTMA3DTile,
     TMATensorTile,
     create_tensor_tile,
     create_tma_tile_gather4,
@@ -227,25 +226,6 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         """Creates a TMA tile for efficient GPU memory transfers.
         This is useful for `m-major` MMA operations where we don't
         need to mask any extra rows."""
-        ...
-
-    @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        depth: Int,
-        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
-    ](self, ctx: DeviceContext) raises -> RaggedTMA3DTile[
-        Self.dtype,
-        swizzle_mode,
-        BM=BN,
-        BN=BK,
-    ]:
-        """Creates a TMA tile for efficient GPU memory transfers.
-        This is useful for `mn-major` MMA operations where we need
-        to mask extra rows to avoid adding `NaN` to the output
-        through the MMA reduction."""
         ...
 
     @always_inline
@@ -538,34 +518,6 @@ struct KVCacheMHAOperand[
         comptime assert False, "create_scale_tma_tile is not implemented"
 
     @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        depth: Int,
-        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
-    ](
-        self,
-        ctx: DeviceContext,
-        out tma: RaggedTMA3DTile[
-            Self.dtype,
-            swizzle_mode,
-            BM=BN,
-            BN=BK,
-        ],
-    ) raises:
-        # Forward to the underlying cache's implementation
-        comptime assert (
-            depth == Self.cache_t.kv_params.head_size
-        ), "depth must match kv_params.head_size"
-        comptime assert (
-            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
-        ) == 0, "BK must be a multiple of swizzle granularity"
-        tma = rebind[type_of(tma)](
-            self.cache.create_ragged_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
-        )
-
-    @always_inline
     def create_rope_tma_tile[
         swizzle_mode: TensorMapSwizzle,
         *,
@@ -798,26 +750,6 @@ struct KVCacheScalesMHAOperand[
         ],
     ) raises:
         comptime assert False, "create_scale_tma_tile is not implemented"
-
-    @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        depth: Int,
-        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
-    ](
-        self,
-        ctx: DeviceContext,
-        out tma: RaggedTMA3DTile[
-            Self.dtype,
-            swizzle_mode,
-            BM=BN,
-            BN=BK,
-        ],
-    ) raises:
-        """TMA not supported for KVCacheScalesMHAOperand."""
-        comptime assert False, "TMA not supported for KVCacheScalesMHAOperand"
 
     @always_inline
     def create_rope_tma_tile[
@@ -1157,32 +1089,6 @@ struct LayoutTensorMHAOperand[
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
             __desc_shape=Index(1, BMN),
         ](ctx, scale_tensor)
-
-    @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        depth: Int,
-        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
-    ](
-        self,
-        ctx: DeviceContext,
-        out tma: RaggedTMA3DTile[
-            Self.dtype,
-            swizzle_mode,
-            BM=BN,
-            BN=BK,
-        ],
-    ) raises:
-        comptime assert (
-            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
-        ) == 0
-        var rows = Int(self.buffer.dim[0]()) * Int(self.buffer.dim[1]())
-        var num_heads = Int(self.buffer.dim[2]())
-        tma = type_of(tma).create[depth=depth](
-            ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
-        )
 
     @always_inline
     def create_rope_tma_tile[
@@ -1545,32 +1451,6 @@ struct RaggedMHAOperand[
                 "scale_layout must be 2D(per token) or 3D(per token per head)"
                 " tensor."
             )
-
-    @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        depth: Int,
-        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
-    ](
-        self,
-        ctx: DeviceContext,
-        out tma: RaggedTMA3DTile[
-            Self.dtype,
-            swizzle_mode,
-            BM=BN,
-            BN=BK,
-        ],
-    ) raises:
-        comptime assert (
-            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
-        ) == 0
-        var rows = Int(self.buffer.dim[0]())  # total tokens
-        var num_heads = Int(self.buffer.dim[1]())
-        tma = type_of(tma).create[depth=depth](
-            ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
-        )
 
     @always_inline
     def create_rope_tma_tile[

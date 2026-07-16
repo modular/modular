@@ -46,4 +46,6 @@ phi3_arch = SupportedArchitecture(
     config=Llama3Config,
     batching=Llama3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

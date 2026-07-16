@@ -191,6 +191,13 @@ comptime AMD_MLA_DECODE_FOLD_M_MAX = 128
 
 
 # entrypoint for MLA decoding kernels
+# Disable nested-origin exclusivity checking: MLA decode reads (does not write)
+# the paged KV cache, but the cache's buffer views and the mutable `output`
+# carry tracked origins the exclusivity checker cannot prove disjoint, so it
+# rejects them as separately-writable arguments. They are distinct allocations,
+# so the check is a false positive here (proper fix: give the cache views
+# provably-disjoint origins instead of sharing the collection's).
+@__unsafe_disable_nested_origin_exclusivity
 @always_inline
 def flare_mla_decoding[
     rank: Int,
@@ -2816,6 +2823,7 @@ def flare_mla_prefill[
             q_depth=q_depth,
             cache_depth=cache_depth,
             _ndbuffer_mha_operand=True,
+            v_depth=type_of(output).static_shape[rank - 1],
         ](
             output,
             q_nope,
@@ -2959,6 +2967,7 @@ def flare_mla_prefill[
             q_depth=q_depth,
             cache_depth=cache_depth,
             _ndbuffer_mha_operand=False,
+            v_depth=type_of(output).static_shape[rank - 1],
         ](
             output,
             q_nope,
@@ -3016,6 +3025,12 @@ def flare_mla_prefill_dispatch[
     comptime group = config.num_heads // kv_num_heads
     comptime rank = output.rank
 
+    # Per-head V / output width (`v_head_dim`), read from the output tensor's
+    # last dim. Decoupled from the non-rope Q/K width: DeepSeek has them equal
+    # (so this is byte-identical to the old behavior), GLM-style MLA does not.
+    # The decode path already derives this as `depth_v`.
+    comptime v_depth = type_of(output).static_shape[rank - 1]
+
     comptime assert q_depth == type_of(q).static_shape[rank - 1]
     comptime assert num_heads == type_of(q).static_shape[rank - 2]
     comptime assert (
@@ -3053,6 +3068,7 @@ def flare_mla_prefill_dispatch[
             q_depth=q_depth,
             cache_depth=cache_depth,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
+            v_depth=v_depth,
         ](
             output,
             q,

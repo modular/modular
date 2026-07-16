@@ -49,13 +49,13 @@ from layout.tma_async import (
     _gather4_box_width,
     create_split_tma,
     create_tma_tile_gather4,
-    RaggedTMA3DTile,
 )
 from layout.tile_layout import RowMajorLayout, Layout as InternalLayout
 from layout.coord import DynamicCoord
 
 from std.collections import OptionalReg
 from std.utils import Index, IndexList
+from std.utils.coord import dyn_coord
 from std.sys import size_of
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.math import ceildiv
@@ -1181,26 +1181,6 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         ...
 
     @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        BK: Int = padded_depth[
-            Self.dtype, swizzle_mode, Self.kv_params.head_size
-        ](),
-    ](self, ctx: DeviceContext) raises -> RaggedTMA3DTile[
-        Self.dtype,
-        swizzle_mode,
-        BM=BN,
-        BN=BK,
-    ]:
-        """Creates a TMA tile for this KV cache.
-        This is useful for `mn-major` MMA operations where we need
-        to mask extra rows to avoid adding `NaN` to the output
-        through the MMA reduction."""
-        ...
-
-    @always_inline
     def create_rope_tma_tile[
         swizzle_mode: TensorMapSwizzle,
         *,
@@ -1436,8 +1416,13 @@ struct ContinuousBatchingKVCache[
         assert tok_idx < Int(
             self.blocks.dim[1]()
         ), "KVCache tok_idx out of range"
-        return coord[DType.int64](
-            Tuple(block_idx, tok_idx, head_idx, head_dim_idx)
+        return dyn_coord[DType.int64](
+            (
+                block_idx,
+                tok_idx,
+                head_idx,
+                head_dim_idx,
+            )
         )
 
     @staticmethod
@@ -1724,38 +1709,6 @@ struct ContinuousBatchingKVCache[
             ctx,
             self.blocks.ptr.bitcast[Scalar[tma_dtype]](),
             self.num_kv_rows(),
-        )
-
-    @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        BK: Int = padded_depth[
-            Self.dtype, swizzle_mode, Self.kv_params.head_size
-        ](),
-    ](
-        self,
-        ctx: DeviceContext,
-        out tma: RaggedTMA3DTile[
-            Self.dtype,
-            swizzle_mode,
-            BM=BN,
-            BN=BK,
-        ],
-    ) raises:
-        comptime assert (
-            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
-        ) == 0, "BK must be a multiple of swizzle granularity"
-        var total_blocks = Int(self.blocks.dim[0]())
-        var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
-            self.blocks.dim[1]()
-        )
-        tma = type_of(tma).create[depth=Self.kv_params.head_size](
-            ctx,
-            self.blocks.ptr,
-            rows=Int(rows),
-            middle_dim=Self.kv_params.num_heads,
         )
 
     @always_inline
@@ -2379,38 +2332,6 @@ struct PagedKVCache[
         )
 
     @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        BK: Int = padded_depth[
-            Self.dtype, swizzle_mode, Self.kv_params.head_size
-        ](),
-    ](
-        self,
-        ctx: DeviceContext,
-        out tma: RaggedTMA3DTile[
-            Self.dtype,
-            swizzle_mode,
-            BM=BN,
-            BN=BK,
-        ],
-    ) raises:
-        comptime assert (
-            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
-        ) == 0, "BK must be a multiple of swizzle granularity"
-        var total_blocks = Int(self.blocks.dim[0]())
-        var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
-            Self.page_size
-        )
-        tma = type_of(tma).create[depth=Self.kv_params.head_size](
-            ctx,
-            self.blocks.ptr,
-            rows=Int(rows),
-            middle_dim=Self.kv_params.num_heads,
-        )
-
-    @always_inline
     def create_rope_tma_tile[
         swizzle_mode: TensorMapSwizzle,
         *,
@@ -2537,8 +2458,13 @@ struct PagedKVCache[
             Int(self.lookup_table.dim[1]()),
         )
         block_idx = Int(self.lookup_table[bs, lut_block_idx])
-        return coord[DType.int64](
-            Tuple(block_idx, tok_in_block_idx, head_idx, head_dim_idx)
+        return dyn_coord[DType.int64](
+            (
+                block_idx,
+                tok_in_block_idx,
+                head_idx,
+                head_dim_idx,
+            ),
         )
 
     @always_inline
@@ -2577,13 +2503,13 @@ struct PagedKVCache[
         # (wrong — element 63 is still in block 0). floordiv correctly maps
         # any element at position d to block d // granularity.
         var scale_block_idx = head_dim_idx // Self.quantization_granularity
-        return coord[DType.int64](
-            Tuple(
+        return dyn_coord[DType.int64](
+            (
                 block_idx,
                 tok_in_block_idx,
                 head_idx,
                 scale_block_idx,
-            )
+            ),
         )
 
     @always_inline
@@ -2977,7 +2903,16 @@ struct ContinuousBatchingKVCacheCollection[
         ), "invalid kv_idx for MLA cache"
         var offset = Int(
             self.blocks.layout(
-                coord[DType.int64](Tuple(0, kv_idx, layer_idx, 0, 0, 0))
+                dyn_coord[DType.int64](
+                    (
+                        0,
+                        kv_idx,
+                        layer_idx,
+                        0,
+                        0,
+                        0,
+                    )
+                )
             )
         )
         return self.CacheType(
@@ -3220,8 +3155,15 @@ struct PagedKVCacheCollection[
             kv_idx >= 0 and kv_idx < 2
         ), "Invalid kv_idx for KV cache"
 
-        var kv_layer_coord = coord[DType.int64](
-            Tuple(0, kv_idx, layer_idx, 0, 0, 0)
+        var kv_layer_coord = dyn_coord[DType.int64](
+            (
+                0,
+                kv_idx,
+                layer_idx,
+                0,
+                0,
+                0,
+            )
         )
 
         var scales_tt: OptionalReg[Self.CacheType.scales_tt_type] = None

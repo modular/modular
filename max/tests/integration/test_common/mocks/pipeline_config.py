@@ -308,10 +308,16 @@ def mock_pipeline_config_hf_dependencies(
 def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        from max.pipelines.lib.memory_estimation import _MemoryPlan
+
         with (
             patch(
                 "max.pipelines.lib.config.PipelineConfig.resolve",
                 return_value=None,
+            ),
+            patch(
+                "max.pipelines.lib.registry._run_memory_planning",
+                return_value=_MemoryPlan(max_batch_size=1, footprint=0),
             ),
             patch(
                 "max.pipelines.lib.config.model_config.validate_hf_repo_access",
