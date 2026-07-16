@@ -19,20 +19,28 @@ traversal. The implementation includes iterator support for forward and reverse
 traversal.
 """
 
-from std.builtin.rebind import downcast
+from std.builtin.rebind import downcast, rebind_var
 from std.collections import check_bounds
 from std.reflection import call_location
 import std.format._utils as fmt
 from std.hashlib.hasher import Hasher
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
+from std.memory import is_trivially_deletable
 from std.os import abort
 
 from std.sys import align_of, size_of
 
 
+@explicit_destroy(
+    "A `Node` with a non-`ImplicitlyDeletable` element must be consumed with"
+    " `_into_value()`; its owning `LinkedList` manages this."
+)
 struct Node[
-    ElementType: Movable & ImplicitlyDeletable,
-](Movable):
+    ElementType: Movable,
+](
+    ImplicitlyDeletable where conforms_to(ElementType, ImplicitlyDeletable),
+    Movable,
+):
     """A node in a linked list data structure.
 
     Parameters:
@@ -84,6 +92,20 @@ struct Node[
         self._prev = prev.value() if prev else Self._OpaquePointer()
         self._next = next.value() if next else Self._OpaquePointer()
 
+    # TODO(MOCO-4228)
+    comptime __del__is_trivial = is_trivially_deletable[Self.ElementType]()
+
+    # TODO(MOCO-4228): Let the compiler synthesize this method
+    def __del__(
+        deinit self,
+    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
+        """Destroy the entry's key and value.
+
+        Constraints:
+            `ElementType` must be `ImplicitlyDeletable`.
+        """
+        pass
+
     def _into_value(deinit self) -> Self.ElementType:
         return self.value^
 
@@ -100,7 +122,7 @@ struct Node[
 
 
 def _make_node[
-    T: Movable & ImplicitlyDeletable
+    T: Movable
 ](
     out node: Node[T],
     var value: T,
@@ -126,7 +148,7 @@ def _make_node[
 struct _LinkedListIter[
     mut: Bool,
     //,
-    ElementType: Copyable & ImplicitlyDeletable,
+    ElementType: Copyable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -168,7 +190,7 @@ struct _LinkedListIter[
 
 
 @fieldwise_init
-struct _LinkedListIterOwned[T: Copyable & ImplicitlyDeletable](
+struct _LinkedListIterOwned[T: Movable & ImplicitlyDeletable](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for LinkedList.
@@ -220,14 +242,19 @@ struct _LinkedListIterOwned[T: Copyable & ImplicitlyDeletable](
         return (sz, {sz})
 
 
-struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
+@explicit_destroy(
+    "Use `deinit_with()` to explicitly destroy a `LinkedList` with"
+    " non-`ImplicitlyDeletable` elements"
+)
+struct LinkedList[ElementType: Movable](
     Boolable,
     Copyable where conforms_to(ElementType, Copyable),
     Defaultable,
     Equatable where conforms_to(ElementType, Equatable),
     Hashable where conforms_to(ElementType, Hashable),
+    ImplicitlyDeletable where conforms_to(ElementType, ImplicitlyDeletable),
     Iterable,
-    IterableOwned,
+    IterableOwned where conforms_to(ElementType, ImplicitlyDeletable),
     Movable,
     Sized,
     Writable where conforms_to(ElementType, Writable),
@@ -247,12 +274,10 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         UnsafePointer[Node[Self.ElementType], MutUntrackedOrigin]
     ]
 
-    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDeletable` from the
-    # `downcast`s below — it is already implied by `ElementType`'s bound.
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _LinkedListIter[
-        downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
+        downcast[Self.ElementType, Copyable],
         iterable_origin,
     ]
     """The iterator type for this linked list.
@@ -263,8 +288,9 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
     """
 
     comptime IteratorOwnedType: Iterator = _LinkedListIterOwned[
-        downcast[Self.ElementType, Copyable & ImplicitlyDeletable]
+        downcast[Self.ElementType, ImplicitlyDeletable]
     ]
+
     """The owned iterator type for this linked list."""
 
     var _head: Self._NodePointer
@@ -323,8 +349,19 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             self.append(curr.value()[].value.copy())
             curr = curr.value()[].next()
 
-    def __del__(deinit self):
-        """Clean up the list by freeing all nodes.
+    def _delete_list_elements(
+        mut self, destroy_func: Some[def(var Self.ElementType)]
+    ):
+        """Hand each element to `destroy_func`, then free every node.
+
+        Shared teardown for `clear`, `__del__`, and `deinit_with`.
+
+        Leaves the list "spent": `_head`/`_tail` dangle at freed memory, so the
+        caller must either reset them (see `clear`) or be about to drop `self`
+        (see `__del__`/`deinit_with`).
+
+        Args:
+            destroy_func: A closure called once per element to consume it.
 
         Notes:
             Time Complexity: O(n) in len(self).
@@ -333,13 +370,39 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         while curr:
             var nn = curr.value()
             var next = nn[].next()
-            nn.destroy_pointee()
+            destroy_func(nn.take_pointee()._into_value())
             dealloc(
                 ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
                     {count = 1}
                 )
             )
             curr = next
+
+    def __del__(
+        deinit self,
+    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
+        """Clean up the list by freeing all nodes.
+
+        Notes:
+            Time Complexity: O(n) in len(self).
+        """
+        self.clear()
+
+    def deinit_with(
+        deinit self, deinit_func: Some[def(var Self.ElementType)], /
+    ):
+        """Consume the list, deinitializing each element with a closure.
+
+        Use this to tear down a `LinkedList` whose elements are not
+        `ImplicitlyDeletable`.
+
+        Args:
+            deinit_func: A closure called once per element to deinitialize it.
+
+        Notes:
+            Time Complexity: O(n) in len(self).
+        """
+        self._delete_list_elements(deinit_func)
 
     def append(mut self, var value: Self.ElementType):
         """Add an element to the end of the list.
@@ -352,7 +415,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         """
         var addr = alloc(Layout[Node[Self.ElementType]].single()).unsafe_leak()
         var value_ptr = UnsafePointer(to=addr[].value)
-        value_ptr.init_pointee_move(value^)
+        value_ptr.unsafe_write(value^)
         addr[].prev() = self._tail
         addr[].next() = Self._NodePointer()
         if self._tail:
@@ -373,7 +436,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         """
         var node = _make_node[Self.ElementType](value^, None, self._head)
         var addr = alloc(Layout[Node[Self.ElementType]].single()).unsafe_leak()
-        addr.init_pointee_move(node^)
+        addr.unsafe_write(node^)
         if self:
             self._head.value()[].prev() = addr
         else:
@@ -545,7 +608,9 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             self._size -= 1
             return Optional[Self.ElementType](node^._into_value())
 
-    def clear(mut self):
+    def clear(
+        mut self,
+    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
         """Removes all elements from the list.
 
         Notes:
@@ -555,7 +620,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         while current:
             var nn = current.value()
             current = nn[].next()
-            nn.destroy_pointee()
+            nn.unsafe_deinit_pointee()
             dealloc(
                 ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
                     {count = 1}
@@ -567,7 +632,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         self._size = 0
 
     @always_inline
-    def insert[I: Indexer](mut self, idx: I, var elem: Self.ElementType) raises:
+    def insert[I: Indexer](mut self, idx: I, var elem: Self.ElementType):
         """Insert an element `elem` into the list at index `idx`.
 
         Parameters:
@@ -577,24 +642,23 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             idx: The index to insert `elem` at `-len(self) <= idx <= len(self)`.
             elem: The item to insert into the list.
 
-        Raises:
-            When given an out of bounds index.
-
         Notes:
             Time Complexity: O(n) in len(self).
         """
 
-        # `insert` follows Python's list.insert() semantics: out-of-range
-        # negative indices clamp to 0 (head) rather than raising, so
-        # we don't use `check_bounds` here.
+        # `insert` follows Python's list.insert() semantics: negative indices
+        # clamp to 0 (head). Bounds-check after clamping, since `check_bounds`
+        # rejects negatives; the valid range is `[0, len(self)]` (an index of
+        # `len(self)` appends, anything past the tail aborts).
         var i = index(idx)
         i = max(i if i >= 0 else i + len(self), 0)
+        check_bounds(i, len(self) + 1)
 
         if i == 0:
             var node = alloc(
                 Layout[Node[Self.ElementType]].single()
             ).unsafe_leak()
-            node.init_pointee_move(
+            node.unsafe_write(
                 _make_node[Self.ElementType](
                     elem^, Self._NodePointer(), Self._NodePointer()
                 )
@@ -614,29 +678,25 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
 
         i -= 1
 
+        # `i <= len(self)` (asserted above) guarantees a valid predecessor node.
         var current = self._get_node_ptr(i)
-        if current:
-            var curr_nn = current.value()
-            var next = curr_nn[].next()
-            var node = alloc(
-                Layout[Node[Self.ElementType]].single()
-            ).unsafe_leak()
-            var data = UnsafePointer(to=node[].value)
-            data[] = elem^
-            node[].next() = next
-            node[].prev() = current
-            if next:
-                next.value()[].prev() = node
-            curr_nn[].next() = node
-            if node[].next() == Self._NodePointer():
-                self._tail = node
-            if node[].prev() == Self._NodePointer():
-                self._head = node
-            self._size += 1
-        else:
-            raise Error("Index ", i, " out of bounds")
+        var curr_nn = current.value()
+        var next = curr_nn[].next()
+        var node = alloc(Layout[Node[Self.ElementType]].single()).unsafe_leak()
+        var data = UnsafePointer(to=node[].value)
+        data.unsafe_write(elem^)
+        node[].next() = next
+        node[].prev() = current
+        if next:
+            next.value()[].prev() = node
+        curr_nn[].next() = node
+        if node[].next() == Self._NodePointer():
+            self._tail = node
+        if node[].prev() == Self._NodePointer():
+            self._head = node
+        self._size += 1
 
-    def extend(mut self, var other: Self):
+    def extend(mut self, deinit other: Self):
         """Extends the list with another.
 
         Args:
@@ -658,12 +718,9 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             self._tail = other._tail
             self._size = other._size
 
-        other._head = Self._NodePointer()
-        other._tail = Self._NodePointer()
-
     def count(
         self, read elem: Self.ElementType
-    ) -> UInt where conforms_to(Self.ElementType, Equatable):
+    ) -> Int where conforms_to(Self.ElementType, Equatable):
         """Count the occurrences of `elem` in the list.
 
         Args:
@@ -683,7 +740,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
 
             current = current.value()[].next()
 
-        return UInt(count)
+        return count
 
     def index(
         self,
@@ -844,7 +901,11 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         """
         return self._size
 
-    def __iter__(var self) -> Self.IteratorOwnedType:
+    def __iter__(
+        var self,
+    ) -> Self.IteratorOwnedType where conforms_to(
+        Self.ElementType, ImplicitlyDeletable
+    ):
         """Consume the linked list and return an iterator over its elements.
 
         Returns:
@@ -855,17 +916,12 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             - O(1) for iterator construction.
             - O(n) in len(self) for a complete iteration of the list.
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
-        comptime assert conforms_to(
-            Self.ElementType, Copyable
-        ), "LinkedList iteration requires the element to be `Copyable`."
-        return {
+        # TODO(MOCO-4205): Remove `trait_downcast` and `downcast`.
+        return Self.IteratorOwnedType(
             rebind_var[
-                LinkedList[
-                    downcast[Self.ElementType, Copyable & ImplicitlyDeletable]
-                ]
+                LinkedList[downcast[Self.ElementType, ImplicitlyDeletable]]
             ](self^)
-        }
+        )
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
@@ -882,28 +938,24 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         comptime assert conforms_to(
             Self.ElementType, Copyable
         ), "LinkedList iteration requires the element to be `Copyable`."
+        # TODO(MOCO-4326): Remove rebind
         return _LinkedListIter(
             rebind[
                 Pointer[
-                    LinkedList[
-                        downcast[
-                            Self.ElementType, Copyable & ImplicitlyDeletable
-                        ]
-                    ],
+                    LinkedList[downcast[Self.ElementType, Copyable]],
                     origin_of(self),
                 ]
             ](Pointer(to=self))
         )
 
-    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDeletable` from the
-    # `downcast`s below — it is already implied by `ElementType`'s bound.
+    # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
     def __reversed__(
         ref self,
     ) -> _LinkedListIter[
-        downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
+        Self.ElementType,
         origin_of(self),
         forward=False,
-    ]:
+    ] where conforms_to(Self.ElementType, Copyable):
         """Iterate backwards over the list, returning immutable references.
 
         Returns:
@@ -914,26 +966,15 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             - O(1) for iterator construction.
             - O(n) in len(self) for a complete iteration of the list.
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
-        comptime assert conforms_to(
-            Self.ElementType, Copyable
-        ), "LinkedList iteration requires the element to be `Copyable`."
-        return _LinkedListIter[
-            downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
-            origin_of(self),
-            forward=False,
-        ](
+        # TODO(MOCO-4326): Remove rebind
+        return {
             rebind[
                 Pointer[
-                    LinkedList[
-                        downcast[
-                            Self.ElementType, Copyable & ImplicitlyDeletable
-                        ]
-                    ],
+                    LinkedList[downcast[Self.ElementType, Copyable]],
                     origin_of(self),
                 ]
             ](Pointer(to=self))
-        )
+        }
 
     def __bool__(self) -> Bool:
         """Check if the list is non-empty.

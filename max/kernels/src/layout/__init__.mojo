@@ -56,3 +56,7 @@ from .tile_tensor import (
     lt_to_tt_idx,
     LTToTTLayout,
 )
+from .tensor_storage import (
+    TensorStorage,
+    PointerStorage,
+)

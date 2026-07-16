@@ -80,22 +80,18 @@ struct _AsyncContext(ImplicitlyCopyable, RegisterPassable):
 
 
 def _init_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
-        chain.address
-    )
+    external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](chain)
 
 
 def _del_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_DestroyChain", NoneType](
-        chain.address
-    )
+    external_call["KGEN_CompilerRT_AsyncRT_DestroyChain", NoneType](chain)
 
 
 def _async_and_then(
     hdl: AnyCoroutine, chain: UnsafePointer[mut=True, _Chain, _]
 ):
     external_call["KGEN_CompilerRT_AsyncRT_AndThen", NoneType](
-        _coro_resume_fn, chain.address, hdl
+        _coro_resume_fn, chain, hdl
     )
 
 
@@ -106,18 +102,18 @@ def _async_execute[type: AnyType](handle: AnyCoroutine, desired_worker_id: Int):
 
 
 def _async_wait(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_Wait", NoneType](chain.address)
+    external_call["KGEN_CompilerRT_AsyncRT_Wait", NoneType](chain)
 
 
 def _async_complete(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_Complete", NoneType](chain.address)
+    external_call["KGEN_CompilerRT_AsyncRT_Complete", NoneType](chain)
 
 
 def _async_wait_timeout(
     chain: UnsafePointer[mut=True, _Chain, _], timeout: Int
 ) -> Bool:
     return external_call["KGEN_CompilerRT_AsyncRT_Wait_Timeout", Bool](
-        chain.address, timeout
+        chain, timeout
     )
 
 
@@ -206,7 +202,7 @@ def task_id_for_device(device_id: Int) -> Int:
         if no affinity mapping is configured.
     """
     return Int(
-        external_call["KGEN_CompilerRT_TaskIdForDevice", Int32](
+        external_call["MLRT_TaskIdForDevice", Int32](
             Int32(device_id),
         )
     )
@@ -394,17 +390,18 @@ def create_raising_task[
     _async_execute[type](task._handle._handle, desired_worker_id=-1)
 
 
-@explicit_destroy
-struct RaisingTask[type: Movable, origins: OriginSet]:
+struct RaisingTask[type: Movable, origins: OriginSet](
+    ImplicitlyDeletable where False,
+):
     """Represents an async task that may raise an error upon completion.
 
     Wraps a `RaisingCoroutine` that executes asynchronously and either
     produces a result value or raises an error. The error is propagated
     to the caller when `wait()` is called.
 
-    This type uses `@explicit_destroy` because only one of the result or
-    error slots is valid after completion. The caller must call `wait()`
-    or `force_destroy()` to consume the task.
+    This type does not conform to `ImplicitlyDeletable` because only one of the
+    result or error slots is valid after completion. The caller must call
+    `wait()` or `force_destroy()` to consume the task.
 
     Parameters:
         type: The type of value produced on success.

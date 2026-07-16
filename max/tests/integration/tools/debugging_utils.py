@@ -24,10 +24,10 @@ from typing import Any, cast
 import torch
 from create_pipelines import PIPELINE_ORACLES, GenericOracle
 from max import driver, pipelines
+from max._entrypoints.cli.entrypoint import configure_cli_logging
 from max.driver.buffer import load_max_buffer
 from max.engine import InferenceSession
 from max.engine.api import PrintStyle
-from max.entrypoints.cli.entrypoint import configure_cli_logging
 from max.experimental.nn import Module as ModuleV3
 from max.nn.hooks import PrintHook
 from max.nn.layer import Module

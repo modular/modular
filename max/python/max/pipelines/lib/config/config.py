@@ -31,10 +31,6 @@ from max.pipelines.kv_cache.config import KVCacheConfig, KVConnectorConfig
 from max.pipelines.lib.interfaces import (
     ArchConfig,
     ArchConfigWithKVCache,
-    PipelineModel,
-)
-from max.pipelines.lib.memory_estimation import (
-    MemoryEstimator,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import (
@@ -43,9 +39,11 @@ from max.pipelines.lib.pipeline_runtime_config import (
 )
 from max.pipelines.lora import LoRAConfig
 from max.pipelines.modeling.types.task import PipelineTask
-from max.pipelines.sampling import SamplingConfig
+from max.pipelines.sampling import (
+    DEFAULT_STRUCTURED_OUTPUT_BACKEND,
+    SamplingConfig,
+)
 from max.pipelines.speculative.config import SpeculativeConfig
-from max.pipelines.weights.hf_utils import is_diffusion_pipeline
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -68,6 +66,8 @@ logger = logging.getLogger("max.pipelines")
 # --pipeline.models.main.model-path. mypy sees ModelManifest so methods like
 # .with_override(), .resolve(), .main_architecture_name type-check correctly.
 if TYPE_CHECKING:
+    from max.pipelines.lib.pipeline_args import PipelineArgs
+
     _ModelsType = ModelManifest
 else:
     _ModelsType = dict[str, MAXModelConfig]
@@ -139,93 +139,6 @@ def _resolve_kvconnector_config(kv: KVCacheConfig) -> None:
             )
 
     kv.kv_connector_config = cfg
-
-
-# Architectures excluded from auto-enabling overlap scheduler.
-# Models not in this list will auto-enable overlap scheduler when eligible.
-_DISABLE_AUTO_OVERLAP_SCHEDULER_ARCHITECTURES = (
-    "DFlashDraftModel",
-    "DeepseekV2ForCausalLM",
-    "DeepseekV2ForCausalLM_ModuleV3",
-    "ExaoneForCausalLM",
-    "ExaoneForCausalLM_ModuleV3",
-    "Gemma3ForCausalLM",
-    "Gemma3ForCausalLM_ModuleV3",
-    "Gemma3ForConditionalGeneration",
-    "Gemma3ForConditionalGeneration_ModuleV3",
-    "GlmMoeDsaForCausalLM",
-    "GptOssForCausalLM",
-    "GptOssForCausalLM_ModuleV3",
-    "GraniteForCausalLM",
-    "GraniteForCausalLM_ModuleV3",
-    "HYV3ForCausalLM",
-    "Idefics3ForConditionalGeneration",
-    "Idefics3ForConditionalGeneration_ModuleV3",
-    "InternVLChatModel",
-    "KimiVLForConditionalGeneration",
-    "Lfm2ForCausalLM",
-    "LlamaForCausalLMEagle",
-    "LlamaForCausalLMEagle3",
-    "LlamaForCausalLM_ModuleV3",
-    "LlavaForConditionalGeneration",
-    "LlavaForConditionalGeneration_ModuleV3",
-    "MambaForCausalLM",
-    "Mistral3ForConditionalGeneration",
-    "MistralForCausalLM",
-    "Olmo3ForCausalLM",
-    "Phi3ForCausalLM",
-    "Phi3ForCausalLM_ModuleV3",
-    "Qwen2_5_VLForConditionalGeneration",
-    "Qwen3VLForConditionalGeneration",
-    "Qwen3VLMoeForConditionalGeneration",
-    "Step3p5ForCausalLM",
-)
-
-# Architectures excluded from auto-enabling device graph capture.
-# Models not in this list will auto-enable device graph capture when eligible.
-_DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
-    "DFlashDraftModel",
-    "DeepseekV2ForCausalLM",
-    "DeepseekV2ForCausalLM_ModuleV3",
-    "ExaoneForCausalLM",
-    "ExaoneForCausalLM_ModuleV3",
-    "Gemma3ForCausalLM",
-    "Gemma3ForCausalLM_ModuleV3",
-    "Gemma3ForConditionalGeneration",
-    "Gemma3ForConditionalGeneration_ModuleV3",
-    "Gemma4ForConditionalGeneration",
-    "GlmMoeDsaForCausalLM",
-    "GptOssForCausalLM",
-    "GptOssForCausalLM_ModuleV3",
-    "GraniteForCausalLM",
-    "GraniteForCausalLM_ModuleV3",
-    "HYV3ForCausalLM",
-    "Idefics3ForConditionalGeneration",
-    "Idefics3ForConditionalGeneration_ModuleV3",
-    "InternVLChatModel",
-    "KimiVLForConditionalGeneration",
-    "Lfm2ForCausalLM",
-    "LlamaForCausalLMEagle",
-    "LlamaForCausalLMEagle3",
-    "LlamaForCausalLM_ModuleV3",
-    "LlavaForConditionalGeneration",
-    "LlavaForConditionalGeneration_ModuleV3",
-    "MambaForCausalLM",
-    "Mistral3ForConditionalGeneration",
-    "MistralForCausalLM",
-    "Olmo3ForCausalLM",
-    "Phi3ForCausalLM",
-    "Phi3ForCausalLM_ModuleV3",
-    "Qwen2_5_VLForConditionalGeneration",
-    "Qwen3ForCausalLM",
-    "Qwen3MoeForCausalLM",
-    "Qwen3VLForConditionalGeneration",
-    "Qwen3VLMoeForConditionalGeneration",
-    "Qwen3_5ForConditionalGeneration",
-    "Step3p5ForCausalLM",
-    "UnifiedDflashKimiK25ForCausalLM",
-    "UnifiedDflashLlama3ForCausalLM",
-)
 
 
 def _is_disable_parser_sentinel(value: str | None) -> bool:
@@ -412,14 +325,20 @@ class PipelineConfig(ConfigFileModel):
         server-generated and gated on having a parser that can both produce
         the grammar and parse the resulting output).
 
+        Tool-call constrained decoding can be turned off independently via
+        ``sampling.enable_tool_call_constrained_decode``: when that is
+        ``False`` the tool parser still parses tool calls out of generated
+        text, but no grammar is generated and the bitmask path is not needed
+        on its account.
+
         Drives whether model / sampler graphs are compiled with a bitmask
         input and whether the D2H pinned buffer is allocated. Distinct from
         ``sampling.enable_structured_output``, which is the user-facing
         flag and only gates honoring user-supplied JSON schemas.
         """
-        return (
-            self.sampling.enable_structured_output
-            or self.runtime.tool_parser is not None
+        return self.sampling.enable_structured_output or (
+            self.runtime.tool_parser is not None
+            and self.sampling.enable_tool_call_constrained_decode
         )
 
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
@@ -593,27 +512,48 @@ class PipelineConfig(ConfigFileModel):
         # not reconstruct the manifest (which would trigger HF validation).
         if model_kwargs:
             model_kwargs.update(component_overrides.get("main", {}))
-            model_path = model_kwargs.pop("model_path", "")
-            if model_path:
-                revision = model_kwargs.pop("huggingface_model_revision", None)
-                # Strip kwargs that match MAXModelConfig defaults so
-                # from_model_path() doesn't reject them for diffusion
-                # pipelines (which forbid extra kwargs).
-                non_default_kwargs = _strip_default_model_kwargs(model_kwargs)
-                self.models = ModelManifest.from_model_path(
-                    model_path,
-                    revision=revision,
-                    **non_default_kwargs,
-                )
-            elif "main" in self.models:
+            if "main" in self.models:
                 # The main model came from a YAML recipe (or a pre-built
-                # manifest via ``models=``). Still let CLI flags such as
-                # --devices override the recipe so the same YAML can be
-                # reused across different multi-GPU setups.
-                non_default_kwargs = _strip_default_model_kwargs(model_kwargs)
-                if non_default_kwargs:
+                # manifest via ``models=``). Merge CLI overrides -- including
+                # --model-path -- into it via with_override() so the same
+                # recipe can be reused across different multi-GPU setups or
+                # models, instead of rebuilding the manifest from scratch and
+                # losing the recipe's other settings (device_specs, kv_cache,
+                # etc).
+                new_model_path = model_kwargs.get("model_path")
+                if (
+                    new_model_path
+                    and new_model_path != self.models["main"].model_path
+                ):
+                    logger.warning(
+                        "--model-path %r overrides the model_path %r loaded "
+                        "from --config-file. The rest of the config file "
+                        "(device_specs, kv_cache, etc) was tuned for the "
+                        "original model and may not be appropriate for %r.",
+                        new_model_path,
+                        self.models["main"].model_path,
+                        new_model_path,
+                    )
+                if model_kwargs:
                     self.models = self.models.with_override(
-                        "main", **non_default_kwargs
+                        "main", **model_kwargs
+                    )
+            else:
+                model_path = model_kwargs.pop("model_path", "")
+                if model_path:
+                    revision = model_kwargs.pop(
+                        "huggingface_model_revision", None
+                    )
+                    # Strip kwargs that match MAXModelConfig defaults so
+                    # from_model_path() doesn't reject them for diffusion
+                    # pipelines (which forbid extra kwargs).
+                    non_default_kwargs = _strip_default_model_kwargs(
+                        model_kwargs
+                    )
+                    self.models = ModelManifest.from_model_path(
+                        model_path,
+                        revision=revision,
+                        **non_default_kwargs,
                     )
 
         # Apply KV cache config to main model
@@ -1084,13 +1024,43 @@ class PipelineConfig(ConfigFileModel):
             )
             if draft_archs and draft_archs[0] == "Gemma4AssistantForCausalLM":
                 target_archs[0] = "UnifiedMTPGemma4ForCausalLM"
+        if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
+            draft_archs = (
+                self.draft_model.huggingface_config.architectures
+                if self.draft_model is not None
+                else None
+            )
+            if self.speculative.is_mtp() and self.draft_model is None:
+                target_archs[0] = (
+                    "UnifiedMTPMiniMaxM3SparseForConditionalGeneration"
+                )
+            elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
+                # M3 target + MHA (Llama-style) Eagle3 draft. The v0 Eagle3
+                # path forbids block-sparse attention.
+                target_archs[0] = (
+                    "Eagle3MHAMiniMaxM3SparseForConditionalGeneration"
+                )
+        if target_archs[0] == "GlmMoeDsaForCausalLM":
+            # GLM-5.2 bakes a NextN MTP layer into the target checkpoint, so
+            # there is no separate draft model. GLM-5.1 shares the arch name
+            # but has no MTP layer; only override when MTP weights exist.
+            has_mtp = (
+                getattr(
+                    self.model.huggingface_config,
+                    "num_nextn_predict_layers",
+                    0,
+                )
+                or 0
+            ) > 0
+            if self.draft_model is None and has_mtp:
+                target_archs[0] = "UnifiedMTPGlmMoeDsaForCausalLM"
 
     def resolve(
         self,
         arch: Any,
         draft_arch: Any = None,
     ) -> None:
-        """Validates and resolves the config.
+        """Validates the config.
 
         Args:
             arch: Pre-resolved target architecture from the registry.
@@ -1142,9 +1112,8 @@ class PipelineConfig(ConfigFileModel):
         # By this point, we should have a valid model_path.
 
         if self.draft_model:
-            # Joint memory estimation for speculative decoding
             _resolve_kvconnector_config(self.draft_model.kv_cache)
-            self._validate_and_resolve_speculative_memory(
+            self._validate_speculative_model_configs(
                 target_arch=arch, draft_arch=draft_arch
             )
             self._validate_pipeline_config_for_speculative_decoding(
@@ -1152,14 +1121,13 @@ class PipelineConfig(ConfigFileModel):
                 draft_arch=draft_arch,
             )
         else:
-            self._validate_and_resolve_remaining_pipeline_config(
+            self._validate_remaining_pipeline_config(
                 model_config=self.model, resolved_arch=arch
             )
 
-        self._validate_and_resolve_overlap_scheduler(arch=arch)
-
         self._resolve_default_reasoning_parser(arch=arch)
         self._resolve_default_tool_parser(arch=arch)
+        self._resolve_default_structured_output_backend(arch=arch)
 
     def _resolve_default_reasoning_parser(self, arch: Any = None) -> None:
         """Apply the architecture's default reasoning parser when unset.
@@ -1232,15 +1200,64 @@ class PipelineConfig(ConfigFileModel):
             arch.name,
         )
 
-    def _validate_and_resolve_overlap_scheduler(self, arch: Any = None) -> None:
+    def _resolve_default_structured_output_backend(
+        self, arch: Any = None
+    ) -> None:
+        """Resolve the structured output backend to a concrete value.
+
+        Resolution order (highest precedence first):
+
+        1. An explicit user choice (``sampling.structured_output_backend`` is
+           not ``None``) always wins -- including an explicit ``"xgrammar"`` on
+           an architecture that pins ``"llguidance"``.
+        2. Otherwise, if the resolved ``SupportedArchitecture`` declares a
+           ``default_structured_output_backend`` (e.g. Gemma 3 / MiniMax-M2 pin
+           ``"llguidance"``), use it.
+        3. Otherwise, fall back to the global default ``"xgrammar"``.
+
+        Runs unconditionally so the field is always a concrete ``str`` after
+        ``resolve()``. The ``None`` sentinel (unset) is what distinguishes an
+        explicit user value from the default -- mirroring the reasoning/tool
+        parser resolvers above.
+        """
+        if self.sampling.structured_output_backend is not None:
+            # Explicit user configuration always wins.
+            return
+
+        if (
+            arch is not None
+            and arch.default_structured_output_backend is not None
+        ):
+            self.sampling.structured_output_backend = (
+                arch.default_structured_output_backend
+            )
+            logger.info(
+                "Defaulting structured output backend to %r for architecture "
+                "%s. Override with --structured-output-backend.",
+                arch.default_structured_output_backend,
+                arch.name,
+            )
+            return
+
+        self.sampling.structured_output_backend = (
+            DEFAULT_STRUCTURED_OUTPUT_BACKEND
+        )
+        logger.info(
+            "Defaulting structured output backend to the global default %r "
+            "(architecture %s declares no default). Override with "
+            "--structured-output-backend.",
+            DEFAULT_STRUCTURED_OUTPUT_BACKEND,
+            arch.name if arch is not None else None,
+        )
+
+    def _validate_and_resolve_overlap_scheduler(
+        self, arch: Any = None, max_batch_size: int = 1
+    ) -> None:
         if not self.runtime.force:
-            max_batch_size = self.runtime.max_batch_size
             if (
                 self.runtime.device_graph_capture is None
                 and arch is not None
-                and arch.name
-                not in _DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
-                and max_batch_size is not None
+                and arch.supports_device_graph_capture
                 and accelerator_api() in ("cuda", "hip")
                 and self._is_eligible_for_overlap_serve_optimizations(arch)
                 # Device graph capture is not supported for prefill-only workers.
@@ -1262,15 +1279,12 @@ class PipelineConfig(ConfigFileModel):
         if self.runtime.force:
             return
 
-        # Automatically enable overlap scheduling for architectures not in the
-        # disable list. This is a blacklist approach so new architectures get
-        # overlap scheduler by default, making it easier to track which models
-        # still need work.
+        # Automatically enable overlap scheduling for architectures that declare
+        # support. New architectures opt out by setting ``supports_overlap_scheduler=False``.
         if not self.runtime.enable_overlap_scheduler:
             if (
                 arch is not None
-                and arch.name
-                not in _DISABLE_AUTO_OVERLAP_SCHEDULER_ARCHITECTURES
+                and arch.supports_overlap_scheduler
                 and self._is_eligible_for_overlap_serve_optimizations(arch)
             ):
                 self.runtime.enable_overlap_scheduler = True
@@ -1316,10 +1330,6 @@ class PipelineConfig(ConfigFileModel):
         if not self.runtime.device_graph_capture:
             return
 
-        if self.runtime.max_batch_size is None:
-            raise ValueError(
-                "device_graph_capture requires max_batch_size to be set."
-            )
         if not self.runtime.enable_overlap_scheduler:
             logger.info("Enabling overlap scheduling for device graph capture.")
         self.runtime.enable_overlap_scheduler = True
@@ -1427,15 +1437,10 @@ class PipelineConfig(ConfigFileModel):
             default_weights_format=arch.default_weights_format,
         )
 
-    def _validate_and_resolve_speculative_memory(
+    def _validate_speculative_model_configs(
         self, target_arch: Any, draft_arch: Any
     ) -> None:
-        """Memory estimation for unified speculative decoding.
-
-        The draft model shares almost all weights with the target, so
-        memory estimation uses the target model's weight size directly.
-        If a future speculative method introduces a draft with significant
-        non-shared weights, draft weight reservation should be added here.
+        """Validates model configs for unified speculative decoding.
 
         Args:
             target_arch: Pre-resolved target architecture from the registry.
@@ -1450,127 +1455,28 @@ class PipelineConfig(ConfigFileModel):
 
         # Validate draft model config against its architecture (quantization,
         # rope type, encoding, etc.). Target validation is handled inside
-        # _validate_and_resolve_remaining_pipeline_config below.
+        # _validate_remaining_pipeline_config below.
         self._validate_model_config_against_arch(self.draft_model, draft_arch)
-
-        self._validate_and_resolve_remaining_pipeline_config(
+        self._validate_remaining_pipeline_config(
             model_config=self.model,
             resolved_arch=target_arch,
         )
 
-        if self.draft_model.kv_cache._available_cache_memory is not None:
-            raise ValueError(
-                "Expected draft model's available_cache_memory to be None"
-            )
-        self.draft_model.kv_cache._available_cache_memory = 0
-
-        # Clamp max_length to the draft model's max sequence length.
-        # EAGLE and other draft models may support a shorter context than the
-        # target model (e.g. 2048 vs 131072).  Both models share a KV cache
-        # and must agree on the sequence length, so we use the minimum.
-        draft_arch_config = draft_arch.config.initialize(
-            self, model_config=self.draft_model
-        )
-        draft_max_seq_len = draft_arch_config.get_max_seq_len()
-        target_max_length = self.model.max_length
-        if (
-            target_max_length is not None
-            and target_max_length > draft_max_seq_len
-        ):
-            logger.info(
-                f"Clamping max_length from {target_max_length} to"
-                f" {draft_max_seq_len} (draft model max sequence length)"
-            )
-            self.model.max_length = draft_max_seq_len
-            self.draft_model.max_length = draft_max_seq_len
-
-    def _validate_and_resolve_remaining_pipeline_config(
+    def _validate_remaining_pipeline_config(
         self,
         model_config: MAXModelConfig,
         resolved_arch: Any,
     ) -> None:
-        """Validates model config against the architecture and runs memory estimation.
+        """Validates model config against the architecture.
+
+        Memory estimation and max_length resolution have moved to the registry
+        (``retrieve_factory``), where they run after this validation completes.
 
         Args:
-            model_config: The model configuration to validate and resolve.
+            model_config: The model configuration to validate.
             resolved_arch: Pre-resolved architecture from the registry.
         """
         self._validate_model_config_against_arch(model_config, resolved_arch)
-
-        if is_diffusion_pipeline(model_config.huggingface_model_repo):
-            # Skip memory estimation for diffusion pipelines,
-            # since they don't use KV cache.
-            return
-
-        if not issubclass(resolved_arch.pipeline_model, PipelineModel):
-            # Non-PipelineModel architectures (e.g. PipelineExecutor) skip
-            # memory estimation.
-            return
-
-        devices = load_devices(model_config.device_specs)
-        arch_config = resolved_arch.config.initialize(
-            self, model_config=model_config
-        )
-
-        if resolved_arch.memory_planner is not None:
-            planner = resolved_arch.memory_planner(arch_config)
-            weights_size = planner.estimate_weights_size(self)
-            activation_size = planner.estimate_activation_memory(
-                self, model_config.huggingface_config
-            )
-            signal_buffer_size = planner.estimate_signal_buffer_memory(
-                self, arch_config
-            )
-        else:
-            # ``memory_planner=None`` is the intentional state for architectures
-            # that manage memory outside the planner path (e.g. diffusion models,
-            # which exit early via ``is_diffusion_pipeline()`` before reaching
-            # this point).  It is also the fallback for any architecture not yet
-            # wired to a MemoryPlanner — if you are adding a new architecture
-            # that uses a KV cache, set ``memory_planner=PagedMemoryPlanner``
-            # on your ``SupportedArchitecture`` to get correct memory estimation.
-            weights_size = model_config.weights_size()
-            activation_size = 0
-            signal_buffer_size = self.estimate_signal_buffer_memory(arch_config)
-
-        MemoryEstimator.estimate_memory_footprint(
-            self,
-            model_config,
-            arch_config,
-            devices,
-            weights_size,
-            activation_size,
-            signal_buffer_size,
-            arch=resolved_arch,
-        )
-
-        if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(
-            weights_size,
-            activation_size,
-            model_config,
-            devices,
-            arch_config,
-            signal_buffer_size,
-        ):
-            if self.model.max_length is None:
-                self.model.max_length = clamped_max_seq_len
-            elif self.model.max_length > clamped_max_seq_len:
-                logging.warning(
-                    f"Clamping max_length from {self.model.max_length} to {clamped_max_seq_len} due to capacity of KV Cache"
-                )
-                self.model.max_length = clamped_max_seq_len
-
-        # Validate whether the architecture requires a max batch total tokens to be specified.
-        # This needs to be done after max_length is resolved.
-        if (
-            resolved_arch.requires_max_batch_context_length
-            and self.runtime.max_batch_total_tokens is None
-        ):
-            logger.warning(
-                f"Architecture '{resolved_arch.name}' requires max-batch-total-tokens to be specified but found None. "
-                f"Defaulting to the max sequence length of the model: {self.model.max_length}"
-            )
-            self.runtime.max_batch_total_tokens = self.model.max_length
 
     # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
     #
@@ -1591,6 +1497,102 @@ class PipelineConfig(ConfigFileModel):
             The graph quantization encoding corresponding to the CLI encoding.
         """
         return self.model.graph_quantization_encoding
+
+    @classmethod
+    def from_args(cls, args: PipelineArgs) -> Self:
+        """Construct a :class:`PipelineConfig` from a :class:`PipelineArgs`.
+
+        Args:
+            args: Flat user-facing pipeline arguments.
+
+        Returns:
+            A fully constructed :class:`PipelineConfig` ready for
+            architecture-driven resolution via :meth:`resolve`.
+        """
+        from max.pipelines.lib.pipeline_runtime_config import (
+            PipelineRuntimeConfig,
+        )
+        from max.pipelines.sampling import SamplingConfig
+
+        from .profiling_config import ProfilingConfig
+
+        if args._manifest_override is not None:
+            manifest = args._manifest_override
+        else:
+            models_dict: dict[str, MAXModelConfig] = {
+                "main": MAXModelConfig.from_pipeline_args(args)
+            }
+            if args.draft_model is not None:
+                models_dict["draft"] = args.draft_model.model_copy(deep=True)
+            manifest = ModelManifest(models_dict)
+
+        return cls(
+            models=manifest,
+            model_override=list(args.model_override),
+            sampling=SamplingConfig(
+                in_dtype=args.in_dtype,
+                out_dtype=args.out_dtype,
+                enable_structured_output=args.enable_structured_output,
+                structured_output_backend=args.structured_output_backend,
+                enable_variable_logits=args.enable_variable_logits,
+                enable_penalties=args.enable_penalties,
+                enable_min_tokens=args.enable_min_tokens,
+                sample_on_host=args.sample_on_host,
+            ),
+            runtime=PipelineRuntimeConfig(
+                pipeline_role=args.pipeline_role,
+                max_batch_size=args.max_batch_size,
+                max_queue_size_tg=args.max_queue_size_tg,
+                min_batch_size_tg=args.min_batch_size_tg,
+                ep_size=args.ep_size,
+                ep_use_allreduce=args.ep_use_allreduce,
+                eplb_profile=args.eplb_profile,
+                ce_delay_ms=args.ce_delay_ms,
+                enable_prioritize_first_decode=args.enable_prioritize_first_decode,
+                enable_chunked_prefill=args.enable_chunked_prefill,
+                enable_in_flight_batching=args.enable_in_flight_batching,
+                eplb_replicas_per_gpu=args.eplb_replicas_per_gpu,
+                max_num_steps=args.max_num_steps,
+                max_batch_input_tokens=args.max_batch_input_tokens,
+                use_experimental_kernels=args.use_experimental_kernels,
+                use_vendor_blas=args.use_vendor_blas,
+                use_vendor_ccl=args.use_vendor_ccl,
+                custom_architectures=list(args.custom_architectures),
+                execute_empty_batches=args.execute_empty_batches,
+                max_batch_total_tokens=args.max_batch_total_tokens,
+                device_graph_capture=args.device_graph_capture,
+                force=args.force,
+                kvcache_ce_watermark=args.kvcache_ce_watermark,
+                decode_stall_timeout_s=args.decode_stall_timeout_s,
+                decode_request_ttl_s=args.decode_request_ttl_s,
+                enable_overlap_scheduler=args.enable_overlap_scheduler,
+                allow_unsupported_logprobs=args.allow_unsupported_logprobs,
+                allow_extra_request_fields=args.allow_extra_request_fields,
+                prefer_module_v3=args.prefer_module_v3,
+                reasoning_parser=args.reasoning_parser,
+                tool_parser=args.tool_parser,
+                emit_reasoning_content=args.emit_reasoning_content,
+                temperature=args.temperature,
+                thinking_temperature=args.thinking_temperature,
+                max_vision_cache_entries=args.max_vision_cache_entries,
+                denoising_cache=args.denoising_cache.model_copy(deep=True),
+            ),
+            profiling=ProfilingConfig(
+                gpu_profiling=args.gpu_profiling,
+                profiling_enabled=args.profiling_enabled,
+                profiling_output_path=args.profiling_output_path,
+                profiling_dynolog_enabled=args.profiling_dynolog_enabled,
+                profiling_warmup_steps=args.profiling_warmup_steps,
+                profiling_active_steps=args.profiling_active_steps,
+                profiling_periodic_flush_seconds=args.profiling_periodic_flush_seconds,
+            ),
+            lora=args.lora.model_copy(deep=True) if args.lora else None,
+            speculative=args.speculative.model_copy(deep=True)
+            if args.speculative
+            else None,
+            task=args.task,
+            debug_verify_replay=args.debug_verify_replay,
+        )
 
 
 def _parse_flag_bool(value: str, flag_name: str) -> bool:

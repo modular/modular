@@ -27,7 +27,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
@@ -92,7 +92,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     k_cache_input_buffer = k_cache_input[dtype]()
     var max_cache_len_in_batch = 0
     for batch_idx in range(batch_size):
-        memcpy(
+        unsafe_memcpy(
             dest=kv_cache_block.ptr
             + kv_cache_block._offset(
                 IndexList[6](

@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import memcmp, memcpy
+from std.sys import simd_width_of
+from std.memory import memcmp, unsafe_memcpy
 
 from .constants import CONTAINER_SIZE, MAXIMUM_UINT64_AS_STRING
 
@@ -25,7 +26,7 @@ def standardize_string_slice(
     var standardized_x = InlineArray[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
     var std_x_ptr = standardized_x.unsafe_ptr()
     var x_len = x.byte_length()
-    memcpy(
+    unsafe_memcpy(
         dest=std_x_ptr + CONTAINER_SIZE - x_len, src=x.unsafe_ptr(), count=x_len
     )
     return standardized_x^
@@ -82,7 +83,7 @@ def to_integer(
     # 24 is not divisible by 16, so we stop at 8. Later on,
     # when we have better compile-time computation, we can
     # change 24 to be adapted to the simd width.
-    comptime simd_width = min(sys.simd_width_of[DType.uint64](), 8)
+    comptime simd_width = min(simd_width_of[DType.uint64](), 8)
 
     var accumulator = SIMD[DType.uint64, simd_width](0)
 

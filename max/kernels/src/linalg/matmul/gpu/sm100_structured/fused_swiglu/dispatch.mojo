@@ -17,6 +17,7 @@ caller is responsible for choosing the config (MMA shape, pipeline stages,
 etc.).
 """
 
+from std.math import align_up
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.primitives.grid_controls import PDLLevel
@@ -136,12 +137,11 @@ def matmul_swiglu_dispatch_sm100_bf16[
         _get_tuning_list_swiglu_bf16(), "swiglu_bf16_tuning"
     )
 
-    @parameter
     @always_inline
-    def rule_nk(x: TuningConfigSwiGLU) -> Bool:
+    def rule_nk(x: TuningConfigSwiGLU) {} -> Bool:
         return x.N == static_N and x.K == static_K
 
-    comptime nk_configs = tuning_table.find[rule_nk]()
+    comptime nk_configs = tuning_table.find(rule=rule_nk)
 
     comptime for tc in nk_configs:
         if m >= tc.M and m < tc.M_end:

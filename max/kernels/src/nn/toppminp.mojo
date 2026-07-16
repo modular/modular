@@ -14,6 +14,8 @@
 
 from std.math import iota
 
+from std.memory import ThinAllocation, dealloc
+from std.memory.alloc import Layout as AllocLayout
 from std.random import random_float64
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from nn.softmax import softmax
@@ -110,15 +112,19 @@ def _topp_minp_sampling[
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
 
-    var sorted_probs_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
+    var sorted_probs_alloc = alloc(
+        AllocLayout[Scalar[dtype]](count=batch_size * vocab_size)
+    ).into_deletable()
     var sorted_probs = TileTensor(
-        sorted_probs_ptr,
+        sorted_probs_alloc.unsafe_ptr(),
         row_major(Coord(batch_size, vocab_size)),
     )
 
-    var sorted_ids_ptr = alloc[Scalar[out_idx_type]](batch_size * vocab_size)
+    var sorted_ids_alloc = alloc(
+        AllocLayout[Scalar[out_idx_type]](count=batch_size * vocab_size)
+    ).into_deletable()
     var sorted_ids = TileTensor(
-        sorted_ids_ptr,
+        sorted_ids_alloc.unsafe_ptr(),
         row_major(Coord(batch_size, vocab_size)),
     )
 
@@ -194,8 +200,8 @@ def _topp_minp_sampling[
                     out_token_ids[batch, 0] = sid
                     break
 
-    sorted_ids_ptr.free()
-    sorted_probs_ptr.free()
+    dealloc(sorted_ids_alloc^.into_allocation())
+    dealloc(sorted_probs_alloc^.into_allocation())
 
 
 @always_inline
@@ -249,18 +255,20 @@ def merge[
     var right_size = end - mid
 
     # Create temporary arrays
-    var left_keys_ptr = alloc[Scalar[dtype]](left_size)
-    var right_keys_ptr = alloc[Scalar[dtype]](right_size)
-    var left_ids_ptr = alloc[Scalar[out_idx_type]](left_size)
-    var right_ids_ptr = alloc[Scalar[out_idx_type]](right_size)
+    var left_keys_ptr = alloc(AllocLayout[Scalar[dtype]](count=left_size))
+    var right_keys_ptr = alloc(AllocLayout[Scalar[dtype]](count=right_size))
+    var left_ids_ptr = alloc(AllocLayout[Scalar[out_idx_type]](count=left_size))
+    var right_ids_ptr = alloc(
+        AllocLayout[Scalar[out_idx_type]](count=right_size)
+    )
 
     # Copy data to temporary arrays
     for i in range(left_size):
-        left_keys_ptr[i] = buf_keys.raw_load(start + i)
-        left_ids_ptr[i] = buf_ids.raw_load(start + i)
+        left_keys_ptr.unsafe_ptr()[i] = buf_keys.raw_load(start + i)
+        left_ids_ptr.unsafe_ptr()[i] = buf_ids.raw_load(start + i)
     for i in range(right_size):
-        right_keys_ptr[i] = buf_keys.raw_load(mid + i)
-        right_ids_ptr[i] = buf_ids.raw_load(mid + i)
+        right_keys_ptr.unsafe_ptr()[i] = buf_keys.raw_load(mid + i)
+        right_ids_ptr.unsafe_ptr()[i] = buf_ids.raw_load(mid + i)
 
     # Merge back into original array
     var i = 0  # Index for left subarray
@@ -268,31 +276,33 @@ def merge[
     var k = start  # Index for merged array
 
     while i < left_size and j < right_size:
-        if left_keys_ptr[i] >= right_keys_ptr[j]:  # Use >= for descending order
-            buf_keys.raw_store(k, left_keys_ptr[i])
-            buf_ids.raw_store(k, left_ids_ptr[i])
+        if (
+            left_keys_ptr.unsafe_ptr()[i] >= right_keys_ptr.unsafe_ptr()[j]
+        ):  # Use >= for descending order
+            buf_keys.raw_store(k, left_keys_ptr.unsafe_ptr()[i])
+            buf_ids.raw_store(k, left_ids_ptr.unsafe_ptr()[i])
             i += 1
         else:
-            buf_keys.raw_store(k, right_keys_ptr[j])
-            buf_ids.raw_store(k, right_ids_ptr[j])
+            buf_keys.raw_store(k, right_keys_ptr.unsafe_ptr()[j])
+            buf_ids.raw_store(k, right_ids_ptr.unsafe_ptr()[j])
             j += 1
         k += 1
 
     # Copy remaining elements if any
     while i < left_size:
-        buf_keys.raw_store(k, left_keys_ptr[i])
-        buf_ids.raw_store(k, left_ids_ptr[i])
+        buf_keys.raw_store(k, left_keys_ptr.unsafe_ptr()[i])
+        buf_ids.raw_store(k, left_ids_ptr.unsafe_ptr()[i])
         i += 1
         k += 1
 
     while j < right_size:
-        buf_keys.raw_store(k, right_keys_ptr[j])
-        buf_ids.raw_store(k, right_ids_ptr[j])
+        buf_keys.raw_store(k, right_keys_ptr.unsafe_ptr()[j])
+        buf_ids.raw_store(k, right_ids_ptr.unsafe_ptr()[j])
         j += 1
         k += 1
 
     # Free temporary arrays
-    left_keys_ptr.free()
-    right_keys_ptr.free()
-    left_ids_ptr.free()
-    right_ids_ptr.free()
+    dealloc(left_keys_ptr^)
+    dealloc(right_keys_ptr^)
+    dealloc(left_ids_ptr^)
+    dealloc(right_ids_ptr^)

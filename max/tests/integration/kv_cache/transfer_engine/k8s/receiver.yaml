@@ -83,6 +83,10 @@ spec:
               value: libfabric
             - name: FI_EFA_USE_DEVICE_RDMA
               value: "1"
+            # Surface libfabric provider warnings (e.g. EFA MR registration
+            # detail) in pod logs so smoke failures are diagnosable from CI.
+            - name: FI_LOG_LEVEL
+              value: warn
             - name: MODULAR_NIXL_PLUGIN_DIR
               value: /opt/venv/lib/nixl
             - name: MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT

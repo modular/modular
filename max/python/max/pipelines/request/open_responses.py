@@ -721,7 +721,7 @@ class FunctionToolParam(BaseModel):
     name: str = Field(
         ...,
         description="The name of the function to be called. Must be a-z, A-Z, 0-9, "
-        "or contain underscores and dashes, with a maximum length of 64.",
+        "or contain underscores and dashes, with a maximum length of 1024.",
     )
     description: str | None = Field(
         None,

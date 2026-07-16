@@ -18,7 +18,7 @@ from std.hashlib import hash
 from std.memory import (
     UnsafeMaybeUninit,
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
 )
 from test_utils import (
@@ -385,11 +385,11 @@ def test_write_repr_to() raises:
 
 
 def test_inline_array_triviality() raises:
-    assert_true(is_trivially_destructible[InlineArray[Int, 1]]())
+    assert_true(is_trivially_deletable[InlineArray[Int, 1]]())
     assert_true(is_trivially_copyable[InlineArray[Int, 1]]())
     assert_true(is_trivially_movable[InlineArray[Int, 1]]())
 
-    assert_false(is_trivially_destructible[InlineArray[String, 1]]())
+    assert_false(is_trivially_deletable[InlineArray[String, 1]]())
     assert_false(is_trivially_copyable[InlineArray[String, 1]]())
     assert_true(is_trivially_movable[InlineArray[String, 1]]())
 
@@ -443,7 +443,9 @@ def test_inline_array_iter_mut() raises:
 
 def _test_inline_array_iter_bounds[
     I: Iterator
-](var array_iter: I, array_len: Int) raises:
+](var array_iter: I, array_len: Int) raises where conforms_to(
+    I.Element, ImplicitlyDeletable
+):
     var iter = array_iter^
 
     for i in range(array_len):
@@ -451,7 +453,7 @@ def _test_inline_array_iter_bounds[
         print(lower, upper, i)
         assert_equal(array_len - i, lower)
         assert_equal(array_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
+        _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -641,7 +643,7 @@ def test_inline_array_with_explicit_destroy_type() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    arr^.destroy_with(destroy_closure)
+    arr^.deinit_with(destroy_closure)
 
     assert_equal(destroyed, [0, 1, 2])
 

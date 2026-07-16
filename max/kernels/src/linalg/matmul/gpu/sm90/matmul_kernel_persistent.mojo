@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.sys import size_of
 
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
 from std.gpu.globals import WARPGROUP_SIZE

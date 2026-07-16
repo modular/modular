@@ -45,7 +45,7 @@ from .functional import (
     unswitch,
     vectorize,
 )
-from .memory import parallel_memcpy
+from .memory import parallel_memcpy, unsafe_parallel_memcpy
 from .reduction import (
     cumsum,
     map_reduce,

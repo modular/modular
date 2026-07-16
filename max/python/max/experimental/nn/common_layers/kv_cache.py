@@ -38,7 +38,8 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
     kv_blocks: Tensor
     cache_lengths: Tensor
     lookup_table: Tensor
-    max_lengths: Tensor
+    max_prompt_length: Tensor
+    max_cache_length: Tensor
     kv_scales: Tensor | None = None
     attention_dispatch_metadata: Tensor | None = None
     # MLA capturable-graph scalar; mirrors upstream PagedCacheValues.
@@ -87,7 +88,8 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
             kv_blocks=_wrap([d.kv_blocks for d in per_device]),
             cache_lengths=_wrap([d.cache_lengths for d in per_device]),
             lookup_table=_wrap([d.lookup_table for d in per_device]),
-            max_lengths=_wrap([d.max_lengths for d in per_device]),
+            max_prompt_length=_wrap([d.max_prompt_length for d in per_device]),
+            max_cache_length=_wrap([d.max_cache_length for d in per_device]),
             kv_scales=kv_scales,
             attention_dispatch_metadata=attention_dispatch_metadata,
             mla_num_partitions=mla_num_partitions,
@@ -103,7 +105,8 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
         yield self.kv_blocks
         yield self.cache_lengths
         yield self.lookup_table
-        yield self.max_lengths
+        yield self.max_prompt_length
+        yield self.max_cache_length
         if self.kv_scales is not None:
             yield self.kv_scales
 
@@ -113,7 +116,10 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
             kv_blocks=BufferValue(self.kv_blocks.local_shards[i]),
             cache_lengths=TensorValue(self.cache_lengths.local_shards[i]),
             lookup_table=TensorValue(self.lookup_table.local_shards[i]),
-            max_lengths=TensorValue(self.max_lengths.local_shards[i]),
+            max_prompt_length=TensorValue(
+                self.max_prompt_length.local_shards[i]
+            ),
+            max_cache_length=TensorValue(self.max_cache_length.local_shards[i]),
             kv_scales=BufferValue(self.kv_scales.local_shards[i])
             if self.kv_scales is not None
             else None,
