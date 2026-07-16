@@ -116,12 +116,20 @@ def repeat_interleave[
 
         repeat_offset += repeat_stride
 
+    # `offset_mapping` is a `List` (not register-passable), so it cannot be
+    # captured directly by the unified closure. Capture a `Span` view instead;
+    # the `Span` carries the list's origin, keeping it alive through the
+    # closure's last use. Everything else is captured by `mut`, matching the
+    # original implicit-capture behavior.
+    var offset_mapping_view = Span(offset_mapping)
+
     @always_inline
-    @parameter
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[
+        width: Int, alignment: Int = 1
+    ](idx: Coord) {var offset_mapping_view, mut}:
         var output_index = rebind[IndexList[3]](coord_to_index_list(idx))
         var input_index = output_index
-        input_index[1] = offset_mapping[output_index[1]]
+        input_index[1] = offset_mapping_view[output_index[1]]
 
         var input_idx = collapsed_input.layout(Coord(input_index))
         var input_value = collapsed_input.raw_load[width=width](input_idx)
@@ -129,8 +137,8 @@ def repeat_interleave[
         var output_idx = collapsed_output.layout(Coord(output_index))
         collapsed_output.raw_store(output_idx, input_value)
 
-    elementwise[func, simd_width_of[output.dtype]()](
-        collapsed_output.layout.shape_coord(), ctx
+    elementwise[simd_width_of[output.dtype]()](
+        func, collapsed_output.layout.shape_coord(), ctx
     )
 
 

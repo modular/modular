@@ -19,6 +19,7 @@ from max.pipelines.modeling.types import PipelineTask
 
 from ..deepseekV3.memory_planner import DeepseekV3MemoryPlanner
 from ..deepseekV3.model_config import DeepseekV3Config
+from .batch_processor import UnifiedMTPDeepseekV3BatchProcessor
 from .model import UnifiedMTPDeepseekV3Model
 from .weight_adapters import convert_with_mtp_state_dict
 
@@ -46,4 +47,5 @@ unified_mtp_deepseekV3_arch = SupportedArchitecture(
     requires_max_batch_context_length=True,
     config=DeepseekV3Config,
     memory_planner=DeepseekV3MemoryPlanner,
+    batching=UnifiedMTPDeepseekV3BatchProcessor,
 )

@@ -166,6 +166,7 @@ def test_tuple_comparison() raises:
     assert_false((1, 2, 3) > (1, 2, 4))
     assert_true((1, 2, 3) <= (1, 2, 4))
     assert_true((1, 2, 3) >= (1, 2, 2))
+    assert_true(Tuple() <= Tuple())
 
 
 def test_tuple_comparison_different_types() raises:
@@ -311,6 +312,8 @@ def test_tuple_assert_not_equal() raises:
 
 def test_tuple_conditional_conformances() raises:
     # Copyable conformance is conditional on all element types being Copyable.
+    assert_true(conforms_to(Tuple[], Comparable))
+    assert_true(conforms_to(Tuple[Int], Comparable))
     assert_true(conforms_to(Tuple[], Copyable))
     assert_true(conforms_to(Tuple[Int], Copyable))
     assert_true(conforms_to(Tuple[Int, String], Copyable))

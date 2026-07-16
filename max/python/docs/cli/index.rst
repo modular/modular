@@ -13,7 +13,7 @@
     in the [install guide](/max/packages#install).
 
 
-.. click:: max.entrypoints.pipelines:main
+.. click:: max._entrypoints.pipelines:main
   :prog: max
   :hide-description:
 
@@ -27,3 +27,4 @@
    list.rst
    serve.rst
    warm-cache.rst
+   warm-interpreter-cache.rst

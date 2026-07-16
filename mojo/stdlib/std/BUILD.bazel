@@ -42,6 +42,7 @@ mojo_library(
     ],
     docs_hosted_on_mojolang = True,
     docs_title = "Mojo standard library",
+    use_production_compiler_for_asan = True,
     validate_missing_docs = True,
 )
 

@@ -24,7 +24,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs, MHAKVCacheParams
 from max.pipelines.architectures.llama3.model import Llama3Inputs
 from max.pipelines.kv_cache.paged_kv_cache import PagedKVCacheManager
 from max.pipelines.lib import ModelOutputs
@@ -120,7 +120,7 @@ def make_kv_inputs(
         if data_parallel_degree is not None:
             kv_params_kwargs["data_parallel_degree"] = data_parallel_degree
 
-        kv_params = KVCacheParams(**kv_params_kwargs)
+        kv_params = MHAKVCacheParams(**kv_params_kwargs)
         kv_manager = PagedKVCacheManager(
             params=kv_params,
             total_num_pages=total_num_pages,

@@ -36,8 +36,8 @@ from max.nn import (
 )
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kv_cache import (
-    KVCacheParams,
     KVCacheQuantizationConfig,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 from max.nn.rotary_embedding import (
@@ -212,14 +212,13 @@ def run_max_indexer(
     )
 
     # Create KV cache params for FP8 indexer cache with scales
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float8_e4m3fn,
         n_kv_heads=1,
         head_dim=index_head_dim,
         num_layers=1,
         page_size=page_size,
         devices=[DeviceRef.GPU()],
-        is_mla=False,
         kvcache_quant_config=KVCacheQuantizationConfig(
             scale_dtype=DType.float32,
             quantization_granularity=128,
@@ -319,8 +318,9 @@ def run_max_indexer(
             kv_blocks=graph.inputs[3].buffer,
             cache_lengths=graph.inputs[4].tensor,
             lookup_table=graph.inputs[5].tensor,
-            max_lengths=graph.inputs[6].tensor,
-            kv_scales=graph.inputs[7].buffer,
+            max_prompt_length=graph.inputs[6].tensor,
+            max_cache_length=graph.inputs[7].tensor,
+            kv_scales=graph.inputs[8].buffer,
         )
 
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())

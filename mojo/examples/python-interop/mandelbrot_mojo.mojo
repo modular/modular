@@ -126,7 +126,7 @@ def draw_mandelbrot(
         for col in range(GRID_WIDTH):
             var v = tensor[row, col]
             if v < iterations:
-                var idx = Int(Int(v) % len(sr))
+                var idx = Int(Int(v) % len(sr.bytes()))
                 var p = sr[byte=idx]
                 buffer += p
             else:

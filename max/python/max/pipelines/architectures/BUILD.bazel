@@ -14,6 +14,8 @@ modular_py_library(
         "tool_parsers",
         # Private MiniMax-M3 arch is imported at runtime, not directly
         "minimax_m3",
+        # Private unified MiniMax-M3 + MTP arch is imported at runtime
+        "minimax_m3_mtp",
     ],
     deps = [
         requirement("transformers"),  # Used in hf_config_shims.py

@@ -40,7 +40,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma4.layers.attention import (
     Gemma4Attention as MaxGemma4Attention,
@@ -52,7 +52,7 @@ from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
-from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
+from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
 
 MAX_SEQ_LEN = 1152
 
@@ -73,7 +73,7 @@ class CompiledAttention(NamedTuple):
 
 
 def _get_position_embeddings(
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     input_tensor: torch.Tensor,
     use_global_rope: bool,
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -123,7 +123,7 @@ def _causal_attention_mask(seq_len: int) -> torch.Tensor:
 
 @torch.no_grad()
 def generate_torch_outputs(
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
     layer_idx: int,
@@ -157,7 +157,7 @@ def generate_torch_outputs(
 
 def build_max_attention(
     session: InferenceSession,
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     attention_weights: dict[str, torch.Tensor],
     dtype: DType,
     device_ref: DeviceRef,
@@ -185,7 +185,7 @@ def build_max_attention(
     }
 
     cache_dtype_eff = cache_dtype if cache_dtype is not None else dtype
-    kv_params_local = KVCacheParams(
+    kv_params_local = MHAKVCacheParams(
         dtype=cache_dtype_eff,
         devices=[device_ref],
         n_kv_heads=text_config.num_key_value_heads,
@@ -196,7 +196,7 @@ def build_max_attention(
         page_size=256,
     )
 
-    kv_params_global = KVCacheParams(
+    kv_params_global = MHAKVCacheParams(
         dtype=cache_dtype_eff,
         devices=[device_ref],
         n_kv_heads=text_config.num_global_key_value_heads,
