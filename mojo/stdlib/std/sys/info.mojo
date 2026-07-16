@@ -767,7 +767,7 @@ comptime _AMD_RDNA2_ARCHS: List[StaticString] = [
     "gfx1030",  # Navi 21 (RX 6900/6800)
     "gfx1031",  # Navi 22 (RX 6700)
     "gfx1032",  # Navi 23 (RX 6600)
-    "gfx1033",  # Navi 24
+    "gfx1033",  # Navi 24 (Van Gogh)
     "gfx1034",  # Navi 24
     "gfx1035",  # Rembrandt APU
     "gfx1036",  # Raphael APU
@@ -783,7 +783,7 @@ def _is_amd_rdna2() -> Bool:
         gfx1030: Navi 21 (RX 6900/6800)
         gfx1031: Navi 22 (RX 6700)
         gfx1032: Navi 23 (RX 6600)
-        gfx1033: Navi 24
+        gfx1033: Navi 24 (Van Gogh)
         gfx1034: Navi 24
         gfx1035: Rembrandt APU
         gfx1036: Raphael APU
@@ -1044,6 +1044,26 @@ def simd_byte_width[target: _TargetType = _current_target()]() -> Int:
     """
     comptime CHAR_BIT = 8
     return simd_bit_width[target]() // CHAR_BIT
+
+
+@always_inline("nodebug")
+def stdlib_plugin[target: _TargetType = _current_target()]() -> StaticString:
+    """Returns the stdlib plugin name for the specified target.
+
+    Parameters:
+        target: The target architecture.
+
+    Returns:
+        The stdlib plugin name for the specified target.
+    """
+    return StaticString(
+        __mlir_attr[
+            `#kgen.param.expr<target_get_field,`,
+            target,
+            `, "stdlib_plugin" : !kgen.string`,
+            `> : !kgen.string`,
+        ]
+    )
 
 
 @always_inline("nodebug")
@@ -1339,7 +1359,12 @@ def has_amd_gpu_accelerator() -> Bool:
     Returns:
         True if the host system has an AMD GPU.
     """
-    return is_amd_gpu() or "amd" in _accelerator_arch()
+    # `_accelerator_arch()` is the raw `--target-accelerator` value, which may
+    # be a bare architecture ("gfx950", "mi300x") with no vendor prefix, or a
+    # vendor-prefixed form ("amdgpu:gfx950", "amd:gfx950"). Detect all of them
+    # so that a bare target behaves identically to a vendor-prefixed one.
+    var arch = _accelerator_arch()
+    return is_amd_gpu() or "amd" in arch or "gfx" in arch or "mi" in arch
 
 
 @always_inline("nodebug")
@@ -1362,7 +1387,12 @@ def has_nvidia_gpu_accelerator() -> Bool:
     Returns:
         True if the host system has an NVIDIA GPU.
     """
-    return is_nvidia_gpu() or "nvidia" in _accelerator_arch()
+    # `_accelerator_arch()` is the raw `--target-accelerator` value, which may
+    # be a bare architecture ("sm_90") with no vendor prefix, a vendor-prefixed
+    # form ("nvidia:sm_90"), or the generic "cuda". Detect all of them so that
+    # a bare target behaves identically to a vendor-prefixed one.
+    var arch = _accelerator_arch()
+    return is_nvidia_gpu() or "nvidia" in arch or "sm" in arch or arch == "cuda"
 
 
 @always_inline("nodebug")
@@ -1402,4 +1432,9 @@ def has_apple_gpu_accelerator() -> Bool:
     Returns:
         True if the host system has a Metal GPU.
     """
-    return is_apple_gpu() or "metal" in _accelerator_arch()
+    # `_accelerator_arch()` is the raw `--target-accelerator` value, which may
+    # be a bare architecture ("apple-m4") with no vendor prefix, or a
+    # vendor-prefixed form ("metal:4"). Detect both so that a bare target
+    # behaves identically to a vendor-prefixed one.
+    var arch = _accelerator_arch()
+    return is_apple_gpu() or "metal" in arch or "apple" in arch

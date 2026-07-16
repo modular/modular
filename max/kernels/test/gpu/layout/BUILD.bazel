@@ -50,6 +50,9 @@ _EXTRA_CONSTRAINTS = {
     # Works on any NVIDIA GPU (H100+), incompatible with AMD
     "test_grouped_tensormap_update.mojo": ["//:nvidia_gpu"],
 } | {
+    # Experimental SWIZZLE_NONE uint32 TMA store, validated on B200.
+    "test_tma_swizzle_none_uint32_store.mojo": ["//:b200_gpu"],
+} | {
     "test_layout_tensor_copy_amd.mojo": ["//:amd_gpu"],
     "test_layout_tensor_copy_nvidia.mojo": ["//:nvidia_gpu"],
     # compile_info emits PTX assembly, which is NVIDIA-specific
@@ -108,7 +111,7 @@ _FILECHECK_TESTS = [
             "matmul_kernels.mojo",
         ],
         exec_properties = {
-            "test.resources:gpu-memory": "1.5",
+            "test.resources:gpu-memory": "2",
         },
         main = src,
         tags = ["gpu"],
@@ -129,9 +132,27 @@ _FILECHECK_TESTS = [
             "test_tensor_core_amd_utils.mojo",  # Imported source, not a test
             "matmul_kernels.mojo",  # Imported source, not a test
             "tensor_core_kernels.mojo",  # Imported source, not a test
+            # Depends only on `layout` + `std`; given a dedicated minimal-deps
+            # target below so it is not coupled to `nn`/`linalg`.
+            "test_device_pointer_tile_storage_kernel.mojo",
         ],
     )
 ]
+
+# `DevicePointerStorage` probe. It only imports `layout` and `std`, so it gets
+# a dedicated target with minimal dependencies rather than the heavy
+# `nn`/`linalg`/`kv_cache` set the glob above attaches to every other test.
+mojo_test(
+    name = "test_device_pointer_tile_storage_kernel.mojo.test",
+    size = "large",
+    srcs = ["test_device_pointer_tile_storage_kernel.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:layout",
+        "@mojo//:std",
+    ],
+)
 
 [
     mojo_filecheck_test(

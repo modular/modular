@@ -228,8 +228,9 @@ class UnifiedDflashLlama3(Module):
         ctx_hidden = self.draft.project_target_hidden(target_hs_concat)
 
         # The draft leaf already carries draft blocks + lookup_table /
-        # max_lengths / dispatch metadata (mirroring the target leaf); only
-        # cache_lengths is overridden with the pre-step value.
+        # max_prompt_length / max_cache_length / dispatch metadata (mirroring
+        # the target leaf); only cache_lengths is overridden with the pre-step
+        # value.
         draft_kv_collection = replace(
             inputs.draft_kv_collection,
             cache_lengths=pre_cache_lengths,

@@ -38,6 +38,7 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
     SamplingConfig,
 )
+from max.pipelines.lib.memory_estimation import _MemoryPlan
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipeline,
@@ -286,6 +287,7 @@ def create_pipeline_with_lora(
             eos_token_id=999,
             weight_adapters={},
             tokenizer=MagicMock(),
+            memory_plan=_MemoryPlan(max_batch_size=1, footprint=0),
         )
 
 

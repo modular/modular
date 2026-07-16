@@ -31,9 +31,9 @@ Modules
    driver
    dtype
    engine
-   entrypoints
    experimental
    graph
    nn
    pipelines
    profiler
+   support.image

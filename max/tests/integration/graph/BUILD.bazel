@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -40,8 +39,10 @@ _SEPARATE_TARGET_TESTS = [
     "test_graph_telemetry.py",
     "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
+    "test_rowwise_reductions.py",
     "test_runtime_source_notes.py",
     "test_scatter.py",
+    "test_tile_based_fusion.py",
 ]
 
 modular_py_library(
@@ -90,6 +91,9 @@ modular_py_test(
         "CUSTOM_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/test_user_op)",
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
@@ -272,6 +276,29 @@ modular_py_test(
     ],
 )
 
+# Row-wise reduction correctness tests (CPU). Each of the ~31 parametrizations
+# builds and compiles one symbolic-dimension graph, so the wall time is
+# compile-dominated; shard_count parallelizes those compiles across CI workers
+# (see the "Avoid Per-Test Graph Recompilation" guidance in max/CLAUDE.md).
+modular_py_test(
+    name = "test_rowwise_reductions",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_rowwise_reductions.py",
+    ],
+    shard_count = 4,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
 # CPU-only graph op tests (ASAN-only restriction unlike cpu_tests)
 modular_py_test(
     name = "cpu_graph_op_tests",
@@ -333,6 +360,26 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
     }),
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tile_based_fusion",
+    srcs = [
+        "test_tile_based_fusion.py",
+    ],
+    # NVIDIA-only: tile-based fusion is not yet validated on AMD/Apple GPUs —
+    # a coverage gate, not a hardware incompatibility (the codegen path emits
+    # generic Mojo via `foreach_fusion_tile` with no NVIDIA-specific branch).
+    # Widen this once the path is validated on other targets.
+    gpu_constraints = ["//:nvidia_gpu"],
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
