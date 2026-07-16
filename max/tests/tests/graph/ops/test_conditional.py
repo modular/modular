@@ -86,7 +86,7 @@ def test_conditional_type_check() -> None:
 
 def test_conditional_with_raising() -> None:
     with Graph("conditional_with_chain", input_types=()) as graph:
-        chain = graph._current_chain
+        chain = graph.device_chains[DeviceRef.CPU()]
         cond = ops.constant(True, dtype=DType.bool, device=DeviceRef.CPU())
 
         def then_fn() -> None:
@@ -100,7 +100,7 @@ def test_conditional_with_raising() -> None:
         except Exception as e:
             assert "else" in str(e)
 
-        assert graph._current_chain == chain
+        assert graph.device_chains[DeviceRef.CPU()] == chain
         graph.output()
     graph._mlir_op.verify()
 

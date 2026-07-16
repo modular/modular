@@ -17,13 +17,14 @@ Helper functions for Expert Parallelism (EP) Communication Kernels.
 """
 
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from std.gpu.host import FuncAttribute
+from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.info import is_gpu
+from std.math import ceildiv
 from layout import TensorLayout, TileTensor, Idx
 from layout.tile_tensor import row_major
-from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from std.sys.info import size_of
+from std.sys.info import has_amd_gpu_accelerator, simd_width_of, size_of
+from std.gpu import WARP_SIZE
 from std.ffi import external_call, _get_global_or_null
 
 from shmem import shmem_module_init, shmem_my_pe
@@ -51,6 +52,42 @@ def global_cache_insert(key: String, value: OpaquePointer[mut=True, _]):
 
 
 @always_inline
+def _ep_dispatch_wait_grid_dim(
+    num_tokens: Int,
+    n_local_experts: Int,
+    sm_count: Int,
+) -> Int:
+    """Decode-fast-path grid sizing for dispatch_wait.
+
+    `copy_received_tokens_to_output` assigns one local expert per SM via
+    `local_expert_id = umod(sm_id, n_local_experts)`, so the active comm-SM
+    count must be at least `n_local_experts` for correctness. We scale beyond
+    that floor with `num_tokens` so prefill batches still get full parallelism.
+    """
+    # comm SMs >= n_local_experts (correctness); plus 1 aux SM.
+    return min(n_local_experts + max(num_tokens, 0) + 1, sm_count)
+
+
+@always_inline
+def _ep_combine_wait_grid_dim(
+    num_tokens: Int,
+    n_chunks_per_tok: Int,
+    n_warps_per_block: Int,
+    sm_count: Int,
+) -> Int:
+    """Decode-fast-path grid sizing for combine_wait.
+
+    `reduce_and_copy_to_output` distributes `num_tokens * n_chunks_per_tok`
+    chunks across `n_warps_per_block * (grid_dim.x - 1)` warps. Size the grid
+    so each warp handles ~1 chunk in the small-batch case and we cap at the
+    hardware SM count for large batches. The `+1` accounts for the aux SM.
+    """
+    var work_units = max(num_tokens * n_chunks_per_tok, 1)
+    var reduce_sms = ceildiv(work_units, max(n_warps_per_block, 1))
+    return min(reduce_sms + 1, sm_count)
+
+
+@always_inline
 def pack_ptrs_array[
     ptrs_layout: TensorLayout,
     //,
@@ -63,22 +100,22 @@ def pack_ptrs_array[
     _ptrs: TileTensor[DType.uint64, ptrs_layout, ...],
     my_rank: Int32,
     out result: InlineArray[
-        UnsafePointer[Scalar[ptr_type], MutExternalOrigin], n_gpus_per_node
+        UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin], n_gpus_per_node
     ],
 ):
     """Pack the pointers into an inline array."""
     comptime assert _ptrs.flat_rank == 1, "Pointers must be a 1D tensor."
     var ptr_arr = InlineArray[
-        UnsafePointer[Scalar[ptr_type], MutExternalOrigin], n_gpus_per_node
+        UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin], n_gpus_per_node
     ](uninitialized=True)
 
     comptime for i in range(n_gpus_per_node):
         comptime if local_rank_only:
-            ptr_arr[i] = UnsafePointer[Scalar[ptr_type], MutExternalOrigin](
+            ptr_arr[i] = UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin](
                 unsafe_from_address=Int(_ptrs[my_rank])
             )
         else:
-            ptr_arr[i] = UnsafePointer[Scalar[ptr_type], MutExternalOrigin](
+            ptr_arr[i] = UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin](
                 unsafe_from_address=Int(_ptrs[i])
             )
 
@@ -107,7 +144,7 @@ def ep_dispatch_async_kernel_api[
     send_ptrs: TileTensor[DType.uint64, ...],
     recv_ptrs: TileTensor[DType.uint64, ...],
     recv_count_ptrs: TileTensor[DType.uint64, ...],
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Execute the Expert Parallelism async dispatch kernel.
 
@@ -155,7 +192,7 @@ def ep_dispatch_async_kernel_api[
         max_token_per_rank,
     )
 
-    var gpu_ctx = context.get_device_context()
+    var gpu_ctx = context
 
     comptime n_ranks = n_gpus_per_node * n_nodes
     comptime hw_info = gpu_ctx.default_device_info
@@ -201,7 +238,7 @@ def ep_dispatch_async_kernel_api[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        var func = gpu_ctx.compile_function[dispatch_async, dispatch_async]()
+        var func = gpu_ctx.compile_function[dispatch_async]()
 
         comptime if use_shmem:
             var cached_module_key = String(t"EP_DISPATCH_INITED_DEV_{gpu_id}")
@@ -211,12 +248,12 @@ def ep_dispatch_async_kernel_api[
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutExternalOrigin](
+                    UnsafePointer[NoneType, MutUntrackedOrigin](
                         unsafe_from_address=1
                     ),
                 )
 
-        var send_ptr = UnsafePointer[UInt8, MutExternalOrigin](
+        var send_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
         var recv_ptrs_arr = pack_ptrs_array[DType.uint8](recv_ptrs, my_rank)
@@ -224,7 +261,7 @@ def ep_dispatch_async_kernel_api[
             recv_count_ptrs, my_rank
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutExternalOrigin](
+            UnsafePointer[Int32, MutUntrackedOrigin](
                 unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
@@ -266,7 +303,8 @@ def ep_dispatch_wait_kernel_api[
     recv_ptrs: TileTensor[DType.uint64, ...],
     recv_count_ptrs: TileTensor[DType.uint64, ...],
     atomic_counters: TileTensor[DType.int32, ...],
-    context: DeviceContextPtr,
+    context: DeviceContext,
+    num_input_tokens: Int = -1,
 ) raises:
     """Execute the Expert Parallelism dispatch completion kernel.
 
@@ -293,7 +331,11 @@ def ep_dispatch_wait_kernel_api[
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
         context: Device context pointer.
+        num_input_tokens: Per-rank input token count for this layer. When >= 0
+            enables the decode-fast-path grid sizing. Default `-1` keeps the
+            full-`sm_count` grid for backwards compatibility.
     """
+    comptime n_local_experts = n_experts // (n_gpus_per_node * n_nodes)
 
     # Ensure this kernel only runs on GPU targets
     comptime assert is_gpu[target](), "EP is only supported on GPU."
@@ -304,7 +346,7 @@ def ep_dispatch_wait_kernel_api[
         recv_count_ptrs.flat_rank == 1
     ), "Receive count pointers must be a 1D tensor."
 
-    var gpu_ctx = context.get_device_context()
+    var gpu_ctx = context
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 
@@ -346,20 +388,30 @@ def ep_dispatch_wait_kernel_api[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        var recv_buf_ptr = UnsafePointer[UInt8, MutExternalOrigin](
+        var recv_buf_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(recv_ptrs[gpu_id])
         )
-        var recv_count_ptr = UnsafePointer[UInt64, MutExternalOrigin](
+        var recv_count_ptr = UnsafePointer[UInt64, MutUntrackedOrigin](
             unsafe_from_address=Int(recv_count_ptrs[gpu_id])
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutExternalOrigin](
+            UnsafePointer[Int32, MutUntrackedOrigin](
                 unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
         var smem_size = UInt32(token_fmt_type.dispatch_smem_size)
-        gpu_ctx.enqueue_function[dispatch_wait, dispatch_wait](
+        var grid_dim_x: Int
+        comptime if has_amd_gpu_accelerator():
+            if num_input_tokens >= 0:
+                grid_dim_x = _ep_dispatch_wait_grid_dim(
+                    num_input_tokens, n_local_experts, hw_info.sm_count
+                )
+            else:
+                grid_dim_x = hw_info.sm_count
+        else:
+            grid_dim_x = hw_info.sm_count
+        gpu_ctx.enqueue_function[dispatch_wait](
             token_handler,
             row_offsets,
             expert_ids,
@@ -368,7 +420,7 @@ def ep_dispatch_wait_kernel_api[
             recv_count_ptr,
             ep_counters,
             my_rank,
-            grid_dim=hw_info.sm_count,
+            grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,
             shared_mem_bytes=Int(smem_size),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -408,7 +460,7 @@ def ep_fused_dispatch_kernel_api[
     send_ptrs: TileTensor[DType.uint64, ...],
     recv_ptrs: TileTensor[DType.uint64, ...],
     recv_count_ptrs: TileTensor[DType.uint64, ...],
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Execute the fused Expert Parallelism dispatch kernel.
 
@@ -473,7 +525,7 @@ def ep_fused_dispatch_kernel_api[
         max_token_per_rank,
     )
 
-    var gpu_ctx = context.get_device_context()
+    var gpu_ctx = context
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 
@@ -524,7 +576,7 @@ def ep_fused_dispatch_kernel_api[
         task_id=get_safe_task_id(context),
     ):
         var smem_size = UInt32(token_fmt_type.dispatch_smem_size)
-        var func = gpu_ctx.compile_function[fused_dispatch, fused_dispatch](
+        var func = gpu_ctx.compile_function[fused_dispatch](
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 smem_size
             ),
@@ -540,12 +592,12 @@ def ep_fused_dispatch_kernel_api[
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutExternalOrigin](
+                    UnsafePointer[NoneType, MutUntrackedOrigin](
                         unsafe_from_address=1
                     ),
                 )
 
-        var send_ptr = UnsafePointer[UInt8, MutExternalOrigin](
+        var send_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
         # Create inline arrays to store all the p2p accessible pointers
@@ -556,11 +608,23 @@ def ep_fused_dispatch_kernel_api[
             DType.uint64, local_rank_only=skip_a2a
         ](recv_count_ptrs, my_rank)
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutExternalOrigin](
+            UnsafePointer[Int32, MutUntrackedOrigin](
                 unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
+        # Fused dispatch grid must satisfy both phases:
+        #  - async: each token gets one comm SM, after n_signal_sms aux SMs.
+        #  - wait: at least n_local_experts comm SMs + 1 aux SM for correctness.
+        comptime n_local_experts = n_experts // (n_gpus_per_node * n_nodes)
+        var num_input_tokens = Int(input_tokens.dim(0))
+        var grid_dim_x: Int
+        comptime if has_amd_gpu_accelerator():
+            grid_dim_x = _ep_dispatch_wait_grid_dim(
+                num_input_tokens, n_local_experts, hw_info.sm_count
+            )
+        else:
+            grid_dim_x = hw_info.sm_count
         gpu_ctx.enqueue_function(
             func,
             input_tokens,
@@ -574,10 +638,10 @@ def ep_fused_dispatch_kernel_api[
             recv_count_ptrs_arr,
             ep_counters,
             my_rank,
-            grid_dim=hw_info.sm_count,
+            grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,
             shared_mem_bytes=Int(smem_size),
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -604,7 +668,7 @@ def ep_combine_async_kernel_api[
     send_ptrs: TileTensor[DType.uint64, ...],
     recv_ptrs: TileTensor[DType.uint64, ...],
     recv_count_ptrs: TileTensor[DType.uint64, ...],
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Execute the Expert Parallelism combine kernel.
 
@@ -647,7 +711,7 @@ def ep_combine_async_kernel_api[
         send_ptrs.flat_rank == 1
     ), "Send pointers must be a 1D tensor."
 
-    var gpu_ctx = context.get_device_context()
+    var gpu_ctx = context
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 
@@ -694,7 +758,7 @@ def ep_combine_async_kernel_api[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        var func = gpu_ctx.compile_function[combine_async, combine_async]()
+        var func = gpu_ctx.compile_function[combine_async]()
 
         comptime if use_shmem:
             var cached_module_key = String(t"EP_COMBINE_INITED_DEV_{gpu_id}")
@@ -704,12 +768,12 @@ def ep_combine_async_kernel_api[
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutExternalOrigin](
+                    UnsafePointer[NoneType, MutUntrackedOrigin](
                         unsafe_from_address=1
                     ),
                 )
 
-        var send_ptr = UnsafePointer[UInt8, MutExternalOrigin](
+        var send_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
         # Create inline arrays to store all the p2p accessible pointers
@@ -718,7 +782,7 @@ def ep_combine_async_kernel_api[
             recv_count_ptrs, my_rank
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutExternalOrigin](
+            UnsafePointer[Int32, MutUntrackedOrigin](
                 unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
@@ -760,7 +824,8 @@ def ep_combine_wait_kernel_api[
     atomic_counters: TileTensor[DType.int32, ...],
     recv_ptrs: TileTensor[DType.uint64, ...],
     recv_count_ptrs: TileTensor[DType.uint64, ...],
-    context: DeviceContextPtr,
+    context: DeviceContext,
+    num_input_tokens: Int = -1,
 ) raises:
     """Execute the Expert Parallelism combine completion kernel.
 
@@ -804,7 +869,7 @@ def ep_combine_wait_kernel_api[
         recv_count_ptrs.flat_rank == 1
     ), "Receive count pointers must be a 1D tensor."
 
-    var gpu_ctx = context.get_device_context()
+    var gpu_ctx = context
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 
@@ -850,25 +915,43 @@ def ep_combine_wait_kernel_api[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        var recv_buf_ptr = UnsafePointer[UInt8, MutExternalOrigin](
+        var recv_buf_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(recv_ptrs[gpu_id])
         )
-        var recv_count_ptr = UnsafePointer[UInt64, MutExternalOrigin](
+        var recv_count_ptr = UnsafePointer[UInt64, MutUntrackedOrigin](
             unsafe_from_address=Int(recv_count_ptrs[gpu_id])
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutExternalOrigin](
+            UnsafePointer[Int32, MutUntrackedOrigin](
                 unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
-        gpu_ctx.enqueue_function[combine_wait, combine_wait](
+        comptime dst_simd_width = simd_width_of[combine_dtype]()
+        comptime n_chunks_per_tok = hidden_size // (WARP_SIZE * dst_simd_width)
+        comptime n_warps_per_block = (
+            hw_info.max_thread_block_size // WARP_SIZE
+        )
+        var grid_dim_x: Int
+        comptime if has_amd_gpu_accelerator():
+            if num_input_tokens >= 0:
+                grid_dim_x = _ep_combine_wait_grid_dim(
+                    num_input_tokens,
+                    n_chunks_per_tok,
+                    n_warps_per_block,
+                    hw_info.sm_count,
+                )
+            else:
+                grid_dim_x = hw_info.sm_count
+        else:
+            grid_dim_x = hw_info.sm_count
+        gpu_ctx.enqueue_function[combine_wait](
             output_tokens,
             recv_buf_ptr,
             recv_count_ptr,
             ep_counters,
             my_rank,
-            grid_dim=hw_info.sm_count,
+            grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,
         )
 
@@ -903,8 +986,8 @@ def ep_fused_combine_kernel_api[
     send_ptrs: TileTensor[DType.uint64, ...],
     recv_ptrs: TileTensor[DType.uint64, ...],
     recv_count_ptrs: TileTensor[DType.uint64, ...],
-    context: DeviceContextPtr,
-    topk_ids_p: Optional[UnsafePointer[Int32, ImmutExternalOrigin]] = None,
+    context: DeviceContext,
+    topk_ids_p: Optional[UnsafePointer[Int32, ImmutUntrackedOrigin]] = None,
 ) raises:
     """Execute the fused Expert Parallelism combine kernel.
 
@@ -960,7 +1043,7 @@ def ep_fused_combine_kernel_api[
         send_ptrs.flat_rank == 1
     ), "Send pointers must be a 1D tensor."
 
-    var gpu_ctx = context.get_device_context()
+    var gpu_ctx = context
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 
@@ -1020,7 +1103,7 @@ def ep_fused_combine_kernel_api[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        var func = gpu_ctx.compile_function[fused_combine, fused_combine]()
+        var func = gpu_ctx.compile_function[fused_combine]()
 
         comptime if use_shmem:
             var cached_module_key = String(
@@ -1032,12 +1115,12 @@ def ep_fused_combine_kernel_api[
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutExternalOrigin](
+                    UnsafePointer[NoneType, MutUntrackedOrigin](
                         unsafe_from_address=1
                     ),
                 )
 
-        var send_ptr = UnsafePointer[UInt8, MutExternalOrigin](
+        var send_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
         # Create inline arrays to store all the p2p accessible pointers
@@ -1048,11 +1131,33 @@ def ep_fused_combine_kernel_api[
             DType.uint64, local_rank_only=skip_a2a
         ](recv_count_ptrs, my_rank)
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutExternalOrigin](
+            UnsafePointer[Int32, MutUntrackedOrigin](
                 unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
+        # Fused combine grid must satisfy:
+        #  - async send_tokens_back: one block per expert (n_experts iterations
+        #    with stride grid_dim.x), so any grid >= 1 is correct.
+        #  - wait + reduce: needs num_tokens * n_chunks_per_tok work units
+        #    distributed across n_warps_per_block * (grid_dim - 1) warps.
+        # Take the max to be safe; cap at sm_count.
+        comptime dst_simd_width = simd_width_of[combine_dtype]()
+        comptime n_chunks_per_tok = hidden_size // (WARP_SIZE * dst_simd_width)
+        comptime n_warps_per_block = (
+            hw_info.max_thread_block_size // WARP_SIZE
+        )
+        var num_input_tokens = Int(input_tokens.dim(0))
+        var grid_dim_x: Int
+        comptime if has_amd_gpu_accelerator():
+            grid_dim_x = _ep_combine_wait_grid_dim(
+                num_input_tokens,
+                n_chunks_per_tok,
+                n_warps_per_block,
+                hw_info.sm_count,
+            )
+        else:
+            grid_dim_x = hw_info.sm_count
         gpu_ctx.enqueue_function(
             func,
             input_tokens,
@@ -1064,7 +1169,7 @@ def ep_fused_combine_kernel_api[
             ep_counters,
             topk_ids_p,
             my_rank,
-            grid_dim=hw_info.sm_count,
+            grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )

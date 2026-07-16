@@ -18,7 +18,7 @@ from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalMask
 from std.testing import assert_almost_equal
@@ -36,7 +36,7 @@ def execute_ragged_flash_attention[
     comptime num_paged_blocks = 32
     comptime page_size = 128
     comptime PagedCollectionType = PagedKVCacheCollection[
-        type, kv_params, page_size
+        type, kv_params, page_size, ...
     ]
     var num_layers = 1
     var layer_idx = 0
@@ -125,7 +125,7 @@ def execute_ragged_flash_attention[
             mixed_ce_q_ragged_host.ptr + mixed_ce_row_offset * head_stride
         )
 
-        memcpy(
+        unsafe_memcpy(
             dest=mixed_ce_offset,
             src=true_ce_offset,
             count=mixed_ce_prompt_len * head_stride,
@@ -240,9 +240,18 @@ def execute_ragged_flash_attention[
                         mixed_ce_ragged_offset + s, h, hd
                     ]
                     try:
+                        # 1 BF16 ULP tolerance: the SM100 1Q vs 2Q paths
+                        # (dispatched per-call based on max_prompt_len)
+                        # use different FP reduction orders, so cross-
+                        # dispatch comparisons here aren't bit-identical
+                        # even when both paths are correct. rtol=1e-2 /
+                        # atol=1e-5 matches the convention used in the
+                        # SM100 MHA test suite (e.g. test_mha_causal_mask).
                         assert_almost_equal(
                             true_ce_val,
                             mixed_ce_val,
+                            atol=1e-5,
+                            rtol=1e-2,
                         )
                     except e:
                         print(

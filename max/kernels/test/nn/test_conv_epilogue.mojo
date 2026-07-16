@@ -176,8 +176,7 @@ def test[
             output_ref,
             input,
             packed_filter,
-            # 30770
-            rebind[ConvShape[rank + 2 - 2]](conv_shape),
+            conv_shape,
         )
     else:
         ConvDirectNHWC[
@@ -193,8 +192,7 @@ def test[
             output_ref,
             input,
             filter,
-            # 30770
-            rebind[ConvShape[rank + 2 - 2]](conv_shape),
+            conv_shape,
         )
 
     # Add bias and activatiion separately.
@@ -252,8 +250,7 @@ def test[
             output,
             input,
             packed_filter,
-            # 30770
-            rebind[ConvShape[rank + 2 - 2]](conv_shape),
+            conv_shape,
         )
     else:
         ConvDirectNHWC[
@@ -270,8 +267,7 @@ def test[
             output,
             input,
             filter,
-            # 30770
-            rebind[ConvShape[rank + 2 - 2]](conv_shape),
+            conv_shape,
         )
 
     # Check results, return on the first failed comparison.

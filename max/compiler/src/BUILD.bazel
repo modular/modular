@@ -6,6 +6,6 @@ mojo_library(
     name = "compiler",
     srcs = glob(["**/*.mojo"]),
     deps = [
-        "//max:compiler_internal",
+        "//max:extensibility",
     ],
 )

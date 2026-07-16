@@ -27,11 +27,14 @@ from max.driver import Buffer, Device
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
-from max.pipelines.dataprocessing.causal_attention_mask import (
+from max.pipelines.lib import SupportedEncoding
+from max.pipelines.modeling.base.component_model import ComponentModel
+from max.pipelines.modeling.dataprocessing.causal_attention_mask import (
     causal_attention_mask_with_token_mask,
 )
-from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.pipelines.weights.weight_loading import (
+    auto_cast_weights_from_env,
+)
 
 from .model_config import Qwen3TextEncoderConfig
 from .qwen3 import Qwen3TextEncoderTransformer
@@ -142,7 +145,11 @@ class Qwen3TextEncoderModel(ComponentModel):
             model = Qwen3TextEncoderTransformer(self.config)
             model.to(self.devices[0])
 
-        self.model = model.compile(*model.input_types(), weights=state_dict)
+        self.model = model.compile(
+            *model.input_types(),
+            weights=state_dict,
+            auto_cast=auto_cast_weights_from_env(),
+        )
         return self.model
 
     @staticmethod
@@ -202,8 +209,6 @@ class Qwen3TextEncoderModel(ComponentModel):
         )
 
         outputs = self.model(tokens, attention_bias)
-        if isinstance(outputs, list):
-            outputs = tuple(outputs)
 
         if hidden_state_index is None:
             if isinstance(outputs, tuple) and len(outputs) == 1:

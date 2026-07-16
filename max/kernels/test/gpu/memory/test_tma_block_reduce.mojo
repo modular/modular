@@ -211,7 +211,7 @@ def test_tma_block_reduce[
             comptime kernel = tma_reduction_kernel[
                 dtype, accum_type, simd_width
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 tma_desc,
                 rows,
                 cols,
@@ -222,7 +222,7 @@ def test_tma_block_reduce[
                 shared_mem_bytes=shared_mem_bytes,
             )
         else:
-            var data_buf = TileTensor(d_data, row_major(Idx(rows), Idx(cols)))
+            var data_buf = TileTensor(d_data, row_major(rows, cols))
 
             # Change the input function to match RMS norm pattern
             @__copy_capture(data_buf)
@@ -243,7 +243,7 @@ def test_tma_block_reduce[
                 input_fn_2d,
             ]
 
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 d_out,
                 cols,  # num_cols
                 grid_dim=grid_dim,
@@ -261,7 +261,7 @@ def test_tma_block_reduce[
 
         # Timed runs
         var total_time = ctx.execution_time[kernel_launch](num_iters)
-        var avg_time_ms = Float64(total_time) / (num_iters * 1e6)
+        var avg_time_ms = Float64(total_time) / Float64(num_iters) * 1e6
 
         print(
             "  Average kernel time for:",

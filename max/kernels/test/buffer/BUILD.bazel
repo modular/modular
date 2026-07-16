@@ -17,15 +17,66 @@ _FILECHECK_TESTS = [
             "full",
         ],
         deps = [
+            "//max:extensibility",
             "//max:internal_utils",
             "//max:linalg",
-            "//max:tensor",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
     for src in _FILECHECK_TESTS
 ]
+
+# Tile-based elementwise fusion needs the builtin_kernels package (for the
+# `Add` op) which the shared glob deps below don't carry. Give it an explicit
+# target so the other buffer tests don't pull that heavy dep.
+_EXPLICIT_DEP_TESTS = [
+    "test_tile_codegen_elementwise_fusion.mojo",
+    "test_foreach_fusion_tile_gpu.mojo",
+]
+
+mojo_test(
+    name = "test_tile_codegen_elementwise_fusion.mojo.test",
+    srcs = ["test_tile_codegen_elementwise_fusion.mojo"],
+    copts = [
+        "--debug-level",
+        "full",
+    ],
+    deps = [
+        "//max:builtin_kernels",
+        "//max:extensibility",
+        "//max:layout",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
+# GPU integration test for the `foreach_fusion_tile` driver: needs
+# builtin_primitives (the driver), builtin_kernels (the `Add` op the fusion
+# struct uses), and a GPU.
+mojo_test(
+    name = "test_foreach_fusion_tile_gpu.mojo.test",
+    srcs = ["test_foreach_fusion_tile_gpu.mojo"],
+    copts = [
+        "--debug-level",
+        "full",
+    ],
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        # TODO(KERN-3171): Metal enqueue of the fusion-tile adapter fails
+        # with 'Null argument at index 0'.
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max:builtin_kernels",
+        "//max:builtin_primitives",
+        "//max:extensibility",
+        "//max:layout",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
 
 [
     mojo_test(
@@ -36,15 +87,15 @@ _FILECHECK_TESTS = [
             "full",
         ],
         deps = [
+            "//max:extensibility",
             "//max:internal_utils",
             "//max:linalg",
-            "//max:tensor",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
     for src in glob(
         ["*.mojo"],
-        exclude = _FILECHECK_TESTS,
+        exclude = _FILECHECK_TESTS + _EXPLICIT_DEP_TESTS,
     )
 ]

@@ -30,9 +30,7 @@ def MOToMOGG(
     TODO: Expand this to also perform lowering search
     """
 
-def AddFallbackShapeFunctions(
-    kernel_library_paths: Sequence[str] = [],
-) -> max._core.Pass:
+def AddFallbackShapeFunctions() -> max._core.Pass:
     """
     This ensures all MO operations will have parameterized outputs by checking
     if they have already been parameterized and if not materializing a fallback
@@ -122,6 +120,21 @@ def ConstantFoldSubgraphTest() -> max._core.Pass:
     ```
     which is the full graph followed by zero or more occurrences of word
     'subgraph' with the values that compose a constant subgraph.
+    """
+
+def CreateParallelFromUnbundle() -> max._core.Pass:
+    """
+    For each `mo.tensor.unbundle` whose N results each have exactly one user
+    and whose user set is structurally identical, creates a new
+    `mo.parallel` region downstream of the unbundle containing a single
+    clone of the consumer.  The new parallel's primary input bundle is
+    built from the unbundle's N results; additional consumer operands
+    whose per-launch values vary are bundled into new inputs.
+
+    The transient `bundle(unbundle(X)...)` introduced as the primary input
+    folds back to `X` via canonicalization, leaving the new region
+    adjacent to the producer for `mo-merge-adjacent-parallels` to match by
+    SSA equality.
     """
 
 def DebugPrintAllTensorsPass() -> max._core.Pass:
@@ -290,7 +303,9 @@ def MergeDuplicateShapeMaterializations() -> max._core.Pass:
     Canonicalization and CSE can take this one step further and eliminate a number of additional operations.
     """
 
-def NanCheckPass(kernel_library_paths: Sequence[str] = []) -> max._core.Pass:
+def NanCheckPass(
+    kernel_library_paths: Sequence[str] = [], stride: int = 20
+) -> max._core.Pass:
     """
     This pass inserts nan_check ops after each floating-point tensor output
     in the graph and lowers them to MOGG kernels in-place. Each nan_check
@@ -299,6 +314,16 @@ def NanCheckPass(kernel_library_paths: Sequence[str] = []) -> max._core.Pass:
     For debugging only — activated via the `max-debug.nan-check` config
     key (for example, `InferenceSession.debug.nan_check = True` or
     `MODULAR_DEBUG=nan-check`) or the `--nan-check` compiler flag.
+
+    The `stride` option samples one of every N floating-point kernel
+    outputs rather than checking all of them. Models with many compiled
+    regions (e.g. gemma-4-31b-it produces ~920 float kernel results) make
+    checking every tensor prohibitively expensive — the single-threaded
+    Mojo/KGEN compile path can't absorb hundreds of extra MOGG kernel
+    call sites in a usable amount of time (GEX-3703). The default of 20
+    keeps NaN/Inf checking usable on large models; set stride=1 to
+    restore the original "check every tensor" behaviour (only practical
+    on small graphs, e.g. lit tests).
     """
 
 def PropagateShapes() -> max._core.Pass:
@@ -365,4 +390,18 @@ def ValidateDevicesPass(
     """
     This pass checks the inputs and outputs of the graph, verifying that the
     data type for each tensor can be implemented on the target device.
+    """
+
+def VerifyDeviceGraphPass() -> max._core.Pass:
+    """
+    When a `mo.graph` carries the `isDeviceGraph` attribute, every
+    kernel-backed op in its body must correspond to a `mogg.kernel.decl`
+    whose `build_graph` field is populated. This pass walks the graph body,
+    looks up each op in the module's `MojoRegistry`, and emits an error for
+    any op whose resolved kernel registration lacks a `build_graph` entry
+    point.
+
+    Ops with no registration in the registry (for example dialect-intrinsic
+    ops such as `mo.constant` or `mo.output`) are skipped. Graphs without
+    the `isDeviceGraph` attribute are no-ops.
     """
