@@ -17,9 +17,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
-import numpy as np
 from max.driver import Buffer, Device, DeviceSpec
 from max.dtype import DType
 from max.engine.api import InferenceSession, Model
@@ -33,19 +32,19 @@ from max.nn.kv_cache import (
 )
 from max.nn.layer import Module
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
+    BatchProcessor,
     CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineModelWithKVCache,
-    upper_bounded_default,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from transformers import AutoConfig
 
+from .batch_processor import DeepseekV2BatchProcessor
 from .deepseekV2 import DeepseekV2
 from .distributed_deepseekV2 import DistributedDeepseekV2
 from .model_config import DeepseekV2Config
@@ -72,8 +71,14 @@ class DeepseekV2Inputs(ModelInputs):
 
 
 class DeepseekV2Model(
-    LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]
+    LogProbabilitiesMixin,
+    PipelineModelWithKVCache[TextContext],
 ):
+    model_config_cls: ClassVar[type[Any]] = DeepseekV2Config
+    batch_processor_cls: ClassVar[type[BatchProcessor[Any, Any]]] = (
+        DeepseekV2BatchProcessor
+    )
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -84,6 +89,7 @@ class DeepseekV2Model(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         if pipeline_config.model.device_specs[0] == DeviceSpec.cpu():
             raise ValueError("DeepseekV2 currently only supported on gpu.")
@@ -97,6 +103,7 @@ class DeepseekV2Model(
             adapter,
             return_logits,
             return_hidden_states,
+            max_batch_size=max_batch_size,
         )
 
         self.model = self.load_model(session)
@@ -132,88 +139,6 @@ class DeepseekV2Model(
                 logits=model_outputs[0],
             )
 
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> DeepseekV2Inputs:
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-        # Get input_row_offsets: start and end position of each batch in the
-        # combined total_seq_len dimension.
-        input_row_offsets = np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-        )
-
-        # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
-
-        return DeepseekV2Inputs(
-            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=Buffer.from_numpy(input_row_offsets).to(
-                self.devices[0]
-            ),
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ).to(self.devices[0]),
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> DeepseekV2Inputs:
-        assert isinstance(prev_model_inputs, DeepseekV2Inputs)
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
-        return DeepseekV2Inputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParamInterface:
-        return DeepseekV2Config.construct_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for DeepseekV2, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_seq_len "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
-
     def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
         # Generate DeviceRef
         device_ref = DeviceRef.from_device(self.devices[0])
@@ -239,14 +164,14 @@ class DeepseekV2Model(
                 input_row_offsets_type,
                 return_n_logits_type,
                 *signals.input_types(),
-                *self.kv_params.get_symbolic_inputs().flatten(),
+                *self.kv_params.flattened_kv_inputs(),
             )
         else:
             return (
                 tokens_type,
                 input_row_offsets_type,
                 return_n_logits_type,
-                *self.kv_params.get_symbolic_inputs().flatten(),
+                *self.kv_params.flattened_kv_inputs(),
             )
 
     def _unflatten_kv_inputs(
@@ -261,22 +186,11 @@ class DeepseekV2Model(
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
         )
-        return list(
-            kv_params.get_symbolic_inputs()
-            .unflatten(iter(kv_inputs_flat))
-            .inputs
-        )
+        symbolic_inputs = kv_params.unflatten_kv_inputs(iter(kv_inputs_flat))
+        assert isinstance(symbolic_inputs, KVCacheInputs)
+        return list(symbolic_inputs.inputs)
 
     def _build_graph(self) -> Graph:
-        # Pre-allocate a buffer for input_row_offsets in multistep execution.
-        # We do this to avoid materializing and copying a buffer with each multistep step
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        ).to(self.devices[0])
-
         # Read in weights.
         if not isinstance(self.weights, SafetensorWeights):
             raise ValueError(

@@ -53,7 +53,6 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
@@ -495,22 +494,22 @@ def run_test[
         scale_dtype_=DType.float32,
         quantization_granularity_=PHYSICAL_DIM,
     ](
-        LayoutTensor[fp8_type, Layout.row_major[6](), MutAnyOrigin](
-            blocks_lt.ptr,
+        LayoutTensor[fp8_type, Layout.row_major[6]()](
+            blocks_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
-            cache_lengths_lt.ptr,
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
+            cache_lengths_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
-            lookup_table_lt.ptr,
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+            lookup_table_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
                 lookup_table_lt.runtime_layout.stride.value,
@@ -518,8 +517,8 @@ def run_test[
         ),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
-        LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
-            scales_lt.ptr,
+        LayoutTensor[DType.float32, Layout.row_major[6]()](
+            scales_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major[6]()](
                 scales_lt.runtime_layout.shape.value,
                 scales_lt.runtime_layout.stride.value,
@@ -532,19 +531,19 @@ def run_test[
     # Q: [total_q_tokens, num_heads, 640] float8_e4m3fn
     var q_tt = TileTensor(
         q_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[PHYSICAL_DIM]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[PHYSICAL_DIM])),
     )
 
     # Output: [total_q_tokens, num_heads, V_DEPTH=512] bfloat16
     var out_tt = TileTensor(
         out_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     # Row offsets for ragged layout
     var row_offsets_tt = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     # q_scale_ptr: reinterpret as UnsafePointer with MutAnyOrigin
@@ -562,7 +561,7 @@ def run_test[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
     flare_mla_decoding[
         rank=3,
         config=MHAConfig[fp8_type](num_heads, LOGICAL_DEPTH),
@@ -576,7 +575,7 @@ def run_test[
         row_offsets_tt,
         scale,
         ctx,
-        scalar_args_buf=lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf=scalar_args_buf_tt,
         q_max_seq_len=q_max_seq_len,
         q_scale_ptr=q_scale_ptr,
     )
@@ -649,22 +648,22 @@ def run_test[
         # Build 4D TileTensors for mha_gpu_naive reference
         var q_b_tt = TileTensor(
             q_b_device,
-            row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[LOGICAL_DEPTH]())),
+            row_major((Idx[1], Idx[1], Idx[num_heads], Idx[LOGICAL_DEPTH])),
         )
         var k_b_tt = TileTensor(
             k_b_device,
             row_major(
                 (
-                    Idx(1),
-                    Idx(ref_num_keys),
-                    Idx[KV_NUM_HEADS](),
-                    Idx[LOGICAL_DEPTH](),
+                    Idx[1],
+                    ref_num_keys,
+                    Idx[KV_NUM_HEADS],
+                    Idx[LOGICAL_DEPTH],
                 )
             ),
         )
         var ref_b_tt = TileTensor(
             ref_b_device,
-            row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[LOGICAL_DEPTH]())),
+            row_major((Idx[1], Idx[1], Idx[num_heads], Idx[LOGICAL_DEPTH])),
         )
 
         # mha_gpu_naive: K used as both K and V (MLA: V = K[:,:,:512])
@@ -1167,22 +1166,22 @@ def run_test_with_scales[
         scale_dtype_=DType.float32,
         quantization_granularity_=PHYSICAL_DIM,
     ](
-        LayoutTensor[fp8_type, Layout.row_major[6](), MutAnyOrigin](
-            blocks_lt.ptr,
+        LayoutTensor[fp8_type, Layout.row_major[6]()](
+            blocks_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
-            cache_lengths_lt.ptr,
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
+            cache_lengths_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
-            lookup_table_lt.ptr,
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+            lookup_table_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
                 lookup_table_lt.runtime_layout.stride.value,
@@ -1191,8 +1190,8 @@ def run_test_with_scales[
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
         # Pass the scales tensor
-        LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
-            scales_lt.ptr,
+        LayoutTensor[DType.float32, Layout.row_major[6]()](
+            scales_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major[6]()](
                 scales_lt.runtime_layout.shape.value,
                 scales_lt.runtime_layout.stride.value,
@@ -1205,19 +1204,19 @@ def run_test_with_scales[
     # Q: [total_q_tokens, num_heads, 640] float8_e4m3fn
     var q_tt = TileTensor(
         q_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[PHYSICAL_DIM]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[PHYSICAL_DIM])),
     )
 
     # Output: [total_q_tokens, num_heads, V_DEPTH=512] bfloat16
     var out_tt = TileTensor(
         out_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     # Row offsets for ragged layout
     var row_offsets_tt = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     # q_scale_ptr: reinterpret as UnsafePointer with MutAnyOrigin
@@ -1235,7 +1234,7 @@ def run_test_with_scales[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt2 = mla_args2.gpu_layout_tensor()
+    var scalar_args_buf_tt2 = mla_args2.gpu_tile_tensor()
     flare_mla_decoding[
         rank=3,
         config=MHAConfig[fp8_type](num_heads, LOGICAL_DEPTH),
@@ -1249,7 +1248,7 @@ def run_test_with_scales[
         row_offsets_tt,
         scale,
         ctx,
-        scalar_args_buf=lt_to_tt(scalar_args_buf_lt2),
+        scalar_args_buf=scalar_args_buf_tt2,
         q_max_seq_len=q_max_seq_len,
         q_scale_ptr=q_scale_ptr,
     )
@@ -1360,22 +1359,22 @@ def run_test_with_scales[
         # Build 4D TileTensors for mha_gpu_naive reference
         var q_b_tt = TileTensor(
             q_b_device,
-            row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[LOGICAL_DEPTH]())),
+            row_major((Idx[1], Idx[1], Idx[num_heads], Idx[LOGICAL_DEPTH])),
         )
         var k_b_tt = TileTensor(
             k_b_device,
             row_major(
                 (
-                    Idx(1),
-                    Idx(ref_num_keys),
-                    Idx[KV_NUM_HEADS](),
-                    Idx[LOGICAL_DEPTH](),
+                    Idx[1],
+                    ref_num_keys,
+                    Idx[KV_NUM_HEADS],
+                    Idx[LOGICAL_DEPTH],
                 )
             ),
         )
         var ref_b_tt = TileTensor(
             ref_b_device,
-            row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[LOGICAL_DEPTH]())),
+            row_major((Idx[1], Idx[1], Idx[num_heads], Idx[LOGICAL_DEPTH])),
         )
 
         # mha_gpu_naive: K used as both K and V (MLA: V = K[:,:,:512])

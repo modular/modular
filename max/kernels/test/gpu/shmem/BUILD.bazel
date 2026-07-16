@@ -1,10 +1,20 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "lit_tests", "mojo_test")
 
 package(default_visibility = ["//max:consumers"])
 
 lit_tests(
     name = "test",
-    srcs = glob(["**/*.mojo"]),
+    srcs = glob(
+        ["**/*.mojo"],
+        exclude = [
+            # Single-GPU MI355 byte-equivalence tests. Pure local
+            # quantize/copy kernels (no rocshmem runtime), so they run as the
+            # standalone mojo_test rules below instead of in this 4-GPU,
+            # requires-network lit_tests sweep.
+            "test_mxfp4_ep_wait_scale_fusion.mojo",
+            "test_mxfp4_fused_silu_scale_fusion.mojo",
+        ],
+    ),
     env = select({
         "//:nvidia_gpu": {
             "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
@@ -36,5 +46,39 @@ lit_tests(
     tags = [
         "gpu",
         "requires-network",
+    ],
+)
+
+# Standalone single-GPU MI355 (gfx950) byte-equivalence tests for
+# the fused scale_4d preshuffle emission. They import only the local quantize/
+# copy kernels from shmem.ep_comm (MXFP4TokenFormat / fused_silu_mxfp4_kernel)
+# and never call the rocshmem runtime, so they need neither MODULAR_SHMEM_LIB_DIR
+# (the rocshmem host lib is dlopen'd lazily only at shmem_init/collective time)
+# nor requires-network. //max:shmem links the device bitcode at compile time.
+mojo_test(
+    name = "test_mxfp4_ep_wait_scale_fusion.mojo.test",
+    size = "large",
+    srcs = ["test_mxfp4_ep_wait_scale_fusion.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max:layout",
+        "//max:linalg",
+        "//max:shmem",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "test_mxfp4_fused_silu_scale_fusion.mojo.test",
+    size = "large",
+    srcs = ["test_mxfp4_fused_silu_scale_fusion.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max:layout",
+        "//max:linalg",
+        "//max:shmem",
+        "@mojo//:std",
     ],
 )

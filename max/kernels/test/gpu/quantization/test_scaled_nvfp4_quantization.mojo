@@ -123,9 +123,9 @@ def test_dynamic_fp4_quant[
     # Run the quantization kernel
     quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
-        lt_to_tt(output_tensor).as_any_origin(),
-        lt_to_tt(scales_tensor).as_any_origin(),
-        lt_to_tt(input_tensor).as_any_origin(),
+        lt_to_tt(output_tensor).as_unsafe_any_origin(),
+        lt_to_tt(scales_tensor).as_unsafe_any_origin(),
+        lt_to_tt(input_tensor).as_unsafe_any_origin(),
         num_cols=n,
         num_cols_padded=n,
         tensor_sf=tensor_sf,
@@ -180,14 +180,16 @@ def test_dynamic_fp4_quant[
 
                         var fp8_sf = get_scale_factor[
                             SF_VECTOR_SIZE=SF_VECTOR_SIZE
-                        ](scales_tensor_host.as_any_origin(), row_idx, col_idx)
+                        ](
+                            scales_tensor_host.as_unsafe_any_origin(),
+                            row_idx,
+                            col_idx,
+                        )
 
                         # verify the scale factors
                         assert_almost_equal(
                             ref_fp8_sf.cast[DType.float64](),
-                            rebind[Scalar[scales_dtype]](fp8_sf).cast[
-                                DType.float64
-                            ](),
+                            fp8_sf.cast[DType.float64](),
                             rtol=1e-1,
                             atol=1e-1,
                         )

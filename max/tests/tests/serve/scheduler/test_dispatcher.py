@@ -30,7 +30,7 @@ from max.serve.scheduler.di_dispatchers import (
     DispatcherClient,
     DispatcherServer,
 )
-from max.serve.worker_interface.zmq_queue import (
+from max.serve.worker_interface._zmq_queue import (
     ClientIdentity,
     generate_zmq_ipc_path,
 )

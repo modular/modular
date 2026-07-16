@@ -52,8 +52,9 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     PagedRowIndices,
     kv_sub_tile_rows,
     kv_num_sub_tiles,
+    kv_tma_fold_chunks,
 )
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     KVTMATile,
     MHAPosition,
     OptionalPointer,
@@ -145,6 +146,12 @@ def depth512_load[
     comptime PairBM = BM * 2
     comptime PairBM_mask = BM_eff * 2
 
+    # Alignment of `kv_row` produced by mask-driven iteration.
+    # Used by `kv_lut.populate` to pick the largest legal SIMD chunk.
+    comptime base_alignment: Int = MaskType.start_column_alignment[
+        PairBM_mask, BN, page_size
+    ]()
+
     comptime PositionType = MHAPosition[
         PairBM,
         BN,
@@ -209,6 +216,38 @@ def depth512_load[
     comptime k_bytes_pp = BK0 * k_tma_tile_rows * qkv_size
     comptime v_bytes_pp = config.v_cols_per_cta * v_tma_tile_rows * qkv_size
 
+    # Depth-chunk TMA fold (SM100). MUST match `mha_sm100_depth512_dispatch`
+    # which builds `k_tma_op` / `v_tma_op` with the same `kv_tma_fold_chunks`
+    # values (single source of truth). The matching descriptor rank and
+    # issue-coord rank are guaranteed because the same comptime predicate drives
+    # both builder and issue site. The per-issue byte total is unchanged: one
+    # folded TMA carries the same bytes as the N per-chunk TMAs.
+    #
+    # K: box_rows == k_tma_tile_rows, smem_BN == BN // 2 (K's per-CTA tile_rows),
+    # mirroring the issue site's `smem_BN=BN // 2`.
+    comptime k_fold_chunks = kv_tma_fold_chunks[
+        qkv_type,
+        config.swizzle_mode,
+        BK=BK0,
+        head_size=config.qk_depth,
+        box_rows=k_tma_tile_rows,
+        smem_BN=BN // 2,
+        page_size=page_size,
+    ]()
+    # V: folds the `v_cols_per_cta` depth columns. box_rows == v_tma_tile_rows,
+    # smem_BN == BK1 (V's per-sub-tile tile_rows = BN // num_pv_stages); the fold
+    # is byte-equivalent because `_tma_copy_kv_impl` writes V chunks at stride
+    # `tile_rows * gran == BK1 * gran` and the rank-4 box reproduces that stride.
+    comptime v_fold_chunks = kv_tma_fold_chunks[
+        qkv_type,
+        config.swizzle_mode,
+        BK=config.v_cols_per_cta,
+        head_size=config.ov_depth,
+        box_rows=v_tma_tile_rows,
+        smem_BN=BK1,
+        page_size=page_size,
+    ]()
+
     # ---- SMEM pointers ------------------------------------------------------
 
     var q_smem = rebind[SharedMemPointer[Scalar[KVLUTType.dtype]]](
@@ -269,11 +308,11 @@ def depth512_load[
         )
 
     var kv_row: UInt32 = mask.start_column[PairBM_mask, BN, page_size](
-        score_row
+        seq_info.prompt_idx, score_row
     )
     var iter_count: UInt32 = (
         mask.last_masked_set_end[PairBM_mask, BN, page_size](
-            score_row, num_keys
+            seq_info.prompt_idx, score_row, num_keys
         )
         - 1
     )
@@ -324,22 +363,31 @@ def depth512_load[
     def _load_v_stage[
         pv_stage: Int
     ](depth_col_offset: Int, v_nvp: UInt32,):
-        """Load one V pv_stage using the shared kv_paged_rows."""
+        """Load one V pv_stage using the shared kv_paged_rows.
+
+        With `oob_fill_pages=True` on the partial path, OOB-coord TMAs
+        zero-fill the SMEM rows past `v_nvp` valid pages, so the full
+        BN-row V tile holds finite data before the MMA reads it. This
+        prevents `0 * non-finite = NaN` propagation in `O += P * V`
+        when masked V rows would otherwise contain stale or
+        uninitialized SMEM (most common when this is the very first
+        write to the SMEM slot — typically the only iter is partial,
+        i.e. `seq_len <= BN`). Because each OOB TMA still arrives at
+        `mbar` with its byte count, we always set the full
+        `v_expect_bytes` regardless of `v_needs_partial`.
+        """
         kv_pipeline.producer_acquire()
         var mbar = kv_pipeline.producer_mbar()
 
         comptime if is_leader:
-            comptime if v_needs_partial:
-                expect_bytes_pred(
-                    mbar, Int32(cta_group * v_bytes_pp * Int(v_nvp)), e
-                )
-            else:
-                expect_bytes_pred(mbar, Int32(v_expect_bytes), e)
+            expect_bytes_pred(mbar, Int32(v_expect_bytes), e)
 
         kv_paged_rows.tma_copy_v[
             needs_partial=v_needs_partial,
             num_v_sub_tiles=num_pv_stages,
             v_sub_tile_idx=pv_stage,
+            oob_fill_pages=v_needs_partial,
+            fold_chunks=v_fold_chunks,
         ](
             v_tma_op,
             kv_smem + kv_pipeline.state.index() * UInt32(kv_elems),
@@ -402,6 +450,7 @@ def depth512_load[
         paged_rows.tma_copy_k[
             needs_partial=partial,
             smem_BN=BN // 2,
+            fold_chunks=k_fold_chunks,
         ](
             k_tma_op,
             kv_smem + kv_pipeline.state.index() * UInt32(kv_elems),
@@ -421,7 +470,7 @@ def depth512_load[
     # Populate kv_paged_rows once for this tile; reused by every K
     # depth stage below and by the subsequent V loop (which captures
     # kv_paged_rows from this scope).
-    kv_paged_rows = kv_lut.populate[BN, True, is_leader](
+    kv_paged_rows = kv_lut.populate[BN, base_alignment, True, is_leader](
         seq_info.prompt_idx, kv_row
     )
     comptime for qk_stage in range(num_qk_stages):
@@ -506,6 +555,7 @@ def depth512_load[
         comptime if check_mask:
             if (
                 mask.status(
+                    seq_info.prompt_idx,
                     Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
                     Index[dtype=DType.int32](PairBM_mask, BN),
                 )
@@ -516,7 +566,7 @@ def depth512_load[
         # ---- K depth stages (num_qk_stages loads) ----
         # Populate once per tile; reused by every K depth stage and the
         # subsequent V loop. Full tile (no partial) in main loop.
-        kv_paged_rows = kv_lut.populate[BN, True, is_leader](
+        kv_paged_rows = kv_lut.populate[BN, base_alignment, True, is_leader](
             seq_info.prompt_idx, kv_row
         )
         comptime for qk_stage in range(num_qk_stages):
@@ -561,6 +611,7 @@ def depth512_load[
             comptime if check_mask:
                 if (
                     mask.status(
+                        seq_info.prompt_idx,
                         Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
                         Index[dtype=DType.int32](PairBM_mask, BN),
                     )
@@ -574,9 +625,9 @@ def depth512_load[
 
                 # K: populate once per tile; reused by every K depth
                 # stage and the subsequent V loop.
-                kv_paged_rows = kv_lut.populate[BN, True, is_leader](
-                    seq_info.prompt_idx, kv_row
-                )
+                kv_paged_rows = kv_lut.populate[
+                    BN, base_alignment, True, is_leader
+                ](seq_info.prompt_idx, kv_row)
                 comptime for qk_stage in range(num_qk_stages):
                     _produce_k[
                         partial=k_needs_partial,

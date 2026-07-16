@@ -604,16 +604,16 @@ def test_grapheme_indices_crlf() raises:
 
 def test_nth_grapheme_ascii() raises:
     var s = StringSlice("abc")
-    assert_equal(s.nth_grapheme(0).value(), "a")
-    assert_equal(s.nth_grapheme(1).value(), "b")
-    assert_equal(s.nth_grapheme(2).value(), "c")
-    assert_true(s.nth_grapheme(3) is None)
-    assert_true(s.nth_grapheme(99) is None)
+    assert_equal(s.graphemes().nth(0).value(), "a")
+    assert_equal(s.graphemes().nth(1).value(), "b")
+    assert_equal(s.graphemes().nth(2).value(), "c")
+    assert_true(s.graphemes().nth(3) is None)
+    assert_true(s.graphemes().nth(99) is None)
 
 
 def test_nth_grapheme_empty() raises:
     var s = StringSlice("")
-    assert_true(s.nth_grapheme(0) is None)
+    assert_true(s.graphemes().nth(0) is None)
 
 
 def test_nth_grapheme_combining_mark() raises:
@@ -621,18 +621,18 @@ def test_nth_grapheme_combining_mark() raises:
     var e_acute = _string_from_codepoints(0x65, 0x0301)
     var s = String("caf") + e_acute
     var slc = StringSlice(s)
-    assert_equal(slc.nth_grapheme(3).value(), e_acute)
-    assert_true(slc.nth_grapheme(4) is None)
+    assert_equal(slc.graphemes().nth(3).value(), e_acute)
+    assert_true(slc.graphemes().nth(4) is None)
 
 
 def test_nth_grapheme_flag_emoji() raises:
     var flag = _string_from_codepoints(0x1F1FA, 0x1F1F8)
     var s = String("A") + flag + String("B")
     var slc = StringSlice(s)
-    assert_equal(slc.nth_grapheme(0).value(), "A")
-    assert_equal(slc.nth_grapheme(1).value(), flag)
-    assert_equal(slc.nth_grapheme(2).value(), "B")
-    assert_true(slc.nth_grapheme(3) is None)
+    assert_equal(slc.graphemes().nth(0).value(), "A")
+    assert_equal(slc.graphemes().nth(1).value(), flag)
+    assert_equal(slc.graphemes().nth(2).value(), "B")
+    assert_true(slc.graphemes().nth(3) is None)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -762,6 +762,74 @@ def test_ascii_fast_path_with_control_chars() raises:
     assert_equal(parts[0], "a")
     assert_equal(parts[1], "\t")
     assert_equal(parts[2], "b")
+
+
+# ===----------------------------------------------------------------------=== #
+# Default iteration: __iter__ / __reversed__ yield grapheme clusters
+# ===----------------------------------------------------------------------=== #
+
+
+def check_default_iteration(result: List[String], *, forward: Bool) raises:
+    assert_equal(len(result), 4)
+    if forward:
+        assert_equal(result, ["a", "👨‍👩‍👧‍👦", "🇺🇸", "b"])
+    else:
+        assert_equal(result, ["b", "🇺🇸", "👨‍👩‍👧‍👦", "a"])
+
+
+def test_string_iter_default_yields_graphemes() raises:
+    var s = String("a👨‍👩‍👧‍👦🇺🇸b")
+    var result = List[String]()
+    for g in s:
+        result.append(String(g))
+    check_default_iteration(result, forward=True)
+
+
+def test_string_slice_iter_default_yields_graphemes() raises:
+    var s = StringSlice("a👨‍👩‍👧‍👦🇺🇸b")
+    var result = List[String]()
+    for g in s:
+        result.append(String(g))
+    check_default_iteration(result, forward=True)
+
+
+def test_string_literal_iter_default_yields_graphemes() raises:
+    var result = List[String]()
+    for g in "a👨‍👩‍👧‍👦🇺🇸b":
+        result.append(String(g))
+    check_default_iteration(result, forward=True)
+
+
+def test_string_reversed_default_yields_graphemes() raises:
+    var s = String("a👨‍👩‍👧‍👦🇺🇸b")
+    var result = List[String]()
+    for g in s.__reversed__():
+        result.append(String(g))
+    check_default_iteration(result, forward=False)
+
+
+def test_string_slice_reversed_default_yields_graphemes() raises:
+    var s = StringSlice("a👨‍👩‍👧‍👦🇺🇸b")
+    var result = List[String]()
+    for g in s.__reversed__():
+        result.append(String(g))
+    check_default_iteration(result, forward=False)
+
+
+def test_string_literal_reversed_default_yields_graphemes() raises:
+    var result = List[String]()
+    for g in "a👨‍👩‍👧‍👦🇺🇸b".__reversed__():
+        result.append(String(g))
+    check_default_iteration(result, forward=False)
+
+
+def test_string_and_string_slice_default_iteration_empty() raises:
+    var count = 0
+    for _g in String(""):
+        count += 1
+    for _g in StringSlice(""):
+        count += 1
+    assert_equal(count, 0)
 
 
 # ===----------------------------------------------------------------------=== #

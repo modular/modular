@@ -255,7 +255,7 @@ def test_aligned_load() raises:
 
 
 def main() raises:
-    test_runtime_and_compile_time_dim_and_stride(Idx(120), Idx[512]())
+    test_runtime_and_compile_time_dim_and_stride(Idx[120], Idx[512])
     test_nested_layout_shape()
     test_transpose_arithmetic()
     test_different_layouts_arithmetic()

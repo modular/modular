@@ -14,7 +14,7 @@
 import json
 
 import pytest
-from max.interfaces import ParsedToolCall, ParsedToolResponse
+from max.pipelines.modeling.types import ParsedToolCall, ParsedToolResponse
 from max.serve.parser.llama_tool_parser import LlamaToolParser
 
 

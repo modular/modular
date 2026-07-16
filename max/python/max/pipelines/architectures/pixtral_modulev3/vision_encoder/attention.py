@@ -14,7 +14,6 @@
 
 import math
 
-from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.linear import Linear
 from max.experimental.tensor import Tensor
@@ -112,15 +111,9 @@ class Attention(Module[..., Tensor]):
         xk = self.k_proj(x)
         xv = self.v_proj(x)
 
-        xq_v = F.reshape(
-            xq, [batch_size, n_patches, self.n_heads, self.head_dim]
-        )
-        xk_v = F.reshape(
-            xk, [batch_size, n_patches, self.n_heads, self.head_dim]
-        )
-        xv_v = F.reshape(
-            xv, [batch_size, n_patches, self.n_heads, self.head_dim]
-        )
+        xq_v = xq.reshape([batch_size, n_patches, self.n_heads, self.head_dim])
+        xk_v = xk.reshape([batch_size, n_patches, self.n_heads, self.head_dim])
+        xv_v = xv.reshape([batch_size, n_patches, self.n_heads, self.head_dim])
 
         cos, sin = position_embeddings
         xq_r, xk_r = self.apply_rotary_embedding(
@@ -132,7 +125,7 @@ class Attention(Module[..., Tensor]):
         )
 
         output = (
-            self.attention(xq_r, xk_r, xv_v, attention_mask)
+            self.attention(xq_r, xk_r, TensorValue(xv_v), attention_mask)
             .transpose(1, 2)
             .reshape([batch_size, n_patches, -1])
         )

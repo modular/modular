@@ -55,7 +55,7 @@ def bench_rms_norm_rope_gpu[
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var cos_vals = TileTensor(cos_d, row_major(Coord(shape)))
     var sin_vals = TileTensor(sin_d, row_major(Coord(shape)))
-    var epsilon = Scalar[dtype](0.001)
+    var epsilon = Float32(0.001)
     var weight_offset = Scalar[dtype](0.0)
 
     ctx.enqueue_copy(data_d, data_h)
@@ -108,7 +108,15 @@ def bench_rms_norm_rope_gpu[
         def kernel_launch(ctx: DeviceContext) raises:
             rms_norm_rope_gpu[
                 input_fn, cos_fn, sin_fn, output_fn, multiply_before_cast=False
-            ](shape, gamma, epsilon, weight_offset, cos_vals, sin_vals, ctx)
+            ](
+                shape,
+                gamma,
+                epsilon,
+                weight_offset,
+                cos_vals,
+                sin_vals,
+                ctx,
+            )
 
         b.iter_custom[kernel_launch](ctx)
 

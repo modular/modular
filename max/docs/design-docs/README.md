@@ -44,9 +44,9 @@ building them.
 
 - [Matrix Multiplication on Blackwell: Part 2—Using Hardware Features to
   Optimize Matmul](matmul-on-blackwell-part-2.md)
-    This document demonstrates optimization techniques including TMA async
-    loading, tensor cores, shared memory tiling, and swizzling to achieve 58x
-    performance improvement over the naive implementation, reaching 293 TFLOPs.
+  This document demonstrates optimization techniques including TMA async
+  loading, tensor cores, shared memory tiling, and swizzling to achieve 58x
+  performance improvement over the naive implementation, reaching 293 TFLOPs.
 
 - [Matrix Multiplication on Blackwell: Part 3-The Optimizations Behind 85% of
   SOTA Performance](matmul-on-blackwell-part-3.md)
