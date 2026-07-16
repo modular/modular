@@ -235,3 +235,30 @@ def test_violated_vs_inconclusive():
     # expected-error @below {{invalid call to 'violated_vs_inconclusive': lacking evidence to prove correctness}}
     # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
     violated_vs_inconclusive[2](4)
+
+
+##===----------------------------------------------------------------------===##
+# Violated Constraint With Dependent Type in Proposition (MOCO-4333)
+##===----------------------------------------------------------------------===##
+
+@fieldwise_init
+struct Lin(Copyable, ImplicitlyDeletable where False):
+    pass
+
+
+# expected-note @below {{function declared here}}
+def make[
+    Keys: Iterable,
+    # Make sure compiler does not crash when emitting the note, dependent type
+    # `origin[*(0, 0)]` need to be replaced properly.
+    #
+    # expected-note-re @below {{constraint declared here evaluated to False, expected 'conforms_to(Keys.IteratorType[{{.*}}].Element, ImplicitlyDeletable)'}}
+](ref keys: Keys) where conforms_to(
+    Keys.IteratorType[origin_of(keys)].Element, ImplicitlyDeletable
+):
+    pass
+
+
+def test_dependent_type_violated_constraint():
+    # expected-error @below {{invalid call to 'make': violated constraint}}
+    make(List[Lin]())
