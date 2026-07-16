@@ -13,7 +13,6 @@
 #define KGEN_MOJOPARSER_EXPRNODE_H
 
 #include "KGEN/MojoParser/ExprDest.h"
-#include "KGEN/MojoParser/IRValues.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <variant>
 
