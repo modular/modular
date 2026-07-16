@@ -157,6 +157,7 @@ modular_py_test(
 _WARM_FAMILIES = [
     "matmul",
     "unary",
+    "binary",
 ]
 
 # CPU fragment per family: no --target -> lane-independent (cfg=exec), shared.

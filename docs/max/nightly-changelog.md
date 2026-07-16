@@ -400,6 +400,14 @@ This version is still a work in progress.
   the full kernel library at import. Set `MAX_EAGER_OP_PRECOMPILE=1` to
   precompile the full matrix at import instead.
 
+- The eager interpreter's binary-elementwise and comparison ops (`add`, `sub`,
+  `mul`, `div`, `mod`, `max`, `min`, `pow`, `and`, `or`, `xor`, and the
+  comparison predicates) now run through pre-compiled graph-compiler models
+  instead of hand-written Mojo bindings, matching the matmul and
+  unary-elementwise migrations. On CPU they run float32/float64; the
+  float16/bfloat16 CPU inputs the Mojo path accepted are no longer supported
+  and raise.
+
 - Added a `max warm-interpreter-cache` command that batch-compiles the full
   eager interpreter model matrix into the on-disk cache for the current
   machine's devices and drops a stamp. A later lazy eager process on the same

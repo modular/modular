@@ -11,10 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Mojo kernel wrappers for comparison and select MO interpreter operations.
+"""Mojo kernel wrapper for the Select (ternary) MO interpreter operation.
 
-This module contains binary comparison ops (Equal, Greater, GreaterEqual,
-NotEqual) and the Select (ternary) operation.
+Performs elementwise ``out = cond ? true_val : false_val``. The binary
+comparison ops that previously shared this module now route through the graph
+compiler (see ``elementwise_binary_gc``); only the ternary select remains
+hand-rolled.
 """
 
 from std.os import abort
@@ -24,40 +26,11 @@ from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator, simd_width_of
 from std.utils.coord import Coord
 
-from std.algorithm.functional import elementwise, IndexList
-from std.reflection import reflect
+from std.algorithm.functional import elementwise
 
-from extensibility import ElementwiseBinaryComparisonOp
-from builtin_kernels import (
-    Equal,
-    Greater,
-    GreaterEqual,
-    NotEqual,
-    Select,
-)
+from builtin_kernels import Select
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
-
-
-# Binary comparison operations
-comptime BINARY_COMPARISON_OPS = TypeList.of[
-    Equal, Greater, GreaterEqual, NotEqual
-]()
-
-# =============================================================================
-# GPU Support Configuration
-# =============================================================================
-
-
-def _is_gpu_allowed_comparison_op[op: ElementwiseBinaryComparisonOp]() -> Bool:
-    """Check if a comparison op is allowed on GPU at compile time."""
-    comptime name = reflect[op].base_name()
-    return (
-        name == "Equal"
-        or name == "Greater"
-        or name == "GreaterEqual"
-        or name == "NotEqual"
-    )
 
 
 # =============================================================================
@@ -66,22 +39,10 @@ def _is_gpu_allowed_comparison_op[op: ElementwiseBinaryComparisonOp]() -> Bool:
 
 
 @export
-def PyInit_elementwise_comparison_ops() abi("C") -> PythonObject:
-    """Create a Python module with comparison elementwise kernel function bindings.
-    """
+def PyInit_select_ops() abi("C") -> PythonObject:
+    """Create a Python module with the select kernel function binding."""
     try:
-        var b = PythonModuleBuilder("elementwise_comparison_ops")
-
-        # Binary comparison operations
-        comptime for i in range(BINARY_COMPARISON_OPS.size):
-            comptime op = BINARY_COMPARISON_OPS[i]
-            comptime name = reflect[op].base_name()
-            comptime docstring = StaticString(
-                "Elementwise " + name + " comparison"
-            )
-            b.def_function[bin_comparison_dispatcher[op]](
-                name, docstring=docstring
-            )
+        var b = PythonModuleBuilder("select_ops")
 
         # Select operation (ternary: cond ? x : y)
         b.def_function[select_dispatcher](
@@ -90,146 +51,12 @@ def PyInit_elementwise_comparison_ops() abi("C") -> PythonObject:
 
         return b.finalize()
     except e:
-        abort(
-            t"failed to create elementwise comparison op bindings module: {e}"
-        )
+        abort(t"failed to create select op bindings module: {e}")
 
 
 # =============================================================================
 # Dispatchers
 # =============================================================================
-
-
-def bin_comparison_dispatcher[
-    op: ElementwiseBinaryComparisonOp
-](
-    out_buffer: PythonObject,
-    lhs_buffer: PythonObject,
-    rhs_buffer: PythonObject,
-    device_context_ptr: PythonObject,
-) raises:
-    """Binary comparison operation dispatcher.
-
-    Args:
-        out_buffer: The output buffer object.
-        lhs_buffer: The left-hand side buffer object.
-        rhs_buffer: The right-hand side buffer object.
-        device_context_ptr: Device context pointer.
-    """
-    var dtype = _get_dtype(lhs_buffer)
-    var rhs_dtype = _get_dtype(rhs_buffer)
-    if dtype != rhs_dtype:
-        raise Error(
-            "Mismatched input dtypes for binary comparison operation: "
-            + String(dtype)
-            + " and "
-            + String(rhs_dtype)
-        )
-
-    var out_ptr = _get_buffer_ptr[DType.uint8](out_buffer)
-    var size = _get_size(out_buffer)
-    var ctx = _get_ctx(device_context_ptr)
-
-    if dtype == DType.float32:
-        bin_elementwise_comparison_op[op, DType.float32](
-            out_ptr,
-            _get_buffer_ptr[DType.float32](lhs_buffer),
-            _get_buffer_ptr[DType.float32](rhs_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.float64:
-        bin_elementwise_comparison_op[op, DType.float64](
-            out_ptr,
-            _get_buffer_ptr[DType.float64](lhs_buffer),
-            _get_buffer_ptr[DType.float64](rhs_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.float16:
-        bin_elementwise_comparison_op[op, DType.float16](
-            out_ptr,
-            _get_buffer_ptr[DType.float16](lhs_buffer),
-            _get_buffer_ptr[DType.float16](rhs_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.bfloat16:
-        bin_elementwise_comparison_op[op, DType.bfloat16](
-            out_ptr,
-            _get_buffer_ptr[DType.bfloat16](lhs_buffer),
-            _get_buffer_ptr[DType.bfloat16](rhs_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.int8:
-        bin_elementwise_comparison_op[op, DType.int8](
-            out_ptr,
-            _get_buffer_ptr[DType.int8](lhs_buffer),
-            _get_buffer_ptr[DType.int8](rhs_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.int16:
-        bin_elementwise_comparison_op[op, DType.int16](
-            out_ptr,
-            _get_buffer_ptr[DType.int16](lhs_buffer),
-            _get_buffer_ptr[DType.int16](rhs_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.int32:
-        bin_elementwise_comparison_op[op, DType.int32](
-            out_ptr,
-            _get_buffer_ptr[DType.int32](lhs_buffer),
-            _get_buffer_ptr[DType.int32](rhs_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.int64:
-        bin_elementwise_comparison_op[op, DType.int64](
-            out_ptr,
-            _get_buffer_ptr[DType.int64](lhs_buffer),
-            _get_buffer_ptr[DType.int64](rhs_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.uint8:
-        bin_elementwise_comparison_op[op, DType.uint8](
-            out_ptr,
-            _get_buffer_ptr[DType.uint8](lhs_buffer),
-            _get_buffer_ptr[DType.uint8](rhs_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.uint16:
-        bin_elementwise_comparison_op[op, DType.uint16](
-            out_ptr,
-            _get_buffer_ptr[DType.uint16](lhs_buffer),
-            _get_buffer_ptr[DType.uint16](rhs_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.uint32:
-        bin_elementwise_comparison_op[op, DType.uint32](
-            out_ptr,
-            _get_buffer_ptr[DType.uint32](lhs_buffer),
-            _get_buffer_ptr[DType.uint32](rhs_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.uint64:
-        bin_elementwise_comparison_op[op, DType.uint64](
-            out_ptr,
-            _get_buffer_ptr[DType.uint64](lhs_buffer),
-            _get_buffer_ptr[DType.uint64](rhs_buffer),
-            size,
-            ctx,
-        )
-    else:
-        raise Error(
-            "Unsupported dtype for comparison operation: " + String(dtype)
-        )
 
 
 def select_dispatcher(
@@ -389,60 +216,8 @@ def select_dispatcher(
 
 
 # =============================================================================
-# Kernel implementations
+# Kernel implementation
 # =============================================================================
-
-
-@always_inline
-def bin_elementwise_comparison_op[
-    op: ElementwiseBinaryComparisonOp, dtype: DType
-](
-    out_ptr: UnsafePointer[Scalar[DType.uint8], MutUntrackedOrigin],
-    lhs_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
-    rhs_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
-    size: Int,
-    ctx: DeviceContext,
-) raises:
-    """Elementwise comparison: out = lhs op rhs.
-
-    Parameters:
-        op: The binary elementwise comparison operation to perform, expressed as a function
-            of two SIMD values.
-        dtype: The data type of the arrays.
-
-    Args:
-        out_ptr: Pointer to the output buffer data (uint8 for bool result).
-        lhs_ptr: Pointer to the left-hand side buffer data.
-        rhs_ptr: Pointer to the right-hand side buffer data.
-        size: Number of elements to process.
-        ctx: Device context.
-    """
-
-    @always_inline
-    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
-        var i = Int(idx[0].value())
-
-        var res = op.elementwise(
-            lhs_ptr.load[width=width](i), rhs_ptr.load[width=width](i)
-        )
-        out_ptr.store[width=width](i, res.cast[DType.uint8]())
-
-    if ctx.api() == "cpu":
-        elementwise[simd_width=simd_width_of[dtype]()](func, Coord(size), ctx)
-    else:
-        # GPU execution - check GPU availability and op/dtype support
-        comptime if has_accelerator():
-            comptime if _is_gpu_allowed_comparison_op[
-                op
-            ]() and dtype != DType.float64:
-                elementwise[simd_width=1, target="gpu"](func, Coord(size), ctx)
-            else:
-                raise Error(
-                    "GPU execution not supported for this comparison op or"
-                    " dtype"
-                )
-        else:
-            raise Error("No GPU accelerator available")
 
 
 @always_inline

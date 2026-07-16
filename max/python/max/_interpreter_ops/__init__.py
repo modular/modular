@@ -35,9 +35,8 @@ from . import (  # type: ignore[attr-defined]
     bottomk_ops,
     conv_ops,
     data_movement_ops,
-    elementwise_binary_ops,
+    elementwise_binary_gc,
     elementwise_cast_ops,
-    elementwise_comparison_ops,
     gather_scatter_ops,
     gc_compile,
     group_norm_ops,
@@ -51,42 +50,13 @@ from . import (  # type: ignore[attr-defined]
     resize_ops,
     rms_norm_ops,
     roi_align_ops,
+    select_ops,
     softmax_ops,
     split_ops,
     tile_ops,
     topk_ops,
     unary_elementwise_gc,
 )
-
-# Arithmetic binary ops: output dtype matches input dtype
-# Dtype dispatch is handled in Mojo
-
-
-BINARY_ELEMENTWISE: dict[
-    type[_core.Operation], Callable[[Buffer, Buffer, Buffer, int], None]
-] = {
-    mo.AddOp: elementwise_binary_ops.Add,
-    mo.SubOp: elementwise_binary_ops.Sub,
-    mo.MulOp: elementwise_binary_ops.Mul,
-    mo.DivOp: elementwise_binary_ops.Div,
-    mo.ModOp: elementwise_binary_ops.Mod,
-    mo.MaxOp: elementwise_binary_ops.Max,
-    mo.MinOp: elementwise_binary_ops.Min,
-    mo.AndOp: elementwise_binary_ops.And,
-    mo.OrOp: elementwise_binary_ops.Or,
-    mo.XorOp: elementwise_binary_ops.Xor,
-    mo.PowOp: elementwise_binary_ops.Pow,
-}
-
-# Comparison binary ops: output dtype is always bool
-BINARY_ELEMENTWISE_COMPARISON: dict[
-    type[_core.Operation], Callable[[Buffer, Buffer, Buffer, int], None]
-] = {
-    mo.EqualOp: elementwise_comparison_ops.Equal,
-    mo.GreaterOp: elementwise_comparison_ops.Greater,
-    mo.GreaterEqualOp: elementwise_comparison_ops.GreaterEqual,
-    mo.NotEqualOp: elementwise_comparison_ops.NotEqual,
-}
 
 # Reduce ops: reduce along an axis, output shape has reduced dim = 1
 REDUCE: dict[
@@ -145,8 +115,6 @@ def _precompile_gc_models() -> None:
 _precompile_gc_models()
 
 __all__ = [
-    "BINARY_ELEMENTWISE",
-    "BINARY_ELEMENTWISE_COMPARISON",
     "GC_FAMILIES",
     "REDUCE",
     "SOFTMAX",
