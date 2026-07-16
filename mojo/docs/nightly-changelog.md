@@ -658,6 +658,13 @@ This version is still a work in progress.
   `ImplicitlyDeletable` pointee, or pass a deinitializing closure to destroy a
   non-`ImplicitlyDeletable` pointee in place.
 
+- `SIMD[DType.bool, N]` now has two new methods:
+  - `first_true()` -- returns the index of the first `True` lane, or a
+    caller-provided `default` (`-1` if unspecified) if all lanes are `False`.
+    Replaces the manual `pack_bits` + `count_trailing_zeros` pattern.
+  - `count_true()` -- returns the number of `True` lanes. A bool-specific
+    alias for `reduce_bit_count()`.
+
 ## Tooling changes
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.
