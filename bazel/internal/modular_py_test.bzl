@@ -1,28 +1,15 @@
 """A helper macro for running python tests with pytest"""
 
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
-load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "get_resources_exec_properties", "get_resources_tags", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", requirement = "pip_requirement")
 load("//bazel/pip/pydeps:pydeps_test.bzl", "pydeps_test")
-load(":modular_py_library.bzl", "modular_py_library")
 load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
 load(":mojo_test_environment.bzl", "mojo_test_environment")
+load(":py_imports.bzl", "compute_py_imports")
 load(":py_repl.bzl", "py_repl")
-load(":test_resources.bzl", "TEST_RESOURCES")
-
-def _get_resource_tags(use_resource_tags, name):
-    if not use_resource_tags:
-        return []
-    resources = TEST_RESOURCES.get("//" + native.package_name() + ":" + name)
-    tags = []
-    if resources:
-        if "cpu" in resources:
-            tags.append("resources:cpu:{}".format(resources["cpu"]))
-        if "memory" in resources:
-            tags.append("resources:memory:{}".format(resources["memory"]))
-    return tags
 
 def _get_manual_srcs(tags, per_test_tags, srcs):
     if "manual" in tags or "postsubmit" in tags:
@@ -52,7 +39,6 @@ def modular_py_test(
         gpu_constraints = [],
         main = None,
         imports = [],
-        use_resource_tags = False,
         per_test_tags = {},
         test_name_prefix = "",
         shard_count = None,
@@ -76,7 +62,6 @@ def modular_py_test(
         gpu_constraints: GPU requirements for the tests
         main: If provided, this is the main entry point for the test. If not provided, pytest is used.
         imports: Additional python import paths
-        use_resource_tags: If true, use pregenerated resource tags for the test.
         per_test_tags: A mapping of source files to extra tags to apply to that test file.
         test_name_prefix: Prefix added to per-src py_test target names (multi-source only).
         shard_count: Forwarded to the underlying test target.
@@ -188,12 +173,12 @@ def modular_py_test(
 
     manual_srcs = _get_manual_srcs(tags, per_test_tags, srcs)
     if manual_srcs:
-        # TODO: Remove once we run mypy-style lints in a separate test target
-        modular_py_library(
+        # TODO: Remove once we run mypy-style lints in a separate test target.
+        # Raw py_library, not modular_py_library: the latter loads
+        # modular_py_test, so depending back on it would cycle.
+        py_library(
             name = name + ".mypy_library",
             data = data + extra_data,
-            toolchains = toolchains,
-            # Pydeps test is added below
             tags = [ALLOW_UNUSED_TAG, "no-pydeps"],
             deps = deps + [
                 requirement("pytest"),
@@ -202,8 +187,7 @@ def modular_py_test(
             testonly = True,
             srcs = manual_srcs + ["//bazel/internal:pytest_runner"],
             visibility = ["//visibility:private"],
-            imports = imports,
-            # NOTE: Intentionally exclude other attrs that shouldn't matter for mypy
+            imports = compute_py_imports(native.package_name(), imports),
         )
 
     if len(test_srcs) > 1:
@@ -233,9 +217,9 @@ def modular_py_test(
                 ] + (["//bazel/internal:pytest-shard"] if use_shard_plugin else []),
                 shard_count = n_shards,
                 srcs = [src] + non_test_srcs + ["//bazel/internal:pytest_runner"],
-                exec_properties = default_exec_properties | exec_properties,
+                exec_properties = default_exec_properties | get_resources_exec_properties(test_name, test = True) | exec_properties,
                 target_compatible_with = gpu_constraints + target_compatible_with,
-                tags = tags + _get_resource_tags(use_resource_tags, test_name) + per_test_tags.get(src, []),
+                tags = tags + get_resources_tags(test_name) + per_test_tags.get(src, []),
                 imports = imports,
                 **kwargs
             )
@@ -271,9 +255,9 @@ def modular_py_test(
             ] + (["//bazel/internal:pytest-shard"] if use_shard_plugin else []),
             shard_count = shard_count,
             srcs = srcs + ["//bazel/internal:pytest_runner"],
-            exec_properties = default_exec_properties | exec_properties,
+            exec_properties = default_exec_properties | get_resources_exec_properties(name, test = True) | exec_properties,
             target_compatible_with = gpu_constraints + target_compatible_with,
-            tags = tags + _get_resource_tags(use_resource_tags, name),
+            tags = tags + get_resources_tags(name),
             imports = imports,
             **kwargs
         )

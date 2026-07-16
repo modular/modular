@@ -1017,7 +1017,7 @@ struct Timer(ImplicitlyCopyable):
     def __exit__(mut self):
         end_time = time.perf_counter_ns()
         elapsed_time_ms = round(
-            Float64(end_time - UInt(self.start_time)) / 1e6, 3
+            Float64(end_time - self.start_time) / 1e6, 3
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
@@ -1092,7 +1092,7 @@ struct ConditionalTimer(ImplicitlyCopyable):
     def __exit__(mut self):
         end_time = time.perf_counter_ns()
         elapsed_time_ms = round(
-            Float64(end_time - UInt(self.start_time)) / 1e6, 3
+            Float64(end_time - self.start_time) / 1e6, 3
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
@@ -1176,8 +1176,7 @@ type at compile time. For example, you can:
 
 - `reflect[ErrType].name()` — Get the error type's name as a string.
 - `comptime if conforms_to(ErrType, Writable)` — Check if the error
-  implements `Writable`.
-- `trait_downcast[Writable](err)` — Access the error through its `Writable`
+  implements `Writable`, and if so, access the error through its `Writable`
   interface.
 
 The following `ResourceGuard` example demonstrates this pattern:
@@ -1214,7 +1213,7 @@ struct ResourceGuard(ImplicitlyCopyable):
         print("  Error type:", type_name)
 
         comptime if conforms_to(ErrType, Writable):
-            print("  Message:", trait_downcast[Writable](err))
+            print("  Message:", err)
 
         return self.suppress_errors
 ```

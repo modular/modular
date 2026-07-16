@@ -32,7 +32,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft7Validator
 from jsonschema.protocols import Validator
 
 logger = logging.getLogger("max.serve")
@@ -62,9 +62,9 @@ class ToolCallConformance:
 def _validator_for(schema: Mapping[str, Any]) -> Validator | None:
     """Returns a cached validator for *schema*, or ``None`` if unbuildable.
 
-    Validates under the 2020-12 dialect, which is what ``jsonschema`` selects
-    by default for schemas that omit ``$schema`` (as tool-parameter schemas
-    do), matching the dialect a plain ``jsonschema.validate`` would use.
+    Validates under JSON Schema Draft 7 to match the OpenRouter evaluator that
+    scores our tool-call error rate under that dialect. Draft 7 is pinned
+    unconditionally -- any ``$schema`` the caller declares is ignored.
     """
     try:
         key = json.dumps(schema, sort_keys=True, separators=(",", ":"))
@@ -77,8 +77,8 @@ def _validator_for(schema: Mapping[str, Any]) -> Validator | None:
     # bad tool definition is not a model failure, so skip rather than blame it.
     # Broad except keeps this observability path from ever raising.
     try:
-        Draft202012Validator.check_schema(dict(schema))
-        validator: Validator = Draft202012Validator(dict(schema))
+        Draft7Validator.check_schema(dict(schema))
+        validator: Validator = Draft7Validator(dict(schema))
     except Exception:
         return None
     _VALIDATOR_CACHE[key] = validator
@@ -129,34 +129,3 @@ def check_tool_call_conformance(
             )
         )
     return results
-
-
-def log_tool_call_conformance(
-    calls: list[tuple[str, object]],
-    schemas_by_name: Mapping[str, Mapping[str, Any]],
-    *,
-    request_id: str,
-    streaming: bool,
-) -> None:
-    """Logs schema-conformance of generated tool calls (observability only).
-
-    Emits one INFO line per *non-conforming* call; conforming calls are
-    silent to keep log volume proportional to failures. Never raises into the
-    caller. See the module docstring for the PII guarantee.
-    """
-    try:
-        results = check_tool_call_conformance(calls, schemas_by_name)
-    except Exception:
-        logger.debug("tool_call_conformance check failed", exc_info=True)
-        return
-    for r in results:
-        if r.outcome == "valid":
-            continue
-        logger.info(
-            "tool_call_conformance req=%s stream=%s fn=%s outcome=%s errors=%s",
-            request_id,
-            streaming,
-            r.function,
-            r.outcome,
-            ",".join(r.errors) if r.errors else "-",
-        )

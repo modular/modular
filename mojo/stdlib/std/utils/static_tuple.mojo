@@ -23,11 +23,10 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
 from std.memory import (
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
 )
 from std.reflection import reflect
-from std.utils.type_functions import ConditionalType
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple
@@ -49,7 +48,7 @@ def _static_tuple_construction_checks[T: _StaticTupleTraits, size: Int]():
     comptime assert (
         is_trivially_movable[T]()
         and is_trivially_copyable[T]()
-        and is_trivially_destructible[T]()
+        and is_trivially_deletable[T]()
     ), String(
         (
             "`StaticTuple` element type must have a trivial move/copy"
@@ -76,15 +75,10 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         `!pop.array<`, Self.size.__mlir_index__(), `, `, Self.element_type, `>`
     ]
 
-    comptime _DeviceElementType: _StaticTupleTraits = ConditionalType[
-        Trait=_StaticTupleTraits,
-        If=conforms_to(Self.element_type, DevicePassable),
-        Then=downcast[
-            downcast[Self.element_type, DevicePassable].device_type,
-            _StaticTupleTraits,
-        ],
-        Else=Self.element_type,
-    ]
+    comptime _DeviceElementType: _StaticTupleTraits = downcast[
+        Self.element_type.device_type,
+        _StaticTupleTraits,
+    ] if conforms_to(Self.element_type, DevicePassable) else Self.element_type
     """The device-side element type: the element's `device_type` when it is
     `DevicePassable`, otherwise the element type itself."""
 
@@ -251,9 +245,10 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
     @always_inline("nodebug")
     def _unsafe_ref(ref self, idx: Int) -> ref[self] Self.element_type:
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._mlir_value).address, idx.__mlir_index__()
+            UnsafePointer(to=self._mlir_value)._get_kgen_pointer(),
+            idx.__mlir_index__(),
         )
-        return UnsafePointer[origin=origin_of(self)](ptr)[]
+        return UnsafePointer[origin=origin_of(self)](_mlir_value=ptr)[]
 
     @always_inline("nodebug")
     def _replace[idx: Int](self, val: Self.element_type) -> Self:

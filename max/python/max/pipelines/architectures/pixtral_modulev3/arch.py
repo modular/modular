@@ -23,6 +23,7 @@ from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
+from .batch_processor import PixtralModuleV3BatchProcessor
 from .model import PixtralModel
 from .model_config import PixtralConfig
 
@@ -49,5 +50,8 @@ pixtral_modulev3_arch = SupportedArchitecture(
         validate_only_one_image,
     ],
     config=PixtralConfig,
+    batching=PixtralModuleV3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

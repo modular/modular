@@ -19,12 +19,12 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
 from max.driver import (
     Buffer,
     Device,
-    enable_all_peer_access,
     is_virtual_device_mode,
 )
 from max.dtype import DType
@@ -88,28 +88,11 @@ class AlwaysSignalBuffersMixin:
         if is_virtual_device_mode():
             return []
 
-        # Enable P2P access between all GPUs before any collective operations.
-        # This must happen before the first allreduce/broadcast/etc. executes.
-        if len(self.devices) > 1:
-            try:
-                enable_all_peer_access()
-            except RuntimeError:
-                logger.warning(
-                    "Failed to enable peer-to-peer GPU access. "
-                    "Collective operations will fall back to slower paths."
-                )
-
         # Import here to avoid circular dependency
         from max.nn.comm import Signals
 
-        return [
-            Buffer.zeros(
-                shape=(Signals.NUM_BYTES,),
-                dtype=DType.uint8,
-                device=dev,
-            )
-            for dev in self.devices
-        ]
+        # Signals.allocate initializes the signal buffers and enables p2p access
+        return Signals.allocate(self.devices)
 
 
 @dataclass
@@ -233,6 +216,78 @@ class UnifiedEagleOutputs(ModelOutputs):
     hidden_states: None = None
 
 
+@dataclass(kw_only=True)
+class UnifiedSpecDecodeInputs(ModelInputs):
+    """Shared spec-decode fields + buffer-tail packing for unified ``*Inputs``.
+
+    Each arch composes the tail via :meth:`_spec_decode_tail_buffers`, which
+    mirrors ``build_spec_decode_input_types`` and must stay in lockstep with it.
+    """
+
+    draft_tokens: Buffer | None = None
+    seed: Buffer | None = None
+    temperature: Buffer | None = None
+    top_k: Buffer | None = None
+    max_k: Buffer | None = None
+    top_p: Buffer | None = None
+    min_top_p: Buffer | None = None
+    in_thinking_phase: Buffer | None = None
+    pinned_bitmask: Buffer | None = None
+    wait_payload: Buffer | None = None
+    device_bitmask_scratch: Buffer | None = None
+
+    structured_output: bool = False
+    """Whether this graph was compiled with constrained-decoding bitmask
+    inputs. Mirrors ``pipeline_config.needs_bitmask_constraints`` -- the same
+    value that gates the bitmask triple in ``build_spec_decode_input_types`` --
+    so the buffer tail and the graph signature derive the decision from one
+    place. Set by each capable module's ``prepare_initial_token_inputs``."""
+
+    def _spec_decode_tail_buffers(
+        self,
+        *,
+        include_in_thinking_phase: bool,
+        supports_structured_output: bool = True,
+    ) -> tuple[Buffer, ...]:
+        # draft_tokens, seed, and the five sampling params are unconditional in
+        # build_spec_decode_input_types; assert them so a missing one is a loud
+        # error, not a silently shortened ABI tuple. (Draft KV lives in the
+        # {"target", "draft"} tree, packed by super().buffers.)
+        assert self.draft_tokens is not None
+        tail: tuple[Buffer, ...] = (self.draft_tokens,)
+        assert self.seed is not None
+        tail += (self.seed,)
+        assert self.temperature is not None
+        assert self.top_k is not None
+        assert self.max_k is not None
+        assert self.top_p is not None
+        assert self.min_top_p is not None
+        tail += (
+            self.temperature,
+            self.top_k,
+            self.max_k,
+            self.top_p,
+            self.min_top_p,
+        )
+        if include_in_thinking_phase:
+            assert self.in_thinking_phase is not None
+            tail += (self.in_thinking_phase,)
+        # Gate the bitmask triple on two compile-time flags, not a runtime
+        # pinned_bitmask is not None check: supports_structured_output
+        # is False for dflash (sets pinned_bitmask but declares no bitmask graph
+        # inputs); structured_output mirrors needs_bitmask_constraints.
+        if supports_structured_output and self.structured_output:
+            assert self.pinned_bitmask is not None
+            assert self.wait_payload is not None
+            assert self.device_bitmask_scratch is not None
+            tail += (
+                self.pinned_bitmask,
+                self.wait_payload,
+                self.device_bitmask_scratch,
+            )
+        return tail
+
+
 class PipelineModel(ABC, Generic[BaseContextType]):
     """A pipeline model with setup, input preparation and execution methods."""
 
@@ -251,8 +306,10 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         adapter: WeightsAdapter | None,
         return_logits: ReturnLogits,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         self.pipeline_config = pipeline_config
+        self.max_batch_size = max_batch_size
         self.devices = devices
         self.device_refs = [DeviceRef.from_device(d) for d in devices]
         self.kv_cache_config = kv_cache_config
@@ -274,8 +331,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 self.huggingface_config.num_attention_heads,
                 self.huggingface_config.num_key_value_heads,
                 self.huggingface_config.head_dim,
-                self.max_seq_len
-                * (pipeline_config.runtime.max_batch_size or 1),
+                self.max_seq_len * max_batch_size,
             )
             if pipeline_config.lora
             else None
@@ -304,7 +360,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                     signal_buffers=self.signal_buffers,
                     lora_manager=self._lora_manager,
                     pad_token_id=pad_token_id or 0,
-                    max_batch_size=pipeline_config.runtime.max_batch_size,
+                    max_batch_size=self.max_batch_size,
                 ),
             )
 
@@ -361,27 +417,11 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         if len(self.devices) <= 1:
             return []
 
-        # Enable P2P access between all GPUs before any collective operations.
-        # This must happen before the first allreduce/broadcast/etc. executes.
-        try:
-            enable_all_peer_access()
-        except RuntimeError:
-            logger.warning(
-                "Failed to enable peer-to-peer GPU access. "
-                "Collective operations will fall back to slower paths."
-            )
-
         # Import here to avoid circular dependency
         from max.nn.comm import Signals
 
-        return [
-            Buffer.zeros(
-                shape=(Signals.NUM_BYTES,),
-                dtype=DType.uint8,
-                device=dev,
-            )
-            for dev in self.devices
-        ]
+        # Signals.allocate initializes the signal buffers and enables p2p access
+        return Signals.allocate(self.devices)
 
     @property
     def dtype(self) -> DType:
@@ -390,6 +430,11 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         return supported_encoding_dtype(quantization_encoding)
+
+    @property
+    def sampler_custom_extensions(self) -> Sequence[Path]:
+        """Custom-op extension paths to compile the sampler graph with."""
+        return ()
 
     @classmethod
     def _calculate_max_seq_len_from_config(
@@ -531,6 +576,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
         adapter: WeightsAdapter | None,
         return_logits: ReturnLogits,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config=pipeline_config,
@@ -541,6 +587,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             adapter=adapter,
             return_logits=return_logits,
             return_hidden_states=return_hidden_states,
+            max_batch_size=max_batch_size,
         )
         self.kv_params = type(self).get_kv_params(
             huggingface_config=self.huggingface_config,

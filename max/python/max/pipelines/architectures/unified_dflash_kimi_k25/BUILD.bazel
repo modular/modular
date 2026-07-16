@@ -24,7 +24,6 @@ modular_py_library(
         "//max/python/max/pipelines/architectures/kimik2_5",
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/unified_dflash_llama3",
-        "//max/python/max/pipelines/architectures/unified_mtp_deepseekV3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/speculative",

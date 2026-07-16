@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import functools
 import importlib
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy as np
@@ -52,8 +54,10 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
     from .pipeline_executor import PipelineExecutor
 
+from max.driver import load_devices
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
+from max.pipelines.lib.memory_estimation import MemoryEstimator, _MemoryPlan
 from max.pipelines.modeling.config_enums import RopeType, SupportedEncoding
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
@@ -321,6 +325,33 @@ class SupportedArchitecture:
     opt in by setting ``runtime.reasoning_parser`` explicitly.
     """
 
+    default_structured_output_backend: str | None = None
+    """Optional default structured output backend for this architecture.
+
+    When set (e.g., ``"llguidance"`` or ``"xgrammar"``), the pipeline config
+    will use this value for ``sampling.structured_output_backend`` if the
+    user did not explicitly configure one. This allows architectures that
+    work better with a specific backend to override the global default.
+
+    If None, the global default from ``SamplingConfig`` is used.
+    """
+
+    supports_overlap_scheduler: bool = True
+    """Whether this architecture supports auto-enabling the overlap scheduler.
+
+    When ``False``, the overlap scheduler is not auto-enabled for this
+    architecture even when otherwise eligible. Users can still force-enable
+    via ``--enable-overlap-scheduler --force``.
+    """
+
+    supports_device_graph_capture: bool = True
+    """Whether this architecture supports auto-enabling device graph capture.
+
+    When ``False``, device graph capture is not auto-enabled for this
+    architecture even when otherwise eligible. Users can still force-enable
+    via ``--device-graph-capture --force``.
+    """
+
     memory_planner: type[MemoryPlanner] | None = None
     """Optional :class:`~max.pipelines.kv_cache.MemoryPlanner` subclass for
     this architecture.
@@ -470,6 +501,201 @@ def _apply_thinking_region(
         tokenizer, tokenizer.new_context, reasoning_parser_name
     )
     tokenizer.new_context = wrapper  # type: ignore[method-assign]
+
+
+def _run_memory_planning(
+    pipeline_config: Any,
+    arch: Any,
+    draft_arch: Any = None,
+) -> _MemoryPlan:
+    """Runs memory estimation and resolves max_length / max_batch_size.
+
+    Called by ``retrieve_factory`` after ``pipeline_config.resolve()`` has
+    completed validation. Returns a :class:`_MemoryPlan` whose
+    ``max_batch_size`` is passed to the pipeline constructor.
+
+    Also applies ``max_length`` clamping and ``max_batch_total_tokens``
+    defaulting, which depend on memory estimation output.
+    """
+    # Multi-component pipelines (diffusion models) have no "main" model entry
+    # — they store per-component configs (transformer, vae, text_encoder, etc.)
+    # and don't use a KV cache, so skip memory estimation entirely.
+    if "main" not in pipeline_config.models:
+        return _MemoryPlan(
+            max_batch_size=pipeline_config.runtime.max_batch_size or 1,
+            footprint=0,
+        )
+
+    model_config = pipeline_config.model
+
+    # Non-PipelineModel architectures skip KV-cache memory estimation.
+    if not issubclass(arch.pipeline_model, PipelineModel):
+        return _MemoryPlan(
+            max_batch_size=pipeline_config.runtime.max_batch_size or 1,
+            footprint=0,
+        )
+
+    devices = load_devices(model_config.device_specs)
+    arch_config = arch.config.initialize(
+        pipeline_config, model_config=model_config
+    )
+
+    if arch.memory_planner is not None:
+        planner = arch.memory_planner(arch_config)
+        weights_size = planner.estimate_weights_size(pipeline_config)
+        activation_size = planner.estimate_activation_memory(
+            pipeline_config, model_config.huggingface_config
+        )
+        signal_buffer_size = planner.estimate_signal_buffer_memory(
+            pipeline_config, arch_config
+        )
+    else:
+        # ``memory_planner=None`` is the fallback for architectures not yet
+        # wired to a MemoryPlanner. If adding a new architecture that uses a
+        # KV cache, set ``memory_planner=PagedMemoryPlanner`` on its
+        # ``SupportedArchitecture``.
+        weights_size = model_config.weights_size()
+        activation_size = 0
+        signal_buffer_size = pipeline_config.estimate_signal_buffer_memory(
+            arch_config
+        )
+
+    plan = MemoryEstimator.estimate_memory_footprint(
+        pipeline_config,
+        model_config,
+        arch_config,
+        devices,
+        weights_size,
+        activation_size,
+        signal_buffer_size,
+        arch=arch,
+        max_batch_size=pipeline_config.runtime.max_batch_size,
+    )
+
+    # Clamp max_length to what the KV cache can support.
+    if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(
+        weights_size,
+        activation_size,
+        model_config,
+        devices,
+        arch_config,
+        signal_buffer_size,
+    ):
+        if model_config.max_length is None:
+            model_config.max_length = clamped_max_seq_len
+        elif model_config.max_length > clamped_max_seq_len:
+            logging.warning(
+                "Clamping max_length from %d to %d due to capacity of KV Cache",
+                model_config.max_length,
+                clamped_max_seq_len,
+            )
+            model_config.max_length = clamped_max_seq_len
+
+    # For speculative decoding, clamp max_length to the draft model's limit
+    # and zero out its cache memory (it shares the target model's KV cache).
+    if draft_arch is not None and pipeline_config.draft_model is not None:
+        if (
+            pipeline_config.draft_model.kv_cache._available_cache_memory
+            is not None
+        ):
+            raise ValueError(
+                "Expected draft model's available_cache_memory to be None"
+            )
+        pipeline_config.draft_model.kv_cache._available_cache_memory = 0
+        draft_arch_config = draft_arch.config.initialize(
+            pipeline_config, model_config=pipeline_config.draft_model
+        )
+        draft_max_seq_len = draft_arch_config.get_max_seq_len()
+        if (
+            model_config.max_length is not None
+            and model_config.max_length > draft_max_seq_len
+        ):
+            logger.info(
+                "Clamping max_length from %d to %d (draft model max sequence length)",
+                model_config.max_length,
+                draft_max_seq_len,
+            )
+            model_config.max_length = draft_max_seq_len
+            pipeline_config.draft_model.max_length = draft_max_seq_len
+
+    # Validate that architectures requiring chunked prefill have it configured.
+    # Must run after max_length is resolved.
+    if (
+        arch.requires_max_batch_context_length
+        and pipeline_config.runtime.max_batch_total_tokens is None
+    ):
+        logger.warning(
+            "Architecture '%s' requires max-batch-total-tokens to be specified "
+            "but found None. Defaulting to the max sequence length of the model: %s",
+            arch.name,
+            model_config.max_length,
+        )
+        pipeline_config.runtime.max_batch_total_tokens = model_config.max_length
+
+    return plan
+
+
+def _retrieve_chat_template(chat_template: Path | None) -> str | None:
+    """Returns the chat template string for a ``--chat-template`` path.
+
+    Returns ``None`` if not set.
+
+    Args:
+        chat_template: Path to a custom chat template file, or ``None`` to
+            use the model's default chat template.
+
+    Raises:
+        ValueError: If ``chat_template`` does not point to an existing file,
+            or if the file cannot be read as UTF-8 text.
+    """
+    if chat_template is None:
+        return None
+
+    # Expand user home directory (e.g. ~/templates/custom.jinja) and resolve
+    # relative paths against cwd.
+    chat_template_path = chat_template.expanduser()
+    if not chat_template_path.is_absolute():
+        chat_template_path = Path.cwd() / chat_template_path
+
+    if not chat_template_path.is_file():
+        if not chat_template_path.exists():
+            raise ValueError(
+                f"--chat-template path ({chat_template_path}) does not exist."
+            )
+        raise ValueError(
+            f"Prompt template path is not a file: {chat_template_path}. "
+            f"Please provide a path to a valid template file."
+        )
+
+    try:
+        template_content = chat_template_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        raise ValueError(
+            f"Failed to read prompt template file {chat_template_path}: {e}. "
+            f"Please ensure the file is readable and contains valid UTF-8 text."
+        ) from e
+
+    # A chat-template file may be either a plain template string or a JSON
+    # object with a "chat_template" key (e.g. HuggingFace's tokenizer_config
+    # format); fall back to the raw content for anything else.
+    try:
+        template_json = json.loads(template_content)
+    except json.JSONDecodeError:
+        template_json = None
+
+    if isinstance(template_json, dict) and "chat_template" in template_json:
+        chat_template_str = template_json["chat_template"]
+        logger.info(
+            f"Successfully loaded chat_template from JSON in {chat_template_path} "
+            f"({len(chat_template_str)} characters)"
+        )
+        return chat_template_str
+
+    logger.info(
+        f"Successfully loaded custom prompt template from {chat_template_path} "
+        f"({len(template_content)} characters)"
+    )
+    return template_content
 
 
 class PipelineRegistry:
@@ -840,7 +1066,9 @@ class PipelineRegistry:
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
-                chat_template=pipeline_config.model.retrieve_chat_template(),
+                chat_template=_retrieve_chat_template(
+                    pipeline_config.model.chat_template
+                ),
             )
         else:
             tokenizer = arch.tokenizer(
@@ -849,7 +1077,9 @@ class PipelineRegistry:
                 revision=pipeline_config.model.huggingface_model_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
-                chat_template=pipeline_config.model.retrieve_chat_template(),
+                chat_template=_retrieve_chat_template(
+                    pipeline_config.model.chat_template
+                ),
             )
 
         return tokenizer
@@ -899,7 +1129,10 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
-    ) -> tuple[PipelineTokenizer[Any, Any, Any], Callable[[], PipelineTypes]]:
+    ) -> tuple[
+        PipelineTokenizer[Any, Any, Any],
+        Callable[[], PipelineTypes],
+    ]:
         """Retrieves the tokenizer and a factory that creates the pipeline instance."""
         tokenizer: PipelineTokenizer[Any, Any, Any]
         pipeline_factory: Callable[[], PipelineTypes]
@@ -975,9 +1208,21 @@ class PipelineRegistry:
             draft_arch=draft_arch,
         )
 
-        # Must be called after pipeline_config.resolve() so that
-        # enable_overlap_scheduler is set correctly (e.g. forced True when
-        # --device-graph-capture is explicitly passed).
+        # Memory planning: derive sizes, run estimation, resolve max_length.
+        # Runs after validation (resolve()) and before the factory is built so
+        # that all resolved values are available to the pipeline constructor.
+        memory_plan = _run_memory_planning(
+            pipeline_config, arch, draft_arch=draft_arch
+        )
+
+        # Must be called after memory planning so that max_batch_size is known,
+        # and after pipeline_config.resolve() so that enable_overlap_scheduler
+        # is set correctly (e.g. forced True when --device-graph-capture is
+        # explicitly passed).
+        pipeline_config._validate_and_resolve_overlap_scheduler(
+            arch=arch, max_batch_size=memory_plan.max_batch_size
+        )
+
         pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
         # An architecture may declare a custom pipeline class that overrides
@@ -1090,7 +1335,9 @@ class PipelineRegistry:
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
-                chat_template=pipeline_config.model.retrieve_chat_template(),
+                chat_template=_retrieve_chat_template(
+                    pipeline_config.model.chat_template
+                ),
             )
         else:
             tokenizer = arch.tokenizer(
@@ -1099,7 +1346,9 @@ class PipelineRegistry:
                 revision=pipeline_config.model.huggingface_model_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
-                chat_template=pipeline_config.model.retrieve_chat_template(),
+                chat_template=_retrieve_chat_template(
+                    pipeline_config.model.chat_template
+                ),
             )
 
         if arch.context_validators:
@@ -1124,16 +1373,8 @@ class PipelineRegistry:
             "eos_token_id": tokenizer.eos,
             "weight_adapters": arch.weight_adapters,
             "tokenizer": typed_tokenizer,
+            "memory_plan": memory_plan,
         }
-
-        # TODO: Running with overlap results in a CUDA_ILLEGAL_ADDRESS error.
-        # The source of this error is in the realize_future_tokens graph where
-        # garbage values are passed to the scatter_nd_skip_oob_indices custom op even though the inputs to the graph are correct.
-        if (
-            pipeline_config.speculative is not None
-            and pipeline_config.speculative.is_dflash()
-        ):
-            factory_kwargs["disable_overlap"] = True
 
         pipeline_factory = cast(
             Callable[[], PipelineTypes],
@@ -1256,7 +1497,7 @@ class PipelineRegistry:
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
     ) -> tuple[PipelineTokenizer[Any, Any, Any], PipelineTypes]:
-        """Retrieves the tokenizer and an instantiated pipeline for the config."""
+        """Retrieves the tokenizer and an instantiated pipeline for the args."""
         tokenizer, pipeline_factory = self.retrieve_factory(
             pipeline_config, task, override_architecture
         )

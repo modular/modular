@@ -23,6 +23,7 @@ preshuffled B, direct VGPR loads).
 
 from std.math import align_up, ceildiv
 from std.os import abort
+from std.random import random_ui64, seed
 from std.sys import (
     get_defined_int,
     get_defined_string,
@@ -317,6 +318,11 @@ def main() raises:
 
     var num_active_experts = Int(arg_parse("num_active_experts", 1))
     var M = Int(arg_parse("M", 256))
+    # Expert-parallel degree: experts are sharded across this many GPUs, so a
+    # token's `topk` global picks land on this rank's local shard only ~1/N of
+    # the time. Per-rank routed-M = M * topk // n_gpus_per_node, matching
+    # `nn/moe/expert_parallel.py` (total_tokens * topk // n_gpus_per_node).
+    var n_gpus_per_node = Int(arg_parse("n_gpus_per_node", 4))
     var skew_spec = String(arg_parse("expert_skew", "uniform"))
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
@@ -356,18 +362,43 @@ def main() raises:
     var have_counts = target_counts_csv.byte_length() != 0
     var have_ids = expert_ids_csv.byte_length() != 0
     if not have_counts and not have_ids:
-        # Synthesize uniform routing from M (per-GPU routed token-rows): spread
-        # M rows over min(M, num_experts) experts as evenly as possible. Lets a
-        # decode bench sweep M alone (e.g. `$M: "range(1, 257)"`) with no
-        # literal per-expert lists.
-        var rows = M if M > 0 else 1
-        var active = min(rows, num_experts)
-        var base = rows // active
-        var rem = rows % active
-        for i in range(active):
-            target_counts.append((base + 1) if i < rem else base)
-            expert_id_pool.append(i)
-        num_active_experts = active
+        # Synthesize realistic EP-sharded MoE routing. Each of `M` tokens routes
+        # to `topk` distinct experts out of the GLOBAL pool
+        # (num_experts * n_gpus_per_node); only picks landing on THIS rank's
+        # local shard ([0, num_experts)) are processed here. So per-rank routed
+        # rows ~= M * topk // n_gpus_per_node, matching
+        # `nn/moe/expert_parallel.py` (total_tokens * topk // n_gpus_per_node),
+        # and active experts follow coupon-collector over the local shard.
+        # n_gpus_per_node=1 reduces to a single-GPU run (all picks local).
+        # `seed(0)` keeps the routing reproducible across runs.
+        seed(0)
+        var num_tokens = M if M > 0 else 1
+        var gpus = max(n_gpus_per_node, 1)
+        var global_experts = num_experts * gpus
+        var k = min(topk, global_experts)
+        var counts = List[Int]()
+        for _ in range(num_experts):
+            counts.append(0)
+        for _ in range(num_tokens):
+            var picks = List[Int]()
+            while len(picks) < k:
+                var e = Int(random_ui64(0, UInt64(global_experts - 1)))
+                var dup = False
+                for i in range(len(picks)):
+                    if picks[i] == e:
+                        dup = True
+                        break
+                if not dup:
+                    picks.append(e)
+            # Count only picks that land on this rank's local shard.
+            for i in range(len(picks)):
+                if picks[i] < num_experts:
+                    counts[picks[i]] += 1
+        for e in range(num_experts):
+            if counts[e] > 0:
+                target_counts.append(counts[e])
+                expert_id_pool.append(e)
+        num_active_experts = len(target_counts)
     elif not have_counts or not have_ids:
         abort(
             "target_counts and expert_ids must be set together, or both"
@@ -413,6 +444,8 @@ def main() raises:
         M,
         " topk=",
         topk,
+        " n_gpus_per_node=",
+        n_gpus_per_node,
         " N=",
         N,
         " K=",
@@ -432,13 +465,12 @@ def main() raises:
     with DeviceContext() as ctx:
         var bench = Bench()
 
-        # target_counts are per-GPU local expert token-rows (EP already
-        # applied), so their sum IS the per-rank routed M that production's
-        # `total_tokens * topk // n_gpus_per_node` yields. Drives the preb
-        # dispatcher's persistent-vs-direct switch.
-        var estimated_total_m = 0
-        for c in target_counts:
-            estimated_total_m += c
+        # `estimated_total_m` drives the preb dispatcher's band +
+        # persistent-vs-direct switch. Production computes it from the routing
+        # FORMULA (an estimate available at dispatch time), not the exact
+        # per-expert counts — see nn/moe/expert_parallel.py:
+        #   estimated_total_m = total_tokens * topk // n_gpus_per_node
+        var estimated_total_m = M * topk // max(n_gpus_per_node, 1)
         bench_preb[
             num_experts=num_experts,
             N=N,

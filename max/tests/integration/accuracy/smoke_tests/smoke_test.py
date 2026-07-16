@@ -39,6 +39,7 @@ import sys
 from functools import cache
 from pathlib import Path
 from pprint import pformat
+from typing import NamedTuple
 
 import click
 import yaml
@@ -86,19 +87,10 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "deepseek-ai/DeepSeek-R1-0528": "max/pipelines/architectures/deepseekV3/recipes/r1_0528_8x_b200.yaml",
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": "max/pipelines/architectures/deepseekV2_modulev3/recipes/deepseekv2_lite.yaml",
     "deepseek-ai/DeepSeek-V3.1-Terminus": "max/pipelines/architectures/deepseekV3/recipes/terminus_8x_b200.yaml",
-    "google/gemma-4-26B-A4B-it__no_dgc": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_no_dgc.yaml",
-    "google/gemma-4-26B-A4B-it__localkv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_localkv.yaml",
-    "google/gemma-4-26B-A4B-it__tieredkv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tieredkv.yaml",
-    "google/gemma-4-31B-it__fp8kv": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_fp8kv_b200.yaml",
-    "google/gemma-4-31B-it__localkv": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_localkv.yaml",
-    "google/gemma-4-31B-it__mtp": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_mtp.yaml",
-    "google/gemma-4-31B-it__tieredkv": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tieredkv.yaml",
-    "google/gemma-4-31B-it__tp2": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tp2.yaml",
-    "nvidia/Gemma-4-26B-A4B-NVFP4__no_dgc": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_no_dgc.yaml",
-    "nvidia/Gemma-4-26B-A4B-NVFP4__localkv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_localkv.yaml",
-    "nvidia/Gemma-4-26B-A4B-NVFP4__tieredkv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tieredkv.yaml",
-    "nvidia/Gemma-4-31B-IT-NVFP4__localkv": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_nvfp4_localkv.yaml",
-    "nvidia/Gemma-4-31B-IT-NVFP4__tieredkv": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_nvfp4_tieredkv.yaml",
+    "google/gemma-4-26B-A4B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tuned.yaml",
+    "google/gemma-4-31B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tuned.yaml",
+    "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tuned.yaml",
+    "nvidia/Gemma-4-31B-IT-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_nvfp4_tuned.yaml",
     "google/gemma-3-27b-it__modulev3": "max/pipelines/architectures/gemma3_modulev3/recipes/gemma3_27b.yaml",
     "MiniMaxAI/MiniMax-M2.7": "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_8x_b200.yaml",
     "amd/MiniMax-M2.7-MXFP4": "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_mxfp4_8x_mi355.yaml",
@@ -118,7 +110,9 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_ar_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tptp_8x_b200.yaml",
+    "nvidia/GLM-5.2-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_2_fp8_tp_ep_8x_b200_mtp.yaml",
     "amd/Kimi-K2.5-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_8x_mi355.yaml",
+    "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",
     "nvidia/Kimi-K2.5-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_with_vision_8x_b200.yaml",
     "nvidia/Kimi-K2.5-NVFP4__tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_tpep_with_vision_8x_b200.yaml",
     "nvidia/Kimi-K2.6-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tpep_8x_b200.yaml",
@@ -139,17 +133,10 @@ MODEL_RECIPES = CaseInsensitiveDict({
 # ``MODEL_RECIPES`` don't try to open a file that isn't there.
 _OPTIONAL_MODEL_RECIPES = {
     "nvidia/Kimi-K2.5-NVFP4__internal": "max/pipelines/architectures/kimik2_5/recipes/internal/nvfp4_8x_b200.yaml",
-    "MiniMaxAI/MiniMax-M3-MXFP8": "max_private/minimax_m3/recipes/mxfp8_4x.yaml",
 }
 _max_dir = Path(__file__).resolve().parents[4]
-_repo_root = _max_dir.parent
 for _alias, _path in _OPTIONAL_MODEL_RECIPES.items():
-    _candidate = (
-        _repo_root / _path
-        if _path.startswith("max_private/")
-        else _max_dir / "python" / _path
-    )
-    if _candidate.is_file():
+    if (_max_dir / "python" / _path).is_file():
         MODEL_RECIPES[_alias] = _path
 
 
@@ -189,22 +176,16 @@ class RecipeConfig(BaseModel):
     speculative: Speculative | None = None
 
 
+class ServerCommand(NamedTuple):
+    cmd: list[str]
+    env: dict[str, str]
+
+
 # TODO Refactor this to a model list/matrix specifying type of model
 def is_vision_model(model: str) -> bool:
     """Check if the model supports vision tasks."""
     model = model.casefold()
-    if any(
-        kw in model
-        for kw in (
-            "no_vision",
-            "__eagle",
-            "__mtp",
-            "__dflash",
-            "_kvconnector",
-            "__internal",
-            "gemma-3-1b",
-        )
-    ):
+    if any(kw in model for kw in ("gemma-3-1b",)):
         return False
     return any(
         kw in model
@@ -249,13 +230,10 @@ def _resolve_recipe_path(recipe_path: str) -> str:
     Recipe paths use the ``max/pipelines/architectures/`` prefix and are
     resolved by the shared config resolver against the installed package.
     """
-    max_dir = Path(__file__).resolve().parents[4]
-    if recipe_path.startswith("max_private/"):
-        resolved = max_dir.parent / recipe_path
-    elif recipe_path.startswith("max/pipelines/architectures/"):
-        resolved = max_dir / "python" / recipe_path
-    else:
+    if not recipe_path.startswith("max/pipelines/architectures/"):
         return recipe_path
+    max_dir = Path(__file__).resolve().parents[4]
+    resolved = max_dir / "python" / recipe_path
     if not resolved.is_file():
         raise FileNotFoundError(
             f"Built-in recipe not found: {recipe_path} (resolved to {resolved})"
@@ -268,6 +246,22 @@ def _load_recipe(recipe_path: str) -> RecipeConfig:
     with open(_resolve_recipe_path(recipe_path), encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     return RecipeConfig.model_validate(data)
+
+
+def resolve_model_path(
+    model: str, recipe_path: str | None = None
+) -> tuple[str, str | None]:
+    """Resolve a model alias to a canonical HF repo id and its recipe path."""
+    if recipe_path is None:
+        recipe_path = MODEL_RECIPES.get(model)
+    if recipe_path:
+        recipe_model_path = _load_recipe(recipe_path).model.model_path
+        if recipe_model_path is None:
+            raise ValueError("Recipe model section must contain model_path.")
+        hf_model_path = recipe_model_path
+    else:
+        hf_model_path = model
+    return resolve_canonical_repo_id(hf_model_path), recipe_path
 
 
 def hf_repos_for_model(model: str) -> list[tuple[str, str | None]]:
@@ -403,16 +397,14 @@ def get_server_cmd(
     *,
     serve_extra_args: str = "",
     recipe_path: str | None = None,
+    autoscale_devices: bool = True,
     gpu_spec: tuple[str, int],
-) -> list[str]:
+) -> ServerCommand:
     gpu_model, gpu_count = gpu_spec
+    env: dict[str, str] = {}
     if recipe_path is None:
         recipe_path = MODEL_RECIPES.get(model)
     recipe = _load_recipe(recipe_path) if recipe_path else None
-    # When a recipe pins explicit device_specs, honor that device count rather
-    # than scaling to the full machine.
-    if recipe is not None and recipe.model.device_specs is not None:
-        gpu_count = len(recipe.model.device_specs)
     recipe_config: tuple[str, RecipeConfig] | None = None
     if (
         recipe is not None
@@ -436,7 +428,7 @@ def get_server_cmd(
         "--limit-mm-per-prompt.video",
         "0",
     ]
-    MAX = ["max.entrypoints.pipelines", "serve", "--pretty-print-config"]
+    MAX = ["max._entrypoints.pipelines", "serve", "--pretty-print-config"]
 
     if gpu_count > 1:
         if recipe is not None:
@@ -472,7 +464,7 @@ def get_server_cmd(
 
             # Remove once vLLM >= 0.17 (which includes vllm-project/vllm#34673).
             if "minimax-m2" in model.casefold():
-                os.environ["VLLM_USE_FLASHINFER_MOE_FP8"] = "0"
+                env["VLLM_USE_FLASHINFER_MOE_FP8"] = "0"
                 VLLM += ["--attention-backend", "FLASH_ATTN"]
 
         else:  # gpu_count > 1 and recipe is None
@@ -492,7 +484,7 @@ def get_server_cmd(
             and recipe.model.kv_cache.kv_connector is not None
         )
     ):
-        os.environ["MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE"] = "1"
+        env["MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE"] = "1"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"
@@ -510,11 +502,9 @@ def get_server_cmd(
     cmd = cmd + ["--port", "8000"]
     if recipe_config is not None:
         config_file_path, recipe = recipe_config
-        cmd += [
-            "--config-file",
-            config_file_path,
-            *_recipe_gpu_overrides(recipe, gpu_count),
-        ]
+        cmd += ["--config-file", config_file_path]
+        if autoscale_devices:
+            cmd += _recipe_gpu_overrides(recipe, gpu_count)
     else:
         cmd += ["--trust-remote-code", "--model", model]
 
@@ -533,7 +523,30 @@ def get_server_cmd(
             logger.warning(
                 "Ignoring --serve-extra-args for framework %s", framework
             )
-    return cmd
+    return ServerCommand(cmd, env)
+
+
+# Verified stock lm-eval tasks runnable unmodified (qa4+ intentionally excluded).
+VALID_STOCK_TASKS = {"babilong_qa1", "babilong_qa2", "babilong_qa3"}
+
+
+def valid_tasks() -> set[str]:
+    """Return the allowlist of task names accepted by ``--override-tasks``.
+
+    Combines the task names of our mirrored ``tasks/`` yamls (the ``task:``
+    field, parsed line-by-line rather than with ``yaml.safe_load`` since some
+    configs use lm-eval's ``!function`` tag) with the verified stock lm-eval
+    long-context tasks. Restricting to this set keeps arbitrary lm-eval tasks
+    out of the smoke test.
+    """
+    tasks_dir = Path(__file__).resolve().parent / "tasks"
+    names: set[str] = set(VALID_STOCK_TASKS)
+    for yaml_path in tasks_dir.glob("**/*.yaml"):
+        for line in yaml_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("task:"):
+                names.add(line.split(":", 1)[1].strip())
+                break
+    return names
 
 
 @click.command()
@@ -594,6 +607,40 @@ def get_server_cmd(
     default=False,
     help="Disable all timeouts. Useful when debugging hangs.",
 )
+@click.option(
+    "--recipe-path",
+    type=str,
+    default=None,
+    help="Recipe config YAML to serve instead of one looked up by model name.",
+)
+@click.option(
+    "--autoscale-devices/--no-autoscale-devices",
+    default=True,
+    help="Scale a recipe's device count to the local machine's GPU count.",
+)
+@click.option(
+    "--override-tasks",
+    "override_tasks",
+    multiple=True,
+    type=click.Choice(sorted(valid_tasks())),
+    help=(
+        "Run these eval task(s) instead of the model-derived defaults. "
+        "Repeatable (e.g. --override-tasks babilong_qa1 --override-tasks "
+        "babilong_qa3). Restricted to the verified task set; click validates "
+        "against it. When set, the TEXT/VISION default selection is bypassed."
+    ),
+)
+@click.option(
+    "--lm-eval-metadata",
+    "lm_eval_metadata",
+    type=str,
+    default=None,
+    help=(
+        "JSON passed verbatim to lm-eval's --metadata, merged into each task's "
+        "config to parameterize it at runtime. For example, "
+        '\'{"max_seq_lengths": "16k"}\' sets the babilong context length.'
+    ),
+)
 def smoke_test(
     hf_model_path: str,
     framework: str,
@@ -604,6 +651,10 @@ def smoke_test(
     num_questions: int,
     serve_extra_args: str,
     disable_timeouts: bool,
+    recipe_path: str | None,
+    autoscale_devices: bool,
+    override_tasks: tuple[str, ...],
+    lm_eval_metadata: str | None,
 ) -> None:
     """
     Example usage: ./bazelw run smoke-test -- meta-llama/Llama-3.2-1B-Instruct
@@ -627,26 +678,22 @@ def smoke_test(
         output_path = Path(build_workspace) / output_path
 
     model = hf_model_path.strip()
-    recipe_path = MODEL_RECIPES.get(model)
-    if recipe_path:
-        recipe_model_path = _load_recipe(recipe_path).model.model_path
-        if recipe_model_path is None:
-            raise ValueError("Recipe model section must contain model_path.")
-        hf_model_path = recipe_model_path
-    else:
-        hf_model_path = model
-    hf_model_path = resolve_canonical_repo_id(hf_model_path)
-    cmd = get_server_cmd(
+    hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
+    cmd, server_env = get_server_cmd(
         framework,
         hf_model_path,
         serve_extra_args=serve_extra_args,
         recipe_path=recipe_path,
+        autoscale_devices=autoscale_devices,
         gpu_spec=get_gpu_name_and_count(),
     )
 
-    tasks = [TEXT_TASK]
-    if is_vision_model(model):
-        tasks = [VISION_TASK] + tasks
+    if override_tasks:
+        tasks = list(override_tasks)
+    elif is_vision_model(model):
+        tasks = [VISION_TASK, TEXT_TASK]
+    else:
+        tasks = [TEXT_TASK]
 
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
     results = []
@@ -658,7 +705,7 @@ def smoke_test(
         timeout = 2700
 
     metrics_url = _metrics_url(framework)
-    with start_server(cmd, timeout) as server:
+    with start_server(cmd, timeout, env_overrides=server_env) as server:
         logger.info(f"Server started in {server.startup_time:.2f} seconds")
         write_github_output("startup_time", f"{server.startup_time:.2f}")
 
@@ -675,6 +722,7 @@ def smoke_test(
                 disable_timeouts=disable_timeouts,
                 metrics_url=metrics_url,
                 model_alias=model if hf_model_path != model else None,
+                lm_eval_metadata=lm_eval_metadata,
             )
 
             if print_responses:

@@ -43,6 +43,7 @@ from max.benchmark.benchmark_shared.request import (
     TRTLLMRequestDriver,
     VllmOmniPixelGenerationRequestDriver,
     VllmOmniVideoRequestDriver,
+    _build_final_payload,
     _build_sglang_pixel_generation_payload,
     _build_sglang_video_payload,
     _build_vllm_omni_pixel_generation_payload,
@@ -431,6 +432,62 @@ class TestRequestDriver:
         assert result.generated_text == "Hello world!"
         assert result.prompt_len == 10
 
+    async def test_openai_chat_completions_choices_but_no_text_is_failure(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """Choices present but no modeled text field must fail, not succeed with ttft=0.
+
+        Regression test for PERF-2615: gpt-oss streamed chunks that had
+        ``choices`` but carried text in a delta field this client does not
+        model, so ``reasoning``/``reasoning_content``/``content`` were all
+        empty. Those runs were marked success with ttft=0 and no tokens, which
+        zeroed out TTFT/TPOT for the whole run and produced a misleading
+        "0 valid requests" steady-state warning. Such a response must now be a
+        failure.
+        """
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="Test prompt",
+            images=[],
+            api_url="http://localhost:8000/chat/completions",
+            prompt_len=10,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+        # Chunks have choices but the text is in an unmodeled delta field;
+        # reasoning/reasoning_content/content are all absent, so no text is
+        # captured.
+        mock_response_data = [
+            b'data: {"choices": [{"delta": {"role": "assistant"}}]}\n\n',
+            b'data: {"choices": [{"delta": {"unmodeled_channel": "hi"}}]}\n\n',
+            b'data: {"choices": [{"delta": {}, "finish_reason": "stop"}]}\n\n',
+            b"data: [DONE]\n\n",
+        ]
+
+        async def async_iter() -> AsyncIterator[bytes]:
+            for item in mock_response_data:
+                yield item
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = async_iter()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver()
+        result = await driver.request(request_input)
+
+        assert result.success is False
+        assert result.ttft == 0.0
+        assert result.generated_text == ""
+        assert result.error is not None
+        assert "No text content" in result.error
+
     @pytest.mark.asyncio
     async def test_openai_chat_completions_merges_reasoning_reasoning_content_and_content(
         self,
@@ -702,7 +759,7 @@ class TestRequestDriver:
         result = await driver.request(request_input)
 
         assert result.success is False
-        assert "No content returned" in result.error
+        assert "No text content" in result.error
 
     @pytest.mark.asyncio
     async def test_request_driver_with_progress_bar(
@@ -775,6 +832,150 @@ class TestRequestDriver:
         result = await driver.request(request_input)
 
         assert result.success is True
+
+
+class TestBuildFinalPayload:
+    """Unit tests for the ``_build_final_payload`` payload helper."""
+
+    def test_none_and_empty_return_copy_unchanged(self) -> None:
+        payload = {"model": "m"}
+        assert _build_final_payload(payload, None) == {"model": "m"}
+        assert _build_final_payload(payload, {}) == {"model": "m"}
+        # The helper returns a fresh dict; the caller's payload is not mutated.
+        assert _build_final_payload(payload, {"x": 1}) is not payload
+        assert "x" not in payload
+
+    def test_adds_new_keys_with_nested_verbatim(self) -> None:
+        payload: dict[str, Any] = {"model": "m"}
+        extra = {
+            "vendor_ext": {"flags": ["a", "b"]},
+            "stop": ["}"],
+        }
+        body = _build_final_payload(payload, extra)
+        assert body["vendor_ext"] == {"flags": ["a", "b"]}
+        assert body["stop"] == ["}"]
+
+    def test_collision_overwrites_and_logs(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        payload = {"max_tokens": 100, "stream": True}
+        with caplog.at_level(
+            logging.WARNING, logger="max.benchmark.benchmark_shared.request"
+        ):
+            body = _build_final_payload(payload, {"max_tokens": 15})
+        # last-writer-wins
+        assert body["max_tokens"] == 15
+        assert body["stream"] is True
+        # collision is surfaced
+        assert any(
+            "overwrites managed request field" in rec.message
+            and "max_tokens" in rec.message
+            for rec in caplog.records
+        )
+
+
+class TestDriverExtraBody:
+    """End-to-end: extra_body reaches the POST payload of text-gen drivers."""
+
+    _EXTRA = {
+        "stop": ["}"],
+        "chat_template_kwargs": {"reasoning_effort": "low"},
+        # Synthetic vendor extension: a nested object holding an array, to
+        # confirm arbitrary nested structures pass through verbatim.
+        "vendor_ext": {"flags": ["a", "b"]},
+    }
+
+    @staticmethod
+    async def _single_chunk(chunk: bytes) -> AsyncIterator[bytes]:
+        yield chunk
+        yield b"data: [DONE]\n\n"
+
+    def _make_input(self, api_url: str) -> RequestFuncInput:
+        return RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="hi",
+            images=[],
+            api_url=api_url,
+            prompt_len=1,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_chat_driver_merges_extra_body(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = self._single_chunk(
+            b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n'
+        )
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver(extra_body=self._EXTRA)
+        result = await driver.request(
+            self._make_input("http://localhost:8000/v1/chat/completions")
+        )
+        assert result.success is True
+        sent = mock_aiohttp_session.post.call_args[1]["json"]
+        assert sent["stop"] == ["}"]
+        assert sent["chat_template_kwargs"] == {"reasoning_effort": "low"}
+        assert sent["vendor_ext"] == {"flags": ["a", "b"]}
+
+    @pytest.mark.asyncio
+    async def test_completions_driver_merges_extra_body(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = self._single_chunk(
+            b'data: {"choices": [{"text": "ok"}]}\n\n'
+        )
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAICompletionsRequestDriver(extra_body=self._EXTRA)
+        result = await driver.request(
+            self._make_input("http://localhost:8000/v1/completions")
+        )
+        assert result.success is True
+        sent = mock_aiohttp_session.post.call_args[1]["json"]
+        assert sent["stop"] == ["}"]
+        assert sent["vendor_ext"] == {"flags": ["a", "b"]}
+
+    @pytest.mark.asyncio
+    async def test_trtllm_driver_merges_extra_body(
+        self,
+        mock_aiohttp_session: Any,
+        mocker: MockerFixture,
+    ) -> None:
+        async def trtllm_chunk() -> AsyncIterator[bytes]:
+            # The TRT-LLM driver validates every event as a chunk and has no
+            # ``[DONE]`` sentinel, so emit only a single data line.
+            yield b'data: {"text_output": "ok"}\n\n'
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = trtllm_chunk()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = TRTLLMRequestDriver(extra_body=self._EXTRA)
+        result = await driver.request(
+            self._make_input(
+                "http://localhost:8000/v2/models/ensemble/generate_stream"
+            )
+        )
+        assert result.success is True
+        sent = mock_aiohttp_session.post.call_args[1]["json"]
+        assert sent["stop"] == ["}"]
+        assert sent["vendor_ext"] == {"flags": ["a", "b"]}
 
 
 class TestRequestDriverSelection:
@@ -1178,6 +1379,10 @@ class TestValidateTaskAndEndpoint:
     def test_pixel_gen_videos_sync_ok(self) -> None:
         validate_task_and_endpoint("text-to-video", "/v1/videos/sync")
 
+    def test_image_to_video_videos_sync_ok(self) -> None:
+        # i2v is a video task and may use the video endpoints.
+        validate_task_and_endpoint("image-to-video", "/v1/videos/sync")
+
     def test_text_gen_videos_sync_rejected(self) -> None:
         with pytest.raises(ValueError, match="does not support"):
             validate_task_and_endpoint("text-generation", "/v1/videos/sync")
@@ -1192,6 +1397,9 @@ class TestValidateTaskAndEndpoint:
 
     def test_pixel_gen_videos_ok(self) -> None:
         validate_task_and_endpoint("text-to-video", "/v1/videos")
+
+    def test_image_to_video_videos_ok(self) -> None:
+        validate_task_and_endpoint("image-to-video", "/v1/videos")
 
     def test_text_gen_videos_rejected(self) -> None:
         with pytest.raises(ValueError, match="does not support"):

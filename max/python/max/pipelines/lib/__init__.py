@@ -48,6 +48,7 @@ from .config import (
     LoRAConfig,
     MAXModelConfig,
     MAXModelConfigBase,
+    PipelineArgs,
     PipelineConfig,
     PipelineRole,
     ProfilingConfig,
@@ -73,6 +74,7 @@ from .interfaces import (
     PipelineModelWithKVCache,
     RaggedBatchProcessor,
     UnifiedEagleOutputs,
+    UnifiedSpecDecodeInputs,
     process_ragged_kv_outputs,
     ragged_kv_symbolic_inputs,
 )
@@ -82,6 +84,7 @@ from .pipeline_runtime_config import PipelineRuntimeConfig
 from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
+    SupportsSSMStateWarmup,
 )
 from .pixel_tokenizer import PixelGenerationTokenizer
 from .registry import (
@@ -121,6 +124,7 @@ __all__ = [
     "ModelManifest",
     "ModelOutputs",
     "OverlapTextGenerationPipeline",
+    "PipelineArgs",
     "PipelineConfig",
     "PipelineModel",
     "PipelineModelType",
@@ -137,10 +141,12 @@ __all__ = [
     "SpeculativeConfig",
     "SupportedArchitecture",
     "SupportedEncoding",
+    "SupportsSSMStateWarmup",
     "TextAndVisionTokenizer",
     "TextGenerationPipeline",
     "TextTokenizer",
     "UnifiedEagleOutputs",
+    "UnifiedSpecDecodeInputs",
     "WeightPathParser",
     "build_eos_tracker_for_request",
     "convert_max_config_value",

@@ -40,7 +40,7 @@ from max.graph import (
     SymbolicDim,
     TensorValue,
 )
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, MLAKVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_mla import (
     QuantizedLatentAttentionWithRope,
@@ -66,13 +66,11 @@ _PAGE_SIZE = 128
 
 
 def _make_kv_params(devices: Sequence[Device]) -> KVCacheParams:
-    return KVCacheParams(
+    return MLAKVCacheParams(
         dtype=DType.float32,
-        n_kv_heads=1,
         head_dim=_CACHE_HEAD_DIM,
         num_layers=_NUM_LAYERS,
         devices=[DeviceRef.from_device(device) for device in devices],
-        is_mla=True,
         num_q_heads=_N_HEADS,
         page_size=_PAGE_SIZE,
     )

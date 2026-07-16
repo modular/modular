@@ -40,7 +40,10 @@ from max.benchmark.benchmark_serving import (
 from max.benchmark.benchmark_serving import (
     parse_args as _parse_serving_args,
 )
-from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
+from max.benchmark.benchmark_shared.config import (
+    PIXEL_GENERATION_TASKS,
+    ServingBenchmarkConfig,
+)
 from max.benchmark.sweep_benchmark_serving_result_utils import (
     LLMBenchmarkResult,
     LLMBenchmarkResultWriter,
@@ -199,11 +202,7 @@ def run_sweep(
     if config.workload_config:
         with open(config.workload_config) as f:
             wl = yaml.safe_load(f)
-        is_pixel_gen = wl.get("benchmark-task") in (
-            "text-to-image",
-            "image-to-image",
-            "text-to-video",
-        )
+        is_pixel_gen = wl.get("benchmark-task") in PIXEL_GENERATION_TASKS
 
     upload_active = uploader is not None and config.upload_results
 

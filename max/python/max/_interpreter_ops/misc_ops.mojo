@@ -29,7 +29,7 @@ from std.algorithm.functional import elementwise, IndexList
 from extensibility import (
     ManagedTensorSlice,
 )
-from extensibility import FusedOutput
+from extensibility import IOSpec
 from extensibility import StaticTensorSpec
 from builtin_kernels import Range, range_shape
 
@@ -84,15 +84,14 @@ def PyInit_misc_ops() abi("C") -> PythonObject:
 
 
 @fieldwise_init
-struct _RangeShapeBody(Dispatchable):
+struct _RangeShapeBody[origin: MutOrigin](Dispatchable):
     """Dispatch body for the RangeShape operation over data dtypes."""
 
     var start_addr: Int
     var stop_addr: Int
     var step_addr: Int
 
-    @__allow_legacy_any_origin_fields
-    var result_ptr: UnsafePointer[Int, MutAnyOrigin]
+    var result_ptr: UnsafePointer[Int, Self.origin]
 
     def call[t: DType](self) raises -> None:
         comptime if t == DType.bool:
@@ -193,7 +192,7 @@ def range_op[
 
     comptime out_spec = StaticTensorSpec[dtype, 1, ...].get_unknown()
     var output_tensor = ManagedTensorSlice[
-        io_spec=FusedOutput, static_spec=out_spec
+        io_spec=IOSpec.FusedOutput, static_spec=out_spec
     ](out_ptr, IndexList[1](size))
 
     if ctx.api() == "cpu":
@@ -210,17 +209,17 @@ def range_op[
                 # the Metal shader compiler cannot handle. Use elementwise
                 # with simd_width=1 to avoid this issue on all GPU targets.
                 @always_inline
-                @parameter
-                @__copy_capture(out_ptr, start, step)
-                def range_func[width: Int, alignment: Int = 1](idx: Coord):
+                def range_func[
+                    width: Int, alignment: Int = 1
+                ](idx: Coord) {var}:
                     var i = Int(idx[0].value())
                     var result = start + (
                         iota[dtype, width](Scalar[dtype](i)) * step
                     )
                     out_ptr.store[width=width](i, result)
 
-                elementwise[range_func, simd_width=1, target="gpu"](
-                    Coord(size), ctx
+                elementwise[simd_width=1, target="gpu"](
+                    range_func, Coord(size), ctx
                 )
             else:
                 raise Error(
@@ -290,7 +289,7 @@ def range_shape_dispatcher(
             start_addr,
             stop_addr,
             step_addr,
-            UnsafePointer(to=result).as_unsafe_any_origin(),
+            UnsafePointer(to=result),
         ),
         dtype,
     )
@@ -368,9 +367,7 @@ def random_normal_op[
             raise Error("No GPU accelerator available")
 
     @always_inline
-    @parameter
-    @__copy_capture(out_ptr, mean, variance, seed_value, grid_block)
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert (
             width == 1
         ), "PyTorch-compat normal kernel uses scalar lanes"
@@ -384,11 +381,11 @@ def random_normal_op[
         out_ptr.store[width=1](i, SIMD[dtype, 1](value))
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](Coord(size), ctx)
+        elementwise[simd_width=1](func, Coord(size), ctx)
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                elementwise[func, simd_width=1, target="gpu"](Coord(size), ctx)
+                elementwise[simd_width=1, target="gpu"](func, Coord(size), ctx)
 
 
 def random_normal_dispatcher(
@@ -488,9 +485,7 @@ def random_uniform_op[
     var delta = upper_bound - lower_bound
 
     @always_inline
-    @parameter
-    @__copy_capture(out_ptr, lower_bound, delta, seed_value)
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var i = Int(idx[0].value())
         var generator = Random(seed=seed_value, offset=UInt64(i))
         var values: SIMD[DType.float32, 4] = generator.step_uniform()
@@ -498,11 +493,11 @@ def random_uniform_op[
         out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=4](Coord(size), ctx)
+        elementwise[simd_width=4](func, Coord(size), ctx)
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                elementwise[func, simd_width=4, target="gpu"](Coord(size), ctx)
+                elementwise[simd_width=4, target="gpu"](func, Coord(size), ctx)
             else:
                 raise Error(
                     "GPU execution not supported for random_uniform"

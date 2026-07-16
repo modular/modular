@@ -68,6 +68,10 @@ const redirects = [
     to: '/max/deploy/local-to-cloud/',
   },
   {
+    from: '/max/deploy/cloud/',
+    to: '/max/deploy/local-to-cloud/',
+  },
+  {
     from: '/max/tutorials/max-serve-local-to-cloud/',
     to: '/max/deploy/local-to-cloud/',
   },
@@ -85,7 +89,7 @@ const redirects = [
   },
   {
     from: '/max/deploy/',
-    to: '/max/deploy/cloud/',
+    to: '/max/deploy/local-to-cloud/',
   },
   {
     from: '/max/serve/',
@@ -93,7 +97,7 @@ const redirects = [
   },
   {
     from: '/max/tutorials/deploy-max-serve-on-kubernetes/',
-    to: '/max/deploy/cloud/',
+    to: '/max/deploy/local-to-cloud/',
   },
   {
     from: '/max/tutorials/benchmark-max-serve/',
@@ -149,7 +153,7 @@ const redirects = [
   },
   {
     from: '/mammoth/',
-    to: '/max/deploy/cloud/',
+    to: '/max/deploy/local-to-cloud/',
   },
   {
     from: '/glossary/ai/prefill/',

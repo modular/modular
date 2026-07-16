@@ -66,9 +66,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
     decoder_model: Model
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
+        assert self.max_batch_size, "Expected max_batch_size to be set"
 
         weights_dict = dict(self.weights.items())
         language_weights = convert_safetensor_language_state_dict(weights_dict)
@@ -87,7 +85,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
 
         input_row_offsets_prealloc_host = Buffer.from_numpy(
             np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1,
+                self.max_batch_size + 1,
                 dtype=np.uint32,
             )
         )

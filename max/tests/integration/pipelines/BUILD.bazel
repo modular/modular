@@ -4,7 +4,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -28,8 +27,10 @@ modular_py_test(
     srcs = ["test_model_config_encoding_resolution.py"],
     deps = [
         "//max/python/max/driver",
+        "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/weights",
+        requirement("pydantic"),
     ],
 )
 
@@ -98,6 +99,7 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
     ],
 )
 
@@ -221,6 +223,7 @@ modular_py_test(
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
+        "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
     ],
@@ -264,7 +267,7 @@ modular_py_test(
         ],
     ),
     exec_properties = {
-        "test.resources:gpu-memory": "23",
+        "test.resources:gpu-memory": "22",
     },
     gpu_constraints = ["//:has_gpu"],
     ignore_extra_deps = [
@@ -305,6 +308,12 @@ modular_py_test(
     ignore_extra_deps = [
         # Used as a pytest plugin
         "//max/tests/integration/test_common:registry",
+        # Pytest plugin for async tests; not a direct import.
+        requirement("pytest-asyncio"),
+        # EAGLE arch is loaded dynamically via the pipeline registry.
+        "//max/python/max/pipelines/architectures/unified_eagle_llama3",
+        # Used at runtime by apply_chat_template; not a direct import.
+        requirement("jinja2"),
     ],
     tags = [
         "gpu",
@@ -315,11 +324,14 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/unified_eagle_llama3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:registry",
+        requirement("jinja2"),
         requirement("numpy"),
+        requirement("pytest-asyncio"),
     ],
 )

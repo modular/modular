@@ -25,7 +25,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
@@ -139,7 +139,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
                 batch_idx * 2 * num_layers * max_seq_len * num_heads * head_dim
                 + Int(start_positions_dyn[batch_idx]) * num_heads * head_dim
             )
-            memcpy(
+            unsafe_memcpy(
                 dest=kv_block_tensor.ptr + dest_offset,
                 src=k_cache_input_buffer.unsafe_ptr()
                 + (batch_idx * seq_len * dim),
@@ -159,7 +159,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     # Initialize query buffer with golden values
     q_input_buffer = q_input[dtype]()
     with q_device.map_to_host() as q_host:
-        memcpy(
+        unsafe_memcpy(
             dest=q_host.unsafe_ptr(),
             src=q_input_buffer.unsafe_ptr(),
             count=len(q_input_buffer),
@@ -168,7 +168,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     # Initialize freqs_cis_table with golden values
     freqs_input_buffer = freqs_cis_table_input[dtype]()
     with freqs_device.map_to_host() as freqs_host:
-        memcpy(
+        unsafe_memcpy(
             dest=freqs_host.unsafe_ptr(),
             src=freqs_input_buffer.unsafe_ptr(),
             count=len(freqs_input_buffer),

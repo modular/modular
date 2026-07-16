@@ -47,6 +47,7 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
     SupportedEncoding,
 )
+from max.pipelines.lib.memory_estimation import _MemoryPlan
 from max.pipelines.lib.pipeline_variants import overlap_text_generation
 from max.pipelines.modeling.types import (
     RequestID,
@@ -405,7 +406,10 @@ def create_overlap_pipeline(
         pipeline_model=cast(type[PipelineModel[Any]], FakePipelineModel),
         eos_token_id=9999,
         weight_adapters=MagicMock(),
-        tokenizer=MagicMock(),
+        tokenizer=MagicMock(spec=[]),
+        memory_plan=_MemoryPlan(
+            max_batch_size=runtime.max_batch_size or 1, footprint=0
+        ),
         disable_overlap=disable_overlap,
     )
     return pipeline

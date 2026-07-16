@@ -116,13 +116,15 @@ class OutputAllocatingModel:
 
 
 def _make_kv_per_device() -> KVCacheInputsPerDevice[Buffer, Buffer]:
-    max_lengths = np.array([[0, 1]], dtype=np.uint32)
+    max_prompt_length = np.array([0], dtype=np.uint32)
+    max_cache_length = np.array([1], dtype=np.uint32)
     dispatch = np.array([1, 1, 1, 1], dtype=np.int64)
     return KVCacheInputsPerDevice(
         kv_blocks=Buffer.zeros((1,), dtype=DType.float32),
         cache_lengths=Buffer.from_numpy(np.array([0], dtype=np.uint32)),
         lookup_table=Buffer.from_numpy(np.array([0], dtype=np.uint32)),
-        max_lengths=Buffer.from_numpy(max_lengths),
+        max_prompt_length=Buffer.from_numpy(max_prompt_length),
+        max_cache_length=Buffer.from_numpy(max_cache_length),
         attention_dispatch_metadata=Buffer.from_numpy(dispatch),
     )
 
