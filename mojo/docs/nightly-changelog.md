@@ -140,6 +140,9 @@ This version is still a work in progress.
   imported into every module. This includes if the user explicitly imports all
   or part of the standard library themselves.
 
+- `imm` is now the preferred spelling for the `read` argument and
+  closure-capture convention. `read` still works but will soon be deprecated.
+
 ## Language changes
 
 - User-written structs must now explicitly declare closure-trait conformance
