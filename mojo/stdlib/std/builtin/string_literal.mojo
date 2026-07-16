@@ -780,7 +780,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         _FormatUtils.format_to_comptime[StaticString(Self())](buffer, *args)
         return buffer^
 
-    def join[T: Copyable & Writable, //](self, elems: Span[T, ...]) -> String:
+    def join[T: Copyable & Writable, //](self, elems: Span[T, _]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
         `buffer_size`, otherwise will allocate once to the heap and write

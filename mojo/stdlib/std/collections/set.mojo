@@ -124,7 +124,7 @@ struct Set[
 
     # TODO: Should take the list owned so we can transfer the elements out.
     def __init__(
-        out self, elements: List[Self.T, ...]
+        out self, elements: List[Self.T]
     ) where conforms_to(Self.T, Copyable):
         """Construct a set from a List of elements.
 

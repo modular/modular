@@ -196,7 +196,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     # TODO: add optimize_ascii and branchless optimization options like unsafe_write_utf8
     @staticmethod
     def unsafe_decode_utf8_codepoint(
-        s: Span[mut=False, UInt8, ...],
+        s: Span[mut=False, UInt8, _],
     ) -> Tuple[Codepoint, Int]:
         """Decodes a single `Codepoint` and number of bytes read from a given
         UTF-8 string pointer.

@@ -2511,7 +2511,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     def join[
         T: Copyable & Writable,
         //,
-    ](self, elems: Span[T, ...]) -> String:
+    ](self, elems: Span[T, _]) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
