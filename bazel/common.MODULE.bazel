@@ -707,6 +707,16 @@ single_version_override(
     ],
 )
 
+# TODO: Comment very out of date
+# Must be rebuilt when updating with: MACOSX_DEPLOYMENT_TARGET=11.0 build-tcmalloc
+# And uploaded to s3 with: aws s3 cp tcmalloc.tar.gz s3://modular-bazel-artifacts-public/artifacts/gperftools/VERSION/SHA/tcmalloc.tar.gz
+http_archive(
+    name = "gperftools-macos",
+    build_file = "//bazel/public-patches:gperftools-macos.BUILD",
+    sha256 = "0d1dbb0273d94d32e28ccb53971d1473cab9bde90a463251f6f117867cf2d680",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/gperftools/2.15/0d1dbb0273d94d32e28ccb53971d1473cab9bde90a463251f6f117867cf2d680/tcmalloc.tar.gz",
+)
+
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
 
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node", dev_dependency = True)
