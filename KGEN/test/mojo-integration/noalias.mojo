@@ -10,7 +10,7 @@
 # CHECK-LABEL: @mayalias(
 @export
 def mayalias(
-    a: UnsafePointer[Float32, ImmutAnyOrigin],
+    a: UnsafePointer[Float32, ImmUnsafeAnyOrigin],
     b: UnsafePointer[Float32, MutAnyOrigin],
 ) abi("Mojo") -> Float32:
     # CHECK: store
@@ -23,7 +23,7 @@ def mayalias(
 # CHECK-LABEL: @noalias(
 @export
 def noalias(
-    a0: UnsafePointer[Float32, ImmutAnyOrigin],
+    a0: UnsafePointer[Float32, ImmUnsafeAnyOrigin],
     b: UnsafePointer[Float32, MutAnyOrigin],
 ) abi("Mojo") -> Float32:
     a = a0.as_noalias_ptr()
@@ -47,5 +47,5 @@ def any_life(ref[MutAnyOrigin] r: Int, mut x: Int) abi("Mojo"):
 # CHECK-SAME: ptr nofree noundef nonnull readnone captures(none) %0,
 # CHECK-SAME: ptr noalias nofree noundef nonnull readnone captures(none) %1)
 @export
-def imm_life(ref[ImmutAnyOrigin] r: Int, mut x: Int) abi("Mojo"):
+def imm_life(ref[ImmUnsafeAnyOrigin] r: Int, mut x: Int) abi("Mojo"):
     pass
