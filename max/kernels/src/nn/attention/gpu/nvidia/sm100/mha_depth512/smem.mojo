@@ -128,6 +128,7 @@ struct Depth512AttentionSMem[
     )
 
     # ---- storage -------------------------------------------------------------
+    @__allow_legacy_any_origin_fields
     var base: SharedMemPointer[Scalar[DType.uint8]]
 
     # ---- construction --------------------------------------------------------
@@ -148,7 +149,7 @@ struct Depth512AttentionSMem[
             address_space=AddressSpace.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
-        ]()
+        ]().as_unsafe_any_origin()
 
     # ---- accessors -----------------------------------------------------------
 

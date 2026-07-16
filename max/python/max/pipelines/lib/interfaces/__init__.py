@@ -12,21 +12,31 @@
 # ===----------------------------------------------------------------------=== #
 """Interfaces for MAX pipelines."""
 
+from max.pipelines.diffusion.interface import (
+    DiffusionPipeline,
+    DiffusionPipelineOutput,
+)
+from max.pipelines.lib.interfaces.batch_processor import (
+    BatchProcessor,
+    BatchProcessorRuntime,
+    ModuleV3SingleReplicaBatchProcessor,
+    RaggedBatchProcessor,
+    SingleReplicaRaggedBatchProcessor,
+    build_single_replica_ragged_token_arrays,
+    process_ragged_kv_outputs,
+    ragged_kv_symbolic_inputs,
+    single_replica_context_batch,
+)
+
 from .arch_config import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,
-    ArchConfigWithKVAndVisionCache,
+    ArchConfigWithBoundedMaxSeqLen,
     ArchConfigWithKVCache,
+    ArchConfigWithPermissiveMaxSeqLen,
+    ArchConfigWithStoredKVParams,
+    ArchVLConfigWithTextSubconfig,
 )
-from .cache_mixin import (
-    DenoisingCacheConfig,
-    DenoisingCacheState,
-    fbcache_conditional_execution,
-    teacache_conditional_execution,
-)
-from .component_model import ComponentModel
-from .diffusion_pipeline import DiffusionPipeline, DiffusionPipelineOutput
-from .first_block_cache import FirstBlockCache, FirstBlockCacheState
 from .generate import GenerateMixin
 from .pipeline_model import (
     AlwaysSignalBuffersMixin,
@@ -35,34 +45,34 @@ from .pipeline_model import (
     PipelineModel,
     PipelineModelWithKVCache,
     UnifiedEagleOutputs,
+    UnifiedSpecDecodeInputs,
 )
-from .taylorseer import TaylorSeer, TaylorSeerState, run_denoising_step
-from .tensor_struct import TensorStruct
 
 __all__ = [
     "AlwaysSignalBuffersMixin",
     "ArchConfig",
     "ArchConfigWithAttentionKVCache",
-    "ArchConfigWithKVAndVisionCache",
+    "ArchConfigWithBoundedMaxSeqLen",
     "ArchConfigWithKVCache",
-    "ComponentModel",
-    "DenoisingCacheConfig",
-    "DenoisingCacheState",
+    "ArchConfigWithPermissiveMaxSeqLen",
+    "ArchConfigWithStoredKVParams",
+    "ArchVLConfigWithTextSubconfig",
+    "BatchProcessor",
+    "BatchProcessorRuntime",
     "DiffusionPipeline",
     "DiffusionPipelineOutput",
-    "FirstBlockCache",
-    "FirstBlockCacheState",
     "GenerateMixin",
     "ModelInputs",
     "ModelOutputs",
+    "ModuleV3SingleReplicaBatchProcessor",
     "PipelineModel",
     "PipelineModelWithKVCache",
-    "TaylorSeer",
-    "TaylorSeerState",
-    "TensorStruct",
+    "RaggedBatchProcessor",
+    "SingleReplicaRaggedBatchProcessor",
     "UnifiedEagleOutputs",
-    "fbcache_conditional_execution",
-    "get_paged_manager",
-    "run_denoising_step",
-    "teacache_conditional_execution",
+    "UnifiedSpecDecodeInputs",
+    "build_single_replica_ragged_token_arrays",
+    "process_ragged_kv_outputs",
+    "ragged_kv_symbolic_inputs",
+    "single_replica_context_batch",
 ]

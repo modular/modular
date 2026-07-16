@@ -46,13 +46,17 @@ _EXTRA_CONSTRAINTS = {
     }),
 }
 
+_GPU_MEMORY = {
+    "test_gated_delta.mojo": "3",
+}
+
 [
     mojo_test(
         name = src + ".test",
         size = "large",
         srcs = [src],
         exec_properties = {
-            "test.resources:gpu-memory": "2",
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "2"),
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),

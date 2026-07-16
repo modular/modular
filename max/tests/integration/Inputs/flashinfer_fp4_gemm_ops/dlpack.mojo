@@ -20,6 +20,9 @@ All implementations are based on that reference material.
 """
 
 from std.sys import bit_width_of
+from std.utils import IndexList
+
+from extensibility import ManagedTensorSlice
 
 
 @fieldwise_init
@@ -115,11 +118,16 @@ struct DLDevice(ImplicitlyCopyable, Movable):
 
 struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
     # https://dmlc.github.io/dlpack/latest/c_api.html#c.DLTensor
+    @__allow_legacy_any_origin_fields
     var data: Pointer[Scalar[Self.dtype], MutAnyOrigin]
     var device: DLDevice
     var _rank: Int32
     var data_type: DLDataType
+
+    @__allow_legacy_any_origin_fields
     var _shape_ptr: UnsafePointer[Int64, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var _strides_ptr: Optional[UnsafePointer[Int64, MutAnyOrigin]]
     var byte_offset: UInt64
 
@@ -143,7 +151,9 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
         self.strides = tensor.strides()
         self.byte_offset = 0
 
-        self._shape_ptr = UnsafePointer(to=self.shape).bitcast[Int64]()
+        self._shape_ptr = (
+            UnsafePointer(to=self.shape).bitcast[Int64]().as_unsafe_any_origin()
+        )
 
         # DLPack convention is that null strides mean the tensor isrow-major
         # contiguous. Many consumers (e.g. FlashInfer's `IsContiguous()`) check
@@ -151,7 +161,11 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
         if Self._is_row_major(self.shape, self.strides):
             self._strides_ptr = {}
         else:
-            self._strides_ptr = UnsafePointer(to=self.strides).bitcast[Int64]()
+            self._strides_ptr = (
+                UnsafePointer(to=self.strides)
+                .bitcast[Int64]()
+                .as_unsafe_any_origin()
+            )
 
     @staticmethod
     def _is_row_major(
@@ -169,5 +183,11 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
         self.byte_offset = copy.byte_offset
 
         # Fix up self-referential pointers to our own inline storage.
-        self._shape_ptr = UnsafePointer(to=self.shape).bitcast[Int64]()
-        self._strides_ptr = UnsafePointer(to=self.strides).bitcast[Int64]()
+        self._shape_ptr = (
+            UnsafePointer(to=self.shape).bitcast[Int64]().as_unsafe_any_origin()
+        )
+        self._strides_ptr = (
+            UnsafePointer(to=self.strides)
+            .bitcast[Int64]()
+            .as_unsafe_any_origin()
+        )

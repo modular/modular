@@ -151,6 +151,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         c_tma_op: TMATensorTile[
@@ -181,6 +182,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         c_tma_op: TMATensorTile[
@@ -194,10 +196,10 @@ struct BlockwiseFP8TileWriter[
 
         comptime for stage in range(Self.num_stages):
             var upper_frag = accum.upper.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(stage, Idx[0])
             )
             var lower_frag = accum.lower.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(stage, Idx[0])
             )
 
             var c_smem_tile = c_tiles[stage % 2]  # double-buffer
@@ -288,6 +290,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         m_abs: UInt32,
@@ -325,6 +328,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         m_abs: UInt32,
@@ -346,10 +350,10 @@ struct BlockwiseFP8TileWriter[
 
         comptime for stage in range(Self.num_stages):
             var upper_frag = accum.upper.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(stage, Idx[0])
             )
             var lower_frag = accum.lower.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(stage, Idx[0])
             )
 
             # Apply expert scale
@@ -495,7 +499,7 @@ struct BlockwiseFP8TileWriter[
             comptime for j in range(
                 zipped.shape_types[1].element_types[0].static_value
             ):
-                var input_crd = Coord(Idx(UInt32(thread_idx.x)), Idx[j]())
+                var input_crd = Coord(UInt32(thread_idx.x), Idx[j])
                 var linear_idx = zipped[linear_idx_type=DType.uint32](
                     input_crd
                 ) * UInt32(simd_size)
@@ -512,7 +516,7 @@ struct BlockwiseFP8TileWriter[
                 if global_i < m_end:
                     # Compute destination pointer via TileTensor layout
                     var dst_offset = c_tensor.layout(
-                        Coord(Idx(Int(global_i)), Idx(Int(global_j)))
+                        Coord(Int(global_i), Int(global_j))
                     )
                     var dst_ptr = c_tensor.ptr + Int(dst_offset)
 

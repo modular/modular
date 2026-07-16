@@ -300,8 +300,8 @@ def assert_with_measure[
     dtype: DType,
     //,
     measure: def[dtype: DType](
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+        UnsafePointer[mut=False, Scalar[dtype], _],
+        UnsafePointer[mut=False, Scalar[dtype], _],
         Int,
     ) thin -> Float64,
 ](

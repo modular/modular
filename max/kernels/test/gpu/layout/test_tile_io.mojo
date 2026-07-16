@@ -80,7 +80,7 @@ def generic_to_shared_to_generic_kernel(
     dst_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
 ):
     """Roundtrip a tile through shared memory: GENERIC -> SHARED -> GENERIC."""
-    comptime thread_layout = row_major(Idx[2](), Idx[2]())
+    comptime thread_layout = row_major(Idx[2], Idx[2])
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
@@ -101,7 +101,7 @@ def generic_to_local_to_generic_kernel(
 
     Each thread holds its own 2x2 fragment in local memory.
     """
-    comptime thread_layout = row_major(Idx[2](), Idx[2]())
+    comptime thread_layout = row_major(Idx[2], Idx[2])
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
@@ -125,7 +125,7 @@ def shared_local_shared_kernel(
     LOCAL -> SHARED writes those fragments into a second `smem_out`.
     SHARED -> GENERIC reads `smem_out` back to `dst`.
     """
-    comptime thread_layout = row_major(Idx[2](), Idx[2]())
+    comptime thread_layout = row_major(Idx[2], Idx[2])
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
@@ -161,7 +161,7 @@ def swizzled_local_to_shared_to_generic_kernel(
     test is the guard that the two swizzled branches compute identical
     swizzled addresses per thread / per index.
     """
-    comptime thread_layout = row_major(Idx[2](), Idx[2]())
+    comptime thread_layout = row_major(Idx[2], Idx[2])
     comptime swizzle = Swizzle(1, 0, 2)
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
@@ -192,7 +192,7 @@ def async_generic_to_shared_to_generic_kernel(
     back to synchronous loads, but the commit/wait calls remain valid
     no-ops.
     """
-    comptime thread_layout = row_major(Idx[2](), Idx[2]())
+    comptime thread_layout = row_major(Idx[2], Idx[2])
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
@@ -217,7 +217,7 @@ def async_generic_to_shared_to_generic_8b_kernel(
     `element_size=2`; under a 2x2 thread layout each thread issues two
     8-byte `cp.async` operations.
     """
-    comptime thread_layout = row_major(Idx[2](), Idx[2]())
+    comptime thread_layout = row_major(Idx[2], Idx[2])
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
@@ -244,7 +244,7 @@ def async_generic_to_shared_to_generic_16b_kernel(
     `element_size=4`; under a 4x1 thread layout each thread issues a
     single 16-byte `cp.async` covering one row.
     """
-    comptime thread_layout = row_major(Idx[4](), Idx[1]())
+    comptime thread_layout = row_major(Idx[4], Idx[1])
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
@@ -280,7 +280,7 @@ def async_generic_to_shared_to_generic_16b_bf16_kernel(
     the byte width and dtype the copier is most likely to see in real
     matmul prologues.
     """
-    comptime thread_layout = row_major(Idx[4](), Idx[1]())
+    comptime thread_layout = row_major(Idx[4], Idx[1])
 
     var src = TileTensor(src_ptr, row_major[_BF16_ROWS, _BF16_COLS]())
     var dst = TileTensor(dst_ptr, row_major[_BF16_ROWS, _BF16_COLS]())
@@ -311,12 +311,12 @@ def masked_async_generic_to_shared_to_generic_kernel(
     the source is fully in bounds.
 
     Verifying the actual zero-fill behavior requires a runtime-shaped
-    src (e.g. `Coord(RuntimeInt(num_rows), Idx[_N]())`) so `src.dim[0]()`
+    src (e.g. `Coord(Int(num_rows), Idx[_N])`) so `src.dim[0]()`
     can be smaller than the distribute layout's row count. That follow-up
     test is tracked alongside the production attention adopters that will
     exercise this path.
     """
-    comptime thread_layout = row_major(Idx[2](), Idx[2]())
+    comptime thread_layout = row_major(Idx[2], Idx[2])
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
@@ -343,7 +343,7 @@ def access_size_swizzled_vectorized_async_kernel(
     stay naturally aligned to `simd_size * size_of[dtype]()`).
     This is the shape mha/mla/qmatmul use in production.
     """
-    comptime thread_layout = row_major(Idx[2](), Idx[2]())
+    comptime thread_layout = row_major(Idx[2], Idx[2])
     comptime simd_size = 2
     comptime swizzle = make_swizzle[
         num_rows=2, row_size=_N, access_size=simd_size
@@ -380,7 +380,7 @@ def swizzled_async_generic_to_shared_to_generic_kernel(
     using the same swizzle, so any disagreement between the two
     swizzled-address calculations would surface as a mismatched roundtrip.
     """
-    comptime thread_layout = row_major(Idx[2](), Idx[2]())
+    comptime thread_layout = row_major(Idx[2], Idx[2])
     comptime swizzle = Swizzle(1, 0, 2)
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
@@ -414,7 +414,7 @@ def _run_roundtrip[
     var dst_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(src_dev, src_host)
 
-    ctx.enqueue_function_experimental[kernel_fn](
+    ctx.enqueue_function[kernel_fn](
         src_dev, dst_dev, grid_dim=(1), block_dim=(_BLOCK_DIM)
     )
 
@@ -484,9 +484,9 @@ def test_async_generic_to_shared_to_generic_16b_bf16(
     var dst_dev = ctx.enqueue_create_buffer[DType.bfloat16](_BF16_NUM_ELEMENTS)
     ctx.enqueue_copy(src_dev, src_host)
 
-    ctx.enqueue_function_experimental[
-        async_generic_to_shared_to_generic_16b_bf16_kernel
-    ](src_dev, dst_dev, grid_dim=(1), block_dim=(_BF16_ROWS))
+    ctx.enqueue_function[async_generic_to_shared_to_generic_16b_bf16_kernel](
+        src_dev, dst_dev, grid_dim=(1), block_dim=(_BF16_ROWS)
+    )
 
     var dst_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
         _BF16_NUM_ELEMENTS

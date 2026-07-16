@@ -29,6 +29,7 @@ These structures enable optimizing GPU kernel performance by controlling executi
 at a granular level, similar to CUDA's native launch attribute system.
 """
 
+from . import Dim
 from std.sys import size_of
 
 from std.utils import StaticTuple
@@ -315,6 +316,8 @@ struct LaunchAttribute(Defaultable, TrivialRegisterPassable):
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form
     a complete attribute that can be passed to GPU kernel launches. It provides
     a way to specify various execution parameters that control kernel behavior.
+
+    These are CUDA only, and are not supported on any other target.
     """
 
     var id: LaunchAttributeID
@@ -392,7 +395,7 @@ struct AccessPolicyWindow(
         The CUDA driver may align the `base_ptr` and restrict the maximum size.
     """
 
-    var base_ptr: Optional[OpaquePointer[MutAnyOrigin]]
+    var base_ptr: Optional[OpaquePointer[MutUntrackedOrigin]]
     """Starting address of the access policy window. Driver may align it."""
 
     var num_bytes: Int
@@ -441,10 +444,11 @@ struct AccessPolicyWindow(
             hit_prop: Access property for hit segments (default: NORMAL).
             miss_prop: Access property for miss segments (default: NORMAL).
         """
-        self.base_ptr = (
+        self.base_ptr = Optional[OpaquePointer[MutUntrackedOrigin]](
             base_ptr.bitcast[NoneType]()
             .unsafe_mut_cast[True]()
             .address_space_cast[AddressSpace.GENERIC]()
+            .unsafe_origin_cast[MutUntrackedOrigin]()
         )
         self.num_bytes = count * size_of[T]()
         self.hit_ratio = hit_ratio

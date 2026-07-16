@@ -15,7 +15,6 @@ import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import barrier, warp_id, lane_id
 from std.gpu.host import DeviceContext
 
-# from testing import assert_almost_equal
 from std.gpu import thread_idx
 from std.gpu.compute.mma import (
     wgmma_async,
@@ -190,7 +189,7 @@ def wgmma_e4m3_e4m3_f32[
         transpose_b=transpose_b,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a_tensor,
         b_tensor,
         c_tensor,

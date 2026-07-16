@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,7 +29,7 @@ from max.nn.quant_config import (
     WeightScaleSpec,
 )
 from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from pydantic import Field
 from typing_extensions import Self
 
@@ -72,6 +73,18 @@ class Flux2BlockQuant:
         """
         if base is None:
             return cls()
+        if base.is_int8_w8a8:
+            # int8 W8A8 (RTN-at-load): quantize every block Linear, both
+            # streams. There is no BFL metadata split -- the klein bf16
+            # checkpoint carries no per-layer quant tags.
+            return cls(
+                attn_qkv=base,
+                attn_out=base,
+                added_attn_qkv=base,
+                added_attn_out=base,
+                ff=base,
+                ff_context=base,
+            )
         if not nvfp4_layers_bfl:
             # Legacy / dev-NVFP4 default: img-side quantized, txt-side BF16.
             return cls(
@@ -122,9 +135,57 @@ def _make_nvfp4_config(num_layers: int, num_single_layers: int) -> QuantConfig:
         attn_quantized_layers=all_layers,
         embedding_output_dtype=DType.bfloat16,
         format=QuantFormat.NVFP4,
-        # BFL FLUX.2-NVFP4 ships scales already in the 5D TCGEN-interleaved
-        # layout, so quantized_matmul skips the runtime interleave pass.
-        scales_pre_interleaved=True,
+        # BFL ships scales in 5D TCGEN5 interleaved layout flattened to 2D,
+        # but that storage can't be K-sharded by slicing axis 1 (the 5D dims
+        # mix rows and K-blocks). The weight adapter deinterleaves to true
+        # ``[M, K//16]`` at load time and lets the runtime
+        # ``block_scales_interleave`` op rebuild the 5D layout per-shard.
+        scales_pre_interleaved=False,
+    )
+
+
+def _make_int8_w8a8_config(
+    num_layers: int, num_single_layers: int
+) -> QuantConfig:
+    """Build a QuantConfig for symmetric int8 W8A8 quantization (Apple M5).
+
+    Per-output-channel (rowwise) int8 weight scales, RTN-quantized from the
+    bf16 checkpoint at load; per-token (dynamic colwise) int8 activation scales
+    computed at runtime inside the fused matmul op. Both are symmetric
+    absmax/127 with no zero point.
+    """
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.COLWISE,
+        origin=ScaleOrigin.DYNAMIC,
+        dtype=DType.float32,
+    )
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.ROWWISE,
+        dtype=DType.float32,
+    )
+    all_layers = set(range(num_layers + num_single_layers))
+    return QuantConfig(
+        input_scale=input_spec,
+        weight_scale=weight_spec,
+        mlp_quantized_layers=all_layers,
+        attn_quantized_layers=all_layers,
+        embedding_output_dtype=DType.bfloat16,
+        format=QuantFormat.INT8_W8A8,
+    )
+
+
+def _int8_w8a8_enabled() -> bool:
+    """Whether the klein int8 W8A8 path is enabled (default off).
+
+    Gated by the ``FLUX2_KLEIN_INT8_W8A8`` env var (``1``/``true``/``yes``)
+    so the bf16 default path is byte-identical when unset. Klein-scoped
+    experimental toggle; the checkpoint stays bf16 (weights are RTN-quantized
+    at load).
+    """
+    return os.environ.get("FLUX2_KLEIN_INT8_W8A8", "").lower() in (
+        "1",
+        "true",
+        "yes",
     )
 
 
@@ -145,7 +206,12 @@ class Flux2Config(MAXModelConfigBase):
     guidance_embeds: bool = True
     """If False (Klein/distilled), no guidance embedder weights are expected."""
     dtype: DType = DType.bfloat16
-    device: DeviceRef = Field(default_factory=DeviceRef.GPU)
+    devices: list[DeviceRef] = Field(default_factory=lambda: [DeviceRef.GPU()])
+    """Devices for tensor parallelism. ``len(devices) == 1`` (default) runs
+    single-GPU; larger lengths shard the denoiser across the listed devices.
+    The first device hosts replicated components and any sub-models that
+    stay single-device (text encoder, VAE, etc.).
+    """
     quant_config: QuantConfig | None = None
     """NVFP4 quantization config, populated when encoding is float4_e2m1fnx2."""
 
@@ -178,6 +244,13 @@ class Flux2Config(MAXModelConfigBase):
                 init_dict.get("num_layers", 8),
                 init_dict.get("num_single_layers", 48),
             )
+        elif encoding == "bfloat16" and _int8_w8a8_enabled():
+            # int8 W8A8 rides on the bf16 checkpoint (weights RTN-quantized at
+            # load); computation dtype stays bfloat16.
+            quant_config = _make_int8_w8a8_config(
+                init_dict.get("num_layers", 8),
+                init_dict.get("num_single_layers", 48),
+            )
         raw_dtype = (
             DType.bfloat16
             if quant_config is not None
@@ -186,7 +259,7 @@ class Flux2Config(MAXModelConfigBase):
         init_dict.update(
             {
                 "dtype": raw_dtype,
-                "device": DeviceRef.from_device(devices[0]),
+                "devices": [DeviceRef.from_device(d) for d in devices],
                 "quant_config": quant_config,
             }
         )

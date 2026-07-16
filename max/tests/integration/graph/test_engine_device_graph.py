@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import gc
+import weakref
 from collections.abc import Generator
 
 import numpy as np
@@ -389,3 +391,63 @@ def test_release_captured_graph_unknown_key_is_noop() -> None:
 
     # The original capture is unaffected.
     model.replay(1, input_tensor)
+
+
+def test_capture_releases_input_dlpack_producer() -> None:
+    """Regression test for GEX-3732.
+
+    `ModelHandle::capture`, `replay`, and `debug_verify_replay` route
+    every input buffer through `collectInputMemories`, which calls
+    `Buffer::getMemory()`. For the common contiguous-slice case
+    `getMemory()` returns a freshly heap-allocated `DeviceMemory` view.
+    Prior to GEX-3732 these views were never freed, so each call leaked a
+    refcounted handle to the underlying `DeviceBuffer`. That handle
+    transitively pinned the DLPack capsule's destructor — and through it,
+    the Python `DLManagedTensor` producer — alive indefinitely.
+
+    This test wraps a `torch.Tensor` as the DLPack producer, routes it
+    through all three engine paths, then asserts that dropping the
+    user-visible references actually releases the producer. With the leak
+    in place the `weakref` would still resolve.
+    """
+    if accelerator_count() == 0:
+        pytest.skip("GPU not available")
+
+    accelerator = Accelerator()
+    session = InferenceSession(devices=[accelerator])
+
+    with Graph(
+        "input_buffer_release_test",
+        input_types=[TensorType(DType.float32, [4], device=DeviceRef.GPU(0))],
+    ) as graph:
+        graph.output(graph.inputs[0].tensor + 1)
+
+    model = session.load(graph)
+
+    producer = torch.zeros(4, dtype=torch.float32, device="cuda:0")
+    producer_ref = weakref.ref(producer)
+
+    input_buffer = Buffer.from_dlpack(producer)
+
+    # Exercise all three graph capture functions.
+    (output,) = model.capture(0, input_buffer)
+    model.replay(0, input_buffer)
+    model.debug_verify_replay(0, input_buffer)
+
+    # Drop every user-visible reference. With the fix in place, the
+    # DeviceMemory views created by `Buffer::getMemory()` inside each
+    # handler are freed on return, so the ref chain back to `producer`
+    # unwinds: view DM dies -> DeviceBufferRef drops -> ~DeviceBuffer fires
+    # -> DLPack destructor lambda runs -> DLManagedTensor deleter releases
+    # the producer.
+    del output
+    model.release_captured_graph(0)
+    del input_buffer
+    del producer
+    gc.collect()
+    accelerator.synchronize()
+
+    assert producer_ref() is None, (
+        "Input DLPack producer leaked through "
+        "model.capture/replay/debug_verify_replay."
+    )

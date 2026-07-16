@@ -12,14 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
 )
+from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3 import weight_adapters
+from .batch_processor import Qwen3BatchProcessor
 from .model import Qwen3Model
 from .model_config import Qwen3Config
 from .weight_adapters import convert_qwen3_moe_state_dict
@@ -43,7 +45,12 @@ qwen3_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=Qwen3Config,
+    batching=Qwen3BatchProcessor,
     multi_gpu_supported=True,
+    memory_planner=PagedMemoryPlanner.with_activation_reservation(
+        0, always_signal_buffers=True
+    ),
+    supports_device_graph_capture=False,
 )
 
 # Qwen3MoE architecture - uses the same model and config as Qwen3,
@@ -70,5 +77,10 @@ qwen3_moe_arch = SupportedArchitecture(
         WeightsFormat.safetensors: convert_qwen3_moe_state_dict,
     },
     config=Qwen3Config,
+    batching=Qwen3BatchProcessor,
     multi_gpu_supported=True,
+    memory_planner=PagedMemoryPlanner.with_activation_reservation(
+        0, always_signal_buffers=True
+    ),
+    supports_device_graph_capture=False,
 )

@@ -166,7 +166,7 @@ def test_case_a(ctx: DeviceContext) raises:
     var dev_out = ctx.enqueue_create_buffer[DType.bfloat16](size)
     ctx.enqueue_copy(dev_in, host_in)
 
-    ctx.enqueue_function_experimental[kernel_case_a](
+    ctx.enqueue_function[kernel_case_a](
         dev_in, dev_out, grid_dim=1, block_dim=64
     )
 
@@ -210,7 +210,7 @@ def test_case_b(ctx: DeviceContext) raises:
         unsafe_from_address=Int(dev_in.unsafe_ptr()) + head_dim_offset * 2
     )
 
-    ctx.enqueue_function_experimental[kernel_case_b](
+    ctx.enqueue_function[kernel_case_b](
         dev_in_offset, dev_out, grid_dim=1, block_dim=64
     )
 

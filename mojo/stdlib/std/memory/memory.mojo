@@ -233,6 +233,46 @@ def _memcpy_impl(
 
 
 @always_inline
+def unsafe_memcpy[
+    T: AnyType
+](
+    *,
+    dest: UnsafePointer[mut=True, T, _],
+    src: UnsafePointer[T, _],
+    count: Int,
+):
+    """Copy `count * size_of[T]()` bytes from src to dest.
+
+    The dest and src memory must **not** overlap. For potentially
+    overlapping memory regions, use `memmove`.
+
+    Parameters:
+        T: The element type.
+
+    Args:
+        dest: The destination pointer.
+        src: The source pointer.
+        count: The number of elements to copy.
+
+    Safety:
+        `dest` and `src` must be valid for at least `count * size_of[T]()`
+        bytes.
+    """
+    var n = count * size_of[T]()
+
+    var dest_bytes = dest.bitcast[Byte]()
+    var src_bytes = src.bitcast[Byte]()
+
+    if __is_run_in_comptime_interpreter:
+        llvm_intrinsic["llvm.memcpy", NoneType](
+            dest_bytes, src_bytes, n.__mlir_index__()
+        )
+    else:
+        _memcpy_impl(dest_bytes, src_bytes, n)
+
+
+@always_inline
+@deprecated(use=unsafe_memcpy)
 def memcpy[
     T: AnyType
 ](
@@ -261,19 +301,7 @@ def memcpy[
     if count == 0:
         return
 
-    var n = count * size_of[dest.T.type]()
-
-    var dest_bytes = dest.unsafe_value().bitcast[Byte]()
-    var src_bytes = src.unsafe_value().bitcast[Byte]()
-
-    if __is_run_in_comptime_interpreter:
-        # A fast version for the interpreter to evaluate
-        # this function during compile time.
-        llvm_intrinsic["llvm.memcpy", NoneType](
-            dest_bytes, src_bytes, n._int_mlir_index()
-        )
-    else:
-        _memcpy_impl(dest_bytes, src_bytes, n)
+    unsafe_memcpy(dest=dest.unsafe_value(), src=src.unsafe_value(), count=count)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -400,7 +428,7 @@ def _malloc[
     out result: Optional[
         UnsafePointer[
             type,
-            MutExternalOrigin,
+            MutUntrackedOrigin,
             address_space=AddressSpace.GENERIC,
         ]
     ],
@@ -421,7 +449,7 @@ def _malloc[
         mlir_pointer = external_call["malloc", MlirPointerType](size)
     else:
         mlir_pointer = __mlir_op.`pop.aligned_alloc`[_type=MlirPointerType](
-            alignment._int_mlir_index(), size._int_mlir_index()
+            alignment.__mlir_index__(), size.__mlir_index__()
         )
 
     # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
@@ -439,19 +467,80 @@ def _free(ptr: UnsafePointer[mut=True, ...]):
     comptime if is_gpu():
         libc.free(ptr.bitcast[NoneType]())
     else:
-        __mlir_op.`pop.aligned_free`(ptr.address)
+        __mlir_op.`pop.aligned_free`(ptr._get_kgen_pointer())
 
 
 @always_inline
 def _free(ptr: OptionalUnsafePointer[mut=True, ...]):
     comptime if is_gpu():
-        libc.free(unsafe_cast[Type=NoneType, origin=MutExternalOrigin](ptr))
+        libc.free(unsafe_cast[Type=NoneType, origin=MutUntrackedOrigin](ptr))
     else:
         comptime KgenPointerType = type_of(ptr).T._mlir_type
         # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
         # represented exactly as the `KgenPointerType` so we can do a bit-cast.
         var kgen_pointer = UnsafePointer(to=ptr).bitcast[KgenPointerType]()[]
         __mlir_op.`pop.aligned_free`(kgen_pointer)
+
+
+# ===-----------------------------------------------------------------------===#
+# is_trivial_* functions
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+def is_trivially_movable[T: Movable]() -> Bool:
+    """Returns whether `T` has a trivial move constructor.
+
+    A move constructor is trivial when the compiler generates it and all of
+    `T`'s fields are themselves trivially movable. In practice this means the
+    value can be moved by copying its bits to a new location without any
+    additional side effects.
+
+    Parameters:
+        T: The type to check.
+
+    Returns:
+        `True` if `T` has a trivial move constructor.
+    """
+    return T.__move_ctor_is_trivial
+
+
+@always_inline("nodebug")
+def is_trivially_copyable[T: Copyable]() -> Bool:
+    """Returns whether `T` has a trivial copy constructor.
+
+    A copy constructor is trivial when the compiler generates it and all of
+    `T`'s fields are themselves trivially copyable. In practice this means the
+    value can be copied by duplicating its bits to a new location without any
+    additional side effects.
+
+    Parameters:
+        T: The type to check.
+
+    Returns:
+        `True` if `T` has a trivial copy constructor.
+    """
+    return T.__copy_ctor_is_trivial
+
+
+@always_inline("nodebug")
+def is_trivially_deletable[T: AnyType]() -> Bool:
+    """Returns whether `T` has a trivial destructor.
+
+    A destructor is trivial when the compiler generates it and all of `T`'s
+    fields are themselves trivially destructible. In practice this means
+    `__del__` is a no-op. A non-`ImplicitlyDeletable` (linear) type returns `False`
+
+    Parameters:
+        T: The type to check.
+
+    Returns:
+        `True` if `T` has a trivial destructor.
+    """
+    comptime if conforms_to(T, ImplicitlyDeletable):
+        return T.__del__is_trivial
+    else:
+        return False
 
 
 # ===-----------------------------------------------------------------------===#
@@ -479,8 +568,8 @@ def uninit_move_n[
     initialized.
 
     For types with trivial move constructors, this is optimized to a single
-    `memcpy` (or `memmove` when `overlapping=True`) operation. Otherwise, it
-    manually moves each element.
+    `unsafe_memcpy` (or `memmove` when `overlapping=True`) operation. Otherwise,
+    it manually moves each element.
 
     The destination memory is treated as a raw span of bits to write to. Any
     existing values at `dest` are silently overwritten without being destroyed.
@@ -492,8 +581,9 @@ def uninit_move_n[
     Parameters:
         T: The type of values to move, which must be `Movable`.
         overlapping: If False, the function assumes `src` and `dest` do not
-            overlap and uses `memcpy`. If True, the function assumes `src` and
-            `dest` may overlap and uses `memmove` to handle this safely.
+            overlap and uses `unsafe_memcpy`. If True, the function assumes
+            `src` and `dest` may overlap and uses `memmove` to handle this
+            safely.
 
     Args:
         dest: Pointer to the destination memory region.
@@ -512,11 +602,11 @@ def uninit_move_n[
         behavior.
     """
 
-    comptime if T.__move_ctor_is_trivial:
+    comptime if is_trivially_movable[T]():
         comptime if overlapping:
             memmove(dest=dest, src=src, count=count)
         else:
-            memcpy(dest=dest, src=src, count=count)
+            unsafe_memcpy(dest=dest, src=src, count=count)
     else:
         for i in range(count):
             (dest + i).init_pointee_move_from(src + i)
@@ -541,8 +631,8 @@ def uninit_copy_n[
     valid and initialized.
 
     For types with trivial copy constructors, this is optimized to a single
-    `memcpy` (or `memmove` when `overlapping=True`) operation. Otherwise, it
-    calls `init_pointee_copy()` on each element.
+    `unsafe_memcpy` (or `memmove` when `overlapping=True`) operation. Otherwise,
+    it calls `unsafe_write()` on each element.
 
     The destination memory is treated as a raw span of bits to write to. Any
     existing values at `dest` are silently overwritten without being destroyed.
@@ -554,8 +644,9 @@ def uninit_copy_n[
     Parameters:
         T: The type of values to copy, which must be `Copyable`.
         overlapping: If False, the function assumes `src` and `dest` do not
-            overlap and uses `memcpy`. If True, the function assumes `src` and
-            `dest` may overlap and uses `memmove` to handle this safely.
+            overlap and uses `unsafe_memcpy`. If True, the function assumes
+            `src` and `dest` may overlap and uses `memmove` to handle this
+            safely.
 
     Args:
         dest: Pointer to the destination memory region.
@@ -574,19 +665,19 @@ def uninit_copy_n[
         behavior.
     """
 
-    comptime if T.__copy_ctor_is_trivial:
+    comptime if is_trivially_copyable[T]():
         comptime if overlapping:
             memmove(dest=dest, src=src, count=count)
         else:
-            memcpy(dest=dest, src=src, count=count)
+            unsafe_memcpy(dest=dest, src=src, count=count)
     else:
         for i in range(count):
-            (dest + i).init_pointee_copy((src + i)[])
+            (dest + i).unsafe_write(copy=(src + i)[])
 
 
 @always_inline
 def destroy_n[
-    T: ImplicitlyDestructible
+    T: ImplicitlyDeletable
 ](pointer: UnsafePointer[mut=True, T, _], count: Int):
     """Destroy `count` initialized values at `pointer`.
 
@@ -594,10 +685,10 @@ def destroy_n[
     the memory uninitialized.
 
     For types with trivial destructors, this is a no-op and generates no code.
-    Otherwise, it calls `destroy_pointee()` on each element.
+    Otherwise, it calls `unsafe_deinit_pointee()` on each element.
 
     Parameters:
-        T: The type of values to destroy, which must be `ImplicitlyDestructible`.
+        T: The type of values to destroy, which must be `ImplicitlyDeletable`.
 
     Args:
         pointer: Pointer to the memory region containing values to destroy.
@@ -611,12 +702,12 @@ def destroy_n[
         must not be read or destroyed again until re-initialized.
     """
 
-    comptime if T.__del__is_trivial:
+    comptime if is_trivially_deletable[T]():
         # Trivial destructors don't need to be called!
         pass
     else:
         for i in range(count):
-            (pointer + i).destroy_pointee()
+            (pointer + i).unsafe_deinit_pointee()
 
 
 # ===-----------------------------------------------------------------------===#

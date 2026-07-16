@@ -22,7 +22,6 @@ def test_scheduler_max_batch_size_less_than_target_tokens_per_batch_ce() -> (
     TokenGenerationSchedulerConfig(
         max_batch_size=100,
         target_tokens_per_batch_ce=100,
-        max_forward_steps_tg=10,
     )
 
     # not ok because max_batch_size > target_tokens_per_batch_ce
@@ -33,5 +32,4 @@ def test_scheduler_max_batch_size_less_than_target_tokens_per_batch_ce() -> (
         TokenGenerationSchedulerConfig(
             max_batch_size=101,
             target_tokens_per_batch_ce=100,
-            max_forward_steps_tg=10,
         )
