@@ -81,7 +81,7 @@ def _build_tiny_add_graph() -> Graph:
 def test_libkineto_trace_is_hta_consumable(tmp_path: Path) -> None:
     """A libkineto trace produced by ``session.profiling`` round-trips into HTA.
 
-    The end-to-end chain is the load-bearing assertion: if any link
+    The end-to-end chain is the real assertion: if any link
     (libkineto schema, JSON layout, HTA importer) drifts, this fails. The
     actual breakdown values are workload-dependent and intentionally not
     asserted on — what matters is that HTA recognized the file and produced
@@ -99,19 +99,18 @@ def test_libkineto_trace_is_hta_consumable(tmp_path: Path) -> None:
 
     # Construct the session first: building an ``Accelerator`` binds device 0's
     # CUDA primary context, which is the precondition ``kineto_can_record()``
-    # probes. Checking recording capability *here*, after the context exists,
-    # matters once recording is live — a collection-time ``skipif`` runs
-    # before any session exists and would skip even on a capable runner.
-    # Today the check is False everywhere regardless: the recording path is
-    # not yet wired through the libkineto backend (and post-#91288 only
-    # ``--config=kineto`` builds on Linux x86_64 link libkineto at all), so
-    # this test skips in every configuration until the wiring lands.
+    # probes. Recording capability is checked *here*, after the context
+    # exists — a collection-time ``skipif`` runs before any session exists
+    # and would skip even on a capable runner.  On default builds the check
+    # is False regardless: the libkineto backend is opt-in via
+    # ``--config=kineto`` on Linux x86_64 (#91288), so only kineto-config
+    # GPU runs exercise the assertions below.
     session = InferenceSession(devices=[Accelerator()])
     if not kineto_can_record():
         pytest.skip(
-            "libkineto recording path inactive — recording is not wired into "
-            "this build (libkineto requires --config=kineto on Linux x86_64), "
-            "or no CUDA primary context is bound."
+            "libkineto recording path inactive — the backend is not linked "
+            "(requires --config=kineto on Linux x86_64), or no CUDA primary "
+            "context is bound."
         )
 
     # ``session.debug`` is a process-global singleton; snapshot and restore the

@@ -353,15 +353,18 @@ This version is still a work in progress.
   the same architecture family. Mirrors `set_virtual_device_target_arch()` for
   GPUs. Leaving it unset compiles for the build host's CPU, as before.
 
-- **Preview (no-op today)**: `InferenceSession.profiling` is a new namespace
-  that will control the libkineto-backed MAX profiler. The control surface is
-  final and callable — `session.profiling.start()` / `.stop()` /
-  `.wait_for_trace()` and the read-only `.state` / `.is_enabled` — but it does
-  not record yet: libkineto-backed Chrome-trace JSON capture (compatible with
-  Meta's [HTA](https://github.com/facebookresearch/HolisticTraceAnalysis))
-  lands in a later nightly. This API is orthogonal to the existing
-  `session.gpu_profiling()` (NVTX/Nsight) path; see `max/docs/profiling.md`
-  in the repository for the user guide.
+- `InferenceSession.profiling` now records libkineto traces in
+  `--config=kineto` builds (Linux x86_64). libkineto is auto-enabled when the
+  pipeline entrypoints configure a session with profiling enabled;
+  `session.profiling.start()` also enables it explicitly and (on hosts with a
+  live CUDA primary context) subscribes to CUPTI's Activity Callback API, and
+  `session.profiling.stop()` flushes and serializes a Chrome-trace JSON file
+  compatible with Meta's
+  [HTA](https://github.com/facebookresearch/HolisticTraceAnalysis).
+  `session.profiling.wait_for_trace()` blocks until serialization is done and
+  raises `max.engine.ProfilingError` if libkineto could not write the trace.
+  Default builds — including the shipped wheels — do not link the libkineto
+  backend yet, so the control surface remains a safe no-op there.
 - `ProfilingConfig` gains six new fields for the libkineto profiler, each
   configurable from Python through the matching `session.debug.profiling_*`
   setter or its `MODULAR_MAX_DEBUG_PROFILING_*` environment variable:
@@ -369,19 +372,20 @@ This version is still a work in progress.
   `profiling_warmup_steps`, `profiling_active_steps`, and
   `profiling_periodic_flush_seconds`.
 - `profiling_output_path` accepts template variables (`{pid}`, `{rank}`) and a
-  directory form (`/tmp/traces/`); the path is expanded per process (keyed on
-  rank, PID, timestamp, and a sequence counter) so that, once trace capture is
-  enabled, multi-process and multi-rank runs won't collide on a single fixed
+  directory form (`/tmp/traces/`) that auto-generates a distinct per-process
+  file (keyed on rank, PID, timestamp, and a sequence counter), so
+  multi-process and multi-rank captures no longer collide on a single fixed
   filename. `{rank}` resolves to `MODULAR_RANK` / `OMPI_COMM_WORLD_RANK` /
   `"0"`.
-- `max.engine.ProfilingError` is a new exception type the profiler will raise
-  to surface trace-write failures.
 - Forking while the profiler is enabled is safe for host applications that
   embed `InferenceSession` and fork (Python `multiprocessing` with the `fork`
   start method, pre-fork servers, or a bare `os.fork()`) — child processes
   start with the profiler disabled and can call `start()` again; the parent
   retains its enabled state across the fork. (MAX itself launches
   workers with the `spawn` start method and is unaffected.)
+- This API is orthogonal to the existing `session.gpu_profiling()`
+  (NVTX/Nsight) path. See `max/docs/profiling.md` in the repository for the
+  full user guide.
 
 - Eager execution in `max.experimental` now routes every realization through
   the `max.experimental.executor.Executor` abstraction. The out-of-the-box

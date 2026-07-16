@@ -1,32 +1,64 @@
-# MAX profiler (HTA/Dynolog-compatible)
+# MAX profiler (HTA-compatible)
 
-> **Preview.** This documents the `session.profiling` API surface and its
-> configuration, which are available now. The profiler does **not record
-> yet** — the libkineto-backed trace capture, Dynolog fleet collection,
-> multi-rank captures, and named ranges arrive in later nightlies. Calling
-> `start()` / `stop()` today is a safe no-op. This page grows as each piece
-> lands.
-
-MAX is gaining an on-demand profiler that will emit
+MAX has an on-demand profiler that emits
 [Chrome trace JSON](https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/)
 compatible with Meta's
 [Holistic Trace Analysis](https://github.com/facebookresearch/HolisticTraceAnalysis)
 (HTA). It is built on
 [`libkineto`](https://github.com/pytorch/kineto/tree/main/libkineto); the
-off-cost when disabled is ≤0.2% (one predicted branch per kernel launch).
+overhead when disabled is ≤0.2% (one predicted branch per kernel launch).
+
+> **Build gate.** Recording requires the libkineto backend, which is opt-in:
+> build with `--config=kineto` (Linux x86_64 only, #91288). Default builds —
+> including the shipped wheel and conda packages — do not link libkineto, so
+> the control surface below is callable but records nothing there. The
+> backend links on-demand dlopen stubs for libcuda/libcupti/libcudart that
+> the packages do not ship, which is why it cannot be on by default yet.
+
+## Quick start
+
+```python
+from max.driver import Accelerator
+from max.engine import InferenceSession
+
+session = InferenceSession(devices=[Accelerator()])
+model = session.load(my_graph)
+
+session.profiling.start()
+for batch in data:
+    model.execute(batch)
+session.profiling.stop()
+session.profiling.wait_for_trace()
+```
+
+When `profiling_enabled` is set, the pipeline entrypoints (`max serve`,
+`max pipelines generate`, `LLM`) enable the profiler during
+`PipelineConfig.configure_session()`, so a capture can also begin without an
+explicit `start()`. Constructing a bare `InferenceSession` does not
+auto-enable.
+
+The default output path is `/tmp/max-trace.json`. See
+[Configuration](#configuration) below for changing it. Open the trace file
+in the Chrome trace viewer (`chrome://tracing` or
+[Perfetto UI](https://ui.perfetto.dev/)) or import it into HTA:
+
+```python
+from hta.trace_analysis import TraceAnalysis
+
+analyzer = TraceAnalysis(trace_dir="/tmp")
+print(analyzer.get_temporal_breakdown())
+```
 
 ## Control surface
 
-The `session.profiling` namespace exposes the runtime lifecycle. The surface
-is final and callable today, but it does not capture a trace until the
-libkineto recording path lands in a later nightly:
+The `session.profiling` namespace exposes the runtime lifecycle:
 
 | Method / property  | Effect                                                                                                                                                        |
 |--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `start()`          | Enable the profiler. Idempotent — calling while enabled is a no-op. (Overall no-op until recording lands.)                                                    |
+| `start()`          | Enable libkineto and subscribe to CUPTI. Idempotent — calling while enabled is a no-op.                                                                       |
 | `stop()`           | Flush and serialize the trace. Idempotent. Never raises on serialization failure — the error is recorded and surfaced by `wait_for_trace()`.                  |
 | `wait_for_trace()` | Block until the most recent `stop()` finishes writing. Raises `max.engine.ProfilingError` on serialization failure (see [Error reporting](#error-reporting)). |
-| `state`            | One of `"idle"`, `"warmup"`, `"active"`, `"flushing"`.                                                                                                        |
+| `state`            | One of `"idle"`, `"active"`, `"flushing"` (plus `"warmup"` once the step-window state machine lands — see below).                                             |
 | `is_enabled`       | `True` while enabled. Cheap; use to elide expensive trace-name construction on the hot path.                                                                  |
 
 ## Configuration
@@ -49,9 +81,16 @@ configs mirrors the same six fields.
 | `profiling_enabled`                | `False` | Master switch.                                                                                                                                                                      |
 | `profiling_output_path`            | `None`  | Output file path; falls back to `/tmp/max-trace.json` when unset. Supports `{pid}` / `{rank}` templates and a directory form — see [Output path expansion](#output-path-expansion). |
 | `profiling_dynolog_enabled`        | `True`  | Will let the process listen for Dynolog on-demand-profile requests once fleet collection lands.                                                                                     |
-| `profiling_warmup_steps`           | `0`     | Iterations to skip after `start()` before recording.                                                                                                                                |
-| `profiling_active_steps`           | `10`    | Iterations to record.                                                                                                                                                               |
-| `profiling_periodic_flush_seconds` | `60`    | Crash-safe chunk cadence for long-running serving.                                                                                                                                  |
+| `profiling_warmup_steps`           | `0`     | Reserved for the step-window state machine (not yet wired — see below).                                                                                                             |
+| `profiling_active_steps`           | `10`    | Reserved for the step-window state machine (not yet wired — see below).                                                                                                             |
+| `profiling_periodic_flush_seconds` | `60`    | Crash-safe chunk cadence for long-running serving (wired in a follow-up).                                                                                                           |
+
+> **Note**: the warmup/active step windows are not wired yet — today a trace
+> covers everything between `start()` (or auto-enable) and `stop()`,
+> regardless of `profiling_warmup_steps` / `profiling_active_steps`, and
+> `state` reports `"active"` immediately after `start()`. The knobs exist so
+> configurations written now keep working when the step-window state machine
+> lands.
 
 ## Output path expansion
 
@@ -118,6 +157,19 @@ is unaffected by any of this.
 - libkineto only links in `--config=kineto` builds (Linux x86_64 only);
   default builds do not link it, and `start()` / `stop()` are safe no-ops
   there.
+
+## Troubleshooting
+
+**Empty trace**. Confirm the build links libkineto (`--config=kineto` on
+Linux x86_64 — default builds record nothing), that `is_enabled` was `True`
+while the workload ran, and that a CUDA device existed before the capture
+(the CUPTI subscription activates once a CUDA primary context is bound).
+
+> **Note**: CUPTI-driven kernel symbolication and file rotation (500 MB cap,
+> periodic flush every `profiling_periodic_flush_seconds`) are wired up in a
+> follow-up nightly. Until that lands, traces from long-running captures
+> are not chunked, and Mojo kernel names may appear mangled
+> (`__mojo_…`) in the trace.
 
 ## See also
 

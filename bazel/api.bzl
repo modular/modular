@@ -161,8 +161,14 @@ def modular_cc_test(data = [], deps = [], internal_deps = [], defines = [], loca
 
 # Ignore internal_deps for public builds
 # buildifier: disable=unused-variable
-def modular_shared_library(internal_deps = [], defines = [], local_defines = [], **kwargs):
+def modular_shared_library(name = None, internal_deps = [], defines = [], local_defines = [], **kwargs):
+    if name in ["Profiling", "ProfilingKineto"]:
+        # Provide TimeProfiler for now since that may be what they're actually after
+        _modular_cc_library(name = name, deps = ["//Support:TimeProfiler"])
+        return
+
     _modular_shared_library(
+        name = name,
         local_defines = _process_defines(local_defines),
         defines = _process_defines(defines),
         **kwargs
