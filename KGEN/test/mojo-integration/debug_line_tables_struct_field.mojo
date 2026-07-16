@@ -38,12 +38,12 @@ struct AVOption(Movable, Writable):
 
 @fieldwise_init
 struct AVClass(Movable, Writable):
-    var option: UnsafePointer[AVOption, ImmutUntrackedOrigin]
+    var option: UnsafePointer[AVOption, ImmUntrackedOrigin]
 
 
-def sws_get_class() -> UnsafePointer[AVClass, ImmutUntrackedOrigin]:
+def sws_get_class() -> UnsafePointer[AVClass, ImmUntrackedOrigin]:
     return external_call[
-        "sws_get_class", UnsafePointer[AVClass, ImmutUntrackedOrigin]
+        "sws_get_class", UnsafePointer[AVClass, ImmUntrackedOrigin]
     ]()
 
 
