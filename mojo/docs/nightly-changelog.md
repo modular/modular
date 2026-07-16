@@ -319,6 +319,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `ones[dtype](start, end)` to `std.bit.mask`. Returns a `Scalar[dtype]`
+  with bits in the half-open range `[start, end)` set to 1 and all other bits
+  set to 0. Asserts that `0 <= start < end <= bitwidth(dtype)`.
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
   `destroy_func`, so it can clear a `Dict` whose key or value type is not
