@@ -115,11 +115,9 @@ is unaffected by any of this.
 
 - `session.gpu_profiling()` (NVTX/Nsight) is orthogonal. NVTX markers
   continue to feed Nsight Systems independently.
-- Tracy (`--config=tracy`) is mutually exclusive with the libkineto profiler
-  at build time: `--config=tracy` builds do not link libkineto, and
-  `--config=kineto` builds (Linux x86_64 only, the sole configuration that
-  links libkineto) do not link Tracy GPU. Default builds link neither. Tracy
-  CPU instrumentation is orthogonal and available in every configuration.
+- libkineto only links in `--config=kineto` builds (Linux x86_64 only);
+  default builds do not link it, and `start()` / `stop()` are safe no-ops
+  there.
 
 ## See also
 

@@ -59,19 +59,17 @@ def kineto_enable() -> None:
     """
     Enable the libkineto-backed profiler.
 
-    Subscribes to CUPTI activity callbacks. Tracy and libkineto are
-    mutually exclusive at build time: ``--config=tracy`` builds do not
-    link libkineto, so this call is a no-op there. On default builds
-    without libkineto (today: macOS and Linux aarch64) or hosts without
-    a live CUDA primary context, this is also a safe no-op.
+    Subscribes to CUPTI activity callbacks. On builds without libkineto
+    (it is linked only in ``--config=kineto`` builds on Linux x86_64) or
+    hosts without a live CUDA primary context, this is a safe no-op.
     """
 
 def kineto_disable() -> None:
     """
     Disable the profiler.
 
-    Flushes the trace. On ``--config=tracy`` or non-Linux-x86_64 builds
-    where libkineto isn't linked, this is a no-op.
+    Flushes the trace. On builds where libkineto isn't linked, this is
+    a no-op.
     """
 
 def kineto_wait_for_trace() -> None:
