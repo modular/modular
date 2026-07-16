@@ -11,4 +11,5 @@ ignore_directories([
     "**/.git",
     "**/.magic",
     "**/.pixi",
+    "**/node_modules",
 ])

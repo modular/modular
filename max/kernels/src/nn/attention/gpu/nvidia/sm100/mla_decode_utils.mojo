@@ -85,6 +85,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     sub_ftz,
     bulk_mma_ws,
     bulk_mma_ws_ts,
+    st_shared_v4_b32,
 )
 from nn.attention.gpu.nvidia.common import KVTMATile
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -197,6 +198,7 @@ struct MLA_Decode_Pack[
     var mask: Self.MaskType
     var valid_length: Self.ValidLengthType
     var lse_accum_split_ptr: Self.SplitAccumType
+    var num_partitions: Int
     comptime device_type: AnyType = Self
 
     def _to_device_type(
@@ -218,10 +220,12 @@ struct MLA_Decode_Pack[
         mask: Self.MaskType,
         valid_length: Self.ValidLengthType,
         lse_accum_split_ptr: Self.SplitAccumType,
+        num_partitions: Int,
     ):
         self.mask = mask
         self.valid_length = valid_length
         self.lse_accum_split_ptr = lse_accum_split_ptr
+        self.num_partitions = num_partitions
 
 
 # ------------------------------------------------------------------------------
@@ -1896,6 +1900,41 @@ struct DecodeSM100QKTSS[
             tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
         ](Self.UMMAInstDesc, a, b, c, c_scale, elect)
 
+    @staticmethod
+    @always_inline
+    def mma_block[
+        *, block_idx: Int, num_blocks: Int
+    ](
+        a: MMASmemDescriptorPair,
+        b: MMASmemDescriptorPair,
+        c: UInt32,
+        *,
+        c_scale: UInt32,
+        elect: Int32,
+    ):
+        # One K-block slice of `mma` (same descriptors, same layouts):
+        # absolute k-mmas so the emitted sequence over all blocks matches
+        # the bulk form. Block 0 applies c_scale; later blocks accumulate.
+        comptime assert Self.num_k_mmas % num_blocks == 0, "uneven K blocks"
+        comptime block_k_mmas = Self.num_k_mmas // num_blocks
+        bulk_mma_ws[
+            UMMAKind.KIND_F16,
+            Self.operand_type,
+            Self.operand_type,
+            a_BMN=Self.config.BM,
+            a_BK=Self.BK,
+            a_swizzle=Self.config.swizzle_mode,
+            a_is_k_major=True,
+            b_BMN=Self.config.BN_QK,
+            b_BK=Self.BK,
+            b_swizzle=Self.config.kv_mma_swizzle_mode,
+            b_is_k_major=True,
+            num_k_mmas=block_k_mmas,
+            operand_size=Self.operand_size,
+            tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
+            k_start=block_idx * block_k_mmas,
+        ](Self.UMMAInstDesc, a, b, c, c_scale, elect)
+
 
 struct DecodeSM100PVSS[
     operand_type: DType,
@@ -2549,13 +2588,9 @@ def st_shared_v4_b32_at_fp8_elem_off[
     elem_off: Int,  # FP8 element offset
     packed: SIMD[DType.uint32, 4],
 ):
-    var dst_ptr = dst_fp8 + elem_off
-    _ = inlined_assembly[
-        "st.shared.v4.b32 [$0], {$1, $2, $3, $4};",
-        NoneType,
-        constraints="l,r,r,r,r",
-        has_side_effect=True,
-    ](dst_ptr, packed[0], packed[1], packed[2], packed[3])
+    # Delegates to the shared `st_shared_v4_b32` (moved to attention_utils);
+    # `elem_off` is in fp8 elements (the pointer is fp8-typed).
+    st_shared_v4_b32(dst_fp8, elem_off, packed)
 
 
 @always_inline
@@ -2589,6 +2624,23 @@ def cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
 
 
 @always_inline
+def cvt_fp8x16_from_u32x4_to_bf16x16_packed_2xu32x4[
+    *,
+    fp8_dtype: DType,
+    out_dtype: DType,
+](w: SIMD[DType.uint32, 4]) -> StaticTuple[SIMD[DType.uint32, 4], 2]:
+    """Converts 16 FP8 bytes (one v4.b32 load) to 16 packed BF16 values."""
+    return StaticTuple[SIMD[DType.uint32, 4], 2](
+        cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
+            fp8_dtype=fp8_dtype, out_dtype=out_dtype
+        ](w[0], w[1]),
+        cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
+            fp8_dtype=fp8_dtype, out_dtype=out_dtype
+        ](w[2], w[3]),
+    )
+
+
+@always_inline
 def st_shared_v4_b32_at_bf16_elem_off[
     out_dtype: DType
 ](
@@ -2598,13 +2650,9 @@ def st_shared_v4_b32_at_bf16_elem_off[
     elem_off: Int,  # bf16 element offset
     packed: SIMD[DType.uint32, 4],
 ):
-    var dst_ptr = dst_bf16 + elem_off
-    _ = inlined_assembly[
-        "st.shared.v4.b32 [$0], {$1, $2, $3, $4};",
-        NoneType,
-        constraints="l,r,r,r,r",
-        has_side_effect=True,
-    ](dst_ptr, packed[0], packed[1], packed[2], packed[3])
+    # Delegates to the shared `st_shared_v4_b32` (moved to attention_utils);
+    # `elem_off` is in bf16 elements (the pointer is bf16-typed).
+    st_shared_v4_b32(dst_bf16, elem_off, packed)
 
 
 @always_inline

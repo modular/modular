@@ -23,11 +23,41 @@ A ``mode(...)`` block selects the solver for the ops inside it:
 
 .. code-block:: python
 
-    from max.experimental.functional import matmul, relu
-    from max.experimental.sharding import GreedyReshard, mode
+    import numpy as np
+    from max.driver import CPU
+    from max.dtype import DType
+    from max.experimental.functional import full, matmul, relu, transfer_to
+    from max.experimental.sharding import (
+        DeviceMesh,
+        GreedyReshard,
+        PlacementMapping,
+        Sharded,
+        mode,
+    )
+
+    # A simulated two-device mesh (both slots are the same CPU).
+    mesh = DeviceMesh(devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",))
+
+    # ``a`` is column-sharded, ``b`` is row-sharded: a @ b contracts the
+    # sharded dimension, so the picker resolves the result back to replicated.
+    a = transfer_to(
+        full([4, 8], 1.0, dtype=DType.float32, device=mesh.devices[0]),
+        PlacementMapping(mesh, (Sharded(1),)),
+    )
+    b = transfer_to(
+        full([8, 2], 1.0, dtype=DType.float32, device=mesh.devices[0]),
+        PlacementMapping(mesh, (Sharded(0),)),
+    )
 
     with mode(GreedyReshard(on_reshard="warn")):
         y = relu(matmul(a, b))
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    # full(4, 8) @ full(8, 2) = 8 * ones(4, 2), then relu is a no-op (positive).
+    assert np.allclose(y.to_numpy(), np.full((4, 2), 8.0))
 
 Shipped solvers: :class:`GreedyReshard` (cheapest feasible action),
 :class:`NoReshard` (passthrough only; errors on any reshard), and

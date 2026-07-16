@@ -44,6 +44,10 @@ def is_ignored_file(filename: StringSlice) -> Bool:
     if not (filename.endswith(".py") or filename.endswith(".mojo")):
         return True
 
+    # CloudInfra services use a proprietary header, not the Apache license.
+    if filename.startswith("CloudInfra/"):
+        return True
+
     # Generated files
     if (
         filename == "max/python/max/serve/schemas/kserve.py"

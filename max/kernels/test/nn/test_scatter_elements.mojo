@@ -68,15 +68,16 @@ def main() raises:
         ]
 
         @always_inline
-        @parameter
         def use_update[
             dtype: DType, width: SIMDSize
         ](
             input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]
-        ) -> SIMD[dtype, width]:
+        ) {} -> SIMD[dtype, width]:
             return update_val
 
-        scatter_elements[use_update](data, indices, updates, 0, output, ctx)
+        scatter_elements(
+            data, indices, updates, 0, output, ctx, reduce_fn=use_update
+        )
 
         for i in range(9):
             assert_equal(output_ptr[i], expected[i])
@@ -127,15 +128,16 @@ def main() raises:
         ]
 
         @always_inline
-        @parameter
         def use_update[
             dtype: DType, width: SIMDSize
         ](
             input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]
-        ) -> SIMD[dtype, width]:
+        ) {} -> SIMD[dtype, width]:
             return update_val
 
-        scatter_elements[use_update](data, indices, updates, 1, output, ctx)
+        scatter_elements(
+            data, indices, updates, 1, output, ctx, reduce_fn=use_update
+        )
 
         for i in range(5):
             assert_equal(output_ptr[i], expected[i])
@@ -186,15 +188,16 @@ def main() raises:
         ]
 
         @always_inline
-        @parameter
         def use_update[
             dtype: DType, width: SIMDSize
         ](
             input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]
-        ) -> SIMD[dtype, width]:
+        ) {} -> SIMD[dtype, width]:
             return update_val
 
-        scatter_elements[use_update](data, indices, updates, 1, output, ctx)
+        scatter_elements(
+            data, indices, updates, 1, output, ctx, reduce_fn=use_update
+        )
 
         for i in range(5):
             assert_equal(output_ptr[i], expected[i])
@@ -245,13 +248,12 @@ def main() raises:
         ]
 
         @always_inline
-        @parameter
         def _max[
             ty: DType, width: SIMDSize
-        ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+        ](v1: SIMD[ty, width], v2: SIMD[ty, width]) {} -> SIMD[ty, width]:
             return max(v1, v2)
 
-        scatter_elements[_max](data, indices, updates, 1, output, ctx)
+        scatter_elements(data, indices, updates, 1, output, ctx, reduce_fn=_max)
 
         for i in range(5):
             assert_equal(output_ptr[i], expected[i])

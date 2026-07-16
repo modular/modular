@@ -487,7 +487,9 @@ def bench_manual[
                     cb_k.offset_ptr(iteration),
                     cb_v.offset_ptr(iteration),
                     cb_o.offset_ptr(iteration),
-                    score_device.unsafe_ptr(),
+                    score_device.unsafe_ptr()
+                    .unsafe_mut_cast[True]()
+                    .unsafe_origin_cast[MutUntrackedOrigin](),
                     ctx,
                 )
 

@@ -19,6 +19,15 @@ which represents a single stream of execution on a given accelerator. You can
 use this struct to allocate accelerator memory, copy data to and from the
 accelerator, and compile and execute functions on the accelerator."""
 
+from . import (
+    Dim,
+    Attribute,
+    FuncAttribute,
+    LaunchAttribute,
+    ConstantMemoryMapping,
+    DeviceAttribute,
+)
+
 from std.collections.optional import OptionalReg
 from std.math import align_up
 from std.os import abort
@@ -48,7 +57,6 @@ from std.sys.info import (
     _TargetType,
     is_triple,
 )
-from std.sys.intrinsics import _type_is_eq
 from std.sys.defines import _is_bool_like
 
 from std.reflection import call_location, SourceLocation
@@ -84,6 +92,7 @@ from ._device_context_metal import (
     call_with_pack_checked_metal,
     call_with_pack_metal,
 )
+from ._launch_args import _compact_zero_sized_capture_slots
 
 
 # Create empty structs to ensure dtype checking when using the C++ handles.
@@ -120,14 +129,6 @@ struct _CompletionFlagCpp:
 
 
 struct _DeviceContextScopeCpp:
-    pass
-
-
-struct _DeviceGraphBuilderCpp:
-    pass
-
-
-struct _DeviceGraphCpp:
     pass
 
 
@@ -184,18 +185,6 @@ comptime _DeviceContextScopePtr[
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
 ] = _CPointer[_DeviceContextScopeCpp, origin]
-
-comptime _DeviceGraphBuilderPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceGraphBuilderCpp, origin]
-
-comptime _DeviceGraphPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceGraphCpp, origin]
 
 comptime _CString[
     origin: Origin[mut=False] = UntrackedOrigin[mut=False]
@@ -990,9 +979,14 @@ struct DevicePointer[
         """
         # TODO: GEX-3693: Assert/raise when target doesn't support raw device
         # pointer access
+        # `DeviceBuffer.unsafe_ptr()` now ties its mutability to the borrow of
+        # the buffer; force mutable to preserve this helper's `MutAnyOrigin`
+        # contract.
         return (
-            self._buffer[].unsafe_ptr() + self._offset
-        ).as_unsafe_any_origin()
+            (self._buffer[].unsafe_ptr() + self._offset)
+            .unsafe_mut_cast[True]()
+            .as_unsafe_any_origin()
+        )
 
     # ===------------------------------------------------------------------=== #
     # Pointer arithmetic
@@ -1568,7 +1562,7 @@ struct DeviceBuffer[dtype: DType](
             view_type: The data type for elements in the new sub-buffer.
 
         Args:
-            offset: The starting offset in elements from the beginning of this buffer.
+            offset: The starting offset, in view_type elements, from the beginning of this buffer.
             size: The number of elements in the new sub-buffer.
 
         Returns:
@@ -1825,19 +1819,27 @@ struct DeviceBuffer[dtype: DType](
         return self._handle
 
     @always_inline
-    def unsafe_ptr(
-        self,
-    ) -> Self._DevicePtr:
+    def unsafe_ptr[
+        mut: Bool,
+        //,
+        origin: Origin[mut=mut],
+    ](ref[origin] self,) -> UnsafePointer[Scalar[Self.dtype], origin]:
         """Returns the raw device pointer without transferring ownership.
 
         This method provides direct access to the underlying device pointer
         for advanced use cases. The buffer retains ownership of the pointer.
 
+        Parameters:
+            mut: The mutability of this `DeviceBuffer`.
+            origin: The origin of this `DeviceBuffer`.
+
         Returns:
             The raw device pointer owned by this buffer.
         """
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
-        return self._device_ptr
+        return self._device_ptr.unsafe_mut_cast[mut]().unsafe_origin_cast[
+            origin
+        ]()
 
     def device_ptr(
         ref self,
@@ -1999,7 +2001,10 @@ trait _FunctionEnqueuer:
             arg_count: Number of entries in `args`.
             arg_sizes: Optional pointer to the per-argument sizes in bytes.
                 Metal sources sizes from `MetalEnqueueFunctionArgs` instead
-                and accepts `None` here; other backends ignore the value.
+                and accepts `None` here. CUDA validates `arg_count` (and,
+                when provided, `arg_sizes`) against the kernel's declared
+                parameter list and rejects mispacked launches; HIP ignores
+                the value.
 
         Returns:
             A C-string carrying an error message on failure, or an empty
@@ -2009,7 +2014,6 @@ trait _FunctionEnqueuer:
         ...
 
 
-@doc_hidden
 struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
     """Represents a CUDA/HIP stream for asynchronous GPU operations.
 
@@ -2024,9 +2028,10 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
     Example:
 
     ```mojo
-    from std.gpu.host import DeviceContext, DeviceStream
+    from std.gpu.host import DeviceContext
+
     var ctx = DeviceContext(0)  # Select first GPU
-    var stream = DeviceStream(ctx)
+    var stream = ctx.create_stream()
 
     # Launch operations on the stream
     # ...
@@ -3002,6 +3007,13 @@ struct DeviceFunction[
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
 
+        # Number of argument slots the device actually reads. Captures with a
+        # zero-sized layout (e.g. a fully-static `TileTensor` layout struct) are
+        # elided in the device kernel, so they must not occupy a positional slot
+        # in the packed argument array (see the compaction pass below). This
+        # starts at `num_args` and is grown by each non-zero-sized capture.
+        var effective_argc = num_args
+
         # NOTE: Manual short buffer optimization. We could use a
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
@@ -3055,10 +3067,6 @@ struct DeviceFunction[
             self._copy_to_constant_memory(constant_memory[i])
 
         if num_captures > 0:
-            for i in range(num_captures):
-                dense_args_sizes[num_args + i] = self._func_impl.capture_sizes[
-                    i
-                ]
             # Call the populate function to initialize the captured values in the arguments array.
             # The captured values are always at the end of the argument list.
             # This function (generated by the compiler) has to be inlined here
@@ -3072,6 +3080,17 @@ struct DeviceFunction[
                 capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
             )
 
+            # Drop zero-sized captures so the packed slots (and their sizes)
+            # match the device kernel's declared parameter order; see
+            # `_compact_zero_sized_capture_slots` for why.
+            effective_argc = _compact_zero_sized_capture_slots(
+                dense_args_addrs,
+                self._func_impl.capture_sizes,
+                num_args,
+                num_captures,
+                dense_args_sizes=dense_args_sizes,
+            )
+
         if self._context.api() == "metal":
             call_with_pack_metal[
                 Self.func,
@@ -3082,6 +3101,7 @@ struct DeviceFunction[
                 func_handle=self._handle,
                 device_context=self._context,
                 num_captures=num_captures,
+                effective_argc=effective_argc,
                 dense_args_addrs=dense_args_addrs,
                 dense_args_sizes=dense_args_sizes,
                 grid_dim=grid_dim,
@@ -3103,7 +3123,7 @@ struct DeviceFunction[
                     attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
                     len(attributes),
                     dense_args_addrs.as_unsafe_any_origin(),
-                    UInt32(num_args + num_captures),
+                    UInt32(effective_argc),
                     dense_args_sizes,
                 ),
                 device_context=self._context,
@@ -3149,9 +3169,7 @@ struct DeviceFunction[
 
             def declared_arg_type_name() -> String:
                 comptime if conforms_to(declared_arg_type, DevicePassable):
-                    return downcast[
-                        declared_arg_type, DevicePassable
-                    ].get_type_name()
+                    return declared_arg_type.get_type_name()
                 else:
                     return reflect[declared_arg_type].name()
 
@@ -3165,9 +3183,7 @@ struct DeviceFunction[
                 declared_arg_type
             ]()
 
-            comptime if _type_is_eq[
-                actual_arg_type, actual_arg_type.device_type
-            ]():
+            comptime if actual_arg_type == actual_arg_type.device_type:
                 # Now check if they handed in the *correct* device dtype.
                 comptime assert is_convertible, String(
                     "argument #",
@@ -3362,6 +3378,16 @@ struct DeviceFunction[
                     ] = first_word_addr.as_unsafe_any_origin()
                     translated_arg_idx += 1
 
+            # Drop zero-sized captures so the packed slots match the device
+            # kernel's declared parameter order; see
+            # `_compact_zero_sized_capture_slots` for why.
+            var effective_argc = _compact_zero_sized_capture_slots(
+                dense_args_addrs,
+                self._func_impl.capture_sizes,
+                num_translated_args,
+                num_captures,
+            )
+
             _checked_call[Self.func](
                 ctx.enqueue(
                     self._handle,
@@ -3371,7 +3397,7 @@ struct DeviceFunction[
                     attributes.unsafe_ptr().as_unsafe_any_origin(),
                     len(attributes),
                     dense_args_addrs.as_unsafe_any_origin(),
-                    UInt32(num_translated_args + num_captures),
+                    UInt32(effective_argc),
                     Optional[UnsafePointer[UInt64, MutUntrackedOrigin]](),
                 ),
                 device_context=self._context,
@@ -3776,889 +3802,6 @@ struct DeviceExternalFunction:
             )
         )
         return Int(result)
-
-
-@fieldwise_init
-struct DeviceGraphNode(TrivialRegisterPassable, Writable):
-    """A handle to a node in an under-construction device graph.
-
-    Returned by node-adding methods on `DeviceGraphBuilder` such as
-    `add_function`, `add_copy`, and `add_memset`. The handle can be used to
-    refer to the node from later API calls (for example, when expressing
-    explicit dependency edges).
-    """
-
-    var id: Int32
-    """Opaque integer identifier of the node within its graph builder."""
-
-    @always_inline
-    def write_to(self, mut writer: Some[Writer]):
-        """Writes a human-readable representation of this node handle.
-
-        Args:
-            writer: The writer to output to.
-        """
-        writer.write("DeviceGraphNode(id=", self.id, ")")
-
-
-@doc_hidden
-@fieldwise_init
-struct _GraphDepArgs(TrivialRegisterPassable):
-    """C ABI representation of the dependency list passed to the
-    `AsyncRT_DeviceGraphBuilder_add*` exports.
-
-    `count` is the (non-negative) number of `Int32` node ids that `ids`
-    points to. When `count == 0`, `ids` may be a dangling pointer (the C
-    side never dereferences it).
-    """
-
-    var ids: UnsafePointer[Int32, ImmutUntrackedOrigin]
-    var count: Int64
-
-
-@doc_hidden
-@always_inline
-def _pack_dep_args(deps: List[DeviceGraphNode]) -> _GraphDepArgs:
-    """Packs an explicit dependency list into the (ids, count) pair used by
-    the AsyncRT_DeviceGraphBuilder_add* C ABI exports.
-
-    `DeviceGraphNode` is a single-Int32 struct, so `List.unsafe_ptr()` can
-    be bitcast directly to `UnsafePointer[Int32]`. The matching C++ side
-    static_asserts this layout invariant in MojoBindings.cpp.
-
-    The returned `ids` pointer borrows from the input `deps` and is only
-    valid for as long as `deps` is alive at the call site.
-    """
-    return _GraphDepArgs(
-        ids=deps.unsafe_ptr()
-        .bitcast[Int32]()
-        .unsafe_origin_cast[ImmutUntrackedOrigin](),
-        count=Int64(len(deps)),
-    )
-
-
-struct DeviceGraph(ImplicitlyCopyable):
-    """Represents an instantiated device graph that can be replayed.
-
-    A `DeviceGraph` captures a sequence of GPU operations (such as kernel
-    launches) as a reusable graph. Once instantiated from a
-    `DeviceGraphBuilder`, the graph can be replayed multiple times at a
-    lower overhead than re-enqueueing each operation individually.
-
-    To obtain a `DeviceGraph`, use
-    [`DeviceGraphBuilder.instantiate()`](/docs/std/gpu/host/device_context/DeviceGraphBuilder/#instantiate).
-    """
-
-    var _handle: _DeviceGraphPtr[mut=True]
-
-    @doc_hidden
-    def __init__(out self, handle: _DeviceGraphPtr[mut=True]):
-        self._handle = handle
-
-    def __init__(out self, *, copy: Self):
-        """Creates a copy of an existing device graph by incrementing its
-        reference count.
-
-        Args:
-            copy: The device graph to copy.
-        """
-        # void AsyncRT_DeviceGraph_retain(DeviceGraph *graph)
-        external_call[
-            "AsyncRT_DeviceGraph_retain", NoneType, _DeviceGraphPtr[mut=True]
-        ](copy._handle)
-        self._handle = copy._handle
-
-    def __del__(deinit self):
-        """Releases resources associated with this device graph."""
-        # void AsyncRT_DeviceGraph_release(DeviceGraph *graph)
-        external_call[
-            "AsyncRT_DeviceGraph_release", NoneType, _DeviceGraphPtr[mut=True]
-        ](self._handle)
-
-    def replay(self) raises:
-        """Replays the captured sequence of GPU operations.
-
-        Submits the pre-captured sequence of operations for execution on the
-        device. This is more efficient than re-enqueueing each operation
-        individually because the graph has already been compiled and
-        instantiated by the driver.
-
-        Raises:
-            If replay fails.
-
-        Example:
-
-        ```mojo
-        from std.gpu.host import DeviceContext
-
-        def kernel():
-            print("replaying")
-
-        with DeviceContext() as ctx:
-            var compiled_fn = ctx.compile_function[kernel]()
-            var builder = ctx.create_graph_builder()
-            _ = builder.add_function(compiled_fn, grid_dim=1, block_dim=1, dependencies=[])
-            var graph = builder^.instantiate()
-            graph.replay()
-            graph.replay()  # replay as many times as needed
-            ctx.synchronize()
-        ```
-        """
-        # const char *AsyncRT_DeviceGraph_replay(DeviceGraph *graph)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceGraph_replay",
-                _CString[],
-                _DeviceGraphPtr[mut=True],
-            ](self._handle)
-        )
-
-
-struct DeviceGraphBuilder(Movable):
-    """Builder for explicit device graph construction.
-
-    A `DeviceGraphBuilder` is obtained from
-    [`DeviceContext.create_graph_builder()`](/docs/std/gpu/host/device_context/DeviceContext/#create_graph_builder).
-    Callers add kernel nodes via `add_function()` and then call
-    `instantiate()` to produce a reusable `DeviceGraph`.
-
-    Example:
-
-    ```mojo
-    from std.gpu.host import DeviceContext
-
-    def kernel(x: Int):
-        print("Value:", x)
-
-    with DeviceContext() as ctx:
-        var compiled_fn = ctx.compile_function[kernel]()
-        var builder = ctx.create_graph_builder()
-        _ = builder.add_function(compiled_fn, 42, grid_dim=1, block_dim=1, dependencies=[])
-        var graph = builder^.instantiate()
-        graph.replay()
-        ctx.synchronize()
-    ```
-    """
-
-    var _handle: _DeviceGraphBuilderPtr[mut=True]
-    var _ctx: DeviceContext
-
-    @doc_hidden
-    def __init__(
-        out self,
-        handle: _DeviceGraphBuilderPtr[mut=True],
-        ctx: DeviceContext,
-    ):
-        self._handle = handle
-        self._ctx = ctx
-
-    def __init__(out self, *, copy: Self):
-        """Creates a copy of an existing graph builder by incrementing its
-        reference count.
-
-        Args:
-            copy: The graph builder to copy.
-        """
-        # void AsyncRT_DeviceGraphBuilder_retain(DeviceGraphBuilder *builder)
-        external_call[
-            "AsyncRT_DeviceGraphBuilder_retain",
-            NoneType,
-            _DeviceGraphBuilderPtr[mut=True],
-        ](copy._handle)
-        self._handle = copy._handle
-        self._ctx = copy._ctx
-
-    def __del__(deinit self):
-        """Releases resources associated with this graph builder."""
-        # void AsyncRT_DeviceGraphBuilder_release(DeviceGraphBuilder *builder)
-        external_call[
-            "AsyncRT_DeviceGraphBuilder_release",
-            NoneType,
-            _DeviceGraphBuilderPtr[mut=True],
-        ](self._handle)
-
-    @doc_hidden
-    def _last_node_id(self) -> Optional[Int32]:
-        """Returns the id of the most recently added node, or None if no
-        nodes have been added yet.
-
-        Cannot fail. Used by `_last_node` and `collect_dependencies`
-        to query the builder's current state.
-        """
-        # int32_t AsyncRT_DeviceGraphBuilder_lastNodeIdOrNone(
-        #     DeviceGraphBuilder *builder)
-        var id = external_call[
-            "AsyncRT_DeviceGraphBuilder_lastNodeIdOrNone",
-            Int32,
-            _DeviceGraphBuilderPtr[mut=True],
-        ](self._handle)
-
-        if id < 0:
-            return None
-        return id
-
-    @doc_hidden
-    def _last_node(self) -> Optional[DeviceGraphNode]:
-        """Returns a handle to the most recently added node, or `None`
-        if no nodes have been added yet.
-
-        Used internally by the public `add_*` methods to retrieve the
-        handle of a node they just added; those call sites always expect
-        a `Some` result and unwrap via `.value()`.
-        """
-
-        def to_device_node(id: Int32) -> DeviceGraphNode:
-            return DeviceGraphNode(id)
-
-        return self._last_node_id().map[To=DeviceGraphNode](to_device_node)
-
-    @parameter
-    @always_inline
-    def add_function[
-        *Ts: DevicePassable
-    ](
-        self,
-        f: DeviceFunction,
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        var dependencies: List[DeviceGraphNode],
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-    ) raises -> DeviceGraphNode:
-        """Adds a type-checked compiled kernel function as a node in this graph.
-
-        Parameters:
-            Ts: Argument types (must be `DevicePassable`).
-
-        Args:
-            f: The type-checked compiled function to add. Must have been
-                compiled via `DeviceContext.compile_function()`.
-            args: Arguments to pass to the kernel.
-            grid_dim: Dimensions of the compute grid.
-            block_dim: Dimensions of each thread block.
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
-            cluster_dim: Cluster dimensions (optional).
-            shared_mem_bytes: Amount of dynamic shared memory per block.
-            attributes: Launch attributes.
-            constant_memory: Constant memory mappings.
-
-        Returns:
-            A handle to the newly added kernel-dispatch node.
-
-        Raises:
-            If adding the node fails.
-        """
-        _check_dim["DeviceGraphBuilder.add_function", "grid_dim"](
-            grid_dim, location=call_location()
-        )
-        _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
-            block_dim, location=call_location()
-        )
-        # Build a transient enqueuer that pairs the builder handle with the
-        # caller-supplied deps. It implements `_FunctionEnqueuer` so the
-        # trait machinery in `_call_with_pack_checked` routes the call into
-        # our C ABI, deps and all. (`_DeviceGraphBuilderEnqueuer` is defined
-        # below `DeviceGraphBuilder` because it borrows `Self`.)
-        var enqueuer = _DeviceGraphBuilderEnqueuer(self, dependencies^)
-        f._call_with_pack_checked(
-            enqueuer,
-            *args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=call_location(),
-        )
-        return self._last_node().value()
-
-    @always_inline
-    def add_function[
-        FuncType: def() -> None,
-        //,
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        func: FuncType,
-        grid_dim: Dim,
-        block_dim: Dim,
-        *,
-        var dependencies: List[DeviceGraphNode],
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-    ) raises -> DeviceGraphNode:
-        """Compiles and adds a capturing kernel closure as a node in this graph.
-
-        This overload is for kernels that capture variables from their
-        enclosing scope using the `{var}` capture syntax. Compilation is
-        performed automatically using the `DeviceContext` that created this
-        builder, so no separate compile step is needed.
-
-        Parameters:
-            FuncType: The type of the closure function (usually inferred).
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            func: The capturing kernel closure to compile and add as a graph
-                node.
-            grid_dim: Dimensions of the compute grid.
-            block_dim: Dimensions of each thread block.
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
-            cluster_dim: Cluster dimensions (optional).
-            shared_mem_bytes: Amount of dynamic shared memory per block.
-            attributes: Launch attributes.
-            constant_memory: Constant memory mappings.
-
-        Returns:
-            A handle to the newly added kernel-dispatch node.
-
-        Raises:
-            If adding the node fails.
-
-        Example:
-
-        ```mojo
-        from std.gpu import global_idx
-        from std.gpu.host import DeviceContext
-
-        with DeviceContext() as ctx:
-            var scale: Float32 = 2.0
-            var buf = ctx.enqueue_create_buffer[DType.float32](256)
-            var ptr = buf.unsafe_ptr()
-
-            def scale_kernel() {var}:
-                var i = global_idx.x
-                ptr[i] = Float32(i) * scale
-
-            var builder = ctx.create_graph_builder()
-            _ = builder.add_function(
-                scale_kernel, grid_dim=1, block_dim=256, dependencies=[]
-            )
-            var graph = builder^.instantiate()
-            graph.replay()
-            ctx.synchronize()
-        ```
-        """
-        _check_dim["DeviceGraphBuilder.add_function", "grid_dim"](
-            grid_dim, location=call_location()
-        )
-        _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
-            block_dim, location=call_location()
-        )
-        var compiled = DeviceFunction[
-            FuncType.__call__,
-            TypeList.of[Trait=AnyType](),
-            target=DeviceContext.default_device_info.target(),
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ](self._ctx)
-        compiled.dump_rep[
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            _dump_sass=_dump_sass,
-        ]()
-        # Build a transient enqueuer that pairs the builder handle with the
-        # caller-supplied deps. It implements `_FunctionEnqueuer` so the
-        # trait machinery in `_call_with_pack` routes the call into our
-        # C ABI, deps and all. (`_DeviceGraphBuilderEnqueuer` is defined
-        # below `DeviceGraphBuilder` because it borrows `Self`.)
-        var enqueuer = _DeviceGraphBuilderEnqueuer(self, dependencies^)
-        compiled._call_with_pack(
-            enqueuer,
-            func,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=call_location(),
-        )
-        return self._last_node().value()
-
-    def add_copy[
-        dtype: DType
-    ](
-        self,
-        dst_buf: DeviceBuffer[dtype, ...],
-        src_buf: HostBuffer[dtype, ...],
-        *,
-        var dependencies: List[DeviceGraphNode],
-    ) raises -> DeviceGraphNode:
-        """Adds a host-to-device memcpy node to the graph.
-
-        The number of bytes copied is determined by the size of the device
-        buffer.
-
-        Parameters:
-            dtype: Type of the data being copied.
-
-        Args:
-            dst_buf: Device buffer to copy to.
-            src_buf: Host buffer to copy from.
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
-
-        Returns:
-            A handle to the newly added memcpy node.
-
-        Raises:
-            If adding the node fails.
-        """
-        var dep_args = _pack_dep_args(dependencies)
-        # const char *AsyncRT_DeviceGraphBuilder_addCopyHostToDevice(
-        #     DeviceGraphBuilder *builder, DeviceBuffer *dst, const void *src,
-        #     const int32_t *depIds, int64_t numDeps)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceGraphBuilder_addCopyHostToDevice",
-                _CString[],
-            ](
-                self._handle,
-                dst_buf._handle,
-                src_buf._host_ptr,
-                dep_args.ids,
-                dep_args.count,
-            )
-        )
-        return self._last_node().value()
-
-    def add_copy[
-        dtype: DType
-    ](
-        self,
-        dst_buf: HostBuffer[dtype, ...],
-        src_buf: DeviceBuffer[dtype, ...],
-        *,
-        var dependencies: List[DeviceGraphNode],
-    ) raises -> DeviceGraphNode:
-        """Adds a device-to-host memcpy node to the graph.
-
-        The number of bytes copied is determined by the size of the device
-        buffer.
-
-        Parameters:
-            dtype: Type of the data being copied.
-
-        Args:
-            dst_buf: Host buffer to copy to.
-            src_buf: Device buffer to copy from.
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
-
-        Returns:
-            A handle to the newly added memcpy node.
-
-        Raises:
-            If adding the node fails.
-        """
-        var dep_args = _pack_dep_args(dependencies)
-        # const char *AsyncRT_DeviceGraphBuilder_addCopyDeviceToHost(
-        #     DeviceGraphBuilder *builder, void *dst, DeviceBuffer *src,
-        #     const int32_t *depIds, int64_t numDeps)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceGraphBuilder_addCopyDeviceToHost",
-                _CString[],
-            ](
-                self._handle,
-                dst_buf._host_ptr,
-                src_buf._handle,
-                dep_args.ids,
-                dep_args.count,
-            )
-        )
-        return self._last_node().value()
-
-    def add_copy[
-        dtype: DType
-    ](
-        self,
-        dst_buf: DeviceBuffer[dtype, ...],
-        src_buf: DeviceBuffer[dtype, ...],
-        *,
-        var dependencies: List[DeviceGraphNode],
-    ) raises -> DeviceGraphNode:
-        """Adds a device-to-device memcpy node to the graph.
-
-        Both buffers must belong to the same context as this builder;
-        cross-context copies are not supported in graphs. The number of bytes
-        copied is determined by the size of the source buffer.
-
-        Parameters:
-            dtype: Type of the data being copied.
-
-        Args:
-            dst_buf: Device buffer to copy to.
-            src_buf: Device buffer to copy from. Must be the same size as
-                `dst_buf`.
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
-
-        Returns:
-            A handle to the newly added memcpy node.
-
-        Raises:
-            If adding the node fails.
-        """
-        var dep_args = _pack_dep_args(dependencies)
-        # const char *AsyncRT_DeviceGraphBuilder_addCopyDeviceToDevice(
-        #     DeviceGraphBuilder *builder, DeviceBuffer *dst, DeviceBuffer *src,
-        #     const int32_t *depIds, int64_t numDeps)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceGraphBuilder_addCopyDeviceToDevice",
-                _CString[],
-            ](
-                self._handle,
-                dst_buf._handle,
-                src_buf._handle,
-                dep_args.ids,
-                dep_args.count,
-            )
-        )
-        return self._last_node().value()
-
-    def add_memset[
-        dtype: DType
-    ](
-        self,
-        dst: DeviceBuffer[dtype, ...],
-        val: Scalar[dtype],
-        *,
-        var dependencies: List[DeviceGraphNode],
-    ) raises -> DeviceGraphNode:
-        """Adds a memset node to the graph that sets all elements of `dst` to
-        `val`.
-
-        Parameters:
-            dtype: Type of the data stored in the buffer.
-
-        Args:
-            dst: Destination buffer.
-            val: Value to set all elements of `dst` to.
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
-
-        Returns:
-            A handle to the newly added memset node.
-
-        Raises:
-            If adding the node fails. The underlying graph APIs cannot express
-            an 8-byte memset whose high and low 32-bit halves differ as a
-            single node, so such patterns will return an error.
-        """
-        comptime bitwidth = bit_width_of[dtype]()
-        comptime assert (
-            bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64
-        ), "bitwidth of memset dtype must be one of [8,16,32,64]"
-        var value: UInt64
-
-        comptime if bitwidth == 8:
-            value = UInt64(Int(bitcast[DType.uint8, 1](val)))
-        elif bitwidth == 16:
-            value = UInt64(Int(bitcast[DType.uint16, 1](val)))
-        elif bitwidth == 32:
-            value = UInt64(bitcast[DType.uint32, 1](val))
-        else:
-            value = bitcast[DType.uint64, 1](val)
-
-        var dep_args = _pack_dep_args(dependencies)
-        # const char *AsyncRT_DeviceGraphBuilder_addSetMemory(
-        #     DeviceGraphBuilder *builder, DeviceBuffer *dst, uint64_t val,
-        #     size_t valSize, const int32_t *depIds, int64_t numDeps)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceGraphBuilder_addSetMemory",
-                _CString[],
-                _DeviceGraphBuilderPtr[mut=True],
-                _DeviceBufferPtr[mut=True],
-                UInt64,
-                c_size_t,
-                UnsafePointer[Int32, ImmutAnyOrigin],
-                Int64,
-            ](
-                self._handle,
-                dst._handle,
-                value,
-                c_size_t(size_of[dtype]()),
-                dep_args.ids.as_unsafe_any_origin(),
-                dep_args.count,
-            )
-        )
-        return self._last_node().value()
-
-    def add_empty(
-        self,
-        *,
-        var dependencies: List[DeviceGraphNode],
-    ) raises -> DeviceGraphNode:
-        """Adds an empty (no-op) node to the graph.
-
-        Empty nodes perform no work at execution time. They are used purely
-        for transitive ordering: a single empty node fanned in from `m`
-        predecessors and out to `n` successors expresses an `m`-to-`n`
-        barrier using `m + n` edges instead of `m * n`, and serves as a
-        stable handle for "the completion of this phase" when the producer
-        set is not visible to the consumer.
-
-        Args:
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
-
-        Returns:
-            A handle to the newly added empty node.
-
-        Raises:
-            If adding the node fails.
-        """
-        var dep_args = _pack_dep_args(dependencies)
-        # const char *AsyncRT_DeviceGraphBuilder_addEmpty(
-        #     DeviceGraphBuilder *builder, const int32_t *depIds,
-        #     int64_t numDeps)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceGraphBuilder_addEmpty",
-                _CString[],
-                _DeviceGraphBuilderPtr[mut=True],
-                UnsafePointer[Int32, ImmutAnyOrigin],
-                Int64,
-            ](self._handle, dep_args.ids.as_unsafe_any_origin(), dep_args.count)
-        )
-        return self._last_node().value()
-
-    def collect_dependencies(
-        self, work: Some[def(Self) raises]
-    ) raises -> DeviceGraphNode:
-        """Runs `work` and returns a single empty node that joins every
-        node added to this builder during its execution.
-
-        The returned handle is suitable for use as a one-element
-        `dependencies=` entry on a downstream `add_*` call. The empty
-        node performs no work at execution time; it exists purely as a
-        fan-in barrier so the caller does not need to thread the
-        producer set's individual handles to every consumer.
-
-        Args:
-            work: Closure whose effects on this builder are captured. The
-                builder is passed as `work`'s sole argument; the closure
-                must not capture the same builder, since doing so would
-                alias with this method's receiver. The closure may add
-                any number of nodes (zero or more) via any of the
-                `add_*` methods.
-
-        Returns:
-            Handle of the empty node that joins every node added by
-            `work`.
-
-        Raises:
-            Anything `work` itself raises, or anything raised while
-            adding the join node.
-
-        Example:
-
-        ```mojo
-        from std.gpu.host import DeviceContext, DeviceGraphBuilder
-
-        with DeviceContext() as ctx:
-            var builder = ctx.create_graph_builder()
-
-            def add_producers(b: DeviceGraphBuilder) raises {read} -> None:
-                _ = b.add_memset(buf_a, UInt8(1), dependencies=[])
-                _ = b.add_memset(buf_b, UInt8(2), dependencies=[])
-
-            var producers_join = builder.collect_dependencies(add_producers)
-            _ = builder.add_copy(
-                buf_c, host_src, dependencies=[producers_join]
-            )
-            var graph = builder^.instantiate()
-            graph.replay()
-        ```
-        """
-        var start_id = self._last_node_id()
-        work(self)
-        var end_id = self._last_node_id()
-
-        var deps = List[DeviceGraphNode]()
-
-        if end_id:
-            var end_val = end_id.value()
-            var start_val = start_id.or_else(-1)
-            deps.reserve(Int(end_val) - Int(start_val))
-            for id in range(start_val + 1, end_val + 1):
-                deps.append(DeviceGraphNode(Int32(id)))
-
-        return self.add_empty(dependencies=deps^)
-
-    def instantiate(var self) raises -> DeviceGraph:
-        """Instantiates the constructed graph into an executable device graph.
-
-        Finalizes the graph construction and produces a `DeviceGraph` that
-        can be replayed multiple times.
-
-        Returns:
-            The instantiated device graph.
-
-        Raises:
-            If instantiation fails.
-        """
-        var result: _DeviceGraphPtr[mut=True] = {}
-        # const char *AsyncRT_DeviceGraphBuilder_instantiate(
-        #     DeviceGraph **result, DeviceGraphBuilder *builder)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceGraphBuilder_instantiate",
-                _CString[],
-                UnsafePointer[_DeviceGraphPtr[mut=True], origin_of(result)],
-                _DeviceGraphBuilderPtr[mut=True],
-            ](
-                UnsafePointer(to=result),
-                self._handle,
-            )
-        )
-        return DeviceGraph(result)
-
-
-@doc_hidden
-struct _DeviceGraphBuilderEnqueuer[
-    builder_origin: Origin[mut=False],
-](_FunctionEnqueuer):
-    """Transient `_FunctionEnqueuer` pairing a `DeviceGraphBuilder` borrow
-    with the dependency list for a single node addition.
-
-    Constructed locally inside `DeviceGraphBuilder.add_function` and passed
-    to `DeviceFunction._call_with_pack[_checked]` so the explicit
-    dependency list can flow through the trait machinery into the C ABI
-    without becoming part of the trait surface or requiring mutable state
-    on `DeviceGraphBuilder` itself.
-
-    Parameters:
-        builder_origin: The origin of the borrow on the parent
-            `DeviceGraphBuilder`. The borrow checker enforces that this
-            enqueuer cannot outlive the originating builder.
-    """
-
-    var _builder: Pointer[DeviceGraphBuilder, Self.builder_origin]
-    """Borrowed reference to the parent graph builder. The Mojo borrow
-    checker uses `builder_origin` to ensure this enqueuer cannot outlive
-    the borrow."""
-
-    var _dependencies: List[DeviceGraphNode]
-    """Explicit dependency list for the node being added. An empty list
-    creates a graph root; a non-empty list specifies exact predecessor
-    edges."""
-
-    @always_inline
-    def __init__(
-        out self,
-        ref[Self.builder_origin] builder: DeviceGraphBuilder,
-        var dependencies: List[DeviceGraphNode],
-    ):
-        """Initializes the transient enqueuer with a borrowed builder and
-        the dependency list to apply to the next node addition.
-
-        Args:
-            builder: The parent `DeviceGraphBuilder` whose handle is used
-                for the C ABI call. Borrowed for the lifetime of this
-                enqueuer.
-            dependencies: Explicit dependency list for the node about to
-                be added. See the field docstring on `_dependencies` for
-                the meaning of each value.
-        """
-        self._builder = Pointer(to=builder)
-        self._dependencies = dependencies^
-
-    @always_inline
-    def enqueue[
-        args_origin: MutOrigin, //
-    ](
-        self,
-        func_handle: _DeviceFunctionPtr[mut=True],
-        grid_dim: Dim,
-        block_dim: Dim,
-        shared_mem_bytes: Int,
-        attributes: UnsafePointer[mut=True, LaunchAttribute, _],
-        num_attributes: Int,
-        args: UnsafePointer[mut=True, OpaquePointer[args_origin], _],
-        arg_count: UInt32,
-        arg_sizes: OptionalUnsafePointer[mut=True, UInt64, _],
-    ) -> _CString[]:
-        """Adds a kernel-dispatch node to the borrowed graph builder.
-
-        Forwards to `AsyncRT_DeviceGraphBuilder_addFunctionDirect`,
-        attaching the dependency list captured at construction time so it
-        is applied to the node being added. See `_FunctionEnqueuer.enqueue`
-        for the full contract.
-
-        Args:
-            func_handle: Handle to the compiled `DeviceFunction` to launch.
-            grid_dim: Grid dimensions (number of thread blocks).
-            block_dim: Block dimensions (number of threads per block).
-            shared_mem_bytes: Bytes of dynamic shared memory per block.
-            attributes: Pointer to the launch attributes array.
-            num_attributes: Number of entries in `attributes`.
-            args: Pointer to the array of argument value pointers.
-            arg_count: Number of entries in `args`.
-            arg_sizes: Optional pointer to the per-argument sizes in bytes.
-
-        Returns:
-            A C-string carrying an error message on failure, or an empty
-            string on success.
-        """
-        var dep_args = _pack_dep_args(self._dependencies)
-        return external_call[
-            "AsyncRT_DeviceGraphBuilder_addFunctionDirect", _CString[]
-        ](
-            self._builder[]._handle,
-            func_handle,
-            grid_dim.x(),
-            grid_dim.y(),
-            grid_dim.z(),
-            block_dim.x(),
-            block_dim.y(),
-            block_dim.z(),
-            shared_mem_bytes,
-            attributes,
-            num_attributes,
-            args,
-            arg_count,
-            arg_sizes,
-            dep_args.ids,
-            dep_args.count,
-        )
 
 
 struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
@@ -6319,7 +5462,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 # This kernel captures 'scale_factor' from the enclosing scope
                 def scale_kernel() {var}:
                     var i = global_idx.x
-                    if i >= UInt(100):
+                    if i >= 100:
                         return
                     data[i] = data[i] * scale_factor
 
@@ -7735,7 +6878,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 self._handle,
                 dst._handle,
                 value,
-                UInt(size_of[dtype]()),
+                c_size_t(size_of[dtype]()),
             )
         )
 
@@ -7970,6 +7113,57 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 _DeviceContextPtr[mut=True],
             ](self._handle, other._handle)
         )
+
+    def num_streams(self) -> Int:
+        """Returns the number of streams available on this device context.
+
+        Returns:
+            The number of streams available on this device context.
+        """
+        # int AsyncRT_DeviceContext_numStreams(const DeviceContext *ctx)
+        return Int(
+            external_call[
+                "AsyncRT_DeviceContext_numStreams",
+                Int32,
+            ](self._handle)
+        )
+
+    def select_stream(self, stream_id: Int) raises -> DeviceContext:
+        """Returns a view of this device context bound to the given stream.
+
+        The returned context shares this context's full stream set, driver
+        context, and device memory pool; only the current-stream selector
+        differs, so work enqueued on it runs on stream `stream_id`. Stream 0 is
+        the base/default stream. Backends without a multi-stream model return a
+        view equivalent to this context.
+
+        Args:
+            stream_id: Index of the stream the returned view submits to.
+
+        Returns:
+            A device context view bound to stream `stream_id`.
+
+        Raises:
+            If the stream cannot be selected or created.
+        """
+        # const char *AsyncRT_DeviceContext_selectStream(
+        #     const DeviceContext **result, const DeviceContext *ctx,
+        #     unsigned int stream_id)
+        var result: _DeviceContextPtr[mut=True] = {}
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_selectStream",
+                _CString[],
+                UnsafePointer[_DeviceContextPtr[mut=True], origin_of(result)],
+                _DeviceContextPtr[mut=True],
+                c_uint,
+            ](UnsafePointer(to=result), self._handle, c_uint(stream_id))
+        )
+        # The runtime transferred ownership of the view's reference to us, so
+        # the wrapper must own it (and release on destruction).
+        var view = DeviceContext(result)
+        view._owning = True
+        return view^
 
     @always_inline
     def get_api_version(self) raises -> Int:
@@ -8533,53 +7727,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             location=call_location(),
         )
         return result
-
-    def create_graph_builder(self) raises -> DeviceGraphBuilder:
-        """Creates a graph builder for explicit device graph construction.
-
-        Returns a `DeviceGraphBuilder` that can be used to add kernel nodes
-        and then instantiate a reusable `DeviceGraph`.
-
-        Returns:
-            A new `DeviceGraphBuilder` associated with this device context.
-
-        Raises:
-            If graph builder creation fails or is not supported on this device.
-
-        Example:
-
-        ```mojo
-        from std.gpu.host import DeviceContext
-
-        def kernel(x: Int):
-            print("Value:", x)
-
-        with DeviceContext() as ctx:
-            var compiled_fn = ctx.compile_function[kernel]()
-            var builder = ctx.create_graph_builder()
-            _ = builder.add_function(compiled_fn, 42, grid_dim=1, block_dim=1, dependencies=[])
-            var graph = builder^.instantiate()
-            graph.replay()
-            ctx.synchronize()
-        ```
-        """
-        var result: _DeviceGraphBuilderPtr[mut=True] = {}
-        # const char *AsyncRT_DeviceContext_createGraphBuilder(
-        #     DeviceGraphBuilder **result, DeviceContext *ctx)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_createGraphBuilder",
-                _CString[],
-                UnsafePointer[
-                    _DeviceGraphBuilderPtr[mut=True], origin_of(result)
-                ],
-                _DeviceContextPtr[mut=True],
-            ](
-                UnsafePointer(to=result),
-                self._handle,
-            )
-        )
-        return DeviceGraphBuilder(result, self)
 
 
 struct DeviceContextList[size: Int](Copyable, ImplicitlyCopyable, Sized):

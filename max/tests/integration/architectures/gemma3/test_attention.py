@@ -21,8 +21,7 @@ from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import KVCacheParams
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.attention import (
     Gemma3Attention as MaxGemma3Attention,
@@ -63,7 +62,7 @@ def _get_position_embeddings(
     rope_params = getattr(text_config, "rope_parameters", None)
     if isinstance(rope_params, dict) and "sliding_attention" in rope_params:
         # v5: single embedding handles both layer types natively
-        rotary_emb = Gemma3RotaryEmbedding(config=text_config, device="cuda")
+        rotary_emb = Gemma3RotaryEmbedding(config=text_config).to("cuda")
         layer_type = (
             "full_attention" if use_global_rope else "sliding_attention"
         )
@@ -71,14 +70,12 @@ def _get_position_embeddings(
     else:
         # v4: need separate embedding with hacked config for local rope
         if use_global_rope:
-            rotary_emb = Gemma3RotaryEmbedding(
-                config=text_config, device="cuda"
-            )
+            rotary_emb = Gemma3RotaryEmbedding(config=text_config).to("cuda")
         else:
             config = copy.deepcopy(text_config)
             config.rope_theta = config.rope_local_base_freq
             config.rope_scaling = {"rope_type": "default"}
-            rotary_emb = Gemma3RotaryEmbedding(config=config, device="cuda")
+            rotary_emb = Gemma3RotaryEmbedding(config=config).to("cuda")
         cos, sin = rotary_emb(input_tensor, position_ids)
 
     return cos.to(torch.bfloat16).to("cuda"), sin.to(torch.bfloat16).to("cuda")
@@ -160,7 +157,7 @@ def generate_max_outputs(
         for weight_name, value in attention_weights.items()
     }
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         devices=[device_ref],
         n_kv_heads=text_config.num_key_value_heads,
@@ -265,7 +262,8 @@ def generate_max_outputs(
         kv_runtime_inputs.kv_blocks.to(device),
         kv_runtime_inputs.cache_lengths.to(device),
         kv_runtime_inputs.lookup_table.to(device),
-        kv_runtime_inputs.max_lengths,
+        kv_runtime_inputs.max_prompt_length,
+        kv_runtime_inputs.max_cache_length,
         kv_runtime_inputs.attention_dispatch_metadata,
     )[0]
 

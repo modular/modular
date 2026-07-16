@@ -46,9 +46,12 @@ from .shmem_api import (
     shmem_init,
     shmem_init_thread_tcp,
     shmem_init_thread_mpi,
+    shmem_module_finalize,
     shmem_module_init,
+    shmem_team_my_pe,
     shmem_team_t,
 )
+from .shmem_buffer import SHMEMBuffer
 
 
 def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:

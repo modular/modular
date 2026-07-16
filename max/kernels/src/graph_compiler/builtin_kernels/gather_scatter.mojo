@@ -35,6 +35,7 @@ from nn.concat import fused_concat, _fused_dual_concat_gpu
 from nn.gather_scatter import (
     Axis,
     ScatterOobIndexStrategy,
+    apply_packed_bitmask,
     gather,
     gather_nd,
     gather_nd_shape,
@@ -522,6 +523,29 @@ def scatter_nd_max_shape[](
     )
 
 
+@compiler.register("mo.apply_packed_bitmask")
+struct ApplyPackedBitmask:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        logits: InputTensor[dtype=dtype, rank=2, ...],
+        packed: InputTensor[dtype=DType.int32, rank=2, ...],
+        fill_value: Scalar[dtype],
+        ctx: DeviceContext,
+    ) raises:
+        apply_packed_bitmask[target](
+            output.to_tile_tensor(),
+            logits.to_tile_tensor(),
+            packed.to_tile_tensor(),
+            fill_value,
+            ctx,
+        )
+
+
 @compiler.register("mo.scatter_set_constant")
 struct ScatterSetConstant:
     @staticmethod
@@ -560,21 +584,21 @@ struct Scatter:
         check_axis_in_range[output.rank](axis)
 
         @always_inline
-        @parameter
         def reduce_func[
             dtype: DType, width: SIMDSize
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) {} -> SIMD[
             dtype, width
         ]:
             return rhs  # always return the latest update element
 
-        scatter_elements[reduce_func](
+        scatter_elements(
             input,
             indices,
             updates,
             normalize_neg_index(axis, output.rank),
             output,
             ctx,
+            reduce_fn=reduce_func,
         )
 
 
@@ -612,21 +636,21 @@ struct ScatterAdd:
         check_axis_in_range[output.rank](Int(axis))
 
         @always_inline
-        @parameter
         def reduce_func[
             dtype: DType, width: SIMDSize
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) {} -> SIMD[
             dtype, width
         ]:
             return lhs + rhs
 
-        scatter_elements[reduce_func](
+        scatter_elements(
             input,
             indices,
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
             ctx,
+            reduce_fn=reduce_func,
         )
 
 
@@ -663,21 +687,21 @@ struct ScatterMax:
         check_axis_in_range[output.rank](Int(axis))
 
         @always_inline
-        @parameter
         def reduce_func[
             dtype: DType, width: SIMDSize
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) {} -> SIMD[
             dtype, width
         ]:
             return max(lhs, rhs)
 
-        scatter_elements[reduce_func](
+        scatter_elements(
             input,
             indices,
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
             ctx,
+            reduce_fn=reduce_func,
         )
 
 
@@ -714,21 +738,21 @@ struct ScatterMin:
         check_axis_in_range[output.rank](Int(axis))
 
         @always_inline
-        @parameter
         def reduce_func[
             dtype: DType, width: SIMDSize
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) {} -> SIMD[
             dtype, width
         ]:
             return min(lhs, rhs)
 
-        scatter_elements[reduce_func](
+        scatter_elements(
             input,
             indices,
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
             ctx,
+            reduce_fn=reduce_func,
         )
 
 
@@ -765,21 +789,21 @@ struct ScatterMul:
         check_axis_in_range[output.rank](Int(axis))
 
         @always_inline
-        @parameter
         def reduce_func[
             dtype: DType, width: SIMDSize
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) {} -> SIMD[
             dtype, width
         ]:
             return lhs * rhs
 
-        scatter_elements[reduce_func](
+        scatter_elements(
             input,
             indices,
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
             ctx,
+            reduce_fn=reduce_func,
         )
 
 
@@ -1593,8 +1617,15 @@ struct Concat:
         comptime for i in range(inputs.size):
             input_shapes[i] = inputs[i].shape()
 
+        # Copy-capture `inputs` into the device-kernel closure via
+        # `@__copy_capture`. Without it the closure captures `inputs` by
+        # reference, so on Metal the GPU kernel holds a host-side pointer to the
+        # capture and reads garbage (concat with >=3 inputs silently returned
+        # all-zeros). `inputs` (`FusedInputVariadicTensors`) stores its tensors
+        # by value, so the copy brings their device pointers into the kernel.
         @always_inline
         @parameter
+        @__copy_capture(inputs)
         def inputs_lambda[
             input_index: Int, width: Int, _rank: Int, alignment: Int = 1
         ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
@@ -1605,8 +1636,12 @@ struct Concat:
                 width=width, element_alignment=alignment
             ](rebind[IndexList[rank]](indices))
 
+        # Copy-capture `output` for the same reason as `inputs` above: a
+        # by-reference capture leaves the device kernel holding a host pointer
+        # to the output tensor on Metal.
         @always_inline
         @parameter
+        @__copy_capture(output)
         def epilogue_wrapper[
             _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
@@ -1663,8 +1698,14 @@ struct FusedConcatSlice:
         comptime for i in range(inputs.size):
             input_shapes[i] = inputs[i].shape()
 
+        # Copy-capture the captured tensors into the device-kernel closures.
+        # A by-reference capture leaves the GPU kernel holding host-side
+        # pointers on Metal, so it reads garbage/zeros (the concat>=4-input
+        # all-zeros bug). Copy-capture brings the device pointers into the
+        # closure.
         @always_inline
         @parameter
+        @__copy_capture(inputs)
         def inputs_lambda[
             input_index: Int,
             width: Int,
@@ -1680,6 +1721,7 @@ struct FusedConcatSlice:
 
         @always_inline
         @parameter
+        @__copy_capture(concat_output, slice_output)
         def epilogue_wrapper[
             _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
@@ -1779,8 +1821,13 @@ struct DualFusedConcatSlice:
         comptime for i in range(num_inputs_1):
             input_shapes_1[i] = inputs[num_inputs_0 + i].shape()
 
+        # Copy-capture the captured tensors into the device-kernel closures.
+        # A by-reference capture leaves the GPU kernel holding host-side
+        # pointers on Metal, so it reads garbage/zeros. Copy-capture brings
+        # the device pointers into the closure.
         @always_inline
         @parameter
+        @__copy_capture(inputs)
         def inputs_lambda_0[
             input_index: Int,
             width: Int,
@@ -1796,6 +1843,7 @@ struct DualFusedConcatSlice:
 
         @always_inline
         @parameter
+        @__copy_capture(inputs)
         def inputs_lambda_1[
             input_index: Int,
             width: Int,
@@ -1811,6 +1859,7 @@ struct DualFusedConcatSlice:
 
         @always_inline
         @parameter
+        @__copy_capture(concat_output_0, slice_output_0)
         def epilogue_0[
             _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
@@ -1864,6 +1913,7 @@ struct DualFusedConcatSlice:
 
         @always_inline
         @parameter
+        @__copy_capture(concat_output_1, slice_output_1)
         def epilogue_1[
             _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
@@ -2092,23 +2142,25 @@ struct AdvancedIndexingGetItem:
         comptime assert (
             output_rank == input_rank + index_rank - num_index_tensors
         )
+        # Do not support boolean masks at this time.
+        comptime assert index_type != DType.bool
 
-        @parameter
         @always_inline
         def input_tensor_fn[
-            width: Int
-        ](idx: IndexList[input_rank]) capturing -> SIMD[input_type, width]:
-            return input_tensor._fused_load[width](idx)
+            dtype: DType, width: Int
+        ](idx: IndexList[input_rank]) {var input_tensor} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                input_tensor._fused_load[width](idx)
+            )
 
         @always_inline
-        @parameter
         def indices_fn[
             indices_index: Int,
-        ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
+        ](coordinates: IndexList[index_rank]) {var indices} -> Int:
             comptime assert (
                 indices_index < num_index_tensors
             ), "tensor index out of bounds"
-            return indices[indices_index]._fused_load[width=1](coordinates)
+            return Int(indices[indices_index]._fused_load[width=1](coordinates))
 
         advanced_indexing_getitem[
             input_rank=input_rank,
@@ -2116,12 +2168,12 @@ struct AdvancedIndexingGetItem:
             num_index_tensors=num_index_tensors,
             target=target,
             trace_description=_trace_name,
-            input_tensor_fn=input_tensor_fn,
-            indices_fn=indices_fn,
         ](
             out_tensor.to_tile_tensor[DType.int64](),
             input_tensor.strides(),
             ctx,
+            input_tensor_fn,
+            indices_fn,
         )
 
 
@@ -2173,35 +2225,33 @@ struct AdvancedIndexingSetItemInplace:
         ],
         ctx: DeviceContext,
     ) capturing raises:
-        @parameter
         @always_inline
         def updates_tensor_fn[
-            width: Int
-        ](idx: IndexList[updates_rank]) capturing -> SIMD[input_type, width]:
-            return updates._fused_load[width](idx)
+            dtype: DType, width: Int
+        ](idx: IndexList[updates_rank]) {var updates} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](updates._fused_load[width](idx))
 
         @always_inline
-        @parameter
         def indices_fn[
             indices_index: Int,
-        ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
+        ](coordinates: IndexList[index_rank]) {var indices} -> Int:
             comptime assert (
                 indices_index < num_index_tensors
             ), "tensor index out of bounds"
-            return indices[indices_index]._fused_load[width=1](coordinates)
+            return Int(indices[indices_index]._fused_load[width=1](coordinates))
 
         advanced_indexing_setitem_inplace[
             start_axis=start_axis,
             num_index_tensors=num_index_tensors,
             target=target,
             trace_description=_trace_name,
-            updates_tensor_fn=updates_tensor_fn,
-            indices_fn=indices_fn,
         ](
             input_tensor.to_tile_tensor[DType.int64](),
             indices[0].shape(),
             updates.strides(),
             ctx,
+            updates_tensor_fn,
+            indices_fn,
         )
 
 

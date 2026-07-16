@@ -66,6 +66,7 @@ def _unpack_kv_collections(
     list[TensorValue],
     list[TensorValue],
     list[TensorValue],
+    list[TensorValue],
 ]:
     # Subgraphs require flat Value inputs; PagedCacheValues is a Python
     # dataclass that can't be passed directly.
@@ -78,7 +79,8 @@ def _unpack_kv_collections(
         [kv.kv_blocks for kv in kv_collections],
         [kv.cache_lengths for kv in kv_collections],
         [kv.lookup_table for kv in kv_collections],
-        [kv.max_lengths for kv in kv_collections],
+        [kv.max_prompt_length for kv in kv_collections],
+        [kv.max_cache_length for kv in kv_collections],
         dispatch_metadata_tensors,
     )
 
@@ -236,7 +238,8 @@ class HYV3TransformerBlock(Module):
         kv_blocks: list[BufferValue],
         kv_cache_lengths: list[TensorValue],
         kv_lookup_table: list[TensorValue],
-        kv_max_lengths: list[TensorValue],
+        kv_max_prompt_lengths: list[TensorValue],
+        kv_max_cache_lengths: list[TensorValue],
         dispatch_metadata_tensors: list[TensorValue],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
@@ -248,7 +251,8 @@ class HYV3TransformerBlock(Module):
                 kv_blocks[i],
                 kv_cache_lengths[i],
                 kv_lookup_table[i],
-                kv_max_lengths[i],
+                kv_max_prompt_lengths[i],
+                kv_max_cache_lengths[i],
                 attention_dispatch_metadata=dispatch_metadata_tensors[i]
                 if dispatch_metadata_tensors
                 else None,
@@ -424,7 +428,8 @@ class HYV3(DistributedLogitsPostprocessMixin, Module):
             kv_blocks,
             cache_lengths,
             lookup_tables,
-            max_lengths,
+            max_prompt_lengths,
+            max_cache_lengths,
             dispatch_metadata_tensors,
         ) = _unpack_kv_collections(kv_collections)
 
@@ -438,7 +443,8 @@ class HYV3(DistributedLogitsPostprocessMixin, Module):
                 kv_blocks,
                 cache_lengths,
                 lookup_tables,
-                max_lengths,
+                max_prompt_lengths,
+                max_cache_lengths,
                 dispatch_metadata_tensors,
                 freqs_cis_list,
                 input_row_offsets_list,

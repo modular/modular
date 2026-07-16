@@ -52,6 +52,7 @@ class PostprocessAndDecode(Module):
         num_channels: int,
         device: DeviceRef,
         dtype: DType,
+        latents_in_dtype: DType | None = None,
     ) -> None:
         super().__init__()
         self.decoder = decoder
@@ -59,6 +60,13 @@ class PostprocessAndDecode(Module):
         self._num_channels = num_channels
         self._device = device
         self._dtype = dtype
+        # Dtype of the incoming latents.  In a uniform-precision pipeline this
+        # equals the VAE compute dtype, but a mixed-precision assembly (e.g. an
+        # NVFP4 transformer whose compute dtype is bfloat16 feeding an
+        # float32 VAE) produces latents in a different dtype than the VAE
+        # expects.  We accept latents at this dtype and cast to ``dtype`` as
+        # the first graph op; the cast is a no-op when they match.
+        self._latents_in_dtype = latents_in_dtype or dtype
 
         # Named with a ``decoder_`` prefix so the FQN doesn't collide with
         # ``PreprocessAndEncode``'s ``encoder_bn_*`` when both components
@@ -82,6 +90,13 @@ class PostprocessAndDecode(Module):
         h_carrier: TensorValue,
         w_carrier: TensorValue,
     ) -> TensorValue:
+        # Reconcile the incoming latents dtype with the VAE compute dtype.
+        # No-op when they already match (uniform-precision pipeline); widens
+        # bfloat16 -> float32 for a mixed-precision assembly (NVFP4 transformer
+        # feeding a float32 VAE).
+        if latents_bsc.dtype != self._dtype:
+            latents_bsc = ops.cast(latents_bsc, self._dtype)
+
         batch = latents_bsc.shape[0]
         c = latents_bsc.shape[2]
 
@@ -140,7 +155,7 @@ class PostprocessAndDecode(Module):
     def input_types(self) -> tuple[TensorType, ...]:
         return (
             TensorType(
-                self._dtype,
+                self._latents_in_dtype,
                 shape=["batch", "seq", self._num_channels],
                 device=self._device,
             ),
@@ -173,6 +188,7 @@ class VaeDecoder(CompiledComponent):
         session: InferenceSession,
         *,
         graphs_module: GraphModule | None = None,
+        latents_in_dtype: DType | None = None,
     ) -> None:
         super().__init__(manifest, session, graphs_module=graphs_module)
 
@@ -211,6 +227,7 @@ class VaeDecoder(CompiledComponent):
             num_channels=num_channels,
             device=device,
             dtype=dtype,
+            latents_in_dtype=latents_in_dtype,
         )
 
         # Load and adapt weights.

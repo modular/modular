@@ -24,7 +24,7 @@ from std.testing import assert_true
 
 from comm import Signal, MAX_GPUS
 from comm.broadcast import broadcast
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 
 
 @always_inline
@@ -136,7 +136,7 @@ def broadcast_test[
         signal_buffers.append(
             list_of_ctxs[i].create_buffer_sync[DType.uint8](signal_buf_size)
         )
-        list_of_ctxs[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctxs[i])
         rank_sigs[i] = (
             signal_buffers[i]
             .unsafe_ptr()

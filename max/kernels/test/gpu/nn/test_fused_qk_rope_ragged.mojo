@@ -27,10 +27,9 @@ from layout import (
     row_major,
 )
 from layout._fillers import random
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 
 from nn.fused_qk_rope import fused_qk_rope_ragged
-from testdata.fused_qk_rope_goldens import freqs_cis_table_input
 from std.testing import assert_almost_equal
 
 from std.utils import Index, IndexList
@@ -270,7 +269,7 @@ def execute_fused_qk_rope_ragged(
                     mixed_ce_row_offset * num_q_heads * kv_params.head_size
                 )
 
-                memcpy(
+                unsafe_memcpy(
                     dest=mixed_ce_q_ragged_tensor.ptr + mixed_ce_dest_offset,
                     src=true_ce_q_ragged_tensor.ptr + true_ce_src_offset,
                     count=mixed_ce_prompt_len
@@ -278,14 +277,18 @@ def execute_fused_qk_rope_ragged(
                     * kv_params.head_size,
                 )
 
-    # Initialize freqs_cis_table with golden values
-    freqs_input_buffer = freqs_cis_table_input[dtype]()
+    # Fill the whole freqs_cis buffer: the kernel reads row
+    # `cache_len + token`, not just the first rows. Unwritten rows are zero
+    # under the default allocator but NaN under `poison-all`. (KERN-3088)
+    comptime freqs_layout = Layout.row_major(max_seq_len, kv_params.head_size)
+    var freqs_runtime_layout = RuntimeLayout[freqs_layout].row_major(
+        freqs_shape
+    )
     with freqs_device.map_to_host() as freqs_host:
-        memcpy(
-            dest=freqs_host.unsafe_ptr(),
-            src=freqs_input_buffer.unsafe_ptr(),
-            count=len(freqs_input_buffer),
+        var freqs_init_tensor = LayoutTensor[dtype, freqs_layout](
+            freqs_host, freqs_runtime_layout
         )
+        random(freqs_init_tensor)
 
     # Initialize KV blocks with random data using regular host memory
     # (not host-pinned memory via map_to_host) to avoid exhausting
@@ -781,7 +784,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                 var dest_offset = (
                     seq_idx * num_q_heads * rope_dim + head_idx * rope_dim
                 )
-                memcpy(
+                unsafe_memcpy(
                     dest=q_ragged_64_tensor.ptr + dest_offset,
                     src=q_ragged_host_ptr.unsafe_ptr() + src_offset,
                     count=rope_dim,
@@ -849,7 +852,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                                 + tok_idx * kv_params.num_heads * rope_dim
                                 + head_idx * rope_dim
                             )
-                            memcpy(
+                            unsafe_memcpy(
                                 dest=kv_block_64_tensor.ptr + dest_offset,
                                 src=kv_block_host_ptr.unsafe_ptr() + src_offset,
                                 count=rope_dim,

@@ -21,6 +21,13 @@ Configuration
 
    SamplingConfig
 
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   DEFAULT_STRUCTURED_OUTPUT_BACKEND
+
 Processors
 ----------
 
