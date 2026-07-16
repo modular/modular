@@ -151,7 +151,7 @@ def test_tma_multicast_load_row_major[
         UInt32(CLUSTER_N),
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(dst_N // tileN, dst_M // tileM),
@@ -296,7 +296,7 @@ def test_tma_sliced_multicast_load_row_major[
         type_of(tma_tensor).tile_shape,  # tma tile shape
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(dst_N // tileN, dst_M // tileM),

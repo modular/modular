@@ -14,12 +14,14 @@
 from __future__ import annotations
 
 import resource
-from unittest.mock import MagicMock, sentinel
+import time
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.utils import (
     argmedian,
+    exceeds_deadline,
     get_tokenizer,
     int_or_none,
     is_castable_to_int,
@@ -36,7 +38,6 @@ def test_get_tokenizer_passes_model_max_length_when_provided(
 ) -> None:
     from_pretrained = mocker.patch(
         "transformers.AutoTokenizer.from_pretrained",
-        return_value=sentinel.tokenizer,
     )
     mocker.patch(
         "transformers.AutoConfig.from_pretrained",
@@ -45,15 +46,18 @@ def test_get_tokenizer_passes_model_max_length_when_provided(
 
     tokenizer = get_tokenizer(
         "repo/model",
+        revision="abc123",
         model_max_length=4096,
         trust_remote_code=True,
     )
 
-    assert tokenizer is sentinel.tokenizer
+    assert tokenizer is from_pretrained.return_value
+    assert tokenizer._resolved_revision == "abc123"
     from_pretrained.assert_called_once_with(
         "repo/model",
         model_max_length=4096,
         trust_remote_code=True,
+        revision="abc123",
     )
 
 
@@ -62,19 +66,22 @@ def test_get_tokenizer_omits_model_max_length_when_unspecified(
 ) -> None:
     from_pretrained = mocker.patch(
         "transformers.AutoTokenizer.from_pretrained",
-        return_value=sentinel.tokenizer,
     )
     mocker.patch(
         "transformers.AutoConfig.from_pretrained",
         return_value=MagicMock(architectures=[]),
     )
 
-    tokenizer = get_tokenizer("repo/model", trust_remote_code=False)
+    tokenizer = get_tokenizer(
+        "repo/model", revision=None, trust_remote_code=False
+    )
 
-    assert tokenizer is sentinel.tokenizer
+    assert tokenizer is from_pretrained.return_value
+    assert tokenizer._resolved_revision is None
     from_pretrained.assert_called_once_with(
         "repo/model",
         trust_remote_code=False,
+        revision=None,
     )
 
 
@@ -204,6 +211,28 @@ def test_argmedian_even_length_picks_nearest() -> None:
     assert idx in (1, 2)
 
 
+# ---- exceeds_deadline ----
+
+
+def test_exceeds_deadline_none_is_unbounded() -> None:
+    assert exceeds_deadline(3600.0, None) is False
+
+
+def test_exceeds_deadline_false_when_sleep_fits() -> None:
+    deadline = time.perf_counter_ns() + int(10 * 1e9)
+    assert exceeds_deadline(0.1, deadline) is False
+
+
+def test_exceeds_deadline_true_when_sleep_overshoots() -> None:
+    deadline = time.perf_counter_ns() + int(0.05 * 1e9)
+    assert exceeds_deadline(5.0, deadline) is True
+
+
+def test_exceeds_deadline_zero_seconds_does_not_overshoot() -> None:
+    deadline = time.perf_counter_ns() + int(0.001 * 1e9)
+    assert exceeds_deadline(0.0, deadline) is False
+
+
 # ---- wait_for_server_ready ----
 
 
@@ -219,7 +248,9 @@ def test_wait_for_server_ready_returns_on_200(mocker: MockerFixture) -> None:
     mocker.patch("time.monotonic", side_effect=[100.0, 101.5])
     sleep = mocker.patch("time.sleep")
 
-    elapsed = wait_for_server_ready("localhost", 8000, timeout_s=60)
+    elapsed = wait_for_server_ready(
+        "localhost", 8000, timeout_s=60, backend="modular"
+    )
 
     assert elapsed == pytest.approx(1.5)
     sleep.assert_not_called()
@@ -244,7 +275,9 @@ def test_wait_for_server_ready_polls_past_non_ready(
     mocker.patch("time.monotonic", side_effect=[100.0, 101.0, 105.0])
     sleep = mocker.patch("time.sleep")
 
-    elapsed = wait_for_server_ready("localhost", 8000, timeout_s=60)
+    elapsed = wait_for_server_ready(
+        "localhost", 8000, timeout_s=60, backend="modular"
+    )
 
     assert elapsed == pytest.approx(5.0)
     assert urlopen.call_count == 2
@@ -259,7 +292,7 @@ def test_wait_for_server_ready_raises_on_timeout(
     sleep = mocker.patch("time.sleep")
 
     with pytest.raises(RuntimeError, match="not ready"):
-        wait_for_server_ready("localhost", 8000, timeout_s=5)
+        wait_for_server_ready("localhost", 8000, timeout_s=5, backend="modular")
 
     sleep.assert_not_called()
 
@@ -287,9 +320,63 @@ def test_wait_for_server_ready_zero_timeout_tries_once(
 
     if expects_raise:
         with pytest.raises(RuntimeError):
-            wait_for_server_ready("localhost", 8000, timeout_s=0)
+            wait_for_server_ready(
+                "localhost", 8000, timeout_s=0, backend="modular"
+            )
     else:
-        wait_for_server_ready("localhost", 8000, timeout_s=0)
+        wait_for_server_ready("localhost", 8000, timeout_s=0, backend="modular")
 
     assert urlopen.call_count == 1
     sleep.assert_not_called()
+
+
+def test_wait_for_server_ready_aborts_when_liveness_fails(
+    mocker: MockerFixture,
+) -> None:
+    """A dead server aborts immediately instead of polling until timeout."""
+    urlopen = mocker.patch("urllib.request.urlopen")
+    urlopen.side_effect = ConnectionRefusedError()
+    # A long timeout: without the liveness check this would poll for ~hours.
+    mocker.patch("time.monotonic", side_effect=[100.0, 100.0])
+    sleep = mocker.patch("time.sleep")
+
+    with pytest.raises(RuntimeError, match="exited before"):
+        wait_for_server_ready(
+            "localhost",
+            8000,
+            timeout_s=120 * 60,
+            backend="modular",
+            liveness_check=lambda: False,
+        )
+
+    # Aborted on the first failed poll — no sleep, no deadline wait.
+    assert urlopen.call_count == 1
+    sleep.assert_not_called()
+
+
+def test_wait_for_server_ready_live_liveness_does_not_interfere(
+    mocker: MockerFixture,
+) -> None:
+    """A liveness check that stays True lets normal polling proceed to 200."""
+    urlopen = mocker.patch("urllib.request.urlopen")
+    urlopen.side_effect = [
+        ConnectionRefusedError(),
+        _mock_response(200),
+    ]
+    mocker.patch("time.monotonic", side_effect=[100.0, 101.0, 105.0])
+    sleep = mocker.patch("time.sleep")
+    liveness = mocker.Mock(return_value=True)
+
+    elapsed = wait_for_server_ready(
+        "localhost",
+        8000,
+        timeout_s=60,
+        backend="modular",
+        liveness_check=liveness,
+    )
+
+    assert elapsed == pytest.approx(5.0)
+    assert urlopen.call_count == 2
+    # Checked once after the first failed poll; the second poll returned 200.
+    liveness.assert_called_once_with()
+    sleep.assert_called_once_with(5.0)

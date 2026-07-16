@@ -507,7 +507,9 @@ def parse_and_plot(
 
 
 @click.command(
-    help="Drawing bar plots for kbench results", no_args_is_help=True
+    help="Drawing bar plots for kbench results",
+    no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "-help", "--help"]},
 )
 @click.option(
     "--label",

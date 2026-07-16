@@ -14,7 +14,7 @@
 
 These wrappers mirror the legacy ops.custom() calls in causal_conv1d.py,
 selective_scan.py, and fused_norm.py, but use the non-legacy F.custom() API
-with custom_extensions for loading state_space.mojopkg.
+with custom_extensions for loading state_space.mojoc/state_space.mojopkg.
 """
 
 from __future__ import annotations
@@ -38,10 +38,10 @@ _MODULAR_MOJO_MAX_IMPORT_PATH = "MODULAR_MOJO_MAX_IMPORT_PATH"
 
 @functools.cache
 def _get_state_space_paths() -> tuple[Path, ...]:
-    """Get paths to state_space.mojopkg kernel libraries.
+    """Get paths to state_space.(mojoc|mojopkg) kernel libraries.
 
-    Reads the Mojo package locations and finds state_space.mojopkg files.
-    Results are cached since paths don't change during a session.
+    Reads the Mojo package locations and finds state_space.(mojoc|mojopkg)
+    files. Results are cached since paths don't change during a session.
     """
     import_path_env = os.environ.get(_MODULAR_MOJO_MAX_IMPORT_PATH, "")
     if not import_path_env:
@@ -71,11 +71,16 @@ def _get_state_space_paths() -> tuple[Path, ...]:
             entry_path = resolved
         if not entry_path.exists():
             continue
-        if entry_path.suffix == ".mojopkg":
+        if entry_path.suffix in (".mojopkg", ".mojoc"):
             if "state_space" in entry_path.name:
                 paths.append(entry_path.resolve())
             continue
         if entry_path.is_dir():
+            for mojoc in entry_path.rglob("*.mojoc"):
+                if "state_space" in mojoc.name and (
+                    mojoc.is_file() or mojoc.is_symlink()
+                ):
+                    paths.append(mojoc.resolve())
             for mojopkg in entry_path.rglob("*.mojopkg"):
                 if "state_space" in mojopkg.name and (
                     mojopkg.is_file() or mojopkg.is_symlink()
@@ -460,7 +465,7 @@ def rms_norm_fused_residual(
         custom_extensions = _get_state_space_paths()
 
     weight_cast = weight.cast(x.dtype)
-    eps_const = F.constant(eps, dtype=x.dtype, device=CPU())
+    eps_const = F.constant(eps, dtype=DType.float32, device=CPU())
     weight_offset_const = F.constant(weight_offset, dtype=x.dtype, device=CPU())
     dropout_p_const = F.constant(0.0, dtype=x.dtype, device=CPU())
     seed_const = F.constant(0, dtype=DType.uint64, device=CPU())

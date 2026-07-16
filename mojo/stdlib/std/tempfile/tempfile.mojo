@@ -30,6 +30,7 @@ import std.os
 from std.format._utils import _WriteBufferStack
 from std.pathlib import Path
 from std.sys import CompilationTarget
+from std.random import random_ui64
 
 from std.memory import Span
 
@@ -42,7 +43,7 @@ def _get_random_name(size: Int = 8) -> String:
     var name = String(capacity=size)
     for _ in range(size):
         var rand_index = Int(
-            random.random_ui64(0, UInt64(characters.byte_length() - 1))
+            random_ui64(0, UInt64(characters.byte_length() - 1))
         )
         name += characters[rand_index]
     return name^

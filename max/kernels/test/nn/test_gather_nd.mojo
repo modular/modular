@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from std.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
-from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
+from nn.gather_scatter import gather_nd, gather_nd_shape
 
 
 # CHECK-LABEL: test_gather_nd
@@ -60,10 +61,11 @@ def main():
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
         print(
             "Output buffer:", output_data_buffer[0], ",", output_data_buffer[1]
@@ -105,10 +107,11 @@ def main():
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
         print(
             "Output buffer:",
@@ -160,10 +163,11 @@ def main():
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
         print(
             "Output buffer:",
@@ -215,10 +219,11 @@ def main():
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
         print(
             "Output buffer:",
@@ -268,10 +273,11 @@ def main():
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
         print(
             "Output buffer:",
@@ -348,10 +354,11 @@ def main():
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
         print(
             "Output buffer:",
@@ -405,10 +412,11 @@ def main():
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
 
         print(
@@ -468,10 +476,11 @@ def main():
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
         print(
             "Output buffer:",

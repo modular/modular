@@ -21,7 +21,7 @@ from kv_cache.types import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from nn.attention.cpu.mha import flash_attention_kv_cache
 from nn.attention.mha_mask import CausalMask
 from std.testing import assert_almost_equal
@@ -43,7 +43,7 @@ def execute_ragged_flash_attention[
 ) raises:
     comptime num_blocks = 32
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params
+        dtype, kv_params, ...
     ]
 
     var batch_size = len(valid_lengths_list)
@@ -138,7 +138,7 @@ def execute_ragged_flash_attention[
         ragged_ptr = q_ragged.ptr + q_ragged._offset(
             IndexList[3](ragged_start_idx, 0, 0)
         )
-        memcpy(
+        unsafe_memcpy(
             dest=padded_ptr,
             src=ragged_ptr,
             count=unpadded_seq_len * num_q_heads * kv_params.head_size,
@@ -219,23 +219,21 @@ def execute_ragged_flash_attention[
         idx += 1
 
     var kv_collection = CollectionType(
-        LayoutTensor[kv_block.dtype, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_block.dtype, Layout.row_major[6]()](
             kv_block.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 kv_block.runtime_layout.shape.value,
                 kv_block.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[
-            cache_lengths.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
+        LayoutTensor[mut=False, cache_lengths.dtype, Layout(UNKNOWN_VALUE)](
             cache_lengths.ptr,
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths.runtime_layout.shape.value,
                 cache_lengths.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[lookup_table.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+        LayoutTensor[mut=False, lookup_table.dtype, Layout(UNKNOWN_VALUE)](
             lookup_table.ptr,
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 lookup_table.runtime_layout.shape.value,

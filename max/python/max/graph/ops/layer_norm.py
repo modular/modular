@@ -13,6 +13,7 @@
 """Op implementation for layer_norm."""
 
 from max._core.dialects import kgen, mo
+from max.dtype import DType
 
 from .. import dtype_promotion
 from ..dim import StaticDim
@@ -28,21 +29,56 @@ def layer_norm(
     beta: TensorValueLike,
     epsilon: float,
 ) -> TensorValue:
-    """Performs layer normalization.
+    """Computes layer normalization over the last dimension of ``input``.
+
+    The output is ``gamma * (input - mean) / sqrt(var + epsilon) + beta``,
+    where ``mean`` and ``var`` are reduced over the last axis of ``input``
+    and broadcast back across the leading axes.
+
+    Reduction is performed in the dtype of ``input``. For numerically stable
+    normalization on float16 or bfloat16 inputs, cast to float32 before
+    calling this op and cast the result back.
+
+    For example:
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("layer_norm_example") as graph:
+            x = ops.constant([[1.0, 3.0]], DType.float32, device=device)
+            gamma = ops.constant([1.0, 1.0], DType.float32, device=device)
+            beta = ops.constant([0.0, 0.0], DType.float32, device=device)
+            graph.output(ops.layer_norm(x, gamma, beta, epsilon=1e-5))
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
+        # Each row is normalized to zero mean and unit variance.
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.allclose(result.to_numpy(), [[-1.0, 1.0]], atol=1e-3)
 
     Args:
-        input: The input tensor to normalize.
-        gamma: The gamma parameter of the normalization.
-        beta: The beta parameter of the normalization.
-        epsilon: The epsilon parameter of the normalization.
+        input: The tensor to normalize. Reduction runs over the last axis.
+        gamma: The scale applied after normalization. A 1-D tensor whose
+            length matches the last dimension of ``input``.
+        beta: The bias added after scaling. A 1-D tensor with the same
+            shape as ``gamma``.
+        epsilon: A small positive constant added to the variance for
+            numerical stability.
 
     Returns:
-        A graph tensor value with the normalization applied.
+        A tensor with the same shape and dtype as ``input``.
 
     Raises:
-        ValueError: If gamma size doesn't match the last dimension of input.
-        ValueError: If beta size doesn't match the last dimension of input.
-        ValueError: If epsilon is not positive.
+        ValueError: If ``gamma`` or ``beta`` does not match the last
+            dimension of ``input``, or if ``epsilon`` is not positive.
     """
     if isinstance(gamma, TensorValue) and isinstance(
         input.shape[-1], StaticDim
@@ -52,7 +88,8 @@ def layer_norm(
         # Check that gamma size matches the last dimension of input
         if gamma_tensor.shape[0] != input.shape[-1]:
             raise ValueError(
-                f"Gamma size {gamma_tensor.shape[0]} does not match dimension of reduction {input.shape[-1]}."
+                f"Gamma size {gamma_tensor.shape[0]} does not match dimension"
+                f" of reduction {input.shape[-1]}."
             )
 
     if isinstance(beta, TensorValue) and isinstance(input.shape[-1], StaticDim):
@@ -61,7 +98,8 @@ def layer_norm(
         # Check that beta size matches the last dimension of input
         if beta_tensor.shape[0] != input.shape[-1]:
             raise ValueError(
-                f"Beta size {beta_tensor.shape[0]} does not match dimension of reduction {input.shape[-1]}."
+                f"Beta size {beta_tensor.shape[0]} does not match dimension of"
+                f" reduction {input.shape[-1]}."
             )
 
     # Check that epsilon is positive
@@ -76,6 +114,6 @@ def layer_norm(
         input,
         gamma,
         beta,
-        constant(epsilon, input.dtype, DeviceRef.CPU()),
+        constant(epsilon, DType.float32, DeviceRef.CPU()),
         kgen.ParamDeclArrayAttr([]),
     )[0].tensor

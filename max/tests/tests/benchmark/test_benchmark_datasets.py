@@ -13,13 +13,17 @@
 
 """Unit tests for benchmark_shared.datasets module."""
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
 
+import msgspec
 import pytest
 from max.benchmark.benchmark_shared.datasets import (
     DATASET_REGISTRY,
+    ArtificialAnalysisBenchmarkDataset,
     ArxivSummarizationBenchmarkDataset,
     AxolotlBenchmarkDataset,
     BenchmarkDataset,
@@ -29,6 +33,7 @@ from max.benchmark.benchmark_shared.datasets import (
     InstructCoderBenchmarkDataset,
     LocalBenchmarkDataset,
     LocalImageBenchmarkDataset,
+    NemotronOpenCodeBenchmarkDataset,
     ObfuscatedConversationsBenchmarkDataset,
     PixelGenerationSampledRequest,
     RandomBenchmarkDataset,
@@ -39,13 +44,67 @@ from max.benchmark.benchmark_shared.datasets import (
     SyntheticPixelBenchmarkDataset,
     VisionArenaBenchmarkDataset,
 )
+from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
+    TokenizerPool,
+)
+from max.benchmark.benchmark_shared.datasets.chat_judge import (
+    ChatJudgeBenchmarkDataset,
+)
 
 # Import the module under test
 from max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit import (
+    build_chat_samples_from_user_text_pool,
     resolve_constant_delay_ms,
+)
+from max.benchmark.benchmark_shared.datasets.nemotron_opencode import (
+    NEMOTRON_OPENCODE_REPO_ID,
+    AnthropicTool,
+    _anthropic_tool_to_openai,
 )
 from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+
+
+class _FakeTokenizer:
+    """Picklable stand-in for `PreTrainedTokenizerBase` used by unit tests.
+
+    `_fake_loader` constructs one per spawn worker; the parent uses an
+    instance of this class directly. Behavior is deterministic so tests
+    can assert on outputs (no Mock call-count plumbing).
+    """
+
+    name_or_path = "_fake_"
+    vocab_size = 1000
+    unk_token_id = None
+    all_special_ids: frozenset[int] = frozenset({0, 1, 2})
+
+    def __init__(self, model_max_length: int = 4096) -> None:
+        self.model_max_length = model_max_length
+
+    def encode(
+        self, text: str, add_special_tokens: bool = False, **_: object
+    ) -> list[int]:
+        # Length-aware so multiturn-fit tests that scale messages to a
+        # target token count round-trip through encode→decode→encode and
+        # see a meaningful encoded length.
+        return list(range(max(4, len(text))))
+
+    def decode(
+        self, ids: list[int], skip_special_tokens: bool = False, **_: object
+    ) -> str:
+        return "Z" * len(ids)
+
+    def convert_tokens_to_ids(self, token: str) -> int:
+        return 223
+
+
+def _fake_loader(
+    name_or_path: str,
+    model_max_length: int | None,
+    trust_remote_code: bool,
+    revision: str | None,
+) -> _FakeTokenizer:
+    return _FakeTokenizer(model_max_length=model_max_length or 4096)
 
 
 def test_dataset_registry_structure() -> None:
@@ -64,8 +123,11 @@ def test_dataset_registry_contents() -> None:
     """Test that the registry contains expected datasets."""
     expected_datasets = {
         "agentic-code",
+        "artificial-analysis",
         "arxiv-summarization",
+        "chat-judge",
         "instruct-coder",
+        "nemotron-opencode",
         "sharegpt",
         "code_debug",
         "random",
@@ -88,6 +150,7 @@ def test_dataset_registry_multiturn_support_mapping() -> None:
         "arxiv-summarization": False,
         "code_debug": True,
         "instruct-coder": True,
+        "nemotron-opencode": True,
         "random": True,
         "synthetic": True,
         "sharegpt": False,
@@ -316,86 +379,62 @@ def test_random_from_flags() -> None:
 
 def test_random_sample_requests() -> None:
     """Test sampling random requests."""
-    # Mock tokenizer
-    mock_tokenizer = Mock(spec=PreTrainedTokenizerBase)
-    mock_tokenizer.vocab_size = 1000
-    mock_tokenizer.model_max_length = 50
-    mock_tokenizer.all_special_ids = {0, 1, 2}
-    mock_tokenizer.encode.return_value = [100]
-    mock_tokenizer.decode.return_value = "random text"
-    mock_tokenizer.return_value.input_ids = [100, 101, 102]
-    mock_tokenizer.convert_tokens_to_ids = Mock(return_value=223)
-    mock_tokenizer.unk_token_id = None
-
+    tok = _FakeTokenizer(model_max_length=50)
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
-    samples = dataset.sample_requests(
-        num_requests=2,
-        tokenizer=mock_tokenizer,
-        input_len="N(50, 5)",
-        output_len="N(20, 2)",
-        sys_prompt_ratio=0.1,
-        max_num_unique_sys_prompt=1,
-    )
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = dataset.sample_requests(
+            num_requests=2,
+            tokenizer=tok,
+            pool=pool,
+            input_len="N(50, 5)",
+            output_len="N(20, 2)",
+            sys_prompt_ratio=0.1,
+            max_num_unique_sys_prompt=1,
+        )
 
     assert len(samples.requests) == 2
     for request in samples.requests:
         assert isinstance(request, SampledRequest)
 
 
-def _make_mock_tokenizer(
-    vocab_size: int = 1000,
-    model_max_length: int = 4096,
-    input_ids: list[int] | None = None,
-) -> Mock:
-    """Return a minimal mock tokenizer for random-dataset unit tests."""
-    tok = Mock(spec=PreTrainedTokenizerBase)
-    tok.vocab_size = vocab_size
-    tok.model_max_length = model_max_length
-    tok.all_special_ids = {0, 1, 2}
-    tok.encode.return_value = [100]
-    tok.decode.return_value = "random text"
-    tok.convert_tokens_to_ids = Mock(return_value=223)
-    tok.unk_token_id = None
-    result = Mock()
-    result.input_ids = input_ids if input_ids is not None else [100, 101, 102]
-    tok.return_value = result
-    return tok
-
-
 def test_shared_contexts_empty_when_no_sys_prompt() -> None:
     """shared_contexts is empty when sys_prompt_ratio is 0."""
-    tok = _make_mock_tokenizer()
+    tok = _FakeTokenizer()
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
-    samples = dataset.sample_requests(
-        num_requests=5,
-        tokenizer=tok,
-        input_len="50",
-        output_len="10",
-        sys_prompt_ratio=0.0,
-        max_num_unique_sys_prompt=1,
-    )
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = dataset.sample_requests(
+            num_requests=5,
+            tokenizer=tok,
+            pool=pool,
+            input_len="50",
+            output_len="10",
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+        )
 
     assert samples.shared_contexts == []
 
 
 def test_shared_contexts_one_entry_per_unique_idx() -> None:
     """shared_contexts has exactly one SharedContext per unique sys_prompt_idx."""
-    tok = _make_mock_tokenizer()
+    tok = _FakeTokenizer()
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
-    samples = dataset.sample_requests(
-        num_requests=10,
-        tokenizer=tok,
-        input_len="50",
-        output_len="10",
-        sys_prompt_ratio=0.3,
-        max_num_unique_sys_prompt=1,
-    )
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = dataset.sample_requests(
+            num_requests=10,
+            tokenizer=tok,
+            pool=pool,
+            input_len="50",
+            output_len="10",
+            sys_prompt_ratio=0.3,
+            max_num_unique_sys_prompt=1,
+        )
 
     assert len(samples.shared_contexts) == 1
     assert isinstance(samples.shared_contexts[0], SharedContext)
@@ -403,19 +442,21 @@ def test_shared_contexts_one_entry_per_unique_idx() -> None:
 
 def test_shared_contexts_at_most_max_unique() -> None:
     """shared_contexts has at most max_num_unique_sys_prompt entries."""
-    tok = _make_mock_tokenizer()
+    tok = _FakeTokenizer()
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
     max_unique = 3
-    samples = dataset.sample_requests(
-        num_requests=30,
-        tokenizer=tok,
-        input_len="50",
-        output_len="10",
-        sys_prompt_ratio=0.3,
-        max_num_unique_sys_prompt=max_unique,
-    )
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = dataset.sample_requests(
+            num_requests=30,
+            tokenizer=tok,
+            pool=pool,
+            input_len="50",
+            output_len="10",
+            sys_prompt_ratio=0.3,
+            max_num_unique_sys_prompt=max_unique,
+        )
 
     assert len(samples.shared_contexts) <= max_unique
     for entry in samples.shared_contexts:
@@ -756,6 +797,42 @@ def test_image_edit_dataset_sample_requests(tmp_path: Path) -> None:
     assert request.image_options.guidance_scale == 3.5
 
 
+def test_image_edit_dataset_forwards_num_frames(tmp_path: Path) -> None:
+    """image-to-video reuses the local-image dataset and threads num_frames."""
+    image_path = tmp_path / "images" / "sample.png"
+    _write_test_image(image_path)
+    dataset_path = tmp_path / "image_edit.jsonl"
+    dataset_path.write_text(
+        json.dumps(
+            {
+                "prompt": "Pan across the scene",
+                "image_path": "images/sample.png",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    dataset = BenchmarkDataset.from_flags(
+        dataset_name="local-image",
+        dataset_path=str(dataset_path),
+    )
+    assert isinstance(dataset, LocalImageBenchmarkDataset)
+
+    samples = dataset.sample_requests(
+        num_requests=1,
+        tokenizer=None,
+        image_width=832,
+        image_height=480,
+        num_frames=81,
+    )
+    request = samples.requests[0]
+    assert isinstance(request, PixelGenerationSampledRequest)
+    assert request.input_image_paths == [str(image_path.resolve())]
+    assert request.image_options is not None
+    assert request.image_options.num_frames == 81
+
+
 def test_image_edit_dataset_invalid_jsonl(tmp_path: Path) -> None:
     dataset_path = tmp_path / "bad.jsonl"
     dataset_path.write_text("{not-json}\n", encoding="utf-8")
@@ -798,30 +875,20 @@ def test_synthetic_pixel_dataset_sample_requests_for_image_to_image() -> None:
 def test_random_multiturn_emits_zero_prefix_turns() -> None:
     """gen_multiturn_random_requests always emits prefix_turns=0; the runner
     owns warmup prefix-turn assignment via _pick_warmup_population."""
-    mock_tokenizer = Mock(spec=PreTrainedTokenizerBase)
-    mock_tokenizer.vocab_size = 1000
-    mock_tokenizer.model_max_length = 4096
-    mock_tokenizer.all_special_ids = {0, 1, 2}
-    mock_tokenizer.encode.return_value = [100]
-    mock_tokenizer.decode.return_value = "random text"
-    mock_tokenizer.convert_tokens_to_ids = Mock(return_value=223)
-    mock_tokenizer.unk_token_id = None
-    mock_result = Mock()
-    mock_result.input_ids = list(range(32))
-    mock_tokenizer.return_value = mock_result
-
+    tok = _FakeTokenizer()
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
-    samples = dataset.gen_multiturn_random_requests(
-        input_len=32,
-        output_len=16,
-        num_chat_sessions=20,
-        num_turns=3,
-        delay_between_chat_turns=500,
-        tokenizer=mock_tokenizer,
-        sys_prompt_ratio=0.0,
-        max_num_unique_sys_prompt=1,
-    )
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = dataset.gen_multiturn_random_requests(
+            input_len=32,
+            output_len=16,
+            num_chat_sessions=20,
+            num_turns=3,
+            delay_between_chat_turns=500,
+            pool=pool,
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+        )
 
     assert all(s.prefix_turns == 0 for s in samples.chat_sessions)
 
@@ -840,35 +907,23 @@ def test_instruct_coder_multiturn_fit_distributions(
     body = "hello world " * 80
     mock_load_pairs.return_value = [(body, "line\n" * 60)] * 400
 
-    mock_tokenizer = Mock(spec=PreTrainedTokenizerBase)
-    mock_tokenizer.model_max_length = 50_000
-    mock_tokenizer.vocab_size = 1000
-    mock_tokenizer.all_special_ids = {0, 1}
-    mock_tokenizer.unk_token_id = None
-    mock_tokenizer.convert_tokens_to_ids = Mock(return_value=99)
-
-    def _tok(text: str, add_special_tokens: bool = False) -> list[int]:
-        return list(range(max(4, len(text))))
-
-    mock_tokenizer.encode = Mock(side_effect=_tok)
-    mock_tokenizer.decode = Mock(
-        side_effect=lambda ids, skip_special_tokens=False: "Z" * len(ids)
-    )
-
+    tok = _FakeTokenizer(model_max_length=50_000)
     dataset = InstructCoderBenchmarkDataset()
     dataset.dataset_path = "/tmp/instruct_coder_mock.json"
 
-    samples = dataset.gen_multiturn_sessions(
-        num_sessions=4,
-        tokenizer=mock_tokenizer,
-        shuffle=False,
-        fit_length_distributions=True,
-        num_turns="DU(3,3)",
-        input_len="80",
-        output_len="20",
-        delay_between_turns_dist="100",
-        sys_prompt_ratio=0.0,
-    )
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = dataset.gen_multiturn_sessions(
+            num_sessions=4,
+            tokenizer=tok,
+            pool=pool,
+            shuffle=False,
+            fit_length_distributions=True,
+            num_turns="DU(3,3)",
+            input_len="80",
+            output_len="20",
+            delay_between_turns_dist="100",
+            sys_prompt_ratio=0.0,
+        )
 
     assert len(samples.chat_sessions) == 4
     for session in samples.chat_sessions:
@@ -880,3 +935,578 @@ def test_instruct_coder_multiturn_fit_distributions(
         for user in session.messages[0::2]:
             assert user.source == "user"
             assert user.num_tokens == 80
+
+
+def _write_chat_judge_file(path: Path) -> None:
+    """Write a single chat-judge session: system turn + 3 user turns."""
+    path.write_text(
+        json.dumps(
+            {
+                "session_id": "s0",
+                "turns": [
+                    {"text": "You are a judge.", "role": "system"},
+                    {"text": "Item 0"},
+                    {"text": "Item 1"},
+                    {"text": "Item 2"},
+                ],
+            }
+        )
+        + "\n"
+    )
+
+
+def test_chat_judge_gen_chat_sessions_sets_per_turn_delay(
+    tmp_path: Path,
+) -> None:
+    """The delay is sampled per turn and set on every user message except
+    the final one; the system message never carries a delay."""
+    dataset_file = tmp_path / "chat_judge.jsonl"
+    _write_chat_judge_file(dataset_file)
+
+    dataset = ChatJudgeBenchmarkDataset()
+    dataset.dataset_path = str(dataset_file)
+
+    samples = dataset.gen_chat_sessions(
+        num_sessions=1,
+        tokenizer=_FakeTokenizer(),
+        shuffle=False,
+        delay_between_turns_dist="100",
+    )
+
+    (session,) = samples.chat_sessions
+    assert session.messages[0].source == "system"
+    assert session.messages[0].delay_until_next_message is None
+
+    user_messages = [m for m in session.messages if m.source == "user"]
+    assert [m.delay_until_next_message for m in user_messages] == [
+        100.0,
+        100.0,
+        None,
+    ]
+
+
+def test_chat_judge_gen_chat_sessions_no_delay_by_default(
+    tmp_path: Path,
+) -> None:
+    """Without a delay distribution, no message carries an inter-turn delay."""
+    dataset_file = tmp_path / "chat_judge.jsonl"
+    _write_chat_judge_file(dataset_file)
+
+    dataset = ChatJudgeBenchmarkDataset()
+    dataset.dataset_path = str(dataset_file)
+
+    samples = dataset.gen_chat_sessions(
+        num_sessions=1,
+        tokenizer=_FakeTokenizer(),
+        shuffle=False,
+    )
+
+    (session,) = samples.chat_sessions
+    assert all(m.delay_until_next_message is None for m in session.messages)
+
+
+def test_pool_wraps_with_pass_marker_when_exhausted() -> None:
+    """When planned turns exceed the pool, the iterator wraps and each new
+    pass prepends a ``[N] `` marker to the user body so cycled prompts stay
+    cache-distinct while still satisfying ``num_sessions``."""
+    tok = _FakeTokenizer(model_max_length=50_000)
+    pool_texts = ["alpha body text", "beta body text", "gamma body text"]
+    num_sessions = 5
+    turns_per_session = 2  # 10 total turns, pool only has 3 -> wraps
+
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = build_chat_samples_from_user_text_pool(
+            pool=pool,
+            user_text_pool=pool_texts,
+            num_sessions=num_sessions,
+            num_turns=str(turns_per_session),
+            input_len="80",
+            output_len="20",
+            delay_between_turns_dist=None,
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            shuffle_pool=False,
+            log_prefix="test-wrap",
+        )
+
+    assert len(samples.chat_sessions) == num_sessions
+    user_contents: list[str] = []
+    for session in samples.chat_sessions:
+        for user in session.messages[0::2]:
+            assert user.source == "user"
+            user_contents.append(user.content)
+
+    assert len(user_contents) == num_sessions * turns_per_session
+
+    # First pass through the pool: no marker.
+    for content in user_contents[: len(pool_texts)]:
+        assert not content.startswith("["), (
+            f"first-pass content should have no marker, got: {content!r}"
+        )
+
+    # Subsequent turns are stamped with their pass number.
+    expected_prefixes = ["[1] ", "[1] ", "[1] ", "[2] ", "[2] ", "[2] ", "[3] "]
+    for content, prefix in zip(
+        user_contents[len(pool_texts) :], expected_prefixes, strict=False
+    ):
+        assert content.startswith(prefix), (
+            f"expected {prefix!r} prefix, got: {content!r}"
+        )
+
+    # Marker token budget reservation keeps on-the-wire length close to target.
+    target_in = 80
+    for user in (
+        msg
+        for session in samples.chat_sessions
+        for msg in session.messages[0::2]
+    ):
+        assert abs(user.num_tokens - target_in) <= 4
+
+
+_BASH_TOOL_ANTHROPIC = AnthropicTool(
+    id="bash",
+    description="run a shell command",
+    inputSchema={
+        "jsonSchema": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"],
+        }
+    },
+)
+_TODOREAD_TOOL_ANTHROPIC = AnthropicTool(
+    id="todoread",
+    description="",
+    inputSchema={"jsonSchema": {}},
+)
+
+
+def _mock_nemotron_rows() -> list[dict[str, object]]:
+    """Three synthetic rows mimicking the Nemotron-SFT-OpenCode-v1 shape.
+
+    ``tools`` is in Anthropic schema (``{id, description, inputSchema:
+    {jsonSchema}}``) to match the real dataset, which records OpenCode CLI
+    sessions whose tool definitions follow the Anthropic API.
+
+    Note that ``content`` is deliberately heterogeneous: a plain ``str`` in
+    most messages but a list of content blocks in the first assistant turn.
+    This mirrors the upstream corpus and is exactly the shape that broke the
+    old pyarrow-backed loader (PERF-2714).
+    """
+    return [
+        {
+            "messages": [
+                {"role": "system", "content": "agent prompt"},
+                {"role": "user", "content": "edit file a.py"},
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "ok, calling bash"}],
+                },
+                {"role": "tool", "content": "stdout"},
+                {"role": "user", "content": "next step"},
+                {"role": "assistant", "content": "done, here is the diff"},
+            ],
+            "tools": [msgspec.to_builtins(_BASH_TOOL_ANTHROPIC)],
+        },
+        {
+            # Trace with no usable assistant reply — should be skipped by
+            # both sample_requests() and gen_multiturn_sessions().
+            "messages": [
+                {"role": "system", "content": "agent prompt"},
+                {"role": "user", "content": "hello"},
+                {"role": "tool", "content": "result"},
+            ],
+            "tools": [],
+        },
+        {
+            "messages": [
+                {"role": "user", "content": "write hello world"},
+                {"role": "assistant", "content": "print('hello world')"},
+            ],
+            "tools": [msgspec.to_builtins(_TODOREAD_TOOL_ANTHROPIC)],
+        },
+    ]
+
+
+def _mock_nemotron_jsonl_lines() -> list[bytes]:
+    """Encode :func:`_mock_nemotron_rows` as raw JSONL byte lines.
+
+    This matches what :meth:`NemotronOpenCodeBenchmarkDataset._stream_jsonl_lines`
+    yields, so patching that method drives the real msgspec line decoder.
+    """
+    return [json.dumps(row).encode("utf-8") for row in _mock_nemotron_rows()]
+
+
+@patch(
+    "max.benchmark.benchmark_shared.datasets.nemotron_opencode"
+    ".NemotronOpenCodeBenchmarkDataset._stream_jsonl_lines"
+)
+def test_nemotron_opencode_sample_requests(mock_stream: Mock) -> None:
+    """``sample_requests`` collapses each row to (history, last_assistant)."""
+    mock_stream.return_value = iter(_mock_nemotron_jsonl_lines())
+
+    tok = Mock(spec=PreTrainedTokenizerBase)
+    tok.encode = Mock(
+        side_effect=lambda text, add_special_tokens=False: [0]
+        * max(len(text), 1)
+    )
+
+    dataset = NemotronOpenCodeBenchmarkDataset()
+    samples = dataset.sample_requests(
+        num_requests=5,
+        tokenizer=tok,
+        shuffle=False,
+        min_prompt_len=1,
+        min_output_len=1,
+    )
+
+    # Row 1 (multi-turn ending on assistant) and row 3 (single user/assistant)
+    # both produce samples; row 2 (no usable assistant reply) is filtered out.
+    assert len(samples.requests) == 2
+    assert all(isinstance(r, SampledRequest) for r in samples.requests)
+    assert all(isinstance(r.prompt_formatted, list) for r in samples.requests)
+    # ``last_loaded_tool_schemas`` retains the raw Anthropic schemas straight
+    # from the dataset rows (for inspection / follow-up work).
+    assert dataset.last_loaded_tool_schemas == [
+        [_BASH_TOOL_ANTHROPIC],
+        [_TODOREAD_TOOL_ANTHROPIC],
+    ]
+    # ``SampledRequest.tools`` carries the OpenAI-translated schemas so the
+    # chat-completions driver can forward them as ``tools=[...]`` against the
+    # MAX OpenAI-compatible server.
+    assert [r.tools for r in samples.requests] == [
+        [_anthropic_tool_to_openai(_BASH_TOOL_ANTHROPIC)],
+        [_anthropic_tool_to_openai(_TODOREAD_TOOL_ANTHROPIC)],
+    ]
+    # ``ignore_eos=True`` always, matching sharegpt/arxiv (decode the full
+    # target length even when ``output_len`` came from the dataset).
+    assert all(r.ignore_eos is True for r in samples.requests)
+    # The raw JSONL stream was consumed exactly once.
+    mock_stream.assert_called_once()
+
+
+@patch(
+    "max.benchmark.benchmark_shared.datasets.nemotron_opencode"
+    ".NemotronOpenCodeBenchmarkDataset._stream_jsonl_lines"
+)
+def test_nemotron_opencode_disable_tool_calls(mock_stream: Mock) -> None:
+    """``enable_tool_calls=False`` drops rows containing tool messages."""
+    mock_stream.return_value = iter(_mock_nemotron_jsonl_lines())
+
+    tok = Mock(spec=PreTrainedTokenizerBase)
+    tok.encode = Mock(
+        side_effect=lambda text, add_special_tokens=False: [0]
+        * max(len(text), 1)
+    )
+
+    dataset = NemotronOpenCodeBenchmarkDataset()
+    samples = dataset.sample_requests(
+        num_requests=5,
+        tokenizer=tok,
+        shuffle=False,
+        enable_tool_calls=False,
+        min_prompt_len=1,
+        min_output_len=1,
+    )
+
+    # Only row 3 has zero tool/non-chat messages.
+    assert len(samples.requests) == 1
+    # With tool calls disabled, ``tools`` is cleared even when the row has
+    # schemas attached.
+    assert samples.requests[0].tools is None
+
+
+@patch(
+    "max.benchmark.benchmark_shared.datasets.nemotron_opencode"
+    ".NemotronOpenCodeBenchmarkDataset._stream_jsonl_lines"
+)
+def test_nemotron_opencode_gen_multiturn(mock_stream: Mock) -> None:
+    """Multi-turn conversion alternates user/assistant and drops tools."""
+    mock_stream.return_value = iter(_mock_nemotron_jsonl_lines())
+
+    tok = Mock(spec=PreTrainedTokenizerBase)
+    tok.encode = Mock(
+        side_effect=lambda text, add_special_tokens=False: [0]
+        * max(len(text), 1)
+    )
+
+    dataset = NemotronOpenCodeBenchmarkDataset()
+    samples = dataset.gen_multiturn_sessions(
+        num_sessions=5,
+        tokenizer=tok,
+        shuffle=False,
+        min_input_len=1,
+        min_output_len=1,
+    )
+
+    # Row 1 yields 2 user/assistant turns, row 2 has no assistant pair and
+    # is dropped, and row 3 yields 1 turn.
+    assert len(samples.chat_sessions) == 2
+    for session in samples.chat_sessions:
+        # Alternation must hold.
+        for i, msg in enumerate(session.messages):
+            assert msg.source == ("user" if i % 2 == 0 else "assistant")
+        # Assistant content placeholders are empty (filled by the live model
+        # at run time, like agentic-code / instruct-coder).
+        for assistant in session.messages[1::2]:
+            assert assistant.content == ""
+
+
+@patch(
+    "max.benchmark.benchmark_shared.datasets.nemotron_opencode"
+    ".NemotronOpenCodeBenchmarkDataset._stream_jsonl_lines"
+)
+def test_nemotron_opencode_iter_rows_heterogeneous_content(
+    mock_stream: Mock,
+) -> None:
+    """Regression for PERF-2714: ``content`` may be a string or a list.
+
+    The old ``datasets.load_dataset`` path unified a single Arrow schema
+    across rows via pyarrow, which cannot represent ``messages[].content``
+    being a ``str`` in one row and a list of content blocks in another. It
+    aborted with ``ArrowInvalid: ... changed from string to array`` and then a
+    whole-file ``pandas.read_json`` fallback failed with
+    ``ValueError: Trailing data``. Decoding each JSONL line independently with
+    msgspec must handle both shapes without error.
+    """
+    lines = [
+        json.dumps(
+            {"messages": [{"role": "user", "content": "plain string"}]}
+        ).encode("utf-8"),
+        json.dumps(
+            {
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "block list"}],
+                    }
+                ]
+            }
+        ).encode("utf-8"),
+        # A malformed line must be skipped, not abort the whole stream.
+        b"{ this is not valid json",
+        # An empty line is also tolerated.
+        b"",
+    ]
+    mock_stream.return_value = iter(lines)
+
+    dataset = NemotronOpenCodeBenchmarkDataset()
+    rows = list(dataset._iter_rows())
+
+    # The empty line is dropped by ``_stream_jsonl_lines`` in production; here
+    # the mock yields it directly, so msgspec's decoder rejects it. Either
+    # way, only the two well-formed rows survive.
+    assert len(rows) == 2
+    assert rows[0].messages is not None
+    assert rows[0].messages[0].content == "plain string"
+    assert rows[1].messages is not None
+    content = rows[1].messages[0].content
+    assert isinstance(content, list)
+    assert content[0].text == "block list"
+
+
+def test_nemotron_opencode_stream_path_uses_repo_id() -> None:
+    """``_stream_jsonl_lines`` targets the dataset blob under ``datasets/``."""
+    dataset = NemotronOpenCodeBenchmarkDataset()
+    dataset.subset = "general"
+    captured: dict[str, str] = {}
+
+    class _FakeFile:
+        def __enter__(self) -> _FakeFile:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def __iter__(self):
+            return iter([b'{"messages": []}\n'])
+
+    class _FakeFs:
+        def open(self, path: str, mode: str) -> _FakeFile:
+            captured["path"] = path
+            captured["mode"] = mode
+            return _FakeFile()
+
+    with patch(
+        "max.benchmark.benchmark_shared.datasets.nemotron_opencode"
+        ".HfFileSystem",
+        return_value=_FakeFs(),
+    ):
+        lines = list(dataset._stream_jsonl_lines())
+
+    assert lines == [b'{"messages": []}']
+    assert captured["mode"] == "rb"
+    assert (
+        captured["path"]
+        == f"datasets/{NEMOTRON_OPENCODE_REPO_ID}/general/data.jsonl"
+    )
+
+
+def test_nemotron_opencode_rejects_unknown_subset() -> None:
+    dataset = NemotronOpenCodeBenchmarkDataset()
+    dataset.subset = "does-not-exist"
+    tok = Mock(spec=PreTrainedTokenizerBase)
+    with pytest.raises(ValueError, match="Unknown Nemotron-OpenCode subset"):
+        dataset.sample_requests(num_requests=1, tokenizer=tok)
+
+
+def test_nemotron_opencode_rejects_dataset_path() -> None:
+    """``--dataset-path`` is not supported; surface that explicitly."""
+    dataset = NemotronOpenCodeBenchmarkDataset()
+    dataset.dataset_path = "/tmp/some-local.jsonl"
+    with pytest.raises(
+        ValueError, match="nemotron-opencode does not support --dataset-path"
+    ):
+        dataset.fetch()
+
+
+def test_anthropic_tool_to_openai_canonical() -> None:
+    """Canonical Anthropic shape maps to OpenAI ``{type, function}``."""
+    out = _anthropic_tool_to_openai(_BASH_TOOL_ANTHROPIC)
+    assert out == {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "run a shell command",
+            "parameters": {
+                "type": "object",
+                "properties": {"command": {"type": "string"}},
+                "required": ["command"],
+            },
+        },
+    }
+
+
+def test_anthropic_tool_to_openai_inputschema_without_jsonschema_wrapper() -> (
+    None
+):
+    """Some rows put the JSON Schema directly under ``inputSchema``."""
+    tool = AnthropicTool(
+        id="ls",
+        description="list files",
+        inputSchema={
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+        },
+    )
+    out = _anthropic_tool_to_openai(tool)
+    assert out["function"]["parameters"] == {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+    }
+
+
+def test_anthropic_tool_to_openai_missing_fields() -> None:
+    """Missing ``inputSchema`` / ``description`` collapse to safe defaults."""
+    assert _anthropic_tool_to_openai(AnthropicTool(id="noop")) == {
+        "type": "function",
+        "function": {
+            "name": "noop",
+            "description": "",
+            "parameters": {},
+        },
+    }
+
+
+# ===----------------------------------------------------------------------=== #
+# Artificial Analysis corpus generator
+# ===----------------------------------------------------------------------=== #
+
+
+def _prompt_text(req: SampledRequest) -> str:
+    """Narrow an AA text request's ``prompt_formatted`` to ``str``.
+
+    AA requests always carry a plain string prompt (no chat messages), so this
+    asserts the runtime type and satisfies MyPy for the ``str | list`` union.
+    """
+    assert isinstance(req.prompt_formatted, str)
+    return req.prompt_formatted
+
+
+def _make_aa_dataset(articles: list[str]) -> ArtificialAnalysisBenchmarkDataset:
+    """AA dataset with ``_iter_articles`` stubbed to a fixed article list."""
+    dataset = ArtificialAnalysisBenchmarkDataset()
+    dataset._iter_articles = lambda *a, **k: iter(articles)  # type: ignore[method-assign]
+    return dataset
+
+
+def test_aa_in_registry() -> None:
+    """The artificial-analysis dataset resolves through the registry."""
+    assert "artificial-analysis" in DATASET_REGISTRY
+    assert (
+        DATASET_REGISTRY["artificial-analysis"].class_name
+        == "ArtificialAnalysisBenchmarkDataset"
+    )
+
+
+def test_aa_requires_input_len() -> None:
+    """input_len is mandatory."""
+    dataset = _make_aa_dataset(["word " * 100])
+    with pytest.raises(ValueError, match="input_len is required"):
+        dataset.sample_requests(num_requests=1, tokenizer=_FakeTokenizer())
+
+
+def test_aa_sizes_prompts_to_budget_and_rotates_tasks() -> None:
+    """Prompts stay within the model-tokenizer budget and rotate tasks."""
+    # Plenty of long articles so each prompt can be filled to budget. The fake
+    # tokenizer counts ~1 token/char, so input_len must exceed the template
+    # overhead (a couple hundred chars).
+    articles = [f"alpha{i} " * 500 for i in range(20)]
+    dataset = _make_aa_dataset(articles)
+    input_len = 2000
+
+    samples = dataset.sample_requests(
+        num_requests=4,
+        tokenizer=_FakeTokenizer(),
+        output_lengths=[1000, 1500, 2000, 1000],
+        input_len=input_len,
+    )
+
+    requests = samples.requests
+    assert len(requests) == 4
+
+    # Balanced over AA's full task mix: distinct task prefixes per request.
+    leading_lines = {_prompt_text(r).split("\n", 1)[0] for r in requests}
+    assert len(leading_lines) == 4
+
+    for r, expected_out in zip(requests, [1000, 1500, 2000, 1000], strict=True):
+        # Whole prompt is sized to the model-tokenizer budget.
+        assert 0 < r.prompt_len <= input_len
+        # Output budget is honored and EOS is ignored to force min length.
+        assert r.output_len == expected_out
+        assert r.ignore_eos is True
+        assert r.encoded_images == []
+
+
+def test_aa_without_output_lengths_leaves_eos_enabled() -> None:
+    """With no output budget, requests don't force generation length."""
+    articles = [f"beta{i} " * 500 for i in range(8)]
+    dataset = _make_aa_dataset(articles)
+
+    samples = dataset.sample_requests(
+        num_requests=2,
+        tokenizer=_FakeTokenizer(),
+        input_len=2000,
+    )
+
+    for r in samples.requests:
+        assert r.output_len is None
+        assert r.ignore_eos is False
+
+
+def test_aa_sampled_output_len_caps_with_eos_enabled() -> None:
+    """A sampled output_len caps max tokens but leaves EOS enabled."""
+    articles = [f"gamma{i} " * 500 for i in range(8)]
+    dataset = _make_aa_dataset(articles)
+
+    samples = dataset.sample_requests(
+        num_requests=2,
+        tokenizer=_FakeTokenizer(),
+        input_len=2000,
+        output_len=50,  # constant distribution -> deterministic cap
+    )
+
+    for r in samples.requests:
+        # Output length is set (a runaway cap), but EOS is not ignored.
+        assert r.output_len == 50
+        assert r.ignore_eos is False
