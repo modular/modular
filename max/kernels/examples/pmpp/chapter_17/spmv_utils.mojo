@@ -13,7 +13,7 @@
 
 from std.random import random_float64, seed
 from std.collections import List
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 struct COOMatrix(DevicePassable, TrivialRegisterPassable):
@@ -21,12 +21,20 @@ struct COOMatrix(DevicePassable, TrivialRegisterPassable):
     var numNonzeros: Int
     var numRows: Int
     var numCols: Int
+
+    @__allow_legacy_any_origin_fields
     var rowIdx: UnsafePointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var colIdx: UnsafePointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var value: UnsafePointer[Float32, MutAnyOrigin]
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -54,12 +62,20 @@ struct CSRMatrix(DevicePassable, TrivialRegisterPassable):
     var numRows: Int
     var numCols: Int
     var numNonzeros: Int
+
+    @__allow_legacy_any_origin_fields
     var rowPtrs: UnsafePointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var colIdx: UnsafePointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var value: UnsafePointer[Float32, MutAnyOrigin]
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -87,11 +103,17 @@ struct ELLMatrix(DevicePassable, TrivialRegisterPassable):
     var numRows: Int
     var numCols: Int
     var nnzPerRow: Int
+
+    @__allow_legacy_any_origin_fields
     var colIdx: UnsafePointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var value: UnsafePointer[Float32, MutAnyOrigin]
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -117,12 +139,20 @@ struct CSCMatrix(DevicePassable, TrivialRegisterPassable):
     var numRows: Int
     var numCols: Int
     var numNonzeros: Int
+
+    @__allow_legacy_any_origin_fields
     var colPtrs: UnsafePointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var rowIdxs: UnsafePointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var values: UnsafePointer[Float32, MutAnyOrigin]
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -181,7 +211,7 @@ def generate_sparse_matrix(
 
 def verify(
     y_ref: List[Float32],
-    d_y: UnsafePointer[Float32, MutAnyOrigin],
+    d_y: UnsafePointer[mut=False, Float32, _],
     rows: Int,
 ) -> Bool:
     var correct = True

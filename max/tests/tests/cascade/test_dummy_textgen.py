@@ -18,14 +18,14 @@ from collections.abc import AsyncIterator
 
 import pytest
 from max.experimental.cascade import GenerateRequest, LocalRuntime
-from max.tests.tests.cascade.dummy_textgen import (
+from max.experimental.cascade.pipelines.dummy_textgen import (
     build_dummy_textgen_pipeline,
 )
 
 
 @pytest.fixture()
 async def runtime() -> AsyncIterator[LocalRuntime]:
-    async with LocalRuntime().open() as rt:
+    async with LocalRuntime() as rt:
         yield rt
 
 
@@ -35,7 +35,7 @@ async def test_textgen_pipeline(runtime: LocalRuntime) -> None:
     await pipeline.deploy(runtime)
 
     req = GenerateRequest(num_tokens=5)
-    tokens = [token async for token in pipeline.generate(req, "hello, ")]
+    tokens = [token async for token in pipeline.generate_text(req, "hello, ")]
 
     assert len(tokens) == 5
     assert all(token == "A" for token in tokens)
@@ -48,5 +48,7 @@ async def test_textgen_different_lengths(runtime: LocalRuntime) -> None:
 
     for num_tokens in [1, 3, 10]:
         request = GenerateRequest(num_tokens=num_tokens)
-        tokens = [token async for token in pipeline.generate(request, "test")]
+        tokens = [
+            token async for token in pipeline.generate_text(request, "test")
+        ]
         assert len(tokens) == num_tokens

@@ -16,7 +16,7 @@
 from std.memory import UnsafePointer, alloc
 
 
-# CHECK: use of uninitialized memory
+# CHECK: UNINIT_READ at {{.*}}: dtype={{.*}}: load matched debug allocator poison sentinel
 def main():
     var ptr = alloc[Float32](4)
 

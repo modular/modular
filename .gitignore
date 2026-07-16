@@ -163,3 +163,5 @@ examples/models/*
 
 # Kgen trace
 kgen.trace.*
+
+.bazelignore

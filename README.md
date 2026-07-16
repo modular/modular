@@ -1,8 +1,10 @@
+<!-- rumdl-disable-file MD033 MD041 MD075 -->
+
 <div align="center">
     <img src="https://modular-assets.s3.amazonaws.com/images/modular_github_logo_bg.png">
 
-[About Modular] | [Get started] | [API docs] | [Contributing]
-  | [Changelog] | [MAX Model Development]
+[About Modular] | [MAX docs] | [Mojo docs] | [Contributing]
+
 </div>
 
 ---
@@ -19,14 +21,17 @@ and tools that accelerates model serving and scales GenAI deployments. It
 abstracts away hardware complexity so you can run the most popular open
 models with industry-leading GPU and CPU performance without any code changes.
 
-![](https://docs.modular.com/images/modular-container-stack.png?20250513)
+<!-- github caches images aggressively, use a query parameter for cache busting  -->
+
+![](https://docs.modular.com/images/modular-container-stack.png?20260513)
 
 ## Get started
 
 You don't need to clone this repo.
 
-You can install Modular as a `pip` or `conda` package and then start an
-OpenAI-compatible endpoint with a model of your choice.
+You can install Modular using a `pip` or `conda` package manager like
+`uv` or `pixi` and then start an OpenAI-compatible endpoint with a model
+of your choice.
 
 To get started with the Modular Platform and serve a model using the MAX
 framework, see [the quickstart guide](https://docs.modular.com/max/get-started).
@@ -34,9 +39,11 @@ framework, see [the quickstart guide](https://docs.modular.com/max/get-started).
 > [!NOTE]
 > **Nightly vs. stable releases**
 > If you cloned the repo and want a stable release, run
-  `git checkout modular/vX.X` to match the version.
-> The `main` branch tracks nightly builds, while the `stable` branch matches
-  the latest released version.
+  `git checkout max/vX.X` to match the version.
+
+> The `main` branch tracks nightly builds.
+>
+> For more information, see [Branches](#branches).
 
 After your model endpoint is up and running, you can start sending the model
 inference requests using
@@ -66,6 +73,15 @@ For more information, see our [MAX container
 docs](https://docs.modular.com/max/container) or the [Modular Docker Hub
 repository](https://hub.docker.com/u/modular).
 
+## Get started with Mojo
+
+You don't need to clone this repo to get started with Mojo.
+
+To install Mojo and get started learning the language, see the
+[Mojo quickstart](https://mojolang.org/docs/manual/quickstart/). The
+[Mojo site](https://mojolang.org/) also features a comprehensive language guide
+with tutorials, a language reference, and API references.
+
 ## About the repo
 
 We're constantly open-sourcing more of the Modular Platform and you can find
@@ -88,17 +104,19 @@ Highlights include:
 - Code examples: [/max/examples](/max/examples) +
   [/mojo/examples](mojo/examples)
 
-This repo has two major branches:
+### Branches
 
-- The [`main`](https://github.com/modular/modular/tree/main) branch, which is
-in sync with the nightly build and subject to new bugs. Use this branch for
-[contributions](./CONTRIBUTING.md), or if you [installed the nightly
-build](https://docs.modular.com/max/packages).
+- The [`main`](https://github.com/modular/modular/tree/main) branch is in sync
+  with the nightly build and subject to new bugs. Use this branch for
+  [contributions](./CONTRIBUTING.md).
 
-- The [`stable`](https://github.com/modular/modular/tree/stable) branch, which
-is in sync with the last stable released version of Mojo. Use the examples in
-here if you [installed the stable
-build](https://docs.modular.com/max/packages).
+- MAX release branches are named `max/vX.X`.
+
+- Mojo release branches are named `mojo/vX.X.X` (Mojo uses the
+  [PEP 440](https://peps.python.org/pep-0440/) version scheme).
+
+- For stable releases prior to MAX 26.3 / Mojo 1.0.0b1, combined MAX/Mojo
+  release branches are named `modular/vX.X`.
 
 ## Contribute
 
@@ -230,11 +248,9 @@ downloaded.
 
 <!-- Header navigation links -->
 [About Modular]: https://www.modular.com/
-[Get started]: https://docs.modular.com/max/get-started
-[API docs]: https://docs.modular.com/max/api
+[MAX docs]: https://docs.modular.com/
 [Contributing]: ./CONTRIBUTING.md
-[Changelog]: https://docs.modular.com/max/changelog
-[MAX Model Development]: /max/docs/development.md
+[Mojo docs]: https://mojolang.org/docs/
 
 <!-- News & Announcements links -->
 [public-com-meet-doc]: https://modul.ar/community-meeting-doc

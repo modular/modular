@@ -111,14 +111,14 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             sep="",
         )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = (
@@ -150,11 +150,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     if simple_init():
         for m in range(Int(m.value())):
             for k in range(Int(k.value())):
-                comptime assert a_host.flat_rank >= 2
-                a_host[(Idx(m), Idx(k))] = Float32(m + k).cast[a_type]()
+                comptime assert a_host.flat_rank == 2
+                a_host[m, k] = Float32(m + k).cast[a_type]()
         for n in range(Int(n.value())):
             for k in range(Int(k.value())):
-                b_host[(Idx(n), Idx(k))] = Float32(n + k).cast[b_type]()
+                b_host[n, k] = Float32(n + k).cast[b_type]()
     else:
         rand(a_host.ptr, a_host.num_elements())
         rand(b_host.ptr, b_host.num_elements())
@@ -181,11 +181,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     @__copy_capture(c_tensor_lt)
     def epilogue_fn[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor_lt.store[alignment=alignment * size_of[c_type](),](
+        c_tensor_lt.store[store_alignment=alignment * size_of[c_type](),](
             idx, rebind[SIMD[c_type, width]](val)
         )
 
@@ -288,9 +288,9 @@ def main() raises:
                         normal_epilogue=True,
                     ](
                         ctx,
-                        Idx(Int(1000)),
-                        Idx(1024),
-                        Idx[1024 + 16](),
+                        Int(1000),
+                        Idx[1024],
+                        Idx[1024 + 16],
                     )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
@@ -308,9 +308,9 @@ def main() raises:
                         normal_epilogue=True,
                     ](
                         ctx,
-                        Idx(Int(512)),
-                        Idx(4096),
-                        Idx[1024 + 16](),
+                        Int(512),
+                        Idx[4096],
+                        Idx[1024 + 16],
                     )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
@@ -329,9 +329,9 @@ def main() raises:
                         normal_epilogue=True,
                     ](
                         ctx,
-                        Idx(Int(500)),
-                        Idx(2048),
-                        Idx(4096),
+                        Int(500),
+                        Idx[2048],
+                        Idx[4096],
                     )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
@@ -348,9 +348,9 @@ def main() raises:
                         normal_epilogue=True,
                     ](
                         ctx,
-                        Idx(Int(999)),
-                        Idx(256),
-                        Idx(128),
+                        Int(999),
+                        Idx[256],
+                        Idx[128],
                     )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
@@ -367,7 +367,7 @@ def main() raises:
                         normal_epilogue=True,
                     ](
                         ctx,
-                        Idx(Int(777)),
-                        Idx(2560),
-                        Idx(8192),
+                        Int(777),
+                        Idx[2560],
+                        Idx[8192],
                     )

@@ -48,10 +48,10 @@ from .kv_cache import (
     KVCacheInputs,
     KVCacheMetrics,
     KVCacheParams,
-    build_max_lengths_tensor,
+    build_max_lengths_tensors,
 )
 from .layer import Layer, LayerList, Module, Shardable
-from .linear import MLP, ColumnParallelLinear, GPTQLinear, Linear
+from .linear import MLP, ColumnParallelLinear, FusedMLP, GPTQLinear, Linear
 from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
 from .moe import MoE, MoEGate, MoEQuantized, forward_moe_sharded_layers
 from .norm import ConstantLayerNorm, GroupNorm, LayerNorm, RMSNorm
@@ -106,6 +106,7 @@ __all__ = [
     "DistributedTransformerBlock",
     "DynamicRotaryEmbedding",
     "Embedding",
+    "FusedMLP",
     "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
     "GPTQLinear",
@@ -132,7 +133,6 @@ __all__ = [
     "MoEQuantized",
     "Module",
     "MultiheadAttention",
-    "PagedCacheValues",
     "QuantConfig",
     "QuantFormat",
     "RMSNorm",
@@ -158,7 +158,7 @@ __all__ = [
     "WeightScaleSpec",
     "YarnRotaryEmbedding",
     "YarnScalingParams",
-    "build_max_lengths_tensor",
+    "build_max_lengths_tensors",
     "clamp",
     "forward_moe_sharded_layers",
     "split_batch",

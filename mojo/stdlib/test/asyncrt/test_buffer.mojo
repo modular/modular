@@ -35,6 +35,10 @@ def _run_badbuf(ctx: DeviceContext) raises:
     try:
         # Release the bad buffer, which should raise an exception in Mojo instead of crashing.
         _ = bad_buf^
+        # The deferred cuMemFree_v2 fires during the first synchronize (event
+        # handler runs, records a pending error). The error surfaces on the
+        # second synchronize via the pending error check.
+        ctx.synchronize()
         ctx.synchronize()
 
     except e:

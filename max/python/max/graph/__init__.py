@@ -17,9 +17,16 @@ from .dim import AlgebraicDim, Dim, DimLike, StaticDim, SymbolicDim
 from .graph import (
     DevicePlacementPolicy,
     Graph,
+    GraphBlock,
     GraphDebugConfig,
     KernelLibrary,
     Module,
+)
+from .graph import (
+    default_custom_extensions as default_custom_extensions,
+)
+from .graph import (
+    default_custom_extensions_scope as default_custom_extensions_scope,
 )
 from .type import (
     BufferType,
