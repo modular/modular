@@ -734,7 +734,7 @@ def generic_assert_output_equals[
 # prove that and rejects passing both as separately-writable arguments. Disable
 # the nested-origin exclusivity check as a stopgap; the proper fix is to give the
 # k/v views provably-disjoint origins instead of sharing the collection's.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def generic_execute_fused_qkv_cache_ragged[
     cache_t: KVCacheT,
     //,

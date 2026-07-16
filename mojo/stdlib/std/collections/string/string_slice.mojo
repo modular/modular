@@ -666,7 +666,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __eq__(self, rhs_same: Self) -> Bool:
         """Verify if a `StringSlice` is equal to another `StringSlice` with the
         same origin.
@@ -694,7 +694,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __eq__(self, rhs: StringSlice) -> Bool:
         """Verify if a `StringSlice` is equal to another `StringSlice`.
 
@@ -715,7 +715,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             return True
         return memcmp(s_ptr, rhs_ptr, s_len) == 0
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __ne__(self, rhs_same: Self) -> Bool:
         """Verify if a `StringSlice` is not equal to another `StringSlice` with
         the same origin.
@@ -729,7 +729,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return Self.__ne__(self, rhs=rhs_same)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline
     def __ne__(self, rhs: StringSlice) -> Bool:
         """Verify if span is not equal to another `StringSlice`.

@@ -197,7 +197,7 @@ comptime AMD_MLA_DECODE_FOLD_M_MAX = 128
 # rejects them as separately-writable arguments. They are distinct allocations,
 # so the check is a false positive here (proper fix: give the cache views
 # provably-disjoint origins instead of sharing the collection's).
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 @always_inline
 def flare_mla_decoding[
     rank: Int,

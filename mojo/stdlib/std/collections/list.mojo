@@ -808,7 +808,7 @@ struct List[T: Movable, /](
 
     # FIXME: This annotation is needed to support List[Span[x, o]] types with
     # mutable origins.
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def append(mut self, var value: Self.T):
         """Appends a value to this list.
 

@@ -1078,7 +1078,7 @@ struct DevicePointer[
     # Comparison
     # ===------------------------------------------------------------------=== #
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __eq__(self, other: Self) -> Bool:
         """Returns `True` if `self` and `other` reference the same buffer and
         offset.
@@ -1094,7 +1094,7 @@ struct DevicePointer[
             and self._offset == other._offset
         )
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __eq__(self, other: DevicePointer[Self.dtype, _]) -> Bool:
         """Returns `True` if `self` and `other` reference the same buffer and
         offset.
@@ -1110,7 +1110,7 @@ struct DevicePointer[
             and self._offset == other._offset
         )
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __ne__(self, other: Self) -> Bool:
         """Returns `True` if `self` and `other` differ in buffer or offset.
 
@@ -1122,7 +1122,7 @@ struct DevicePointer[
         """
         return not (self == other)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __ne__(self, other: DevicePointer[Self.dtype, _]) -> Bool:
         """Returns `True` if `self` and `other` differ in buffer or offset.
 
@@ -1134,7 +1134,7 @@ struct DevicePointer[
         """
         return not (self == other)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __lt__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` precedes `other` within the same buffer.
 
@@ -1154,7 +1154,7 @@ struct DevicePointer[
             )
         return self._offset < other._offset
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __le__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` precedes or equals `other` within the
         same buffer.
@@ -1175,7 +1175,7 @@ struct DevicePointer[
             )
         return self._offset <= other._offset
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __gt__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` follows `other` within the same buffer.
 
@@ -1195,7 +1195,7 @@ struct DevicePointer[
             )
         return self._offset > other._offset
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __ge__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` follows or equals `other` within the same
         buffer.

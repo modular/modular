@@ -261,7 +261,7 @@ def _quicksort[
 
 # This is being passed mutable origins that are taken from the same memory
 # object, so of course they alias.  The caller guarantees they don't overlap.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def _merge[
     T: Copyable,
     span_origin: MutOrigin,

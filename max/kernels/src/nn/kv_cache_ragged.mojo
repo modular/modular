@@ -2175,7 +2175,7 @@ def _matmul_kv_cache_ragged[
 # separately-writable arguments to this call. Disabling the nested-origin
 # exclusivity check is a stopgap workaround; the proper fix is to give the k/v
 # views provably-disjoint origins instead of sharing the collection's.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 @always_inline
 def _matmul_kv_cache_ragged_impl[
     dtype: DType,
@@ -2853,7 +2853,7 @@ def _unfused_qkv_matmul_ragged_paged_gguf_quantized_impl[
 # separately-writable arguments to this call. Disabling the nested-origin
 # exclusivity check is a stopgap workaround; the proper fix is to give the k/v
 # views provably-disjoint origins instead of sharing the collection's.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 @always_inline
 def _matmul_kv_cache_ragged_gguf_quantized_impl[
     cache_t: KVCacheT,

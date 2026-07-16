@@ -819,7 +819,7 @@ struct Pointer[
         """
         self = self - offset
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __eq__(
         self,
@@ -835,7 +835,7 @@ struct Pointer[
         """
         return Int(self) == Int(rhs)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __eq__(self, rhs: Self) -> Bool:
         """Returns True if the two pointers are equal.
@@ -848,7 +848,7 @@ struct Pointer[
         """
         return Int(self) == Int(rhs)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __ne__(
         self,
@@ -864,7 +864,7 @@ struct Pointer[
         """
         return not (self == rhs)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __ne__(self, rhs: Self) -> Bool:
         """Returns True if the two pointers are not equal.
@@ -877,7 +877,7 @@ struct Pointer[
         """
         return not (self == rhs)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __lt__(
         self,
@@ -893,7 +893,7 @@ struct Pointer[
         """
         return Int(self) < Int(rhs)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __lt__(self, rhs: Self) -> Bool:
         """Returns True if this pointer represents a lower address than rhs.
@@ -906,7 +906,7 @@ struct Pointer[
         """
         return Int(self) < Int(rhs)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __le__(
         self,
@@ -923,7 +923,7 @@ struct Pointer[
         """
         return Int(self) <= Int(rhs)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __le__(self, rhs: Self) -> Bool:
         """Returns True if this pointer represents a lower than or equal
@@ -937,7 +937,7 @@ struct Pointer[
         """
         return Int(self) <= Int(rhs)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __gt__(
         self,
@@ -954,7 +954,7 @@ struct Pointer[
         """
         return Int(self) > Int(rhs)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __gt__(self, rhs: Self) -> Bool:
         """Returns True if this pointer represents a higher address than rhs.
@@ -968,7 +968,7 @@ struct Pointer[
         """
         return Int(self) > Int(rhs)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __ge__(
         self,
@@ -986,7 +986,7 @@ struct Pointer[
         """
         return Int(self) >= Int(rhs)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __ge__(self, rhs: Self) -> Bool:
         """Returns True if this pointer represents a higher than or equal

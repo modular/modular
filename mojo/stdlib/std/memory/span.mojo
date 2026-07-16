@@ -625,7 +625,7 @@ struct Span[
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __eq__(
         self, rhs: Span[Self.T, _]
     ) -> Bool where conforms_to(Self.T, Equatable):
