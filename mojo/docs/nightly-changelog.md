@@ -319,6 +319,10 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `StringSlice.startswith()` and `StringSlice.endswith()` now use a direct
+  `memcmp` against the prefix/suffix bytes instead of going through `find()`,
+  avoiding the cost of a full search when the answer is determined by a single
+  bounded comparison.
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
   `destroy_func`, so it can clear a `Dict` whose key or value type is not
