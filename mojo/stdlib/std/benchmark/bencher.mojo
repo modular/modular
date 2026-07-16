@@ -18,6 +18,7 @@ It includes support for throughput metrics, warmup iterations, batch execution,
 and both CPU and GPU kernel benchmarking.
 """
 
+from . import Report, Unit
 import std.time
 from std.collections import Dict, Optional
 import std.format._utils as fmt
@@ -437,7 +438,7 @@ struct BenchConfig(Copyable):
 
 
 @fieldwise_init
-struct BenchId:
+struct BenchId(Copyable, Equatable, Hashable, Writable):
     """Defines a benchmark Id struct to identify and represent a particular benchmark execution.
     """
 
@@ -573,7 +574,7 @@ struct Bench(Writable):
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
-            ctx.enqueue_function_experimental[example_kernel](
+            ctx.enqueue_function[example_kernel](
                 grid_dim=shape[0], block_dim=shape[1]
             )
 
@@ -724,7 +725,7 @@ struct Bench(Writable):
 
     def bench_with_input[
         T: AnyType,
-        FuncType: def(mut Bencher, T) unified -> None,
+        FuncType: def(mut Bencher, T) -> None,
     ](
         mut self,
         func: FuncType,
@@ -786,7 +787,7 @@ struct Bench(Writable):
 
     def bench_with_input[
         T: TrivialRegisterPassable,
-        FuncType: def(mut Bencher, T) unified -> None,
+        FuncType: def(mut Bencher, T) -> None,
     ](
         mut self,
         func: FuncType,
@@ -844,7 +845,7 @@ struct Bench(Writable):
         """
 
         @always_inline
-        def func_unified(mut b: Bencher, ctx: DeviceContext, i: Int) unified {}:
+        def func_unified(mut b: Bencher, ctx: DeviceContext, i: Int) {}:
             try:
                 bench_fn(b, ctx, i)
             except e:
@@ -854,7 +855,7 @@ struct Bench(Writable):
 
     @always_inline
     def bench_multicontext[
-        FuncType: def(mut Bencher, DeviceContext, Int) unified -> None,
+        FuncType: def(mut Bencher, DeviceContext, Int) -> None,
     ](
         mut self,
         func: FuncType,
@@ -960,7 +961,7 @@ struct Bench(Writable):
 
     @always_inline
     def bench_function[
-        FuncType: def() unified -> None,
+        FuncType: def() -> None,
     ](
         mut self,
         func: FuncType,
@@ -986,7 +987,7 @@ struct Bench(Writable):
         @always_inline
         def bench_iter(
             mut b: Bencher,
-        ) unified {read func,}:
+        ) {read func,}:
             b.iter(func)
 
         self.bench_function(bench_iter, bench_id, measures=measures)
@@ -1067,7 +1068,7 @@ struct Bench(Writable):
             self._test[bench_with_abort_on_err]()
 
     def bench_function[
-        FuncType: def(mut Bencher) unified -> None,
+        FuncType: def(mut Bencher) -> None,
     ](
         mut self,
         func: FuncType,
@@ -1104,13 +1105,13 @@ struct Bench(Writable):
         """
 
         @always_inline
-        def func_unified(mut b: Bencher) unified {}:
+        def func_unified(mut b: Bencher) {}:
             bench_fn(b)
 
         self._test(func_unified)
 
     def _test[
-        FuncType: def(mut Bencher) unified -> None,
+        FuncType: def(mut Bencher) -> None,
     ](mut self, func: FuncType) raises:
         """Tests an input function by executing it only once.
 
@@ -1144,13 +1145,13 @@ struct Bench(Writable):
         """
 
         @always_inline
-        def func_unified(mut b: Bencher) unified {}:
+        def func_unified(mut b: Bencher) {}:
             user_bench_fn(b)
 
         self._bench(func_unified, bench_id, measures^, fixed_iterations)
 
     def _bench[
-        FuncType: def(mut Bencher) unified -> None,
+        FuncType: def(mut Bencher) -> None,
     ](
         mut self,
         func: FuncType,
@@ -1170,8 +1171,7 @@ struct Bench(Writable):
             fixed_iterations: Just run a fixed number of iterations.
         """
 
-        @parameter
-        def bench_fn(mut b: Bencher):
+        def bench_fn(mut b: Bencher) {ref}:
             """Executes benchmark for a target function.
 
             Args:
@@ -1184,9 +1184,8 @@ struct Bench(Writable):
             else:
                 func(b)
 
-        @parameter
         @always_inline
-        def benchmark_fn(num_iters: Int) raises -> Int:
+        def benchmark_fn(num_iters: Int) raises {ref} -> Int:
             """Executes benchmark for a target function.
 
             Args:
@@ -1209,10 +1208,11 @@ struct Bench(Writable):
         var res: Report
 
         if fixed_iterations:
-            res = _run_impl_fixed[benchmark_fn](fixed_iterations.value())
+            res = _run_impl_fixed(benchmark_fn, fixed_iterations.value())
         else:
             res = _run_impl(
-                _RunOptions[benchmark_fn](
+                _RunOptions(
+                    timing_fn=benchmark_fn,
                     num_warmup_iters=self.config.num_warmup_iters,
                     max_iters=self.config.max_iters,
                     min_runtime_secs=self.config.min_runtime_secs,
@@ -1538,12 +1538,12 @@ struct Bencher(RegisterPassable):
         """
 
         @always_inline
-        def unified_closure() unified {}:
+        def unified_closure() {}:
             iter_fn()
 
         self.iter(unified_closure)
 
-    def iter[IterFn: def() unified](mut self, f: IterFn):
+    def iter[IterFn: def()](mut self, f: IterFn):
         """Returns the total elapsed time by running a target closure a
         particular number of times.
 
@@ -1573,18 +1573,18 @@ struct Bencher(RegisterPassable):
         """
 
         @always_inline
-        def iter_unified() unified {}:
+        def iter_unified() {}:
             iter_fn()
 
         @always_inline
-        def preproc_unified() unified {}:
+        def preproc_unified() {}:
             preproc_fn()
 
         self.iter_preproc(iter_unified, preproc_unified)
 
     def iter_preproc[
-        IterFn: def() unified -> None,
-        PreprocFn: def() unified -> None,
+        IterFn: def() -> None,
+        PreprocFn: def() -> None,
     ](mut self, iter_fn: IterFn, preproc_fn: PreprocFn):
         """Returns the total elapsed time by running a target function a particular
         number of times.
@@ -1618,7 +1618,7 @@ struct Bencher(RegisterPassable):
             abort(String(e))
 
     def iter_custom[
-        FuncType: def(Int) unified -> Int,
+        FuncType: def(Int) -> Int,
     ](mut self, func: FuncType):
         """Times a target function with custom number of iterations.
 
@@ -1648,6 +1648,35 @@ struct Bencher(RegisterPassable):
             abort(String(e))
 
     def iter_custom[
+        FuncType: def(DeviceContext) raises -> None,
+    ](mut self, ref func: FuncType, ctx: DeviceContext):
+        """Times a target GPU closure with custom number of iterations via DeviceContext ctx.
+
+        Parameters:
+            FuncType: The target GPU kernel launch closure type.
+
+        Args:
+            func: The closure carrying the captured state of the kernel launch.
+            ctx: The GPU DeviceContext for launching kernel.
+
+        Notes:
+
+        This overload is intentionally separate from the parametric
+        `iter_custom[kernel_launch_fn](ctx)` form. Nested launch closures that
+        capture benchmark-local state are closure values, and the current
+        closure typing rules do not let those values compose with a
+        `def(DeviceContext) raises capturing[_]` compile-time parameter while
+        preserving their capture object. This value-taking overload forwards
+        the closure to `DeviceContext.execution_time()` so `FuncType` carries
+        the captured state.
+        """
+
+        try:
+            self.elapsed = ctx.execution_time(func, self.num_iters)
+        except e:
+            abort(String(e))
+
+    def iter_custom[
         kernel_launch_fn: def(DeviceContext, Int) raises capturing[_] -> None
     ](mut self, ctx: DeviceContext):
         """Times a target GPU function with custom number of iterations via DeviceContext ctx.
@@ -1662,6 +1691,35 @@ struct Bencher(RegisterPassable):
             self.elapsed = ctx.execution_time_iter[kernel_launch_fn](
                 self.num_iters
             )
+        except e:
+            abort(String(e))
+
+    def iter_custom[
+        FuncType: def(DeviceContext, Int) raises -> None,
+    ](mut self, ref func: FuncType, ctx: DeviceContext):
+        """Times a target GPU closure with custom number of iterations via DeviceContext ctx.
+
+        Parameters:
+            FuncType: The target GPU kernel launch closure type.
+
+        Args:
+            func: The closure carrying the captured state of the kernel launch.
+            ctx: The GPU DeviceContext for launching kernel.
+
+        Notes:
+
+        This overload is intentionally separate from the parametric
+        `iter_custom[kernel_launch_fn](ctx)` form. Nested launch closures that
+        capture benchmark-local state are closure values, and the current
+        closure typing rules do not let those values compose with a
+        `def(DeviceContext, Int) raises capturing[_]` compile-time parameter
+        while preserving their capture object. This value-taking overload
+        forwards the closure to `DeviceContext.execution_time_iter()` so
+        `FuncType` carries the captured state.
+        """
+
+        try:
+            self.elapsed = ctx.execution_time_iter(func, self.num_iters)
         except e:
             abort(String(e))
 

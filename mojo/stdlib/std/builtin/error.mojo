@@ -20,10 +20,10 @@ from std.format._utils import FormatStruct
 from std.memory import (
     ArcPointer,
     OwnedPointer,
-    alloc,
-    memcpy,
+    unsafe_memcpy,
 )
-from std.ffi import external_call
+from std.memory.alloc import alloc, Layout
+from std.ffi import CStringSlice, external_call
 import std.format._utils as fmt
 from std.sys import is_gpu
 from std.sys.info import size_of, align_of
@@ -49,7 +49,7 @@ struct StackTrace(Copyable, Movable, Writable):
     def __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: UnsafePointer[UInt8, MutExternalOrigin],
+        unsafe_from_raw_pointer: UnsafePointer[UInt8, MutUntrackedOrigin],
     ):
         """Construct a StackTrace from a raw pointer to a C string.
 
@@ -74,25 +74,18 @@ struct StackTrace(Copyable, Movable, Writable):
         # Copy the null-terminated string
         var src_ptr = copy._data.unsafe_ptr()
         var str_len = Int(_unsafe_strlen(src_ptr))
-        var new_ptr = alloc[UInt8](str_len + 1)
-        memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
+        var new_ptr = alloc(Layout[UInt8](count=str_len + 1)).unsafe_leak()
+        unsafe_memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
         self._data = OwnedPointer(unsafe_from_raw_pointer=new_ptr)
-
-    def __init__(out self, *, deinit take: Self):
-        """Move constructor.
-
-        Args:
-            take: The existing StackTrace to move from.
-        """
-        self._data = take._data^
 
     @staticmethod
     @no_inline
     def collect_if_enabled(depth: Int = 0) -> Optional[StackTrace]:
-        """Collect a stack trace if enabled by environment variable.
+        """Collect a stack trace if enabled by configuration.
 
-        This method checks the `MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment
-        variable and collects a stack trace only if it is enabled. Returns
+        This method checks the `max-debug.stack-trace-on-error` Config key
+        (settable via the `MODULAR_DEBUG=stack-trace-on-error` environment
+        variable) and collects a stack trace only if it is enabled. Returns
         `None` if stack traces are disabled, on GPU, or if collection fails.
 
         Args:
@@ -111,7 +104,7 @@ struct StackTrace(Copyable, Movable, Writable):
         if depth < 0:
             return None
 
-        var buffer = Optional[UnsafePointer[UInt8, MutExternalOrigin]]()
+        var buffer = Optional[UnsafePointer[UInt8, MutUntrackedOrigin]]()
         var num_bytes = external_call[
             "KGEN_CompilerRT_GetStackTrace", SIMDSize
         ](UnsafePointer(to=buffer), depth)
@@ -129,7 +122,11 @@ struct StackTrace(Copyable, Movable, Writable):
             writer: The object to write to.
         """
         writer.write_string(
-            StringSlice(unsafe_from_utf8_ptr=self._data.unsafe_ptr())
+            StringSlice(
+                unsafe_from_utf8=CStringSlice(
+                    unsafe_from_ptr=self._data.unsafe_ptr().bitcast[Int8]()
+                )
+            )
         )
 
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -164,7 +161,8 @@ struct Error(
 
     By default, stack trace is collected for errors created from string
     literals. Stack trace collection can be controlled via the
-    `MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment variable.
+    `max-debug.stack-trace-on-error` Config key (settable via the
+    `MODULAR_DEBUG=stack-trace-on-error` environment variable).
     """
 
     # ===-------------------------------------------------------------------===#
@@ -195,17 +193,7 @@ struct Error(
         self._error = String(value)
         self._stack_trace = StackTrace.collect_if_enabled(0)
 
-    @no_inline
     @implicit
-    def __init__(out self, value: Some[Writable]):
-        """Construct an Error object from a Writable argument.
-
-        Args:
-            value: The Writable argument to store in the error message.
-        """
-        self._error = String(value)
-        self._stack_trace = StackTrace.collect_if_enabled(0)
-
     @no_inline
     def __init__[*Ts: Writable](out self, *args: *Ts):
         """Construct an Error by concatenating a sequence of Writable arguments.

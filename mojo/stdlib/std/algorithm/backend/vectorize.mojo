@@ -23,7 +23,7 @@ from std.math import align_down
 
 @always_inline
 def vectorize[
-    func: def[width: Int](idx: Int) unified -> None,
+    func: def[width: Int](idx: Int) -> None,
     //,
     simd_width: Int,
     /,
@@ -49,7 +49,7 @@ def vectorize[
 
     ```mojo
     from std.algorithm.functional import vectorize
-    from std.memory import alloc
+    from std.memory.alloc import alloc, dealloc, Layout
     from std.sys import simd_width_of
 
     # The amount of elements to loop through
@@ -58,15 +58,18 @@ def vectorize[
     comptime simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
     def main():
-        var p = alloc[Int32](size)
+        var allocation = alloc(Layout[Int32](count=size))
+        var p = allocation.unsafe_ptr()
 
-        def closure[width: Int](i: Int) unified {mut}:
+        def closure[width: Int](i: Int) {mut}:
             print("storing", width, "els at pos", i)
-            p.store[width=width](i, i)
+            p.store[width=width](i, Int32(i))
 
         vectorize[simd_width](size, closure)
         print(p.load[width=simd_width]())
         print(p.load[width=simd_width](simd_width))
+
+        dealloc(allocation^)
     ```
 
     On a machine with a SIMD register size of 128, this will set 4xInt32 values
@@ -84,7 +87,7 @@ def vectorize[
     You can also unroll the loop to potentially improve performance at the cost
     of binary size:
 
-    ```
+    ```text
     vectorize[closure, width, unroll_factor=2](size)
     ```
 
@@ -92,7 +95,7 @@ def vectorize[
     fewer arithmetic, comparison, and conditional jump operations. The assembly
     would look like this in pseudocode:
 
-    ```
+    ```text
     closure[4](0)
     closure[4](4)
     # Remainder loop won't unroll unless `size` is passed as a parameter
@@ -128,7 +131,7 @@ def vectorize[
 
 @always_inline
 def vectorize[
-    func: def[width: Int](idx: Int, evl: Int) unified -> None,
+    func: def[width: Int](idx: Int, evl: Int) -> None,
     //,
     simd_width: Int,
     /,
@@ -164,7 +167,7 @@ def vectorize[
 
     ```mojo
     from std.algorithm.functional import vectorize
-    from std.memory import alloc
+    from std.memory.alloc import alloc, dealloc, Layout
     from std.sys import simd_width_of
     from std.math import iota
     from std.sys.intrinsics import masked_store
@@ -173,9 +176,10 @@ def vectorize[
     comptime simd_width = simd_width_of[DType.int32]()  # assumed 4 in this example
 
     def main():
-        var p = alloc[Int32](size)
+        var allocation = alloc(Layout[Int32](count=size))
+        var p = allocation.unsafe_ptr()
 
-        def closure[width: Int](i: Int, evl: Int) unified {mut}:
+        def closure[width: Int](i: Int, evl: Int) {mut}:
             print("storing", evl, "of", width, "els at pos", i)
             var val = SIMD[DType.int32, width](i)
 
@@ -192,7 +196,7 @@ def vectorize[
         print(p.load[width=simd_width]())
         print(p.load[width=simd_width](simd_width))
         print(p.load[width=2](2 * simd_width))
-        p.free()
+        dealloc(allocation^)
     ```
 
     On a machine with a SIMD register size of 128, this will set 4xInt32 values
@@ -211,7 +215,7 @@ def vectorize[
     You can also unroll the main loop to potentially improve performance at the
     cost of binary size:
 
-    ```
+    ```text
     vectorize[simd_width, unroll_factor=2](size, closure)
     ```
 
@@ -219,7 +223,7 @@ def vectorize[
     in fewer arithmetic, comparison, and conditional jump operations. In
     pseudocode:
 
-    ```
+    ```text
     closure[4](0, 4)
     closure[4](4, 4)
     closure[4](8, 2)  # single predicated tail call
@@ -255,13 +259,13 @@ def vectorize[
 
 @always_inline
 def vectorize[
-    func: def[width: Int](idx: Int) unified -> None,
+    func: def[width: Int](idx: Int) -> None,
     //,
     simd_width: Int,
     /,
     *,
     size: Int,
-    unroll_factor: Int = size if std.sys.is_gpu() else 1,
+    unroll_factor: Int = 1,
 ](closure: func):
     """Simplifies SIMD optimized loops by mapping a function across a range from
     0 to `size`, incrementing by `simd_width` at each step. The remainder of
@@ -283,7 +287,7 @@ def vectorize[
 
     ```mojo
     from std.algorithm.functional import vectorize
-    from std.memory import alloc
+    from std.memory.alloc import alloc, dealloc, Layout
     from std.sys import simd_width_of
 
     # The amount of elements to loop through
@@ -292,16 +296,19 @@ def vectorize[
     comptime simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
     def main():
-        var p = alloc[Int32](size)
+        var allocation = alloc(Layout[Int32](count=size))
+        var p = allocation.unsafe_ptr()
 
-        # The closure can capture the `p` pointer with unified {mut}
-        def closure[width: Int](i: Int) unified {mut}:
+        # The closure can capture the `p` pointer with {mut}
+        def closure[width: Int](i: Int) {mut}:
             print("storing", width, "els at pos", i)
             p.store[width=width](i, i)
 
         vectorize[simd_width](size, closure)
         print(p.load[width=simd_width]())
         print(p.load[width=simd_width](simd_width))
+
+        dealloc(allocation^)
     ```
 
     On a machine with a SIMD register size of 128, this will set 4xInt32 values
@@ -322,7 +329,7 @@ def vectorize[
     You can also unroll the main loop to potentially improve performance at the
     cost of binary size:
 
-    ```
+    ```text
     vectorize[width, size=size, unroll_factor=2](closure)
     ```
 
@@ -330,7 +337,7 @@ def vectorize[
     fewer arithmetic, comparison, and conditional jump operations. The assembly
     would look like this in pseudocode:
 
-    ```
+    ```text
     closure[4](0)
     closure[4](4)
     closure[2](8)

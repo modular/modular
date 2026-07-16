@@ -40,6 +40,8 @@ from std.gpu.memory import (
 from std.gpu.compute.mma import mma
 from layout.layout import *
 from layout import (
+    Coord,
+    Idx,
     LayoutTensor,
     lt_to_tt,
     RuntimeLayout,
@@ -74,8 +76,8 @@ from ...structuring import SMemTile
 def distance[
     dtype: DType, //
 ](
-    arg0: UnsafePointer[Scalar[dtype], _],
-    arg1: UnsafePointer[Scalar[dtype], _],
+    arg0: UnsafePointer[mut=False, Scalar[dtype], _],
+    arg1: UnsafePointer[mut=False, Scalar[dtype], _],
 ) -> Int:
     return (Int(arg0) - Int(arg1)) // size_of[dtype]()
 
@@ -125,8 +127,10 @@ def warp_split_k_reduction[
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](
-            smem.bitcast[Scalar[c_type]]()
-            + ((warp_k_part_id % i_red) * BM * BN)
+            (
+                smem.bitcast[Scalar[c_type]]()
+                + ((warp_k_part_id % i_red) * BM * BN)
+            ).as_unsafe_any_origin()
         ).vectorize[
             1, c_frag_size
         ]()
@@ -468,7 +472,6 @@ def multistage_mma[
             comptime for k_mma0 in range(num_k_mma_iters):
                 comptime for k_mma1 in range(k_group_size):
                     comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
-                    comptime current = k_mma % num_reg_tiles
                     comptime k_mma_next = k_mma + UInt32(k_group_size)
                     comptime next = Int(k_mma_next % UInt32(num_reg_tiles))
 
@@ -566,7 +569,6 @@ def multistage_mma[
         comptime for k_mma0 in range(num_k_mma_iters):
             comptime for k_mma1 in range(k_group_size):
                 comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
-                comptime current = k_mma % num_reg_tiles
                 comptime k_mma_next = k_mma + UInt32(k_group_size)
                 comptime next = Int(k_mma_next % UInt32(num_reg_tiles))
 
@@ -696,7 +698,6 @@ def multistage_mma[
 
 @__name(
     t"multistage_gemm_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}",
-    mangle=True,
 )
 def multistage_gemm_kernel[
     c_type: DType,
@@ -725,14 +726,16 @@ def multistage_gemm_kernel[
     var c = c_tt.to_layout_tensor()
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
-    # Hold on adding fp16 because it could have different precisions than bf16.
+    # float16 shares bf16's MMA path here; its accumulation precision can
+    # differ from bf16, so it is opt-in via the float16 quantization encoding.
     comptime assert (
-        a_type in (DType.float32, DType.bfloat16) and a_type == b_type
+        a_type in (DType.float32, DType.bfloat16, DType.float16)
+        and a_type == b_type
     ) or (
         a_type in (DType.float8_e4m3fn, DType.float8_e5m2)
         and a_type == b_type
         and c_type == DType.float32
-    ), "Pipeline gemm only supports tf32, BF16, E4M3, and E5M2 mma"
+    ), "Pipeline gemm only supports tf32, F16, BF16, E4M3, and E5M2 mma"
     comptime simd_size = simd_width_of[c_type]()
 
     var M: Int = c.dim[0]()
@@ -814,7 +817,10 @@ def multistage_gemm_kernel[
         circular=True,
     ]
     var b_smem_iter = IteratorTypeB(
-        b_smem + IteratorTypeB.linear_uint_type(warp_k_part_id * b_smem_size),
+        (
+            b_smem
+            + IteratorTypeB.linear_uint_type(warp_k_part_id * b_smem_size)
+        ).as_unsafe_any_origin(),
         IteratorTypeB.linear_uint_type(b_smem_size),
     )
 
@@ -964,7 +970,11 @@ def multistage_gemm_kernel[
             Layout.row_major(WM, WN),
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
-        ](a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
+        ](
+            (
+                a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN
+            ).as_unsafe_any_origin()
+        )
 
         copy_local_to_shared[
             thread_layout=Layout.row_major(8, 4),
@@ -1078,7 +1088,6 @@ def multistage_gemm_kernel[
 )
 @__name(
     t"multistage_gemm_split_k_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}",
-    mangle=True,
 )
 def multistage_gemm_split_k_kernel[
     c_type: DType,
@@ -1103,15 +1112,6 @@ def multistage_gemm_split_k_kernel[
     comptime N = b.shape[0]() if transpose_b else b.shape[1]()
     comptime K = b.shape[1]() if transpose_b else b.shape[0]()
     comptime BK = config.block_tile_shape[2]
-
-    # If K is not divisible by num_partitions, the first num_partitions-1 parts
-    # will be rounded up to multiple of BK.
-    var a_part = a.split[axis=1, split_alignment=BK](
-        num_partitions, block_idx.z
-    )
-    var b_part = b.split[axis=1 if transpose_b else 0, split_alignment=BK](
-        num_partitions, block_idx.z
-    )
 
     comptime work_space_tensor_type = LayoutTensor[
         work_space_type, c_layout, MutAnyOrigin
@@ -1141,21 +1141,46 @@ def multistage_gemm_split_k_kernel[
     )
 
     var ws_tt = lt_to_tt(work_space_part)
-    var a_tt = lt_to_tt(a_part)
-    var b_tt = lt_to_tt(b_part)
 
     comptime if (
         has_amd_gpu_accelerator()
         and not has_amd_rdna_gpu_accelerator()
         and transpose_b
     ):
+        # `.split` makes the K axis dynamic, but AMDMatmul derives its
+        # K-loop bound from the static shape. Carve comptime K/P tiles so
+        # each partition keeps a static K (parent strides preserved).
+        comptime assert K % config.num_k_partitions == 0, (
+            "AMD split-K carves static K/P tiles, so K must be divisible by"
+            " num_k_partitions (no ragged remainder)."
+        )
+        comptime K_part = K // config.num_k_partitions
+        # AMDMatmul's K-loop iterates K_part // BK tiles by integer division,
+        # so a ragged tail would be silently dropped. The dispatch gate keeps
+        # BK == 64 and K a multiple of num_k_partitions * 64.
+        comptime assert (
+            K_part % BK == 0
+        ), "AMD split-K requires each K partition to be a multiple of BK."
+        var z = Int(block_idx.z)
+        var a_amd = lt_to_tt(a).tile(Coord(M, Idx[K_part]), Coord(0, z))
+        var b_amd = lt_to_tt(b).tile(Coord(Idx[N], Idx[K_part]), Coord(0, z))
         AMDMatmul[
             a_type,
             b_type,
             work_space_type,
             transpose_b,
             k_partition_config,
-        ].run(ws_tt, a_tt, b_tt)
+        ].run(ws_tt, a_amd, b_amd)
 
     else:
+        # If K is not divisible by num_partitions, the first
+        # num_partitions-1 parts are rounded up to a multiple of BK.
+        var a_part = a.split[axis=1, split_alignment=BK](
+            num_partitions, block_idx.z
+        )
+        var b_part = b.split[axis=1 if transpose_b else 0, split_alignment=BK](
+            num_partitions, block_idx.z
+        )
+        var a_tt = lt_to_tt(a_part)
+        var b_tt = lt_to_tt(b_part)
         multistage_gemm_kernel[config=k_partition_config,](ws_tt, a_tt, b_tt)

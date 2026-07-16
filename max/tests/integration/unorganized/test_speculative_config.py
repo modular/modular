@@ -19,21 +19,13 @@ from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
     compute_synthetic_acceptance_base_rate,
 )
-from max.pipelines.lib.config.speculative_config import SpeculativeConfig
+from max.pipelines.speculative.config import SpeculativeConfig
 
 
 def test_is_eagle() -> None:
     """Verify is_eagle() returns correct boolean."""
     assert SpeculativeConfig(speculative_method="eagle").is_eagle()
-    assert not SpeculativeConfig(speculative_method="standalone").is_eagle()
     assert not SpeculativeConfig(speculative_method=None).is_eagle()
-
-
-def test_is_standalone() -> None:
-    """Verify is_standalone() returns correct boolean."""
-    assert SpeculativeConfig(speculative_method="standalone").is_standalone()
-    assert not SpeculativeConfig(speculative_method="eagle").is_standalone()
-    assert not SpeculativeConfig(speculative_method=None).is_standalone()
 
 
 def test_num_speculative_tokens() -> None:

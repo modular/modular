@@ -22,7 +22,7 @@ of GPU devices, such as maximum thread counts, memory sizes, compute capabilitie
 supported features.
 
 :::note
-See the [`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext/) page
+See the [`DeviceContext`](/docs/std/gpu/host/device_context/DeviceContext/) page
 for examples that retrieve `DeviceAttribute` values.
 :::
 """
@@ -117,4 +117,9 @@ struct DeviceAttribute(TrivialRegisterPassable):
     """
     comptime MAX_ACCESS_POLICY_WINDOW_SIZE = Self(109)
     """CUDA-only: Maximum value of CUaccessPolicyWindow::num_bytes.
+    """
+
+    # Context-level attributes (values >= 1000).
+    comptime PARALLELISM_LEVEL = Self(1000)
+    """Number of parallel worker threads for CPU work dispatch.
     """

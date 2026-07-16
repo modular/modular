@@ -142,18 +142,23 @@ def test[
     var o_size = q_size
 
     # Allocate memory for all variables.
-    var q_ptr = alloc[Scalar[q_type]](q_size)
-    var k_ptr = alloc[Scalar[kv_type]](k_size)  # fp8 host
-    var k_bf16_ptr = alloc[Scalar[q_type]](k_size)
-    var output_ptr = alloc[Scalar[q_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[q_type]](o_size)
+    var q_ptr = ctx.enqueue_create_host_buffer[q_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[kv_type](k_size)  # fp8 host
+    var k_bf16_ptr = ctx.enqueue_create_host_buffer[q_type](k_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[q_type](o_size)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[q_type](o_size)
 
     # Q, K, V are randomly initialized.
-    randn[q_type](q_ptr, q_size)
-    randn[kv_type](k_ptr, k_size)
+    randn(q_ptr.as_span())
+    randn(k_ptr.as_span())
 
     host_cast_k_fp8_to_bf16[kv_fp8_t=kv_type, k_bf16_t=q_type](
-        k_ptr, k_bf16_ptr, depth, num_keys, kv_num_heads, batch_size
+        k_ptr.unsafe_ptr(),
+        k_bf16_ptr.unsafe_ptr(),
+        depth,
+        num_keys,
+        kv_num_heads,
+        batch_size,
     )
 
     # Device pointers
@@ -168,21 +173,15 @@ def test[
     # Construct TileTensors for Q, K, output.
     var q_tt = TileTensor(
         q_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_tt = TileTensor(
         k_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var out_tt = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     # Keep LayoutTensors for mha_gpu_naive reference path.
@@ -198,7 +197,7 @@ def test[
         _is_cache_length_accurate=True,
         is_fp8_kv=True,
     ](batch_size, num_keys, seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     @parameter
     @always_inline
@@ -206,7 +205,7 @@ def test[
         q_tt,
         k_tt,
         out_tt,
-        scalar_args_buf_lt,
+        scalar_args_buf_tt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
@@ -214,13 +213,13 @@ def test[
                 config=MHAConfig[q_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,
             ](
-                out_tt.as_any_origin(),
+                out_tt.as_unsafe_any_origin(),
                 q_tt,
                 k_tt,
                 CausalMask(),
                 scale,
                 ctx,
-                lt_to_tt(scalar_args_buf_lt),
+                scalar_args_buf_tt,
                 num_partitions=num_partitions,
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
@@ -228,13 +227,13 @@ def test[
                 config=MHAConfig[q_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,
             ](
-                out_tt.as_any_origin(),
+                out_tt.as_unsafe_any_origin(),
                 q_tt,
                 k_tt,
                 NullMask(),
                 scale,
                 ctx,
-                lt_to_tt(scalar_args_buf_lt),
+                scalar_args_buf_tt,
                 num_partitions=num_partitions,
             )
 
@@ -281,7 +280,7 @@ def test[
         ctx.enqueue_copy(k_ref_device_ptr, k_bf16_ptr)
 
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
-            var k_operand = LayoutTensorMHAOperand(k_ref_device)
+            var k_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
             var null_valid_length = LayoutTensor[
                 DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
             ](
@@ -327,6 +326,8 @@ def test[
         ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
+    ctx.synchronize()
+
     if o_size == 0:
         return
 
@@ -339,16 +340,16 @@ def test[
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(depth - 64):
-                    var expect = output_ptr.load(
+                    var expect = output_ptr[
                         d
                         + depth * (h + s * num_heads)
                         + b * depth * num_heads * seq_len
-                    ).cast[DType.float64]()
-                    var actual = flash_output_ptr.load(
+                    ].cast[DType.float64]()
+                    var actual = flash_output_ptr[
                         d
                         + (depth - 64) * (h + s * num_heads)
                         + b * (depth - 64) * num_heads * seq_len
-                    ).cast[DType.float64]()
+                    ].cast[DType.float64]()
                     # if not isclose(actual, expect, atol=1e-3, rtol=rtol):
                     #     var rerr = abs((actual - expect) / expect)
                     #     print(h, s, d, actual, expect, rerr)
@@ -360,11 +361,6 @@ def test[
     _ = q_device_ptr
     _ = k_device_ptr
     _ = output_device_ptr
-
-    q_ptr.free()
-    k_ptr.free()
-    output_ptr.free()
-    flash_output_ptr.free()
 
 
 def test_decoding[

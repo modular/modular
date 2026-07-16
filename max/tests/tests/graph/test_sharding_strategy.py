@@ -14,13 +14,16 @@
 
 from __future__ import annotations
 
+import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, Weight
 from max.graph.weight import (
+    Segment,
     ShardingStrategy,
     col_sharding_strategy,
     head_aware_col_sharding_strategy,
     row_sharding_strategy,
+    segmented_sharding_strategy,
     stacked_qkv_sharding_strategy,
 )
 
@@ -438,3 +441,223 @@ def test_sharding_strategy_is_head_aware_colwise() -> None:
 
     colwise_strategy = ShardingStrategy.columnwise(num_devices=4)
     assert colwise_strategy.is_head_aware_colwise is False
+
+
+def test_segmented_sharding_two_even_segments_axis0() -> None:
+    """Two even segments along axis 0 should reduce to gate_up-style sharding."""
+    with Graph("test", input_types=[]):
+        moe_dim = 768
+        weight = Weight(
+            "gate_up",
+            dtype=DType.float32,
+            shape=[2 * moe_dim, 1024],
+            device=DeviceRef.CPU(),
+        )
+
+        num_devices = 4
+        for i in range(num_devices):
+            shard = segmented_sharding_strategy(
+                weight,
+                i,
+                num_devices,
+                axis=0,
+                segments=(Segment.even(moe_dim), Segment.even(moe_dim)),
+            )
+            # 768 / 4 = 192 per half; concat → 384 total.
+            assert int(shard.shape[0]) == 2 * (moe_dim // num_devices)
+            assert int(shard.shape[1]) == 1024
+
+
+def test_segmented_sharding_three_head_aware_segments() -> None:
+    """Three head-aware segments along axis 0 must match stacked_qkv."""
+    with Graph("test", input_types=[]):
+        num_heads = 30  # Uneven across 4 devices.
+        head_dim = 64
+        hidden = num_heads * head_dim
+
+        weight = Weight(
+            "qkv",
+            dtype=DType.float32,
+            shape=[3 * hidden, hidden],
+            device=DeviceRef.CPU(),
+        )
+
+        num_devices = 4
+        head_aware_seg = Segment.head_aware(num_heads, head_dim)
+        # 30/4 → 8, 8, 7, 7 heads per device.
+        expected_dims = [8, 8, 7, 7]
+
+        for i in range(num_devices):
+            seg_shard = segmented_sharding_strategy(
+                weight,
+                i,
+                num_devices,
+                axis=0,
+                segments=(head_aware_seg, head_aware_seg, head_aware_seg),
+            )
+            stacked_shard = stacked_qkv_sharding_strategy(
+                weight, i, num_devices, num_heads, head_dim
+            )
+            assert int(seg_shard.shape[0]) == 3 * expected_dims[i] * head_dim
+            assert int(seg_shard.shape[0]) == int(stacked_shard.shape[0])
+            assert int(seg_shard.shape[1]) == hidden
+
+
+def test_segmented_sharding_mixed_segments_axis0() -> None:
+    """Mixed head-aware + even segments along axis 0 (flux2 fused QKV+MLP)."""
+    with Graph("test", input_types=[]):
+        num_heads = 24
+        head_dim = 256
+        inner = num_heads * head_dim  # 6144
+        mlp = 18432
+        # Layout: [Q | K | V | gate | up] along axis 0.
+        weight = Weight(
+            "qkv_mlp",
+            dtype=DType.float32,
+            shape=[3 * inner + 2 * mlp, 6144],
+            device=DeviceRef.CPU(),
+        )
+        head_aware = Segment.head_aware(num_heads, head_dim)
+        even = Segment.even(mlp)
+        segments = (head_aware, head_aware, head_aware, even, even)
+
+        num_devices = 4
+        for i in range(num_devices):
+            shard = segmented_sharding_strategy(
+                weight,
+                i,
+                num_devices,
+                axis=0,
+                segments=segments,
+            )
+            # 24/4 = 6 heads, 18432/4 = 4608 mlp slots.
+            local_heads = num_heads // num_devices
+            local_mlp = mlp // num_devices
+            expected = 3 * local_heads * head_dim + 2 * local_mlp
+            assert int(shard.shape[0]) == expected
+            assert int(shard.shape[1]) == 6144
+
+
+def test_segmented_sharding_mixed_segments_axis1() -> None:
+    """Mixed segments along axis 1 (flux2 fused output projection input)."""
+    with Graph("test", input_types=[]):
+        num_heads = 24
+        head_dim = 256
+        inner = num_heads * head_dim
+        mlp = 18432
+        # Output projection input layout: [attn(inner) | mlp(mlp)] along axis 1.
+        weight = Weight(
+            "out_proj",
+            dtype=DType.float32,
+            shape=[6144, inner + mlp],
+            device=DeviceRef.CPU(),
+        )
+        segments = (Segment.head_aware(num_heads, head_dim), Segment.even(mlp))
+
+        num_devices = 4
+        for i in range(num_devices):
+            shard = segmented_sharding_strategy(
+                weight,
+                i,
+                num_devices,
+                axis=1,
+                segments=segments,
+            )
+            local_heads = num_heads // num_devices
+            local_mlp = mlp // num_devices
+            assert int(shard.shape[0]) == 6144
+            assert int(shard.shape[1]) == local_heads * head_dim + local_mlp
+
+
+def test_segmented_sharding_packed_fp4_columns() -> None:
+    """Packed FP4 storage halves the column count along axis 1."""
+    with Graph("test", input_types=[]):
+        num_heads = 32
+        head_dim = 64
+        inner = num_heads * head_dim
+        # Packed FP4: weight stores in_dim // 2 columns.
+        weight = Weight(
+            "fp4_out",
+            dtype=DType.uint8,
+            shape=[2048, inner // 2],
+            device=DeviceRef.CPU(),
+        )
+
+        num_devices = 4
+        for i in range(num_devices):
+            shard = segmented_sharding_strategy(
+                weight,
+                i,
+                num_devices,
+                axis=1,
+                segments=(Segment.head_aware(num_heads, head_dim),),
+            )
+            local_heads = num_heads // num_devices
+            assert int(shard.shape[0]) == 2048
+            # Packed: local_heads * head_dim / 2.
+            assert int(shard.shape[1]) == local_heads * head_dim // 2
+
+
+def test_segmented_sharding_size_mismatch_raises() -> None:
+    """Segments that don't cover the axis should raise."""
+    with Graph("test", input_types=[]):
+        weight = Weight(
+            "w",
+            dtype=DType.float32,
+            shape=[1000, 64],
+            device=DeviceRef.CPU(),
+        )
+        with pytest.raises(ValueError, match="segments cover"):
+            segmented_sharding_strategy(
+                weight,
+                0,
+                4,
+                axis=0,
+                segments=(Segment.even(500),),  # Only 500, not 1000.
+            )
+
+
+def test_segment_factories() -> None:
+    """Segment.head_aware computes size; Segment.even leaves num_heads None."""
+    even_seg = Segment.even(512)
+    assert even_seg.size == 512
+    assert even_seg.num_heads is None
+
+    head_seg = Segment.head_aware(8, 64)
+    assert head_seg.size == 512
+    assert head_seg.num_heads == 8
+
+
+def test_sharding_strategy_is_segmented() -> None:
+    """Tests the is_segmented property of ShardingStrategy."""
+    seg = ShardingStrategy.segmented(
+        num_devices=2,
+        axis=0,
+        segments=(Segment.even(64), Segment.even(64)),
+    )
+    assert seg.is_segmented is True
+    assert seg.is_rowwise is False
+    assert seg.is_gate_up is False
+
+    rowwise = ShardingStrategy.rowwise(num_devices=2)
+    assert rowwise.is_segmented is False
+
+
+def test_sharding_strategy_sharded_axis() -> None:
+    """sharded_axis answers row vs column vs replicate uniformly."""
+    assert ShardingStrategy.rowwise(2).sharded_axis == 0
+    assert ShardingStrategy.columnwise(2).sharded_axis == 1
+    assert ShardingStrategy.replicate(2).sharded_axis is None
+    assert ShardingStrategy.head_aware_columnwise(2, 8, 64).sharded_axis == 1
+    assert ShardingStrategy.stacked_qkv(2, 8, 64).sharded_axis == 0
+    assert ShardingStrategy.gate_up(2, axis=0).sharded_axis == 0
+    assert ShardingStrategy.gate_up(2, axis=2).sharded_axis == 2
+    assert ShardingStrategy.axiswise(axis=1, num_devices=2).sharded_axis == 1
+    assert (
+        ShardingStrategy.segmented(
+            2, axis=0, segments=(Segment.even(8),)
+        ).sharded_axis
+        == 0
+    )
+    assert ShardingStrategy.tensor_parallel(2).sharded_axis is None
+    assert ShardingStrategy.expert_parallel(2).sharded_axis is None

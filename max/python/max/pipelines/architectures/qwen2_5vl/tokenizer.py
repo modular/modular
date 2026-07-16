@@ -21,14 +21,6 @@ from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
-    EOSTracker,
-    ImageMetadata,
-    TextGenerationRequest,
-    TextGenerationRequestMessage,
-    TextGenerationRequestTool,
-    TokenBuffer,
-)
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     get_rope_index,
     get_seqlens,
@@ -36,15 +28,27 @@ from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     mrope_pos_ids_3d,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
+    MAX_PIXELS,
     fetch_image,
     process_vision_info,
 )
+from max.pipelines.context import (
+    EOSTracker,
+    ImageMetadata,
+    TokenBuffer,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import (
     TextAndVisionTokenizer,
     float32_to_bfloat16_as_uint16,
     max_tokens_to_generate,
 )
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.modeling.types import (
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+    TextGenerationRequestTool,
+)
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import AutoTokenizer, Qwen2_5_VLConfig
@@ -320,15 +324,29 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         self,
         messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None = None,
+        **chat_template_options: Any,
     ) -> str:
-        """Apply chat template using tokenizer directly (not processor)."""
+        """Apply chat template using tokenizer directly (not processor).
 
-        messages_dicts = [msg.model_dump() for msg in messages]
+        Args:
+            messages: List of messages for the chat template.
+            tools: Optional tools available for the model to invoke.
+            **chat_template_options: Template options to forward to the Jinja
+                template. Merged with ``add_generation_prompt=True`` default.
+
+        Returns:
+            The templated chat message as a string.
+        """
+        chat_template_options = {
+            "add_generation_prompt": True,
+            **chat_template_options,
+        }
+        messages_dicts = [msg.model_dump(exclude_none=True) for msg in messages]
         templated_message = self.delegate.apply_chat_template(
             messages_dicts,
             tokenize=False,
             tools=tools,
-            add_generation_prompt=True,
+            **chat_template_options,
         )
         assert isinstance(templated_message, str)
         return templated_message
@@ -392,7 +410,11 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             return request.prompt
 
         if request.messages:
-            return self.apply_chat_template(request.messages)
+            return self.apply_chat_template(
+                request.messages,
+                request.tools,
+                **(request.chat_template_options or {}),
+            )
 
         raise ValueError(f"{request} does not provide messages or prompt.")
 
@@ -403,9 +425,10 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
     ]:
         image_inputs = None
         if request.images:
+            # fetch_image accepts both a PIL.Image and raw bytes.
             image_inputs = [
-                fetch_image({"image": image_data})
-                for image_data in request.images
+                fetch_image({"image": image})
+                for image in request.images_for_processing()
             ]
         elif request.messages:
             image_inputs, _, _ = process_vision_info(
@@ -450,9 +473,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         # Expand input_ids/attention_mask for image token ids
         if image_grid_thw is None:
             if self.max_length and input_ids.shape[0] > self.max_length:
-                raise ValueError(
-                    "input_ids is greater than the max_length of the tokenizer"
-                )
+                raise PromptTooLongError(input_ids.shape[0], self.max_length)
 
             return input_ids, attention_mask
 
@@ -482,9 +503,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             )
 
         if self.max_length and input_ids.shape[0] > self.max_length:
-            raise ValueError(
-                "input_ids is greater than the max_length of the tokenizer"
-            )
+            raise PromptTooLongError(input_ids.shape[0], self.max_length)
 
         return input_ids, attention_mask
 
@@ -559,8 +578,8 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
 
         # Handle JSON schema if provided
         json_schema = (
-            json.dumps(request.response_format.get("json_schema", None))
-            if request.response_format
+            json.dumps(request.response_format.json_schema)
+            if request.response_format and request.response_format.json_schema
             else None
         )
 
@@ -573,6 +592,8 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             tokens=TokenBuffer(input_ids),
             max_length=max_length,
             json_schema=json_schema,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
             images=images,
@@ -586,6 +607,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             image_token_indices=image_token_indices,
             decoder_position_ids=decoder_position_ids,
             vision_data=vision_data,
+            vocab_size=self.tokenizer_vocab_size,
         )
 
     def new_context_blocking(
@@ -671,17 +693,29 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             start_and_end_idxs = find_contiguous_ranges(
                 input_ids, [self.image_token_id]
             )
+            # Key each image on its raw encoded bytes (+ the resolution size
+            # class), not on hash_image(pixel_values): the raw-byte key is
+            # byte-identical across torch/BLAS/device so a separate encoder can
+            # reproduce it for cache-aware routing, whereas the post-resize
+            # float hash cannot. smart_resize is deterministic from the encoded
+            # bytes + fixed config, so the process-wide max-pixels resolution
+            # bound is the size tier. request.images is 1:1 with
+            # pixel_values_list (one processed entry per input image).
+            image_size_tier = MAX_PIXELS
             images = [
                 ImageMetadata(
                     start_idx=start_idx,
                     end_idx=end_idx,
                     pixel_values=pixel_values,
-                    image_hash=hash_image(pixel_values)
+                    image_hash=hash_image(raw_bytes, image_size_tier)
                     if self.enable_prefix_caching
                     else None,
                 )
-                for (start_idx, end_idx), pixel_values in zip(
-                    start_and_end_idxs, pixel_values_list, strict=True
+                for (start_idx, end_idx), pixel_values, raw_bytes in zip(
+                    start_and_end_idxs,
+                    pixel_values_list,
+                    request.images,
+                    strict=True,
                 )
             ]
         else:

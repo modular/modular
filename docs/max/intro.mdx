@@ -17,12 +17,9 @@ tools that accelerates model serving and scales GenAI deployments. It abstracts
 away hardware complexity so you can run the most popular open models with
 industry-leading GPU and CPU performance without any code changes.
 
-For teams that need to scale, Modular's
-[fully managed cloud](/max/deploy/cloud) offers dedicated or serverless
-endpoints. You can also run Modular's inference stack inside your own cloud
-infrastructure to meet data residency requirements. For self-hosted solutions,
-our ready-to-deploy Docker container removes the complexity of deploying your
-own GenAI endpoint.
+For teams that need to scale, our ready-to-deploy Docker container removes
+the complexity of deploying your own GenAI endpoint in the cloud infrastructure
+of your choice.
 
 Unlike other serving solutions, Modular enables customization across the entire
 stack. You can customize everything from the serving pipeline and model
@@ -50,7 +47,7 @@ Hugging Face:
       -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
       -p 8000:8000 \
       modular/max-nvidia-full:latest \
-      --model-path google/gemma-3-27b-it
+      --model google/gemma-3-27b-it
     ```
   </TabItem>
 </Tabs>
@@ -99,8 +96,8 @@ libraries).
 
 ## Components
 
-Modular is a vertically integrated AI infrastructure stack that spans that
-provides entry points for users at every level.
+Modular is a vertically integrated AI infrastructure stack that provides entry
+points for users at every level.
 
 <figure>
   <img src={require('./images/modular-dev-stack-light.png').default}
@@ -151,12 +148,8 @@ developer productivity.
 
 ## Stay in touch
 
-Once you've explored MAX's features and experimented with self-hosted endpoints,
-the next step is scaling. Modular's [managed cloud solution](/max/deploy/cloud)
-provides fully-managed dedicated and serverless endpoints. Alternatively, you
-can use
-[Modular's control plane in your VPC](/max/deploy/cloud#deploy-in-your-own-cloud)
-to keep inference inside your own infrastructure for teams with strict data
-residency requirements. Reach out to talk through your deployment needs.
+Once you've explored MAX's features and experimented with self-hosted
+endpoints, [reach out](https://www.modular.com/request-demo) to talk through
+your production deployment needs.
 
 <ContactSection />

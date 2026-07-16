@@ -72,7 +72,7 @@ def initialize_tensor_from_cpu_example() raises:
         ctx.enqueue_copy(dev_buf, host_buf)
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             tensor,
             grid_dim=(col_blocks, row_blocks),
             block_dim=(block_size, block_size),
@@ -140,7 +140,7 @@ def shared_memory_alloc_example() raises:
         ctx.enqueue_memset(dev_buf, 0.0)
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             tensor,
             grid_dim=(num_blocks, num_blocks),
             block_dim=(block_size, block_size),
@@ -211,7 +211,7 @@ def layout_tensor_distribute_example():
             host_buf[i] = Int32(i)
         var tensor = LayoutTensor[dtype, layout](dev_buf)
         ctx.enqueue_copy(dev_buf, host_buf)
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             tensor,
             grid_dim=(1, 1),
             block_dim=(8, 1),
@@ -271,7 +271,7 @@ def simple_copy_example():
         ctx.enqueue_copy(dev_buf, host_buf)
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             tensor,
             grid_dim=(num_row_blocks, num_col_blocks),
             block_dim=(block_size, block_size),
@@ -346,7 +346,7 @@ def copy_from_async_example():
                 host_buf[i] = Float32(i)
             var tensor = LayoutTensor[dtype, input_layout](dev_buf)
             ctx.enqueue_copy(dev_buf, host_buf)
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 tensor,
                 grid_dim=(num_row_blocks, num_col_blocks),
                 block_dim=(block_size, block_size),

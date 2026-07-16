@@ -55,7 +55,7 @@ def test_compile_function() raises:
     # CHECK: tid.x
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function_unchecked[kernel, dump_asm=True]()
+        _ = ctx.compile_function[kernel, dump_asm=True]()
 
 
 def kernel_inlined_assembly():
@@ -72,9 +72,7 @@ def test_compile_function_with_assembly() raises:
     # CHECK-NOT: begin assembly
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function_unchecked[
-            kernel_inlined_assembly, dump_asm=True
-        ]()
+        _ = ctx.compile_function[kernel_inlined_assembly, dump_asm=True]()
 
 
 # CHECK-LABEL: test_compile_function_with_path
@@ -86,9 +84,7 @@ def test_compile_function_with_path() raises:
 
     with DeviceContext() as ctx:
         comptime out_file = Path("/tmp/my_file.ptx")
-        _ = ctx.compile_function_unchecked[
-            kernel_inlined_assembly, dump_asm=out_file
-        ]()
+        _ = ctx.compile_function[kernel_inlined_assembly, dump_asm=out_file]()
         print(out_file.read_text())
 
 
@@ -107,9 +103,7 @@ def test_compile_function_with_path_func() raises:
         def dummy_fn() capturing -> Path:
             return out_dir / out_file_name
 
-        _ = ctx.compile_function_unchecked[
-            kernel_inlined_assembly, dump_asm=dummy_fn
-        ]()
+        _ = ctx.compile_function[kernel_inlined_assembly, dump_asm=dummy_fn]()
 
         var out_file = out_dir / out_file_name
         print(out_file.read_text())
@@ -133,9 +127,7 @@ def test_short_nvptx_ptr() raises:
     # CHECK-NEXT: ld.global.b32
     # CHECK-NEXT: st.shared.b32
     with DeviceContext() as ctx:
-        _ = ctx.compile_function_unchecked[
-            do_some_shared_mem_op, dump_asm=True
-        ]()
+        _ = ctx.compile_function[do_some_shared_mem_op, dump_asm=True]()
 
 
 # CHECK-LABEL: test_exp2_compile

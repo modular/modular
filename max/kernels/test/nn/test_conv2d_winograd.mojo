@@ -15,6 +15,7 @@ from std.math import isclose
 from std.random import rand
 
 from layout import TileTensor, row_major
+from layout.tensor_storage import PointerStorage
 from nn.conv.conv import Naive2dConvolution
 
 from std.utils.index import Index
@@ -24,9 +25,11 @@ from std.utils.index import Index
 def matmul[
     dtype: DType, //, N: Int, K: Int, M: Int, transpose_b: Bool
 ](
-    C: TileTensor[mut=True, dtype, element_size=1, ...],
-    A: TileTensor[dtype, element_size=1, ...],
-    B: TileTensor[dtype, element_size=1, ...],
+    C: TileTensor[
+        mut=True, dtype, Storage=PointerStorage[element_width=1], ...
+    ],
+    A: TileTensor[dtype, Storage=PointerStorage[element_width=1], ...],
+    B: TileTensor[dtype, Storage=PointerStorage[element_width=1], ...],
 ):
     comptime assert C.flat_rank == 2
     comptime assert A.flat_rank == 2
@@ -57,11 +60,13 @@ def matmul[
 def winograd_2d_convolution_3x3[
     dtype: DType
 ](
-    signal: TileTensor[dtype, element_size=1, ...],
+    signal: TileTensor[dtype, Storage=PointerStorage[element_width=1], ...],
     kernel: TileTensor[
-        dtype, element_size=1, ...
+        dtype, Storage=PointerStorage[element_width=1], ...
     ],  # must be 3x3, let's comptime assert  somehow. Or parameter
-    output: TileTensor[mut=True, dtype, element_size=1, ...],
+    output: TileTensor[
+        mut=True, dtype, Storage=PointerStorage[element_width=1], ...
+    ],
 ):
     comptime assert signal.flat_rank == 2
     comptime assert kernel.flat_rank == 2
@@ -146,8 +151,12 @@ def winograd_2d_convolution_3x3[
 def outputs_are_close[
     dtype: DType
 ](
-    output_naive: TileTensor[dtype, element_size=1, ...],
-    output_winograd: TileTensor[dtype, element_size=1, ...],
+    output_naive: TileTensor[
+        dtype, Storage=PointerStorage[element_width=1], ...
+    ],
+    output_winograd: TileTensor[
+        dtype, Storage=PointerStorage[element_width=1], ...
+    ],
     Oh: Int,
     Ow: Int,
 ) -> Bool:
@@ -180,10 +189,10 @@ def test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     comptime Ow: Int = W - Kw + 1  # Output width
 
     # Allocate memory for input, filter, and both outputs
-    var input_ptr = alloc[Scalar[dtype]](H * W)
-    var filter_ptr = alloc[Scalar[dtype]](Kh * Kw)
-    var output_ptr_winograd = alloc[Scalar[dtype]](Oh * Ow)
-    var output_ptr_naive = alloc[Scalar[dtype]](Oh * Ow)
+    var input_ptr = List(length=H * W, fill=Scalar[dtype](0))
+    var filter_ptr = List(length=Kh * Kw, fill=Scalar[dtype](0))
+    var output_ptr_winograd = List(length=Oh * Ow, fill=Scalar[dtype](0))
+    var output_ptr_naive = List(length=Oh * Ow, fill=Scalar[dtype](0))
 
     # Create TileTensors
     var input = TileTensor(input_ptr, row_major[H, W]())
@@ -192,8 +201,8 @@ def test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     var output_naive = TileTensor(output_ptr_naive, row_major[Oh, Ow]())
 
     # Initialize with random values
-    rand[dtype](input_ptr, H * W)
-    rand[dtype](filter_ptr, Kh * Kw)
+    rand(input_ptr)
+    rand(filter_ptr)
 
     # Perform Winograd-based convolution
     winograd_2d_convolution_3x3[dtype](input, filter, output_winograd)
@@ -209,9 +218,9 @@ def test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     comptime dilation = Index(1, 1, 1)
 
     Naive2dConvolution[dtype, dtype, dtype].run(
-        output_ptr_naive,
-        input_ptr,
-        filter_ptr,
+        output_ptr_naive.unsafe_ptr(),
+        input_ptr.unsafe_ptr(),
+        filter_ptr.unsafe_ptr(),
         output_shape,
         input_shape,
         filter_shape,
@@ -227,14 +236,12 @@ def test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     if outputs_are_close[dtype](output_naive, output_winograd, Oh, Ow):
         print("Succeed")
 
-    # Free allocated memory
-    input_ptr.free()
-    filter_ptr.free()
-    output_ptr_winograd.free()
-    output_ptr_naive.free()
-
     # CHECK: Succeed
     print("Succeed")
+    _ = output_ptr_naive^
+    _ = output_ptr_winograd^
+    _ = filter_ptr^
+    _ = input_ptr^
 
 
 def main() raises:

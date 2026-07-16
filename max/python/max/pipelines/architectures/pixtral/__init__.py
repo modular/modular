@@ -13,7 +13,12 @@
 """Pixtral vision-language architecture for multimodal text generation."""
 
 from .arch import pixtral_arch
-from .model import PixtralModel
+from .model import PixtralInputs, PixtralModel
 from .model_config import PixtralConfig
 
-__all__ = ["PixtralConfig", "PixtralModel", "pixtral_arch"]
+__all__ = [
+    "PixtralConfig",
+    "PixtralInputs",
+    "PixtralModel",
+    "pixtral_arch",
+]

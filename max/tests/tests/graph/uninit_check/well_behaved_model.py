@@ -13,9 +13,10 @@
 """A simple add+relu model used as a subprocess by test_uninit_check_e2e.py.
 
 Builds a Graph, compiles it via InferenceSession, runs inference, and
-verifies the output.  If MODULAR_MAX_UNINITIALIZED_READ_CHECK is set in
-the environment, InferenceSession automatically enables the debug
-allocator poison and the Mojo MOJO_STDLIB_SIMD_UNINIT_CHECK define.
+verifies the output.  If MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK is set
+in the environment (or the `max-debug.uninitialized-read-check` Config key
+is set), InferenceSession automatically enables the debug allocator poison
+and the Mojo MOJO_STDLIB_SIMD_UNINIT_CHECK define.
 """
 
 import numpy as np

@@ -18,23 +18,21 @@ import time
 import uuid
 from dataclasses import dataclass
 
-from max.interfaces import (
-    Pipeline,
-    RequestID,
-    Scheduler,
-    TextGenerationInputs,
-    TextGenerationOutput,
-)
-from max.kv_cache import (
+from max.pipelines.context import TextContext, TextGenerationOutput
+from max.pipelines.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,
     TransferReqData,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import (
     PipelineConfig,
     TextGenerationPipeline,
+)
+from max.pipelines.modeling.types import (
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
 )
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
@@ -43,7 +41,8 @@ from max.serve.scheduler.base import (
     PrefillRequest,
     PrefillResponse,
 )
-from max.serve.worker_interface.zmq_queue import ClientIdentity
+from max.serve.scheduler.interface import Scheduler
+from max.serve.worker_interface._zmq_queue import ClientIdentity
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
@@ -62,6 +61,15 @@ class TransferDest:
     dst_replica_idx: int
 
 
+@dataclass
+class ActiveTransfer:
+    """Prefill-side state for a posted KV transfer awaiting completion."""
+
+    context: TextContext
+    replica_idx: int
+    transfer: TransferReqData
+
+
 class PrefillScheduler(Scheduler):
     def __init__(
         self,
@@ -77,38 +85,15 @@ class PrefillScheduler(Scheduler):
         self.kv_cache = kv_cache
 
         # Initialize Scheduler state.
-
-        # Maps request_id to (context, replica_idx, transfer_data)
-        self.active_transfers: dict[
-            RequestID,
-            tuple[TextAndVisionContext | TextContext, int, TransferReqData],
-        ] = {}
+        self.active_transfers: dict[RequestID, ActiveTransfer] = {}
         self.request_id_to_reply_context: dict[
             RequestID, tuple[ClientIdentity, TransferDest]
         ] = {}
 
-        self.transfer_engine = KVTransferEngine(
+        self.transfer_engine = KVTransferEngine.from_paged_kv_cache(
             name=f"prefill_agent_{uuid.uuid4()}",
-            # TODO: Also support scales tensors
-            tensors=[
-                kv_cache.get_device_buffer(replica_idx).values
-                for replica_idx in range(scheduler_config.data_parallel_degree)
-            ],
-            # Assume all replicas have the same number of pages.
-            total_num_pages=kv_cache.get_num_pages(replica_idx=0),
+            kv_cache=kv_cache,
         )
-
-        # Register draft KV cache blocks for speculative decoding so that
-        # target and draft KV are bundled into a single NIXL transfer.
-        draft_kv_blocks = getattr(pipeline, "draft_kv_blocks", None)
-        if isinstance(draft_kv_blocks, list):
-            self.transfer_engine.register_tensor_group(
-                name="draft",
-                # draft_kv_blocks is list[Buffer] (one per replica).
-                # Wrap each in a list for the [replica][tp_shard=1] shape.
-                tensors=[[buf] for buf in draft_kv_blocks],
-                total_num_pages=kv_cache.get_num_pages(replica_idx=0),
-            )
 
         self.outstanding_cancelled_requests: set[RequestID] = set()
 
@@ -116,15 +101,14 @@ class PrefillScheduler(Scheduler):
         # whose first generated token hasn't materialized yet due to the overlap scheduling
         # one-batch lag. Populated when a CE batch completes; resolved in the
         # next execute() call when the real token surfaces.
-        self._pending_first_token: dict[
-            RequestID, tuple[TextAndVisionContext | TextContext, int]
-        ] = {}
+        self._pending_first_token: dict[RequestID, tuple[TextContext, int]] = {}
 
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
             pipeline=pipeline,
             kv_cache=kv_cache,
             batch_scheduling_strategy=BatchSchedulingStrategy.PREFILL_FIRST,
+            get_inflight_kv_transfer_count=lambda: len(self.active_transfers),
         )
         self.scheduler_logger = SchedulerLogger()
         self.dispatcher = dispatcher
@@ -181,17 +165,30 @@ class PrefillScheduler(Scheduler):
         - Removes the transfer from active_transfers
         """
         to_be_deleted = []
-        for context, replica_idx, transfer in self.active_transfers.values():
-            if self.transfer_engine.is_complete(transfer):
-                self.transfer_engine.cleanup_transfer(transfer)
+        for active in self.active_transfers.values():
+            if self.transfer_engine.is_complete(active.transfer):
+                self.transfer_engine.cleanup_transfer(active.transfer)
+                blocks_released = len(
+                    self.kv_cache.get_req_blocks(
+                        active.context.request_id,
+                        replica_idx=active.replica_idx,
+                    )
+                )
                 # Release from paged cache (scheduler manages primary KV cache lifecycle)
                 self.kv_cache.release(
-                    context.request_id, replica_idx=replica_idx
+                    active.context.request_id, replica_idx=active.replica_idx
                 )
                 # Pipeline release handles special cases (spec decoding draft model KV cache)
                 # For regular pipelines, release() is a no-op
-                self.pipeline.release(context.request_id)
-                to_be_deleted.append(context.request_id)
+                self.pipeline.release(active.context.request_id)
+                to_be_deleted.append(active.context.request_id)
+                logger.debug(
+                    "KV transfer complete for request %s: releasing %d blocks "
+                    "back to prefill pool. Remaining in-flight transfers: %d.",
+                    active.context.request_id,
+                    blocks_released,
+                    len(self.active_transfers) - len(to_be_deleted),
+                )
 
         for id in to_be_deleted:
             del self.active_transfers[id]
@@ -232,8 +229,6 @@ class PrefillScheduler(Scheduler):
         dst_idxs = dst_idxs[num_already_cached_blocks:]
         assert dst_idxs.count(-1) == 0
 
-        # Initiate the KV transfer
-        logger.debug("initiating transfer from prefill worker.")
         transfer_data = self.transfer_engine.initiate_send_transfer(
             remote_metadata,
             src_idxs,
@@ -241,10 +236,24 @@ class PrefillScheduler(Scheduler):
             src_replica_idx=src_replica_idx,
             dst_replica_idx=transfer_dest.dst_replica_idx,
         )
-        self.active_transfers[req_id] = (
-            context,
-            src_replica_idx,
-            transfer_data,
+        self.active_transfers[req_id] = ActiveTransfer(
+            context=context,
+            replica_idx=src_replica_idx,
+            transfer=transfer_data,
+        )
+        transfer_pinned = sum(
+            len(self.kv_cache.get_req_blocks(rid, replica_idx=at.replica_idx))
+            for rid, at in self.active_transfers.items()
+        )
+        logger.debug(
+            "KV transfer started for request %s: blocks pinned on prefill "
+            "pending transfer completion. Active in-flight transfers: %d, "
+            "directly holding %d blocks. Free blocks: %d / %d total.",
+            req_id,
+            len(self.active_transfers),
+            transfer_pinned,
+            self.kv_cache.num_free_blocks(src_replica_idx),
+            self.kv_cache.total_num_blocks(src_replica_idx),
         )
 
         assert context.tokens.generated_length != 0, (
@@ -260,18 +269,21 @@ class PrefillScheduler(Scheduler):
         # decoding is active, the unified Eagle/MTP model always populates
         # draft_tokens_to_verify during CE; error if it hasn't.
         draft_tokens: list[int] | None = None
-        if self.scheduler_config.num_speculative_tokens > 0:
-            if (
-                context._spec_decoding_state is None
-                or not context._spec_decoding_state.draft_tokens_to_verify
-            ):
+        if (
+            self.scheduler_config.num_speculative_tokens > 0
+            and not context.is_done
+        ):
+            # Done contexts (max_gen_tokens=1) produce no further TG steps on
+            # the decode pod, so draft tokens are unnecessary. For all other
+            # contexts, draft tokens must be present after CE.
+            if not context.spec_decoding_state.draft_tokens_to_verify:
                 raise ValueError(
                     f"Expected draft tokens on context {req_id} after CE "
                     f"with speculative decoding enabled, but none were "
                     f"populated. Check that the unified Eagle/MTP pipeline "
                     f"is wired in for prefill_only."
                 )
-            draft_tokens = context._spec_decoding_state.draft_tokens_to_verify
+            draft_tokens = context.spec_decoding_state.draft_tokens_to_verify
 
         self.dispatcher.send_reply_nowait(
             PrefillResponse(
@@ -386,7 +398,13 @@ class PrefillScheduler(Scheduler):
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
 
-        # Log batch metrics
+        # Log batch metrics. When the overlap pipeline is active, the
+        # wall-clock time measured above describes the previously enqueued
+        # batch; the pipeline reports that batch's composition and timing so
+        # telemetry is attributed to the correct batch type.
+        is_overlap_active = bool(
+            getattr(self.pipeline, "overlap_active", False)
+        )
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             inputs=inputs,
@@ -396,6 +414,13 @@ class PrefillScheduler(Scheduler):
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
+            batch_execution_time_is_previous=is_overlap_active,
+            completed_batch_stats=self.pipeline.take_completed_batch_stats()
+            if hasattr(self.pipeline, "take_completed_batch_stats")
+            else None,
+            batch_vision_metrics=self.pipeline.batch_vision_metrics()
+            if hasattr(self.pipeline, "batch_vision_metrics")
+            else None,
         )
 
         return SchedulerProgress.MADE_PROGRESS
@@ -409,12 +434,6 @@ def load_prefill_scheduler(
     # Validate speculative decoding configuration for prefill-only mode.
     spec_config = pipeline_config.speculative
     if spec_config is not None:
-        if spec_config.is_standalone():
-            raise ValueError(
-                "Standalone speculative decoding is not supported with "
-                "pipeline_role='prefill_only'. Use 'eagle' or 'mtp' "
-                "speculative methods instead."
-            )
         if not (spec_config.is_eagle() or spec_config.is_mtp()):
             raise ValueError(
                 f"Unsupported speculative method "
@@ -429,7 +448,7 @@ def load_prefill_scheduler(
 
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config
+        pipeline_config, pipeline.max_batch_size
     )
 
     return PrefillScheduler(

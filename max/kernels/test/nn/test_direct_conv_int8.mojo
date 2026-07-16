@@ -79,28 +79,26 @@ def test[
         num_groups=1,
     )
 
-    var input_ptr = alloc[Scalar[input_type]](N * H * W * C)
-    var filter_ptr = alloc[Scalar[filter_type]](R * S * C * F)
-    var output_ptr = alloc[Scalar[output_type]](N * HO * WO * F)
-    var output_ref_ptr = alloc[Scalar[output_type]](N * HO * WO * F)
+    var input_ptr = List(length=N * H * W * C, fill=Scalar[input_type](0))
+    var filter_ptr = List(length=R * S * C * F, fill=Scalar[filter_type](0))
+    var output_ptr = List(length=N * HO * WO * F, fill=Scalar[output_type](0))
+    var output_ref_ptr = List(
+        length=N * HO * WO * F, fill=Scalar[output_type](0)
+    )
 
-    rand[input_type](input_ptr, N * H * W * C)
-    rand[filter_type](filter_ptr, R * S * C * F)
+    rand(input_ptr)
+    rand(filter_ptr)
 
     # Find the tile size used in packing.
     comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
     comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
 
-    var num_threads = num_physical_cores()
-    var num_tasks = get_conv_num_tasks(num_threads, conv_shape)
-    var num_partitions = get_conv_num_partitions[
-        micro_kernel_height, micro_kernel_width * simd_size
-    ](num_tasks, conv_shape)
-
     # Rounded C and F size for pre-packed filter.
     comptime micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
-    var packed_filter_ptr = alloc[Scalar[filter_type]](R * S * C * rounded_F)
+    var packed_filter_ptr = List(
+        length=R * S * C * rounded_F, fill=Scalar[filter_type](0)
+    )
 
     comptime layout_4d = Layout.row_major[4]()
     comptime layout_5d = Layout.row_major[5]()
@@ -136,9 +134,9 @@ def test[
 
     # Reference: naive conv
     Naive2dConvolution[output_type, input_type, filter_type].run(
-        output_ref_ptr,
-        input_ptr,
-        filter_ptr,
+        output_ref_ptr.unsafe_ptr(),
+        input_ptr.unsafe_ptr(),
+        filter_ptr.unsafe_ptr(),
         Index(N, 1, HO, WO, F),
         Index(N, 1, H, W, C),
         Index(1, R, S, C, F),
@@ -181,17 +179,11 @@ def test[
             conv_attr,
         ].run(output, input, filter, conv_shape)
 
-    input_ptr.free()
-    filter_ptr.free()
-    packed_filter_ptr.free()
-
     # Check results, return on the first failed comparison.
     for n in range(N):
         for ho in range(HO):
             for wo in range(WO):
                 for f in range(F):
-                    var failed: Bool
-
                     comptime if output_type.is_floating_point():
                         if isclose(
                             output_ref[n, ho, wo, f],
@@ -210,15 +202,15 @@ def test[
                     print("Test failed at index: ", Index(n, ho, wo, f))
                     print("Golden value: ", output_ref[n, ho, wo, f])
                     print("Actual value: ", output[n, ho, wo, f])
-                    output_ptr.free()
-                    output_ref_ptr.free()
                     return
-
-    output_ptr.free()
-    output_ref_ptr.free()
 
     # CHECK: Succeed
     print("Succeed")
+    _ = output_ref_ptr^
+    _ = output_ptr^
+    _ = packed_filter_ptr^
+    _ = filter_ptr^
+    _ = input_ptr^
 
 
 def main() raises:

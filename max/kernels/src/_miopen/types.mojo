@@ -22,7 +22,7 @@ from std.sys.info import size_of
 
 @fieldwise_init
 struct Handle(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
+    var _value: OptionalReg[OpaquePointer[MutUntrackedOrigin]]
 
     def __init__(out self):
         self._value = None
@@ -30,7 +30,7 @@ struct Handle(Defaultable, Equatable, TrivialRegisterPassable):
 
 @fieldwise_init
 struct TensorDescriptor(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
+    var _value: OptionalReg[OpaquePointer[MutUntrackedOrigin]]
 
     def __init__(out self):
         self._value = None
@@ -38,7 +38,7 @@ struct TensorDescriptor(Defaultable, Equatable, TrivialRegisterPassable):
 
 @fieldwise_init
 struct ConvolutionDescriptor(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
+    var _value: OptionalReg[OpaquePointer[MutUntrackedOrigin]]
 
     def __init__(out self):
         self._value = None
@@ -223,7 +223,7 @@ struct ConvSolution(RegisterPassable):
 
 @fieldwise_init
 struct Problem(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
+    var _value: OptionalReg[OpaquePointer[MutUntrackedOrigin]]
 
     def __init__(out self):
         self._value = None
@@ -231,7 +231,7 @@ struct Problem(Defaultable, Equatable, TrivialRegisterPassable):
 
 @fieldwise_init
 struct Solution(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
+    var _value: OptionalReg[OpaquePointer[MutUntrackedOrigin]]
 
     def __init__(out self):
         self._value = None
@@ -239,7 +239,7 @@ struct Solution(Defaultable, Equatable, TrivialRegisterPassable):
 
 @fieldwise_init
 struct FindOptions(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
+    var _value: OptionalReg[OpaquePointer[MutUntrackedOrigin]]
 
     def __init__(out self):
         self._value = None

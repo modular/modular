@@ -29,8 +29,12 @@ from linalg.utils import partition_work
 from std.memory import (
     alloc,
     bitcast,
+    dealloc,
+    unsafe_memcpy,
     stack_allocation,
+    Allocation,
 )
+from std.memory.alloc import Layout as AllocLayout
 
 from std.runtime.asyncrt import parallelism_level
 
@@ -260,8 +264,8 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 
 def _quantize_a_Q8_K[
     group_size: Int, dtype: DType, *, interleave_group_sums: Bool = False
-](a: LayoutTensor[dtype, ...]) -> UnsafePointer[
-    _block_Q8_K_packed[group_size], MutExternalOrigin
+](a: LayoutTensor[mut=False, dtype, ...]) -> Allocation[
+    _block_Q8_K_packed[group_size]
 ]:
     comptime assert a.rank == 2
     comptime quantized_k = _block_QK_K.quantized_k
@@ -270,10 +274,12 @@ def _quantize_a_Q8_K[
     var M = a.dim[0]()
     var K = a.dim[1]()
 
-    var packed_base_ptr = alloc[_block_Q8_K_packed[group_size]](
-        M * (K // quantized_k)
+    var packed_base_alloc = alloc(
+        AllocLayout[_block_Q8_K_packed[group_size]](
+            count=M * (K // quantized_k)
+        )
     )
-    var packed_ptr = packed_base_ptr
+    var packed_ptr = packed_base_alloc.unsafe_ptr()
 
     for ko in range(0, K, quantized_k):
         var am_ptr = a.ptr + ko
@@ -332,9 +338,7 @@ def _quantize_a_Q8_K[
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = am_ptr
 
-    # TODO(MOCO-2074): Suppress false positive unused var warning.
-    _ = packed_ptr
-    return packed_base_ptr
+    return packed_base_alloc^
 
 
 def _expand_q_bits_lo[
@@ -461,7 +465,7 @@ def _pack_block_Q4_K[
     )
 
     # Scales are not currently transformed.
-    memcpy(
+    unsafe_memcpy(
         dest=q_scales_reorder_buf,
         src=q_scales_buf.unsafe_ptr(),
         count=group_count * block_n,
@@ -550,7 +554,7 @@ def _pack_block_Q6_K[
 
 def matmul_Q4_K_pack_b(
     b_tt: TileTensor[
-        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
     b_packed_tt: TileTensor[
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
@@ -584,7 +588,7 @@ def matmul_Q4_K_pack_b(
 
 def matmul_Q6_K_pack_b(
     b_tt: TileTensor[
-        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
     b_packed_tt: TileTensor[
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
@@ -626,7 +630,7 @@ def _matmul_group_stream_x86[
     group_size: Int,
     stream_b_vals_fn: def(
         mut b_vals: InlineArray[
-            SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
+            SIMD[DType.uint8, SIMDSize(simd_width) * 4], tile_n * tile_k
         ]
     ) capturing[_] -> None,
 ](
@@ -634,7 +638,7 @@ def _matmul_group_stream_x86[
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
     var b_vals = InlineArray[
-        SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
+        SIMD[DType.uint8, SIMDSize(simd_width) * 4], tile_n * tile_k
     ](fill=0)
 
     comptime for k in range(0, group_size, tile_k * 4):
@@ -669,7 +673,7 @@ def _matmul_group_stream_neon_dotprod[
     group_size: Int,
     stream_b_vals_fn: def(
         mut b_vals: InlineArray[
-            SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
+            SIMD[DType.uint8, SIMDSize(simd_width) * 4], tile_n * tile_k
         ]
     ) capturing[_] -> None,
 ](
@@ -677,7 +681,7 @@ def _matmul_group_stream_neon_dotprod[
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
     var b_vals = InlineArray[
-        SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
+        SIMD[DType.uint8, SIMDSize(simd_width) * 4], tile_n * tile_k
     ](fill=0)
 
     comptime for k in range(0, group_size, 16):
@@ -712,7 +716,7 @@ def _matmul_group_stream[
     group_size: Int,
     stream_b_vals_fn: def(
         mut b_vals: InlineArray[
-            SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
+            SIMD[DType.uint8, SIMDSize(simd_width) * 4], tile_n * tile_k
         ]
     ) capturing[origins] -> None,
 ](
@@ -751,10 +755,12 @@ def _matmul_group_unpacked[
 
     @parameter
     def stream_b_vals(
-        mut b_vals: InlineArray[SIMD[DType.uint8, simd_width * 4], tile_n * 1]
+        mut b_vals: InlineArray[
+            SIMD[DType.uint8, SIMDSize(simd_width) * 4], tile_n * 1
+        ]
     ):
         comptime for col in range(tile_n):
-            b_vals[col] = b_q_bits_ptr.load[width=simd_width * 4]()
+            b_vals[col] = b_q_bits_ptr.load[width=SIMDSize(simd_width) * 4]()
             b_q_bits_ptr += simd_width * 4
 
     _matmul_group_stream[
@@ -813,7 +819,7 @@ def _apply_zero_point_correction[
                 # The minimum values vector is encoded as pairs of int16 values
                 # from group_0 and group_1:
                 #       [n0_g0 n0_g1 : n1_g0 n1_g1 : n2_g0 n2_g1 : n3_g0 n3_g1]
-                var q_mins = b_q_mins_ptr.load[width=simd_width * 2](
+                var q_mins = b_q_mins_ptr.load[width=SIMDSize(simd_width) * 2](
                     g * block_n + col * simd_width * 2
                 ).cast[DType.int16]()
 
@@ -824,7 +830,7 @@ def _apply_zero_point_correction[
                     corrections[row, col] = dot_i16_to_i32_x86(
                         corrections[row, col],
                         q_mins,
-                        bitcast[DType.int16, simd_width * 2](
+                        bitcast[DType.int16, SIMDSize(simd_width) * 2](
                             SIMD[DType.int32, simd_width](
                                 bitcast[DType.int32, 1](a_group_sums)
                             )
@@ -975,11 +981,13 @@ def _matmul_group_packed_Q4_K[
     @parameter
     def stream_b_vals(
         mut b_vals: InlineArray[
-            SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
+            SIMD[DType.uint8, SIMDSize(simd_width) * 4], tile_n * tile_k
         ]
     ):
         comptime for col in range(tile_n):
-            var packed_bits = b_q_bits_ptr.load[width=simd_width * 4]()
+            var packed_bits = b_q_bits_ptr.load[
+                width=SIMDSize(simd_width) * 4
+            ]()
             b_q_bits_ptr += simd_width * 4
 
             comptime for i in range(2):
@@ -1201,14 +1209,16 @@ def _matmul_group_packed_Q6_K[
     @parameter
     def stream_b_vals(
         mut b_vals: InlineArray[
-            SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
+            SIMD[DType.uint8, SIMDSize(simd_width) * 4], tile_n * tile_k
         ]
     ):
         comptime for col in range(tile_n):
-            var hi_bytes = SIMD[DType.uint8, size=simd_width * 4](0)
+            var hi_bytes = SIMD[DType.uint8, size=SIMDSize(simd_width) * 4](0)
 
             comptime for i in range(3):
-                var packed_bits = b_q_bits_ptr.load[width=simd_width * 4]()
+                var packed_bits = b_q_bits_ptr.load[
+                    width=SIMDSize(simd_width) * 4
+                ]()
                 b_q_bits_ptr += simd_width * 4
 
                 var bytes = packed_bits & 63
@@ -1243,9 +1253,9 @@ def _matmul_Q6_K_tile[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_ptr: UnsafePointer[
-        _block_Q8_K_packed[_block_Q6_K.group_size], ImmutAnyOrigin
+        mut=False, _block_Q8_K_packed[_block_Q6_K.group_size], _
     ],
-    b_ptr: UnsafePointer[_block_Q6_K_packed[], _],
+    b_ptr: UnsafePointer[mut=False, _block_Q6_K_packed[], _],
     c_ptr: UnsafePointer[mut=True, Float32, _],
     N: Int,
     accumulate: Bool,
@@ -1381,7 +1391,7 @@ def _matmul_Q6_K_columns[
     @__copy_capture(b_tile_ptr, b_q_bits)
     @always_inline
     def process_rows[tile_m: Int](m: Int):
-        var b_q_bits_ptr = b_q_bits.as_any_origin()
+        var b_q_bits_ptr = b_q_bits.as_unsafe_any_origin()
 
         @parameter
         def matmul_group_unpacked(
@@ -1429,8 +1439,12 @@ def _matmul_Qb_K[
     interleave_group_sums: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
-    b: LayoutTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    a: LayoutTensor[
+        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
+    b: LayoutTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     c: LayoutTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1447,14 +1461,15 @@ def _matmul_Qb_K[
     var K = a.dim[1]()
     var k_blocks = K // _block_QK_K.quantized_k
 
-    var a_packed_base_ptr = _quantize_a_Q8_K[
+    var a_packed_base_alloc = _quantize_a_Q8_K[
         group_size, interleave_group_sums=interleave_group_sums
     ](a)
+    a_packed_base_ptr = a_packed_base_alloc.unsafe_ptr()
 
     comptime grain_size = simd_width * 2
 
     var work_count = ceildiv(N, grain_size)
-    var num_workers = min(work_count, parallelism_level())
+    var num_workers = min(work_count, parallelism_level(ctx))
 
     @parameter
     @__copy_capture(
@@ -1509,14 +1524,18 @@ def _matmul_Qb_K[
 
     sync_parallelize[task_func](num_workers, ctx)
 
-    a_packed_base_ptr.free()
+    dealloc(a_packed_base_alloc^)
 
 
 def matmul_Q4_K[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None
 ](
-    a_tt: TileTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
-    b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    a_tt: TileTensor[
+        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_tt: TileTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     c_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1541,8 +1560,12 @@ def matmul_Q4_K[
 def matmul_Q6_K[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None
 ](
-    a_tt: TileTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
-    b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    a_tt: TileTensor[
+        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_tt: TileTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     c_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],

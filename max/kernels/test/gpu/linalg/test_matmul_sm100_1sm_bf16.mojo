@@ -16,7 +16,6 @@ from std.sys import argv, size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import TileTensor, Coord, CoordLike, row_major, Idx
@@ -66,9 +65,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     swapAB: Bool = False,
     k_group_size: Int = 1,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     if not benchmark:
         print(
@@ -79,27 +78,31 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             t" swapAB={swapAB} k_group_size={k_group_size}"
         )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = (
+        Int(n.value())
+        * Int(k.value()) if transpose_b else Int(k.value())
+        * Int(n.value())
+    )
+    var c_size = Int(m.value()) * Int(n.value())
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     # Device allocations
@@ -117,7 +120,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         for m_idx in range(M):
             for k_idx in range(K):
                 comptime assert a_host.flat_rank >= 2
-                a_host[(Idx(m_idx), Idx(k_idx))] = Float32(m_idx + k_idx).cast[
+                a_host[Coord(m_idx, k_idx)] = Float32(m_idx + k_idx).cast[
                     a_type
                 ]()
         for n_idx in range(N):
@@ -187,10 +190,6 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -240,9 +239,9 @@ def main() raises:
                         block_swizzle_size=8,
                     ](
                         ctx,
-                        Idx(Int(1000)),
-                        Idx[1024](),
-                        Idx[1024 + 16](),
+                        Int(1000),
+                        Idx[1024],
+                        Idx[1024 + 16],
                     )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
@@ -259,9 +258,9 @@ def main() raises:
                         swapAB=True,
                     ](
                         ctx,
-                        Idx(Int(512)),
-                        Idx[4096](),
-                        Idx[1024 + 16](),
+                        Int(512),
+                        Idx[4096],
+                        Idx[1024 + 16],
                     )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
@@ -279,9 +278,9 @@ def main() raises:
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(500)),
-                        Idx[2048](),
-                        Idx[4096](),
+                        Int(500),
+                        Idx[2048],
+                        Idx[4096],
                     )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
@@ -297,9 +296,9 @@ def main() raises:
                         block_swizzle_size=2,
                     ](
                         ctx,
-                        Idx(Int(999)),
-                        Idx[256](),
-                        Idx[128](),
+                        Int(999),
+                        Idx[256],
+                        Idx[128],
                     )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
@@ -315,7 +314,7 @@ def main() raises:
                         block_swizzle_size=1,
                     ](
                         ctx,
-                        Idx(Int(777)),
-                        Idx[2560](),
-                        Idx[8192](),
+                        Int(777),
+                        Idx[2560],
+                        Idx[8192],
                     )

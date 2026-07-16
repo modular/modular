@@ -23,6 +23,7 @@ import time
 from collections.abc import AsyncGenerator
 from multiprocessing.context import SpawnProcess
 
+import hf_repo_lock
 import httpx
 import pytest
 import pytest_asyncio
@@ -32,6 +33,8 @@ logger = logging.getLogger(__name__)
 PORT = 8000
 METRICS_PORT = 8001
 MODEL = "modularai/SmolLM-135M-Instruct-FP32"
+MODEL_REVISION = hf_repo_lock.revision_for_hf_repo(MODEL)
+assert MODEL_REVISION is not None
 BASE_URL = f"http://127.0.0.1:{PORT}"
 HEALTH_URL = f"{BASE_URL}/health"
 CHAT_COMPLETIONS_URL = f"{BASE_URL}/v1/chat/completions"
@@ -43,30 +46,25 @@ def serve_main() -> None:
     This function configures and launches the serve API server with model worker.
     It blocks in uvloop.run(server.serve()) until the server is shut down.
     """
-    from max.driver import DeviceSpec
-    from max.entrypoints.cli.serve.serve_api_and_model_worker import (
+    from max._entrypoints.cli.serve.serve_api_and_model_worker import (
         serve_api_server_and_model_worker,
     )
-    from max.pipelines import PipelineConfig
-    from max.pipelines.lib.config.model_config import MAXModelConfig
-    from max.pipelines.lib.model_manifest import ModelManifest
+    from max.driver import DeviceSpec
+    from max.pipelines import PipelineArgs
     from max.serve.config import Settings
 
     settings = Settings(
         port=PORT,
         metrics_port=METRICS_PORT,
     )
+    assert MODEL_REVISION is not None
     # Configure pipeline with GGUF model for fast loading on CPU
-    pipeline_config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=MODEL,
-                    device_specs=[DeviceSpec.cpu()],
-                    quantization_encoding="float32",
-                )
-            }
-        ),
+    pipeline_config = PipelineArgs(
+        model_path=MODEL,
+        huggingface_model_revision=MODEL_REVISION,
+        huggingface_weight_revision=MODEL_REVISION,
+        device_specs=[DeviceSpec.cpu()],
+        quantization_encoding="float32",
     )
     # Launch server (blocks until shutdown)
     serve_api_server_and_model_worker(settings, pipeline_config)

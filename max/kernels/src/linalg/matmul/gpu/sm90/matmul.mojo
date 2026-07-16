@@ -18,7 +18,7 @@ from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import H100
-from layout import Layout, TileTensor
+from layout import Layout, TensorLayout, TileTensor
 from layout.tma_async import create_tensor_tile, create_tma_tile_template
 from std.logger import Logger
 from std.bit import log2_floor
@@ -174,13 +174,9 @@ def _warp_specialize_gemm_with_multicasting_impl[
     comptime assert a_device.rank == 2, "a must be rank 2"
     comptime assert b_device.rank == 2, "b must be rank 2"
 
-    var a = a_device.to_layout_tensor()
-    var b = b_device.to_layout_tensor()
-    var c = c_device.to_layout_tensor()
-
-    # Static shape from the LayoutTensor's type-level layout.
-    comptime N_static = c.layout.shape[1].value()
-    comptime K_static = a.layout.shape[1].value()
+    # Static shape from the TileTensor type-level layout.
+    comptime N_static = type_of(c_device).LayoutType.static_shape[1]
+    comptime K_static = type_of(a_device).LayoutType.static_shape[1]
 
     comptime assert not swapAB or (
         schedule == MatmulSchedule.NONE
@@ -197,9 +193,9 @@ def _warp_specialize_gemm_with_multicasting_impl[
 
     # C is in reference to A and B not being swapped
     # so we derive M and N from A and B instead
-    var M = b.dim[0]() if swapAB else a.dim[0]()
-    var N = a.dim[0]() if swapAB else b.dim[0]()
-    var K = a.dim[1]()
+    var M = Int(b_device.dim[0]()) if swapAB else Int(a_device.dim[0]())
+    var N = Int(a_device.dim[0]()) if swapAB else Int(b_device.dim[0]())
+    var K = Int(a_device.dim[1]())
 
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
@@ -322,7 +318,7 @@ def _warp_specialize_gemm_with_multicasting_impl[
             c_smem_tile,
             swizzle_mode=c_swizzle,
             __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),
-        ](ctx, c)
+        ](ctx, c_device)
 
     var lut_ptr = ctx.enqueue_create_buffer[DType.uint32](0)
 
@@ -338,9 +334,9 @@ def _warp_specialize_gemm_with_multicasting_impl[
         a_type: DType,
         b_type: DType,
         c_type: DType,
-        a_layout: Layout,
-        b_layout: Layout,
-        c_layout: Layout,
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_layout: TensorLayout,
         a_swizzle: TensorMapSwizzle,
         b_swizzle: TensorMapSwizzle,
         c_swizzle: TensorMapSwizzle,
@@ -380,9 +376,9 @@ def _warp_specialize_gemm_with_multicasting_impl[
         a_type,
         b_type,
         c_type,
-        a.layout,
-        b.layout,
-        c.layout,
+        type_of(a_device).LayoutType,
+        type_of(b_device).LayoutType,
+        type_of(c_device).LayoutType,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
@@ -394,9 +390,9 @@ def _warp_specialize_gemm_with_multicasting_impl[
         b_type,
         a_type,
         c_type,
-        b.layout,
-        a.layout,
-        c.layout,
+        type_of(b_device).LayoutType,
+        type_of(a_device).LayoutType,
+        type_of(c_device).LayoutType,
         a_swizzle=b_swizzle,
         b_swizzle=a_swizzle,
         c_swizzle=c_swizzle,
@@ -423,14 +419,14 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     BM // CLUSTER_N, BK
                 ) if config.partitioned_multicast else Index(BM, BK),
                 swizzle_mode=a_swizzle,
-            ](ctx, a)
+            ](ctx, a_device)
 
             var b_tma_op = create_tensor_tile[
                 Index(
                     BN // CLUSTER_M, BK
                 ) if config.partitioned_multicast else Index(BN, BK),
                 swizzle_mode=b_swizzle,
-            ](ctx, b)
+            ](ctx, b_device)
 
             comptime if schedule != MatmulSchedule.NONE:
                 comptime kernel = matmul_kernel_regular[].run_persistent[
@@ -445,13 +441,14 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     type_of(c_tma_op).desc_shape,
                     grid_shape=grid_shape_adjusted,
                     schedule=schedule,
+                    c_tensor_layout=type_of(c_device).LayoutType,
                 ]
 
-                ctx.enqueue_function[kernel, kernel](
+                ctx.enqueue_function[kernel](
                     a_tma_op,
                     b_tma_op,
                     c_tma_op,
-                    c,
+                    c_device.as_unsafe_any_origin(),
                     Index(M, N, K),
                     grid_dim=(grid_shape_adjusted[0], grid_shape_adjusted[1]),
                     block_dim=(num_threads),
@@ -474,15 +471,18 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     type_of(a_tma_op).desc_shape,
                     type_of(b_tma_op).desc_shape,
                     type_of(c_tma_op).desc_shape,
+                    type_of(a_device).LayoutType,
+                    type_of(b_device).LayoutType,
+                    type_of(c_device).LayoutType,
                 ]
 
-                ctx.enqueue_function[kernel, kernel](
+                ctx.enqueue_function[kernel](
                     a_tma_op,
                     b_tma_op,
                     c_tma_op,
-                    a.get_immutable(),
-                    b.get_immutable(),
-                    c,
+                    a_device.as_immut().as_unsafe_any_origin(),
+                    b_device.as_immut().as_unsafe_any_origin(),
+                    c_device.as_unsafe_any_origin(),
                     lut_ptr,
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(num_threads),
@@ -498,14 +498,14 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     BM // CLUSTER_N, BK
                 ) if config.partitioned_multicast else Index(BM, BK),
                 swizzle_mode=a_swizzle,
-            ](ctx, b)
+            ](ctx, b_device)
 
             var b_tma_op = create_tensor_tile[
                 Index(
                     BN // CLUSTER_M, BK
                 ) if config.partitioned_multicast else Index(BN, BK),
                 swizzle_mode=b_swizzle,
-            ](ctx, a)
+            ](ctx, a_device)
 
             comptime if schedule == MatmulSchedule.NONE:
                 comptime kernel = matmul_kernel_swapAB.run[
@@ -518,15 +518,18 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     type_of(a_tma_op).desc_shape,
                     type_of(b_tma_op).desc_shape,
                     type_of(c_tma_op).desc_shape,
+                    type_of(b_device).LayoutType,
+                    type_of(a_device).LayoutType,
+                    type_of(c_device).LayoutType,
                 ]
 
-                ctx.enqueue_function[kernel, kernel](
+                ctx.enqueue_function[kernel](
                     a_tma_op,
                     b_tma_op,
                     c_tma_op,
-                    b.get_immutable(),
-                    a.get_immutable(),
-                    c,
+                    b_device.as_immut().as_unsafe_any_origin(),
+                    a_device.as_immut().as_unsafe_any_origin(),
+                    c_device.as_unsafe_any_origin(),
                     lut_ptr,
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(num_threads),
@@ -549,11 +552,11 @@ def _warp_specialize_gemm_with_multicasting_impl[
             type_of(c_tma_op).desc_shape,
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c_tma_op,
-            a.get_immutable(),
-            b.get_immutable(),
-            c,
+            a_device.as_immut().as_unsafe_any_origin(),
+            b_device.as_immut().as_unsafe_any_origin(),
+            c_device.as_unsafe_any_origin(),
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(num_threads),
             shared_mem_bytes=smem_size,
@@ -622,7 +625,7 @@ def _get_c_smem_layout[
         + String(pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]())
     )
 
-    def _get_max_wg_bn() capturing -> Int:
+    def _get_max_wg_bn() -> Int:
         var WG_BN = MAX_WG_BN
         while (
             available_c_smem_size < WG_BM * WG_BN * size_of[c_type]()
@@ -662,14 +665,10 @@ def warp_specialize_gemm_with_multicasting_splitk[
     comptime assert a_device.rank == 2, "a must be rank 2"
     comptime assert b_device.rank == 2, "b must be rank 2"
 
-    var a = a_device.to_layout_tensor()
-    var b = b_device.to_layout_tensor()
-    var c = c_device.to_layout_tensor()
-
-    var M = c.dim[0]()
-    # Static shape from the LayoutTensor's type-level layout.
-    comptime N = c.layout.shape[1].value()
-    comptime K = a.layout.shape[1].value()
+    var M = c_device.dim[0]()
+    # Static shape from the TileTensor type-level layout.
+    comptime N = type_of(c_device).LayoutType.static_shape[1]
+    comptime K = type_of(a_device).LayoutType.static_shape[1]
 
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
@@ -733,21 +732,22 @@ def warp_specialize_gemm_with_multicasting_splitk[
             BM, BK
         ),
         swizzle_mode=a_swizzle,
-    ](ctx, a)
+    ](ctx, a_device)
     b_tma_op = create_tensor_tile[
         Index(BN // CLUSTER_M, BK) if config.partitioned_multicast else Index(
             BN, BK
         ),
         swizzle_mode=b_swizzle,
-    ](ctx, b)
+    ](ctx, b_device)
 
     c_tma_op = create_tensor_tile[
         c_smem_tile,
         swizzle_mode=c_swizzle,
         __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),
-    ](ctx, c)
+    ](ctx, c_device)
 
     comptime scheduler = SplitKTileScheduler[
+        locks_origin=MutAnyOrigin,
         Index(N, K),
         config.block_tile_shape,
         UInt32(splits),
@@ -797,9 +797,9 @@ def warp_specialize_gemm_with_multicasting_splitk[
         a_type,
         b_type,
         c_type,
-        a.layout,
-        b.layout,
-        c.layout,
+        type_of(a_device).LayoutType,
+        type_of(b_device).LayoutType,
+        type_of(c_device).LayoutType,
         c_smem_layout,
         config.block_tile_shape,
         config.mma_shape,
@@ -836,13 +836,14 @@ def warp_specialize_gemm_with_multicasting_splitk[
         type_of(c_tma_op).desc_shape,
         splits=splits,
         raster_order=raster_order,
+        c_tensor_layout=type_of(c_device).LayoutType,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
-        c,
+        c_device.as_unsafe_any_origin(),
         workspace_ptr,
         locks_ptr,
         Index(M, N, K),

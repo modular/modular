@@ -1,7 +1,8 @@
 ---
 title: Build a model graph with Module
 sidebar_label: Modules
-description: Learn how to build model graphs using MAX's Module class
+description: Learn how to compose modules, write custom modules with explicit weights,
+  load checkpoint data, and construct a model graph.
 ---
 
 A [`Module`](/max/api/python/generated/max.nn.Module/#max.nn.Module) defines
@@ -10,12 +11,12 @@ your model's layers, weights, and forward computation. A
 that computation as a static data structure the compiler can optimize. You need
 both to build a runnable model.
 
-You'll use modules to build a model definition from the ground up, but
-you'll also use them to extend an existing [MAX-supported model](/max/models/)
-with custom layers. This page shows you how to compose built-in modules, write
+You'll use modules to build a model definition from the ground up, but you'll
+also use them to extend an existing [MAX-supported model](/max/models/) with
+custom layers. This page shows you how to compose built-in modules, write
 custom modules with explicit weights, load checkpoint data, and construct a
-graph from the result. By the end, you'll understand how to build a complete
-model definition and verify its outputs locally.
+graph. By the end, you'll understand how to build a complete model definition
+and verify its outputs locally.
 
 :::note
 
@@ -24,7 +25,7 @@ workflow, see the [Model development overview](/max/develop/).
 
 :::
 
-## Key concepts
+## Key APIs
 
 If you have experience with PyTorch and `torch.nn.Module`, MAX's `Module` class
 will look familiar. In both cases, a module defines your model's layers,
@@ -55,14 +56,10 @@ programming pattern relies on the following key APIs:
 
 :::note
 
-<!-- rumdl-disable MD013 -->
-The [`max.nn.Module`](/max/api/python/generated/max.nn.Module) API used on this
-page relies on explicit graph construction. MAX also provides
-[`max.experimental.nn.Module`](/max/api/python/generated/max.experimental.nn.Module),
-which uses an eager-style construction pattern that more closely resembles
-PyTorch. For more information, see [Eager
-execution](/max/develop/eager-execution/).
-<!-- rumdl-enable MD013 -->
+This page uses explicit graph construction with the `max.graph` and `max.nn`
+packages. MAX also provides an eager-style execution pattern with the
+`max.experimental` package. For more information, see the [Graph
+overview](/max/develop/graph).
 
 :::
 
@@ -73,7 +70,9 @@ flows through them. In most cases, you can compose a module entirely with
 prebuilt modules, such as [`Linear`](/max/api/python/generated/max.nn.Linear/),
 [`Embedding`](/max/api/python/generated/max.nn.Embedding/),
 [`RMSNorm`](/max/api/python/generated/max.nn.RMSNorm/),
-[`LayerNorm`](/max/api/python/generated/max.nn.LayerNorm/), and others.
+[`LayerNorm`](/max/api/python/generated/max.nn.LayerNorm/), and others. When
+your architecture needs a component none of these provide, you write a custom
+layer; see [Write a custom layer](/max/develop/layers/).
 
 Here's a simple module that composes two built-in `Linear` modules:
 
@@ -223,9 +222,8 @@ internal registry so you can pass it to the compiler later on.
 
 To load weights from a checkpoint file in safetensors or GGUF format, you'll
 need a weight adapter that translates the checkpoint's key names into the names
-your module expects. Learn more in the [Map weight
-names](/max/develop/model-bringup-workflow/#map-weight-names) section of the
-Model bring-up workflow.
+your module expects. Learn more in [Weight
+adapters](/max/develop/weight-adapters).
 
 If you want to see your module weights'
 fully-qualified names to make sure you're writing your weight adapter
@@ -303,22 +301,27 @@ from max.engine import InferenceSession
 from max.driver import GPU
 
 session = InferenceSession(devices=[GPU()])
-compiled_model = session.load(graph, weights_registry=model.state_dict())
-result = compiled_model(input_data)
+compiled = session.compile(graph)
+runnable_model = session.init(compiled, weights_registry=model.state_dict())
+result = runnable_model(input_data)
 
 print(result[0].to_numpy())
 ```
 
-[`InferenceSession.load()`](/max/api/python/generated/max.engine.InferenceSession/#max.engine.InferenceSession.load)
-compiles a graph into an executable
-[`Model`](/max/api/python/generated/max.engine.Model/). It requires a graph and
-a `weights_registry`, or a dictionary that maps weight names to tensor data.
+[`InferenceSession.compile()`](/max/api/python/generated/max.engine.InferenceSession/#max.engine.InferenceSession.compile)
+compiles a graph into a
+[`CompiledModel`](/max/api/python/generated/max.engine.CompiledModel/) artifact,
+which holds the compiled code but isn't directly executable.
+[`InferenceSession.init()`](/max/api/python/generated/max.engine.InferenceSession/#max.engine.InferenceSession.init)
+then binds the artifact to weights and returns an executable
+[`Model`](/max/api/python/generated/max.engine.Model/). It accepts a
+`weights_registry`, or a dictionary that maps weight names to tensor data.
 
 You should have already passed this dictionary to `load_state_dict()`, which
 stored the dictionary inside the `Module` instance. Reuse it by passing
 `model.state_dict()` as the `weights_registry` argument.
 
-Calling the compiled `Model` runs `execute()` and returns a list of output
+Calling the runnable `Model` runs `execute()` and returns a list of output
 buffers. Convert each buffer to a NumPy array with `to_numpy()` to inspect the
 results. Output post-processing such as decoding happens elsewhere in the
 [inference pipeline](/max/develop/pipelines/).

@@ -113,7 +113,7 @@ def kernel_3[
         UnsafePointer[
             Scalar[a_type],
             address_space=AddressSpace.SHARED,
-            ExternalOrigin[mut=True],
+            UntrackedOrigin[mut=True],
         ]
     ](
         external_memory[
@@ -128,28 +128,28 @@ def kernel_3[
     comptime a_smem_tile_t = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
@@ -411,7 +411,7 @@ def kernel_2[
         num_threads=block_dim,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c,
@@ -512,9 +512,9 @@ def test_kernel_2[
     ) if transpose_b else Layout.row_major(K, N)
     comptime c_layout = Layout.row_major(M, N)
 
-    var a_host_ptr = alloc[Scalar[a_type]](M * K)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
-    var b_host_ptr = alloc[Scalar[b_type]](N * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
     var c_host = ManagedLayoutTensor[c_type, c_layout](ctx)
     var c_host_ref = ManagedLayoutTensor[c_type, c_layout](ctx)
@@ -621,10 +621,6 @@ def test_kernel_2[
             atol=0.0001,
             rtol=rtol,
         )
-
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
 
 
 def main() raises:

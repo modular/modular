@@ -24,7 +24,7 @@ CUDA context for the rest of the process.  All subprocesses are launched
 in parallel for speed.
 
 Usage:
-    bt-h100 //max/tests/integration/unorganized:compare_fusion_errors \
+    bt-b200 //max/tests/integration/unorganized:compare_fusion_errors \
         --test_output=streamed --cache_test_results=no
 """
 
@@ -75,15 +75,14 @@ def main() -> None:
         print("ERROR: MODULAR_KERNEL_VERIFICATION_OPS_PATH not set.")
         sys.exit(1)
 
-    print(
-        f"MODULAR_MAX_DEBUG: {os.environ.get('MODULAR_MAX_DEBUG', 'not set')}"
-    )
+    print(f"MODULAR_DEBUG: {os.environ.get('MODULAR_DEBUG', 'not set')}")
     print(
         "MODULAR_DEVICE_CONTEXT_SYNC_MODE:"
         f" {os.environ.get('MODULAR_DEVICE_CONTEXT_SYNC_MODE', 'not set')}"
     )
     print(
-        f"MOJO_ASSERT_LEVEL: {os.environ.get('MOJO_ASSERT_LEVEL', 'not set')}"
+        "MODULAR_MAX_DEBUG_ASSERT_LEVEL:"
+        f" {os.environ.get('MODULAR_MAX_DEBUG_ASSERT_LEVEL', 'not set')}"
     )
 
     # Launch all scenarios in parallel.

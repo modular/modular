@@ -9,4 +9,5 @@ max.pipelines.architectures.flux2
 
 .. automodule:: max.pipelines.architectures.flux2
    :members:
+   :imported-members:
    :show-inheritance:

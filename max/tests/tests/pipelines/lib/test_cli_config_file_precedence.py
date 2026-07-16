@@ -10,18 +10,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for Click config file precedence."""
+"""Tests for Click config file precedence and recipe path resolution."""
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 import click
+import pytest
 from click.testing import CliRunner
+from max._entrypoints.cli.config import config_to_flag, pipeline_config_options
 from max.config import ConfigFileModel
-from max.entrypoints.cli.config import config_to_flag
+from max.config.config_file_model import _resolve_config_file
+from max.driver import DeviceSpec
+from max.pipelines.lib import PipelineConfig
 from pydantic import Field
+from pytest import MonkeyPatch
 
 
 class _TestConfig(ConfigFileModel):
@@ -35,6 +41,21 @@ def _make_cli() -> click.Command:
     def cli(**config_kwargs: Any) -> None:
         config = _TestConfig(**config_kwargs)
         click.echo(f"{config.model_path}|{config.device_graph_capture}")
+
+    return cli
+
+
+def _make_pipeline_cli() -> click.Command:
+    @click.command()
+    @pipeline_config_options
+    def cli(**config_kwargs: Any) -> None:
+        click.echo(
+            "|".join(
+                key
+                for key in ("device_specs", "draft_device_specs")
+                if key in config_kwargs
+            )
+        )
 
     return cli
 
@@ -80,3 +101,204 @@ def test_cli_args_override_config_file(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert result.output.strip() == "from-cli|True"
+
+
+def test_implicit_devices_do_not_override_config(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Absent --devices leaves device_specs to config or model defaults."""
+    monkeypatch.setattr(
+        "max._entrypoints.cli.config.DevicesOptionType.device_specs",
+        staticmethod(lambda devices: [devices]),
+    )
+
+    result = CliRunner().invoke(_make_pipeline_cli(), ["--config-file", "x"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == ""
+
+
+def test_implicit_devices_use_default_without_config(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Absent --devices lets MAXModelConfig use its Pydantic default."""
+    monkeypatch.setattr(
+        "max._entrypoints.cli.config.DevicesOptionType.device_specs",
+        staticmethod(lambda devices: [devices]),
+    )
+
+    result = CliRunner().invoke(_make_pipeline_cli(), [])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == ""
+
+
+def test_explicit_devices_still_override_config_file(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "max._entrypoints.cli.config.DevicesOptionType.device_specs",
+        staticmethod(lambda devices: [devices]),
+    )
+
+    result = CliRunner().invoke(
+        _make_pipeline_cli(),
+        ["--config-file", "x", "--devices", "gpu:0"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "device_specs|draft_device_specs"
+
+
+def test_explicit_devices_inherited_by_draft_devices(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "max._entrypoints.cli.config.DevicesOptionType.device_specs",
+        staticmethod(lambda devices: [devices]),
+    )
+
+    result = CliRunner().invoke(_make_pipeline_cli(), ["--devices", "gpu:0"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "device_specs|draft_device_specs"
+
+
+def test_resolve_config_file_passthrough_for_plain_paths() -> None:
+    """Non-prefixed paths are returned unchanged."""
+    assert _resolve_config_file("/tmp/my_config.yaml") == "/tmp/my_config.yaml"
+    assert _resolve_config_file("relative/path.yaml") == "relative/path.yaml"
+
+
+def test_resolve_config_file_resolves_builtin_recipe() -> None:
+    """Paths with the max/pipelines/architectures/ prefix resolve to the package."""
+    resolved = _resolve_config_file(
+        "max/pipelines/architectures/llama3_modulev3/recipes/llama32_1b.yaml"
+    )
+    assert Path(resolved).is_file()
+    assert resolved.endswith(
+        "pipelines/architectures/llama3_modulev3/recipes/llama32_1b.yaml"
+    )
+
+
+def test_resolve_config_file_raises_for_missing_recipe() -> None:
+    """Non-existent recipe under the prefix raises FileNotFoundError."""
+    with pytest.raises(FileNotFoundError, match="Built-in recipe not found"):
+        _resolve_config_file(
+            "max/pipelines/architectures/no_such/recipes/missing.yaml"
+        )
+
+
+def test_cli_overrides_yaml_recipe_values(tmp_path: Path) -> None:
+    """Regression: CLI flags must override values set in a YAML recipe,
+    covering both the ``model:`` section (``--devices``,
+    ``--data-parallel-degree``) and the ``runtime:`` section
+    (``--ep-size``)."""
+    config_path = tmp_path / "recipe.yaml"
+    config_path.write_text(
+        "model:\n"
+        "  model_path: fake/model\n"
+        "  device_specs: [0, 1, 2, 3, 4, 5, 6, 7]\n"
+        "  data_parallel_degree: 8\n"
+        "runtime:\n"
+        "  ep_size: 8\n",
+        encoding="utf-8",
+    )
+
+    config = PipelineConfig.from_flat_kwargs(
+        config_file=str(config_path),
+        device_specs=[DeviceSpec(i, "gpu") for i in range(4)],
+        data_parallel_degree=4,
+        ep_size=4,
+    )
+
+    main = config.models["main"]
+    assert len(main.device_specs) == 4
+    assert main.data_parallel_degree == 4
+    assert config.runtime.ep_size == 4
+
+
+def test_model_path_override_preserves_yaml_recipe_fields(
+    tmp_path: Path,
+) -> None:
+    """Regression: --model-path must merge into (not replace) a YAML-loaded
+    model manifest, preserving other recipe-set fields like device_specs."""
+    config_path = tmp_path / "recipe.yaml"
+    config_path.write_text(
+        "model:\n"
+        "  model_path: fake/original-model\n"
+        "  device_specs: [0, 1, 2, 3, 4, 5, 6, 7]\n"
+        "  data_parallel_degree: 2\n"
+        "runtime:\n"
+        "  ep_size: 8\n",
+        encoding="utf-8",
+    )
+
+    config = PipelineConfig.from_flat_kwargs(
+        config_file=str(config_path),
+        model_path="fake/override-model",
+    )
+
+    main = config.models["main"]
+    assert main.model_path == "fake/override-model"
+    # The rest of the recipe must survive the model_path override.
+    assert len(main.device_specs) == 8
+    assert main.data_parallel_degree == 2
+    assert config.runtime.ep_size == 8
+
+
+def test_model_path_override_warns_about_mismatched_recipe(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """--model-path differing from the recipe's model_path logs a warning."""
+    config_path = tmp_path / "recipe.yaml"
+    config_path.write_text(
+        "model:\n  model_path: fake/original-model\n",
+        encoding="utf-8",
+    )
+
+    with caplog.at_level(logging.WARNING, logger="max.pipelines"):
+        PipelineConfig.from_flat_kwargs(
+            config_file=str(config_path),
+            model_path="fake/override-model",
+        )
+
+    assert any(
+        "fake/original-model" in rec.message
+        and "fake/override-model" in rec.message
+        for rec in caplog.records
+    )
+
+
+def test_model_path_matching_recipe_does_not_warn(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """--model-path matching the recipe's own model_path is a no-op, not a
+    mismatch, so it should not warn."""
+    config_path = tmp_path / "recipe.yaml"
+    config_path.write_text(
+        "model:\n  model_path: fake/same-model\n",
+        encoding="utf-8",
+    )
+
+    with caplog.at_level(logging.WARNING, logger="max.pipelines"):
+        PipelineConfig.from_flat_kwargs(
+            config_file=str(config_path),
+            model_path="fake/same-model",
+        )
+
+    assert caplog.records == []
+
+
+def test_config_file_with_builtin_recipe_prefix() -> None:
+    """ConfigFileModel resolves and opens a built-in recipe via the prefix path."""
+    import yaml
+
+    resolved = _resolve_config_file(
+        "max/pipelines/architectures/llama3_modulev3/recipes/llama32_1b.yaml"
+    )
+    with open(resolved) as f:
+        data = yaml.safe_load(f)
+    assert data["model"]["model_path"] == "meta-llama/Llama-3.2-1B-Instruct"

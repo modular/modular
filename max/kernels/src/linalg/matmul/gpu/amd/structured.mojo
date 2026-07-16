@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import align_of
+from std.sys import align_of, simd_width_of
 from std.gpu import WARP_SIZE
 from std.gpu.compute.mma import mma
 from std.itertools import product
@@ -100,6 +100,7 @@ struct SMemBuffer[
     comptime BlockTileType = Self.SMemTile.TileType[Self.BM, Self.BN]
     comptime WarpTileType = Self.BlockTileType.TileType[Self.WM, Self.WN]
 
+    @__allow_legacy_any_origin_fields
     var buffer: Self.SMemTile
 
     @always_inline
@@ -329,8 +330,13 @@ struct AmdTileOperator[
     ]
 
     # Register storage for matrix data
+    @__allow_legacy_any_origin_fields
     var _a_reg_tile: Self.ARegTile
+
+    @__allow_legacy_any_origin_fields
     var _b_reg_tile: Self.BRegTile
+
+    @__allow_legacy_any_origin_fields
     var out_reg_tile: Self.OutRegTile
 
     @always_inline

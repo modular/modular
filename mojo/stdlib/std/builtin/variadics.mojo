@@ -18,55 +18,26 @@ These are Mojo built-ins, so you don't need to import them.
 from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, TypeNames
-from std.sys.intrinsics import _type_is_eq_parse_time
 from std.builtin.globals import global_constant
 
 
 struct _MLIR:
+    comptime KGENTypeType = __mlir_type.`!kgen.type`
+
     comptime POPArrayType[
         size: __mlir_type.index, elt_type: AnyType
     ] = __mlir_type[`!pop.array<`, size, `, `, elt_type, `>`]
 
-    comptime KGENParamListType[elt_type: AnyType] = __mlir_type[
+    comptime KGENParamListType[elt_type: Self.KGENTypeType] = __mlir_type[
         `!kgen.param_list<`, elt_type, `>`
     ]
-    comptime KGENTypeListType[elt_type: type_of(AnyType)] = __mlir_type[
-        `!kgen.param_list<`, elt_type, `>`
-    ]
-
-
-struct Variadic:
-    """A namespace for variadic utilities."""
-
-    comptime TypesOfTrait[T: type_of(AnyType)] = _MLIR.KGENTypeListType[T]
-    """Represents a raw variadic sequence of types that satisfy the specified trait.
-
-    Parameters:
-        T: The trait that types in the variadic sequence must conform to.
-    """
-
-    # ===-----------------------------------------------------------------------===#
-    # VariadicConcat
-    # ===-----------------------------------------------------------------------===#
-
-    comptime concat_types[
-        T: type_of(AnyType), //, *Ts: _MLIR.KGENTypeListType[T]
-    ] = __mlir_attr[
-        `#kgen.param_list.concat<`, Ts.values, `> :`, _MLIR.KGENTypeListType[T]
-    ]
-    """Represents the concatenation of multiple variadic sequences of types.
-
-    Parameters:
-        T: The trait that types in the variadic sequences must conform to.
-        Ts: The variadic sequences to concatenate.
-    """
 
 
 # ===-----------------------------------------------------------------------===#
 # ParameterList and TypeList Utilities
 # ===-----------------------------------------------------------------------===#
 
-comptime _IntToValueGeneratorType[ToT: AnyType] = __mlir_type[
+comptime _IntToXGeneratorType[ToT: _MLIR.KGENTypeType] = __mlir_type[
     `!lit.generator<<"Idx":`,
     Int,
     `>`,
@@ -74,68 +45,13 @@ comptime _IntToValueGeneratorType[ToT: AnyType] = __mlir_type[
     `>`,
 ]
 
-comptime _IntToTypeGeneratorType[
-    Trait: type_of(AnyType),
-] = __mlir_type[
-    `!lit.generator<<"Idx":`,
-    Int,
-    `> `,
-    Trait,
-    `>`,
-]
-
-comptime _TypeToValueGeneratorType[
-    Trait: type_of(AnyType), ValueType: AnyType
-] = __mlir_type[
-    `!lit.generator<<"Elt": `,
-    +Trait,
-    `> `,
-    +ValueType,
-    `>`,
-]
-"""Maps a conforming element type to a compile-time value."""
-
-comptime _TypePredicateGenerator[T: type_of(AnyType)] = __mlir_type[
-    `!lit.generator<<"Type": `,
-    T,
-    `>`,
-    Bool,
-    `>`,
-]
-"""Generator type for type predicates.
-
-A predicate takes a type and returns a boolean indicating whether to keep it.
-
-Parameters:
-    T: The trait that the types conform to.
-"""
-
-comptime _TypeIndexPredicateGenerator[T: type_of(AnyType)] = __mlir_type[
-    `!lit.generator<<"Elt": `,
-    T,
-    `, "Idx":`,
-    Int,
-    `>`,
-    Bool,
-    `>`,
-]
-"""Generator type for indexed type predicates.
-
-A predicate takes an element type and its index in the list and returns whether
-to retain that element in the filtered list.
-
-Parameters:
-    T: The trait that the types conform to.
-"""
-
-
 # ===-----------------------------------------------------------------------===#
 # TypeList
 # ===-----------------------------------------------------------------------===#
 
 
 struct TypeList[
-    Trait: type_of(AnyType), //, values: _MLIR.KGENTypeListType[Trait]
+    Trait: type_of(AnyType), //, values: _MLIR.KGENParamListType[Trait]
 ](Sized, TrivialRegisterPassable):
     """A compile-time list of types conforming to a common trait.
 
@@ -148,31 +64,30 @@ struct TypeList[
 
     Examples:
 
-    ```text
+    ```mojo
     from std.builtin.variadics import TypeList
-    from std.sys.intrinsics import _type_is_eq
     from std.testing import assert_equal
 
     # Create a type list
-    comptime tl = TypeList[Trait=AnyType, Int, String, Float64]()
+    comptime tl = TypeList.of[Trait=AnyType, Int, String, Float64]()
 
-    def main():
+    def main() raises:
         # Query size
         assert_equal(tl.size, 3)
 
         # Check membership
-        comptime assert tl.contains[Int]
-        comptime assert not tl.contains[Bool]
+        comptime assert tl.contains[Int]()
+        comptime assert not tl.contains[Bool]()
 
         # Index into the list
-        comptime assert _type_is_eq[tl[0], Int]()
+        comptime assert tl[0] == Int
     ```
     """
 
-    comptime _mlir_type = _MLIR.KGENTypeListType[Self.Trait]
+    comptime _mlir_type = _MLIR.KGENParamListType[Self.Trait]
     """The low-level MLIR type of the type list."""
 
-    comptime size: Int = Int(
+    comptime size = Int(
         mlir_value=__mlir_attr[
             `#kgen.param_list.size<:`,
             Self._mlir_type,
@@ -183,7 +98,7 @@ struct TypeList[
     )
     """The number of types in the list."""
 
-    comptime __getitem_param__[idx: Int] = __mlir_attr[
+    comptime __getitem_param__[idx: SIMDSize] = __mlir_attr[
         `#kgen.param_list.get<:`,
         Self._mlir_type,
         ` `,
@@ -199,6 +114,27 @@ struct TypeList[
         idx: The index of the type to access.
     """
 
+    comptime _get_type_at_index[idx: __mlir_type.index] = __mlir_attr[
+        `#kgen.param_list.get<:`,
+        Self._mlir_type,
+        ` `,
+        +Self.values,
+        `, `,
+        idx,
+        `> : `,
+        +Self.Trait,
+    ]
+    """Gets a type at the given raw `index`.
+
+    Unlike `__getitem_param__`, this accepts a raw `!kgen.index` so callers can
+    index without constructing a `SIMDSize` (and thus without pulling in
+    `SIMDSize` comparison machinery). Used by the stdlib plugin router during
+    bootstrap.
+
+    Parameters:
+        idx: The raw `index` of the type to access.
+    """
+
     @implicit
     @always_inline("builtin")
     def __init__(
@@ -209,7 +145,7 @@ struct TypeList[
                 `#kgen.upcast<`,
                 existing.values,
                 `> : `,
-                _MLIR.KGENTypeListType[Self.Trait],
+                _MLIR.KGENParamListType[Self.Trait],
             ],
         ],
     ) where __mlir_attr[
@@ -254,7 +190,7 @@ struct TypeList[
         Trait: type_of(AnyType),
         ToT: Trait,
         //,
-        ToWrap: _IntToTypeGeneratorType[Trait],
+        ToWrap: _IntToXGeneratorType[Trait],
         idx: __mlir_type.index,
     ] = ToWrap[Int(mlir_value=idx)]
 
@@ -263,16 +199,16 @@ struct TypeList[
         ToT: Trait,
         //,
         count: Int,
-        Mapper: _IntToTypeGeneratorType[Trait],
+        Mapper: _IntToXGeneratorType[Trait],
     ] = TypeList[
         Trait=Trait,
         __mlir_attr[
             `#kgen.param_list.tabulate<`,
-            count._int_mlir_index(),
+            count.__mlir_index__(),
             `,`,
             Self._IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
             `> : `,
-            _MLIR.KGENTypeListType[Trait],
+            _MLIR.KGENParamListType[Trait],
         ],
     ]
     """Builds a type list by applying an index-to-type mapper `count` times.
@@ -301,13 +237,13 @@ struct TypeList[
 
     # Note: this is _concat instead of concat because it takes MLIR typelists
     comptime _concat[
-        Trait: type_of(AnyType), //, *Ts: _MLIR.KGENTypeListType[Trait]
+        Trait: type_of(AnyType), //, *Ts: _MLIR.KGENParamListType[Trait]
     ] = TypeList[
         __mlir_attr[
             `#kgen.param_list.concat<`,
             Ts.values,
             `> :`,
-            _MLIR.KGENTypeListType[Trait],
+            _MLIR.KGENParamListType[Trait],
         ]
     ]
     """Form a TypeList from the concatenation of multiple MLIR type lists.
@@ -337,10 +273,32 @@ struct TypeList[
         FromAndTo: AnyType,
         ToWrap: Self._ReducerGeneratorType[FromAndTo],
         PrevV: FromAndTo,
-        VA: _MLIR.KGENTypeListType[Self.Trait],
-        idx: SIMDSize,
+        VA: _MLIR.KGENParamListType[Self.Trait],
+        idx: Int,
     ] = ToWrap[PrevV, TypeList[VA].__getitem_param__[idx]]
     """Adapts a (prev, element) reducer to the variadic reduce index signature."""
+
+    comptime _ReduceVariadicIdxGeneratorTypeGenerator[
+        Prev: AnyType
+    ] = __mlir_type[
+        `!lit.generator<<"Prev": `,
+        +Prev,
+        `, "From": `,
+        _MLIR.KGENParamListType[Self.Trait],
+        `, "Idx":`,
+        Int,
+        `>`,
+        +Prev,
+        `>`,
+    ]
+    comptime _IndexToIntWrap[
+        ReduceT: AnyType,
+        ToWrap: Self._ReduceVariadicIdxGeneratorTypeGenerator[ReduceT],
+        PrevV: ReduceT,
+        VA: _MLIR.KGENParamListType[Self.Trait],
+        idx: __mlir_type.index,
+    ] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
+    """Wrapper for type -> value."""
 
     comptime reduce[
         FromAndTo: AnyType,
@@ -353,8 +311,7 @@ struct TypeList[
         `,`,
         Self.values,
         `,`,
-        _IndexToIntWrap[
-            Self.Trait,
+        Self._IndexToIntWrap[
             FromAndTo,
             Self._DiscardIndexWrapper[FromAndTo, Reducer, ...],
             ...,
@@ -371,8 +328,79 @@ struct TypeList[
             `[prev: FromAndTo, element: Self.Trait] -> FromAndTo`.
     """
 
+    comptime _TypeIndexReducerGenerator[Acc: AnyType] = __mlir_type[
+        `!lit.generator<<"Prev": `,
+        +Acc,
+        `, "From": `,
+        +Self.Trait,
+        `, "Idx":`,
+        Int,
+        `>`,
+        +Acc,
+        `>`,
+    ]
+
+    comptime _PassIndexReducerWrapper[
+        FromAndTo: AnyType,
+        ToWrap: Self._TypeIndexReducerGenerator[FromAndTo],
+        PrevV: FromAndTo,
+        VA: _MLIR.KGENParamListType[Self.Trait],
+        list_idx: Int,
+    ] = ToWrap[
+        PrevV,
+        TypeList[VA].__getitem_param__[list_idx],
+        list_idx,
+    ]
+    """Adapts a (prev, element, index) reducer to the variadic reduce index signature."""
+
+    comptime reduce_idx[
+        FromAndTo: AnyType,
+        //,
+        BaseVal: FromAndTo,
+        Reducer: Self._TypeIndexReducerGenerator[FromAndTo],
+    ] = __mlir_attr[
+        `#kgen.param_list.reduce<`,
+        BaseVal,
+        `,`,
+        Self.values,
+        `,`,
+        Self._IndexToIntWrap[
+            FromAndTo,
+            Self._PassIndexReducerWrapper[FromAndTo, Reducer, ...],
+            ...,
+        ],
+        `> : `,
+        +FromAndTo,
+    ]
+    """Folds this type list to a single value using a step function of position.
+
+    Like `reduce`, but the reducer receives each element's index in this list,
+    from `0` through `size - 1`, as a third compile-time argument.
+
+    Parameters:
+        FromAndTo: The type of the accumulator and the final result.
+        BaseVal: The initial accumulator value.
+        Reducer: A compile-time generator
+            `[prev: FromAndTo, element: Self.Trait, idx: Int] -> FromAndTo`.
+    """
+
+    comptime _TypePredicateGenerator = __mlir_type[
+        `!lit.generator<<"Type": `,
+        Self.Trait,
+        `>`,
+        Bool,
+        `>`,
+    ]
+    """Generator type for type predicates.
+
+    A predicate takes a type and returns a boolean indicating whether to keep it.
+
+    Parameters:
+        T: The trait that the types conform to.
+    """
+
     comptime _AnySatisfiesReducer[
-        predicate: _TypePredicateGenerator[Self.Trait],
+        predicate: Self._TypePredicateGenerator,
         last_value: Bool,
         this_element: Self.Trait,
     ] = last_value or predicate[this_element]
@@ -380,7 +408,7 @@ struct TypeList[
     @always_inline("builtin")
     @staticmethod
     def any_satisfies[
-        predicate: _TypePredicateGenerator[Self.Trait],
+        predicate: Self._TypePredicateGenerator,
     ]() -> Bool:
         """Returns true if `predicate` holds for at least one type in this list.
 
@@ -397,15 +425,28 @@ struct TypeList[
         ]
 
     comptime _AllSatisfiesReducer[
-        predicate: _TypePredicateGenerator[Self.Trait],
+        predicate: Self._TypePredicateGenerator,
         last_value: Bool,
         this_element: Self.Trait,
     ] = last_value and predicate[this_element]
 
     @always_inline("builtin")
     @staticmethod
+    def all_conforms_to[_trait: type_of(AnyType)]() -> Bool:
+        """Returns true if all types in this list conform to `Trait`.
+
+        Parameters:
+            _trait: The trait to check for conformance to.
+
+        Returns:
+            True if all types in this list conform to `Trait`, False otherwise.
+        """
+        return conforms_to(Self.values, _trait)
+
+    @always_inline("builtin")
+    @staticmethod
     def all_satisfies[
-        predicate: _TypePredicateGenerator[Self.Trait],
+        predicate: Self._TypePredicateGenerator,
     ]() -> Bool:
         """Returns true if `predicate` holds for every type in this list.
 
@@ -423,13 +464,13 @@ struct TypeList[
         ]
 
     comptime _ContainsTypePredicate[
-        search: Self.Trait,
+        search: AnyType,
         element: Self.Trait,
-    ] = _type_is_eq_parse_time[element, search]()
+    ] = element == search
 
     @always_inline("builtin")
     @staticmethod
-    def contains[type: Self.Trait]() -> Bool:
+    def contains[type: AnyType]() -> Bool:
         """Checks if a type is contained in this type list.
 
         Parameters:
@@ -473,29 +514,28 @@ struct TypeList[
             The generator type is `[T: Trait] -> To`.
     """
 
-    comptime _TypeIndexToTypeGenerator[
-        ToTrait: type_of(AnyType),
-    ] = __mlir_type[
+    comptime _TypeIndexPredicateGenerator = __mlir_type[
         `!lit.generator<<"Elt": `,
         Self.Trait,
         `, "Idx":`,
         Int,
         `>`,
-        ToTrait,
+        Bool,
         `>`,
     ]
-    """Generator type for index-aware type-to-type maps.
+    """Generator type for indexed type predicates.
 
-    Maps an element type and its list index to an output type.
+    A predicate takes an element type and its index in the list and returns whether
+    to retain that element in the filtered list.
 
     Parameters:
-        ToTrait: The trait of the mapped output types.
+        T: The trait that the types conform to.
     """
 
     comptime _FilterIdxTabulator[
-        Predicate: _TypeIndexPredicateGenerator[Self.Trait],
+        Predicate: Self._TypeIndexPredicateGenerator,
         idx: Int,
-    ]: _MLIR.KGENTypeListType[Self.Trait] = TypeList.of[
+    ]: _MLIR.KGENParamListType[Self.Trait] = TypeList.of[
         Trait=Self.Trait, Self.__getitem_param__[idx]
     ]().values if Predicate[
         Self.__getitem_param__[idx], idx
@@ -504,7 +544,7 @@ struct TypeList[
     ]().values
 
     comptime filter_idx[
-        Predicate: _TypeIndexPredicateGenerator[Self.Trait],
+        Predicate: Self._TypeIndexPredicateGenerator,
     ] = TypeList._concat[
         *ParameterList.tabulate[
             Self.size,
@@ -525,9 +565,18 @@ struct TypeList[
         A `TypeList` of the same trait containing the kept elements in order.
     """
 
+    comptime _TypeToValueGeneratorType[ValueType: AnyType] = __mlir_type[
+        `!lit.generator<<"Elt": `,
+        +Self.Trait,
+        `> `,
+        +ValueType,
+        `>`,
+    ]
+    """Maps a conforming element type to a compile-time value."""
+
     comptime _MapToValuesGeneratorType[
         ValueType: AnyType,
-    ] = _TypeToValueGeneratorType[Self.Trait, ValueType]
+    ] = Self._TypeToValueGeneratorType[ValueType]
 
     comptime _MapToValuesIntTabulator[
         ValueType: AnyType,
@@ -668,17 +717,33 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     arguments must have the same type `Int`.
 
     ```mojo
-    def sum_values[*args: Int]() -> Int:
+    def sum_values[*args: Int]():
+
+        # Iterate over elements at compile time
+        comptime for i in range(args.size):  # can also use len() at comptime
+
+            # print() below is a run-time call, so placing args[i] directly inside
+            # it will invoke run-time access and not compile-time access; both share
+            # the same syntax. For illustration, we place comptime access in a separate
+            # step here.
+            comptime arg = args[i]
+            print(arg, end=" ")
+
+        print()
+
+        # Iterate over elements at run-time
         var total = 0
+        for i in range(len(args)): # can also use the comptime args.size
+            total += args[i]
 
-        # Can use regular for loop because args is a ParameterList
-        for i in range(len(args)):
-            total += args[i]  # All elements are Int, so uniform access
-
-        return total
+        print(total)
 
     def main():
-        print(sum_values[1, 2, 3, 4, 5]())
+        sum_values[1, 2, 3, 4, 5]()
+
+        # Output:
+        #  1 2 3 4 5
+        #  15
     ```
 
     Parameters:
@@ -747,13 +812,13 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         """
         return self.get_span()[idx]
 
-    comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
+    comptime __getitem_param__[idx: SIMDSize]: Self.type = __mlir_attr[
         `#kgen.param_list.get<:`,
         Self._mlir_type,
         ` `,
         +Self.values,
         `, `,
-        idx._int_mlir_index(),
+        idx._mlir_value,
         `> : `,
         +Self.type,
     ]
@@ -799,7 +864,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     comptime _IndexToIntTabulateWrap[
         ToT: AnyType,
         //,
-        ToWrap: _IntToValueGeneratorType[ToT],
+        ToWrap: _IntToXGeneratorType[ToT],
         idx: __mlir_type.index,
     ]: ToT = ToWrap[Int(mlir_value=idx)]
 
@@ -807,12 +872,12 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         type: AnyType,
         //,
         count: Int,
-        Mapper: _IntToValueGeneratorType[type],
+        Mapper: _IntToXGeneratorType[type],
     ] = ParameterList[
         type=type,
         __mlir_attr[
             `#kgen.param_list.tabulate<`,
-            count._int_mlir_index(),
+            count.__mlir_index__(),
             `,`,
             Self._IndexToIntTabulateWrap[Mapper, ...],
             `> : `,
@@ -859,10 +924,6 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     # Reductions
     # ===-------------------------------------------------------------------===#
 
-    comptime _ElementToBoolGeneratorType = __mlir_type[
-        `!lit.generator<<"Elt": `, +Self.type, `>`, +Bool, `>`
-    ]
-
     comptime _ReducerGeneratorType[
         FromAndTo: AnyType,
     ] = __mlir_type[
@@ -881,7 +942,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         PrevV: FromAndTo,
         VA: Self._mlir_type,
         idx: __mlir_type.index,
-    ] = ToWrap[PrevV, Self.__getitem_param__[Int(mlir_value=idx)]]
+    ] = ToWrap[PrevV, Self.__getitem_param__[SIMDSize(mlir_value=idx)]]
     """Takes an index because kgen.variadic.reduce passes it but we don't want it"""
 
     # TODO: This isn't returning a ParamList, so it should really be a 'def' so
@@ -912,6 +973,10 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         BaseVal: The initial value to reduce on.
         Reducer: A `[BaseVal: FromAndTo, T: Self.type] -> FromAndTo` that does the reduction.
     """
+
+    comptime _ElementToBoolGeneratorType = __mlir_type[
+        `!lit.generator<<"Elt": `, +Self.type, `>`, +Bool, `>`
+    ]
 
     comptime _AnySatisfiesReducer[
         predicate: Self._ElementToBoolGeneratorType,
@@ -959,10 +1024,17 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             Self._AllSatisfiesReducer[predicate, ...],
         ]
 
+    # TODO(MOCO-3531): Remove downcasts here.
     comptime _ContainsValuePredicate[
         search_value: Self.type,
-        element_value: Self.type where conforms_to(Self.type, Equatable),
-    ] = trait_downcast[Equatable](search_value) == trait_downcast[Equatable](
+        element_value: Self.type,
+    ] where conforms_to(Self.type, Equatable) = rebind[
+        downcast[Self.type, Equatable]
+    ](
+        search_value
+    ) == rebind[
+        downcast[Self.type, Equatable]
+    ](
         element_value
     )
 
@@ -1025,15 +1097,16 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             ParentConformsTo="Writable",
             ElementConformsTo="Writable",
         ]()
+        comptime assert conforms_to(Self.type, Writable)
         writer.write_string("(")
         for i in range(len(self)):
             if i > 0:
                 writer.write_string(", ")
 
             comptime if is_repr:
-                trait_downcast[Writable](self[i]).write_repr_to(writer)
+                self[i].write_repr_to(writer)
             else:
-                trait_downcast[Writable](self[i]).write_to(writer)
+                self[i].write_to(writer)
         writer.write_string(")")
 
     @no_inline
@@ -1163,8 +1236,8 @@ struct VariadicList[
     """
 
     comptime _EltPointerType = Pointer[Self.element_type, Self.origin]
-    # FIXME: This should be the origin of the container, not ExternalOrigin.
-    var _value: Span[Self._EltPointerType, ExternalOrigin[mut=False]]
+    # FIXME: This should be the origin of the container, not UntrackedOrigin.
+    var _value: Span[Self._EltPointerType, UntrackedOrigin[mut=False]]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -1178,9 +1251,9 @@ struct VariadicList[
     ](
         out self,
         value: Pointer[
-            _MLIR.POPArrayType[size, Self._EltPointerType._mlir_type],
+            _MLIR.POPArrayType[size, Self._EltPointerType._mlir_lit_ref],
             container_origin,
-        ]._mlir_type,
+        ]._mlir_lit_ref,
     ):
         """Constructs a VariadicList from a compiler-generated array of element
         pointers.
@@ -1196,15 +1269,14 @@ struct VariadicList[
         # the first element.
         var array_up = UnsafePointer(
             to=Pointer(_mlir_value=value)[]
-        ).unsafe_origin_cast[ExternalOrigin[mut=False]]()
-        var elt_ptr = UnsafePointer[_, ExternalOrigin[mut=False]](
-            __mlir_op.`pop.array.gep`(
-                array_up.address,
-                Int(0)._int_mlir_index(),
+        ).unsafe_origin_cast[UntrackedOrigin[mut=False]]()
+        var elt_ptr = UnsafePointer[_, UntrackedOrigin[mut=False]](
+            _mlir_value=__mlir_op.`pop.array.gep`(
+                array_up._get_kgen_pointer(),
+                Int(0).__mlir_index__(),
             )
         ).bitcast[Self._EltPointerType]()
-        var size_tmp = size  # FIXME: Weird MLIR syntax error?
-        self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size_tmp))
+        self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size))
 
     # The destructor for this type is trivial if not an "owned" list.
     comptime __del__is_trivial: Bool = not Self.is_owned
@@ -1218,29 +1290,28 @@ struct VariadicList[
         # normally torn down when CheckLifetimes is left to its own devices.
         comptime if Self.is_owned:
             _constrained_conforms_to[
-                conforms_to(Self.element_type, ImplicitlyDestructible),
+                conforms_to(Self.element_type, ImplicitlyDeletable),
                 Parent=Self,
                 Element=Self.element_type,
-                ParentConformsTo="ImplicitlyDestructible",
+                ParentConformsTo="ImplicitlyDeletable",
             ]()
-            comptime TDestructible = downcast[
-                Self.element_type, ImplicitlyDestructible
-            ]
+            comptime assert conforms_to(Self.element_type, ImplicitlyDeletable)
 
             for i in reversed(range(len(self))):
                 # Safety: We own the elements in this list.
-                UnsafePointer(to=self[i]).mut_cast[True]().bitcast[
-                    TDestructible
-                ]().destroy_pointee()
+                UnsafePointer(to=self[i]).mut_cast[
+                    True
+                ]().unsafe_deinit_pointee()
 
-    def consume_elements[
-        elt_handler: def(idx: Int, var elt: Self.element_type) capturing
-    ](deinit self):
+    def consume_elements(
+        deinit self,
+        elt_handler: Some[def(idx: Int, var elt: Self.element_type)],
+    ):
         """Consume the variadic list by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
         variadic lists.
 
-        Parameters:
+        Args:
             elt_handler: A function that will be called for each element of the
                          list.
         """
@@ -1253,7 +1324,9 @@ struct VariadicList[
             var ptr = UnsafePointer(to=self[i])
             # TODO: Cannot use UnsafePointer.take_pointee because it requires
             # the element to be Movable, which is not required here.
-            elt_handler(i, __get_address_as_owned_value(ptr.address))
+            elt_handler(
+                i, __get_address_as_owned_value(ptr._get_kgen_pointer())
+            )
 
     # FIXME: This is a hack to work around a miscompile, do not use.
     def _annihilate(deinit self):
@@ -1309,15 +1382,16 @@ struct VariadicList[
             ParentConformsTo="Writable",
             ElementConformsTo="Writable",
         ]()
+        comptime assert conforms_to(Self.element_type, Writable)
         writer.write_string("(")
         for i in range(len(self)):
             if i > 0:
                 writer.write_string(", ")
 
             comptime if is_repr:
-                trait_downcast[Writable](self[i]).write_repr_to(writer)
+                self[i].write_repr_to(writer)
             else:
-                trait_downcast[Writable](self[i]).write_to(writer)
+                self[i].write_to(writer)
         writer.write_string(")")
 
     @no_inline
@@ -1486,24 +1560,19 @@ struct VariadicPack[
 
         comptime if Self.is_owned:
             comptime for i in reversed(range(Self.__len__())):
-                # FIXME(MOCO-2953):
-                #   Due to a compiler limitation, we can't use
-                #   conforms_to() here, meaning the `trait_downcast` below
-                #   could fail with a worse elaboration error than we'd get from
-                #   _constrained_conforms_to.
-                #
-                # comptime element_type = Self.element_types[i]
-                # _constrained_conforms_to[
-                #     conforms_to(element_type, ImplicitlyDestructible),
-                #     Parent=Self,
-                #     Element=element_type,
-                #     ParentConformsTo="ImplicitlyDestructible",
-                # ]()
+                comptime element_type = Self.element_types[i]
+                _constrained_conforms_to[
+                    conforms_to(element_type, ImplicitlyDeletable),
+                    Parent=Self,
+                    Element=element_type,
+                    ParentConformsTo="ImplicitlyDeletable",
+                ]()
+                comptime assert conforms_to(element_type, ImplicitlyDeletable)
 
                 # Safety: We own the elements in this pack.
-                UnsafePointer(
-                    to=trait_downcast[ImplicitlyDestructible](self[i])
-                ).mut_cast[True]().destroy_pointee()
+                UnsafePointer(to=self[i]).mut_cast[
+                    True
+                ]().unsafe_deinit_pointee()
 
     def consume_elements[
         elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
@@ -1525,7 +1594,9 @@ struct VariadicPack[
             var ptr = UnsafePointer(to=self[i])
             # TODO: Cannot use UnsafePointer.take_pointee because it requires
             # the element to be Movable, which is not required here.
-            elt_handler[i](__get_address_as_owned_value(ptr.address))
+            elt_handler[i](
+                __get_address_as_owned_value(ptr._get_kgen_pointer())
+            )
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -1568,7 +1639,7 @@ struct VariadicPack[
             mutability of the pack argument convention.
         """
         litref_elt = __mlir_op.`lit.ref.pack.extract`[
-            index=index._int_mlir_index()
+            index=index.__mlir_index__()
         ](self._value)
         return __get_litref_as_mvalue(litref_elt)
 
@@ -1590,19 +1661,21 @@ struct VariadicPack[
         `, 0: index>: `,
         _MLIR.KGENParamListType[__mlir_type.`!kgen.type`],
     ]
-    """Use variadic_ptr_map to construct the type list of the !kgen.pack that
+    """Use variadic_ptr_map to construct the type list of the !kgen.struct that
     the !lit.ref.pack will lower to.  It exposes the pointers introduced by the
     references.
     """
     comptime _kgen_pack_with_pointer_type = __mlir_type[
-        `!kgen.pack<:param_list<type> `, Self._variadic_pointer_types, `>`
+        `!kgen.struct<:param_list<type> `,
+        Self._variadic_pointer_types,
+        ` isParamPack>`,
     ]
-    """This is the !kgen.pack type with pointer elements."""
+    """This is the !kgen.struct type with pointer elements."""
 
     @doc_hidden
     @always_inline("nodebug")
     def get_as_kgen_pack(self) -> Self._kgen_pack_with_pointer_type:
-        """This rebinds `in_pack` to the equivalent `!kgen.pack` with kgen
+        """This rebinds `in_pack` to the equivalent `!kgen.struct` with kgen
         pointers."""
         return rebind[Self._kgen_pack_with_pointer_type](self._value)
 
@@ -1614,11 +1687,11 @@ struct VariadicPack[
         _MLIR.KGENParamListType[__mlir_type.`!kgen.type`],
     ]
     comptime _loaded_kgen_pack_type = __mlir_type[
-        `!kgen.pack<:param_list<type> `,
+        `!kgen.struct<:param_list<type> `,
         Self._variadic_with_pointers_removed,
-        `>`,
+        ` isParamPack>`,
     ]
-    """This is the `!kgen.pack` type that happens if one loads all the elements
+    """This is the `!kgen.struct` type that happens if one loads all the elements
     of the pack.
     """
 
@@ -1629,7 +1702,7 @@ struct VariadicPack[
     def get_loaded_kgen_pack(self) -> Self._loaded_kgen_pack_type:
         """This returns the stored KGEN pack after loading all of the elements.
         """
-        return __mlir_op.`kgen.pack.load`(self.get_as_kgen_pack())
+        return __mlir_op.`kgen.struct.load_indirect`(self.get_as_kgen_pack())
 
     def _write_to[
         O1: ImmutOrigin,
@@ -1638,12 +1711,12 @@ struct VariadicPack[
         *,
         is_repr: Bool = False,
     ](
-        self: VariadicPack[element_trait=Writable, _, ...],
+        self,
         mut writer: Some[Writer],
         start: StringSlice[O1] = StaticString(""),
         end: StringSlice[O2] = StaticString(""),
         sep: StringSlice[O3] = StaticString(", "),
-    ):
+    ) where Self.element_types.all_conforms_to[Writable]():
         """Writes a sequence of writable values from a pack to a writer with
         delimiters.
 
@@ -1666,6 +1739,9 @@ struct VariadicPack[
         writer.write_string(start)
 
         comptime for i in range(self.__len__()):
+            comptime assert conforms_to(
+                Self.element_types[i], Writable
+            ), "variadic pack element type is not Writable"
             comptime if i != 0:
                 writer.write_string(sep)
 
@@ -1677,9 +1753,9 @@ struct VariadicPack[
 
     @no_inline
     def write_to(
-        self: VariadicPack[element_trait=Writable, _, ...],
+        self,
         mut writer: Some[Writer],
-    ):
+    ) where Self.element_types.all_conforms_to[Writable]():
         """Writes the elements of this pack to a writer.
 
         Args:
@@ -1693,9 +1769,9 @@ struct VariadicPack[
 
     @no_inline
     def write_repr_to(
-        self: VariadicPack[element_trait=Writable, _, ...],
+        self,
         mut writer: Some[Writer],
-    ):
+    ) where Self.element_types.all_conforms_to[Writable]():
         """Writes the repr of the elements of this pack to a writer.
 
         Args:
@@ -1706,67 +1782,3 @@ struct VariadicPack[
             start=StaticString("("),
             end=StaticString(")"),
         )
-
-
-# ===-----------------------------------------------------------------------===#
-# VariadicReduce
-# ===-----------------------------------------------------------------------===#
-
-
-comptime _ReduceVariadicIdxGeneratorTypeGenerator[
-    Prev: AnyType, From: type_of(AnyType)
-] = __mlir_type[
-    `!lit.generator<<"Prev": `,
-    +Prev,
-    `, "From": `,
-    _MLIR.KGENTypeListType[From],
-    `, "Idx":`,
-    SIMDSize,
-    `>`,
-    +Prev,
-    `>`,
-]
-"""This specifies a generator to generate a generator type for the reducer.
-The generated generator type is [Prev: AnyType, Ts: _MLIR.KGENTypeListType[AnyType], idx: SIMDSize] -> Prev,
-"""
-
-comptime _IndexToIntWrap[
-    From: type_of(AnyType),
-    ReduceT: AnyType,
-    ToWrap: _ReduceVariadicIdxGeneratorTypeGenerator[ReduceT, From],
-    PrevV: ReduceT,
-    VA: _MLIR.KGENTypeListType[From],
-    idx: __mlir_type.index,
-] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
-"""Wrapper for type -> value."""
-
-comptime _ReduceVariadicAndIdxToVariadic[
-    From: type_of(AnyType),
-    To: type_of(AnyType),
-    //,
-    *,
-    BaseVal: _MLIR.KGENTypeListType[To],
-    ParamListType: _MLIR.KGENTypeListType[From],
-    Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[
-        _MLIR.KGENTypeListType[To], From
-    ],
-] = __mlir_attr[
-    `#kgen.param_list.reduce<`,
-    BaseVal,
-    `,`,
-    ParamListType,
-    `,`,
-    _IndexToIntWrap[From, _MLIR.KGENTypeListType[To], Reducer, ...],
-    `> : `,
-    type_of(BaseVal),
-]
-"""Construct a new variadic of types using a reducer. To reduce to a single
-type, one could reduce the input to a single element variadic instead.
-
-Parameters:
-    From: The common trait bound for the input variadic types.
-    To: The common trait bound for the output variadic types.
-    BaseVal: The initial value to reduce on.
-    ParamListType: The variadic to be reduced.
-    Reducer: A `[BaseVal: _MLIR.KGENTypeListType[To], Ts: *From, idx: index] -> To` that does the reduction.
-"""

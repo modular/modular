@@ -19,6 +19,11 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
+from std.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+)
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from std.gpu.primitives.warp import broadcast
@@ -30,18 +35,16 @@ from std.gpu.compute.arch.tcgen05 import (
 from std.gpu.memory import fence_mbarrier_init
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from layout.tma_async import RaggedTMA3DTile
-from nn.attention.gpu.nvidia.sm100.attention import (
-    FA4Config,
-    EnableForcedOrdering,
-)
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
-    SM100TensorAccumulatorSS,
-    SM100TensorAccumulatorTS,
+    SM100TensorAccumulator,
     elect,
-    FA4MiscMBars,
+    kv_sub_tile_rows,
+    o_store_tma_blocks_per_op,
 )
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     get_seq_info,
     KVTMATile,
     MHAPosition,
@@ -90,6 +93,11 @@ struct SM100MHA2Q[
 
     comptime pair_cta: Bool = Self.config.pair_cta
     comptime cta_group: Int = 2 if Self.pair_cta else 1
+    # CTAs per launch cluster = cta_group (pair-CTA 2-SM width) * splitk
+    # partitions. Drives the static `nvvm.cluster_dim` metadata. Distinct from
+    # `cta_group` (the UMMA 1-SM/2-SM width, always 1 or 2): split-K is P
+    # independent single-CTA kernels (cta_group==1) co-launched in a cluster.
+    comptime cluster_size: Int = Self.config.cluster_size()
     comptime BM = Self.config.BM
     comptime BN = Self.config.BN
     comptime depth = Self.config.qk_depth
@@ -114,24 +122,15 @@ struct SM100MHA2Q[
     comptime num_qk_stages = Self.config.num_qk_stages
     comptime num_pv_stages = Self.config.num_pv_stages
 
-    # Unified misc barriers type managing all barriers including K/V/O pipelines
-    comptime MiscMBarsType = FA4MiscMBars[
-        num_qk_stages=Self.num_qk_stages,
-        num_pv_stages=Self.num_pv_stages,
-        num_kv_stages=Self.config.num_kv_stages,
-        use_order_barriers=EnableForcedOrdering,
-        use_fused_kv=Self.config.use_fused_kv,
-        pair_cta=Self.pair_cta,
-    ]
-
     # First MMA is Q@K' (can be staged by num_qk_stages)
     # (BM x depth) @ (BN x depth)' -> (BM x BN)
-    comptime UMMA0Type = SM100TensorAccumulatorSS[
+    comptime UMMA0Type = SM100TensorAccumulator[
         Self.qkv_type,
         Self.accum_type,
         MMA_M=Self.MMA_M,  # 128 single-CTA, 256 pair-CTA
         MMA_N=Self.BN,
         BK=align_up(Self.depth, Self.config.MMA_K),  # BK in memory depth
+        a_tmem=False,
         swizzle_a=Self.config.swizzle_mode,
         swizzle_b=Self.config.swizzle_mode,
         transpose_b=True,
@@ -140,12 +139,13 @@ struct SM100MHA2Q[
     ]
     # Second MMA is P@V (V not staged, but P writing can be staged)
     # (BM x BN) @ (BN x depth) -> (BM x depth)
-    comptime UMMA1Type = SM100TensorAccumulatorTS[
+    comptime UMMA1Type = SM100TensorAccumulator[
         Self.qkv_type,
         Self.accum_type,
         MMA_M=Self.MMA_M,
         MMA_N=Self.config.padded_ov_depth,
         BK=Self.BN,
+        a_tmem=True,
         swizzle_b=Self.config.swizzle_mode,
         transpose_b=False,
         num_stages=Self.num_pv_stages,
@@ -175,6 +175,67 @@ struct SM100MHA2Q[
 
     comptime SmemType = SM100AttentionSMem[Self.config]
 
+    # TMA-op types as seen by `kernel`/`_kernel_impl`. Defined once so the 2Q
+    # signatures and the 1Q-variant rebinds (see `kernel`) share a single
+    # definition.
+    comptime QTMAOpType = QTMATile[
+        Self.KVLUTType.dtype,
+        Self.config.swizzle_mode,
+        BM=Self.config.BM // Self.config.num_q,
+        depth=Self.config.qk_depth,
+        group=Self.config.group,
+        decoding=False,
+        fuse_gqa=Self.fuse_gqa,
+        num_qk_stages=Self.config.num_qk_stages,
+    ]
+    comptime KTMAOpType = KVTMATile[
+        Self.KVLUTType.dtype,
+        Self.config.swizzle_mode,
+        BN=kv_sub_tile_rows(Self.config.k_rows_per_cta(), Self.page_size),
+        BK=Self.config.BK0,
+    ]
+    comptime VTMAOpType = KVTMATile[
+        Self.KVLUTType.dtype,
+        Self.config.swizzle_mode,
+        BN=kv_sub_tile_rows(Self.config.BN, Self.page_size),
+        BK=Self.config.v_cols_per_cta(),
+    ]
+    comptime OTMAStoreType = RaggedTMA3DTile[
+        Self.output_type,
+        # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
+        # Q/K/V/S/P buffers governed by `config.swizzle_mode`).
+        TensorMapSwizzle.SWIZZLE_NONE,
+        # 2Q: BM=128 (each WG writes one of two Q halves).
+        # 1Q: BM=128 (both WGs cover the full BM=128 Q rows and write
+        # disjoint depth-column ranges).
+        BM=Self.config.BM // Self.config.num_q,
+        BN=Self.config.ov_depth,
+        middle_dim=Self.config.num_kv_heads if Self.fuse_gqa else Self.config.num_q_heads,
+        group=Self.config.group if Self.fuse_gqa else 1,
+        # Batched rank-5 O store (must match dispatch.mojo's store) for every
+        # non-split config; the 1Q split-K (reduce-scatter) config uses the
+        # PER-BLOCK (rank-3) store because each partition TMA-stores only its own
+        # depth band via `async_copy_from_col` at a non-{0,half} offset (see the
+        # matching conditional + rationale in dispatch.mojo).
+        tma_blocks_per_op=0 if Self.config.splitk_partitions
+        > 1 else o_store_tma_blocks_per_op[
+            Self.output_type,
+            TensorMapSwizzle.SWIZZLE_NONE,
+            Self.config.ov_depth,
+            Self.config.group if Self.fuse_gqa else 1,
+            depth_splits=2,
+        ](),
+    ]
+    comptime PackType = Pack[
+        Self.MaskType,
+        Self.SchedulerType,
+        Self.ValidLengthType,
+        Self.SinkType,
+        Self.KVRowOffsetsType,
+        Self.MaxSeqLenType,
+        Self.PartitionType,
+    ]
+
     @staticmethod
     @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(k_tma_op, `nvvm.grid_constant`)
@@ -187,55 +248,178 @@ struct SM100MHA2Q[
     )
     @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
     @__llvm_metadata(
-        `nvvm.cluster_dim`=StaticTuple[Int32, 3](Int32(Self.cta_group), 1, 1)
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](Int32(Self.cluster_size), 1, 1)
     )
     @__name(
-        t"sm100_mha_2q_depth{Self.config.qk_depth}_{Self.qkv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
-        mangle=True,
+        t"sm100_mha_{Self.config.num_q}q_depth{Self.config.qk_depth}_{Self.qkv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
     )
     def kernel(
-        q_tma_op: QTMATile[
-            Self.KVLUTType.dtype,
-            Self.config.swizzle_mode,
-            BM=Self.config.BM // 2,
-            depth=Self.config.qk_depth,
-            group=Self.config.group,
-            decoding=False,
-            fuse_gqa=Self.fuse_gqa,
-            num_qk_stages=Self.config.num_qk_stages,
-        ],
-        k_tma_op: KVTMATile[
-            Self.KVLUTType.dtype,
-            Self.config.swizzle_mode,
-            BN=Self.config.k_rows_per_cta(),
-            BK=Self.config.BK0,
-        ],
-        v_tma_op: KVTMATile[
-            Self.KVLUTType.dtype,
-            Self.config.swizzle_mode,
-            BN=Self.config.BN,
-            BK=Self.config.v_cols_per_cta(),
-        ],
-        ragged_tma_store: RaggedTMA3DTile[
-            Self.output_type,
-            Self.config.swizzle_mode,
-            BM=Self.config.BM // 2,
-            BN=Self.config.ov_depth,
-            group=Self.config.group if Self.fuse_gqa else 1,
-        ],
+        q_tma_op: Self.QTMAOpType,
+        k_tma_op: Self.KTMAOpType,
+        v_tma_op: Self.VTMAOpType,
+        ragged_tma_store: Self.OTMAStoreType,
         kv_lut: Self.KVLUTType,
         scale: Float32,
         batch_size: UInt32,
         num_keys_arg: UInt32,
-        pack: Pack[
-            Self.MaskType,
-            Self.SchedulerType,
-            Self.ValidLengthType,
-            Self.SinkType,
-            Self.KVRowOffsetsType,
-            Self.MaxSeqLenType,
-            Self.PartitionType,
-        ],
+        pack: Self.PackType,
+    ):
+        # Static-cluster entry: the `nvvm.cluster_dim` metadata above bakes a
+        # *required* cluster size into the kernel (pair-CTA 2-SM width, or 1 for
+        # non-split). Used by every config EXCEPT the num_q==1 split-K path,
+        # which launches a runtime-sized cluster via `kernel_dyncluster` (no
+        # static cluster metadata — see `FA4Config.splitk_dynamic`).
+        Self._entry_body(
+            q_tma_op,
+            k_tma_op,
+            v_tma_op,
+            ragged_tma_store,
+            kv_lut,
+            scale,
+            batch_size,
+            num_keys_arg,
+            pack,
+        )
+
+    @staticmethod
+    @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(k_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(ragged_tma_store, `nvvm.grid_constant`)
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.config.num_threads)
+        )
+    )
+    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
+    @__name(
+        t"sm100_mha_{Self.config.num_q}q_depth{Self.config.qk_depth}_{Self.qkv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}_dyncluster",
+    )
+    def kernel_dyncluster(
+        q_tma_op: Self.QTMAOpType,
+        k_tma_op: Self.KTMAOpType,
+        v_tma_op: Self.VTMAOpType,
+        ragged_tma_store: Self.OTMAStoreType,
+        kv_lut: Self.KVLUTType,
+        scale: Float32,
+        batch_size: UInt32,
+        num_keys_arg: UInt32,
+        pack: Self.PackType,
+    ):
+        # Dynamic-cluster entry: deliberately NO `nvvm.cluster_dim` metadata, so
+        # the cluster size is supplied only at launch (`cluster_dim=Dim(P,1,1)`).
+        # Verified on B200 (`test_dsmem_dyncluster_smoke`): a metadata-less
+        # clustered kernel launches and `cluster_sync`/`mapa` DSMEM work. Used by
+        # the num_q==1 split-K path (cta_group==1) so one compiled kernel serves
+        # a runtime cluster size (plan §6 dynamic cluster dimensions).
+        Self._entry_body(
+            q_tma_op,
+            k_tma_op,
+            v_tma_op,
+            ragged_tma_store,
+            kv_lut,
+            scale,
+            batch_size,
+            num_keys_arg,
+            pack,
+        )
+
+    @staticmethod
+    @always_inline
+    def _entry_body(
+        q_tma_op: Self.QTMAOpType,
+        k_tma_op: Self.KTMAOpType,
+        v_tma_op: Self.VTMAOpType,
+        ragged_tma_store: Self.OTMAStoreType,
+        kv_lut: Self.KVLUTType,
+        scale: Float32,
+        batch_size: UInt32,
+        num_keys_arg: UInt32,
+        pack: Self.PackType,
+    ):
+        # Thin entrypoint. Compute this tile's `SeqInfo` once and forward it to
+        # `_kernel_impl` (all warp groups share it — it is derived from
+        # blockIdx, not threadIdx, so it is identical on every lane/warp).
+        #
+        # When this 2Q config admits a type-compatible 1Q variant
+        # (`can_switch_to_1q`), route short sequences through the cheaper 1Q
+        # body. The 1Q body covers `Kernel1Q.BM_eff` *sequence positions* per
+        # tile at `blockIdx.x == 0` (BM // group when fusing GQA, else BM), so
+        # the switch is only correct when the whole prompt fits in that one
+        # tile: `seq_len <= Kernel1Q.BM_eff`. Then the prompt is a single tile
+        # at `prompt_offset == 0` in BOTH the 1Q and 2Q tilings, where their
+        # `SeqInfo` coincide, so passing the 2Q `seq_info` into the 1Q body is
+        # correct. `broadcast` (lane-0 shuffle) makes the branch warp-uniform;
+        # the decision is the same on all 16 warps because `seq_len` is, so no
+        # cross-warp sync is needed. The grid is unchanged (still 2Q-tiled) —
+        # a prompt this short occupies only `blockIdx.x == 0`, which the 2Q
+        # grid always covers.
+        var seq_info: SeqInfo = get_seq_info[
+            Self.BM_mask,
+            Self.config.num_kv_heads if Self.fuse_gqa else Self.num_q_heads,
+            Self.MaskType.get_type_name() == "CausalMask",
+            pair_cta=Self.pair_cta,
+            splitk_partitions=UInt32(Self.config.splitk_partitions),
+        ](batch_size, pack.max_seq_len, pack.valid_length, pack.partition)
+
+        comptime if Self.config.can_switch_to_1q():
+            comptime Kernel1Q = SM100MHA2Q[
+                Self.KVLUTType,
+                Self.output_type,
+                Self.MaskType,
+                Self.SchedulerType,
+                Self.config.switch_1q_config(),
+                Self.ValidLengthType,
+                Self.SinkType,
+                Self.KVRowOffsetsType,
+                Self._is_cache_length_accurate,
+                Self.MaxSeqLenType,
+                Self.PartitionType,
+            ]
+            if broadcast(seq_info.seq_len - seq_info.prompt_offset) <= UInt32(
+                Kernel1Q.BM_eff
+            ):
+                # The TMA ops are typed from the 2Q `Self.config`; the 1Q types
+                # fold to identical values (`can_switch_to_1q()` guarantees
+                # matching `num_qk_stages` ⇒ matching `BK0`; per-half BM=128,
+                # BN/depth/group/swizzle already match), but the parser sees
+                # distinct parameter expressions, so `rebind`.
+                Kernel1Q._kernel_impl(
+                    rebind[Kernel1Q.QTMAOpType](q_tma_op),
+                    rebind[Kernel1Q.KTMAOpType](k_tma_op),
+                    rebind[Kernel1Q.VTMAOpType](v_tma_op),
+                    rebind[Kernel1Q.OTMAStoreType](ragged_tma_store),
+                    kv_lut,
+                    scale,
+                    num_keys_arg,
+                    pack,
+                    seq_info,
+                )
+                return
+        Self._kernel_impl(
+            q_tma_op,
+            k_tma_op,
+            v_tma_op,
+            ragged_tma_store,
+            kv_lut,
+            scale,
+            num_keys_arg,
+            pack,
+            seq_info,
+        )
+
+    @staticmethod
+    @always_inline
+    def _kernel_impl(
+        q_tma_op: Self.QTMAOpType,
+        k_tma_op: Self.KTMAOpType,
+        v_tma_op: Self.VTMAOpType,
+        ragged_tma_store: Self.OTMAStoreType,
+        kv_lut: Self.KVLUTType,
+        scale: Float32,
+        num_keys_arg: UInt32,
+        pack: Self.PackType,
+        seq_info: SeqInfo,
     ):
         comptime assert (
             Self.MMA_M == 64 or Self.MMA_M == 128 or Self.MMA_M == 256
@@ -253,27 +437,44 @@ struct SM100MHA2Q[
             + "\nsmem_used = "
             + String(Self.config.smem_used)
         )
+        # The dynamic-smem carveout reserved at launch is `config.smem_used`
+        # (`launch_smem_used()`), so it must be at least the real
+        # `SM100AttentionSMem` byte footprint that the kernel actually writes.
+        # Under-reserving (smem_used < smem_size) is an out-of-bounds __shared__
+        # write bug (the trailing mbar / tmem_addr regions overflow the carveout
+        # on init); over-reserving is safe. Equality is not required: the 2Q
+        # fused-KV path legitimately over-reserves a few bytes.
+        comptime assert (
+            Self.config.smem_used >= Self.SmemType.smem_size()
+        ), String(
+            "config.smem_used = ",
+            Self.config.smem_used,
+            " must be >= SmemType.smem_size() = ",
+            Self.SmemType.smem_size(),
+        )
         comptime assert (
             not Self.SchedulerType.may_advance
         ), "Persistent kernels not yet supported with FA4"
 
         mask = pack.mask
-        scheduler = pack.scheduler
-        valid_length = pack.valid_length
         sink_weights = pack.sink_weights
         kv_input_row_offsets = pack.kv_input_row_offsets
         max_seq_len = pack.max_seq_len
-        partition = pack.partition
 
-        comptime num_qo = Self.config.num_qo()
-        # TODO: We may want to support num_qo>2 for depth=64?
+        comptime num_q = Self.config.num_q
+        # TODO: We may want to support num_q>2 for depth=64?
         comptime assert (
-            num_qo == 1 or num_qo == 2
-        ), "Currently only support num_qo == 1 or 2"
+            num_q == 1 or num_q == 2
+        ), "Currently only support num_q == 1 or 2"
         var smem = Self.SmemType()
         var misc_mbars = smem.misc_mbars()
 
-        # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
+        # Per-warpgroup register allocation, mirroring CUTLASS's
+        # `sm100_fmha_fwd_kernel_tma_warpspecialized.hpp`.  Softmax gets
+        # the largest slice (192), correction the next (88), and the
+        # MMA-leader/other path runs lean (40); inactive warps drop to
+        # the minimum (24).  Sum × WG size must stay ≤ the SM register
+        # file; bump together if a path starts spilling.
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 88
         comptime num_reg_other = 40
@@ -284,14 +485,22 @@ struct SM100MHA2Q[
         )
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
-        if warp_idx == 0:
-            # Initialize all barriers (S/C/order/Q1Sync/K/V/O) in one call
-            misc_mbars.init(lane_idx=Int32(thread_idx.x))
-        elif warp_idx == 1:
-            tcgen05_alloc[Int32(Self.cta_group)](
-                smem.tmem_addr_ptr(),
-                UInt32(512),
-            )
+        # Range-led nest (like the `warp_idx < 8 / < 12 / == 13 / == 12` dispatch
+        # below) rather than a flat `== 0 / == 1 / == 2` chain: three contiguous
+        # equality cases get lowered by ptxas to a constant-memory jump table
+        # (`LDC c[0x2]` + `BRX`) in the 2Q kernel (which inlines both the 1Q and 2Q
+        # bodies); leading with `< 2` keeps every level to <= 2 equality cases so the
+        # prologue dispatch stays a uniform predicate-branch chain. Same warp -> task
+        # mapping: warp 0 inits barriers, warp 1 allocates TMEM, warp 2 prefetches TMA.
+        if warp_idx < 2:
+            if warp_idx == 0:
+                # Initialize all barriers (S/C/order/Q1Sync/K/V/O) in one call
+                misc_mbars.init(lane_idx=Int32(thread_idx.x))
+            else:  # warp_idx == 1
+                tcgen05_alloc[Int32(Self.cta_group)](
+                    smem.tmem_addr_ptr(),
+                    UInt32(Self.config.sm100_tmem_cols),
+                )
         elif warp_idx == 2:
             e = elect()
             if e != 0:
@@ -301,33 +510,64 @@ struct SM100MHA2Q[
             if e != 0:
                 v_tma_op.prefetch_descriptor()
 
-        # Pair-CTA: cluster_sync ensures both CTAs see each other's barriers.
-        # Single-CTA: plain barrier suffices.
-        comptime if Self.pair_cta:
+        # Cluster (pair-CTA or 1Q split-K): a `cluster_sync` (after
+        # `fence_mbarrier_init`) guarantees every CTA has finished initializing
+        # its barriers before any peer arrives on them cross-cluster. Pair-CTA
+        # needs this so both CTAs see each other's barriers; 1Q split-K needs it
+        # so the split-K publish mbarrier is init-visible before a peer's
+        # `arrive_cluster` (an arrive-before-init silently hangs). Plain
+        # single-CTA uses a plain `barrier()`.
+        comptime cluster_discipline = Self.pair_cta or (
+            Self.config.splitk_partitions > 1
+        )
+        comptime if cluster_discipline:
             fence_mbarrier_init()
             cluster_sync()
         else:
             barrier()
 
+        # Read the TMEM base from SMEM EXACTLY ONCE here, post-barrier (the
+        # alloc on warp 1 + this barrier publish it), and carry it by register
+        # to every consumer (fa4_softmax / fa4_correction / fa4_mma). Mirrors
+        # the depth-512 fix: the consumers must NOT re-read
+        # `smem.tmem_addr_ptr()` in their bodies, because an in-body slot reload
+        # gated only on a pipeline barrier (not the alloc publish) can observe a
+        # stale/pre-alloc value under SM co-residency and feed a garbage TMEM
+        # operand to `UTCHMMA`. Same published value -> single-shot bit-identical.
+        var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
+
+        # Programmatic Dependent Launch (PDL).  This is the only point every
+        # thread of every CTA reaches before the warp-specialized early
+        # returns below (invalid tiles bail in warps 0-13 while warps 14-15
+        # fall through), so it is the only divergence-free place to honor the
+        # contract that *every* CTA signal launch-dependents — otherwise a
+        # back-to-back consumer grid's `wait` hangs (see MLA decode).  The
+        # data-independent prologue above (barrier init, tmem alloc, TMA
+        # descriptor prefetch) overlaps the predecessor grid's tail; `wait`
+        # fences here before the data-dependent Q/K/V loads in `fa4_load`;
+        # `launch` lets the successor grid's prologue overlap our compute.
+        comptime if MHA_PDL_LEVEL > PDLLevel.OFF:
+            wait_on_dependent_grids()
+            launch_dependent_grids()
+
         # warp group partitioning
         # Two QO:
         #
-        # Pair-CTA: early returns are replaced with conditional work so that
-        # ALL threads always reach the cluster_sync at the bottom.  Without
-        # this, invalid tiles cause some warps to return early while warps
-        # 14-15 (and any valid warps) block at cluster_sync forever.
+        # Pair-CTA AND 1Q split-K both run as a thread-block cluster and end on
+        # a terminal `cluster_sync()` (a cluster-wide barrier every thread of
+        # every CTA must reach). So their per-warp invalid-tile early returns are
+        # replaced with fall-through; otherwise some warps return early while the
+        # rest block at the terminal `cluster_sync()` forever. Plain single-CTA
+        # (not pair-CTA, `splitk_partitions == 1`) keeps the early returns.
+        # Within a cluster all P CTAs share `block_idx.x // cluster_size` -> the
+        # same tile -> the same validity, so invalid clusters are all-or-none and
+        # every CTA reaches the terminal sync together.
+        # (`cluster_discipline` is defined above, at the prologue barrier.)
         if warp_idx < 8:
             # softmax $warp_group_idx
             warpgroup_reg_alloc[num_reg_softmax]()
-            var seq_info: SeqInfo = get_seq_info[
-                Self.BM_mask,
-                Self.num_q_heads
-                // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-                pair_cta=Self.pair_cta,
-            ](batch_size, max_seq_len, valid_length, partition)
 
-            comptime if not Self.pair_cta:
+            comptime if not cluster_discipline:
                 if not seq_info.is_valid():
                     return
 
@@ -350,8 +590,14 @@ struct SM100MHA2Q[
                     Self.SinkType,
                     Self._is_cache_length_accurate,
                     Self.MaxSeqLenType,
+                    # `kernel` routes tiles with
+                    # `seq_len - prompt_offset <= Kernel1Q.BM_eff` to the
+                    # 1Q body when the switch is compiled in, so the 2Q
+                    # body's output halves are always non-empty.
+                    output_nonempty=Self.config.can_switch_to_1q(),
                 ](
                     smem,
+                    tmem_addr,
                     pos.score_row,
                     seq_info,
                     mask,
@@ -366,15 +612,7 @@ struct SM100MHA2Q[
             # correction
             warpgroup_reg_dealloc[num_reg_correction]()
 
-            var seq_info: SeqInfo = get_seq_info[
-                Self.BM_mask,
-                Self.num_q_heads
-                // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-                pair_cta=Self.pair_cta,
-            ](batch_size, max_seq_len, valid_length, partition)
-
-            comptime if not Self.pair_cta:
+            comptime if not cluster_discipline:
                 if not seq_info.is_valid():
                     return
 
@@ -394,6 +632,8 @@ struct SM100MHA2Q[
                     Self.page_size,
                 ](
                     smem,
+                    tmem_addr,
+                    seq_info.prompt_idx,
                     pos.score_row,
                     pos.num_keys,
                     mask,
@@ -401,15 +641,8 @@ struct SM100MHA2Q[
         else:
             if warp_idx == 13:  # produce
                 warpgroup_reg_dealloc[num_reg_other]()
-                var seq_info: SeqInfo = get_seq_info[
-                    Self.BM_mask,
-                    Self.num_q_heads
-                    // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                    Self.MaskType.get_type_name() == "CausalMask",
-                    pair_cta=Self.pair_cta,
-                ](batch_size, max_seq_len, valid_length, partition)
 
-                comptime if not Self.pair_cta:
+                comptime if not cluster_discipline:
                     if not seq_info.is_valid():
                         return
 
@@ -424,42 +657,71 @@ struct SM100MHA2Q[
                         kv_input_row_offsets,
                         max_seq_len,
                     )
-                    fa4_load[
-                        Self.KVLUTType,
-                        Self.MaskType,
-                        Self.config,
-                        Self.ValidLengthType,
-                        Self._is_cache_length_accurate,
-                        Self.MaxSeqLenType,
-                    ](
-                        smem,
-                        pos.score_row,
-                        pos.num_keys,
-                        seq_info,
-                        max_seq_len,
-                        mask,
-                        q_tma_op,
-                        k_tma_op,
-                        v_tma_op,
-                        kv_lut,
-                    )
+                    comptime if not Self.pair_cta:
+                        fa4_load[
+                            Self.config,
+                            ValidLengthType=Self.ValidLengthType,
+                            _is_cache_length_accurate=Self._is_cache_length_accurate,
+                            is_leader=True,
+                        ](
+                            smem,
+                            pos.score_row,
+                            pos.num_keys,
+                            seq_info,
+                            max_seq_len,
+                            mask,
+                            q_tma_op,
+                            k_tma_op,
+                            v_tma_op,
+                            kv_lut,
+                        )
+                    else:
+                        var cta_rank = block_rank_in_cluster() % 2
+                        if cta_rank == 0:
+                            fa4_load[
+                                Self.config,
+                                ValidLengthType=Self.ValidLengthType,
+                                _is_cache_length_accurate=Self._is_cache_length_accurate,
+                                is_leader=True,
+                            ](
+                                smem,
+                                pos.score_row,
+                                pos.num_keys,
+                                seq_info,
+                                max_seq_len,
+                                mask,
+                                q_tma_op,
+                                k_tma_op,
+                                v_tma_op,
+                                kv_lut,
+                            )
+                        else:
+                            fa4_load[
+                                Self.config,
+                                ValidLengthType=Self.ValidLengthType,
+                                _is_cache_length_accurate=Self._is_cache_length_accurate,
+                                is_leader=False,
+                            ](
+                                smem,
+                                pos.score_row,
+                                pos.num_keys,
+                                seq_info,
+                                max_seq_len,
+                                mask,
+                                q_tma_op,
+                                k_tma_op,
+                                v_tma_op,
+                                kv_lut,
+                            )
 
             elif warp_idx == 12:  # Q @ K', P @ V
                 warpgroup_reg_dealloc[num_reg_other]()
-                var seq_info: SeqInfo = get_seq_info[
-                    Self.BM_mask,
-                    Self.num_q_heads
-                    // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                    Self.MaskType.get_type_name() == "CausalMask",
-                    pair_cta=Self.pair_cta,
-                ](batch_size, max_seq_len, valid_length, partition)
 
-                comptime if not Self.pair_cta:
+                comptime if not cluster_discipline:
                     if not seq_info.is_valid():
-                        var tmem_addr = smem.tmem_addr_ptr()[]
                         tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
                         tcgen05_dealloc[Int32(Self.cta_group)](
-                            tmem_addr, UInt32(512)
+                            tmem_addr, UInt32(Self.config.sm100_tmem_cols)
                         )
                         return
                 var execute: Bool = seq_info.is_valid()
@@ -479,31 +741,47 @@ struct SM100MHA2Q[
                     )
                     fa4_mma[Self.config, page_size=Self.page_size](
                         smem,
+                        tmem_addr,
+                        seq_info.prompt_idx,
                         pos.score_row,
                         pos.num_keys,
                         mask,
                     )
             else:
+                # 24 is the floor for `setmaxnreg.dec` on SM90+ — drop
+                # this warpgroup's allocation to the minimum so the
+                # active WGs can claim its share of the SM register file.
                 warpgroup_reg_dealloc[24]()
 
-        # Pair-CTA: cluster_sync before dealloc so that stmatrix
-        # (which uses shared::cluster on SM100) in the peer CTA has
-        # finished before either CTA exits and breaks the cluster.
-        # All early returns above were converted to fall-through for
-        # pair_cta so that every thread reaches this sync point.
-        comptime if Self.pair_cta:
+        # Cluster discipline (pair-CTA or 1Q split-K): a terminal cluster_sync
+        # before dealloc so no CTA exits and breaks the cluster while a peer's
+        # cross-CTA access is still in flight. Pair-CTA protects cluster-scoped
+        # stmatrix; 1Q split-K protects the DSMEM peer reads of this CTA's smem
+        # (M4 combine) -- it is now the SOLE cluster-wide fence guarding those
+        # reads (the combine dropped its in-helper round-2 barrier by packing the
+        # bf16 output into each partition's OWN-band dead f32 slice, which no peer
+        # reads). All early returns above were converted to fall-through so every
+        # thread reaches this sync point. TMEM dealloc is deferred here (out of
+        # the warp bodies) for the same reason.
+        comptime if cluster_discipline:
             cluster_sync()
+
             if warp_idx == 0:
-                var tmem_addr = smem.tmem_addr_ptr()[]
                 tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
-                tcgen05_dealloc[Int32(Self.cta_group)](tmem_addr, UInt32(512))
+                tcgen05_dealloc[Int32(Self.cta_group)](
+                    tmem_addr, UInt32(Self.config.sm100_tmem_cols)
+                )
 
     @staticmethod
     @always_inline
     def mask_status(
-        mask: Self.MaskType, score_row: UInt32, kv_row: UInt32
+        mask: Self.MaskType,
+        seq_id: UInt32,
+        score_row: UInt32,
+        kv_row: UInt32,
     ) -> TileMaskStatus:
         return mask.status(
+            seq_id,
             Index[dtype=DType.int32](
                 Int(score_row),
                 Int(kv_row),

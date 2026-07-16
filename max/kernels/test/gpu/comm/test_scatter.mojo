@@ -39,7 +39,7 @@ from std.testing import assert_true
 
 from comm import Signal, MAX_GPUS
 from comm.scatter import scatter
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 
 comptime dtype = DType.uint32
 
@@ -75,13 +75,11 @@ def _test_pull[
 
     # Allocate input chunks on GPU 0.
     var input_devbufs = List[DeviceBuffer[dtype]]()
-    var host_buf = alloc[Scalar[dtype]](max_chunk_size)
+    var host_buf = ctxs[0].enqueue_create_host_buffer[dtype](max_chunk_size)
 
-    comptime InputTileType = type_of(
-        TileTensor[dtype, _, MutAnyOrigin](
-            None, row_major(Idx(Int(0)))
-        ).as_immut()
-    )
+    comptime InputTileType = TileTensor[
+        dtype, type_of(row_major(Int(0))), ImmutAnyOrigin
+    ]
     var tt_input_bufs = InlineArray[InputTileType, dp_size](uninitialized=True)
 
     for dp in range(dp_size):
@@ -91,15 +89,14 @@ def _test_pull[
             host_buf[j] = expected[dp][j]
         ctxs[0].enqueue_copy(dev_buf, host_buf)
         ctxs[0].synchronize()
-        tt_input_bufs[dp] = TileTensor(dev_buf, row_major(Idx(n))).as_immut()
+        tt_input_bufs[dp] = TileTensor(dev_buf, row_major(n)).as_immut()
         input_devbufs.append(dev_buf)
-    host_buf.free()
 
     # Output buffers on each GPU (sized to its replica's chunk).
     var output_devbufs = List[DeviceBuffer[dtype]]()
-    comptime OutputTileType = type_of(
-        TileTensor[dtype, _, MutAnyOrigin](None, row_major(Idx(Int(0))))
-    )
+    comptime OutputTileType = TileTensor[
+        dtype, type_of(row_major(Int(0))), MutAnyOrigin
+    ]
     var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
     for i in range(ngpus):
         var replica = i // tp_size
@@ -107,7 +104,9 @@ def _test_pull[
         var out_buf = ctxs[i].enqueue_create_buffer[dtype](n)
         ctxs[i].enqueue_memset(out_buf, 0)
         ctxs[i].synchronize()
-        out_tiles[i] = OutputTileType(out_buf.unsafe_ptr(), row_major(Idx(n)))
+        out_tiles[i] = OutputTileType(
+            out_buf.unsafe_ptr().as_unsafe_any_origin(), row_major(n)
+        )
         output_devbufs.append(out_buf)
 
     # Signal buffers.
@@ -117,9 +116,11 @@ def _test_pull[
     )
     for i in range(ngpus):
         var sig_buf = ctxs[i].create_buffer_sync[DType.uint8](size_of[Signal]())
-        ctxs[i].enqueue_memset[DType.uint8](sig_buf, 0)
+        init_signal_buffer(sig_buf, ctxs[i])
         ctxs[i].synchronize()
-        rank_sigs[i] = sig_buf.unsafe_ptr().bitcast[Signal]()
+        rank_sigs[i] = (
+            sig_buf.unsafe_ptr().bitcast[Signal]().as_unsafe_any_origin()
+        )
         signal_bufs.append(sig_buf)
 
     # Launch scatter.
@@ -131,7 +132,7 @@ def _test_pull[
         ctxs[i].synchronize()
 
     # Verify.
-    var host_out = alloc[Scalar[dtype]](max_chunk_size)
+    var host_out = List(length=max_chunk_size, fill=Scalar[dtype](0))
     for gpu in range(ngpus):
         var replica = gpu // tp_size
         var n = len(expected[replica])
@@ -151,7 +152,6 @@ def _test_pull[
                     "expected",
                     expected[replica][j],
                 )
-    host_out.free()
     print(
         "PASS: scatter ngpus=",
         ngpus,
@@ -164,6 +164,7 @@ def _test_pull[
     _ = signal_bufs^
     _ = output_devbufs^
     _ = input_devbufs^
+    _ = host_buf^
 
 
 def _test_dp2() raises:
