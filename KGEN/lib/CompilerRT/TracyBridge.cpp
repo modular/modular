@@ -9,10 +9,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Profiling/internal/TracyZone.h"
 #include "Support/SymbolExport.h"
 #include <cstddef>
 #include <cstdint>
+
+#if MODULAR_KGEN_PROFILING_ENABLED
+#include "Support/Profiling/internal/TracyZone.h"
+#endif
 
 extern "C" {
 
@@ -28,14 +31,20 @@ KGEN_CompilerRT_TracyIsEnabled(void) {
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint64_t
 KGEN_CompilerRT_TracyZoneBegin(const char *name, size_t nameLen,
                                uint32_t color) {
+#if MODULAR_KGEN_PROFILING_ENABLED
   return M::tracyZoneBegin("MojoTrace", sizeof("MojoTrace") - 1,
                            "Trace.__enter__", sizeof("Trace.__enter__") - 1,
                            name, nameLen, color);
+#else
+  return 0;
+#endif
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_TracyZoneEnd(uint64_t packedCtx) {
+#if MODULAR_KGEN_PROFILING_ENABLED
   M::tracyZoneEnd(packedCtx);
+#endif
 }
 
 } // extern "C"

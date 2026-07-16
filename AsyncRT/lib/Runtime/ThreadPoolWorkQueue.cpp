@@ -20,7 +20,13 @@
 #include "Support/Configuration.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"
+#if MODULAR_ASYNCRT_MAX_PROFILING_LEVEL != 0
 #include "Support/Profiling/internal/Tracy.h"
+#else
+// TODO: This is duplicating some things, maybe find a better way
+#define TRACY_ZONE_SCOPED_NC(name, color)
+#define TRACY_ZONE_SCOPED_NCT(name, color, text)
+#endif
 #include "Support/Threading/Atomics.h"
 #include "Support/Threading/HWInfo.h"
 #include "Support/Threading/SpinWaiter.h"

@@ -11,12 +11,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Profiling/internal/Range.h"
 #include "Support/SymbolExport.h"
+
+#if MODULAR_KGEN_PROFILING_ENABLED
+#include "Support/Profiling/internal/Range.h"
+#include <string_view>
+#endif
 
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
 
 extern "C" {
 
@@ -33,12 +36,16 @@ extern "C" {
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_RangeBegin(const char *namePtr, size_t nameLen,
                            uint32_t color) {
+#if MODULAR_KGEN_PROFILING_ENABLED
   M::Profiling::rangeBegin(std::string_view(namePtr, nameLen), color);
+#endif
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_RangeEnd(void) {
+#if MODULAR_KGEN_PROFILING_ENABLED
   M::Profiling::rangeEnd();
+#endif
 }
 
 // Step counter advance. MAX's Model::execute() calls this once per
@@ -46,7 +53,9 @@ KGEN_CompilerRT_RangeEnd(void) {
 // Mojo-side runtime entry points can also drive it when appropriate.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_RangeStep(void) {
+#if MODULAR_KGEN_PROFILING_ENABLED
   M::Profiling::step();
+#endif
 }
 
 // Enable / disable control surface. The Python session.profiling.start() /
@@ -55,12 +64,16 @@ KGEN_CompilerRT_RangeStep(void) {
 // through these same entry points.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_RangeEnable(void) {
+#if MODULAR_KGEN_PROFILING_ENABLED
   M::Profiling::enable();
+#endif
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_RangeDisable(void) {
+#if MODULAR_KGEN_PROFILING_ENABLED
   M::Profiling::disable();
+#endif
 }
 
 // Returns 1 if the profiler is currently enabled, 0 otherwise. Useful from
@@ -69,7 +82,11 @@ KGEN_CompilerRT_RangeDisable(void) {
 // shape so Mojo callers can treat both predicates uniformly.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
 KGEN_CompilerRT_RangeIsEnabled(void) {
+#if MODULAR_KGEN_PROFILING_ENABLED
   return M::Profiling::isEnabled() ? 1 : 0;
+#else
+  return 0;
+#endif
 }
 
 } // extern "C"
