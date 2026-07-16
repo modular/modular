@@ -831,7 +831,7 @@ Attribute IndexToDeclRefRemapper::tryReplace(Attribute attr, size_t depth) {
   if (auto ref = dyn_cast<ParamIndexRefAttr>(attr)) {
     if (ref.getDepth() == depth) {
       return ParamDeclRefAttr::get(paramListAttr.getName(ref.getIndex()),
-                                   ref.getType());
+                                   replace(ref.getType()));
     }
   }
 
