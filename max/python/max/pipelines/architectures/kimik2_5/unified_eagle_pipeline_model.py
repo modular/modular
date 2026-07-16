@@ -295,8 +295,9 @@ class Eagle3KimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
 
         with CompilationTimer("vision + eagle3 language model") as timer:
             graph_module = Module()
-            vision_graph = self._build_vision_graph(
-                kimik2_5_config, vision_state_dict, module=graph_module
+            assert self.model_config is not None
+            vision_graph, _ = self._build_vision_graph(
+                self.model_config, vision_state_dict, module=graph_module
             )
             with Graph(
                 "eagle3_kimik25_graph",

@@ -30,12 +30,11 @@ from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
+    MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
-    PipelineModelWithKVCache,
 )
 from transformers import AutoConfig
 
@@ -99,7 +98,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
 
 class Gemma3_MultiModalModel(
     AlwaysSignalBuffersMixin,
-    PipelineModelWithKVCache[TextAndVisionContext],
+    MultiGraphPipelineModelWithKVCache[TextAndVisionContext],
 ):
     """Gemma 3 multimodal pipeline model for text generation.
 
@@ -131,7 +130,7 @@ class Gemma3_MultiModalModel(
     language_model: Model
     """The compiled and initialized MAX Engine model ready for inference."""
 
-    vision_model: Model
+    vision_model: Model | None
     """The compiled and initialized MAX Engine vision model ready for inference."""
 
     # The vision and text towers are in the same weights file, but are in
@@ -176,53 +175,31 @@ class Gemma3_MultiModalModel(
             huggingface_config
         )
 
-    def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
-        """Loads the compiled Gemma3 MultiModal models into the MAX Engine session.
-
-        Returns:
-            A tuple of (vision_model, language_model).
-        """
+    def _load_state_dict(self) -> dict[str, Any]:
         assert self._max_batch_size, "Expected max_batch_size to be set"
 
-        # Get processed state dict for language and vision models
         weights_dict = dict(self.weights.items())
-        language_weights_dict = convert_safetensor_language_state_dict(
+        self._language_weights_dict = convert_safetensor_language_state_dict(
             weights_dict
         )
-        vision_weights_dict = convert_safetensor_vision_state_dict(weights_dict)
+        self._vision_weights_dict = convert_safetensor_vision_state_dict(
+            weights_dict
+        )
+        return {k: v.data() for k, v in weights_dict.items()}
 
-        raw_state_dict = {k: v.data() for k, v in weights_dict.items()}
+    def _create_model_config(
+        self, state_dict: dict[str, Any]
+    ) -> Gemma3ForConditionalGenerationConfig:
         model_config = Gemma3ForConditionalGenerationConfig.initialize(
             self.pipeline_config
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
-            state_dict=raw_state_dict,
+            state_dict=state_dict,
             return_logits=self.return_logits,
         )
         self.config = model_config
-
-        # Build and compile vision + language models in parallel
-        with CompilationTimer("vision + language model") as timer:
-            module = Module()
-            language_graph, language_weight_dict = self._build_language_graph(
-                model_config, language_weights_dict, module=module
-            )
-            vision_graph, vision_model_state_dict = self._build_vision_graph(
-                model_config, vision_weights_dict, module=module
-            )
-            timer.mark_build_complete()
-            combined_registry = {
-                **language_weight_dict,
-                **vision_model_state_dict,
-            }
-            models = session.load_all(
-                module, weights_registry=combined_registry
-            )
-            language_model = models[language_graph.name]
-            vision_model = models[vision_graph.name]
-
-        return vision_model, language_model
+        return model_config
 
     def _language_model_input_types(
         self, config: Gemma3ForConditionalGenerationConfig
@@ -417,6 +394,7 @@ class Gemma3_MultiModalModel(
         image_embeddings: list[Buffer]
         image_token_indices: list[Buffer]
         if model_inputs.has_vision_inputs:
+            assert self.vision_model is not None
             assert model_inputs.pixel_values is not None
 
             # Execute vision model: patched pixel_values -> image_embeddings.

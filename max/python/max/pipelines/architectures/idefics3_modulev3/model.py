@@ -36,8 +36,8 @@ from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
+    ModuleV3MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
-    PipelineModelWithKVCache,
 )
 from max.pipelines.weights.weight_loading import (
     auto_cast_weights_from_env,
@@ -92,7 +92,9 @@ class Idefics3Inputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
+class Idefics3Model(
+    ModuleV3MultiGraphPipelineModelWithKVCache[TextAndVisionContext]
+):
     """An Idefics3 pipeline model using the ModuleV3 API."""
 
     model_config_cls: ClassVar[type[Any]] = Idefics3Config
@@ -115,7 +117,7 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
         )
         return getattr(text_config, "max_position_embeddings", 4096)
 
-    vision_model: Callable[..., Any]
+    vision_model: Callable[..., Any] | None
     """The compiled vision model."""
 
     language_model: Callable[..., Any]
@@ -146,46 +148,33 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
         self.vision_model, self.language_model = self.load_model()
         self.image_token_id = self.huggingface_config.image_token_id
 
-    def load_model(self) -> tuple[Callable[..., Any], Callable[..., Any]]:
-        """Compile vision and language models using the V3 API.
-
-        Returns:
-            A tuple of (compiled_vision_model, compiled_language_model).
-        """
-        # Validate SafetensorWeights requirement
+    def _load_state_dict(self) -> dict[str, Any]:
         if not isinstance(self.weights, SafetensorWeights):
             raise ValueError(
                 "Idefics3 currently only supports safetensors weights"
             )
 
-        # Get processed state dicts for language and vision models.
         weights_dict = dict(self.weights.items())
-        llm_weights_dict = convert_idefics3_language_model_state_dict(
+        self._language_weights_dict = (
+            convert_idefics3_language_model_state_dict(weights_dict)
+        )
+        self._vision_weights_dict = convert_idefics3_vision_model_state_dict(
             weights_dict
         )
-        vision_weights_dict = convert_idefics3_vision_model_state_dict(
-            weights_dict
-        )
+        return {}
 
-        # Generate Idefics3 config from HuggingFace config
+    def _create_model_config(
+        self, state_dict: dict[str, Any]
+    ) -> Idefics3Config:
+        del state_dict
+
         idefics3_config = Idefics3Config.initialize(self.pipeline_config)
         idefics3_config.finalize(
             huggingface_config=self.huggingface_config,
-            llm_state_dict=llm_weights_dict,
+            llm_state_dict=self._language_weights_dict,
             return_logits=self.return_logits,
         )
-
-        # Compile vision model
-        compiled_vision = self._compile_vision_model(
-            idefics3_config, vision_weights_dict
-        )
-
-        # Compile language model
-        compiled_language = self._compile_language_model(
-            idefics3_config, llm_weights_dict
-        )
-
-        return compiled_vision, compiled_language
+        return idefics3_config
 
     def _compile_vision_model(
         self,
@@ -258,6 +247,7 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
         image_embeddings: Buffer
         image_token_indices: Buffer
         if model_inputs.has_vision_inputs:
+            assert self.vision_model is not None
             assert model_inputs.pixel_values is not None
             assert model_inputs.image_token_indices is not None
 

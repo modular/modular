@@ -36,14 +36,13 @@ from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
+    ModuleV3MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
-    PipelineModelWithKVCache,
 )
 from max.pipelines.lib.utils import (
     parse_state_dict_from_weights,
     upper_bounded_default,
 )
-from max.profiler import traced
 from transformers import AutoConfig
 
 from .batch_processor import PixtralModuleV3BatchProcessor
@@ -73,7 +72,9 @@ class PixtralInputs(ModelInputs):
         return self.pixel_patches is not None
 
 
-class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
+class PixtralModel(
+    ModuleV3MultiGraphPipelineModelWithKVCache[TextAndVisionContext]
+):
     """The overall interface to the Pixtral model."""
 
     model_config_cls: ClassVar[type[Any]] = PixtralConfig
@@ -101,7 +102,7 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
                 f"exceeds the model's max_position_embeddings ({upper_bound})."
             ) from e
 
-    vision_model: Callable[..., Any]
+    vision_model: Callable[..., Any] | None
     """Compiled vision model (encoder + projector) for a ragged batch of images."""
 
     language_model: Callable[..., Any]
@@ -129,7 +130,19 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
             return_logits,
         )
 
-        self.vision_model, self.language_model = self._load_models()
+        if self.pipeline_config.model.enable_echo:
+            raise ValueError(
+                "Pixtral model does not currently implement enable echo."
+            )
+
+        assert self._max_batch_size, "Expected max_batch_size to be set"
+
+        if len(self.devices) > 1:
+            raise NotImplementedError(
+                "Pixtral does not support distributed inference"
+            )
+
+        self.vision_model, self.language_model = self.load_model()
 
     def execute(
         self,
@@ -142,6 +155,7 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
 
         # Process vision inputs: single call for all images in the batch
         if model_inputs.has_vision_inputs:
+            assert self.vision_model is not None
             vision_output = self.vision_model(
                 model_inputs.pixel_patches,
                 model_inputs.vision_attention_mask,
@@ -179,35 +193,13 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
                 logits=cast(Buffer, model_outputs[0].driver_tensor),
             )
 
-    @traced
-    def _load_models(self) -> tuple[Callable[..., Any], Callable[..., Any]]:
-        if self.pipeline_config.model.enable_echo:
-            raise ValueError(
-                "Pixtral model does not currently implement enable echo."
-            )
-
-        assert self._max_batch_size, "Expected max_batch_size to be set"
-
+    def _load_state_dict(self) -> dict[str, Any]:
         if not isinstance(self.weights, SafetensorWeights):
             raise ValueError(
                 "only safetensors weights are currently supported in Pixtral models."
             )
-
-        if len(self.devices) > 1:
-            raise NotImplementedError(
-                "Pixtral does not support distributed inference"
-            )
-
-        # Prepare full state dict then split for vision and language models
         state_dict = parse_state_dict_from_weights(
             self.pipeline_config, self.weights, self.adapter
-        )
-
-        vision_config = self.huggingface_config.vision_config
-        patch_dim = (
-            vision_config.num_channels
-            * vision_config.patch_size
-            * vision_config.patch_size
         )
 
         vision_state_dict: dict[str, WeightData] = {}
@@ -248,9 +240,31 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
                     "Unexpected vision weight key after remapping: %s", key
                 )
 
+        self._vision_weights_dict = vision_state_dict
+        self._language_weights_dict = language_state_dict
+        return state_dict
+
+    def _create_model_config(
+        self, state_dict: dict[str, WeightData]
+    ) -> PixtralConfig:
+        del state_dict
+        vision_config = self.huggingface_config.vision_config
+        self._patch_dim = (
+            vision_config.num_channels
+            * vision_config.patch_size
+            * vision_config.patch_size
+        )
+
         model_config = PixtralConfig.initialize(self.pipeline_config)
         model_config.return_logits = self.return_logits
-        device_ref = DeviceRef.from_device(self.devices[0])
+        return model_config
+
+    def _compile_vision_model(
+        self,
+        model_config: PixtralConfig,
+        state_dict: dict[str, Any],
+    ) -> Callable[..., Any]:
+        patch_dim = self._patch_dim
 
         # ---- Build and compile vision model ----
         with F.lazy(), default_dtype(model_config.dtype):
@@ -273,12 +287,19 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
             device=DeviceRef.GPU(),
         )
 
-        compiled_vision = vision_nn.compile(
+        return vision_nn.compile(
             pixel_patches_type,
             attention_mask_type,
             position_ids_type,
-            weights=vision_state_dict,
+            weights=state_dict,
         )
+
+    def _compile_language_model(
+        self,
+        model_config: PixtralConfig,
+        state_dict: dict[str, Any],
+    ) -> Callable[..., Any]:
+        device_ref = DeviceRef.from_device(self.devices[0])
 
         # ---- Build and compile language model ----
         with F.lazy(), default_dtype(model_config.dtype):
@@ -308,14 +329,12 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
 
         kv_inputs = self.kv_params.flattened_kv_inputs()
 
-        compiled_language = language_nn.compile(
+        return language_nn.compile(
             input_ids_type,
             input_row_offsets_type,
             return_n_logits_type,
             image_embeddings_type,
             image_token_indices_type,
             *kv_inputs,
-            weights=language_state_dict,
+            weights=state_dict,
         )
-
-        return compiled_vision, compiled_language

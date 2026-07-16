@@ -31,7 +31,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.experimental import functional as F
 from max.experimental.tensor import default_dtype
-from max.graph import DeviceRef, Graph, Value
+from max.graph import DeviceRef, Graph, Module, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -654,6 +654,20 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
         """HuggingFace config passed to the weight adapter, if any."""
         return None
 
+    def _wire_batch_processor(
+        self,
+        model: Any = None,
+        model_config: Any = None,
+    ) -> None:
+        """Post-compile wiring into the batch processor (EP bind, vision, etc.)."""
+        del model, model_config
+        batch_processor = self.batch_processor
+        if batch_processor is None:
+            return
+        bind_ep = getattr(batch_processor, "bind_ep_comm_initializer", None)
+        if bind_ep is not None:
+            bind_ep(getattr(self, "ep_comm_initializer", None))
+
 
 class GraphPipelineModelWithKVCache(PipelineModelWithKVCache[BaseContextType]):
     """Graph-API pipeline model with shared compile-and-load template.
@@ -663,8 +677,7 @@ class GraphPipelineModelWithKVCache(PipelineModelWithKVCache[BaseContextType]):
     duplicating weight loading, timing, and EP batch-processor wiring.
 
     ModuleV3 (eager) models and multi-graph VLMs should inherit
-    :class:`PipelineModelWithKVCache` directly and implement ``load_model`` with
-    their own signature.
+    :class:`MultiGraphPipelineModelWithKVCache` instead.
     """
 
     @traced
@@ -716,15 +729,107 @@ class GraphPipelineModelWithKVCache(PipelineModelWithKVCache[BaseContextType]):
             f"{type(self).__qualname__} must implement `_build_graph_for_compile`."
         )
 
-    def _wire_batch_processor(self, model: Model, model_config: Any) -> None:
-        """Post-compile wiring into the batch processor (EP bind, vision, etc.)."""
-        del model, model_config
-        batch_processor = self.batch_processor
-        if batch_processor is None:
-            return
-        bind_ep = getattr(batch_processor, "bind_ep_comm_initializer", None)
-        if bind_ep is not None:
-            bind_ep(getattr(self, "ep_comm_initializer", None))
+
+class MultiGraphPipelineModelWithKVCache(
+    PipelineModelWithKVCache[BaseContextType]
+):
+    """Graph-API VLM with unified :meth:`load_model` and per-tower hooks.
+
+    :meth:`_create_model_config` should return the full VLM config (with
+    ``.vision_config`` and ``.text_config`` / ``.llm_config`` subconfigs) and
+    assign :attr:`model_config`. Both :meth:`_build_*` hooks receive that same
+    ``model_config``.
+
+    Override :meth:`load_model` when graph capture or weight loading does not
+    fit this flow (e.g. Qwen2.5VL, Kimi-K2.5).
+    """
+
+    _vision_weights_dict: dict[str, Any]
+    _language_weights_dict: dict[str, Any]
+
+    @traced
+    def load_model(
+        self, session: InferenceSession
+    ) -> tuple[Model | None, Model]:
+        """Build, compile, and load vision and language graphs into ``session``."""
+        state_dict = self._load_state_dict()
+        model_config = self._create_model_config(state_dict)
+        self._init_distributed_runtime(session, model_config)
+
+        with CompilationTimer("vision + language model") as timer:
+            graph_module = Module()
+
+            vision_graph: Graph | None = None
+            vision_registry: dict[str, Any] = {}
+            if self._include_vision_graph(model_config):
+                vision_graph, vision_registry = self._build_vision_graph(
+                    model_config,
+                    self._vision_weights_dict,
+                    module=graph_module,
+                )
+
+            language_graph, language_registry = self._build_language_graph(
+                model_config,
+                self._language_weights_dict,
+                module=graph_module,
+            )
+            timer.mark_build_complete()
+
+            models = session.load_all(
+                graph_module,
+                weights_registry={**vision_registry, **language_registry},
+            )
+
+        vision_model = (
+            models[vision_graph.name] if vision_graph is not None else None
+        )
+        language_model = models[language_graph.name]
+        self._wire_batch_processor(vision_model, model_config)
+        return vision_model, language_model
+
+    def _include_vision_graph(self, model_config: Any) -> bool:
+        """Whether to capture and load a vision graph (override for text-only VLMs)."""
+        del model_config
+        return True
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+        """Builds the full VLM config from ``state_dict``.
+
+        Should assign :attr:`model_config` and return the same object.
+        """
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_create_model_config`."
+        )
+
+    def _init_distributed_runtime(
+        self,
+        session: InferenceSession,
+        model_config: Any,
+    ) -> None:
+        """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""
+        del session, model_config
+
+    def _build_vision_graph(
+        self,
+        model_config: Any,
+        state_dict: dict[str, Any],
+        module: Module,
+    ) -> tuple[Graph, dict[str, Any]]:
+        """Captures the vision tower graph and its ``nn.state_dict()`` registry."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_build_vision_graph`."
+        )
+
+    def _build_language_graph(
+        self,
+        model_config: Any,
+        state_dict: dict[str, Any],
+        module: Module,
+    ) -> tuple[Graph, dict[str, Any]]:
+        """Captures the language tower graph and its ``nn.state_dict()`` registry."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_build_language_graph`."
+        )
 
 
 class ModuleV3PipelineModelWithKVCache(
@@ -738,7 +843,10 @@ class ModuleV3PipelineModelWithKVCache(
     duplicating weight loading, timing, and ``nn.compile`` wiring.
 
     Graph-API models should inherit :class:`GraphPipelineModelWithKVCache`
-    instead. Multi-graph VLMs and ``ComponentModel`` types should override
+    instead. Multi-graph VLMs should inherit
+    :class:`MultiGraphPipelineModelWithKVCache` (graph API) or
+    :class:`ModuleV3MultiGraphPipelineModelWithKVCache` (ModuleV3).
+    ``ComponentModel`` types and unified spec-decode pipelines should override
     :meth:`load_model` entirely.
     """
 
@@ -798,3 +906,70 @@ class ModuleV3PipelineModelWithKVCache(
         )
         input_types.extend(self._modulev3_extra_input_types)
         return tuple(input_types)
+
+
+class ModuleV3MultiGraphPipelineModelWithKVCache(
+    PipelineModelWithKVCache[BaseContextType]
+):
+    """ModuleV3 VLM with separate vision and language compiled callables.
+
+    Subclasses implement :meth:`_load_state_dict` (tower weight prep),
+    :meth:`_create_model_config`, and :meth:`_compile_vision_model` /
+    :meth:`_compile_language_model`. The base :meth:`load_model` passes each
+    tower's ``WeightData`` dict into the matching compile hook (the vision or
+    language slice of :attr:`_vision_weights_dict` / :attr:`_language_weights_dict`,
+    not the raw checkpoint returned from :meth:`_load_state_dict`).
+
+    Graph-API VLMs should inherit :class:`MultiGraphPipelineModelWithKVCache`
+    instead.
+    """
+
+    _vision_weights_dict: dict[str, Any]
+    _language_weights_dict: dict[str, Any]
+
+    @traced
+    def load_model(
+        self,
+    ) -> tuple[Callable[..., Any] | None, Callable[..., Any]]:
+        """Build and compile vision and language ModuleV3 callables."""
+        state_dict = self._load_state_dict()
+        model_config = self._create_model_config(state_dict)
+        self._init_distributed_runtime(model_config)
+
+        with CompilationTimer("vision + language model") as timer:
+            vision_model = self._compile_vision_model(
+                model_config, self._vision_weights_dict
+            )
+            language_model = self._compile_language_model(
+                model_config, self._language_weights_dict
+            )
+            timer.mark_build_complete()
+
+        self._wire_batch_processor(vision_model, model_config)
+        return vision_model, language_model
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+        """Builds model config from ``state_dict``."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_create_model_config`."
+        )
+
+    def _init_distributed_runtime(self, model_config: Any) -> None:
+        """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""
+        del model_config
+
+    def _compile_vision_model(
+        self, model_config: Any, state_dict: dict[str, Any]
+    ) -> Callable[..., Any]:
+        """Builds and compiles the vision tower."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_compile_vision_model`."
+        )
+
+    def _compile_language_model(
+        self, model_config: Any, state_dict: dict[str, Any]
+    ) -> Callable[..., Any]:
+        """Builds and compiles the language tower."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_compile_language_model`."
+        )
