@@ -36,8 +36,10 @@ from .arch_config import (
 from .generate import GenerateMixin
 from .pipeline_model import (
     AlwaysSignalBuffersMixin,
+    GraphPipelineModelWithKVCache,
     ModelInputs,
     ModelOutputs,
+    ModuleV3PipelineModelWithKVCache,
     PipelineModel,
     PipelineModelWithKVCache,
     UnifiedEagleOutputs,
@@ -56,8 +58,10 @@ __all__ = [
     "BatchProcessor",
     "BatchProcessorRuntime",
     "GenerateMixin",
+    "GraphPipelineModelWithKVCache",
     "ModelInputs",
     "ModelOutputs",
+    "ModuleV3PipelineModelWithKVCache",
     "ModuleV3SingleReplicaBatchProcessor",
     "PipelineModel",
     "PipelineModelWithKVCache",

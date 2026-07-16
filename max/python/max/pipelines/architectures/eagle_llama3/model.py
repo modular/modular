@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from max.driver import Device
 from max.engine import InferenceSession
@@ -28,6 +28,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.utils import parse_state_dict_from_weights
+from typing_extensions import override
 
 from ..llama3.model import LlamaModelBase
 from .eagle_llama3 import EagleLlama3
@@ -68,19 +69,25 @@ class EagleLlama3Model(LlamaModelBase):
             "Cannot directly execute EagleLlama3Model. You should use the UnifiedEagleLlama3Model instead."
         )
 
-    def _build_graph(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-    ) -> Graph:
+    @override
+    def _load_state_dict(self) -> dict[str, Any]:
         draft_model: MAXModelConfig | None = self.pipeline_config.draft_model
         assert draft_model is not None
         draft_hf_config = draft_model.huggingface_config
         assert draft_hf_config is not None
-        state_dict = parse_state_dict_from_weights(
-            self.pipeline_config, weights, adapter, hf_config=draft_hf_config
+        return parse_state_dict_from_weights(
+            self.pipeline_config,
+            self.weights,
+            self.adapter,
+            hf_config=draft_hf_config,
         )
 
+    @override
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Llama3Config:
+        draft_model: MAXModelConfig | None = self.pipeline_config.draft_model
+        assert draft_model is not None
+        draft_hf_config = draft_model.huggingface_config
+        assert draft_hf_config is not None
         model_config = Llama3Config.initialize_from_config(
             self.pipeline_config,
             draft_hf_config,
@@ -93,7 +100,16 @@ class EagleLlama3Model(LlamaModelBase):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
         )
+        return model_config
 
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Llama3Config,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
         assert len(self.devices) == 1, "EAGLE only supports single device"
 
         single_model: EagleLlama3 = EagleLlama3(model_config)
@@ -104,7 +120,7 @@ class EagleLlama3Model(LlamaModelBase):
             weight_alignment=1,
             strict=False,  # We don't use the input layer norm and output layer norm
         )
-        self.state_dict = single_model.state_dict()
+        weights_registry = single_model.state_dict()
 
         with Graph(
             "eagle_llama3",
@@ -132,5 +148,4 @@ class EagleLlama3Model(LlamaModelBase):
                 hidden_states.tensor,
             )
             graph.output(*outputs)
-
-            return graph
+            return graph, weights_registry

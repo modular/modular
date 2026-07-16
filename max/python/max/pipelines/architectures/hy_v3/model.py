@@ -22,16 +22,13 @@ from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph
-from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.pipelines.architectures.llama3.model import (
     Llama3Inputs,
     LlamaModelBase,
 )
-from max.pipelines.lib import CompilationTimer
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
-from max.pipelines.lib.utils import parse_state_dict_from_weights
 from typing_extensions import override
 
 from .batch_processor import HyV3BatchProcessor
@@ -81,30 +78,10 @@ class HYV3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
     attention_bias: bool = False
     state_dict: dict[str, Any]
+    ep_comm_initializer: EPCommInitializer | None = None
 
     @override
-    def load_model(self, session: InferenceSession) -> Model:
-        with CompilationTimer("model") as timer:
-            graph = self._build_graph(self.weights, self.adapter, session)
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=self.state_dict)
-        if self._batch_processor is not None:
-            bind = getattr(
-                self._batch_processor, "bind_ep_comm_initializer", None
-            )
-            if bind is not None:
-                bind(self.ep_comm_initializer)
-        return model
-
-    def _build_graph(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-        session: InferenceSession | None = None,
-    ) -> Graph:
-        state_dict = parse_state_dict_from_weights(
-            self.pipeline_config, weights, adapter
-        )
+    def _create_model_config(self, state_dict: dict[str, Any]) -> HYV3Config:
         model_config = HYV3Config.initialize_from_config(
             self.pipeline_config, self.huggingface_config
         )
@@ -128,7 +105,6 @@ class HYV3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
         # EP only matters multi-GPU (SHMEM kernels reject n_ranks=1).
         num_devices = len(self.devices)
-        self.ep_comm_initializer: EPCommInitializer | None = None
         if num_devices > 1:
             ep_size = num_devices
             ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
@@ -147,23 +123,39 @@ class HYV3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 n_nodes=1,
                 dispatch_quant_config=None,
             )
-            # Skip EP init in virtual device mode (compile-only): NVSHMEM
-            # needs real GPUs, but keep ep_config for graph structure.
-            if session is not None and not is_virtual_device_mode():
-                self.ep_comm_initializer = EPCommInitializer(
-                    model_config.ep_config
-                )
-                self.ep_comm_initializer.ep_init(session)
-                model_config.ep_config.node_id = (
-                    self.ep_comm_initializer.config.node_id
-                )
-                if model_config.ep_config.node_id == -1:
-                    raise ValueError(
-                        "EP node ID is not set. Please check if the EP "
-                        "initialization is successful."
-                    )
         else:
             model_config.ep_config = None
+
+        return model_config
+
+    @override
+    def _init_distributed_runtime(
+        self,
+        session: InferenceSession,
+        model_config: HYV3Config,
+    ) -> None:
+        self.ep_comm_initializer = None
+        if model_config.ep_config is None or is_virtual_device_mode():
+            return
+
+        self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
+        self.ep_comm_initializer.ep_init(session)
+        model_config.ep_config.node_id = self.ep_comm_initializer.config.node_id
+        if model_config.ep_config.node_id == -1:
+            raise ValueError(
+                "EP node ID is not set. Please check if the EP "
+                "initialization is successful."
+            )
+
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: HYV3Config,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        num_devices = len(self.devices)
 
         nn_model = HYV3(model_config)
         graph_inputs = nn_model.input_types(self.kv_params)
@@ -174,7 +166,7 @@ class HYV3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             weight_alignment=1,
             strict=True,
         )
-        self.state_dict = nn_model.state_dict()
+        weights_registry = nn_model.state_dict()
 
         with Graph("hy_v3", input_types=graph_inputs) as graph:
             inputs_iter = iter(graph.inputs)
@@ -210,4 +202,4 @@ class HYV3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             )
 
             graph.output(*outputs)
-            return graph
+            return graph, weights_registry

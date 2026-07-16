@@ -20,14 +20,12 @@ from typing import Any, ClassVar
 
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import InferenceSession
 from max.graph import Graph, ops
-from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
-    CompilationTimer,
     ModelInputs,
     ModelOutputs,
 )
@@ -85,9 +83,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         DeepseekV3BatchProcessor
     )
 
-    def _create_model_config(
-        self, state_dict: dict[str, WeightData]
-    ) -> DeepseekV3Config:
+    @override
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
 
@@ -227,131 +224,113 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         return model_config
 
     @override
-    def load_model(self, session: InferenceSession) -> Model:
-        """Load the model with the given weights."""
+    def _init_distributed_runtime(
+        self,
+        session: InferenceSession,
+        model_config: Any,
+    ) -> None:
+        assert isinstance(model_config, DeepseekV3Config)
+        self.ep_comm_initializer = None
+        # Skip EP initialization in virtual device mode (compilation-only)
+        # since NVSHMEM functions cannot be linked without real GPU devices.
+        # We still keep ep_config to generate the correct graph structure.
+        if model_config.ep_config is None or is_virtual_device_mode():
+            return
 
-        with CompilationTimer("model") as timer:
-            if self.adapter:
-                state_dict = self.adapter(
-                    dict(self.weights.items()),
-                    huggingface_config=self.huggingface_config,
-                    pipeline_config=self.pipeline_config,
-                )
-            else:
-                state_dict = {
-                    key: value.data() for key, value in self.weights.items()
-                }
-            # Create the model
-            config = self._create_model_config(state_dict)
-
-            self.ep_comm_initializer: EPCommInitializer | None = None
-            # Skip EP initialization in virtual device mode (compilation-only)
-            # since NVSHMEM functions cannot be linked without real GPU devices.
-            # We still keep ep_config to generate the correct graph structure.
-            if config.ep_config is not None and not is_virtual_device_mode():
-                ep_alloc_config = config.ep_config
-                # When EAGLE/MTP speculative decoding shares EP buffers between
-                # target (FP4) and draft (BF16) models, allocate buffers
-                # large enough for the draft model's dispatch dtype.
-                draft_ep_dtype = _get_mtp_draft_ep_dispatch_dtype(
-                    self.pipeline_config
-                )
-                if draft_ep_dtype is not None:
-                    ep_alloc_config = replace(
-                        config.ep_config,
-                        dispatch_dtype=draft_ep_dtype,
-                        dispatch_quant_config=None,
-                    )
-                    logger.info(
-                        f"Upsizing EP buffers for draft model dispatch dtype: {draft_ep_dtype}"
-                    )
-                self.ep_comm_initializer = EPCommInitializer(ep_alloc_config)
-                self.ep_comm_initializer.ep_init(session)
-                # ep_init() sets node_id on the initializer's config; propagate
-                # it back to the model's ep_config (which may be a different
-                # object when we created a copy above).
-                config.ep_config.node_id = ep_alloc_config.node_id
-                if config.ep_config.node_id == -1:
-                    raise ValueError(
-                        "EP node ID is not set. Please check if the EP initialization is successful."
-                    )
-
-            nn_model = DeepseekV3(config)
-            nn_model.load_state_dict(
-                state_dict, weight_alignment=1, strict=True
+        ep_alloc_config = model_config.ep_config
+        # When EAGLE/MTP speculative decoding shares EP buffers between
+        # target (FP4) and draft (BF16) models, allocate buffers
+        # large enough for the draft model's dispatch dtype.
+        draft_ep_dtype = _get_mtp_draft_ep_dispatch_dtype(self.pipeline_config)
+        if draft_ep_dtype is not None:
+            ep_alloc_config = replace(
+                model_config.ep_config,
+                dispatch_dtype=draft_ep_dtype,
+                dispatch_quant_config=None,
+            )
+            logger.info(
+                f"Upsizing EP buffers for draft model dispatch dtype: {draft_ep_dtype}"
+            )
+        self.ep_comm_initializer = EPCommInitializer(ep_alloc_config)
+        self.ep_comm_initializer.ep_init(session)
+        # ep_init() sets node_id on the initializer's config; propagate
+        # it back to the model's ep_config (which may be a different
+        # object when we created a copy above).
+        model_config.ep_config.node_id = ep_alloc_config.node_id
+        if model_config.ep_config.node_id == -1:
+            raise ValueError(
+                "EP node ID is not set. Please check if the EP initialization is successful."
             )
 
-            self.state_dict = nn_model.state_dict()
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        assert isinstance(model_config, DeepseekV3Config)
+        nn_model = DeepseekV3(model_config)
+        nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
+        weights_registry = nn_model.state_dict()
 
-            # Create the graph
-            with Graph(
-                "deepseekV3_graph",
-                input_types=nn_model.input_types(self.kv_params),
-            ) as graph:
-                (
-                    tokens,
-                    devices_input_row_offsets,
-                    host_input_row_offsets,
-                    return_n_logits,
-                    data_parallel_splits,
-                    *variadic_args,
-                ) = graph.inputs
+        # Create the graph
+        with Graph(
+            "deepseekV3_graph",
+            input_types=nn_model.input_types(self.kv_params),
+        ) as graph:
+            (
+                tokens,
+                devices_input_row_offsets,
+                host_input_row_offsets,
+                return_n_logits,
+                data_parallel_splits,
+                *variadic_args,
+            ) = graph.inputs
 
-                variadic_args_iter = iter(variadic_args)
-                # Multi-GPU passes a signal buffer per device: unmarshal these.
-                signal_buffers = [
-                    next(variadic_args_iter).buffer
-                    for _ in range(len(self.devices))
-                ]
+            variadic_args_iter = iter(variadic_args)
+            # Multi-GPU passes a signal buffer per device: unmarshal these.
+            signal_buffers = [
+                next(variadic_args_iter).buffer
+                for _ in range(len(self.devices))
+            ]
 
-                # Unmarshal the KV cache arguments.
-                kv_inputs = self.kv_params.unflatten_kv_inputs(
-                    variadic_args_iter
+            # Unmarshal the KV cache arguments.
+            kv_inputs = self.kv_params.unflatten_kv_inputs(variadic_args_iter)
+            assert isinstance(kv_inputs, KVCacheInputs)
+            kv_caches_per_dev = list(kv_inputs.inputs)
+
+            # Unmarshal the batch context lengths
+            batch_context_lengths = [
+                next(variadic_args_iter).tensor
+                for _ in range(len(self.devices))
+            ]
+
+            # all remaining arguments are for EP inputs
+            ep_model_inputs = list(variadic_args_iter)
+
+            # DeepseekV3.__call__ expects a per-device list for
+            # input_row_offsets
+            input_row_offsets_per_dev = list(
+                ops.distributed_broadcast(
+                    devices_input_row_offsets.tensor, signal_buffers
                 )
-                assert isinstance(kv_inputs, KVCacheInputs)
-                kv_caches_per_dev = list(kv_inputs.inputs)
-
-                # Unmarshal the batch context lengths
-                batch_context_lengths = [
-                    next(variadic_args_iter).tensor
-                    for _ in range(len(self.devices))
-                ]
-
-                # all remaining arguments are for EP inputs
-                ep_model_inputs = list(variadic_args_iter)
-
-                # DeepseekV3.__call__ expects a per-device list for
-                # input_row_offsets
-                input_row_offsets_per_dev = list(
-                    ops.distributed_broadcast(
-                        devices_input_row_offsets.tensor, signal_buffers
-                    )
-                )
-                outputs = nn_model(
-                    tokens.tensor,
-                    signal_buffers,
-                    kv_caches_per_dev,
-                    return_n_logits.tensor,
-                    input_row_offsets_per_dev,
-                    host_input_row_offsets.tensor,
-                    data_parallel_splits.tensor,
-                    batch_context_lengths,
-                    ep_model_inputs,
-                )
-
-                graph.output(*outputs)
-
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=self.state_dict)
-
-        if self._batch_processor is not None:
-            bind_ep = getattr(
-                self._batch_processor, "bind_ep_comm_initializer", None
             )
-            if bind_ep is not None:
-                bind_ep(self.ep_comm_initializer)
+            outputs = nn_model(
+                tokens.tensor,
+                signal_buffers,
+                kv_caches_per_dev,
+                return_n_logits.tensor,
+                input_row_offsets_per_dev,
+                host_input_row_offsets.tensor,
+                data_parallel_splits.tensor,
+                batch_context_lengths,
+                ep_model_inputs,
+            )
 
-        return model
+            graph.output(*outputs)
+            return graph, weights_registry
 
     def execute(
         self,

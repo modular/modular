@@ -14,12 +14,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from typing import Any, ClassVar
 
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
-from max.graph import DeviceRef
+from typing_extensions import override
 
 from ..llama3_modulev3.batch_processor import Llama3ModuleV3BatchProcessor
 from ..llama3_modulev3.model import Llama3Model
@@ -36,42 +33,21 @@ class Olmo2Model(Llama3Model):
     batch_processor_cls: ClassVar[type[Llama3ModuleV3BatchProcessor]] = (
         Llama3ModuleV3BatchProcessor
     )
+    config_class: type[Any] = Olmo2Config
 
-    def load_model(self) -> Callable[..., Any]:
-        device0 = self.devices[0]
-        device_ref = DeviceRef(device0.label, device0.id)
-
-        huggingface_config = self.huggingface_config
-        if self.adapter:
-            state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
+    @override
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         model_config = Olmo2Config.initialize(self.pipeline_config)
         model_config.finalize(
-            huggingface_config=huggingface_config,
+            huggingface_config=self.huggingface_config,
             state_dict=state_dict,
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
         )
-        with F.lazy(), default_dtype(model_config.dtype):
-            nn_model = Olmo2(model_config, self.kv_params)
-            nn_model.to(self.devices[0])
+        return model_config
 
-        assert self.batch_processor is not None
-        compile_input_types = self.batch_processor.get_symbolic_inputs(
-            kv_params=self.kv_params,
-            device_refs=[device_ref],
-        )
-
-        compiled_model = nn_model.compile(
-            *compile_input_types,
-            weights=state_dict,
-        )
-
-        return compiled_model
+    @override
+    def _instantiate_module(self, model_config: Any) -> Any:
+        nn_model = Olmo2(model_config, self.kv_params)
+        nn_model.to(self.devices[0])
+        return nn_model

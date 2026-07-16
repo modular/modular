@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -28,8 +28,10 @@ from max.driver import (
     is_virtual_device_mode,
 )
 from max.dtype import DType
-from max.engine import InferenceSession
-from max.graph import DeviceRef, Value
+from max.engine import InferenceSession, Model
+from max.experimental import functional as F
+from max.experimental.tensor import default_dtype
+from max.graph import DeviceRef, Graph, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -40,8 +42,13 @@ from max.nn.kv_cache import (
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContextType, LogProbabilities
 from max.pipelines.kv_cache.config import KVCacheConfig
+from max.pipelines.lib.utils import (
+    CompilationTimer,
+    parse_state_dict_from_weights,
+)
 from max.pipelines.lora import LoRAInputs, LoRAManager
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.profiler import traced
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
@@ -633,3 +640,161 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             kv_cache_config,
             cache_dtype,
         )
+
+    def _load_state_dict(self) -> dict[str, Any]:
+        """Loads weights via :func:`~max.pipelines.lib.utils.parse_state_dict_from_weights`."""
+        return parse_state_dict_from_weights(
+            self.pipeline_config,
+            self.weights,
+            self.adapter,
+            hf_config=self._hf_config_for_weights(),
+        )
+
+    def _hf_config_for_weights(self) -> AutoConfig | None:
+        """HuggingFace config passed to the weight adapter, if any."""
+        return None
+
+
+class GraphPipelineModelWithKVCache(PipelineModelWithKVCache[BaseContextType]):
+    """Graph-API pipeline model with shared compile-and-load template.
+
+    Subclasses override :meth:`_build_graph_for_compile` (and optionally
+    :meth:`_create_model_config`, :meth:`_init_distributed_runtime`) rather than
+    duplicating weight loading, timing, and EP batch-processor wiring.
+
+    ModuleV3 (eager) models and multi-graph VLMs should inherit
+    :class:`PipelineModelWithKVCache` directly and implement ``load_model`` with
+    their own signature.
+    """
+
+    @traced
+    def load_model(self, session: InferenceSession) -> Model:
+        """Build, compile, and load the model graph into ``session``."""
+        state_dict = self._load_state_dict()
+        model_config = self._create_model_config(state_dict)
+        self._init_distributed_runtime(session, model_config)
+
+        with CompilationTimer("model") as timer:
+            graph, weights_registry = self._build_graph_for_compile(
+                session,
+                state_dict,
+                model_config,
+            )
+            timer.mark_build_complete()
+            self.state_dict = weights_registry
+            model = session.load(graph, weights_registry=weights_registry)
+
+        self._wire_batch_processor(model, model_config)
+        return model
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+        """Builds model config from ``state_dict``.
+
+        Subclasses implement ``initialize`` / ``finalize`` (or heavier setup)
+        here. There is no separate finalize hook.
+        """
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_create_model_config`."
+        )
+
+    def _init_distributed_runtime(
+        self,
+        session: InferenceSession,
+        model_config: Any,
+    ) -> None:
+        """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""
+        del session, model_config
+
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        """Instantiates the nn module, captures the graph, returns the registry."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_build_graph_for_compile`."
+        )
+
+    def _wire_batch_processor(self, model: Model, model_config: Any) -> None:
+        """Post-compile wiring into the batch processor (EP bind, vision, etc.)."""
+        del model, model_config
+        batch_processor = self.batch_processor
+        if batch_processor is None:
+            return
+        bind_ep = getattr(batch_processor, "bind_ep_comm_initializer", None)
+        if bind_ep is not None:
+            bind_ep(getattr(self, "ep_comm_initializer", None))
+
+
+class ModuleV3PipelineModelWithKVCache(
+    PipelineModelWithKVCache[BaseContextType]
+):
+    """ModuleV3 (eager) pipeline model with shared compile template.
+
+    Subclasses override :meth:`_instantiate_module` (and optionally
+    :meth:`_create_model_config`, :meth:`_init_distributed_runtime`,
+    :meth:`_module_default_dtype`, :meth:`_get_compile_input_types`) rather than
+    duplicating weight loading, timing, and ``nn.compile`` wiring.
+
+    Graph-API models should inherit :class:`GraphPipelineModelWithKVCache`
+    instead. Multi-graph VLMs and ``ComponentModel`` types should override
+    :meth:`load_model` entirely.
+    """
+
+    _modulev3_extra_input_types: list[Any]
+
+    @traced
+    def load_model(self) -> Callable[..., Any]:
+        """Build and compile the ModuleV3 callable."""
+        state_dict = self._load_state_dict()
+        model_config = self._create_model_config(state_dict)
+        self._init_distributed_runtime(model_config)
+
+        with CompilationTimer("model") as timer:
+            module_default_dtype = self._module_default_dtype(
+                state_dict, model_config
+            )
+            with F.lazy(), default_dtype(module_default_dtype):
+                nn_model = self._instantiate_module(model_config)
+            compile_input_types = self._get_compile_input_types(model_config)
+            timer.mark_build_complete()
+            return nn_model.compile(*compile_input_types, weights=state_dict)
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+        """Builds model config from ``state_dict``."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_create_model_config`."
+        )
+
+    def _init_distributed_runtime(self, model_config: Any) -> None:
+        """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""
+        del model_config
+        self._modulev3_extra_input_types = []
+
+    def _module_default_dtype(
+        self, state_dict: dict[str, Any], model_config: Any
+    ) -> DType:
+        """Default dtype for the eager module build context."""
+        del state_dict
+        return model_config.dtype
+
+    def _instantiate_module(self, model_config: Any) -> Any:
+        """Constructs and places the nn module under ``F.lazy()``."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_instantiate_module`."
+        )
+
+    def _get_compile_input_types(self, model_config: Any) -> tuple[Any, ...]:
+        """Symbolic inputs passed to ``nn_model.compile``."""
+        del model_config
+        batch_processor = self.batch_processor
+        assert batch_processor is not None
+        input_types = list(
+            batch_processor.get_symbolic_inputs(
+                kv_params=self.kv_params,
+                device_refs=self.device_refs,
+            )
+        )
+        input_types.extend(self._modulev3_extra_input_types)
+        return tuple(input_types)

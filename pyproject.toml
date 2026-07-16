@@ -165,6 +165,16 @@ follow_imports = "skip"
 module = "cyclopts.*"
 ignore_missing_imports = true
 
+# Private MiniMax-M3 graph hooks diverge from the shared load_model template
+# signatures; suppress only the files that inherit those hooks.
+[[tool.mypy.overrides]]
+module = "minimax_m3.model"
+disable_error_code = ["misc"]
+
+[[tool.mypy.overrides]]
+module = "minimax_m3.eagle3_model"
+disable_error_code = ["override"]
+
 [tool.pydantic-mypy]
 init_forbid_extra = true
 init_typed = true

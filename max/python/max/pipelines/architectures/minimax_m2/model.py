@@ -22,12 +22,9 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph
-from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
-from max.pipelines.lib import CompilationTimer
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
-from max.pipelines.lib.utils import parse_state_dict_from_weights
 from typing_extensions import override
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
@@ -95,28 +92,7 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     state_dict: dict[str, Any]
 
     @override
-    def load_model(self, session: InferenceSession) -> Model:
-        with CompilationTimer("model") as timer:
-            graph = self._build_graph(self.weights, self.adapter, session)
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=self.state_dict)
-        if self._batch_processor is not None:
-            bind = getattr(
-                self._batch_processor, "bind_ep_comm_initializer", None
-            )
-            if bind is not None:
-                bind(self.ep_comm_initializer)
-        return model
-
-    def _build_graph(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-        session: InferenceSession | None = None,
-    ) -> Graph:
-        state_dict = parse_state_dict_from_weights(
-            self.pipeline_config, weights, adapter
-        )
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         model_config = MiniMaxM2Config.initialize_from_config(
             self.pipeline_config, self.huggingface_config
         )
@@ -153,7 +129,6 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         # data_parallel_degree (==1 -> TP attention, ==num_devices -> DP).
         ep_enabled = num_devices > 1 and ep_size > 1
 
-        self.ep_comm_initializer: EPCommInitializer | None = None
         if ep_enabled:
             if ep_size % num_devices != 0:
                 raise ValueError(
@@ -185,26 +160,54 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 dispatch_quant_config=model_config.quant_config,
                 use_allreduce=ep_use_allreduce,
             )
-            assert session is not None
-            self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
-            self.ep_comm_initializer.ep_init(session)
-            attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
-            logger.info(
-                "MiniMax-M2 EP initialized (%s-attention + EP-MoE,"
-                " use_allreduce=%s): node_id=%s, n_gpus=%s, n_nodes=%s, "
-                "n_experts=%s, max_tokens_per_rank=%s",
-                attn_strategy,
-                ep_use_allreduce,
-                model_config.ep_config.node_id,
-                model_config.ep_config.n_gpus_per_node,
-                model_config.ep_config.n_nodes,
-                model_config.ep_config.n_experts,
-                model_config.ep_config.max_tokens_per_rank,
-            )
+        else:
+            model_config.ep_config = None
 
+        return model_config
+
+    @override
+    def _init_distributed_runtime(
+        self,
+        session: InferenceSession,
+        model_config: Any,
+    ) -> None:
+        assert isinstance(model_config, MiniMaxM2Config)
+        self.ep_comm_initializer = None
+        if model_config.ep_config is None:
+            return
+        self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
+        self.ep_comm_initializer.ep_init(session)
+        attn_strategy = (
+            "TP"
+            if self.pipeline_config.model.data_parallel_degree == 1
+            else "DP"
+        )
+        logger.info(
+            "MiniMax-M2 EP initialized (%s-attention + EP-MoE,"
+            " use_allreduce=%s): node_id=%s, n_gpus=%s, n_nodes=%s, "
+            "n_experts=%s, max_tokens_per_rank=%s",
+            attn_strategy,
+            model_config.ep_config.use_allreduce,
+            model_config.ep_config.node_id,
+            model_config.ep_config.n_gpus_per_node,
+            model_config.ep_config.n_nodes,
+            model_config.ep_config.n_experts,
+            model_config.ep_config.max_tokens_per_rank,
+        )
+
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        assert isinstance(model_config, MiniMaxM2Config)
         nn_model = MiniMaxM2(model_config)
-
         graph_inputs = nn_model.input_types(self.kv_params)
+        num_devices = len(self.devices)
+        ep_enabled = model_config.ep_config is not None
 
         nn_model.load_state_dict(
             state_dict,
@@ -216,8 +219,7 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 )
             ),
         )
-
-        self.state_dict = nn_model.state_dict()
+        weights_registry = nn_model.state_dict()
 
         with Graph("minimax_m2", input_types=graph_inputs) as graph:
             # Unpack inputs in the exact order declared by
@@ -267,4 +269,4 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             )
 
             graph.output(*outputs)
-            return graph
+            return graph, weights_registry

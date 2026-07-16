@@ -18,8 +18,7 @@ from typing import Any, Literal
 from max.driver import Buffer
 from max.engine import InferenceSession, Model
 from max.graph import Graph
-from max.graph.weights import Weights, WeightsAdapter
-from max.pipelines.lib.utils import parse_state_dict_from_weights
+from typing_extensions import override
 
 from ..llama3.model import LlamaModelBase
 from .model_config import Olmo2Config
@@ -44,18 +43,8 @@ class Olmo2Model(LlamaModelBase):
     state_dict: dict[str, Any]
     """Weights to load into the model."""
 
-    def _build_graph(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-        session: InferenceSession | None = None,
-    ) -> Graph:
-        """Override to use Olmo2Config and Olmo2 model instead of Llama3."""
-
-        # Retrieve config using Olmo2Config instead of Llama3Config
-        state_dict = parse_state_dict_from_weights(
-            self.pipeline_config, weights, adapter
-        )
+    @override
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Olmo2Config:
         model_config = Olmo2Config.initialize(self.pipeline_config)
         model_config.finalize(
             huggingface_config=self.huggingface_config,
@@ -64,24 +53,28 @@ class Olmo2Model(LlamaModelBase):
             norm_method=self.norm_method,
             attention_bias=self.attention_bias,
         )
+        return model_config
 
-        # Build Graph - only single GPU for now
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Olmo2Config,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
         if len(self.devices) > 1:
             raise NotImplementedError("Multi-GPU OLMo2 is not implemented yet")
 
         nn_model = Olmo2(model_config)
-
-        # Get Graph Inputs
         graph_inputs = nn_model.input_types(self.kv_params)
 
-        # Load weights.
         nn_model.load_state_dict(
             state_dict,
             override_quantization_encoding=True,
             weight_alignment=1,
         )
-
-        self.state_dict = nn_model.state_dict()
+        weights_registry = nn_model.state_dict()
 
         with Graph(
             "olmo2",
@@ -98,4 +91,4 @@ class Olmo2Model(LlamaModelBase):
                 return_n_logits=return_n_logits.tensor,
             )
             graph.output(*outputs)
-            return graph
+            return graph, weights_registry

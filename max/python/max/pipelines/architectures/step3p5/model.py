@@ -17,20 +17,16 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
-import numpy as np
 from max._core.engine import Model
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph
-from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.comm.ep.ep_manager import EPBatchManager
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.lib import CompilationTimer
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
-from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.pipelines.weights.quant import parse_quant_config
 from typing_extensions import override
@@ -159,54 +155,7 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         )
 
     @override
-    def load_model(self, session: InferenceSession) -> Model:
-        assert self.max_batch_size, "Expected max_batch_size to be set"
-
-        dp = self.pipeline_config.model.data_parallel_degree
-        max_batch_size = self.max_batch_size
-        if dp > 1:
-            max_batch_size *= dp
-
-        self._input_row_offsets_prealloc: Buffer | None = None
-        if not is_virtual_device_mode():
-            self._input_row_offsets_prealloc = Buffer.from_numpy(
-                np.arange(max_batch_size + 1, dtype=np.uint32)
-            ).to(self.devices[0])
-
-        self._host_input_row_offsets_prealloc: Buffer | None = None
-        if dp > 1 and not is_virtual_device_mode():
-            self._host_input_row_offsets_prealloc = Buffer.from_numpy(
-                np.arange(max_batch_size + 1, dtype=np.uint32)
-            )
-
-        with CompilationTimer("model") as timer:
-            graph = self._build_graph(self.weights, self.adapter, session)
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=self.state_dict)
-
-        if self._batch_processor is not None:
-            bind_ep = getattr(
-                self._batch_processor, "bind_ep_comm_initializer", None
-            )
-            if bind_ep is not None:
-                bind_ep(self.ep_comm_initializer)
-            bind_mode = getattr(
-                self._batch_processor, "bind_parallelism_mode", None
-            )
-            if bind_mode is not None:
-                bind_mode(self._mode)
-
-        return model
-
-    def _build_graph(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-        session: InferenceSession | None = None,
-    ) -> Graph:
-        state_dict = parse_state_dict_from_weights(
-            self.pipeline_config, weights, adapter
-        )
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Step3p5Config:
         model_config = Step3p5Config.initialize_from_config(
             self.pipeline_config, self.huggingface_config
         )
@@ -217,20 +166,37 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             norm_method=self.norm_method,
             attention_bias=self.attention_bias,
         )
+        self._ep_config = self._create_ep_config(state_dict)
+        return model_config
 
-        # Set up EP config + comm infrastructure.
-        ep_config = self._create_ep_config(state_dict)
+    @override
+    def _init_distributed_runtime(
+        self,
+        session: InferenceSession,
+        model_config: Step3p5Config,
+    ) -> None:
+        del model_config
+        # Set up EP comm infrastructure.
+        self.ep_comm_initializer = None
+        ep_config = self._ep_config
+        if ep_config is None or is_virtual_device_mode():
+            return
+        self.ep_comm_initializer = EPCommInitializer(ep_config)
+        self.ep_comm_initializer.ep_init(session)
+        ep_config.node_id = self.ep_comm_initializer.config.node_id
 
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Step3p5Config,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        ep_config = self._ep_config
         ep_manager: EPBatchManager | None = None
-        self.ep_comm_initializer: EPCommInitializer | None = None
         if ep_config is not None:
             ep_manager = EPBatchManager(ep_config)
-
-            if not is_virtual_device_mode():
-                self.ep_comm_initializer = EPCommInitializer(ep_config)
-                if session is not None:
-                    self.ep_comm_initializer.ep_init(session)
-                    ep_config.node_id = self.ep_comm_initializer.config.node_id
 
         nn_model = Step3p5(model_config, ep_manager=ep_manager)
         # Cache the mode for input-prep (DP_EP adds host offsets +
@@ -269,8 +235,7 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             weight_alignment=1,
             strict=True,
         )
-
-        self.state_dict = nn_model.state_dict()
+        weights_registry = nn_model.state_dict()
 
         num_devices = len(self.devices)
 
@@ -320,4 +285,16 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             )
 
             graph.output(*outputs)
-            return graph
+            return graph, weights_registry
+
+    @override
+    def _wire_batch_processor(
+        self, model: Model, model_config: Step3p5Config
+    ) -> None:
+        super()._wire_batch_processor(model, model_config)
+        batch_processor = self.batch_processor
+        if batch_processor is None:
+            return
+        bind_mode = getattr(batch_processor, "bind_parallelism_mode", None)
+        if bind_mode is not None:
+            bind_mode(self._mode)

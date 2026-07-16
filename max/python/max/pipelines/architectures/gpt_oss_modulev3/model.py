@@ -14,15 +14,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
 import numpy as np
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
@@ -30,8 +27,8 @@ from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
+    ModuleV3PipelineModelWithKVCache,
     PipelineConfig,
-    PipelineModelWithKVCache,
 )
 
 from .batch_processor import GptOssModuleV3BatchProcessor
@@ -60,7 +57,7 @@ class GptOssInputs(ModelInputs):
     """Number of logits to return."""
 
 
-class GptOssModel(PipelineModelWithKVCache[TextContext]):
+class GptOssModel(ModuleV3PipelineModelWithKVCache[TextContext]):
     """A GPT OSS pipeline model for text generation.
 
     This class integrates the GPT OSS architecture with the MAX Engine pipeline
@@ -108,54 +105,21 @@ class GptOssModel(PipelineModelWithKVCache[TextContext]):
             return_logits,
             max_batch_size=max_batch_size,
         )
-
         self.model = self.load_model()
 
-    def load_model(self) -> Callable[..., Any]:
-        """Loads the compiled GPT OSS model into the MAX Engine session.
-
-        Args:
-            session: The MAX Engine inference session.
-
-        Returns:
-            The loaded MAX Engine model object.
-        """
-        device0 = self.devices[0]
-        device_ref = DeviceRef(device0.label, device0.id)
-
-        huggingface_config = self.huggingface_config
-        if self.adapter:
-            state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         model_config = GptOssConfig.initialize(self.pipeline_config)
         model_config.finalize(
-            huggingface_config=huggingface_config,
+            huggingface_config=self.huggingface_config,
             state_dict=state_dict,
             return_logits=self.return_logits,
         )
-        with F.lazy():
-            nn_model = GptOss(model_config, self.kv_params)
-            nn_model.to(self.devices[0])
+        return model_config
 
-        assert self.batch_processor is not None
-        compile_input_types = self.batch_processor.get_symbolic_inputs(
-            kv_params=self.kv_params,
-            device_refs=[device_ref],
-        )
-
-        compiled_model = nn_model.compile(
-            *compile_input_types,
-            weights=state_dict,
-        )
-
-        return compiled_model
+    def _instantiate_module(self, model_config: Any) -> Any:
+        nn_model = GptOss(model_config, self.kv_params)
+        nn_model.to(self.devices[0])
+        return nn_model
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the GPT OSS model with the prepared inputs.

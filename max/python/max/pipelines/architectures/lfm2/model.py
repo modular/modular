@@ -29,8 +29,8 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
-from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.modeling.types import RequestID
+from typing_extensions import override
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
 from .batch_processor import LFM2BatchProcessor
@@ -243,14 +243,8 @@ class LFM2Model(LlamaModelBase):
             if bind is not None:
                 bind(self._conv_cache)
 
-    def _build_graph(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-    ) -> Graph:
-        state_dict = parse_state_dict_from_weights(
-            self.pipeline_config, weights, adapter
-        )
+    @override
+    def _create_model_config(self, state_dict: dict[str, Any]) -> LFM2Config:
         model_config = LFM2Config.initialize(self.pipeline_config)
         model_config.finalize(
             huggingface_config=self.huggingface_config,
@@ -259,7 +253,16 @@ class LFM2Model(LlamaModelBase):
             return_hidden_states=self.return_hidden_states,
         )
         self._model_config = model_config
+        return model_config
 
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: LFM2Config,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
         model = LFM2(model_config)
         model.load_state_dict(
             state_dict,
@@ -267,7 +270,7 @@ class LFM2Model(LlamaModelBase):
             weight_alignment=1,
             strict=True,
         )
-        self.state_dict = model.state_dict()
+        weights_registry = model.state_dict()
         self._num_kv_inputs = len(self.kv_params.flattened_kv_inputs())
 
         with Graph(
@@ -286,7 +289,7 @@ class LFM2Model(LlamaModelBase):
                 conv_states=conv_inputs,
             )
             graph.output(*outputs)
-            return graph
+            return graph, weights_registry
 
     def _num_logit_outputs(self) -> int:
         has_offsets = self.return_logits in (

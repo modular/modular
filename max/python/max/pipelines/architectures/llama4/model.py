@@ -14,11 +14,12 @@
 
 from __future__ import annotations
 
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal
 
+from max.engine import InferenceSession
 from max.graph import Graph
-from max.graph.weights import Weights, WeightsAdapter
 from max.pipelines.architectures.llama3.model import LlamaModelBase
+from typing_extensions import override
 
 from .llama4 import Llama4
 from .model_config import Llama4Config
@@ -36,25 +37,8 @@ class Llama4Model(LlamaModelBase):
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
     attention_bias: bool = False
 
-    def _build_graph(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-    ) -> Graph:
-        if len(self.devices) > 1:
-            raise ValueError(
-                "Llama4 currently supports single-device execution only."
-            )
-
-        if adapter:
-            state_dict = adapter(
-                dict(weights.items()),
-                huggingface_config=self.huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {key: value.data() for key, value in weights.items()}
-
+    @override
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Llama4Config:
         model_config = Llama4Config.initialize(self.pipeline_config)
         model_config.finalize(
             huggingface_config=self.huggingface_config,
@@ -62,6 +46,20 @@ class Llama4Model(LlamaModelBase):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
         )
+        return model_config
+
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Llama4Config,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        if len(self.devices) > 1:
+            raise ValueError(
+                "Llama4 currently supports single-device execution only."
+            )
 
         nn_model = Llama4(model_config)
         nn_model.load_state_dict(
@@ -70,7 +68,7 @@ class Llama4Model(LlamaModelBase):
             weight_alignment=1,
             strict=False,
         )
-        self.state_dict = nn_model.state_dict()
+        weights_registry = nn_model.state_dict()
 
         with Graph(
             "llama4",
@@ -88,4 +86,4 @@ class Llama4Model(LlamaModelBase):
             )
             graph.output(*outputs)
 
-        return graph
+        return graph, weights_registry
