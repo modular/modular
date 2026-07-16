@@ -49,7 +49,6 @@ def bench[
 ]() raises:
     comptime N = 100
 
-    @parameter
     def runner():
         try:
             for _ in range(N):
@@ -58,7 +57,7 @@ def bench[
         except e:
             abort(String(e))
 
-    var ms = std.benchmark.run[runner](1, 10)
+    var ms = std.benchmark.run(runner, 1, 10)
 
     pretty_print(
         name,
@@ -101,7 +100,7 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     comptime out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
-    var input_ptr = alloc[Scalar[DType.int]](in_size)
+    var input_ptr = List(length=in_size, fill=Scalar[DType.int](0))
     var input = TileTensor(
         input_ptr,
         row_major(Coord(in_shape)),
@@ -118,11 +117,11 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
         paddings[2 * i + 1] = d_post
 
     # Create an output matrix and fill with 0
-    var output_ptr = alloc[Scalar[DType.int]](out_size)
+    var output_ptr = List(length=out_size, fill=Scalar[DType.int](0))
     var output = TileTensor(
         output_ptr,
         row_major(Coord(out_shape)),
-    ).fill(0)
+    )
 
     # constant padding value = 7
     var constant = Scalar[DType.int](7)
@@ -136,9 +135,8 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
         for i in range(out_size):
             # Just verify no crash occurs and values are set
             _ = output.raw_load(i)
-
-    input_ptr.free()
-    output_ptr.free()
+    _ = output_ptr^
+    _ = input_ptr^
 
 
 def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
@@ -173,7 +171,7 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     comptime out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
-    var input_ptr = alloc[Scalar[DType.int]](in_size)
+    var input_ptr = List(length=in_size, fill=Scalar[DType.int](0))
     var input = TileTensor(
         input_ptr,
         row_major(Coord(in_shape)),
@@ -190,11 +188,11 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
         paddings[2 * i + 1] = d_post
 
     # Create an output matrix and fill with 0
-    var output_ptr = alloc[Scalar[DType.int]](out_size)
+    var output_ptr = List(length=out_size, fill=Scalar[DType.int](0))
     var output = TileTensor(
         output_ptr,
         row_major(Coord(out_shape)),
-    ).fill(0)
+    )
 
     # pad
     pad_reflect(output, input, paddings.ptr)
@@ -203,16 +201,15 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
         # Simple verification: check that values are set
         for i in range(out_size):
             _ = output.raw_load(i)
-
-    input_ptr.free()
-    output_ptr.free()
+    _ = output_ptr^
+    _ = input_ptr^
 
 
 # CHECK-LABEL: test_pad_iterative
 def main() raises:
     print("== test_pad_iterative")
 
-    def all[N: Int]() raises:
+    def _all[N: Int]() raises:
         bench[test_pad_constant_nd, 1, N, "test_pad_constant_1d"]()
         bench[test_pad_constant_nd, 2, N, "test_pad_constant_2d"]()
         bench[test_pad_constant_nd, 3, N, "test_pad_constant_3d"]()
@@ -223,11 +220,11 @@ def main() raises:
         bench[test_pad_reflect_nd, 3, N, "test_pad_reflect_3d"]()
         # bench[test_pad_reflect_nd, 4, N, "test_pad_reflect_4d"]()
 
-    # all[64]()
-    # all[128]()
-    # all[256]()
-    # all[512]()
-    # all[1024]()
+    # _all[64]()
+    # _all[128]()
+    # _all[256]()
+    # _all[512]()
+    # _all[1024]()
 
     test_pad_constant_nd[1, 64, True]()
     test_pad_constant_nd[2, 64, True]()

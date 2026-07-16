@@ -15,7 +15,7 @@
 from std.memory import UnsafePointer, alloc
 
 
-# CHECK: use of uninitialized memory
+# CHECK: UNINIT_READ at {{.*}}: dtype={{.*}}: load matched debug allocator poison sentinel
 def main():
     var ptr = alloc[Float32](4)
 
@@ -25,8 +25,9 @@ def main():
     ptr.store(2, Float32(3.0))
     ptr.store(3, Float32(4.0))
 
-    # Poison element at index 2.
-    (ptr + 2).bitcast[UInt32]().store(UInt32(0xFFFFFFFF))
+    # Poison element at index 2 with the debug allocator poison pattern
+    # (FLT_MAX bits = 0x7F7FFFFF).
+    (ptr + 2).bitcast[UInt32]().store(UInt32(0x7F7FFFFF))
 
     # Gather with offsets [0,1,2,3] — lane 2 is unmasked and poisoned.
     var offset = SIMD[DType.int64, 4](0, 1, 2, 3)

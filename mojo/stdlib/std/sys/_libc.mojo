@@ -58,7 +58,7 @@ def free(ptr: OptionalUnsafePointer[mut=True, NoneType, ...]):
     """
     free(
         UnsafePointer(to=ptr).bitcast[
-            UnsafePointer[NoneType, ExternalOrigin[mut=True]]
+            UnsafePointer[NoneType, UntrackedOrigin[mut=True]]
         ]()[]
     )
 
@@ -72,7 +72,7 @@ def exit(status: c_int):
 # stdio.h — input/output operations
 # ===-----------------------------------------------------------------------===#
 
-comptime FILE_ptr = _CPointer[NoneType, ExternalOrigin[mut=True]]
+comptime FILE_ptr = _CPointer[NoneType, UntrackedOrigin[mut=True]]
 
 
 @always_inline
@@ -155,8 +155,8 @@ def posix_spawnp[
     return external_call["posix_spawnp", c_int](
         pid,
         file,
-        _CPointer[NoneType, ExternalOrigin[mut=False]](),
-        _CPointer[NoneType, ExternalOrigin[mut=False]](),
+        _CPointer[NoneType, UntrackedOrigin[mut=False]](),
+        _CPointer[NoneType, UntrackedOrigin[mut=False]](),
         argv,
         envp,
     )
@@ -180,13 +180,13 @@ def _get_environ() -> (
         # a pointer to the `environ` variable.
         return external_call[
             "_NSGetEnviron",
-            _CPointer[_EnvpType, ExternalOrigin[mut=False]],
+            _CPointer[_EnvpType, UntrackedOrigin[mut=False]],
         ]().value()[]
     elif CompilationTarget.is_linux():
         # On Linux, look up `environ` via dlsym(RTLD_DEFAULT, "environ").
         # RTLD_DEFAULT is ((void *)0) on Linux.
         return dlsym[_EnvpType](
-            _CPointer[NoneType, MutExternalOrigin](),
+            _CPointer[NoneType, MutUntrackedOrigin](),
             "environ".as_c_string_slice().unsafe_ptr(),
         ).value()[]
     else:
@@ -322,15 +322,15 @@ def fcntl[*types: Intable](fd: c_int, cmd: c_int, *args: *types) -> c_int:
 
 
 @always_inline
-def dlerror(out result: _CPointer[c_char, MutExternalOrigin]):
+def dlerror(out result: _CPointer[c_char, MutUntrackedOrigin]):
     result = external_call["dlerror", type_of(result)]()
 
 
 @always_inline
 def dlopen(
     filename: OptionalUnsafePointer[c_char, _], flags: c_int
-) -> _CPointer[NoneType, MutExternalOrigin]:
-    return external_call["dlopen", _CPointer[NoneType, MutExternalOrigin]](
+) -> _CPointer[NoneType, MutUntrackedOrigin]:
+    return external_call["dlopen", _CPointer[NoneType, MutUntrackedOrigin]](
         filename, flags
     )
 
@@ -347,7 +347,7 @@ def dlsym[
 ](
     handle: _CPointer[NoneType, _],
     name: UnsafePointer[mut=False, c_char, _],
-    out result: _CPointer[result_type, MutExternalOrigin],
+    out result: _CPointer[result_type, MutUntrackedOrigin],
 ):
     result = external_call["dlsym", type_of(result)](handle, name)
 
@@ -355,9 +355,9 @@ def dlsym[
 def realpath(
     path: UnsafePointer[mut=False, c_char, _],
     resolved_path: _CPointer[mut=True, c_char, _] = _CPointer[
-        c_char, MutExternalOrigin
+        c_char, MutUntrackedOrigin
     ](),
-    out result: _CPointer[c_char, MutExternalOrigin],
+    out result: _CPointer[c_char, MutUntrackedOrigin],
 ):
     """Expands all symbolic links and resolves references to /./, /../ and extra
     '/' characters in the null-terminated string named by path to produce a

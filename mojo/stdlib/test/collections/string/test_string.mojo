@@ -18,7 +18,7 @@ from std.collections.string.string import (
 from std.collections.string.string_slice import _to_string_list
 from std.math import isinf, isnan
 
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from std.python import Python, PythonObject
 from std.testing import (
     assert_equal,
@@ -238,6 +238,18 @@ def test_ord() raises:
     assert_equal(ord(StringSlice("α")), 945)
     assert_equal(ord(StringSlice("➿")), 10175)
     assert_equal(ord(StringSlice("🔥")), 128293)
+
+    # `\xhh` and `\ooo` escapes denote Unicode code points (not raw bytes),
+    # so values >= 0x80 are encoded to UTF-8 and `ord` recovers the original
+    # value.
+    assert_equal(ord("\x1c"), 0x1C)
+    assert_equal(ord("\x1e"), 0x1E)
+    assert_equal(ord("\x7f"), 0x7F)
+    assert_equal(ord("\x85"), 0x85)  # U+0085 NEL
+    assert_equal(ord("\xa0"), 0xA0)  # U+00A0 NBSP
+    assert_equal(ord("\xff"), 0xFF)
+    assert_equal(ord("\205"), 0x85)  # octal form of U+0085 NEL
+    assert_equal(ord("\377"), 0xFF)  # octal form of U+00FF
 
 
 def test_chr() raises:
@@ -1428,7 +1440,7 @@ def test_resize() raises:
 def test_uninit_ctor() raises:
     var hello_len = "hello".byte_length()
     var s = String(unsafe_uninit_length=hello_len)
-    memcpy(
+    unsafe_memcpy(
         dest=s.unsafe_ptr_mut(),
         src=StaticString("hello").unsafe_ptr(),
         count=hello_len,
@@ -1438,7 +1450,7 @@ def test_uninit_ctor() raises:
     # Resize with uninitialized memory.
     var s2 = String()
     s2.resize(unsafe_uninit_length=hello_len)
-    memcpy(
+    unsafe_memcpy(
         dest=s2.unsafe_ptr_mut(),
         src=StaticString("hello").unsafe_ptr(),
         count=hello_len,
@@ -1449,7 +1461,7 @@ def test_uninit_ctor() raises:
     var s3 = String()
     var long: StaticString = "hellohellohellohellohellohellohellohellohellohel"
     s3.resize(unsafe_uninit_length=long.byte_length())
-    memcpy(
+    unsafe_memcpy(
         dest=s3.unsafe_ptr_mut(),
         src=long.unsafe_ptr(),
         count=long.byte_length(),
@@ -1549,7 +1561,7 @@ def test_sso() raises:
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    comptime expected_capacity = UInt((String.INLINE_CAPACITY * 2 + 7) & ~7)
+    comptime expected_capacity = (String.INLINE_CAPACITY * 2 + 7) & ~7
     assert_equal(s.capacity(), Int(expected_capacity))
     assert_equal(s._is_inline(), False)
 

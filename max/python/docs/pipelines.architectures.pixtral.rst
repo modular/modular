@@ -9,4 +9,5 @@ max.pipelines.architectures.pixtral
 
 .. automodule:: max.pipelines.architectures.pixtral
    :members:
+   :imported-members:
    :show-inheritance:

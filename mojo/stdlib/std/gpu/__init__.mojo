@@ -19,11 +19,11 @@ grouped into a grid of thread blocks.
 
 A _kernel_ is a function that runs on the GPU in parallel across many threads.
 Currently, the
-[`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext) struct
+[`DeviceContext`](/docs/std/gpu/host/device_context/DeviceContext/) struct
 provides the interface for compiling and launching GPU kernels inside MAX
-[custom operations](/max/develop/custom-ops/).
+[custom operations](https://docs.modular.com/max/develop/custom-ops/).
 
-The [`gpu.host`](/mojo/std/gpu/host/) package includes APIs to manage
+The [`gpu.host`](/docs/std/gpu/host/) package includes APIs to manage
 interaction between the _host_ (that is, the CPU) and _device_ (that is, the GPU
 or accelerator).
 
@@ -36,7 +36,7 @@ from std.gpu import block_dim, block_idx, thread_idx, global_idx
 ```
 
 For an example of launching a GPU kernel from a MAX custom operation, see the
-[vector addition example](https://github.com/modular/modular/blob/main/examples/custom_ops/kernels/vector_addition.mojo)
+[vector addition example](https://github.com/modular/modular/blob/main/max/examples/custom_ops/kernels/vector_addition.mojo)
 in the MAX repo.
 """
 
@@ -54,23 +54,16 @@ from .primitives import (
     launch_dependent_grids,
     wait_on_dependent_grids,
     block_dim,
-    block_dim_uint,
     block_id_in_cluster,
     block_idx,
-    block_idx_uint,
     cluster_dim,
     cluster_idx,
     global_idx,
-    global_idx_uint,
     grid_dim,
-    grid_dim_uint,
     lane_id,
-    lane_id_uint,
     sm_id,
     thread_idx,
-    thread_idx_uint,
     warp_id,
-    warp_id_uint,
 )
 from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
 from .host import DeviceBuffer, DeviceContext, HostBuffer
@@ -86,7 +79,8 @@ from .memory import (
     async_copy_wait_all,
     async_copy_wait_group,
     cp_async_bulk_tensor_global_shared_cta,
-    cp_async_bulk_tensor_reduce,
+    cp_async_bulk_tensor_global_shared_cta_elect,
+    cp_async_bulk_tensor_reduce_global_shared_cta,
     cp_async_bulk_tensor_shared_cluster_global,
     cp_async_bulk_tensor_shared_cluster_global_multicast,
     external_memory,

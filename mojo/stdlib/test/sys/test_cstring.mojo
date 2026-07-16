@@ -35,7 +35,7 @@ def test_init_from_invalid_string() raises:
 
 def test_init_from_invalid_byte_span() raises:
     with assert_raises(contains="not nul-terminated"):
-        _ = CStringSlice(Span[Byte, ImmutExternalOrigin]())
+        _ = CStringSlice(Span[Byte, ImmutUntrackedOrigin]())
 
     with assert_raises(contains="not nul-terminated"):
         _ = CStringSlice(Span[Byte]([Byte(1), Byte(2)]))

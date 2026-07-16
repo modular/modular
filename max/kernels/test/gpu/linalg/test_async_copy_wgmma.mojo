@@ -237,7 +237,7 @@ def test_cpasync_wgmma[
         b_swizzle=b_swizzle,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a.device_tensor(),
         b.device_tensor(),
         c.device_tensor(),

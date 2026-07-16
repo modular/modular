@@ -16,4 +16,8 @@ from .arch import olmo2_arch
 from .model import Olmo2Model
 from .model_config import Olmo2Config
 
-__all__ = ["Olmo2Config", "Olmo2Model", "olmo2_arch"]
+__all__ = [
+    "Olmo2Config",
+    "Olmo2Model",
+    "olmo2_arch",
+]

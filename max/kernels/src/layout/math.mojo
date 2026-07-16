@@ -18,7 +18,17 @@ from std.sys.info import simd_width_of
 import std.algorithm.reduction as reduction
 from std.algorithm import vectorize
 from std.math.math import max as b_max
-from layout import Coord, Idx, LayoutTensor, TileTensor, UNKNOWN_VALUE
+from layout import (
+    Coord,
+    Idx,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 
 from std.utils.index import IndexList
 
@@ -343,7 +353,7 @@ def sum[
     return res_tensor
 
 
-def mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
+def mean(src: LayoutTensor) raises -> Scalar[src.dtype]:
     """Computes the mean value of the elements in a buffer.
 
     Args:
@@ -374,7 +384,7 @@ def mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
 
 def mean[
     reduce_axis: Int
-](src: LayoutTensor[...], dst: LayoutTensor[mut=True, src.dtype, ...]) raises:
+](src: LayoutTensor, dst: LayoutTensor[mut=True, src.dtype, ...]) raises:
     """Computes the mean across reduce_axis of a LayoutTensor.
 
     Parameters:
@@ -407,9 +417,7 @@ def mean[
     comptime if dst.dtype.is_integral():
 
         @always_inline
-        def normalize_integral[
-            simd_width: Int
-        ](idx: Int) unified {var dst_1d, var n}:
+        def normalize_integral[simd_width: Int](idx: Int) {var dst_1d, var n}:
             var idx_1d = dst_1d.runtime_layout(
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
             )
@@ -424,7 +432,7 @@ def mean[
         @always_inline
         def normalize_floating[
             simd_width: Int
-        ](idx: Int) unified {var dst_1d, var n, var n_recip}:
+        ](idx: Int) {var dst_1d, var n, var n_recip}:
             var idx_1d = dst_1d.runtime_layout(
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
             )
@@ -436,7 +444,7 @@ def mean[
 
 
 def variance(
-    src: LayoutTensor[...], correction: Int = 1
+    src: LayoutTensor, correction: Int = 1
 ) raises -> Scalar[src.dtype]:
     """Computes the variance value of the elements in a buffer.
 
@@ -491,7 +499,7 @@ def variance(src: TileTensor, correction: Int = 1) raises -> Scalar[src.dtype]:
     def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
-        var src_idx = src.layout(Idx(idx))
+        var src_idx = src.layout(idx)
         return rebind[SIMD[dtype_, width]](src.raw_load[width=width](src_idx))
 
     return reduction.variance[src.dtype, input_fn_1d](
@@ -520,7 +528,7 @@ def mean(src: TileTensor) raises -> Scalar[src.dtype]:
     def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
-        var src_idx = src.layout(Idx(idx))
+        var src_idx = src.layout(idx)
         return rebind[SIMD[dtype_, width]](src.raw_load[width=width](src_idx))
 
     return reduction.mean[src.dtype, input_fn_1d](src.num_elements())

@@ -51,10 +51,10 @@ def sync_parallelize[
     """
 
     # The try/except here is required to satisfy the non-raising
-    # `unified register_passable -> None` signature. The unified overload's
+    # ` -> None` signature. The overload's
     # inner `func_wrapped` has its own try/except for the same reason, but
     # that outer catch is unreachable since abort() here terminates first.
-    def func_unified(i: Int) unified register_passable {}:
+    def func_unified(i: Int):
         try:
             func(i)
         except e:
@@ -65,7 +65,7 @@ def sync_parallelize[
 
 @always_inline
 def sync_parallelize[
-    FuncType: def(Int) unified register_passable -> None,
+    FuncType: def(Int) -> None,
 ](func: FuncType, num_work_items: Int, ctx: Optional[DeviceContext] = None):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
     and returns when all are complete.
@@ -129,10 +129,10 @@ def parallelize[
         ctx: Optional CPU DeviceContext to execute the work on.
     """
 
-    def func_unified(i: Int) unified register_passable {}:
+    def func_unified(i: Int):
         func(i)
 
-    _parallelize_impl(func_unified, num_work_items, parallelism_level(), ctx)
+    _parallelize_impl(func_unified, num_work_items, parallelism_level(ctx), ctx)
 
 
 @always_inline
@@ -152,7 +152,7 @@ def parallelize[
         ctx: Optional CPU DeviceContext to execute the work on.
     """
 
-    def func_unified(i: Int) unified register_passable {}:
+    def func_unified(i: Int):
         func(i)
 
     _parallelize_impl(func_unified, num_work_items, num_workers, ctx)
@@ -160,7 +160,7 @@ def parallelize[
 
 @always_inline
 def parallelize[
-    FuncType: def(Int) unified register_passable -> None,
+    FuncType: def(Int) -> None,
 ](func: FuncType, num_work_items: Int, ctx: Optional[DeviceContext] = None):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
@@ -173,12 +173,12 @@ def parallelize[
         num_work_items: Number of parallel tasks.
         ctx: Optional CPU DeviceContext to execute the work on.
     """
-    _parallelize_impl(func, num_work_items, parallelism_level(), ctx)
+    _parallelize_impl(func, num_work_items, parallelism_level(ctx), ctx)
 
 
 @always_inline
 def parallelize[
-    FuncType: def(Int) unified register_passable -> None,
+    FuncType: def(Int) -> None,
 ](
     func: FuncType,
     num_work_items: Int,
@@ -202,7 +202,7 @@ def parallelize[
 
 @always_inline
 def _parallelize_impl[
-    FuncType: def(Int) unified register_passable -> None,
+    FuncType: def(Int) -> None,
 ](
     func: FuncType,
     num_work_items: Int,
@@ -230,7 +230,7 @@ def _parallelize_impl[
     @always_inline
     def coarse_grained_func(
         thread_idx: Int,
-    ) unified {read func, read chunk_size, read extra_items,}:
+    ) {read func, read chunk_size, read extra_items,}:
         # Calculate the consecutive range of work items this invocation is
         # responsible for.
         var start_idx = thread_idx * chunk_size + min(thread_idx, extra_items)
@@ -246,20 +246,27 @@ def _parallelize_impl[
 
 
 @always_inline
-def _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
+def _get_num_workers(
+    problem_size: Int,
+    grain_size: Int = 32768,
+    ctx: Optional[DeviceContext] = None,
+) -> Int:
     """Returns a number of workers to run in parallel for given problem_size,
     accounting for the available worker threads of the current runtime.
 
     Args:
         problem_size: The number of parallel tasks.
         grain_size: Minimum number of elements to warrant an additional thread.
+        ctx: The context to execute the work on.
 
     Returns:
         The number of workers to run in parallel.
     """
     # default grain_size copied from https://github.com/pytorch/pytorch/blob/20dfce591ce88bc957ffcd0c8dc7d5f7611a4a3b/aten/src/ATen/TensorIterator.h#L86
     # Ensure at least one worker is always returned to avoid division by zero.
-    return max(1, min(parallelism_level(), ceildiv(problem_size, grain_size)))
+    return max(
+        1, min(parallelism_level(ctx), ceildiv(problem_size, grain_size))
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -287,14 +294,14 @@ def parallelize_over_rows[
         ctx: Optional CPU DeviceContext to execute the work on.
     """
 
-    def func_unified(start: Int, end: Int) unified register_passable {}:
+    def func_unified(start: Int, end: Int):
         func(start, end)
 
     parallelize_over_rows(func_unified, shape, axis, grain_size, ctx)
 
 
 def parallelize_over_rows[
-    FuncType: def(Int, Int) unified register_passable -> None,
+    FuncType: def(Int, Int) -> None,
 ](
     func: FuncType,
     shape: IndexList,
@@ -323,14 +330,14 @@ def parallelize_over_rows[
 
     var num_workers = min(
         num_rows,
-        _get_num_workers(total_size, grain_size),
+        _get_num_workers(total_size, grain_size, ctx),
     )
     var chunk_size = ceildiv(num_rows, num_workers)
 
     @always_inline
     def task_func(
         task_id: Int,
-    ) unified {read func, read chunk_size, read num_rows,}:
+    ) {read func, read chunk_size, read num_rows,}:
         var start_row = task_id * chunk_size
         var end_row = min((task_id + 1) * chunk_size, num_rows)
 

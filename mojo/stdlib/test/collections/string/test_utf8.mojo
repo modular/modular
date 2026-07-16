@@ -29,15 +29,15 @@ from std.testing import TestSuite
 # ===----------------------------------------------------------------------=== #
 
 
-comptime GOOD_SEQUENCES = [
+comptime GOOD_SEQUENCES: List[List[Byte]] = [
     List("a".as_bytes()),
-    List("\xc3\xb1".as_bytes()),
-    List("\xe2\x82\xa1".as_bytes()),
-    List("\xf0\x90\x8c\xbc".as_bytes()),
+    [0xC3, 0xB1],  # U+00F1 (ñ)
+    [0xE2, 0x82, 0xA1],  # U+20A1 (₡)
+    [0xF0, 0x90, 0x8C, 0xBC],  # U+1033C (𐌼)
     List("안녕하세요, 세상".as_bytes()),
-    List("\xc2\x80".as_bytes()),
-    List("\xf0\x90\x80\x80".as_bytes()),
-    List("\xee\x80\x80".as_bytes()),
+    [0xC2, 0x80],  # U+0080
+    [0xF0, 0x90, 0x80, 0x80],  # U+10000
+    [0xEE, 0x80, 0x80],  # U+E000
     List("very very very long string 🔥🔥🔥".as_bytes()),
     List(" τo".as_bytes()),
 ]

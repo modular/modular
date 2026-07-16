@@ -16,23 +16,25 @@ from std.ffi import external_call, _CPointer, _get_global
 from std.sys.compile import SanitizeAddress
 
 
-def _init_global_runtime() -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
+def _init_global_runtime() -> _CPointer[NoneType, UntrackedOrigin[mut=True]]:
     return external_call[
-        "KGEN_CompilerRT_AsyncRT_GetOrCreateRuntime",
-        _CPointer[NoneType, ExternalOrigin[mut=True]],
+        "KGEN_CompilerRT_AsyncRT_GetOrCreateCPUDevice",
+        _CPointer[NoneType, UntrackedOrigin[mut=True]],
     ]()
 
 
-def _destroy_global_runtime(ptr: _CPointer[NoneType, ExternalOrigin[mut=True]]):
+def _destroy_global_runtime(
+    ptr: _CPointer[NoneType, UntrackedOrigin[mut=True]]
+):
     """Destroy the global runtime if ever used."""
-    external_call["KGEN_CompilerRT_AsyncRT_ReleaseRuntime", NoneType](ptr)
+    external_call["KGEN_CompilerRT_AsyncRT_ReleaseCPUDevice", NoneType](ptr)
 
 
 @always_inline
 def _ensure_runtime_init():
     var current_runtime = external_call[
-        "KGEN_CompilerRT_AsyncRT_GetCurrentRuntime",
-        _CPointer[NoneType, ExternalOrigin[mut=True]],
+        "KGEN_CompilerRT_AsyncRT_GetCurrentCPUDevice",
+        _CPointer[NoneType, UntrackedOrigin[mut=True]],
     ]()
     if current_runtime:
         return
@@ -57,10 +59,10 @@ def __wrap_and_execute_main[
     external_call["KGEN_CompilerRT_SetArgV", NoneType](argc, argv)
 
     # Initialize signal handler for SIGSEGV  SIGABRT that will print a stack
-    # trace if MOJO_ENABLE_STACK_TRACE_ON_CRASH is set to non-zero or false.
-    # Such functionality needs to be explicitly hidden under the env var,
-    # because otherwise extra signal handler will be registered if user runs
-    # code with sanitizer enabled, which will lead to extra stack trace printed.
+    # trace unless the `max-debug.stack-trace-on-crash` Config key is
+    # disabled.  This functionality is gated because otherwise an extra signal
+    # handler will be registered when the user runs code with a sanitizer
+    # enabled, which would lead to duplicate stack traces being printed.
     external_call["KGEN_CompilerRT_PrintStackTraceOnFault", NoneType]()
 
     # Call into the user main function.
@@ -91,10 +93,10 @@ def __wrap_and_execute_raising_main[
     external_call["KGEN_CompilerRT_SetArgV", NoneType](argc, argv)
 
     # Initialize signal handler for SIGSEGV  SIGABRT that will print a stack
-    # trace if MOJO_ENABLE_STACK_TRACE_ON_CRASH is set to non-zero or false.
-    # Such functionality needs to be explicitly hidden under the env var,
-    # because otherwise extra signal handler will be registered if user runs
-    # code with sanitizer enabled, which will lead to extra stack trace printed.
+    # trace unless the `max-debug.stack-trace-on-crash` Config key is
+    # disabled.  This functionality is gated because otherwise an extra signal
+    # handler will be registered when the user runs code with a sanitizer
+    # enabled, which would lead to duplicate stack traces being printed.
     external_call["KGEN_CompilerRT_PrintStackTraceOnFault", NoneType]()
 
     # Call into the user main function.

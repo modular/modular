@@ -87,5 +87,5 @@ def test_symbolic_seqlen() -> None:
     #     compiled(Tensor.zeros([1, 3, 1, 6]))
 
     assert 5 != embedding.dim
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         compiled(Tensor.zeros([1, 2, 1, 5]))

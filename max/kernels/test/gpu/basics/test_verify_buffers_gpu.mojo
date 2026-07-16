@@ -125,7 +125,7 @@ def run_verify_kernel[
     var result_device = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS * 5)
 
     comptime kernel = _verify_buffers_gpu[dtype, BLOCK_SIZE]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         output_buf,
         reference_buf,
         length,
@@ -136,7 +136,9 @@ def run_verify_kernel[
         block_dim=BLOCK_SIZE,
     )
 
-    var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
+    var result_host = ctx.enqueue_create_host_buffer[DType.float32](
+        NUM_BLOCKS * 5
+    )
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -153,8 +155,6 @@ def run_verify_kernel[
         worst_violation = max(worst_violation, result_host[base + 2])
         any_out_nz = max(any_out_nz, result_host[base + 3])
         any_ref_nz = max(any_ref_nz, result_host[base + 4])
-
-    result_host.free()
 
     return VerifyMetrics(
         total_abs_diff,
@@ -179,7 +179,7 @@ def fill_on_device[
     comptime FILL_BLOCK = 256
     var fill_grid = ceildiv(length, FILL_BLOCK)
     comptime kernel = _fill_buffer[dtype]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         buf,
         length,
         val,

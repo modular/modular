@@ -19,6 +19,7 @@
 from std.sys import simd_width_of
 
 from layout import TileTensor, row_major
+from std.gpu.host import DeviceContext
 from nn.gather_scatter import gather
 
 
@@ -63,12 +64,13 @@ def test_gather() raises:
         )
 
         # Test gather
-        comptime simd_width = simd_width_of[__mlir_type.`!pop.scalar<f32>`]()
+        comptime simd_width = simd_width_of[__mlir_type.`!kgen.scalar<f32>`]()
 
         gather[axis=0](
             output.make_dynamic[DType.int64](),
             input.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
+            context=DeviceContext(api="cpu"),
         )
 
         print(output[0, 0])
@@ -134,6 +136,7 @@ def test_gather_3d() raises:
             output.make_dynamic[DType.int64](),
             input.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
+            context=DeviceContext(api="cpu"),
         )
 
         print(output[0, 0, 0, 0])
@@ -200,6 +203,7 @@ def test_gather_empty_indices() raises:
             output.make_dynamic[DType.int64](),
             input.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
+            context=DeviceContext(api="cpu"),
         )
 
     _test_gather[DType.int32]()

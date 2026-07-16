@@ -45,8 +45,8 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
-    RaggedTMA3DTile,
 )
+from nn.attention.mha_operand import kv_sub_tile_rows as _kv_sub_tile_rows
 from nn.attention.gpu.nvidia.sm90.attention import (
     _apply_mask,
     _get_position,
@@ -195,15 +195,18 @@ def mha_sm90_dispatch[
             decoding=decoding,
         ](ctx, q, num_rows_q)
     )
+    comptime kv_sub_BN = _kv_sub_tile_rows(
+        new_config.block_n(), KVType.page_size
+    )
     k_tma_op = k.create_tma_tile[
         swizzle_mode,
-        BN=new_config.block_n(),
+        BN=kv_sub_BN,
         depth=new_config.depth,
         BK=new_config.padded_depth,
     ](ctx)
     v_tma_op = v.create_tma_tile[
         swizzle_mode,
-        BN=new_config.block_n(),
+        BN=kv_sub_BN,
         depth=new_config.depth,
         BK=new_config.padded_depth,
     ](ctx)
@@ -309,7 +312,9 @@ def mha_sm90_dispatch[
         var schedule = ctx.enqueue_create_buffer[DType.uint32](1)
         schedule.enqueue_fill(UInt32(H100.sm_count))
         ctx.synchronize()
-        var scheduler: SchedulerType = SchedulerType(schedule.unsafe_ptr())
+        var scheduler: SchedulerType = SchedulerType(
+            schedule.unsafe_ptr().as_unsafe_any_origin()
+        )
         _mha_sm90_sink_dispatch[
             SchedulerType=SchedulerType,
             KVLUTType=KVType,
@@ -380,13 +385,13 @@ def _mha_sm90_sink_dispatch[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
@@ -513,13 +518,13 @@ def _mha_sm90_kv_input_row_offset_dispatch[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
@@ -641,13 +646,13 @@ def _mha_sm90_valid_length_dispatch[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
@@ -763,13 +768,13 @@ def _mha_sm90_enqueue[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
@@ -827,7 +832,7 @@ def _mha_sm90_enqueue[
 
     comptime smem_use = config.shared_mem_bytes[True, sm_90=True]()
     comptime num_threads = config.num_threads[True]()
-    ctx.enqueue_function[kernel_sm90, kernel_sm90](
+    ctx.enqueue_function[kernel_sm90](
         q_tma_op,
         k_tma_op,
         v_tma_op,
@@ -856,7 +861,6 @@ def _mha_sm90_enqueue[
 )
 @__name(
     t"sm90_mha_depth{config.depth}_{KVLUTType.dtype}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
-    mangle=True,
 )
 def _mha_sm90[
     KVLUTType: MHAOperand,
@@ -884,13 +888,13 @@ def _mha_sm90[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     o_ptr_arg: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -1159,7 +1163,7 @@ def _mha_sm90[
         max_seq_len.as_uint32(),
     )
     var state: MHATileState = scheduler.initial_state(
-        block_idx_ptr, tile_summary
+        block_idx_ptr.as_unsafe_any_origin(), tile_summary
     )
 
     # returns `true` if we are done
@@ -1224,7 +1228,7 @@ def _mha_sm90[
         ],
     ):
         comptime sz = BN * config.padded_depth
-        k_smem = {kv_smem + UInt32(sz) * idx}
+        k_smem = {(kv_smem + UInt32(sz) * idx).as_unsafe_any_origin()}
 
     @parameter
     @always_inline
@@ -1241,7 +1245,7 @@ def _mha_sm90[
         ],
     ):
         comptime sz = BN * config.padded_depth
-        v_smem = {kv_smem + UInt32(sz) * idx}
+        v_smem = {(kv_smem + UInt32(sz) * idx).as_unsafe_any_origin()}
 
     @parameter
     @always_inline
@@ -1286,12 +1290,12 @@ def _mha_sm90[
                 q_tma_op,
                 k_tma_op,
                 v_tma_op,
-                q_smem,
-                kv_smem,
-                produced_mbar_kv,
-                consumed_mbar_kv,
-                produced_mbar_q,
-                consumed_mbar_q,
+                q_smem.as_unsafe_any_origin(),
+                kv_smem.as_unsafe_any_origin(),
+                produced_mbar_kv.as_unsafe_any_origin(),
+                consumed_mbar_kv.as_unsafe_any_origin(),
+                produced_mbar_q.as_unsafe_any_origin(),
+                consumed_mbar_q.as_unsafe_any_origin(),
                 kv_lut,
                 position,
                 partition,
@@ -1327,7 +1331,7 @@ def _mha_sm90[
             address_space=AddressSpace.SHARED,
             alignment=128,
         ]:
-            return {q_smem + UInt32(q_size) * q_idx}
+            return {(q_smem + UInt32(q_size) * q_idx).as_unsafe_any_origin()}
 
         # layout is
         # shape  = (2, num_m_mmas) x (2, num_n_mmas)
@@ -1503,6 +1507,7 @@ def _mha_sm90[
                 comptime for col in range(num_cols_output):
                     vout[row, col] = vout[row, col] * c
 
+        @parameter
         @always_inline
         def elementwise_reciprocal(
             old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)
@@ -1560,7 +1565,7 @@ def _mha_sm90[
                 tid,
                 local_warp_group_idx,
                 warp_y,
-                q_smem + q_idx * q_tile_size,
+                (q_smem + q_idx * q_tile_size).as_unsafe_any_origin(),
                 output_reg_tile,
             )
             # Guard writing to shared memory.

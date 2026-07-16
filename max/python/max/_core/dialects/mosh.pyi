@@ -107,7 +107,7 @@ class EqOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: max._core.dialects.builtin.IntegerType,
+        result: max._core.Type,
         input1: max._core.Value[ShapeType],
         input2: max._core.Value[ShapeType],
     ) -> None: ...
@@ -137,16 +137,14 @@ class GetDimOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: max._core.dialects.builtin.IntegerType,
+        result: max._core.Type,
         input: max._core.Value[ShapeType],
-        dim: max._core.Value[max._core.dialects.builtin.IntegerType],
+        dim: max._core.Value,
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[ShapeType]: ...
     @property
-    def dim(
-        self,
-    ) -> max._core.Value[max._core.dialects.builtin.IntegerType]: ...
+    def dim(self) -> max._core.Value: ...
 
 class GetRankOp(max._core.Operation):
     """
@@ -164,7 +162,7 @@ class GetRankOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: max._core.dialects.builtin.IntegerType,
+        result: max._core.Type,
         input: max._core.Value[ShapeType],
     ) -> None: ...
     @property
@@ -177,11 +175,11 @@ class NewOp(max._core.Operation):
     Example:
 
     ```mlir
-    %d0 : si64
-    %d1 : si64
+    %d0 : !kgen.scalar<si64>
+    %d1 : !kgen.scalar<si64>
     %sh0 = mosh.new(%d0, %d1)
 
-    %d2 : si64
+    %d2 : !kgen.scalar<si64>
     %sh1 = mosh.new(%d0, %d1, %d2)
     ```
     """
@@ -212,7 +210,7 @@ class NumElementsOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: max._core.dialects.builtin.IntegerType,
+        result: max._core.Type,
         input: max._core.Value[ShapeType],
     ) -> None: ...
     @property
@@ -267,13 +265,15 @@ class ParamToValueOp(max._core.Operation):
 class ShapeAttr(max._core.Attribute):
     """
     The `#mosh.ape` attribute contains a variable number of `TypedAttr`s, each
-    of which have index type. The type of this attribute is always `!mosh.ape`.
+    of which has a kgen.scalar<si64> type. The type of this attribute is
+    always `!mosh.ape`.
 
     Each dimension `TypedAttr` inside `values` is one of:
     1. `KGEN::ParamDeclRefAttr` for a dimension parameter, e.g., `D0`.
     2. `KGEN::ParamOperatorAttr` for a dimension parameter expression, e.g.,
     `add(D1, 2)`.
-    3. `IntegerAttr` for a concrete integer dimension, e.g., `42`
+    3. `KGEN::SIMDAttr` for a concrete integer dimension, e.g., `42` (typed as
+    `kgen.scalar<si64>`).
 
     Note that -1 can be used as a special dimension value that denotes a
     dimension to be inferred from other dimensions and total number of elements
@@ -344,16 +344,12 @@ class SliceOp(max._core.Operation):
         location: Location,
         result: ShapeType,
         input: max._core.Value[ShapeType],
-        start: max._core.Value[max._core.dialects.builtin.IntegerType],
-        end: max._core.Value[max._core.dialects.builtin.IntegerType],
+        start: max._core.Value,
+        end: max._core.Value,
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[ShapeType]: ...
     @property
-    def start(
-        self,
-    ) -> max._core.Value[max._core.dialects.builtin.IntegerType]: ...
+    def start(self) -> max._core.Value: ...
     @property
-    def end(
-        self,
-    ) -> max._core.Value[max._core.dialects.builtin.IntegerType]: ...
+    def end(self) -> max._core.Value: ...

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # Re-export ToolParser protocol and generic types from interfaces
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     ParsedToolCall,
     ParsedToolCallDelta,
     ParsedToolResponse,
@@ -21,6 +21,7 @@ from max.interfaces import (
 
 from .json_utils import parse_json_from_text
 from .llama_tool_parser import LlamaToolParser
+from .tool_call_normalization import normalize_tool_call_arguments
 
 __all__ = [
     "LlamaToolParser",
@@ -28,5 +29,6 @@ __all__ = [
     "ParsedToolCallDelta",
     "ParsedToolResponse",
     "ToolParser",
+    "normalize_tool_call_arguments",
     "parse_json_from_text",
 ]

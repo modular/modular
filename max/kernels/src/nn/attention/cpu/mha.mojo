@@ -45,7 +45,8 @@ from linalg.matmul.cpu.apple_accelerate import (
 )
 from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
-from std.memory import memset_zero, stack_allocation
+from std.memory import alloc, dealloc, memset_zero, stack_allocation
+from std.memory.alloc import DeletableAllocation, Layout as AllocLayout
 from nn.attention.mha_mask import MHAMask
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -681,7 +682,7 @@ struct _FlashAttention[
             @always_inline
             def do_correction[
                 _simd_width: Int
-            ](idx: Int) unified {o_row_ptr, fixup_val, mut}:
+            ](idx: Int) {o_row_ptr, fixup_val, mut}:
                 var val = o_row_ptr.load[width=_simd_width](idx)
                 o_row_ptr.store(idx, val * fixup_val)
 
@@ -717,7 +718,7 @@ struct _FlashAttention[
         var num_blocks_n = ceildiv(depth_dim, Self._config.o_block_n)
         var work_count = num_batches * num_heads * num_blocks_m * num_blocks_n
 
-        var num_threads = min(work_count, parallelism_level())
+        var num_threads = min(work_count, parallelism_level(ctx))
 
         @__copy_capture(
             num_threads,
@@ -756,15 +757,21 @@ struct _FlashAttention[
                 Span(sum_vals_storage), row_major[Self._config.block_m]()
             )
 
-            var packed_ptr_allocated = max_seq_len != 1
-            var packed_ptr: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
-            if packed_ptr_allocated:
-                packed_ptr = alloc[Scalar[Self.dtype]](
-                    packed_size,
-                    alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
-                )
-            else:
-                packed_ptr = type_of(packed_ptr).unsafe_dangling()
+            var packed_alloc = Optional[
+                DeletableAllocation[Scalar[Self.dtype]]
+            ]()
+            var packed_ptr = type_of(
+                packed_alloc.value().unsafe_ptr()
+            ).unsafe_dangling()
+
+            if max_seq_len != 1:
+                packed_alloc = alloc(
+                    AllocLayout[Scalar[Self.dtype]](
+                        count=packed_size,
+                        alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
+                    )
+                ).into_deletable()
+                packed_ptr = packed_alloc.unsafe_value().unsafe_ptr()
 
             var q_seq_stride = num_heads * depth_dim
 
@@ -925,7 +932,7 @@ struct _FlashAttention[
                     @always_inline
                     def do_final[
                         _simd_width: Int
-                    ](idx: Int) unified {oz_ptr, o_ptr, reciprocal, mut}:
+                    ](idx: Int) {oz_ptr, o_ptr, reciprocal, mut}:
                         var v = oz_ptr.load[width=_simd_width](idx)
                         o_ptr.store(idx, v * reciprocal)
 
@@ -936,8 +943,14 @@ struct _FlashAttention[
                     o_ptr += q_seq_stride
                     oz_ptr += Self._config.o_block_n
 
-            if packed_ptr_allocated:
-                packed_ptr.free()
+            # NOTE: passing `dealloc[Scalar[Self.dtype]]` directly crashes the
+            # when the dtype is parametric; wrap it in a local function as a workaround.
+            def _dealloc_packed(
+                var packed: DeletableAllocation[Scalar[Self.dtype]],
+            ):
+                dealloc(packed^.into_allocation())
+
+            packed_alloc^.deinit_with(_dealloc_packed)
 
         sync_parallelize[task_func](num_threads, ctx)
 
@@ -1404,6 +1417,9 @@ def _flash_attention_kv_cache[
     )
 
 
+# See the note on the ragged overload below: `k`/`v` alias the same `blocks`
+# buffer and are read-only here, so disable the nested-origin exclusivity check.
+@__unsafe_disable_nested_origin_exclusivity
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
@@ -1443,6 +1459,9 @@ def flash_attention_kv_cache[
     )
 
 
+# See the note on the ragged overload below: `k`/`v` alias the same `blocks`
+# buffer and are read-only here, so disable the nested-origin exclusivity check.
+@__unsafe_disable_nested_origin_exclusivity
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
@@ -1485,6 +1504,12 @@ def flash_attention_kv_cache[
     _flash_attention_kv_cache[mask_fn, 4](q, k, v, scale, output, sink_weights)
 
 
+# `k` and `v` are disjoint views into the same `blocks` buffer, so they share the
+# collection's mutable `blocks_origin`. Attention only READS them, but the
+# exclusivity checker can't prove that and rejects passing both. Disabling the
+# nested-origin exclusivity check is safe here (read-only) and lets direct
+# callers pass `get_key_cache()`/`get_value_cache()` without a copy-capture shim.
+@__unsafe_disable_nested_origin_exclusivity
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,

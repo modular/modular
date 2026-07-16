@@ -24,10 +24,11 @@ algorithms, building custom data structures, or any task requiring collection
 types beyond basic primitives.
 """
 
+from .binary_heap import BinaryHeap
 from .bitset import BitSet
 from .counter import Counter
 from .deque import Deque
-from .dict import Dict, KeyElement, OwnedKwargsDict
+from .dict import Dict, KeyElement, StringDict
 from .inline_array import InlineArray
 from .linked_list import LinkedList
 from .list import List

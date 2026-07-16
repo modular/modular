@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from smoke_tests.bisect_smoke_test import parse_results
-from smoke_tests.smoke_test import (
+from smoke_tests.eval_runner import (
     TEXT_TASK,
     VISION_TASK,
     build_eval_summary,
@@ -27,7 +27,7 @@ from smoke_tests.smoke_test import (
 
 def test_eval_metrics_roundtrip() -> None:
     """Verify smoke_test.py output can be parsed by bisect_smoke_test.py."""
-    model = "test/model"
+    model = "Nvidia/Test-Model-Mixed-Case"
 
     # Mock LmEvalResults structure (what lm_eval produces)
     lm_eval_results = [
@@ -55,12 +55,12 @@ def test_eval_metrics_roundtrip() -> None:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         output_path = Path(tmpdir)
-        model_dir = output_path / model.lower().replace("/", "__")
+        model_dir = output_path / model.replace("/", "__")
         model_dir.mkdir(parents=True)
 
         # Mock GPU detection to avoid calling nvidia-smi
         with patch(
-            "smoke_tests.smoke_test.get_gpu_name_and_count",
+            "smoke_tests.eval_runner.get_gpu_name_and_count",
             return_value=("Test GPU", 1),
         ):
             summary = build_eval_summary(

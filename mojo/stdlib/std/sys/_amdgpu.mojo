@@ -24,6 +24,7 @@ from std.sys.intrinsics import (
 from std.gpu.primitives.id import lane_id
 from std.memory import Span
 from std.memory.unsafe_pointer import _Null
+from std.os import abort
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.
@@ -59,7 +60,7 @@ def update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, ...]):
     var mb = sig[].event_mailbox_ptr
     if Int(mb) != Int(_Null[address_space=AddressSpace.GLOBAL]()):
         var mb_ptr = UnsafePointer[
-            UInt64, ExternalOrigin[mut=True], address_space=AddressSpace.GLOBAL
+            UInt64, UntrackedOrigin[mut=True], address_space=AddressSpace.GLOBAL
         ](unsafe_from_address=Int(mb))
         var id = sig[].event_id.cast[DType.uint64]()
         Atomic.store[ordering=Ordering.RELEASE](mb_ptr, id)
@@ -71,7 +72,7 @@ def hsa_signal_add(sig: UInt64, value: UInt64):
     var s = UnsafePointer(to=sig).bitcast[
         UnsafePointer[
             amd_signal_t,
-            MutExternalOrigin,
+            MutUntrackedOrigin,
             address_space=AddressSpace.GLOBAL,
         ]
     ]()[]
@@ -524,7 +525,7 @@ def printf_append_string_n(
 @fieldwise_init
 struct Header(TrivialRegisterPassable):
     var _handle: UnsafePointer[
-        header_t, MutExternalOrigin, address_space=AddressSpace.GLOBAL
+        header_t, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
     ]
 
     def fill_packet(
@@ -617,7 +618,10 @@ struct header_t(TrivialRegisterPassable):
 
 @fieldwise_init
 struct Payload(TrivialRegisterPassable):
-    var _handle: UnsafePointer[payload_t, MutExternalOrigin]
+    var _handle: UnsafePointer[payload_t, MutUntrackedOrigin]
+
+    def __getitem__(self, idx0: Int, idx1: Int) -> UInt64:
+        abort("shouldn't load from this")
 
     @always_inline
     def __setitem__(mut self, idx0: Int, idx1: Int, value: UInt64):
@@ -636,7 +640,7 @@ struct payload_t(Copyable):
 @fieldwise_init
 struct Buffer(TrivialRegisterPassable):
     var _handle: UnsafePointer[
-        buffer_t, MutExternalOrigin, address_space=AddressSpace.GLOBAL
+        buffer_t, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
     ]
 
     @always_inline
@@ -724,9 +728,9 @@ struct Buffer(TrivialRegisterPassable):
 @fieldwise_init
 struct buffer_t(Copyable, TrivialRegisterPassable):
     var headers: UnsafePointer[
-        header_t, MutExternalOrigin, address_space=AddressSpace.GLOBAL
+        header_t, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
     ]
-    var payloads: UnsafePointer[payload_t, MutExternalOrigin]
+    var payloads: UnsafePointer[payload_t, MutUntrackedOrigin]
     var doorbell: UInt64
     var free_stack: UInt64
     var ready_stack: UInt64
@@ -765,7 +769,7 @@ struct ControlWidth(TrivialRegisterPassable):
 
 @always_inline
 def get_control_mask(control: UInt32, offset: UInt32, width: UInt32) -> UInt32:
-    var value: UInt32 = (control >> offset) & ((1 << width) - 1)
+    var value: UInt32 = (control >> offset) & ((UInt32(1) << width) - UInt32(1))
     return value
 
 
@@ -865,7 +869,7 @@ def hostcall(
         implicitarg_ptr().bitcast[
             UnsafePointer[
                 buffer_t,
-                MutExternalOrigin,
+                MutUntrackedOrigin,
                 address_space=AddressSpace.GLOBAL,
             ]
         ]()[10]

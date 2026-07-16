@@ -62,13 +62,13 @@ def test[dtype: DType](C: Int):  # Input Len
     comptime S: Int = 3  # Filter len
 
     var O: Int = C - S + 1  # Output len (method="same")
-    var input_ptr = alloc[Scalar[dtype]](C)
-    var filter_ptr = alloc[Scalar[dtype]](S)
-    var output_ptr = alloc[Scalar[dtype]](O)
-    var output_ref_ptr = alloc[Scalar[dtype]](O)
+    var input_ptr = List(length=C, fill=Scalar[dtype](0))
+    var filter_ptr = List(length=S, fill=Scalar[dtype](0))
+    var output_ptr = List(length=O, fill=Scalar[dtype](0))
+    var output_ref_ptr = List(length=O, fill=Scalar[dtype](0))
 
-    rand[dtype](input_ptr, C)
-    rand[dtype](filter_ptr, S)
+    rand(input_ptr)
+    rand(filter_ptr)
 
     var output_shape = Index(1, 1, 1, O, 1)
     var input_shape = Index(1, 1, 1, C, 1)
@@ -85,9 +85,9 @@ def test[dtype: DType](C: Int):  # Input Len
         dtype,
         dtype,
     ].run(
-        output_ref_ptr,
-        input_ptr,
-        filter_ptr,
+        output_ref_ptr.unsafe_ptr(),
+        input_ptr.unsafe_ptr(),
+        filter_ptr.unsafe_ptr(),
         output_shape,
         input_shape,
         filter_shape,
@@ -99,10 +99,12 @@ def test[dtype: DType](C: Int):  # Input Len
         1,
     )
 
-    winograd_1d_convolution_3[S](input_ptr, filter_ptr, output_ptr, C)
-
-    input_ptr.free()
-    filter_ptr.free()
+    winograd_1d_convolution_3[S](
+        input_ptr.unsafe_ptr(),
+        filter_ptr.unsafe_ptr(),
+        output_ptr.unsafe_ptr(),
+        C,
+    )
 
     for idx in range(O):
         if not isclose(
@@ -115,15 +117,14 @@ def test[dtype: DType](C: Int):  # Input Len
                 "diff naive-winograd: ", output_ref_ptr[idx] - output_ptr[idx]
             )
             print("Mismatch!")
-            output_ptr.free()
-            output_ref_ptr.free()
             return
-
-    output_ptr.free()
-    output_ref_ptr.free()
 
     # CHECK: Succeed
     print("Succeed")
+    _ = output_ref_ptr^
+    _ = output_ptr^
+    _ = filter_ptr^
+    _ = input_ptr^
 
 
 def main() raises:

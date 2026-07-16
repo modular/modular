@@ -9,4 +9,5 @@ max.pipelines.architectures.exaone
 
 .. automodule:: max.pipelines.architectures.exaone
    :members:
+   :imported-members:
    :show-inheritance:

@@ -93,8 +93,12 @@ struct Pipe:
     """Create a pipe for interprocess communication.
 
     Example usage:
-    ```
-    pipe().write_bytes("TEST".as_bytes())
+    ```mojo
+    from std.os.process import Pipe
+
+    def main() raises:
+        var pipe = Pipe()
+        pipe.write_bytes("TEST".as_bytes())
     ```
     """
 
@@ -185,7 +189,7 @@ struct Pipe:
             raise Error("Can not write from read only side of pipe")
 
     @always_inline
-    def read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> UInt:
+    def read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> Int:
         """Read a number of bytes from this pipe.
 
         Args:
@@ -210,10 +214,13 @@ struct Process:
     """Create and manage child processes from file executables.
 
     Example usage:
-    ```
-    child_process = Process.run("ls", List[String]("-lha"))
-    if child_process.interrupt():
-        print("Successfully interrupted.")
+    ```mojo
+    from std.os.process import Process
+
+    def main() raises:
+        var child_process = Process.run("ls", ["-lha"])
+        if child_process.interrupt():
+            print("Successfully interrupted.")
     ```
     """
 

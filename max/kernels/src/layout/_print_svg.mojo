@@ -13,7 +13,7 @@
 from std.pathlib import Path
 from std.sys import size_of
 
-from layout import Layout, LayoutTensor
+from layout import IntTuple, Layout, LayoutTensor
 from layout.swizzle import Swizzle
 
 
@@ -222,7 +222,7 @@ def _print_svg_impl[
         t: Int,
         element_idx: Int,
         mut writer: W,
-    ) unified {mut cell_size}:
+    ) {mut cell_size}:
         writer.write(
             '<rect x="',
             x,

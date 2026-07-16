@@ -13,7 +13,7 @@
 """Tests verifying tpool_patch_merger graph kernel against the HuggingFace
 Kimi-K2.5 reference implementation.
 
-Reference: https://huggingface.co/moonshotai/Kimi-K2.5/blob/main/modeling_kimi_k25.py
+Reference: https://huggingface.co/nvidia/Kimi-K2.5-NVFP4/blob/main/modeling_kimi_k25.py
 """
 
 from __future__ import annotations

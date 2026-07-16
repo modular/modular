@@ -109,7 +109,7 @@ def reference_attention_bshd[
     )
 
     comptime layout_2d = Layout.row_major[2]()
-    var score_ptr = alloc[Scalar[dtype]](seq_len * kv_seq_len)
+    var score_ptr = List(length=seq_len * kv_seq_len, fill=Scalar[dtype](0))
     var score_2d = LayoutTensor[dtype, layout_2d](
         score_ptr,
         RuntimeLayout[layout_2d].row_major(Index(seq_len, kv_seq_len)),
@@ -161,8 +161,7 @@ def reference_attention_bshd[
                             v_4d[b, k, kv_h, n][0], accum
                         )
                     output_4d[b, m, h, n] = accum
-
-    score_ptr.free()
+    _ = score_ptr^
 
 
 def reference_attention_bshd_with_sinks[
@@ -227,7 +226,7 @@ def reference_attention_bshd_with_sinks[
     var kv_group_count = num_heads // kv_num_heads
 
     comptime layout_2d = Layout.row_major[2]()
-    var score_ptr = alloc[Scalar[dtype]](seq_len * kv_seq_len)
+    var score_ptr = List(length=seq_len * kv_seq_len, fill=Scalar[dtype](0))
     var score_2d = LayoutTensor[dtype, layout_2d](
         score_ptr,
         RuntimeLayout[layout_2d].row_major(Index(seq_len, kv_seq_len)),
@@ -289,8 +288,7 @@ def reference_attention_bshd_with_sinks[
                             v_4d[b, k, kv_h, n][0], accum
                         )
                     output_4d[b, m, h, n] = accum
-
-    score_ptr.free()
+    _ = score_ptr^
 
 
 @fieldwise_init
@@ -416,11 +414,11 @@ def build_ndbuffer[
     *,
     static_shape: IndexList[rank] = IndexList[rank](fill=UNKNOWN_VALUE),
 ](shape: IndexList[rank]) raises -> LayoutTensor[
-    dtype, Layout.row_major(static_shape), MutAnyOrigin
+    dtype, Layout.row_major(static_shape), MutUntrackedOrigin
 ]:
     var ptr = alloc[Scalar[dtype]](shape.flattened_length())
     rand(ptr, shape.flattened_length())
-    return LayoutTensor[dtype, Layout.row_major(static_shape), MutAnyOrigin](
+    return LayoutTensor[dtype, Layout.row_major(static_shape)](
         ptr, RuntimeLayout[Layout.row_major(static_shape)].row_major(shape)
     )
 
@@ -896,9 +894,10 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
         output_with_sinks,
         scale,
         sink_weights=LayoutTensor[
-            sink_weights.dtype, Layout.row_major(UNKNOWN_VALUE), _
+            sink_weights.dtype,
+            Layout.row_major(UNKNOWN_VALUE),
         ](
-            sink_weights.ptr.as_immutable(),
+            sink_weights.ptr.as_immutable().as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                 sink_weights.runtime_layout.shape.value
             ),

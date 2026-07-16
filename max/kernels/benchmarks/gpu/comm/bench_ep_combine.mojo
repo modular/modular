@@ -21,8 +21,6 @@
 # NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 # br --run_under="mpirun -n $NUM_GPUS --allow-run-as-root --bind-to none" //max/kernels/benchmarks:gpu/bench_ep_dispatch
 
-from std.collections import OptionalReg
-
 from std.random import randint, randn, seed
 from std.sys import (
     get_defined_int,
@@ -62,7 +60,7 @@ def legalize_topk_ids[
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
-        def is_duplicate() unified {read} -> Int:
+        def is_duplicate() {read} -> Int:
             for i in range(top_k):
                 for j in range(i + 1, top_k):
                     if topk_ids_for_token[i] == topk_ids_for_token[j]:
@@ -92,10 +90,10 @@ def bench_dispatch[
     comptime max_recv_tokens = n_experts * n_tokens_per_rank
 
     comptime output_tt_layout = row_major(
-        (Idx[max_recv_tokens](), Idx[hidden_size]())
+        (Idx[max_recv_tokens], Idx[hidden_size])
     )
     comptime output_scales_tt_layout = row_major(
-        (Idx(hidden_size // group_size), Idx[max_recv_tokens]())
+        (hidden_size // group_size, Idx[max_recv_tokens])
     )
 
     var recv_count = shmem_malloc[DType.uint64](n_local_experts * n_ranks)
@@ -139,19 +137,19 @@ def bench_dispatch[
     )
 
     var topk_ids_tensor = TileTensor[origin=ImmutAnyOrigin](
-        device_topk_buf, row_major(Idx(n_tokens_per_rank), Idx[top_k]())
+        device_topk_buf, row_major(n_tokens_per_rank, Idx[top_k])
     )
     var input_tokens_tensor = TileTensor[origin=ImmutAnyOrigin](
         device_input_buf,
-        row_major(Idx(n_tokens_per_rank), Idx[hidden_size]()),
+        row_major(n_tokens_per_rank, Idx[hidden_size]),
     )
     var output_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_buf,
-        row_major(Idx[max_recv_tokens](), Idx[hidden_size]()),
+        row_major(Idx[max_recv_tokens], Idx[hidden_size]),
     )
     var output_scales_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_scales_buf,
-        row_major(Idx(hidden_size // group_size), Idx[max_recv_tokens]()),
+        row_major(hidden_size // group_size, Idx[max_recv_tokens]),
     )
     var row_offsets_tensor = TileTensor[origin=MutAnyOrigin](
         device_row_offsets_buf, row_major[n_local_experts + 1]()
@@ -161,11 +159,11 @@ def bench_dispatch[
     )
     var src_token_info_tensor = TileTensor[origin=MutAnyOrigin](
         device_src_token_info_buf,
-        row_major(Idx[max_recv_tokens](), Idx[2]()),
+        row_major(Idx[max_recv_tokens], Idx[2]),
     )
     var output_2_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_2_buf,
-        row_major(Idx(n_tokens_per_rank), Idx[top_k](), Idx[hidden_size]()),
+        row_major(n_tokens_per_rank, Idx[top_k], Idx[hidden_size]),
     )
 
     comptime hw_info = ctx.default_device_info
@@ -223,7 +221,7 @@ def bench_dispatch[
             TokenFmtType,
         ]
 
-        var func = ctx.compile_function_experimental[dispatch_async]()
+        var func = ctx.compile_function[dispatch_async]()
         shmem_module_init(func)
 
         comptime dispatch_wait = dispatch_wait_kernel[
@@ -238,9 +236,7 @@ def bench_dispatch[
             FormatHandlerType,
         ]
 
-        var func_dispatch_wait = ctx.compile_function[
-            dispatch_wait, dispatch_wait
-        ]()
+        var func_dispatch_wait = ctx.compile_function[dispatch_wait]()
 
         comptime combine_async = combine_async_kernel[
             input_type,
@@ -255,9 +251,7 @@ def bench_dispatch[
             n_tokens_per_rank,
             1,  # p2p_world_size
         ]
-        var func_combine_async = ctx.compile_function_experimental[
-            combine_async
-        ]()
+        var func_combine_async = ctx.compile_function[combine_async]()
         shmem_module_init(func_combine_async)
 
         comptime combine_wait = combine_wait_kernel[
@@ -271,9 +265,7 @@ def bench_dispatch[
             combine_msg_bytes,
             n_tokens_per_rank,
         ]
-        var func_combine_async_wait = ctx.compile_function_experimental[
-            combine_wait
-        ]()
+        var func_combine_async_wait = ctx.compile_function[combine_wait]()
 
         @always_inline
         @parameter
@@ -281,10 +273,10 @@ def bench_dispatch[
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
             var recv_buf_ptrs: InlineArray[
                 UnsafePointer[UInt8, MutAnyOrigin], 1
-            ] = [recv_buf]
+            ] = [recv_buf.as_unsafe_any_origin()]
             var recv_count_ptrs: InlineArray[
                 UnsafePointer[UInt64, MutAnyOrigin], 1
-            ] = [recv_count]
+            ] = [recv_count.as_unsafe_any_origin()]
 
             ctx.enqueue_function(
                 func,
@@ -312,13 +304,6 @@ def bench_dispatch[
                 recv_count,
                 EPLocalSyncCounters[n_experts](atomic_counter),
                 Int32(my_rank),
-                OptionalReg[
-                    TileTensor[
-                        DType.bfloat16,
-                        type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
-                        ImmutAnyOrigin,
-                    ]
-                ](),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
@@ -335,10 +320,10 @@ def bench_dispatch[
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
             var combine_recv_buf_ptrs: InlineArray[
                 UnsafePointer[UInt8, MutAnyOrigin], 1
-            ] = [send_buf]
+            ] = [send_buf.as_unsafe_any_origin()]
             var combine_recv_count_ptrs: InlineArray[
                 UnsafePointer[UInt64, MutAnyOrigin], 1
-            ] = [recv_count]
+            ] = [recv_count.as_unsafe_any_origin()]
 
             ctx.enqueue_function(
                 func_combine_async,
@@ -349,13 +334,6 @@ def bench_dispatch[
                 combine_recv_count_ptrs,
                 EPLocalSyncCounters[n_experts](atomic_counter),
                 Int32(my_rank),
-                OptionalReg[
-                    TileTensor[
-                        input_type,
-                        type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
-                        MutAnyOrigin,
-                    ]
-                ](),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
@@ -498,7 +476,7 @@ def bench_dispatch[
 
         var bf16_output = output_tensor.bitcast[
             DType.bfloat16
-        ]().as_any_origin()
+        ]().as_unsafe_any_origin()
         var format_handler = token_fmt_type(bf16_output)
 
         setup_and_run_benchmark[
@@ -522,7 +500,9 @@ def bench_dispatch[
             top_k,
         ]
 
-        var fp8_output = output_tensor.bitcast[token_dtype]().as_any_origin()
+        var fp8_output = output_tensor.bitcast[
+            token_dtype
+        ]().as_unsafe_any_origin()
         var format_handler = token_fmt_type(fp8_output, output_scales_tensor)
 
         setup_and_run_benchmark[

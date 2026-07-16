@@ -16,6 +16,7 @@ import re
 
 import hf_repo_lock
 import pytest
+from max import pipelines
 from pytest_mock import MockerFixture
 from test_common.mocks import DummyPipelineConfig
 from test_common.pipeline_model_dummy import DUMMY_LLAMA_ARCH
@@ -90,6 +91,42 @@ def test_revision_for_hf_repo_no_local_leakage(mocker: MockerFixture) -> None:
     list_mock.assert_not_called()
 
 
+def test_try_revision_for_hf_repo_locked() -> None:
+    assert hf_repo_lock.try_revision_for_hf_repo(EXAMPLE_KEY) == EXAMPLE_VALUE
+
+
+def test_try_revision_for_hf_repo_none_or_empty() -> None:
+    assert hf_repo_lock.try_revision_for_hf_repo(None) is None
+    assert hf_repo_lock.try_revision_for_hf_repo("") is None
+
+
+def test_try_revision_for_hf_repo_local_path() -> None:
+    assert hf_repo_lock.try_revision_for_hf_repo("/path/to/model") is None
+
+
+def test_try_revision_for_hf_repo_swallows_invalid_format() -> None:
+    # `revision_for_hf_repo` raises ValueError for a non-'org/model' id; the
+    # lenient variant swallows it and returns None instead.
+    assert (
+        hf_repo_lock.try_revision_for_hf_repo(
+            "000EXAMPLE-for-unit-test/repo/subrepo"
+        )
+        is None
+    )
+
+
+def test_try_revision_for_hf_repo_reraises_unexpected(
+    mocker: MockerFixture,
+) -> None:
+    # Only the expected ValueError falls back; an unexpected error is a real
+    # bug and must surface rather than silently serving the wrong revision.
+    mocker.patch.object(
+        hf_repo_lock, "revision_for_hf_repo", side_effect=RuntimeError("boom")
+    )
+    with pytest.raises(RuntimeError):
+        hf_repo_lock.try_revision_for_hf_repo("org/model")
+
+
 def test_apply_to_config() -> None:
     config = DummyPipelineConfig(
         model_path=EXAMPLE_KEY,
@@ -101,6 +138,25 @@ def test_apply_to_config() -> None:
     assert config.model.huggingface_model_revision == "main"
     hf_repo_lock.apply_to_config(config)
     assert config.model.huggingface_model_revision == EXAMPLE_VALUE
+
+
+def test_apply_to_config_pipeline_args() -> None:
+    """Regression test (QUA-729/QUA-730): MAXModelConfig.from_pipeline_args()
+    rebuilds a fresh MAXModelConfig on every call, so writing through it
+    (e.g. MAXModelConfig.from_pipeline_args(config).foo = ...) is silently
+    discarded. apply_to_config() must write PipelineArgs's own flat fields
+    directly, or the locked revision never actually applies -- every
+    PipelineArgs-based harness pipeline (the common case, e.g. GenericOracle)
+    silently falls back to the unpinned default revision instead of raising
+    or pinning correctly.
+    """
+    config = pipelines.PipelineArgs(
+        model_path=EXAMPLE_KEY,
+        quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
+    )
+    assert config.huggingface_model_revision == "main"
+    hf_repo_lock.apply_to_config(config)
+    assert config.huggingface_model_revision == EXAMPLE_VALUE
 
 
 def test_apply_to_config_raises_on_missing_revision() -> None:

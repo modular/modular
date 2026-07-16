@@ -10,16 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""FLUX.2 diffusion architecture for image generation."""
+"""FLUX.2 ModuleV3 diffusion architecture (single ``Module`` implementation)."""
 
-from .arch import (
-    flux2_klein_modulev3_arch,
-    flux2_modulev3_arch,
-)
-from .model import Flux2TransformerModel
+from .arch import flux2_modulev3_arch
+from .flux2_executor import FLUXModule
+from .flux2_inputs import Flux2ModuleV3Inputs
 
 __all__ = [
-    "Flux2TransformerModel",
-    "flux2_klein_modulev3_arch",
+    "FLUXModule",
+    "Flux2ModuleV3Inputs",
     "flux2_modulev3_arch",
 ]

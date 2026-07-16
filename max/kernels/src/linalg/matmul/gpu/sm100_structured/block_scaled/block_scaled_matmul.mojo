@@ -104,8 +104,8 @@ def _to_scales_5d_batched(
                 tensor.layout.shape[0](),
                 tensor.layout.shape[1](),
                 tensor.layout.shape[2](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
         )
     )
@@ -123,11 +123,11 @@ def _to_scales_5d_non_batched(
     return tensor.reshape(
         row_major(
             Coord(
-                Idx[1](),
+                Idx[1],
                 tensor.layout.shape[0](),
                 tensor.layout.shape[1](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
         )
     )
@@ -146,7 +146,7 @@ def _create_tma_and_launch[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     a_3d: TileTensor,
@@ -320,7 +320,7 @@ def _create_tma_and_launch[
         workspace = {}
 
     # Launch
-    ctx.enqueue_function[kernel, kernel, dump_asm=False](
+    ctx.enqueue_function[kernel, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -360,7 +360,7 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_tensor: TileTensor,
@@ -447,7 +447,7 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_tensor: TileTensor,

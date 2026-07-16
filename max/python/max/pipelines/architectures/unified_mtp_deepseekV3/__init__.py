@@ -13,6 +13,10 @@
 """DeepSeek-V3 multi-token prediction draft model for speculative decoding with unified graph compilation."""
 
 from .arch import unified_mtp_deepseekV3_arch
-from .model import UnifiedMTPDeepseekV3Model
+from .model import UnifiedMTPDeepseekV3Inputs, UnifiedMTPDeepseekV3Model
 
-__all__ = ["UnifiedMTPDeepseekV3Model", "unified_mtp_deepseekV3_arch"]
+__all__ = [
+    "UnifiedMTPDeepseekV3Inputs",
+    "UnifiedMTPDeepseekV3Model",
+    "unified_mtp_deepseekV3_arch",
+]

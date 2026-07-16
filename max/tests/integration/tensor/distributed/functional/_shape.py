@@ -127,20 +127,6 @@ class _Reshape:
             out.to_numpy(), t_np.reshape(8, 2, 2), rtol=1e-5
         )
 
-    def test_merged_axis_raises(self) -> None:
-        """Reshape that merges sharded axis with adjacent axis raises.
-
-        (4, 8) Sharded(1) → (8, 4) merges axis 0 and axis 1 into new
-        axis 0. Per-shard reshape would give wrong global ordering.
-        The cumulative-product factorization correctly detects this.
-        """
-        t = transfer_to(
-            Tensor(np.arange(32, dtype=np.float32).reshape(4, 8)),
-            PlacementMapping(self.MESH_1D, (Sharded(1),)),
-        )
-        with pytest.raises(ValueError, match="cannot be mapped"):
-            reshape(t, (8, 4))
-
     def test_partial_passthrough(self) -> None:
         """Partial placement preserved through reshape."""
         data = np.ones((4, 8), dtype=np.float32)
@@ -165,15 +151,6 @@ class _Reshape:
             out.to_numpy(), t_np.reshape(4, 4, 8), rtol=1e-5
         )
 
-    def test_sharded_split_raises(self) -> None:
-        """Sharded dim split with indivisible shard size -> ValueError."""
-        dt = transfer_to(
-            Tensor(np.ones((8, 4), dtype=np.float32)),
-            PlacementMapping(self.MESH_1D, (Sharded(0),)),
-        )
-        with pytest.raises(ValueError, match="not evenly divisible"):
-            reshape(dt, (2, 4, 4))
-
     def test_mha_reshape_batch_sharded(self) -> None:
         """Multi-head attention reshape: [B, S, H*D] → [B, S, H, D].
 
@@ -191,6 +168,161 @@ class _Reshape:
         np.testing.assert_allclose(
             out.to_numpy(), t_np.reshape(B, S, H, D), rtol=1e-5
         )
+
+    def test_split_sharded_axis_clean(self) -> None:
+        """Pure split of a sharded axis, leftmost candidate divides the
+        mesh size cleanly. Mirrors the (T, 2048) Sharded(1) → (-1, 8, 256)
+        pattern: old axis 1 (2048) splits into new axes [1, 2] of sizes
+        [8, 256], sharding lands on new axis 1 (8 % N == 0)."""
+        T = 5  # MESH_2 has 2 devices; mesh size N=2 divides new axis 1 (size 8).
+        t_np = np.arange(T * 2048, dtype=np.float32).reshape(T, 2048)
+        dt = transfer_to(
+            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(1),))
+        )
+        out = reshape(dt, (-1, 8, 256))
+        assert out.placements == (Sharded(1),)
+        assert list(out.shape) == [T, 8, 256]
+        np.testing.assert_allclose(
+            out.to_numpy(), t_np.reshape(-1, 8, 256), rtol=1e-5
+        )
+
+    def test_split_sharded_axis_indivisible_pure_split(self) -> None:
+        """Pure split where the sharded axis (size 32) splits into
+        [4, 8] and the leftmost candidate (4) divides the mesh size
+        N=4 (MESH_1D). Sharding lands on new axis 1."""
+        t_np = np.arange(8 * 32, dtype=np.float32).reshape(8, 32)
+        dt = transfer_to(
+            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(1),))
+        )
+        out = reshape(dt, (8, 4, 8))
+        assert out.placements == (Sharded(1),)
+        assert list(out.shape) == [8, 4, 8]
+        np.testing.assert_allclose(
+            out.to_numpy(), t_np.reshape(8, 4, 8), rtol=1e-5
+        )
+
+    def test_split_unsharded_dim(self) -> None:
+        """S(1) on [4, 8] -> reshape [2, 2, 8]: old axis 0 splits and
+        the sharded axis 1 (size 8) shifts to new axis 2."""
+        t_np = np.arange(32, dtype=np.float32).reshape(4, 8)
+        dt = transfer_to(
+            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(1),))
+        )
+        out = reshape(dt, (2, 2, 8))
+        assert out.placements == (Sharded(2),)
+        assert list(out.shape) == [2, 2, 8]
+        np.testing.assert_allclose(
+            out.to_numpy(), t_np.reshape(2, 2, 8), rtol=1e-5
+        )
+
+    def test_2d_mesh_replicated_and_sharded(self) -> None:
+        """MESH_2D is shape (2, 2). Replicated on axis 0, Sharded(1) on
+        axis 1 of a 4D tensor — static axis 1 (size 4) merges into new
+        axis 1 (size 32) and stays sharded."""
+        t_np = np.arange(2 * 4 * 8, dtype=np.float32).reshape(2, 4, 8)
+        dt = transfer_to(
+            Tensor(t_np),
+            PlacementMapping(self.MESH_2D, (Replicated(), Sharded(1))),
+        )
+        out = reshape(dt, (2, 32))
+        assert out.placements == (Replicated(), Sharded(1))
+        assert list(out.shape) == [2, 32]
+        np.testing.assert_allclose(
+            out.to_numpy(), t_np.reshape(2, 32), rtol=1e-5
+        )
+
+    def test_multiple_minus_ones_raises(self) -> None:
+        """Reshape rejects targets with more than one ``-1`` sentinel."""
+        t = transfer_to(
+            Tensor(np.arange(32, dtype=np.float32).reshape(4, 8)),
+            PlacementMapping(self.MESH_1D, (Sharded(0),)),
+        )
+        with pytest.raises(ValueError, match=r"-1"):
+            reshape(t, (-1, -1, 2))
+
+    # ── Gemma3-attention-style reshape patterns ────────────────────────
+    #
+    # The attention layer goes:
+    #   x_q: (T, q_dim) Sharded(1)
+    #     -> (-1, n_heads, head_dim) for QK-norm
+    #     -> (-1, q_dim) for re-concat with K, V
+    # After rope:
+    #   xq: (T, q_dim) Sharded(1)
+    #     -> (-1, n_heads, head_dim) for flash attention
+    # After attention:
+    #   attn_out: (T, n_heads, head_dim) Sharded(1)
+    #     -> (T, n_heads * head_dim) for o_proj
+    #
+    # Plain ``-1`` AND per_shard_shape arithmetic must both produce the
+    # right per-shard target shapes.
+
+    def test_gemma_qkv_split_minus_one(self) -> None:
+        """(T, q_dim) Sharded(1) → (-1, n_heads, head_dim)."""
+        T, n_heads, head_dim = 6, 8, 16
+        q_dim = n_heads * head_dim
+        t_np = np.arange(T * q_dim, dtype=np.float32).reshape(T, q_dim)
+        dt = transfer_to(
+            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(1),))
+        )
+        out = reshape(dt, (-1, n_heads, head_dim))
+        assert out.placements == (Sharded(1),)
+        assert list(out.shape) == [T, n_heads, head_dim]
+        np.testing.assert_allclose(
+            out.to_numpy(), t_np.reshape(-1, n_heads, head_dim), rtol=1e-5
+        )
+
+    def test_gemma_qkv_merge_minus_one(self) -> None:
+        """(T, n_heads, head_dim) Sharded(1) → (-1, n_heads * head_dim)."""
+        T, n_heads, head_dim = 6, 8, 16
+        q_dim = n_heads * head_dim
+        t_np = np.arange(T * q_dim, dtype=np.float32).reshape(
+            T, n_heads, head_dim
+        )
+        dt = transfer_to(
+            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(1),))
+        )
+        out = reshape(dt, (-1, q_dim))
+        assert out.placements == (Sharded(1),)
+        assert list(out.shape) == [T, q_dim]
+        np.testing.assert_allclose(
+            out.to_numpy(), t_np.reshape(-1, q_dim), rtol=1e-5
+        )
+
+    def test_gemma_qkv_merge_per_shard_shape(self) -> None:
+        """Merge using ``shape[1] * shape[2]`` — exercises the wrapper-landing
+        path on a merged target axis."""
+        T, n_heads, head_dim = 6, 8, 16
+        q_dim = n_heads * head_dim
+        t_np = np.arange(T * q_dim, dtype=np.float32).reshape(
+            T, n_heads, head_dim
+        )
+        dt = transfer_to(
+            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(1),))
+        )
+        out = reshape(
+            dt,
+            (
+                dt.shape[0],
+                dt.shape[1] * dt.shape[2],
+            ),
+        )
+        assert out.placements == (Sharded(1),)
+        assert list(out.shape) == [T, q_dim]
+        np.testing.assert_allclose(
+            out.to_numpy(), t_np.reshape(T, q_dim), rtol=1e-5
+        )
+
+    def test_uneven_static_identity(self) -> None:
+        """Identity reshape on uneven static sharding: (7, 8) Sharded(0)
+        over 4 devices → per-shard sizes [2, 2, 2, 1], shard preserved."""
+        t_np = np.arange(56, dtype=np.float32).reshape(7, 8)
+        dt = transfer_to(
+            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+        )
+        out = reshape(dt, (7, 8))
+        assert out.placements == (Sharded(0),)
+        assert list(out.shape) == [7, 8]
+        np.testing.assert_allclose(out.to_numpy(), t_np, rtol=1e-5)
 
 
 # ── Permute ──────────────────────────────────────────────────────────
@@ -317,16 +449,6 @@ class _Split:
             # Each shard's local dim-1 should be 2 (= 4 / tp_size=2)
             assert list(p.local_shards[0].shape)[1] == 2
 
-    def test_uneven_split_raises(self) -> None:
-        """Split size not divisible by shard count along sharded axis -> error."""
-        t = transfer_to(
-            Tensor(np.arange(8, dtype=np.float32).reshape(4, 2)),
-            PlacementMapping(self.MESH_2, (Sharded(0),)),
-        )
-        # split_sizes=[3, 1] along axis 0 — 3 is not divisible by 2 devices
-        with pytest.raises(ValueError, match="not evenly divisible"):
-            split(t, [3, 1], axis=0)
-
 
 # ── Unsqueeze ────────────────────────────────────────────────────────
 
@@ -373,15 +495,6 @@ class _Squeeze:
             result.to_numpy(), t_np.reshape(4, 2), rtol=1e-5
         )
 
-    def test_sharded_axis_raises(self) -> None:
-        """Squeezing the sharded axis itself raises."""
-        t_np = np.ones((2, 1, 3), dtype=np.float32)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(1),))
-        )
-        with pytest.raises(ValueError, match="sharded axis"):
-            squeeze(t, 1)
-
 
 # ── Gather ───────────────────────────────────────────────────────────
 
@@ -406,19 +519,6 @@ class _Gather:
         assert result.placements == (Sharded(1),)
         expected = w_np[[0, 3]]
         np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-5)
-
-    def test_gather_axis_raises(self) -> None:
-        """Gathering along sharded axis raises."""
-        weight = transfer_to(
-            Tensor(np.arange(20, dtype=np.float32).reshape(10, 2)),
-            PlacementMapping(self.MESH_2, (Sharded(0),)),
-        )
-        indices = transfer_to(
-            Tensor(np.array([0, 5], dtype=np.int64)),
-            PlacementMapping(self.MESH_2, (Replicated(),)),
-        )
-        with pytest.raises(ValueError, match="sharded axis"):
-            gather(weight, indices, axis=0)
 
 
 # ── BroadcastTo ─────────────────────────────────────────────────────
@@ -464,6 +564,15 @@ class _BroadcastTo:
         assert any(isinstance(p, Partial) for p in result.placements)
         assert list(result.shape) == [3, 4]
 
+    def test_size_mismatch_raises(self) -> None:
+        """Input dim that's neither 1 nor equal to the target — rejected."""
+        t = transfer_to(
+            Tensor(np.arange(8, dtype=np.float32).reshape(2, 4)),
+            PlacementMapping(self.MESH_2, (Replicated(),)),
+        )
+        with pytest.raises(ValueError, match="must be either 1 or equal"):
+            broadcast_to(t, shape=(3, 4))
+
 
 # ── Flatten ─────────────────────────────────────────────────────────
 
@@ -499,15 +608,6 @@ class _Flatten:
         np.testing.assert_allclose(
             result.to_numpy(), t_np.reshape(4, 6, 2), rtol=1e-5
         )
-
-    def test_sharded_in_range_raises(self) -> None:
-        """Flattening across sharded axis raises."""
-        t_np = np.ones((4, 3, 2), dtype=np.float32)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(1),))
-        )
-        with pytest.raises(ValueError, match="sharded axis"):
-            flatten(t, start_dim=0, end_dim=1)
 
     def test_partial_passthrough(self) -> None:
         """Partial placement preserved through flatten."""
@@ -592,15 +692,6 @@ class _TopKBottomK:
         assert values.placements == (Sharded(0),)
         assert indices.placements == (Sharded(0),)
 
-    def test_top_k_sharded_raises(self) -> None:
-        """top_k along sharded axis raises."""
-        t = transfer_to(
-            Tensor(np.ones((4, 2), dtype=np.float32)),
-            PlacementMapping(self.MESH_2, (Sharded(0),)),
-        )
-        with pytest.raises(ValueError, match="sharded axis"):
-            top_k(t, k=1, axis=0)
-
     def test_bottom_k_non_sharded(self) -> None:
         """bottom_k along non-sharded axis — placement preserved."""
         t_np = np.array([[5, 1, 3, 2, 4], [10, 8, 6, 9, 7]], dtype=np.float32)
@@ -629,15 +720,6 @@ class _Chunk:
         for p in parts:
             assert p.placements == (Sharded(0),)
 
-    def test_chunk_sharded_raises(self) -> None:
-        """Chunk along sharded axis raises."""
-        t = transfer_to(
-            Tensor(np.ones((4, 6), dtype=np.float32)),
-            PlacementMapping(self.MESH_2, (Sharded(0),)),
-        )
-        with pytest.raises(ValueError, match="sharded axis"):
-            chunk(t, chunks=2, axis=0)
-
 
 # ── RepeatInterleave ────────────────────────────────────────────────
 
@@ -660,29 +742,6 @@ class _RepeatInterleave:
         np.testing.assert_allclose(
             result.to_numpy(), np.repeat(t_np, 3, axis=1), rtol=1e-5
         )
-
-    def test_repeat_sharded_raises(self) -> None:
-        """repeat_interleave along sharded axis raises."""
-        t = transfer_to(
-            Tensor(np.ones((4, 2), dtype=np.float32)),
-            PlacementMapping(self.MESH_2, (Sharded(0),)),
-        )
-        with pytest.raises(ValueError, match="sharded axis"):
-            repeat_interleave(t, repeats=2, axis=0)
-
-    def test_repeat_axis_none_sharded_raises(self) -> None:
-        """repeat_interleave with axis=None on Sharded input raises.
-
-        axis=None flattens the input first, which produces wrong global
-        ordering when the input is sharded (each shard flattens
-        independently).
-        """
-        t = transfer_to(
-            Tensor(np.ones((4, 2), dtype=np.float32)),
-            PlacementMapping(self.MESH_2, (Sharded(0),)),
-        )
-        with pytest.raises(ValueError, match="sharded"):
-            repeat_interleave(t, repeats=2, axis=None)
 
 
 # ── Tile ────────────────────────────────────────────────────────────
@@ -757,15 +816,6 @@ class _Pad:
         assert result.placements == (Sharded(0),)
         assert list(result.shape) == [4, 4]
 
-    def test_pad_sharded_dim_raises(self) -> None:
-        """Padding along sharded axis raises."""
-        t = transfer_to(
-            Tensor(np.ones((4, 2), dtype=np.float32)),
-            PlacementMapping(self.MESH_2, (Sharded(0),)),
-        )
-        with pytest.raises(ValueError, match="sharded axis"):
-            pad(t, [1, 1, 0, 0])
-
 
 # ── SliceTensor ─────────────────────────────────────────────────────
 
@@ -831,22 +881,33 @@ class _Scatter:
         result = scatter(x, updates, idx, axis=1)
         assert result.placements == (Sharded(0),)
 
-    def test_scatter_sharded_axis_raises(self) -> None:
-        """Scatter along sharded axis raises."""
-        x = transfer_to(
-            Tensor(np.zeros((4, 4), dtype=np.float32)),
+    def test_scatter_sharded_axis_rule_no_raise(self) -> None:
+        """Scatter along sharded axis — verify the *rule* auto-gathers
+        without raising. The scatter Mojo kernel itself crashes for most
+        shape/dtype combinations on this branch (unrelated to the cost
+        model), so we exercise the rule directly instead of running the
+        kernel end-to-end."""
+        from max.experimental.sharding import TensorLayout
+        from max.experimental.sharding.rules import scatter_rule
+        from max.graph import Shape
+
+        x = TensorLayout(
+            DType.float32,
+            Shape((4, 4)),
             PlacementMapping(self.MESH_2, (Sharded(0),)),
         )
-        updates = transfer_to(
-            Tensor(np.ones((4, 2), dtype=np.float32)),
+        updates = TensorLayout(
+            DType.float32,
+            Shape((4, 2)),
             PlacementMapping(self.MESH_2, (Sharded(0),)),
         )
-        idx = transfer_to(
-            Tensor(np.zeros((4, 2), dtype=np.int32)),
+        idx = TensorLayout(
+            DType.int32,
+            Shape((4, 2)),
             PlacementMapping(self.MESH_2, (Sharded(0),)),
         )
-        with pytest.raises(ValueError, match="sharded axis"):
-            scatter(x, updates, idx, axis=0)
+        menu = scatter_rule(x, updates, idx, axis=0)
+        assert any(row.output == Replicated() for row in menu.axis_assignments)
 
     def test_scatter_add_non_sharded_axis(self) -> None:
         """scatter_add along non-sharded axis — placement preserved."""

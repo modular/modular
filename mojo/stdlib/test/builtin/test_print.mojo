@@ -124,18 +124,32 @@ def test_print() raises:
 
 
 def test_print_end() raises:
+    # Test string literals
     with PrintChecker() as checker:
         print("Hello", end=" World\n", file=checker.stream())
         checker.check_line("Hello World")
 
+    # Test runtime strings
+    with PrintChecker() as checker:
+        var dyn_string: String = "End\n"
+        print("Start", end=dyn_string, file=checker.stream())
+        checker.check_line("StartEnd")
+
 
 def test_print_sep() raises:
+    # Test string literals
     with PrintChecker() as checker:
         print("a", "b", "c", sep="/", file=checker.stream())
         checker.check_line("a/b/c")
 
         print("a", 1, 2, sep="/", end="xx\n", file=checker.stream())
         checker.check_line("a/1/2xx")
+
+    # Test runtime strings
+    with PrintChecker() as checker:
+        var dyn_string: String = ":"
+        print("1", "2", sep=dyn_string, file=checker.stream())
+        checker.check_line("1:2")
 
 
 def main() raises:

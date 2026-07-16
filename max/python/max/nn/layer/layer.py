@@ -21,7 +21,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import wraps
 from inspect import signature
 from itertools import islice
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 from max.driver import Buffer, DLPackArray
@@ -44,6 +44,7 @@ from typing_extensions import Self
 from .._identity import IdentitySet
 
 
+@runtime_checkable
 class Shardable(Protocol):
     """Protocol for objects that support sharding across multiple devices.
 
@@ -334,6 +335,24 @@ class Module(Layer, ABC):
     @property
     def sublayers(self) -> dict[str, Module]:
         return self._sublayers
+
+    def replace_module(self, name: str, module: Module) -> None:
+        """Replaces the child module registered at ``name``.
+
+        Args:
+            name: The attribute name of an existing child module.
+            module: The replacement module.
+
+        Raises:
+            KeyError: If ``name`` is not a registered child module. Unlike a
+                bare ``setattr``, this surfaces a wrong name instead of
+                silently creating a new, unreferenced child.
+        """
+        if name not in self._sublayers:
+            raise KeyError(
+                f"{type(self).__name__!r} has no child module {name!r}"
+            )
+        setattr(self, name, module)
 
     def load_state_dict(
         self,

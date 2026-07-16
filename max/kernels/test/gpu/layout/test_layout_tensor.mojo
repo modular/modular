@@ -33,11 +33,13 @@ def test_runtime_and_compile_time_dim_and_stride[
     MType: CoordLike, KType: CoordLike, //
 ](m: MType, k: KType) raises:
     var shape = Coord(k, m)
-    var tt = TileTensor[DType.float32, _, MutAnyOrigin](None, row_major(shape))
+    var tt = TileTensor(
+        UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling(), row_major(shape)
+    )
     var tensor = tt.to_layout_tensor()
 
-    var K = k.value()
-    var M = m.value()
+    var K = Int(k.value())
+    var M = Int(m.value())
 
     assert_equal(tensor.dim(0), K)
     assert_equal(tensor.dim(1), M)
@@ -253,7 +255,7 @@ def test_aligned_load() raises:
 
 
 def main() raises:
-    test_runtime_and_compile_time_dim_and_stride(Idx(120), Idx[512]())
+    test_runtime_and_compile_time_dim_and_stride(Idx[120], Idx[512])
     test_nested_layout_shape()
     test_transpose_arithmetic()
     test_different_layouts_arithmetic()

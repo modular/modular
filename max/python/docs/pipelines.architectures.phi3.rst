@@ -9,4 +9,5 @@ max.pipelines.architectures.phi3
 
 .. automodule:: max.pipelines.architectures.phi3
    :members:
+   :imported-members:
    :show-inheritance:

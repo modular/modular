@@ -17,7 +17,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from max.interfaces.request import (
+from max.pipelines.request import (
     OpenResponsesRequest,
     OpenResponsesRequestBody,
     RequestID,

@@ -16,25 +16,30 @@ import logging
 import os
 import time
 
-from max.interfaces import (
-    MAXPullQueue,
-    MAXPushQueue,
-    Pipeline,
-    RequestID,
-    Scheduler,
-    SchedulerResult,
-    TextGenerationInputs,
+from max.pipelines.context import (
+    TextAndVisionContext,
+    TextContext,
     TextGenerationOutput,
 )
-from max.interfaces.queue import drain_queue
-from max.kv_cache import PagedKVCacheManager
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
     PipelineConfig,
     TextGenerationPipeline,
 )
+from max.pipelines.modeling.types import (
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
+)
 from max.profiler import Tracer, traced
+from max.serve.queue import (
+    MAXPullQueue,
+    MAXPushQueue,
+    drain_queue,
+)
+from max.serve.scheduler.interface import Scheduler
+from max.serve.scheduler_result import SchedulerResult
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
@@ -144,6 +149,14 @@ class TokenGenerationScheduler(Scheduler):
         if not (inputs or self.support_empty_batches or has_pending_outputs):
             return SchedulerProgress.NO_PROGRESS
 
+        # When the overlap pipeline is actually overlapping, the wall-clock
+        # time measured below reflects the previous batch's sync, not the
+        # current batch. Flag it so the logger emits "Previous Execution:"
+        # and defers execution telemetry to the completed-batch stats below.
+        is_overlap_active = bool(
+            getattr(self.pipeline, "overlap_active", False)
+        )
+
         # Schedule the batch
         t0 = time.monotonic()
         if len(inputs.flat_batch) > 0:
@@ -154,7 +167,15 @@ class TokenGenerationScheduler(Scheduler):
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
 
-        # Log batch metrics
+        # Log batch metrics. Under overlap scheduling the wall-clock time
+        # measured above describes the previously enqueued batch; the
+        # pipeline reports that batch's composition and timing so telemetry
+        # is attributed to the correct batch type.
+        completed_batch_stats = (
+            self.pipeline.take_completed_batch_stats()
+            if hasattr(self.pipeline, "take_completed_batch_stats")
+            else None
+        )
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             inputs=inputs,
@@ -164,9 +185,14 @@ class TokenGenerationScheduler(Scheduler):
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
-            speculative_decoding_metrics=self.pipeline.spec_decode_metrics()
-            if hasattr(self.pipeline, "spec_decode_metrics")
+            batch_spec_decode_metrics=self.pipeline.batch_spec_decode_metrics()
+            if hasattr(self.pipeline, "batch_spec_decode_metrics")
             else None,
+            batch_vision_metrics=self.pipeline.batch_vision_metrics()
+            if hasattr(self.pipeline, "batch_vision_metrics")
+            else None,
+            batch_execution_time_is_previous=is_overlap_active,
+            completed_batch_stats=completed_batch_stats,
         )
 
         for cancelled_id in get_cancelled_reqs(self.cancel_queue):
@@ -226,7 +252,7 @@ def load_text_generation_scheduler(
 ) -> TokenGenerationScheduler:
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config
+        pipeline_config, pipeline.max_batch_size
     )
 
     # Build DP batch padder when DP > 1 with device graph capture.

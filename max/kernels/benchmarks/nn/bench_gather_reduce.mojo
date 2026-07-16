@@ -40,13 +40,17 @@ def bench_gather_reduce(mut b: Bencher):
     var input_shape = IndexList[2](num_rows, embedding_dim)
     var output_shape = IndexList[2](num_indices, embedding_dim)
     var indices_shape = IndexList[2](num_indices, multi_hot_dim)
-    var input_storage = alloc[Scalar[type]](input_shape.flattened_length())
-    var output_storage = alloc[Scalar[type]](output_shape.flattened_length())
-    var indices_storage = alloc[Int32](indices_shape.flattened_length())
-    var input = TileTensor(input_storage, row_major(Coord(input_shape))).fill(1)
-    var output = TileTensor(
-        output_storage, row_major(Coord(output_shape))
-    ).fill(0)
+    var input_storage = List(
+        length=input_shape.flattened_length(), fill=Scalar[type](1)
+    )
+    var output_storage = List(
+        length=output_shape.flattened_length(), fill=Scalar[type](0)
+    )
+    var indices_storage = List(
+        length=indices_shape.flattened_length(), fill=Int32(0)
+    )
+    var input = TileTensor(input_storage, row_major(Coord(input_shape)))
+    var output = TileTensor(output_storage, row_major(Coord(output_shape)))
     var indices = TileTensor(indices_storage, row_major(Coord(indices_shape)))
     for i in range(Int(indices.dim[0]())):
         for j in range(Int(indices.dim[1]())):
@@ -64,9 +68,6 @@ def bench_gather_reduce(mut b: Bencher):
     b.iter[to_bench]()
 
     print(output[0, 0])
-    input.ptr.free()
-    output.ptr.free()
-    indices.ptr.free()
 
 
 def main() raises:

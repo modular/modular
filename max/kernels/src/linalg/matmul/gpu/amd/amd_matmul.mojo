@@ -67,7 +67,7 @@ from pipeline.pipeline_dsl import ScheduleEntry
 from structured_kernels.amd_tile_io import (
     RegTileLoader,
     RegTileWriter,
-    blocked_copy_local_to_shared,
+    RegTileWriterLDS,
 )
 
 comptime SCHED_MASK_DS_READ = 0
@@ -145,6 +145,9 @@ struct AMDMatmul[
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(Self.config.num_threads())
         )
+    )
+    @__name(
+        t"amd_matmul_{Self.a_type}_{Self.b_type}_{Self.c_type}_BM{Self.BM}_BN{Self.BN}_BK{Self.BK}_WM{Self.WM}_WN{Self.WN}"
     )
     @staticmethod
     def run[
@@ -262,18 +265,16 @@ struct AMDMatmul[
             comptime thread_layout = row_major[
                 load_thread_rows, load_thread_cols
             ]()
-            blocked_copy_local_to_shared[
+            RegTileWriterLDS[
                 thread_layout,
-                block_cols=k_tile_size,
                 swizzle=swizzle,
                 num_threads=num_threads,
-            ](a_smem, a_load_reg)
-            blocked_copy_local_to_shared[
+            ].copy_blocked[k_tile_size](a_smem, a_load_reg)
+            RegTileWriterLDS[
                 thread_layout,
-                block_cols=k_tile_size,
                 swizzle=swizzle,
                 num_threads=num_threads,
-            ](b_smem, b_load_reg)
+            ].copy_blocked[k_tile_size](b_smem, b_load_reg)
 
         # === Warp-K SMEM offsets for split-K ===
         # Each warp-K partition reads its own WK-wide slice of the BK-wide

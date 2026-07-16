@@ -9,4 +9,5 @@ max.pipelines.architectures.kimik2_5
 
 .. automodule:: max.pipelines.architectures.kimik2_5
    :members:
+   :imported-members:
    :show-inheritance:
