@@ -34,7 +34,7 @@ from comm import MAX_GPUS, Signal
 from extensibility import StaticTensorSpec
 from std.gpu.host import CompletionFlag, DeviceContext, DeviceContextList
 from layout.tile_tensor import row_major
-from std.gpu.host.info import is_cpu, is_gpu, is_valid_target
+from std.gpu.host.info import B200, is_cpu, is_gpu, is_valid_target
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     ComptimeInt,
@@ -108,6 +108,7 @@ from state_space.mamba2_ssd_scan import (
     mamba2_ssd_chunk_scan_varlen_fwd_gpu,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu,
+    mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split,
 )
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
@@ -138,7 +139,7 @@ from extensibility import (
 from extensibility import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
-from std.memory import UnsafePointer, memcpy
+from std.memory import UnsafePointer, unsafe_memcpy
 from std.time import sleep
 from std.logger import Logger
 
@@ -672,23 +673,23 @@ struct RandomNormal:
         seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        @parameter
         @always_inline
         def output_fn[
             _width: SIMDSize,
             _rank: Int,
-        ](coords: IndexList[_rank], val: SIMD[dtype, _width]):
+        ](coords: IndexList[_rank], val: SIMD[dtype, _width]) {read output}:
             output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, _width]](val),
             )
 
-        random_normal[output_fn, target=target](
+        random_normal[target=target](
             output.shape(),
             mean,
             variance,
             seed_value.unsafe_ptr[DType.uint64](),
             ctx,
+            output_fn,
         )
 
 
@@ -722,23 +723,23 @@ struct RandomUniform:
         seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        @parameter
         @always_inline
         def output_fn[
             _width: SIMDSize,
             _rank: Int,
-        ](coords: IndexList[_rank], val: SIMD[dtype, _width]):
+        ](coords: IndexList[_rank], val: SIMD[dtype, _width]) {read output}:
             output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, _width]](val),
             )
 
-        random_uniform[output_fn, target=target](
+        random_uniform[target=target](
             output.shape(),
             lower_bound,
             upper_bound,
             seed_value.unsafe_ptr[DType.uint64](),
             ctx,
+            output_fn,
         )
 
 
@@ -1291,10 +1292,9 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
             )
 
         @always_inline
-        @parameter
         def output_fn[
             width: SIMDSize, alignment: Int
-        ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
+        ](idx: IndexList[3], val: SIMD[dtype, width]) {var output} -> None:
             output._lambda_store[width=width, element_alignment=alignment](
                 idx,
                 cast_saturating[out_dtype](val),
@@ -1311,13 +1311,13 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
         rope_ragged[
             interleaved=Self.interleaved,
             target=target,
-            output_fn=output_fn,
         ](
             x_tensor,
             row_offsets_tensor,
             start_tensor,
             freqs_cis_tensor,
             ctx,
+            output_fn,
         )
 
 
@@ -1360,10 +1360,9 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
             )
 
         @always_inline
-        @parameter
         def output_fn[
             width: SIMDSize, alignment: Int
-        ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
+        ](idx: IndexList[3], val: SIMD[dtype, width]) {var output} -> None:
             output._lambda_store[width=width, element_alignment=alignment](
                 idx,
                 rebind[SIMD[dtype, width]](val),
@@ -1382,13 +1381,13 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         rope_ragged[
             interleaved=Self.interleaved,
             target=target,
-            output_fn=output_fn,
         ](
             x_tensor,
             row_offsets_tensor,
             start_tensor,
             freqs_cis_tensor,
             ctx,
+            output_fn,
             position_ids=position_ids_tensor.as_unsafe_any_origin().as_immut(),
         )
 
@@ -3325,57 +3324,141 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         @parameter
         @always_inline
         def launch_gpu[DSTATE_VAL: Int]() raises:
-            comptime BLOCK_SIZE = 64
-            var num_p_blocks = ceildiv(head_dim, BLOCK_SIZE)
-            comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
-                dtype,
-                DSTATE_VAL,
-                x_tt.LayoutType,
-                dt_tt.LayoutType,
-                A_tt.LayoutType,
-                B_tt.LayoutType,
-                C_tt.LayoutType,
-                D_tt.LayoutType,
-                dt_bias_tt.LayoutType,
-                y_tt.LayoutType,
-                ssm_pool_tt.LayoutType,
-                query_start_loc_tt.LayoutType,
-                has_initial_state_tt.LayoutType,
-                cache_indices_tt.LayoutType,
-            ]
-            var compiled = ctx.compile_function[kernel]()
-            ctx.enqueue_function(
-                compiled,
-                nheads,
-                head_dim,
-                ngroups,
-                nheads_ngroups_ratio,
-                batch,
-                dt_softplus_int8,
-                x_tt,
-                dt_tt,
-                A_tt,
-                B_tt,
-                C_tt,
-                D_tt,
-                dt_bias_tt,
-                y_tt,
-                ssm_pool_tt,
-                query_start_loc_tt,
-                has_initial_state_tt,
-                cache_indices_tt,
-                x_strides,
-                dt_strides,
-                A_strides,
-                B_strides,
-                C_strides,
-                D_strides,
-                dt_bias_strides,
-                y_strides,
-                ssm_pool_strides,
-                grid_dim=(num_p_blocks, nheads, batch),
-                block_dim=(BLOCK_SIZE, 1, 1),
-            )
+            # NVIDIA B200 (sm_100) gets the cooperative DSTATE-split
+            # decode-occupancy variant (r7); every other device (AMD MI355
+            # gfx950, Hopper, Apple, ...) runs the portable v1
+            # one-thread-per-channel kernel. The split uses a `lane_group_sum`
+            # full-warp shuffle + 2D block that assume warp width 32, which is
+            # invalid on AMD's wavefront-64 (it failed 2/9 MI355 tests, why
+            # round-2 was reverted in 07c5e0b7533). The gate keeps AMD/non-B200
+            # byte-identical to main. Predicate is `== B200` (not `version ==
+            # "sm_100"`: B200's version string is "sm_100a"; the split was
+            # measured and validated on B200 only, so B100/B300 stay on v1 too).
+            # Gate on `ctx.default_device_info == B200` (the comptime device
+            # `GPUInfo` for the accelerator arch): the wrapper `target` is a
+            # `StaticString`, so `GPUInfo.from_target[target]()` is ill-typed
+            # (`from_target` wants a `!kgen.target`) and hard-errors the
+            # `builtin_kernels` build on every arch.
+            comptime use_dstate_split = ctx.default_device_info == B200
+
+            comptime if use_dstate_split:
+                # Cooperative DSTATE-split: DSTATE_SPLIT threads cooperate on
+                # each head_dim channel's DSTATE recurrence (lifts decode bs=1
+                # occupancy; v1 one-thread-per-channel was ~4% achieved occupancy
+                # on B200). The block holds CH_PER_BLOCK channels x DSTATE_SPLIT
+                # threads = 128 threads (4 warps). DSTATE_SPLIT must divide both
+                # DSTATE and 32 (warp) so each channel's lane group stays
+                # warp-aligned for the lane_group_sum reduction; it divides every
+                # dispatched DSTATE (16/64/128/256) cleanly.
+                # Sweep (decode-shape microbench, B200, bf16, dstate=128):
+                #   per-launch us @ bs=1: split1=46.8, split4=22.5, split8=16.6
+                #   (-64.6% vs split1). split8 wins at bs=1/16/32.
+                comptime DSTATE_SPLIT = 8
+                comptime BLOCK_THREADS = 128
+                comptime CH_PER_BLOCK = BLOCK_THREADS // DSTATE_SPLIT
+                var num_p_blocks = ceildiv(head_dim, CH_PER_BLOCK)
+                comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
+                    dtype,
+                    DSTATE_VAL,
+                    x_tt.LayoutType,
+                    dt_tt.LayoutType,
+                    A_tt.LayoutType,
+                    B_tt.LayoutType,
+                    C_tt.LayoutType,
+                    D_tt.LayoutType,
+                    dt_bias_tt.LayoutType,
+                    y_tt.LayoutType,
+                    ssm_pool_tt.LayoutType,
+                    query_start_loc_tt.LayoutType,
+                    has_initial_state_tt.LayoutType,
+                    cache_indices_tt.LayoutType,
+                    DSTATE_SPLIT,
+                ]
+                var compiled = ctx.compile_function[kernel]()
+                ctx.enqueue_function(
+                    compiled,
+                    nheads,
+                    head_dim,
+                    ngroups,
+                    nheads_ngroups_ratio,
+                    batch,
+                    dt_softplus_int8,
+                    x_tt,
+                    dt_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
+                    D_tt,
+                    dt_bias_tt,
+                    y_tt,
+                    ssm_pool_tt,
+                    query_start_loc_tt,
+                    has_initial_state_tt,
+                    cache_indices_tt,
+                    x_strides,
+                    dt_strides,
+                    A_strides,
+                    B_strides,
+                    C_strides,
+                    D_strides,
+                    dt_bias_strides,
+                    y_strides,
+                    ssm_pool_strides,
+                    grid_dim=(num_p_blocks, nheads, batch),
+                    block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1),
+                )
+            else:
+                comptime BLOCK_SIZE = 64
+                var num_p_blocks = ceildiv(head_dim, BLOCK_SIZE)
+                comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
+                    dtype,
+                    DSTATE_VAL,
+                    x_tt.LayoutType,
+                    dt_tt.LayoutType,
+                    A_tt.LayoutType,
+                    B_tt.LayoutType,
+                    C_tt.LayoutType,
+                    D_tt.LayoutType,
+                    dt_bias_tt.LayoutType,
+                    y_tt.LayoutType,
+                    ssm_pool_tt.LayoutType,
+                    query_start_loc_tt.LayoutType,
+                    has_initial_state_tt.LayoutType,
+                    cache_indices_tt.LayoutType,
+                ]
+                var compiled = ctx.compile_function[kernel]()
+                ctx.enqueue_function(
+                    compiled,
+                    nheads,
+                    head_dim,
+                    ngroups,
+                    nheads_ngroups_ratio,
+                    batch,
+                    dt_softplus_int8,
+                    x_tt,
+                    dt_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
+                    D_tt,
+                    dt_bias_tt,
+                    y_tt,
+                    ssm_pool_tt,
+                    query_start_loc_tt,
+                    has_initial_state_tt,
+                    cache_indices_tt,
+                    x_strides,
+                    dt_strides,
+                    A_strides,
+                    B_strides,
+                    C_strides,
+                    D_strides,
+                    dt_bias_strides,
+                    y_strides,
+                    ssm_pool_strides,
+                    grid_dim=(num_p_blocks, nheads, batch),
+                    block_dim=(BLOCK_SIZE, 1, 1),
+                )
 
         comptime if is_cpu[target]():
             if dstate == 256:
@@ -3741,7 +3824,7 @@ struct InplaceMemcpy[DstDevice: StaticString, SrcDevice: StaticString]:
             )
         elif is_cpu[Self.DstDevice]() and is_cpu[Self.SrcDevice]():
             # Host-to-host. Plain synchronous memcpy.
-            memcpy(
+            unsafe_memcpy(
                 dest=dst.unsafe_ptr(),
                 src=src.unsafe_ptr(),
                 count=count,

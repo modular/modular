@@ -94,6 +94,39 @@ class VisionEncoderCacheEntry:
     """Number of active requests referencing this entry."""
 
 
+@dataclass
+class VisionEncoderMetrics:
+    """Per-iteration vision encoder statistics for one batch.
+
+    Populated by :class:`VisionEncoderCache` during batch preparation and
+    surfaced by the scheduler in its per-iteration log so that vision
+    encoder cost is attributed separately from the language model forward
+    pass.
+    """
+
+    num_images_total: int = 0
+    """Images referenced by vision requests in this batch (hits + misses)."""
+
+    num_images_encoded: int = 0
+    """Images the vision encoder actually ran on this batch (cache misses)."""
+
+    num_images_cached: int = 0
+    """Images served from the vision encoder cache this batch (cache hits)."""
+
+    num_patches_encoded: int = 0
+    """Input image patches fed to the vision encoder this batch."""
+
+    num_tokens_encoded: int = 0
+    """Merged vision tokens produced by the encoder this batch."""
+
+    @property
+    def cache_hit_rate(self) -> float:
+        """Fraction of images served from cache (0.0 when no images)."""
+        if self.num_images_total == 0:
+            return 0.0
+        return self.num_images_cached / self.num_images_total
+
+
 class VisionEncoderCache(Generic[VLMContextType]):
     """Reference-counted LRU cache for vision encoder outputs.
 
@@ -120,6 +153,12 @@ class VisionEncoderCache(Generic[VLMContextType]):
         self._cache: OrderedDict[int, VisionEncoderCacheEntry] = OrderedDict()
         self._max_entries = max_entries
         self._request_refs: defaultdict[RequestID, set[int]] = defaultdict(set)
+
+        # Per-batch vision encoder metrics, populated during batch
+        # preparation and drained by the scheduler once per iteration via
+        # ``pop_metrics``. ``None`` when the most recent batch did no vision
+        # work (e.g. a text-only or decode step).
+        self._batch_metrics: VisionEncoderMetrics | None = None
 
     @traced
     def lookup(self, image_hash: int) -> VisionEncoderCacheEntry | None:
@@ -230,12 +269,16 @@ class VisionEncoderCache(Generic[VLMContextType]):
         """
         uncached_contexts: list[VLMContextType] = []
 
+        metrics = VisionEncoderMetrics()
+
         for ctx in context_batch:
             if not getattr(ctx, "needs_vision_encoding", False):
                 continue
 
             if not self.enabled:
                 uncached_contexts.append(ctx)
+                for img in ctx.images:
+                    self._record_encoded_image(metrics, img)
                 continue
 
             self._ensure_image_hashes(ctx)
@@ -245,10 +288,13 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
             for img in ctx.images:
                 assert img.image_hash is not None
+                metrics.num_images_total += 1
                 if self.lookup(img.image_hash) is not None:
                     cached_in_ctx.append(img.image_hash)
+                    metrics.num_images_cached += 1
                 else:
                     has_uncached = True
+                    self._record_encoded_image(metrics, img, count_total=False)
 
             if not has_uncached:
                 for h in cached_in_ctx:
@@ -258,7 +304,42 @@ class VisionEncoderCache(Generic[VLMContextType]):
                     self.acquire(ctx.request_id, h)
                 uncached_contexts.append(ctx)
 
+        self._batch_metrics = metrics if metrics.num_images_total > 0 else None
         return uncached_contexts
+
+    @staticmethod
+    def _record_encoded_image(
+        metrics: VisionEncoderMetrics,
+        img: object,
+        count_total: bool = True,
+    ) -> None:
+        """Tally one cache-miss image (encoder runs on it) into ``metrics``.
+
+        ``count_total`` is False when the caller already incremented
+        ``num_images_total`` (the enabled-cache path counts every image up
+        front to distinguish hits from misses).
+        """
+        if count_total:
+            metrics.num_images_total += 1
+        metrics.num_images_encoded += 1
+        pixel_values = getattr(img, "pixel_values", None)
+        if pixel_values is not None and getattr(pixel_values, "shape", None):
+            metrics.num_patches_encoded += int(pixel_values.shape[0])
+        start_idx = getattr(img, "start_idx", None)
+        end_idx = getattr(img, "end_idx", None)
+        if start_idx is not None and end_idx is not None:
+            metrics.num_tokens_encoded += int(end_idx) - int(start_idx)
+
+    def pop_metrics(self) -> VisionEncoderMetrics | None:
+        """Return the metrics for the most recent batch and reset them.
+
+        Returns ``None`` when the most recent batch preparation did no
+        vision encoding (text-only or decode step). Intended to be called
+        once per scheduler iteration.
+        """
+        metrics = self._batch_metrics
+        self._batch_metrics = None
+        return metrics
 
     @traced
     def _cache_and_split(

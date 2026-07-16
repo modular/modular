@@ -36,11 +36,14 @@ from std.logger import Logger
 from std.utils.index import Index, IndexList
 
 from .dispatch import (
-    DISPATCH_HIT,
     matmul_dispatch_sm100,
     sm100_heuristic_and_outliers_dispatch,
-    try_small_MN_gemms_bf16,
+    small_MN_gemms,
     _vendor_blas_matmul_sm100,
+)
+from .tuning_configs import (
+    TuningConfigSmallMNGemms,
+    _get_tuning_list_small_MN_gemms_bf16,
 )
 
 comptime logger = Logger()
@@ -79,6 +82,14 @@ def fused_bias_residual_matmul_dispatch_sm100[
     ), "a_type and b_type must be bfloat16 and must be the same"
     comptime assert c_type in (DType.bfloat16,), "c_type must be bfloat16"
 
+    # Zero-sized output (e.g. an ``(0, N)`` GEMM from the fused Linear layers
+    # of a diffusion VAE encoder running on the text-to-image ``(0, 0, 3)``
+    # placeholder image): nothing to compute.  The generic ``matmul`` entry
+    # guards this identically. The output buffer is pre-allocated zero-element
+    # by the caller, so an early return produces the correct empty output.
+    if m == 0 or Int(c.dim[1]()) == 0:
+        return
+
     # The bias/residual as a store epilogue: `c = (a @ b) + epilogue[coords]`,
     # broadcasting row 0 for a 1D bias. Every non-TMA kernel (GEMV, small-MN,
     # cuBLAS) applies this exactly once.
@@ -99,12 +110,28 @@ def fused_bias_residual_matmul_dispatch_sm100[
             coords, rebind[SIMD[c.dtype, _width]](val + resid)
         )
 
-    var small_mn_status = try_small_MN_gemms_bf16[
-        elementwise_lambda_fn=bias_residual_elementwise_lambda,
-        pdl_level=pdl_level,
-    ](c, a, b, ctx)
-    if small_mn_status == DISPATCH_HIT:
-        return
+    comptime small_MN_gemms_table = Table(
+        _get_tuning_list_small_MN_gemms_bf16(), "small_MN_gemms_configs"
+    )
+
+    @always_inline
+    def small_MN_gemms_rule(x: TuningConfigSmallMNGemms) {} -> Bool:
+        return x.K == static_K and x.N == static_N
+
+    comptime small_MN_gemms_configs = small_MN_gemms_table.find(
+        rule=small_MN_gemms_rule
+    )
+
+    comptime if small_MN_gemms_configs:
+        comptime for config in small_MN_gemms_configs:
+            if m >= config.M and m < config.M_end:
+                logger.info("Dispatching to small_MN_gemms: ", config)
+                small_MN_gemms[
+                    config=config,
+                    elementwise_lambda_fn=bias_residual_elementwise_lambda,
+                    pdl_level=pdl_level,
+                ](c, a, b, ctx)
+                return
 
     comptime low_perf_shapes = [
         Index(2112, 14336),

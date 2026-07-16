@@ -8874,6 +8874,23 @@ class TestLazyGCModelCompilation:
     selecting lazy (default) vs the opt-in precompile sweep.
     """
 
+    @pytest.fixture(autouse=True)
+    def _isolate_from_session_warm(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Run these decision-logic tests free of any session-wide warm cache.
+
+        The shared conftest points ``MODULAR_DERIVED_PATH`` at a build-time warm
+        dir and this target sets ``MODULAR_EAGER_WARM_ADOPT_ASSERTED=1``, so the
+        import-time precompile force-loads it. This class instead unit-tests the
+        lazy/stamp/per-target decision logic against a mocked cache dir, so an
+        always-adoptable process-wide manifest would short-circuit the very path
+        under test. Clear both; tests that need a manifest set their own env (or
+        patch ``read_manifest``) in-body, after this fixture.
+        """
+        monkeypatch.delenv("MODULAR_DERIVED_PATH", raising=False)
+        monkeypatch.delenv("MODULAR_EAGER_WARM_ADOPT_ASSERTED", raising=False)
+
     def test_matmul_model_compiles_once_and_reuses(self) -> None:
         """A second call for the same (device, dtype) returns the cached model."""
         from max._interpreter_ops import matmul_gc
@@ -9086,3 +9103,263 @@ class TestLazyGCModelCompilation:
         sig = gc_compile._context_signature()
         assert sig == gc_compile._context_signature()
         assert "accelerators=" in sig and "cpu=" in sig
+
+    def test_manifest_roundtrip_and_adoptable(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from max._interpreter_ops import gc_compile
+
+        monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
+        monkeypatch.setenv("MODULAR_EAGER_WARM_ADOPT_ASSERTED", "1")
+        monkeypatch.setattr(gc_compile, "accelerator_count", lambda: 2)
+        monkeypatch.setattr(
+            gc_compile, "accelerator_architecture_name", lambda: "sm_100a"
+        )
+        envelope = {
+            "host_arch": gc_compile.platform.machine(),
+            "gpu": {"arch": "sm_100a"},
+            "device_count": 2,
+            "toolchain": {"mode": "asserted"},
+        }
+        entries = [
+            {
+                "family": "matmul",
+                "device_class": "cpu",
+                "mef": "matmul_cpu.mef",
+            },
+            {
+                "family": "matmul",
+                "device_class": "gpu:0",
+                "mef": "matmul_slot_0.mef",
+            },
+        ]
+        assert gc_compile.write_manifest(envelope, entries)
+        m = gc_compile.read_manifest()
+        assert m is not None
+        assert gc_compile.manifest_adoptable(m)
+        assert (
+            gc_compile.manifest_entry_path(m, "matmul", "gpu:0")
+            == tmp_path / "matmul_slot_0.mef"
+        )
+        # An unknown (family, device_class) pair resolves to None.
+        assert gc_compile.manifest_entry_path(m, "unary", "cpu") is None
+
+    def test_manifest_not_adoptable_without_optin(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from max._interpreter_ops import gc_compile
+
+        monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
+        monkeypatch.delenv("MODULAR_EAGER_WARM_ADOPT_ASSERTED", raising=False)
+        monkeypatch.setattr(gc_compile, "accelerator_count", lambda: 2)
+        monkeypatch.setattr(
+            gc_compile, "accelerator_architecture_name", lambda: "sm_100a"
+        )
+        gc_compile.write_manifest(
+            {
+                "gpu": {"arch": "sm_100a"},
+                "device_count": 2,
+                "toolchain": {"mode": "asserted"},
+            },
+            [],
+        )
+        manifest = gc_compile.read_manifest()
+        assert manifest is not None
+        assert not gc_compile.manifest_adoptable(manifest)
+
+    def test_manifest_device_count_is_adoption_ceiling(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Per-slot MEFs make device_count a ceiling, not an equality: a warm
+        adopts iff it has at least as many slots as this box needs (which
+        force-loads slots 0..k-1); fewer means missing slots, so it can't."""
+        from max._interpreter_ops import gc_compile
+
+        monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
+        monkeypatch.setenv("MODULAR_EAGER_WARM_ADOPT_ASSERTED", "1")
+        monkeypatch.setattr(gc_compile, "accelerator_count", lambda: 4)
+        monkeypatch.setattr(
+            gc_compile, "accelerator_architecture_name", lambda: "sm_100a"
+        )
+
+        def write(device_count: int) -> dict[str, object]:
+            gc_compile.write_manifest(
+                {
+                    "host_arch": gc_compile.platform.machine(),
+                    "gpu": {"arch": "sm_100a"},
+                    "device_count": device_count,
+                    "toolchain": {"mode": "asserted"},
+                },
+                [],
+            )
+            manifest = gc_compile.read_manifest()
+            assert manifest is not None
+            return manifest
+
+        # Warmed 2 < this box's 4: slots 2,3 were never compiled -> reject.
+        assert not gc_compile.manifest_adoptable(write(2))
+        # Warmed 8 >= this box's 4: force-loads slots 0..3, extras unused -> adopt.
+        assert gc_compile.manifest_adoptable(write(8))
+
+    def test_manifest_not_adoptable_on_host_arch_mismatch(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from max._interpreter_ops import gc_compile
+
+        monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
+        monkeypatch.setenv("MODULAR_EAGER_WARM_ADOPT_ASSERTED", "1")
+        monkeypatch.setattr(gc_compile, "accelerator_count", lambda: 2)
+        monkeypatch.setattr(
+            gc_compile, "accelerator_architecture_name", lambda: "sm_100a"
+        )
+        # Count + GPU arch match, opt-in on, only the host arch differs (the
+        # per-slot CPU MEF embeds host-ELF kernels, so a foreign host can't
+        # adopt).
+        gc_compile.write_manifest(
+            {
+                "host_arch": "not-this-host",
+                "gpu": {"arch": "sm_100a"},
+                "device_count": 2,
+                "toolchain": {"mode": "asserted"},
+            },
+            [],
+        )
+        manifest = gc_compile.read_manifest()
+        assert manifest is not None
+        assert not gc_compile.manifest_adoptable(manifest)
+
+    def test_cpu_only_manifest_adoptable_when_no_accelerator(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A CPU-only manifest (no ``gpu`` key) adopts on a box with no
+        accelerator, there is no GPU slot to mismatch."""
+        from max._interpreter_ops import gc_compile
+
+        monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
+        monkeypatch.setenv("MODULAR_EAGER_WARM_ADOPT_ASSERTED", "1")
+        monkeypatch.setattr(gc_compile, "accelerator_count", lambda: 0)
+        gc_compile.write_manifest(
+            {
+                "host_arch": gc_compile.platform.machine(),
+                "cpu_target": "triple=x86_64-unknown-linux-gnu;cpu=x86-64-v3",
+                "toolchain": {"mode": "asserted"},
+            },
+            [],
+        )
+        manifest = gc_compile.read_manifest()
+        assert manifest is not None
+        assert gc_compile.manifest_adoptable(manifest)
+
+    def test_cpu_only_manifest_not_adoptable_with_accelerator(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A CPU-only manifest is rejected on a box that has an accelerator: its
+        GPU slots were never warmed, so a GPU box must not adopt it."""
+        from max._interpreter_ops import gc_compile
+
+        monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
+        monkeypatch.setenv("MODULAR_EAGER_WARM_ADOPT_ASSERTED", "1")
+        monkeypatch.setattr(gc_compile, "accelerator_count", lambda: 2)
+        # The CPU-only branch returns before consulting
+        # accelerator_architecture_name; stub it anyway so a stray call can't
+        # raise on a CPU host.
+        monkeypatch.setattr(
+            gc_compile, "accelerator_architecture_name", lambda: "sm_100a"
+        )
+        gc_compile.write_manifest(
+            {
+                "host_arch": gc_compile.platform.machine(),
+                "cpu_target": "triple=x86_64-unknown-linux-gnu;cpu=x86-64-v3",
+                "toolchain": {"mode": "asserted"},
+            },
+            [],
+        )
+        manifest = gc_compile.read_manifest()
+        assert manifest is not None
+        assert not gc_compile.manifest_adoptable(manifest)
+
+    def test_read_manifest_absent_is_none(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from max._interpreter_ops import gc_compile
+
+        monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
+        assert gc_compile.read_manifest() is None
+
+    def test_matmul_model_prefers_manifest_over_stamp(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A lazy miss with an adoptable manifest force-loads instead of
+        compiling the batched sweep."""
+        from max._interpreter_ops import gc_compile, matmul_gc
+
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
+        monkeypatch.setattr(matmul_gc, "_MATMUL_MODEL_CACHE", {})
+        monkeypatch.setattr(matmul_gc, "_swept", False)
+        calls: list[str] = []
+
+        def fake_adopt(manifest: object) -> bool:
+            calls.append("manifest")
+            return True
+
+        monkeypatch.setattr(gc_compile, "read_manifest", lambda: {"x": 1})
+        monkeypatch.setattr(gc_compile, "manifest_adoptable", lambda m: True)
+        monkeypatch.setattr(
+            matmul_gc, "_adopt_matmul_from_manifest", fake_adopt
+        )
+        monkeypatch.setattr(
+            matmul_gc,
+            "compile_matmul_sweep",
+            lambda: calls.append("stamp_sweep"),
+        )
+        monkeypatch.setattr(
+            matmul_gc,
+            "_compile_matmul_target",
+            lambda t: calls.append("per_target"),
+        )
+        matmul_gc.matmul_model(CPU(), DType.float32)
+        # fake_adopt returns True without populating the cache, so matmul_model
+        # falls through to _compile_matmul_target; the point is that the
+        # key-based stamp sweep is never tried.
+        assert "manifest" in calls
+        assert "stamp_sweep" not in calls
+
+    def test_unary_model_prefers_manifest_over_stamp(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A lazy miss with an adoptable manifest force-loads instead of
+        compiling the batched sweep (unary mirror of the matmul case)."""
+        from max._interpreter_ops import gc_compile
+        from max._interpreter_ops import unary_elementwise_gc as unary_gc
+
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
+        monkeypatch.setattr(unary_gc, "_UNARY_MODEL_CACHE", {})
+        monkeypatch.setattr(unary_gc, "_swept", False)
+        calls: list[str] = []
+
+        def fake_adopt(manifest: object) -> bool:
+            calls.append("manifest")
+            return True
+
+        monkeypatch.setattr(gc_compile, "read_manifest", lambda: {"x": 1})
+        monkeypatch.setattr(gc_compile, "manifest_adoptable", lambda m: True)
+        monkeypatch.setattr(unary_gc, "_adopt_unary_from_manifest", fake_adopt)
+        monkeypatch.setattr(
+            unary_gc,
+            "compile_unary_sweep",
+            lambda: calls.append("stamp_sweep"),
+        )
+        monkeypatch.setattr(
+            unary_gc,
+            "_compile_unary_target",
+            lambda o, d, t: calls.append("per_target"),
+        )
+        # Any op supported on CPU float32 reaches the manifest branch.
+        op_type = next(iter(unary_gc._UNARY_OPS))
+        unary_gc.unary_model(op_type, CPU(), DType.float32)
+        assert "manifest" in calls
+        assert "stamp_sweep" not in calls

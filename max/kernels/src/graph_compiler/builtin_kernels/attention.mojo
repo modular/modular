@@ -2742,6 +2742,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
                 kv_input_fn=kv_input_fn,
                 target=target,
                 sparse_mla=True,
+                sparse_indices_stride=indices_stride,
             ](
                 output.to_tile_tensor[DType.int64](),
                 q.to_tile_tensor[DType.int64](),

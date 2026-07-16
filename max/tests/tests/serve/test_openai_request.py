@@ -12,8 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import json
+
+from max.pipelines.context.exceptions import InputError
 from max.serve.config import Settings
-from max.serve.router.openai_routes import openai_parse_chat_completion_request
+from max.serve.router.openai_routes import (
+    _create_response_format,
+    openai_parse_chat_completion_request,
+)
 
 """
 It is unclear why the type ignore for CreateChatCompletionRequest is necessary.
@@ -581,6 +587,57 @@ def test_openai_response_format_accepts_boolean_schema(schema: bool) -> None:
     assert response_format["json_schema"]["schema"] is schema
 
 
+def test_create_response_format_probes_normalized_schema() -> None:
+    """``_create_response_format`` validates the *normalized* schema against
+    the active backend (via the injected validator), so an uncompilable schema
+    is a 400 here rather than a worker crash later."""
+    probed: list[str] = []
+
+    class _RecordingValidator:
+        """GrammarValidator that records the schema it is asked to check."""
+
+        def check_tool_grammar(self, grammar: str) -> None:
+            return None
+
+        def check_json_schema(self, json_schema: str) -> None:
+            probed.append(json_schema)
+
+    class _RaisingValidator:
+        """GrammarValidator that rejects everything, as an uncompilable
+        schema would."""
+
+        def check_tool_grammar(self, grammar: str) -> None:
+            raise InputError("cannot compile")
+
+        def check_json_schema(self, json_schema: str) -> None:
+            raise InputError("cannot compile")
+
+    # A schema with no root ``type`` — normalization defaults it to "object",
+    # and that normalized form is what the validator (and worker) must compile.
+    response_format = cast(
+        Any,
+        {
+            "type": "json_schema",
+            "json_schema": {"name": "t", "schema": {"properties": {}}},
+        },
+    )
+
+    _create_response_format(
+        response_format,
+        enable_response_format_schema=True,
+        grammar_validator=_RecordingValidator(),
+    )
+    assert len(probed) == 1
+    assert json.loads(probed[0])["type"] == "object"
+
+    with pytest.raises(InputError):
+        _create_response_format(
+            response_format,
+            enable_response_format_schema=True,
+            grammar_validator=_RaisingValidator(),
+        )
+
+
 def test_openai_chat_message_validates_structure() -> None:
     """Regression for SERVSYS-1257: ``messages`` should not be typed as
     ``list[dict[str, Any]]`` (the ``Any`` clobbered OpenAI SDK validation).
@@ -1026,6 +1083,30 @@ def test_openai_tool_function_name_charset_is_per_model() -> None:
             _validate_tool_function_name(bad, minimax_re)
 
 
+def test_openai_tool_function_name_length_limit() -> None:
+    """Tool-name length cap is 1024 chars; empty and invalid charsets rejected."""
+    from max.pipelines.context.exceptions import InputError
+    from max.serve.router.openai_routes import (
+        _MAX_TOOL_NAME_LEN,
+        _validate_tool_function_name,
+    )
+
+    assert _MAX_TOOL_NAME_LEN == 1024
+
+    # A name exactly at the cap is accepted.
+    _validate_tool_function_name("a" * _MAX_TOOL_NAME_LEN)
+
+    # One character past the cap is rejected.
+    with pytest.raises(InputError):
+        _validate_tool_function_name("a" * (_MAX_TOOL_NAME_LEN + 1))
+
+    # Empty and invalid-character names are still rejected regardless of length.
+    with pytest.raises(InputError):
+        _validate_tool_function_name("")
+    with pytest.raises(InputError):
+        _validate_tool_function_name("has space")
+
+
 async def test_openai_rejects_invalid_json_tool_call_arguments() -> None:
     """Assistant ``tool_calls.arguments`` that isn't valid JSON -> 400 (verifier 16_12)."""
     from max.pipelines.context.exceptions import InputError
@@ -1303,3 +1384,114 @@ def test_reasoning_split(payload: dict[str, Any], expected: bool) -> None:
     }
     request = CreateChatCompletionRequest.model_validate(body)
     assert request.reasoning_split is expected
+
+
+def test_merge_tool_call_deltas_coalesces_same_index_in_one_chunk() -> None:
+    """A name/id delta and its first args delta in one chunk merge to one entry.
+
+    Regression for CENG-768: with ``STREAM_MIN_CHUNK_TOKENS`` batching a single
+    ``parse_delta`` return carries both the call-start and the opening args for
+    the same call. Emitting them as two ``tool_calls`` entries that share an
+    index breaks strict OpenAI clients; the router must coalesce them into one
+    first-frame entry ``{index, id, type, function: {name, arguments}}``.
+    """
+    from max.pipelines.modeling.types import ParsedToolCallDelta
+    from max.serve.router.openai_routes import _merge_tool_call_deltas
+
+    merged = _merge_tool_call_deltas(
+        [
+            ParsedToolCallDelta(index=0, id="call_abc", name="save_config"),
+            ParsedToolCallDelta(index=0, arguments="{"),
+        ]
+    )
+    assert len(merged) == 1
+    entry = merged[0]
+    assert entry.index == 0
+    assert entry.id == "call_abc"
+    assert entry.type == "function"
+    assert entry.function is not None
+    assert entry.function.name == "save_config"
+    assert entry.function.arguments == "{"
+
+
+def test_merge_tool_call_deltas_two_calls_one_chunk_one_entry_each() -> None:
+    """Two calls firing in one chunk yield one entry each, ordered by index."""
+    from max.pipelines.modeling.types import ParsedToolCallDelta
+    from max.serve.router.openai_routes import _merge_tool_call_deltas
+
+    merged = _merge_tool_call_deltas(
+        [
+            ParsedToolCallDelta(index=0, arguments=', "days": 2}'),
+            ParsedToolCallDelta(index=1, id="call_xyz", name="get_time"),
+            ParsedToolCallDelta(index=1, arguments='{"tz": "UTC"}'),
+        ]
+    )
+    assert [e.index for e in merged] == [0, 1]
+    # index 0 is a continuation: args only, no id/name/type.
+    assert merged[0].id is None
+    assert merged[0].type is None
+    assert merged[0].function is not None
+    assert merged[0].function.name is None
+    assert merged[0].function.arguments == ', "days": 2}'
+    # index 1 is a first frame: id + type + name + concatenated args.
+    assert merged[1].id == "call_xyz"
+    assert merged[1].type == "function"
+    assert merged[1].function is not None
+    assert merged[1].function.name == "get_time"
+    assert merged[1].function.arguments == '{"tz": "UTC"}'
+
+
+def test_merge_tool_call_deltas_first_frame_has_empty_args_string() -> None:
+    """A first frame with no args in its chunk still carries ``arguments == ""``.
+
+    Matches OpenAI's first-frame shape so a client that reads
+    ``function.arguments`` unconditionally does not see ``null``.
+    """
+    from max.pipelines.modeling.types import ParsedToolCallDelta
+    from max.serve.router.openai_routes import _merge_tool_call_deltas
+
+    merged = _merge_tool_call_deltas(
+        [ParsedToolCallDelta(index=0, id="call_1", name="ping")]
+    )
+    assert len(merged) == 1
+    assert merged[0].function is not None
+    assert merged[0].function.arguments == ""
+
+
+def test_merge_tool_call_deltas_ignores_content_only_deltas() -> None:
+    """Content-only deltas carry no tool call and produce no entry."""
+    from max.pipelines.modeling.types import ParsedToolCallDelta
+    from max.serve.router.openai_routes import _merge_tool_call_deltas
+
+    assert (
+        _merge_tool_call_deltas(
+            [ParsedToolCallDelta(index=0, content="hello ")]
+        )
+        == []
+    )
+
+
+def test_merge_tool_call_deltas_empty_string_arg_is_present_not_absent() -> (
+    None
+):
+    """An empty-string ``arguments`` is present-but-empty, not absent.
+
+    Pins the ``is not None`` presence semantics: a lone ``arguments=""`` delta
+    still yields one continuation entry (args-only, no id/type/name) rather
+    than being dropped or promoted to a first frame. ``parse_delta`` never
+    emits empty-string fields today, so this only fixes the edge's intent; it
+    must stay behavior-identical on real input.
+    """
+    from max.pipelines.modeling.types import ParsedToolCallDelta
+    from max.serve.router.openai_routes import _merge_tool_call_deltas
+
+    merged = _merge_tool_call_deltas(
+        [ParsedToolCallDelta(index=0, arguments="")]
+    )
+    assert len(merged) == 1
+    assert merged[0].index == 0
+    assert merged[0].id is None
+    assert merged[0].type is None
+    assert merged[0].function is not None
+    assert merged[0].function.name is None
+    assert merged[0].function.arguments == ""

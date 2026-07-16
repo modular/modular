@@ -885,3 +885,37 @@ class TestDGCTaskDisambiguation:
                     arch=arch, max_batch_size=plan.max_batch_size
                 )
             assert config.runtime.device_graph_capture is True
+
+
+# ---------------------------------------------------------------------------
+# Category K: Chat Template Wiring Through retrieve_tokenizer()
+# ---------------------------------------------------------------------------
+
+
+class TestChatTemplateWiring:
+    """``PipelineConfig.model.chat_template`` (a ``Path``) must reach the
+    tokenizer.
+
+    Regression coverage for the ``registry.py`` call sites that read
+    ``pipeline_config.model.chat_template`` and pass it through
+    ``_retrieve_chat_template()`` when building the tokenizer.
+    """
+
+    @prepare_registry
+    def test_chat_template_path_reaches_tokenizer(self) -> None:
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
+            )
+            template_file = Path(tmpdir) / "custom_template.jinja"
+            template_file.write_text("{{ messages }}")
+            config = _make_pipeline_config(tmpdir, chat_template=template_file)
+
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+                PIPELINE_REGISTRY.retrieve_tokenizer(config)
+
+        assert DummyTextTokenizer.init_kwargs["chat_template"] == (
+            "{{ messages }}"
+        )

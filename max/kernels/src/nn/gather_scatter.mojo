@@ -16,19 +16,20 @@ from std.math import align_down, ceildiv, iota
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target
 
-from std.algorithm import elementwise, parallel_memcpy, sync_parallelize
+from std.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
 from std.algorithm.functional import tile
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
 from layout import (
     Coord,
     Idx,
+    PointerStorage,
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
     row_major,
 )
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from extensibility import ManagedTensorSlice
@@ -329,7 +330,14 @@ def gather[
         comptime assert indices_coords.flat_rank == indices.flat_rank
         comptime assert input_coords.flat_rank == input.flat_rank
 
-        comptime if prefetch_offset > 0:
+        # `ptr_at_offset` (the software index-prefetch below) is only defined
+        # for `PointerStorage`-backed tiles; skip the prefetch hint for other
+        # storages (e.g. `DevicePointerStorage`). Correctness is unaffected.
+        comptime if (
+            prefetch_offset > 0
+            and indices.Storage == PointerStorage[element_width=1]
+            and input.Storage == PointerStorage[element_width=1]
+        ):
             var indices_ptr = indices.ptr_at_offset(indices_coords)
             var indices_remaining = (
                 Int(end_indices_ptr) - Int(indices_ptr)
@@ -781,7 +789,7 @@ def scatter_nd_generator[
             )
 
         comptime if is_cpu[target]():
-            memcpy(
+            unsafe_memcpy(
                 dest=output_flat.ptr,
                 src=data_flat.ptr,
                 count=output_flat.num_elements(),
@@ -1256,8 +1264,8 @@ def scatter_elements[
 
     var axis = _axis if _axis >= 0 else _axis + rank
 
-    # Do serial or parallel memcpy depending on output size.
-    parallel_memcpy(
+    # Do serial or parallel unsafe_memcpy depending on output size.
+    unsafe_parallel_memcpy(
         dest=output.unsafe_ptr(), src=input.unsafe_ptr(), count=output.size()
     )
 

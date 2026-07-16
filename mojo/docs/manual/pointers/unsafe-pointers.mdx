@@ -31,7 +31,7 @@ value pointed to by a pointer is sometimes called a *pointee*.
 # Allocate memory to hold a value
 var ptr = alloc[Int](1)
 # Initialize the allocated memory
-ptr.init_pointee_copy(100)
+ptr.unsafe_write(100)
 ```
 
 <figure>
@@ -91,9 +91,9 @@ or point to a memory location:
   keyword argument.
 
   ```mojo
-  ptr.init_pointee_copy(value)
+  ptr.unsafe_write(copy=value)
   # or
-  ptr.init_pointee_move(value^)
+  ptr.unsafe_write(value^)
   # or
   ptr = UnsafePointer(to=value)
   ```
@@ -143,20 +143,11 @@ not initialized.
 ### Initializing the pointee
 
 To initialize allocated memory, `UnsafePointer` provides the
-[`init_pointee_copy()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#init_pointee_copy)
-and
-[`init_pointee_move()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#init_pointee_move)
-methods. For example:
+[`unsafe_write()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_write)
+method, which moves a value into the pointer's memory location:
 
 ```mojo no-test
-ptr.init_pointee_copy(my_value)
-```
-
-To move a value into the pointer's memory location, use
-`init_pointee_move()`:
-
-```mojo no-test
-str_ptr.init_pointee_move(my_string^)
+str_ptr.unsafe_write(my_string^)
 ```
 
 Note that to move the value, you usually need to add the transfer sigil
@@ -165,7 +156,14 @@ type](/docs/manual/traits#register-passable) (like `Int`) or a
 newly-constructed, "owned" value:
 
 ```mojo
-str_ptr.init_pointee_move("Owned string")
+str_ptr.unsafe_write("Owned string")
+```
+
+To copy a value into the pointer's memory location instead of moving it, pass
+it as the `copy` keyword argument:
+
+```mojo no-test
+ptr.unsafe_write(copy=my_value)
 ```
 
 Alternately, you can get a pointer to an existing value by calling the
@@ -215,7 +213,7 @@ constructor or copy constructor).
 ```mojo
 var str_ptr = alloc[String](1)
 # str_ptr[] = "Testing" # Undefined behavior!
-str_ptr.init_pointee_move("Testing")
+str_ptr.unsafe_write("Testing")
 str_ptr[] += " pointers" # Works now
 ```
 
@@ -228,11 +226,11 @@ consuming move. It invokes `__init__(take=)` on the destination value. It leaves
 the memory location uninitialized.
 
 The
-[`destroy_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#destroy_pointee)
+[`unsafe_deinit_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_deinit)
 method calls the destructor on the pointee, and leaves the memory location
 pointed to by `ptr` uninitialized.
 
-Both `take_pointee()` and `destroy_pointee()` require that the pointer is
+Both `take_pointee()` and `unsafe_deinit_pointee()` require that the pointer is
 non-null, and the memory location contains a valid, initialized value of the
 pointee's type; otherwise the function results in undefined behavior.
 
@@ -255,7 +253,7 @@ Calling [`free()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#free) on a
 pointer frees the memory allocated by the pointer. It doesn't call the
 destructors on any values stored in the memory—you need to do that explicitly
 (for example, using
-[`destroy_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#destroy_pointee)
+[`unsafe_deinit_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_deinit)
 or one of the other functions described in
 [Destroying or removing values](#destroying-or-removing-values)).
 
@@ -304,7 +302,7 @@ values, and initializes them all to zero.
 ```mojo
 var float_ptr = alloc[Float64](6)
 for offset in range(6):
-    (float_ptr+offset).init_pointee_copy(0.0)
+    (float_ptr+offset).unsafe_write(0.0)
 ```
 
 Once the values are initialized, you can access them using subscript syntax:

@@ -37,6 +37,7 @@ from layout import (
     row_major,
     RuntimeLayout,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     UNKNOWN_VALUE,
 )
@@ -1215,9 +1216,7 @@ def grouped_matmul[
     with usage_stats_buf.map_to_host() as host:
         host[0] = UInt32(max_num_tokens_per_expert)
         host[1] = UInt32(num_active_experts)
-    var expert_usage_stats = TileTensor[DType.uint32](
-        usage_stats_buf, row_major(Coord(2))
-    )
+    var expert_usage_stats = TileTensor(usage_stats_buf, row_major(Coord(2)))
     grouped_matmul[elementwise_lambda_fn=elementwise_lambda_fn](
         c,
         a,
@@ -1332,20 +1331,47 @@ def grouped_matmul_rowwise_scaled_fp8_kernel[
     BScalesLayout: TensorLayout,
     AOffsetsLayout: TensorLayout,
     ExpertIdsLayout: TensorLayout,
+    c_storage: TensorStorage,
+    a_storage: TensorStorage,
+    b_storage: TensorStorage,
+    a_scales_storage: TensorStorage,
+    b_scales_storage: TensorStorage,
+    a_offsets_storage: TensorStorage,
+    expert_ids_storage: TensorStorage,
     *,
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],
-    a: TileTensor[mut=False, a_type, ALayout, MutAnyOrigin],
-    b: TileTensor[mut=False, b_type, BLayout, MutAnyOrigin],
-    a_scales: TileTensor[mut=False, a_scales_type, AScalesLayout, MutAnyOrigin],
-    b_scales: TileTensor[mut=False, b_scales_type, BScalesLayout, MutAnyOrigin],
+    c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin, Storage=c_storage],
+    a: TileTensor[mut=False, a_type, ALayout, MutAnyOrigin, Storage=a_storage],
+    b: TileTensor[mut=False, b_type, BLayout, MutAnyOrigin, Storage=b_storage],
+    a_scales: TileTensor[
+        mut=False,
+        a_scales_type,
+        AScalesLayout,
+        MutAnyOrigin,
+        Storage=a_scales_storage,
+    ],
+    b_scales: TileTensor[
+        mut=False,
+        b_scales_type,
+        BScalesLayout,
+        MutAnyOrigin,
+        Storage=b_scales_storage,
+    ],
     a_offsets: TileTensor[
-        mut=False, DType.uint32, AOffsetsLayout, MutAnyOrigin
+        mut=False,
+        DType.uint32,
+        AOffsetsLayout,
+        MutAnyOrigin,
+        Storage=a_offsets_storage,
     ],
     expert_ids: TileTensor[
-        mut=False, DType.int32, ExpertIdsLayout, MutAnyOrigin
+        mut=False,
+        DType.int32,
+        ExpertIdsLayout,
+        MutAnyOrigin,
+        Storage=expert_ids_storage,
     ],
 ):
     comptime assert transpose_b, "Only support transposed B (B is [E, N, K])."
@@ -1366,10 +1392,10 @@ def grouped_matmul_rowwise_scaled_fp8_kernel[
     var N = Int(b.dim[1]())
     var K = Int(b.dim[2]())
 
-    var a_start_row = a_offsets[block_idx.z]
+    var a_start_row = rebind[Scalar[DType.uint32]](a_offsets[block_idx.z])
     var a_by_expert = a.ptr + Int64(a_start_row) * Int64(K)
 
-    var expert = expert_ids[block_idx.z]
+    var expert = rebind[Scalar[DType.int32]](expert_ids[block_idx.z])
     var b_by_expert = b.ptr + Int64(expert) * Int64(N) * Int64(K)
 
     # indices in current matmul
@@ -1429,20 +1455,54 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
     target: StaticString = "cpu",
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[
+        mut=True,
+        c_type,
+        address_space=AddressSpace.GENERIC,
+        Storage=_,
+        ...,
+    ],
+    a: TileTensor[
+        mut=False,
+        a_type,
+        address_space=AddressSpace.GENERIC,
+        Storage=_,
+        ...,
+    ],
+    b: TileTensor[
+        mut=False,
+        b_type,
+        address_space=AddressSpace.GENERIC,
+        Storage=_,
+        ...,
+    ],
     a_scales: TileTensor[
-        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False,
+        a_scales_type,
+        address_space=AddressSpace.GENERIC,
+        Storage=_,
+        ...,
     ],
     b_scales: TileTensor[
-        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False,
+        b_scales_type,
+        address_space=AddressSpace.GENERIC,
+        Storage=_,
+        ...,
     ],
     a_offsets: TileTensor[
-        mut=False, a_offsets_type, address_space=AddressSpace.GENERIC, ...
+        mut=False,
+        a_offsets_type,
+        address_space=AddressSpace.GENERIC,
+        Storage=_,
+        ...,
     ],
     expert_ids: TileTensor[
-        mut=False, expert_ids_type, address_space=AddressSpace.GENERIC, ...
+        mut=False,
+        expert_ids_type,
+        address_space=AddressSpace.GENERIC,
+        Storage=_,
+        ...,
     ],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
@@ -1531,6 +1591,13 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
         type_of(b_scales).LayoutType,
         type_of(a_offsets).LayoutType,
         type_of(expert_ids).LayoutType,
+        type_of(c).Storage,
+        type_of(a).Storage,
+        type_of(b).Storage,
+        type_of(a_scales).Storage,
+        type_of(b_scales).Storage,
+        type_of(a_offsets).Storage,
+        type_of(expert_ids).Storage,
         transpose_b=transpose_b,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]

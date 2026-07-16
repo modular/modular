@@ -65,7 +65,7 @@ Existing Tracy instrumentation (C++):
 
 ```cpp
 // Before — Tracy zone
-#include "Support/Profiling/Tracy.h"
+#include "Support/Profiling/internal/Tracy.h"
 TRACY_ZONE_SCOPED_NC("kernel-launch", TRACY_COLOR_BLUE);
 launch_my_kernel();
 ```
@@ -80,8 +80,8 @@ HTA trace, use the libkineto Range API alongside the Tracy zone:
 
 ```cpp
 // After — both backends
-#include "Support/Profiling/Range.h"
-#include "Support/Profiling/Tracy.h"
+#include "Support/Profiling/internal/Range.h"
+#include "Support/Profiling/internal/Tracy.h"
 
 {
   M::Profiling::RangeScope range("kernel-launch", TRACY_COLOR_BLUE);

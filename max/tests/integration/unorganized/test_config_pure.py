@@ -16,22 +16,25 @@ import pickle
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, PropertyMock, patch
 
 import pytest
 from max._entrypoints.cli.config import parse_task_flags
 from max.driver import DeviceSpec, accelerator_count
 from max.dtype import DType
+from max.graph.weights import WeightsFormat
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.context import SamplingParamsGenerationConfigDefaults
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
     MAXModelConfig,
+    PipelineArgs,
     PipelineConfig,
     PipelineRuntimeConfig,
     SamplingConfig,
 )
+from max.pipelines.lib.config.model_config import _infer_weight_path
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types.task import PipelineTask
@@ -486,18 +489,31 @@ class TestNeedsBitmaskConstraints:
 
     @mock_pipeline_config_resolve
     @pytest.mark.parametrize(
-        "enable_structured_output,tool_parser,expected",
+        "enable_structured_output,tool_parser,enable_tool_call_constrained_decode,expected",
         [
-            (False, None, False),
-            (True, None, True),
-            (False, "kimik2_5", True),
-            (True, "kimik2_5", True),
+            # No structured output, no parser: never needs the bitmask path.
+            (False, None, True, False),
+            (False, None, False, False),
+            # User structured output on: always needs it, regardless of the
+            # tool-call flag.
+            (True, None, True, True),
+            (True, None, False, True),
+            # Parser configured + tool-call constrained decode on (default):
+            # bitmask path wires in for server-generated tool grammars.
+            (False, "kimik2_5", True, True),
+            (True, "kimik2_5", True, True),
+            # Parser configured but tool-call constrained decode disabled: the
+            # parser still parses output, but no grammar/bitmask on its account.
+            (False, "kimik2_5", False, False),
+            # ...unless user structured output independently requires it.
+            (True, "kimik2_5", False, True),
         ],
     )
     def test_truth_table(
         self,
         enable_structured_output: bool,
         tool_parser: str | None,
+        enable_tool_call_constrained_decode: bool,
         expected: bool,
     ) -> None:
         config = PipelineConfig(
@@ -505,7 +521,8 @@ class TestNeedsBitmaskConstraints:
                 {"main": MAXModelConfig(model_path="test/model")}
             ),
             sampling=SamplingConfig(
-                enable_structured_output=enable_structured_output
+                enable_structured_output=enable_structured_output,
+                enable_tool_call_constrained_decode=enable_tool_call_constrained_decode,
             ),
             runtime=PipelineRuntimeConfig(tool_parser=tool_parser),
         )
@@ -777,6 +794,121 @@ class TestDraftModelQuantizationEncoding:
             config._validate_speculative_model_configs(
                 target_arch=mock_arch, draft_arch=mock_arch
             )
+
+
+# float32 safetensors for a repo that ships no bfloat16 files, mirroring a
+# checkpoint like ``nvidia/Kimi-K2.6-Eagle3``.
+_F32_SAFETENSORS = [
+    Path("model-00001-of-00002.safetensors"),
+    Path("model-00002-of-00002.safetensors"),
+]
+
+
+def _make_f32_only_repo() -> Mock:
+    """Build a fake ``HuggingFaceRepo`` whose only weights are float32."""
+
+    def files_for_encoding(
+        encoding: SupportedEncoding,
+        weights_format: WeightsFormat | None = None,
+    ) -> dict[WeightsFormat, list[Path]]:
+        if encoding == "float32":
+            return {WeightsFormat.safetensors: list(_F32_SAFETENSORS)}
+        return {}
+
+    repo = Mock()
+    repo.repo_id = "test/f32-only"
+    repo.repo_type = "online"
+    repo.supported_encodings = ["float32"]
+    repo.files_for_encoding = Mock(side_effect=files_for_encoding)
+    # A float32-only repo reports float32 regardless of the preferred encoding.
+    repo.encoding_for_file = Mock(return_value="float32")
+    return repo
+
+
+class TestFloat32WeightFallbackScoping:
+    """Regression tests for the float32 -> 16-bit weight-path fallback.
+
+    ``_infer_weight_path`` falls back to a repo's float32 safetensors
+    when a float16/bfloat16 graph has no matching files. That fallback is
+    scoped to diffuser sub-components (``subfolder`` set); it must NOT fire
+    for architecture-validated models (LLMs, speculative-decoding draft
+    models), where eagerly binding ``weight_path`` to the float32 checkpoint
+    makes the given-encoding validation flip ``quantization_encoding`` to
+    float32 and drop the requested bfloat16.
+
+    Regression guard for KERN-3167: the NVFP4 Kimi-K2.6 Eagle recipes
+    configure a bfloat16 draft model whose HF repo ships only float32
+    safetensors; the unscoped fallback flipped it to float32, which the Eagle3
+    architecture does not support (``quantization_encoding of 'float32' not
+    supported by MAX engine``).
+    """
+
+    def test_draft_model_bf16_encoding_preserved_over_f32_only_repo(
+        self,
+    ) -> None:
+        """An LLM/draft model keeps bfloat16 (cast from float32), not float32.
+
+        Requested bfloat16, repo has only float32 safetensors, no
+        ``subfolder``. The best-effort pass must not bind ``weight_path``, so
+        the given-encoding resolution casts float32 -> bfloat16 (preserving
+        the requested encoding) instead of flipping to float32.
+        """
+        config = MAXModelConfig(
+            model_path="nvidia/Kimi-K2.6-Eagle3",
+            quantization_encoding="bfloat16",
+        )
+        assert config.subfolder is None
+
+        with (
+            patch.object(
+                MAXModelConfig,
+                "huggingface_weight_repo",
+                new_callable=PropertyMock,
+                return_value=_make_f32_only_repo(),
+            ),
+            patch(
+                "max.pipelines.lib.config.model_config.supported_encoding_supported_on",
+                return_value=True,
+            ),
+        ):
+            # Best-effort (pre-architecture) pass must not bind weight_path.
+            assert _infer_weight_path(config) == []
+
+            # Architecture-level given-encoding resolution.
+            config.validate_and_resolve_quantization_encoding_weight_path(
+                default_encoding="bfloat16"
+            )
+
+        # The requested bfloat16 is preserved; the float32 weights are cast at
+        # load time, recorded in the dtype-cast bookkeeping.
+        assert config.quantization_encoding == "bfloat16"
+        assert config._applied_dtype_cast_from == "float32"
+        assert config._applied_dtype_cast_to == "bfloat16"
+
+    def test_diffuser_subcomponent_f32_fallback_still_resolves(self) -> None:
+        """A diffuser sub-component (``subfolder`` set) still gets the fallback.
+
+        This is the mixed-precision FLUX.2 case the fallback was added for: a
+        bfloat16 component whose checkpoint ships float32 safetensors. The
+        fallback must still resolve ``weight_path`` to the float32 files while
+        leaving the requested bfloat16 encoding in place.
+        """
+        config = MAXModelConfig(
+            model_path="black-forest-labs/FLUX.2-dev",
+            subfolder="text_encoder",
+            quantization_encoding="bfloat16",
+        )
+
+        with patch.object(
+            MAXModelConfig,
+            "huggingface_weight_repo",
+            new_callable=PropertyMock,
+            return_value=_make_f32_only_repo(),
+        ):
+            resolved_weight_path = _infer_weight_path(config)
+
+        assert resolved_weight_path == _F32_SAFETENSORS
+        assert config.quantization_encoding == "bfloat16"
 
 
 @prepare_registry
@@ -1059,23 +1191,15 @@ def test_config__test_retrieve_factory_with_known_architecture(
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=modular_ai_llama_3_1_local_path,
-                    quantization_encoding="bfloat16",
-                    max_length=1,
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(
-            max_batch_size=1,
-            prefer_module_v3=True,
-        ),
+    config = PipelineArgs(
+        model_path=modular_ai_llama_3_1_local_path,
+        quantization_encoding="bfloat16",
+        max_length=1,
+        max_batch_size=1,
+        prefer_module_v3=True,
     )
 
-    _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
+    _, _ = PIPELINE_REGISTRY.retrieve_factory(PipelineConfig.from_args(config))
 
 
 @prepare_registry
@@ -2166,3 +2290,136 @@ def test_resolve_default_tool_parser__none_sentinel_disables(
     config._resolve_default_tool_parser(arch=arch)
 
     assert config.runtime.tool_parser is None
+
+
+# ===----------------------------------------------------------------------=== #
+# Tests for _resolve_default_structured_output_backend
+# ===----------------------------------------------------------------------=== #
+
+
+def _backend_arch(default: str | None) -> SimpleNamespace:
+    """Minimal architecture stub for structured-output-backend resolution."""
+    return SimpleNamespace(
+        name="DummyForCausalLM", default_structured_output_backend=default
+    )
+
+
+def test_resolve_backend__unset_normal_arch_defaults_to_xgrammar() -> None:
+    """Unset + an arch with no backend preference resolves to the global
+    default ``xgrammar``."""
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+    )
+    assert config.sampling.structured_output_backend is None  # unset sentinel
+
+    config._resolve_default_structured_output_backend(
+        arch=_backend_arch(default=None)
+    )
+
+    assert config.sampling.structured_output_backend == "xgrammar"
+
+
+def test_resolve_backend__unset_pinned_arch_uses_arch_default() -> None:
+    """Unset + an arch that pins ``llguidance`` (e.g. Gemma 3 / MiniMax-M2)
+    resolves to the arch default."""
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+    )
+
+    config._resolve_default_structured_output_backend(
+        arch=_backend_arch(default="llguidance")
+    )
+
+    assert config.sampling.structured_output_backend == "llguidance"
+
+
+def test_resolve_backend__explicit_xgrammar_overrides_pinned_arch() -> None:
+    """Regression: an explicit ``xgrammar`` on a ``llguidance``-pinned arch is
+    honored, not silently overwritten. This is the precedence bug this fix
+    closes (explicit ``xgrammar`` equalled the old hardcoded default)."""
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+        sampling=SamplingConfig(structured_output_backend="xgrammar"),
+    )
+
+    config._resolve_default_structured_output_backend(
+        arch=_backend_arch(default="llguidance")
+    )
+
+    assert config.sampling.structured_output_backend == "xgrammar"
+
+
+def test_resolve_backend__explicit_llguidance_on_normal_arch_is_honored() -> (
+    None
+):
+    """An explicit ``llguidance`` on a model with no arch preference is
+    honored over the global ``xgrammar`` default."""
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+        sampling=SamplingConfig(structured_output_backend="llguidance"),
+    )
+
+    config._resolve_default_structured_output_backend(
+        arch=_backend_arch(default=None)
+    )
+
+    assert config.sampling.structured_output_backend == "llguidance"
+
+
+def test_resolve_backend__unset_no_arch_defaults_to_xgrammar() -> None:
+    """Unset + ``arch=None`` exercises the unconditional global fallback."""
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+    )
+
+    config._resolve_default_structured_output_backend(arch=None)
+
+    assert config.sampling.structured_output_backend == "xgrammar"
+
+
+def test_from_args__unset_backend_preserves_none_sentinel() -> None:
+    """Regression: ``PipelineArgs`` with no ``--structured-output-backend``
+    must carry the ``None`` sentinel into the built ``PipelineConfig``.
+
+    Before the fix, ``PipelineArgs.structured_output_backend`` defaulted to a
+    hardcoded ``"llguidance"`` string, so ``from_args`` produced a
+    ``SamplingConfig`` that already looked like an explicit user choice. That
+    short-circuited ``_resolve_default_structured_output_backend`` and the
+    global ``xgrammar`` default (and any arch pin) was never reached."""
+    args = PipelineArgs(model_path="test/model")
+    assert args.structured_output_backend is None
+
+    config = PipelineConfig.from_args(args)
+
+    assert config.sampling.structured_output_backend is None
+
+
+def test_from_args__unset_backend_resolves_to_xgrammar() -> None:
+    """End-to-end guard for the reported bug: a model launched without an
+    explicit backend and no arch pin ends up on ``xgrammar``, not
+    ``llguidance``."""
+    args = PipelineArgs(model_path="test/model")
+
+    config = PipelineConfig.from_args(args)
+    config._resolve_default_structured_output_backend(
+        arch=_backend_arch(default=None)
+    )
+
+    assert config.sampling.structured_output_backend == "xgrammar"
+
+
+def test_from_args__explicit_backend_is_preserved() -> None:
+    """An explicit ``--structured-output-backend`` value survives
+    ``from_args`` and wins over resolution."""
+    args = PipelineArgs(
+        model_path="test/model", structured_output_backend="llguidance"
+    )
+
+    config = PipelineConfig.from_args(args)
+    assert config.sampling.structured_output_backend == "llguidance"
+
+    config._resolve_default_structured_output_backend(
+        arch=_backend_arch(default=None)
+    )
+
+    assert config.sampling.structured_output_backend == "llguidance"

@@ -11,28 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Implements `parallel_memcpy`.
+"""Implements `unsafe_parallel_memcpy`.
 
 You can import these APIs from the `algorithm` package. For example:
 
 ```mojo
-from std.algorithm import parallel_memcpy
+from std.algorithm import unsafe_parallel_memcpy
 ```
 """
 
 from . import sync_parallelize
 from std.math import ceildiv
 
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from std.runtime.asyncrt import parallelism_level
 
 
-def parallel_memcpy[
+def unsafe_parallel_memcpy[
     dtype: DType
 ](
     *,
-    dest: OptionalUnsafePointer[mut=True, Scalar[dtype], _],
-    src: OptionalUnsafePointer[Scalar[dtype], _],
+    dest: UnsafePointer[mut=True, Scalar[dtype], _],
+    src: UnsafePointer[Scalar[dtype], _],
     count: Int,
     count_per_task: Int,
     num_tasks: Int,
@@ -65,21 +65,21 @@ def parallel_memcpy[
         if to_copy <= 0:
             return
 
-        memcpy(
-            dest=dest.unsafe_value() + begin,
-            src=src.unsafe_value() + begin,
+        unsafe_memcpy(
+            dest=dest + begin,
+            src=src + begin,
             count=to_copy,
         )
 
     sync_parallelize[_parallel_copy](num_tasks)
 
 
-def parallel_memcpy[
+def unsafe_parallel_memcpy[
     dtype: DType,
 ](
     *,
-    dest: OptionalUnsafePointer[mut=True, Scalar[dtype], _],
-    src: OptionalUnsafePointer[Scalar[dtype], _],
+    dest: UnsafePointer[mut=True, Scalar[dtype], _],
+    src: UnsafePointer[Scalar[dtype], _],
     count: Int,
 ):
     """Copies `count` elements from a memory buffer `src` to `dest` in parallel.
@@ -98,18 +98,87 @@ def parallel_memcpy[
     comptime min_work_for_parallel = 4 * min_work_per_task
 
     # If number of elements to be copied is less than minimum preset (4048),
-    # then use default memcpy.
+    # then use default unsafe_memcpy.
     if count < min_work_for_parallel:
-        memcpy(dest=dest, src=src, count=count)
+        unsafe_memcpy(dest=dest, src=src, count=count)
     else:
         var work_units = ceildiv(count, min_work_per_task)
         var num_tasks = min(work_units, parallelism_level())
         var work_block_size = ceildiv(work_units, num_tasks)
 
-        parallel_memcpy(
+        unsafe_parallel_memcpy(
             dest=dest,
             src=src,
             count=count,
             count_per_task=work_block_size * min_work_per_task,
             num_tasks=num_tasks,
         )
+
+
+@deprecated(use=unsafe_parallel_memcpy)
+def parallel_memcpy[
+    dtype: DType
+](
+    *,
+    dest: OptionalUnsafePointer[mut=True, Scalar[dtype], _],
+    src: OptionalUnsafePointer[Scalar[dtype], _],
+    count: Int,
+    count_per_task: Int,
+    num_tasks: Int,
+):
+    """Copies `count` elements from a memory buffer `src` to `dest` in parallel
+    by spawning `num_tasks` tasks each copying `count_per_task` elements.
+
+    Parameters:
+        dtype: The element dtype.
+
+    Args:
+        dest: The destination buffer.
+        src: The source buffer.
+        count: Number of elements in the buffer.
+        count_per_task: Task size.
+        num_tasks: Number of tasks to run in parallel.
+
+    Safety:
+        `dest` or `src` can only be `None` when `count == 0`.
+    """
+    if count == 0:
+        return
+
+    unsafe_parallel_memcpy(
+        dest=dest.unsafe_value(),
+        src=src.unsafe_value(),
+        count=count,
+        count_per_task=count_per_task,
+        num_tasks=num_tasks,
+    )
+
+
+@deprecated(use=unsafe_parallel_memcpy)
+def parallel_memcpy[
+    dtype: DType,
+](
+    *,
+    dest: OptionalUnsafePointer[mut=True, Scalar[dtype], _],
+    src: OptionalUnsafePointer[Scalar[dtype], _],
+    count: Int,
+):
+    """Copies `count` elements from a memory buffer `src` to `dest` in parallel.
+
+    Parameters:
+        dtype: The element dtype.
+
+    Args:
+        dest: The destination pointer.
+        src: The source pointer.
+        count: The number of elements to copy.
+
+    Safety:
+        `dest` or `src` can only be `None` when `count == 0`.
+    """
+    if count == 0:
+        return
+
+    unsafe_parallel_memcpy(
+        dest=dest.unsafe_value(), src=src.unsafe_value(), count=count
+    )

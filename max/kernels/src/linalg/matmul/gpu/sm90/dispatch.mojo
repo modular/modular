@@ -533,7 +533,7 @@ def matmul_dispatch_sm90_fp8[
         comptime BLOCK_TILE_DIM_M = 64 * NUM_CONSUMER
 
         comptime SCHEDULE_TYPE = MatmulSchedule(
-            get_defined_int["TUNE_SCHEDULE_TYPE", 1]()
+            Int32(get_defined_int["TUNE_SCHEDULE_TYPE", 1]())
         )
 
         comptime H100_FP8_TUNING_CONFIG = MatmulConfig[

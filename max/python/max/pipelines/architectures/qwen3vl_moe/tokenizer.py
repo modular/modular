@@ -703,17 +703,29 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             start_and_end_idxs = find_contiguous_ranges(
                 encoded_prompt, [self.image_token_id]
             )
+            # Key each image on its raw encoded bytes (+ the resolution size
+            # class), not on hash_image(pixel_values): the raw-byte key is
+            # byte-identical across torch/BLAS/device so a separate encoder can
+            # reproduce it for cache-aware routing, whereas the post-resize
+            # float hash cannot. smart_resize is deterministic from the encoded
+            # bytes + fixed config, so the process-wide max-pixels resolution
+            # bound is the size tier. request.images is 1:1 with
+            # pixel_values_list (one processed entry per input image).
+            image_size_tier = self.img_processor.max_pixels
             images = [
                 ImageMetadata(
                     start_idx=start_idx,
                     end_idx=end_idx,
                     pixel_values=pixel_values,
-                    image_hash=hash_image(pixel_values)
+                    image_hash=hash_image(raw_bytes, image_size_tier)
                     if self.enable_prefix_caching
                     else None,
                 )
-                for (start_idx, end_idx), pixel_values in zip(
-                    start_and_end_idxs, pixel_values_list, strict=True
+                for (start_idx, end_idx), pixel_values, raw_bytes in zip(
+                    start_and_end_idxs,
+                    pixel_values_list,
+                    request.images,
+                    strict=True,
                 )
             ]
         else:

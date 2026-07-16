@@ -202,7 +202,8 @@ class DeepseekV3_2DecoderLayer(Module):
             qk_rope_head_dim=config.qk_rope_head_dim,
             v_head_dim=config.v_head_dim,
             devices=config.devices,
-            graph_mode="decode",
+            # No BF16 sparse op yet, so BF16-attention classes stay on decode.
+            graph_mode=config.graph_mode if attn_quantized else "decode",
             buffer_size=config.max_batch_context_length,
             index_n_heads=config.index_n_heads,
             index_head_dim=config.index_head_dim,

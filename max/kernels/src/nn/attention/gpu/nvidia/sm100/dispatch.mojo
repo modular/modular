@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.bit import prev_power_of_two
 from std.collections import OptionalReg
 from std.math import ceildiv
 from std.gpu.primitives.grid_controls import pdl_launch_attributes
@@ -37,9 +38,12 @@ from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.nvidia.mha_tile_scheduler import TransientScheduler
 from nn.attention.mha_utils import (
+    DynamicInt,
     MHAConfig,
     MHAPartitionScheme,
+    NoPartition,
     OptionallyStaticInt,
+    StaticInt,
     _is_decoding,
 )
 from .attention_utils import (
@@ -48,6 +52,8 @@ from .attention_utils import (
     o_store_tma_blocks_per_op,
 )
 from .kernel import SM100MHA2Q
+
+from std.pathlib import Path
 
 comptime logger = Logger()
 
@@ -59,7 +65,6 @@ def mha_sm100_dispatch[
     MaskType: MHAMask,
     output_type: DType,
     MaxPromptLenType: OptionallyStaticInt,
-    PartitionType: MHAPartitionScheme,
     //,
     config: MHAConfig,
     group: Int,
@@ -80,10 +85,11 @@ def mha_sm100_dispatch[
     scale: Float32,
     kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[DType.uint32]],
     batch_size_arg: Int,
-    partition: PartitionType,
     ctx: DeviceContext,
     sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
 ) raises:
+    comptime PartitionType = NoPartition[DType.float32]
+    comptime partition: PartitionType = PartitionType()
     comptime assert (
         config.dtype == KVType.dtype and config.dtype == q_type
     ), "config, kv, and q types must all match for FA3."
@@ -109,7 +115,18 @@ def mha_sm100_dispatch[
 
     @parameter
     @always_inline
-    def with_fa4_config[fa4_config: FA4Config[KVType.dtype]]() raises:
+    def with_fa4_config[
+        NumPartitionsType: OptionallyStaticInt,
+        //,
+        fa4_config: FA4Config[KVType.dtype],
+    ](num_partitions: NumPartitionsType) raises:
+        # `num_partitions` is dynamic (a runtime cluster size) iff this is the
+        # num_q==1 split-K path; for the 2Q config (and its in-kernel 1Q switch)
+        # it is a static 1, so the split-K launch/grid/combine fold away and no
+        # runtime argument is generated.
+        comptime assert (
+            Bool(NumPartitionsType.static_value) != fa4_config.splitk_dynamic()
+        ), "num_partitions must be dynamic iff config.splitk_dynamic()"
         comptime swizzle_mode = fa4_config.swizzle_mode
         # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
         # Q/K/V/S/P buffers governed by `swizzle_mode`). The softmax warp loads
@@ -134,7 +151,16 @@ def mha_sm100_dispatch[
         # the 5D TMA limit (rank-5; rank-4 for group==1). Only swizzled-output
         # callers fall back to per-block (0). Shared formula keeps this in sync
         # with the kernel param type.
-        comptime store_blocks_per_op = o_store_tma_blocks_per_op[
+        # 1Q split-K (reduce-scatter): each partition CTA TMA-stores only its OWN
+        # depth-column BAND via per-block `async_copy_from_col`, and the band
+        # offset `p*ceil(blocks/P)` is not a {0, half} batched-box boundary for
+        # P>=4. So the split-K config needs the PER-BLOCK (rank-3) O-store
+        # descriptor, NOT the batched one (which only `async_copy_batched` over
+        # the two {0, ceil(blocks/2)} halves can drive). `fa4_splitk_combine_write`
+        # infers `tma_bpo==0` from this store and takes its per-block path. Every
+        # non-split config keeps the batched store (single-issuer/intra-CTA WG
+        # combine, where the {0, half} boxes hold).
+        comptime store_blocks_per_op = 0 if fa4_config.splitk_partitions > 1 else o_store_tma_blocks_per_op[
             output_type,
             output_swizzle_mode,
             fa4_config.ov_depth,
@@ -242,6 +268,7 @@ def mha_sm100_dispatch[
             ),
             flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
             pair_cta=fa4_config.pair_cta,
+            splitk_partitions=UInt32(fa4_config.splitk_partitions),
         ]
         var scheduler: SchedulerType = SchedulerType()
 
@@ -281,12 +308,10 @@ def mha_sm100_dispatch[
                     var max_num_prompt_tiles: UInt32 = ceildiv(
                         max_prompt_len_arg.as_uint32(), UInt32(PairBM_eff)
                     )
-                    var block_x: UInt32 = (
-                        max_num_prompt_tiles * partition.num_partitions()
-                    )
+                    var block_x: UInt32 = max_num_prompt_tiles
                     logger.info(
                         "------ Dispatching to SM100 FMHA-",
-                        fa4_config.num_qo,
+                        fa4_config.num_q,
                         "Q ------",
                     )
                     logger.info(
@@ -310,7 +335,7 @@ def mha_sm100_dispatch[
                     # max of both footprints (see `FA4Config.launch_smem_used`).
                     comptime smem_use = fa4_config.launch_smem_used()
 
-                    comptime kernel = SM100MHA2Q[
+                    comptime KernelStruct = SM100MHA2Q[
                         KVType,
                         output_type,
                         MaskType,
@@ -322,12 +347,44 @@ def mha_sm100_dispatch[
                         _is_cache_length_accurate,
                         MaxPromptLenType,
                         PartitionType,
-                    ].kernel
+                    ]
+                    # num_q==1 split-K launches a runtime-sized cluster via the
+                    # metadata-less `kernel_dyncluster` entry (no static
+                    # `nvvm.cluster_dim`); every other config uses the static
+                    # `kernel` entry. The launch `cluster_dim` below supplies the
+                    # cluster size for the dynamic entry.
+                    comptime kernel = KernelStruct.kernel_dyncluster if fa4_config.splitk_dynamic() else KernelStruct.kernel
 
                     var cluster_dim: OptionalReg[Dim] = None
-                    comptime if fa4_config.pair_cta:
-                        cluster_dim = Dim(2, 1, 1)
-                    ctx.enqueue_function[kernel](
+                    # Unifies pair-CTA (cluster_size==2) and num_q==1 split-K
+                    # (cluster_size==P). Pair-CTA uses the comptime cluster_size
+                    # (matches the static `nvvm.cluster_dim` metadata on the
+                    # `kernel` entry). Dynamic split-K uses the RUNTIME launch
+                    # `num_partitions` (<= P_MAX); the metadata-less
+                    # `kernel_dyncluster` entry reads it via cluster_dim.x, so
+                    # one compiled kernel (P_MAX) serves any launch P in {2,4,8}.
+                    comptime if fa4_config.cluster_size() > 1:
+                        comptime if fa4_config.splitk_dynamic():
+                            cluster_dim = Dim(Int(num_partitions), 1, 1)
+                        else:
+                            cluster_dim = Dim(fa4_config.cluster_size(), 1, 1)
+                    comptime name = String(
+                        "nq",
+                        fa4_config.num_q,
+                        "d",
+                        fa4_config.qk_depth,
+                        "qh",
+                        fa4_config.num_q_heads,
+                        "kvh",
+                        fa4_config.num_kv_heads,
+                        ".",
+                    )
+                    ctx.enqueue_function[
+                        kernel,
+                        # dump_llvm=Path(String(name, "ll")),
+                        # dump_asm=Path(String(name, "ptx")),
+                        # _dump_sass=Path(String(name, "as")),
+                    ](
                         q_tma_op,
                         k_tma_op,
                         v_tma_op,
@@ -337,7 +394,9 @@ def mha_sm100_dispatch[
                         batch_size,
                         max_cache_valid_length,
                         pack,
-                        grid_dim=SchedulerType.grid_dim(batch_size, block_x),
+                        grid_dim=SchedulerType.grid_dim(
+                            batch_size, block_x, num_partitions.as_uint32()
+                        ),
                         block_dim=(num_threads, 1, 1),
                         cluster_dim=cluster_dim,
                         shared_mem_bytes=smem_use,
@@ -375,7 +434,7 @@ def mha_sm100_dispatch[
         else:
             with_sink[NullPointer[KVType.dtype]]({})
 
-    # --- num_qo dispatch ---
+    # --- num_q dispatch ---
     # 1Q is only legal when single-CTA and qk_depth in [64, 256]; the
     # comptime gate prevents constructing fa4_config_1q (and its
     # supported() assert) on shapes 1Q can't run. Outside the gate
@@ -384,8 +443,20 @@ def mha_sm100_dispatch[
         not pair_cta and config.depth >= 64 and config.depth <= 256
     )
     comptime if can_use_1q:
-        comptime fa4_config_1q = fa4_config_2q.with_num_qo(1)
-        comptime assert fa4_config_1q.supported(), fa4_config_1q.description()
+        # Dynamic cluster dims (Stage B): compile the num_q==1 split-K kernel
+        # ONCE at the portable cluster ceiling `P_MAX` (the 2-SM cap = 8) and
+        # choose the partition count at LAUNCH via the runtime `cluster_dim`.
+        # The count is AUTO-selected below from occupancy + KV length; there is
+        # no compile-time `P` knob. `num_partitions` is an `OptionallyStaticInt`
+        # so the 2Q config (and its in-kernel 1Q switch) carry a static `1` and
+        # fold the split-K launch/grid/combine away, while the genuine 1Q split
+        # path carries the runtime count via `DynamicInt`.
+        comptime P_MAX = 4
+        comptime fa4_config_1q = fa4_config_2q.with_num_q(1)
+        comptime fa4_config_1q_splitk = fa4_config_1q.with_splitk(P_MAX)
+        comptime assert (
+            fa4_config_1q_splitk.supported()
+        ), fa4_config_1q_splitk.description()
 
         # Heuristic: pick 1Q when (a) max_prompt_len <= 128 (so 2Q's
         # BM=256 would waste >= 50% of Q rows) or (b) the unclamped
@@ -399,19 +470,59 @@ def mha_sm100_dispatch[
             fa4_config_2q.num_kv_heads if fa4_config_2q.fuse_gqa else fa4_config_2q.num_q_heads
         )
         var raw_grid_2q: UInt32 = (
-            max_num_prompt_tiles_2q
-            * partition.num_partitions()
-            * num_heads_sched_2q
-            * batch_size
+            max_num_prompt_tiles_2q * num_heads_sched_2q * batch_size
         )
-        var sm_count: Int = ctx.get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
+        var sm_count: UInt32 = UInt32(
+            ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
         )
         var grid_threshold: UInt32 = UInt32(sm_count // 2)
-        comptime bm_eff_1q = UInt32(fa4_config_1q.BM_eff())
+        comptime bm_eff_1q = UInt32(fa4_config_1q_splitk.BM_eff())
         if max_prompt_len_u32 <= bm_eff_1q or raw_grid_2q <= grid_threshold:
-            with_fa4_config[fa4_config_1q]()
+            # Auto-select the split-K partition count.
+            #   by_grid : how many extra CTAs we can add before oversubscribing
+            #             (the 1Q grid widens x by this factor over the 2Q grid).
+            #   by_cache: don't split a short KV into more partitions than there
+            #             is K/V to go around (512 keys / partition, mirroring
+            #             the decode split-K `//512` granularity); this avoids
+            #             launching mostly-empty clusters.
+            # Floor to a power of two in {1,2,4,8}: the B200-verified combine /
+            # window envelope. (Non-pow2 P is correct by construction --
+            # writer-combines-all and `splitk_window` handle any P -- but only
+            # pow2 has been swept on hardware.)
+            #
+            # 128 x 12 or 256 x 12:
+            # grid_2q = 12
+            # grid_threshold = 74
+            # 128: 74/12 = 6
+            # 256: 74/12 = 6
+            # 512: 74/24 = 3
+            # better:
+            # 128: 148/12 = 12
+            # 256: 148/24 = 6
+            # 512: 148/48 = 3
+            #
+            # (np-1)/np
+            var max_num_prompt_tiles_1q: UInt32 = ceildiv(
+                max_prompt_len_u32, UInt32(fa4_config_1q_splitk.PairBM_eff())
+            )
+            var raw_grid_1q: UInt32 = (
+                max_num_prompt_tiles_1q * num_heads_sched_2q * batch_size
+            )
+            var by_grid: UInt32 = sm_count // max(raw_grid_1q, UInt32(1))
+            var by_cache: UInt32 = max_cache_valid_length // UInt32(512)
+            var np: UInt32 = min(min(by_grid, by_cache), UInt32(P_MAX))
+            var num_partitions = 1 if np <= 1 else prev_power_of_two(np)
+            # P==1 has nothing to combine: route to the 2Q config, whose
+            # in-kernel 1Q switch (`switch_1q_config`) runs short / low-occupancy
+            # sequences as a static single partition -- no cluster, no DSMEM, no
+            # combine.
+            if num_partitions >= 2:
+                with_fa4_config[fa4_config_1q_splitk](
+                    DynamicInt(Int(num_partitions))
+                )
+            else:
+                with_fa4_config[fa4_config_1q](StaticInt[1]())
         else:
-            with_fa4_config[fa4_config_2q]()
+            with_fa4_config[fa4_config_2q](StaticInt[1]())
     else:
-        with_fa4_config[fa4_config_2q]()
+        with_fa4_config[fa4_config_2q](StaticInt[1]())

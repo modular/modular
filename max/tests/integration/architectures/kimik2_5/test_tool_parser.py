@@ -807,7 +807,9 @@ def test_generate_tool_call_grammar_with_tool_names(
 ) -> None:
     """Test generating a Lark grammar for constrained decoding with tools."""
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tools=_tools("get_weather", "search"), tokenizer=mock_tokenizer
+        tools=_tools("get_weather", "search"),
+        tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
 
     assert isinstance(grammar, str)
@@ -824,7 +826,9 @@ def test_generate_tool_call_grammar_without_tool_names(
 ) -> None:
     """Test generating a grammar that accepts any valid identifier."""
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tools=None, tokenizer=mock_tokenizer
+        tools=None,
+        tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
 
     assert isinstance(grammar, str)
@@ -842,6 +846,7 @@ def test_generate_tool_call_grammar_escapes_special_chars(
     grammar = KimiToolParser.generate_tool_call_grammar(
         tools=_tools("get_weather.v2", "search+plus", "tool[0]"),
         tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
 
     assert isinstance(grammar, str)
@@ -854,7 +859,9 @@ def test_generate_tool_call_grammar_escapes_special_chars(
 def test_generate_tool_call_grammar_requires_tokenizer() -> None:
     """Grammar generation must raise without a tokenizer to resolve IDs."""
     with pytest.raises(ValueError, match=r"tokenizer is required"):
-        KimiToolParser.generate_tool_call_grammar(tools=_tools("get_weather"))
+        KimiToolParser.generate_tool_call_grammar(
+            tools=_tools("get_weather"), backend="llguidance"
+        )
 
 
 def test_generate_tool_call_grammar_uses_single_token_refs(
@@ -867,7 +874,9 @@ def test_generate_tool_call_grammar_uses_single_token_refs(
     matching is what the migration away from ``grammar_from_regex`` removed.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tools=_tools("get_weather"), tokenizer=mock_tokenizer
+        tools=_tools("get_weather"),
+        tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
 
     assert "<[256]>" in grammar  # section-begin id from _MinimalTokenizer
@@ -893,6 +902,7 @@ def test_generate_tool_call_grammar_with_response_format_schema(
         tools=_tools("get_weather", "search"),
         response_format_schema=response_format_schema,
         tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
 
     assert isinstance(grammar, str)
@@ -918,6 +928,7 @@ def test_generate_tool_call_grammar_combined_accepts_json_object_type(
         tools=_tools("calculate"),
         response_format_schema=response_format_schema,
         tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
 
     assert isinstance(grammar, str)
@@ -1012,9 +1023,9 @@ def test_combined_grammar_enforces_response_schema(
     """The response_format branch enforces the schema on both backends.
 
     A JSON object missing the required ``answer`` field must not be a complete,
-    accepted output. (Under xgrammar auto-reasoning the bytes may be consumed as
-    reasoning text, so the backend-agnostic invariant is ``not is_accepting``
-    rather than a partial token consume.)
+    accepted output. Both backends model the combined grammar as "a full tool
+    call OR a schema-conforming JSON" with no free-text branch, so ``{}`` reaches
+    no accepting state on either.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
         tools=_tools("get_weather"),
@@ -1073,12 +1084,11 @@ def test_combined_grammar_still_accepts_tool_call(
 def test_combined_grammar_xgrammar_structural_tag_shape(
     mock_tokenizer: PipelineTokenizer[Any, Any, Any],
 ) -> None:
-    """xgrammar combined grammar is an ``or`` of the tool envelope and json_schema.
+    """The combined grammar allows an optional reasoning prefix followed by
+    either a tool call or a schema-conforming JSON response.
 
-    Complements the llguidance ``json_response`` / ``%json`` string assertions:
-    the xgrammar grammar is a serialized StructuralTag whose top-level format is
-    an ``OrFormat`` carrying the response schema verbatim in a ``json_schema``
-    alternative.
+    Verifies the serialized StructuralTag has that shape: a reasoning prefix,
+    then an ``or`` between the tool section and the response ``json_schema``.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
         tools=_tools("get_weather"),
@@ -1087,15 +1097,134 @@ def test_combined_grammar_xgrammar_structural_tag_shape(
         backend="xgrammar",
     )
     tag = xgrammar.StructuralTag.model_validate_json(grammar)
-    assert tag.format.type == "or"
-    element_types = {element.type for element in tag.format.elements}
+    assert tag.format.type == "sequence"
+    or_format = tag.format.elements[-1]
+    assert or_format.type == "or"
+    element_types = {element.type for element in or_format.elements}
     assert "json_schema" in element_types
     json_branch = next(
         element
-        for element in tag.format.elements
+        for element in or_format.elements
         if element.type == "json_schema"
     )
     assert json_branch.json_schema == _COMBINED_RESPONSE_SCHEMA
+
+
+def test_combined_grammar_xgrammar_accepts_reasoned_json_response(
+    ll_tokenizer: LLTokenizer,
+    minimal_tokenizer: _MinimalTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+) -> None:
+    """xgrammar: a reasoning preamble may precede the JSON response branch.
+
+    The reasoning prefix is factored outside the tool/json alternation, so the
+    model may emit ``</think>`` and then a schema-conforming JSON response — not
+    only a tool call. Without this the JSON branch would be unreachable once the
+    model reasons, forcing a tool call.
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather"),
+        response_format_schema=_COMBINED_RESPONSE_SCHEMA,
+        tokenizer=mock_tokenizer,
+        backend="xgrammar",
+    )
+    matcher = _make_grammar_matcher(
+        "xgrammar", grammar, ll_tokenizer, minimal_tokenizer
+    )
+
+    tokens = minimal_tokenizer(THINK_END + json.dumps({"answer": "sunny"}))
+    consumed = matcher.try_consume_tokens(tokens)
+    assert consumed == len(tokens), (
+        f"reasoned JSON response rejected at offset {consumed} of "
+        f"{len(tokens)}; error: {matcher.get_error()}"
+    )
+    assert matcher.is_accepting(), (
+        "matcher not accepting after a reasoned schema-conforming JSON response"
+    )
+
+
+def test_xgrammar_enforces_tool_argument_schema(
+    ll_tokenizer: LLTokenizer,
+    minimal_tokenizer: _MinimalTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+) -> None:
+    """xgrammar constrains each tool call's arguments to the tool's JSON schema.
+
+    This is xgrammar's value-add over llguidance's freeform argument body: a
+    call whose arguments violate the tool's parameter schema (missing a required
+    field, wrong value type) never reaches an accepting state. ``required`` tool
+    choice forces the section from the first token, so no reasoning prefix is
+    needed. (The combined-grammar tests above only exercise the *response*
+    schema; this pins the *tool-argument* schema.)
+    """
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"location": {"type": "string"}},
+                    "required": ["location"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+    ]
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=tools,
+        tokenizer=mock_tokenizer,
+        backend="xgrammar",
+        tool_choice="required",
+    )
+
+    def accepts(args: str) -> bool:
+        matcher = _make_grammar_matcher(
+            "xgrammar", grammar, ll_tokenizer, minimal_tokenizer
+        )
+        tokens = minimal_tokenizer(_section("get_weather", 0, args))
+        return (
+            matcher.try_consume_tokens(tokens) == len(tokens)
+            and matcher.is_accepting()
+        )
+
+    assert accepts('{"location": "NYC"}'), "schema-valid args must be accepted"
+    assert not accepts("{}"), "missing required field must be rejected"
+    assert not accepts('{"location": 42}'), "wrong value type must be rejected"
+
+
+def test_xgrammar_rejects_nonjson_tool_argument_body(
+    ll_tokenizer: LLTokenizer,
+    minimal_tokenizer: _MinimalTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+) -> None:
+    """xgrammar frames the tool-argument body as a JSON value, so trailing
+    non-JSON garbage is rejected.
+
+    Direct contrast to ``test_grammar_accepts_less_than_in_arguments`` (the
+    freeform llguidance body accepts ``{"done": true} < extra``): xgrammar does
+    not, since the JSON value ends at ``}`` and ``< extra`` has no continuation.
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather"),
+        tokenizer=mock_tokenizer,
+        backend="xgrammar",
+        tool_choice="required",
+    )
+
+    def accepts(args: str) -> bool:
+        matcher = _make_grammar_matcher(
+            "xgrammar", grammar, ll_tokenizer, minimal_tokenizer
+        )
+        tokens = minimal_tokenizer(_section("get_weather", 0, args))
+        return (
+            matcher.try_consume_tokens(tokens) == len(tokens)
+            and matcher.is_accepting()
+        )
+
+    assert not accepts('{"done": true} < extra')
+    # Sanity: the same body without the trailing garbage IS accepted.
+    assert accepts('{"done": true}')
 
 
 def test_grammar_accepts_up_to_max_sections(
@@ -1112,7 +1241,9 @@ def test_grammar_accepts_up_to_max_sections(
     the bound and the test stay in lockstep.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tools=_tools("get_weather"), tokenizer=mock_tokenizer
+        tools=_tools("get_weather"),
+        tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
     matcher = LLMatcher(ll_tokenizer, grammar)
 
@@ -1141,7 +1272,9 @@ def test_grammar_caps_at_max_sections(
     holding a GPU slot. Derives the count from the constant.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tools=_tools("get_weather"), tokenizer=mock_tokenizer
+        tools=_tools("get_weather"),
+        tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
     matcher = LLMatcher(ll_tokenizer, grammar)
 
@@ -1173,7 +1306,9 @@ def test_grammar_accepts_interleaved_thinking(
     ``</think>`` and may contain ``<`` and markup.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tools=_tools("get_weather", "search"), tokenizer=mock_tokenizer
+        tools=_tools("get_weather", "search"),
+        tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
     matcher = LLMatcher(ll_tokenizer, grammar)
 
@@ -1199,7 +1334,9 @@ def test_grammar_rejects_im_end_mid_section(
 ) -> None:
     """``<|im_end|>`` is only allowed at accepting states, not mid-section."""
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tools=_tools("get_weather"), tokenizer=mock_tokenizer
+        tools=_tools("get_weather"),
+        tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
     matcher = LLMatcher(ll_tokenizer, grammar)
 
@@ -1230,7 +1367,9 @@ def test_grammar_accepts_unbounded_argument_body(
     ~10 KB argument and verifies every token is consumed.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tools=_tools("echo_document"), tokenizer=mock_tokenizer
+        tools=_tools("echo_document"),
+        tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
     matcher = LLMatcher(ll_tokenizer, grammar)
 
@@ -1271,7 +1410,9 @@ def test_grammar_accepts_less_than_in_arguments(
     byte-level regex grammar, which had to reject ``<`` outside JSON strings.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tools=_tools("write_file"), tokenizer=mock_tokenizer
+        tools=_tools("write_file"),
+        tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
 
     test_payloads = [
@@ -1334,7 +1475,9 @@ def test_auto_mode_multi_section_no_matcher_desync(
     (as auto mode produces) and asserts no rejection.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tools=_tools("get_weather", "search"), tokenizer=mock_tokenizer
+        tools=_tools("get_weather", "search"),
+        tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
     matcher = LLMatcher(ll_tokenizer, grammar)
 
@@ -1439,7 +1582,9 @@ def test_sync_fill_constrains_name_only_after_section_consumed(
     section_end = 257
     call_begin = 258
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tools=_tools("get_weather"), tokenizer=mock_tokenizer
+        tools=_tools("get_weather"),
+        tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
     matcher = LLMatcher(ll_tokenizer, grammar)
 
@@ -1504,7 +1649,9 @@ def test_sync_fill_with_placeholder_drafts_leaves_bonus_slot_unconstrained(
     """
     section_begin, section_end, call_begin = 256, 257, 258
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tools=_tools("get_weather"), tokenizer=mock_tokenizer
+        tools=_tools("get_weather"),
+        tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
     matcher = LLMatcher(ll_tokenizer, grammar)
     helper = StructuredOutputHelper(
@@ -1555,7 +1702,9 @@ def _build_auto_ctx(
     """A ``tool_choice=auto`` helper + context wired to the real Kimi grammar."""
     section_begin, section_end = 256, 257
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tools=_tools("get_weather"), tokenizer=mock_tokenizer
+        tools=_tools("get_weather"),
+        tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
     matcher = LLMatcher(ll_tokenizer, grammar)
     helper = StructuredOutputHelper(
@@ -1687,7 +1836,9 @@ def test_llguidance_rollback_inverse_behavior_across_rule_boundary(
     rollback.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tools=_tools("get_weather"), tokenizer=mock_tokenizer
+        tools=_tools("get_weather"),
+        tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
     matcher = LLMatcher(ll_tokenizer, grammar)
     for tok in prefix:
@@ -1733,7 +1884,9 @@ def test_deep_copy_walk_avoids_rule_boundary_rollback_desync(
     (258) as the next committed token -- the exact case ``rollback`` breaks.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tools=_tools("get_weather"), tokenizer=mock_tokenizer
+        tools=_tools("get_weather"),
+        tokenizer=mock_tokenizer,
+        backend="llguidance",
     )
     matcher = LLMatcher(ll_tokenizer, grammar)
     assert matcher.try_consume_tokens([256]) == 1  # section_begin

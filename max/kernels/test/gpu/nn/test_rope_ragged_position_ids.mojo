@@ -85,15 +85,15 @@ def test_rope_ragged_position_ids[
     var sp_t = TileTensor(sp_dev.unsafe_ptr(), start_pos_layout)
     var pid_t = TileTensor(pid_dev.unsafe_ptr(), pid_layout)
 
-    # `out_t` must be `@__copy_capture`'d into the device closure: a by-ref
-    # capture leaves the kernel dereferencing the host-stack tensor on the
-    # GPU (memory access fault). Same rule the kernel itself follows for its
-    # captured tensors; mirrors `test_rope_ragged.mojo`'s `output_fn`.
+    # `out_t` must be captured by value (`{var out_t}`) into the device
+    # closure: a by-ref capture leaves the kernel dereferencing the host-stack
+    # tensor on the GPU (memory access fault). Same rule the kernel itself
+    # follows for its captured tensors; mirrors `test_rope_ragged.mojo`'s
+    # `output_fn`.
     @always_inline
-    @__copy_capture(out_t)
     def output_fn[
         width: SIMDSize, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
+    ](idx: IndexList[3], val: SIMD[dtype, width]) {var out_t} -> None:
         out_t.store[width=width](Coord(idx), val)
 
     rope_ragged[
@@ -101,13 +101,13 @@ def test_rope_ragged_position_ids[
         dtype,
         interleaved=True,
         target=StaticString("gpu"),
-        output_fn=output_fn,
     ](
         x=x_t,
         input_row_offsets=ro_t,
         start_pos=sp_t,
         freqs_cis=freqs_t,
         context=ctx,
+        output_fn=output_fn,
         position_ids=pid_t.as_unsafe_any_origin().as_immut(),
     )
     ctx.synchronize()

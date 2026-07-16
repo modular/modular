@@ -495,6 +495,7 @@ def get_seq_info[
     num_heads: Int,
     flip_prompt_idx: Bool,
     pair_cta: Bool = False,
+    splitk_partitions: UInt32 = 1,
 ](
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,
@@ -508,11 +509,18 @@ def get_seq_info[
         valid_length,
         max_seq_len.as_uint32(),
     )
+    # `splitk_partitions` MUST match the launch scheduler's value (dispatch),
+    # so `cluster_size` (and thus the `block_idx.x // cluster_size -> tile`
+    # mapping + per-tile validity) agrees. Omitting it defaults to 1, which
+    # for num_q==1 split-K (pair_cta=False) wrongly yields cluster_size=1 and
+    # maps the partition CTAs (block_idx.x % P != 0) to nonexistent tiles, so
+    # they are marked invalid and skip all compute.
     scheduler = TransientScheduler[
         UInt32(BM),
         UInt32(num_heads),
         flip_prompt_idx=flip_prompt_idx,
         pair_cta=pair_cta,
+        splitk_partitions=splitk_partitions,
     ]()
     # SAFETY: Stored in MHATileState.sidx_ptr but never dereferenced.
     var state: MHATileState = scheduler.initial_state(

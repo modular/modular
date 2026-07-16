@@ -46,6 +46,7 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
+    SupportsSSMStateWarmup,
 )
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.modeling.types import RequestID
@@ -99,7 +100,7 @@ class NemotronHInputs(Llama3Inputs):
         )
 
 
-class NemotronHModel(LlamaModelBase):
+class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
     """Nemotron-H pipeline model (hybrid Mamba-2 + attention)."""
 
     model_config_cls: ClassVar[type[Any]] = NemotronHConfig
@@ -123,6 +124,7 @@ class NemotronHModel(LlamaModelBase):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -133,11 +135,19 @@ class NemotronHModel(LlamaModelBase):
             adapter,
             return_logits,
             return_hidden_states,
+            max_batch_size=max_batch_size,
         )
 
     @traced
     def load_model(self, session: InferenceSession) -> Model:
+        # Use the resolved batch size forwarded from the memory plan via
+        # __init__ (stored on self by the base PipelineModel). The user-facing
+        # pipeline_config.runtime.max_batch_size is only the requested cap and
+        # is often None here; self.max_batch_size is the authoritative value.
         max_batch_size = self.max_batch_size
+        assert max_batch_size is not None, (
+            "max_batch_size must be set in runtime config"
+        )
 
         with CompilationTimer("model") as timer:
             graph = self._build_graph(self.weights, self.adapter)
@@ -354,3 +364,21 @@ class NemotronHModel(LlamaModelBase):
     def release(self, request_id: RequestID) -> None:
         if self._state_cache is not None:
             self._state_cache.release(request_id)
+
+    def release_warmup_state(self, request_ids: list[RequestID]) -> None:
+        """Release SSM/conv pool slots claimed during graph-capture warmup.
+
+        Called by the overlap pipeline's ``_warmup_model_inputs`` context
+        manager after each ``(batch_size, cache_length)`` probe completes.
+        Releases the warmup request IDs from the state cache so the pool is
+        not exhausted before serving begins.  Each probe claims up to
+        ``batch_size`` fresh slots; without this release the pool would be
+        drained by the warmup sweep.
+
+        The pool buffers themselves are NOT cleared here — the state written
+        during warmup will be zeroed by the next ``claim()`` for that slot,
+        which happens when a real request is assigned to it.
+        """
+        if self._state_cache is not None:
+            for rid in request_ids:
+                self._state_cache.release(rid)

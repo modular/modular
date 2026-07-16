@@ -28,7 +28,7 @@ from std.bit import rotate_bits_right
 from std.math import iota, ceildiv
 from std.sys import llvm_intrinsic, simd_byte_width
 
-from std.memory import Span, bitcast, memcpy
+from std.memory import Span, bitcast, unsafe_memcpy
 
 from std.utils import IndexList
 
@@ -199,7 +199,9 @@ def load_incomplete_simd[
 ) -> SIMD[DType.uint8, width]:
     var result = SIMD[DType.uint8, width](0)
     var tmp_buffer_pointer = UnsafePointer(to=result).bitcast[UInt8]()
-    memcpy(dest=tmp_buffer_pointer, src=pointer, count=nb_of_elements_to_load)
+    unsafe_memcpy(
+        dest=tmp_buffer_pointer, src=pointer, count=nb_of_elements_to_load
+    )
     return result
 
 
@@ -261,7 +263,7 @@ def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
         )
 
         var v_ptr = UnsafePointer(to=result_vector_with_equals).bitcast[Byte]()
-        memcpy(
+        unsafe_memcpy(
             dest=res_ptr + res_offset, src=v_ptr, count=nb_of_elements_to_store
         )
         res_offset += nb_of_elements_to_store

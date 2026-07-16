@@ -145,7 +145,7 @@ def test_rope_ragged[
     @always_inline
     def output_fn[
         width: SIMDSize, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
+    ](idx: IndexList[3], val: SIMD[dtype, width]) {var q_out_tensor} -> None:
         q_out_tensor.store[width=width](Coord(idx), val)
 
     rope_ragged[
@@ -153,13 +153,13 @@ def test_rope_ragged[
         dtype,
         interleaved=True,
         target=StaticString("cpu"),
-        output_fn=output_fn,
     ](
         x=q_tensor,
         input_row_offsets=input_row_offsets_tensor,
         start_pos=start_pos_tensor,
         freqs_cis=freqs_cis_tensor,
         context=ctx,
+        output_fn=output_fn,
     )
 
     # Compare output and expected query tensors.

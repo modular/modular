@@ -19,13 +19,13 @@ from std.algorithm import map
 ```
 """
 
-from std._plugin import CurrentPlugin
+from std._plugin import CurrentPlugin, PluginForTarget
 from std.collections.string.string_slice import get_static_string
 from std.math import ceildiv
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from std.sys.info import CompilationTarget
+from std.sys.info import CompilationTarget, _accelerator_arch
 
 from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import Index, IndexList
@@ -353,13 +353,12 @@ def _elementwise_impl[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        comptime if CurrentPlugin._handles_elementwise[target]:
-            return CurrentPlugin.elementwise_fn[target, shape.rank, simd_width](
-                _CoordToIndexListAdapter[shape.rank, FuncType](func),
-                coord_to_index_list(shape),
-                context,
-            )
-        elif is_cpu[target]():
+        # Check the host (CPU) path first: a CPU-targeted op must run on the
+        # host even in an accelerator build. Only after ruling out CPU do we
+        # consult the accelerator plugin, so host ops never touch `PluginForTarget`.
+        # TODO(DRIV-186): GPUInfo should handle CPU device,
+        # Should not need to additionally check accelerator arch here
+        comptime if is_cpu[target]():
 
             @always_inline
             def func_wrap_cpu[
@@ -371,6 +370,17 @@ def _elementwise_impl[
                 simd_width=simd_width,
                 trace_description=trace_description,
             ](func_wrap_cpu, shape=shape, ctx=Optional(context))
+        elif _accelerator_arch() != "" and PluginForTarget[
+            context.default_device_info.target()
+        ]._handles_elementwise:
+            comptime plugin = PluginForTarget[
+                context.default_device_info.target()
+            ]
+            return plugin.elementwise_fn[shape.rank, simd_width](
+                _CoordToIndexListAdapter[shape.rank, FuncType](func),
+                coord_to_index_list(shape),
+                context,
+            )
         elif is_gpu[target]():
             _elementwise_impl_gpu[
                 simd_width=simd_width,

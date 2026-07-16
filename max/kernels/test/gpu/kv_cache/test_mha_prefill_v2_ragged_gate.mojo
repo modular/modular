@@ -50,7 +50,7 @@ from kv_cache_test_utils import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from std.memory import memcpy, memset_zero
+from std.memory import unsafe_memcpy, memset_zero
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import (
     CausalMask,
@@ -327,7 +327,7 @@ def _run_ragged_at[
                     * kv_block_continuous_shape[5]
                 )
                 var n_cpy = block_sz * kv_params.num_heads * kv_params.head_size
-                memcpy(
+                unsafe_memcpy(
                     dest=kv_block_paged_tensor.ptr + paged_offset,
                     src=kv_block_continuous_tensor.ptr + continuous_offset,
                     count=n_cpy,
