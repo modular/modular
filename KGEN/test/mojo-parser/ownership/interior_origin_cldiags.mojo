@@ -24,7 +24,10 @@ struct MyListInterior[T: AnyType]:
     def __del__(deinit self):
         pass # Explicit del so it isn't considered trivial and elided.
 
-    def mutate(mut self):
+    def mutate(mut self): # must invalidate all interior origins.
+        pass
+
+    def access(self): # doesn't invalidate interior origins.
         pass
 
     @__defines_interior_origins
@@ -101,9 +104,39 @@ def test_dominance_lifetime():
     elt_ref2 += 4 # This works
     list.mutate()
 
-    elt_ref3 = list[]  # expected-note {{origin was defined here, after the reference was formed}}
+    ref elt_ref3 = list[]  # expected-note {{origin was defined here, after the reference was formed}}
     elt_ref3 += 4   # This works because the ref was refreshed.
 
     # This is an error because the ref is invalidated.
     # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
     elt_ref2 += 4
+
+def test_dominance_lifetime2(cond: Bool):
+    var list = MyListInterior[Int]()
+    ref elt_ref = list[]
+    elt_ref += 4 # This works
+
+    # This is all fine, nothing invalidates elt_ref.
+    var sum = 0
+    if cond:
+        sum += elt_ref
+        list.access() # doesn't invalidate anything.
+    else:
+        sum += elt_ref
+    sum += elt_ref
+
+    # This is not fine, because the list is mutated, potentially invalidating
+    # elt_ref.  It gets reinitialized within the body, but that doesn't make
+    # elt_ref valid again!
+    if cond: # expected-note {{origin was defined inside this control structure}}
+        list.mutate()
+        ref elt_ref_a = list[]
+        elt_ref_a += 4   # This works because the ref was refreshed.
+    else:
+        list.mutate()
+        ref elt_ref_b = list[]
+        elt_ref_b += 4   # This works because the ref was refreshed.
+
+    # This is an error because the ref is invalidated.
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    elt_ref += 4

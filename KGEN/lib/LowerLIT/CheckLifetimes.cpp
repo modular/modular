@@ -1523,30 +1523,8 @@ struct TrackedAndInteriorLiveness {
   void markReachable(bool value) { tracked[0] = value; }
 
   /// Merge \p other into this state at a control-flow join.
-  void mergeWith(const TrackedAndInteriorLiveness &other) {
-    if (!other.isReachable())
-      return; // 'other' isn't reachable, so just use 'this'.
-    if (!isReachable()) {
-      // 'this' isn't reachable, so just use 'other'.
-      tracked = other.tracked;
-      interior = other.interior;
-      return;
-    }
-    // Both are reachable, so merge them.
-    tracked &= other.tracked;
-    for (size_t i = 0, e = interior.size(); i != e; ++i) {
-      if (interior[i].getInt() && !other.interior[i].getInt()) {
-        // We're invalided if the other one is.
-        interior[i] = other.interior[i];
-      } else if (!interior[i].getPointer() && other.interior[i].getPointer()) {
-        interior[i].setPointer(other.interior[i].getPointer());
-      } else if (interior[i].getInt() && other.interior[i].getInt() &&
-                 interior[i].getPointer() && other.interior[i].getPointer()) {
-        // If both are live, we should pick the common ancestor.
-        assert(0 && "FIXME: Implement merge");
-      }
-    }
-  }
+  void mergeWith(const TrackedAndInteriorLiveness &other,
+                 mlir::DominanceInfo &domInfo);
 
   void swap(TrackedAndInteriorLiveness &other) {
     tracked.swap(other.tracked);
@@ -1572,6 +1550,58 @@ struct TrackedAndInteriorLiveness {
   }
 };
 } // namespace
+
+/// Given two operations indicating interior-origin validity, pick the defining
+/// operation that remains valid after a control-flow merge with the shortest
+/// lifetime. Same-block cases pick the later operation; sibling regions are
+/// lifted to their nearest common ancestor (see LowerAsyncFunctions).
+static Operation *findNearestCommonAncestor(Operation *op1, Operation *op2,
+                                            mlir::DominanceInfo &domInfo) {
+  if (op1 == op2)
+    return op1;
+  if (op1->getBlock() == op2->getBlock())
+    return domInfo.dominates(op1, op2) ? op2 : op1;
+
+  auto findOpInCommonRegion = [](Operation *lhs, Operation *rhs) {
+    Region *rhsRegion = rhs->getParentRegion();
+    while (!lhs->getParentRegion()->isAncestor(rhsRegion))
+      lhs = lhs->getParentOp();
+    return lhs;
+  };
+  Operation *op1Common = findOpInCommonRegion(op1, op2);
+  Operation *op2Common = findOpInCommonRegion(op2, op1);
+  return domInfo.dominates(op1Common, op2Common) ? op2Common : op1Common;
+}
+
+/// Merge \p other into this state at a control-flow join.
+void TrackedAndInteriorLiveness::mergeWith(
+    const TrackedAndInteriorLiveness &other, mlir::DominanceInfo &domInfo) {
+  if (!other.isReachable())
+    return; // 'other' isn't reachable, so just use 'this'.
+  if (!isReachable()) {
+    // 'this' isn't reachable, so just use 'other'.
+    tracked = other.tracked;
+    interior = other.interior;
+    return;
+  }
+
+  // Both are reachable, so merge them.
+  tracked &= other.tracked;
+  for (size_t i = 0, e = interior.size(); i != e; ++i) {
+    auto &entry = interior[i];
+    auto &otherEntry = other.interior[i];
+    if (entry.getInt() && !otherEntry.getInt()) {
+      // We're invalided if the other one is.
+      entry = otherEntry;
+    } else if (!entry.getPointer() && otherEntry.getPointer()) {
+      entry.setPointer(otherEntry.getPointer());
+    } else if (entry.getInt() && otherEntry.getInt()) {
+      // If both are live, we should pick the common ancestor.
+      entry.setPointer(findNearestCommonAncestor(
+          entry.getPointer(), otherEntry.getPointer(), domInfo));
+    }
+  }
+}
 
 // These data structures keep track of all of the interior origins found in a
 // function. This allows us to use bitvector dataflow to push around their
@@ -2402,8 +2432,14 @@ void UninitializedValueScan::checkInteriorOriginUsage(
   // this reference was formed.
   auto diag = emitError(op.getLoc(), "use of invalidated interior reference '");
   diag << getOriginStr() << "'";
-  diag.attachNote(definingOp->getLoc())
-      << "origin was defined here, after the reference was formed";
+  // Control-flow parents (e.g. the `if` at a branch join) can be the merged
+  // defining point without being a concrete redefinition site.
+  if (definingOp->getNumRegions() == 0)
+    diag.attachNote(definingOp->getLoc())
+        << "origin was defined here, after the reference was formed";
+  else
+    diag.attachNote(definingOp->getLoc())
+        << "origin was defined inside this control structure";
 
   // We mark the liveness sentinel as having an error diagnosed to make sure the
   // pass fails.
@@ -2776,10 +2812,10 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
 void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   if (isa<HLCF::BreakOp, ParamForBreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
-    breakSet->mergeWith(liveness);
+    breakSet->mergeWith(liveness, valueSet.domInfo);
   } else if (isa<HLCF::ContinueOp, ParamForContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
-    continueSet->mergeWith(liveness);
+    continueSet->mergeWith(liveness, valueSet.domInfo);
   } else {
     StringAttr label = cast<LIT::TryRaiseOp>(op).getLabelAttr();
     RaiseSetEntry<TrackedAndInteriorLiveness> *matchingSet =
@@ -2787,7 +2823,7 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
     //  lower-semantic-cf should guarantee there is a matching set.
     assert(matchingSet && "No matching 'try'?");
     // Only merges the set with the matching label.
-    matchingSet->raiseSet->mergeWith(liveness);
+    matchingSet->raiseSet->mergeWith(liveness, valueSet.domInfo);
   }
 
   // Indicate that all values are live after the terminator so an 'if' will get
@@ -2808,7 +2844,7 @@ void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   scanBlock(op.getRegion(0).front());
   livenessCopy.swap(liveness);
   scanBlock(op.getRegion(1).front());
-  liveness.mergeWith(livenessCopy);
+  liveness.mergeWith(livenessCopy, valueSet.domInfo);
 }
 
 // This is used for the HLCF::ElifOp.
@@ -2836,7 +2872,7 @@ void UninitializedValueScan::checkElIfOp(HLCF::ElifOp op) {
     // Scan the "then" block for this condition, the result is the exit set for
     // this case.
     scanBlock(ifRegions[nextElIfRegion + 1].front());
-    thenLiveOutValues.mergeWith(liveness);
+    thenLiveOutValues.mergeWith(liveness, valueSet.domInfo);
 
     // Restore the live-in set to the set of things before the 'then' block.
     std::swap(liveness, scratchSet);
@@ -2847,7 +2883,7 @@ void UninitializedValueScan::checkElIfOp(HLCF::ElifOp op) {
 
   // The live out set of the whole 'elif' is the intersection of the output set
   // of the else as well as all the 'then' blocks.
-  liveness.mergeWith(thenLiveOutValues);
+  liveness.mergeWith(thenLiveOutValues, valueSet.domInfo);
 }
 
 void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
@@ -2887,7 +2923,7 @@ void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
   // because LowerSemanticCF already processed them.
   if (loopOp.getNumRegions() == 2 && !isa<ParamForOp>(loopOp)) {
     scanBlock(loopOp.getRegion(1).front());
-    liveness.mergeWith(breakSet);
+    liveness.mergeWith(breakSet, valueSet.domInfo);
   } else {
     liveness = std::move(breakSet);
   }
@@ -2927,7 +2963,7 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
 
   // The fall through live values are the intersection from the except and
   // else blocks.
-  liveness.mergeWith(bodySets.liveness);
+  liveness.mergeWith(bodySets.liveness, valueSet.domInfo);
 }
 
 //===----------------------------------------------------------------------===//
