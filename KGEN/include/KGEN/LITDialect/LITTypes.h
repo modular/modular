@@ -107,8 +107,8 @@ public:
   TypedAttr getCaptureOrigins() { return getBodyFnType().getCaptureOrigins(); }
 
   /// Get whether nested lifetimes are excluded from exclusivity checking.
-  bool getIsNestedOriginExclusivityCheckingDisabled() {
-    return getBodyFnType().getIsNestedOriginExclusivityCheckingDisabled();
+  bool getIsNestedOriginsReadOnly() {
+    return getBodyFnType().getIsNestedOriginsReadOnly();
   }
 
   /// Get the number of implicit origin decls this function type carries.

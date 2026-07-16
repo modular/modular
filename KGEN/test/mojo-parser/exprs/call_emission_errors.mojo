@@ -575,9 +575,9 @@ def test_call_error_location():
     )
 
 
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def nested_mutability_disabled1(ref a: String, b: String): pass
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def nested_mutability_disabled2(mut a: String, b: String): pass
 
 def test_nested_mutability_disabled():

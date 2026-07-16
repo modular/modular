@@ -312,10 +312,10 @@ public:
   /// This is an optional origin set parameter, representing the origins of
   /// the function captures.
   TypedAttr captureOrigins;
-  /// Whether `@__unsafe_disable_nested_origin_exclusivity` was specified:
+  /// Whether `@__unsafe_nested_origins_read_only` was specified:
   /// nested origins are not considered in exclusivity checking.
   /// TODO: Generalize this to mutation sets.
-  bool isNestedOriginExclusivityCheckingDisabled = false;
+  bool isNestedOriginsReadOnly = false;
 
   /// This performs any special checks over the declaration based on its name
   /// and whether it is a method.  This happens after decorator processing

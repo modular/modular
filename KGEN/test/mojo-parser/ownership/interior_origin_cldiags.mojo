@@ -28,7 +28,7 @@ struct MyListInterior[T: AnyType]:
         pass
 
     @__defines_interior_origins
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __getitem__(
         ref self
     ) -> ref[self.data.get_ref_with_unsafe_interior_origin["element"](self)] Self.T:

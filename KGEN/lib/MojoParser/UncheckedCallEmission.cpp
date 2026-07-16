@@ -1281,10 +1281,10 @@ struct ExclusivityChecker : public SharedStateUser {
         syntax(syntax), argumentValues(argumentValues),
         builder(emitter.builder), declScope(emitter.declScope) {
 
-    // Handle __unsafe_disable_nested_origin_exclusivity.
+    // Handle __unsafe_nested_origins_read_only.
     originsAccessesAreReadOnly =
         sugarCast<FnTypeGeneratorType>(callee.getRValueType())
-            .getIsNestedOriginExclusivityCheckingDisabled();
+            .getIsNestedOriginsReadOnly();
 
     // Check capture origins first so we know if argument values may overlap.
     checkCaptureOrigins();
@@ -1308,7 +1308,7 @@ private:
   std::optional<OpBuilder> builder;
   ASTDecl &declScope;
 
-  /// True if the __unsafe_disable_nested_origin_exclusivity decorator is
+  /// True if the __unsafe_nested_origins_read_only decorator is
   /// on the callee. Nested type-embedded origins are treated as read-only.
   bool originsAccessesAreReadOnly = false;
   /// True if the call accesses AnyOriginAttr.
@@ -1542,7 +1542,7 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
       return;
     }
 
-    // When @__unsafe_disable_nested_origin_exclusivity is used, we strip
+    // When @__unsafe_nested_origins_read_only is used, we strip
     // mutability of nested origins and 'ref' arguments, but do not strip from
     // 'mut', 'deinit', or result arguments.
     auto shouldStripMutability = [&](TypedAttr origin) -> bool {
@@ -1557,7 +1557,7 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
     // Find all the of the origins that are buried in the specified type.
     for (TypedAttr origin :
          shared.cachedOriginFinder.findOriginsIn(argVal.getType())) {
-      // Callees marked `@__unsafe_disable_nested_origin_exclusivity` promise
+      // Callees marked `@__unsafe_nested_origins_read_only` promise
       // not to mutate origins.
       if (originsAccessesAreReadOnly && shouldStripMutability(origin))
         origin = OriginMutCastAttr::get(origin, false);

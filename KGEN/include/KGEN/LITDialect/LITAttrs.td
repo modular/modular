@@ -91,12 +91,12 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     "TypedAttr":$captureOrigins,
     // TODO: Generalize this to a set of origin parameters that are guaranteed
     // to not be dereferenced.
-    OptionalParameter<"bool">:$isNestedOriginExclusivityCheckingDisabled
+    OptionalParameter<"bool">:$isNestedOriginsReadOnly
   );
   let assemblyFormat = [{
     `<` $numImplicitOriginDecls
     `` custom<FnMetadataOrigins>($captureOrigins)
-    (`,` $isNestedOriginExclusivityCheckingDisabled^)? `>`
+    (`,` $isNestedOriginsReadOnly^)? `>`
   }];
 
   let skipDefaultBuilders = 1;

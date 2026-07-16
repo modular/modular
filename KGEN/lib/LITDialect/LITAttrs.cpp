@@ -57,10 +57,9 @@ static void printFnMetadataOrigins(AsmPrinter &p, TypedAttr origins) {
 }
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *context) {
-  return FnMetadataAttr::get(
-      context, /*numImplicitOriginDecls=*/0,
-      /*captureOrigins=*/OriginSetAttr::get(context, {}),
-      /*isNestedOriginExclusivityCheckingDisabled=*/false);
+  return FnMetadataAttr::get(context, /*numImplicitOriginDecls=*/0,
+                             /*captureOrigins=*/OriginSetAttr::get(context, {}),
+                             /*isNestedOriginsReadOnly=*/false);
 }
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx,
@@ -133,7 +132,7 @@ FnMetadataAttr FnMetadataAttr::addCaptureOrigins(TypedAttr origins) {
       OriginSetUnionAttr::get(origins, type)};
   return get(getContext(), getNumImplicitOriginDecls(),
              OriginSetAttr::get(getContext(), originUnion),
-             getIsNestedOriginExclusivityCheckingDisabled());
+             getIsNestedOriginsReadOnly());
 }
 
 void FnMetadataAttr::printFuncTypeBody(AsmPrinter &p, FuncType sig) const {
@@ -159,8 +158,7 @@ bool FnMetadataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
 
   return getNumImplicitOriginDecls() == other.getNumImplicitOriginDecls() &&
          getCaptureOrigins() == other.getCaptureOrigins() &&
-         getIsNestedOriginExclusivityCheckingDisabled() ==
-             other.getIsNestedOriginExclusivityCheckingDisabled();
+         getIsNestedOriginsReadOnly() == other.getIsNestedOriginsReadOnly();
 }
 
 //===----------------------------------------------------------------------===//

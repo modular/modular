@@ -370,7 +370,7 @@ def KGEN_FuncType : KGENType<"Func", "func", [
     TypedAttr getCaptureOrigins();
 
     /// Get whether nested lifetimes are excluded from exclusivity checking.
-    bool getIsNestedOriginExclusivityCheckingDisabled();
+    bool getIsNestedOriginsReadOnly();
 
     /// Get the number of implicit origin decls this function type carries.
     size_t getNumImplicitOriginDecls();

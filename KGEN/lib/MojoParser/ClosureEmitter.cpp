@@ -385,10 +385,10 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
 
   // Closure storage is carried by the inserted self argument, not by FnEffects.
   auto newArgListAttr = argListAttr.cloneWith(argPogs);
-  auto metadata = FnMetadataAttr::get(
-      ctx, oldFnMetadata.getNumImplicitOriginDecls(),
-      oldFnMetadata.getCaptureOrigins(),
-      oldFnMetadata.getIsNestedOriginExclusivityCheckingDisabled());
+  auto metadata =
+      FnMetadataAttr::get(ctx, oldFnMetadata.getNumImplicitOriginDecls(),
+                          oldFnMetadata.getCaptureOrigins(),
+                          oldFnMetadata.getIsNestedOriginsReadOnly());
   return FuncTypeGeneratorType::get(
       sig.getInputParamTypes(),
       FunctionType::get(ctx, signatureInputs, sig.getResults()), argConventions,
@@ -1738,8 +1738,7 @@ static FnTypeGeneratorType prependImplicitOriginDecl(FnTypeGeneratorType sig) {
   FnMetadataAttr oldMeta = sig.getFnMetadata();
   FnMetadataAttr newMeta = FnMetadataAttr::get(
       sig.getContext(), oldMeta.getNumImplicitOriginDecls() + 1,
-      oldMeta.getCaptureOrigins(),
-      oldMeta.getIsNestedOriginExclusivityCheckingDisabled());
+      oldMeta.getCaptureOrigins(), oldMeta.getIsNestedOriginsReadOnly());
   return FnTypeGeneratorType::get(
       sig.getInputParamTypes(), sig.getValues(), sig.getArgConventions(),
       sig.getFnEffects(), newMeta, sig.getMetadata(), sig.getArgListAttrs());
