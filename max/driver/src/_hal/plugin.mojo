@@ -317,7 +317,7 @@ struct RawDriver(Movable):
         ctx_origin: Origin, //
     ](
         self,
-        context: UnsafePointer[ContextHandle.type, ctx_origin],
+        context: UnsafePointer[ContextHandle.T, ctx_origin],
         queue: QueueHandle,
     ) raises HALError:
         var status = self._raw.queue_destroy.f(

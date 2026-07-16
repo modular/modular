@@ -123,7 +123,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def handle[
         origin: Origin, //
-    ](ref[origin] self) -> UnsafePointer[ContextHandle.type, origin]:
+    ](ref[origin] self) -> UnsafePointer[ContextHandle.T, origin]:
         """Returns the raw context handle, tying its origin back to `self`.
 
         Accessing `self._handle` directly hands out a `ContextHandle` whose

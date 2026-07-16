@@ -372,7 +372,7 @@ def memset(ptr: UnsafePointer[mut=True, ...], value: Byte, count: Int):
         value: The value to fill with.
         count: Number of elements to fill (in elements, not bytes).
     """
-    _memset_impl(ptr.bitcast[Byte](), value, count * size_of[ptr.type]())
+    _memset_impl(ptr.bitcast[Byte](), value, count * size_of[ptr.T]())
 
 
 # ===-----------------------------------------------------------------------===#

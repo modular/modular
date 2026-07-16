@@ -1756,7 +1756,7 @@ def mma_arrive[
         "Unsupported cta group: ", cta_group
     )
 
-    comptime type = mbar_ptr.type
+    comptime type = mbar_ptr.T
     comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[
@@ -1789,7 +1789,7 @@ def mma_arrive_multicast[
         "Unsupported cta group: ", cta_group
     )
 
-    comptime type = mbar_ptr.type
+    comptime type = mbar_ptr.T
     comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[

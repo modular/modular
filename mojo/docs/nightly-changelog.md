@@ -704,6 +704,8 @@ This version is still a work in progress.
 - The `Equatable` trait now allows for positional-only implementations, and
   argument on implementers no longer need to match the trait exactly.
 
+- `Pointer` and `UnsafePointer` have had their `type` parameter renamed to `T`.
+
 - `UnsafePointer.init_pointee_move()` and `UnsafePointer.init_pointee_copy()`
   are now deprecated in favor of a single `unsafe_write()` method. Moving a
   value in works the same as before:

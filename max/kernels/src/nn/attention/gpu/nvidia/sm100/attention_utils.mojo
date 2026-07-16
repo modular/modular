@@ -2130,7 +2130,7 @@ def elect_mma_arrive[
         "Unsupported cta group: ", cta_group
     )
 
-    comptime type = mbar_ptr.type
+    comptime type = mbar_ptr.T
     comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[
@@ -2172,7 +2172,7 @@ def expect_bytes_pred(
             skipped when this is 0.
     """
 
-    comptime type = mbar_ptr.type
+    comptime type = mbar_ptr.T
     comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[

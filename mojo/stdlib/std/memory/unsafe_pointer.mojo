@@ -239,29 +239,29 @@ def alloc[
 
 
 comptime MutUnsafePointer[
-    type: AnyType,
+    T: AnyType,
     origin: MutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = UnsafePointer[mut=True, type, origin, address_space=address_space]
+] = UnsafePointer[mut=True, T, origin, address_space=address_space]
 """A mutable unsafe pointer.
 
 Parameters:
-    type: The pointee type.
+    T: The pointee type.
     origin: The origin of the pointer.
     address_space: The address space of the pointer.
 """
 
 comptime ImmUnsafePointer[
-    type: AnyType,
+    T: AnyType,
     origin: ImmOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = UnsafePointer[type, origin, address_space=address_space]
+] = UnsafePointer[T, origin, address_space=address_space]
 """An immutable unsafe pointer.
 
 Parameters:
-    type: The pointee type.
+    T: The pointee type.
     origin: The origin of the pointer.
     address_space: The address space of the pointer.
 """
@@ -318,16 +318,16 @@ comptime ImmutOpaquePointer = ImmOpaquePointer
 comptime OptionalUnsafePointer[
     mut: Bool,
     //,
-    type: AnyType,
+    T: AnyType,
     origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = Optional[UnsafePointer[type, origin, address_space=address_space]]
+] = Optional[UnsafePointer[T, origin, address_space=address_space]]
 """An optional (nullable) `UnsafePointer`.
 
 Parameters:
     mut: The mutability of the pointer.
-    type: The type of the pointee.
+    T: The type of the pointee.
     origin: The origin of the pointer.
     address_space: The address space of the pointer.
 """
@@ -336,7 +336,7 @@ Parameters:
 struct Pointer[
     mut: Bool,
     //,
-    type: AnyType,
+    T: AnyType,
     origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -477,7 +477,7 @@ struct Pointer[
 
     Parameters:
         mut: Whether the origin is mutable.
-        type: The type the pointer points to.
+        T: The type the pointer points to.
         origin: The origin of the memory being addressed.
         address_space: The address space associated with the `Pointer` allocated memory.
         _safe: Temporary parameter while merging the `UnsafePointer` and `Pointer` types.
@@ -487,11 +487,15 @@ struct Pointer[
     # Aliases
     # ===-------------------------------------------------------------------===#
 
+    @deprecated("`Pointer.type` is deprecated, use `Pointer.T` instead.")
+    comptime type = Self.T
+    """A temporary deprecated type alias while renaming Pointer's parameter `T`."""
+
     comptime _is_unsafe = not Self._safe
 
     comptime _mlir_lit_ref = __mlir_type[
         `!lit.ref<`,
-        Self.type,
+        Self.T,
         `, `,
         Self.origin._mlir_origin,
         `, `,
@@ -501,7 +505,7 @@ struct Pointer[
 
     comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
-        Self.type,
+        Self.T,
         `, `,
         Self.address_space._value._mlir_value,
         `>`,
@@ -512,7 +516,7 @@ struct Pointer[
         with_mut: Bool, //, with_origin: Origin[mut=with_mut]
     ] = Pointer[
         mut=with_mut,
-        Self.type,
+        Self.T,
         with_origin,
         address_space=Self.address_space,
         _safe=Self._safe,
@@ -585,7 +589,7 @@ struct Pointer[
     def __init__(
         out self,
         *,
-        ref[Self.origin, Self.address_space._value._mlir_value] to: Self.type,
+        ref[Self.origin, Self.address_space._value._mlir_value] to: Self.T,
     ):
         """Constructs a Pointer from a reference to a value.
 
@@ -603,7 +607,7 @@ struct Pointer[
     def __init__(
         other: Pointer,
         out self: Pointer[
-            other.type,
+            other.T,
             ImmOrigin(other.origin),
             address_space=other.address_space,
             _safe=Self._safe,
@@ -624,7 +628,7 @@ struct Pointer[
     # @always_inline("builtin")
     # def __init__(
     #     out self,
-    #     other: Pointer[Self.type, _, address_space=Self.address_space, _safe=_],
+    #     other: Pointer[Self.T, _, address_space=Self.address_space, _safe=_],
     # ) where Self.origin.contains[other.origin]:
     #     """Implicitly casts a pointer with one origin to another origin when
     #     the result origin is a superset.
@@ -643,7 +647,7 @@ struct Pointer[
     ](
         other: Pointer[...],
         out self: Pointer[
-            other.type,
+            other.T,
             other.origin,
             address_space=other.address_space,
             _safe=Self._safe,
@@ -652,9 +656,9 @@ struct Pointer[
         self = {_mlir_value = other._mlir_value}
 
     def __init__[
-        T: ImplicitlyDeletable, //
+        U: ImplicitlyDeletable, //
     ](
-        out self: Pointer[T, Self.origin, _safe=Self._safe],
+        out self: Pointer[U, Self.origin, _safe=Self._safe],
         *,
         ref[Self.origin] unchecked_downcast_value: PythonObject,
     ):
@@ -664,13 +668,13 @@ struct Pointer[
         an initialized Mojo object of matching type.
 
         Parameters:
-            T: Pointee type that can be destroyed implicitly (without
+            U: Pointee type that can be destroyed implicitly (without
               deinitializer arguments).
 
         Args:
             unchecked_downcast_value: The Python object to downcast from.
         """
-        self = unchecked_downcast_value.unchecked_downcast_value_ptr[T]()
+        self = unchecked_downcast_value.unchecked_downcast_value_ptr[U]()
 
     # ===------------------------------------------------------------------===#
     # UnsafeNicheable
@@ -678,7 +682,7 @@ struct Pointer[
 
     @doc_hidden
     comptime NicheStorage: NicheStorageTraits = _UnsafePointerNicheStorage[
-        Self.type, Self.address_space
+        Self.T, Self.address_space
     ]
 
     @staticmethod
@@ -687,7 +691,7 @@ struct Pointer[
     def write_niche(
         memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
     ):
-        memory.bitcast[_Null[Self.type, Self.address_space]]().unsafe_write({})
+        memory.bitcast[_Null[Self.T, Self.address_space]]().unsafe_write({})
 
     @staticmethod
     @always_inline
@@ -695,7 +699,7 @@ struct Pointer[
     def isa_niche(
         memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
     ) -> Bool:
-        comptime NullType = _Null[Self.type, Self.address_space]
+        comptime NullType = _Null[Self.T, Self.address_space]
         comptime null_address = Int(NullType())
         return Int(memory.bitcast[NullType]()[]) == null_address
 
@@ -704,7 +708,7 @@ struct Pointer[
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    def __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
+    def __getitem__(self) -> ref[Self.origin, Self.address_space] Self.T:
         """Return a reference to the underlying data.
 
         Returns:
@@ -719,9 +723,7 @@ struct Pointer[
     @always_inline("nodebug")
     def __getitem__[
         I: Indexer
-    ](self, *, unsafe_offset: I) -> ref[
-        Self.origin, Self.address_space
-    ] Self.type:
+    ](self, *, unsafe_offset: I) -> ref[Self.origin, Self.address_space] Self.T:
         """Return a reference to the underlying data, offset by the given index.
 
         Parameters:
@@ -737,9 +739,9 @@ struct Pointer[
 
         - The pointer does not track the bounds of the memory it points
           into, so this does not check whether `unsafe_offset` (in elements
-          of `type`) keeps the result within those bounds. `self` offset by
+          of `T`) keeps the result within those bounds. `self` offset by
           `unsafe_offset` must point to a valid, initialized element of
-          `type`; an out-of-bounds `unsafe_offset` is undefined behavior.
+          `T`; an out-of-bounds `unsafe_offset` is undefined behavior.
         """
         return self.unsafe_offset(unsafe_offset)[]
 
@@ -749,7 +751,7 @@ struct Pointer[
         I: Indexer, //
     ](self, offset: I) -> ref[
         Self.origin, Self.address_space
-    ] Self.type where Self._is_unsafe:
+    ] Self.T where Self._is_unsafe:
         """Return a reference to the underlying data, offset by the given index.
 
         Parameters:
@@ -825,7 +827,7 @@ struct Pointer[
     @always_inline("nodebug")
     def __eq__(
         self,
-        rhs: Pointer[Self.type, _, address_space=Self.address_space, _safe=_],
+        rhs: Pointer[Self.T, _, address_space=Self.address_space, _safe=_],
     ) -> Bool:
         """Returns True if the two pointers are equal.
 
@@ -854,7 +856,7 @@ struct Pointer[
     @always_inline("nodebug")
     def __ne__(
         self,
-        rhs: Pointer[Self.type, _, address_space=Self.address_space, _safe=_],
+        rhs: Pointer[Self.T, _, address_space=Self.address_space, _safe=_],
     ) -> Bool:
         """Returns True if the two pointers are not equal.
 
@@ -883,7 +885,7 @@ struct Pointer[
     @always_inline("nodebug")
     def __lt__(
         self,
-        rhs: Pointer[Self.type, _, address_space=Self.address_space, _safe=_],
+        rhs: Pointer[Self.T, _, address_space=Self.address_space, _safe=_],
     ) -> Bool:
         """Returns True if this pointer represents a lower address than rhs.
 
@@ -912,7 +914,7 @@ struct Pointer[
     @always_inline("nodebug")
     def __le__(
         self,
-        rhs: Pointer[Self.type, _, address_space=Self.address_space, _safe=_],
+        rhs: Pointer[Self.T, _, address_space=Self.address_space, _safe=_],
     ) -> Bool:
         """Returns True if this pointer represents a lower than or equal
            address than rhs.
@@ -943,7 +945,7 @@ struct Pointer[
     @always_inline("nodebug")
     def __gt__(
         self,
-        rhs: Pointer[Self.type, _, address_space=Self.address_space, _safe=_],
+        rhs: Pointer[Self.T, _, address_space=Self.address_space, _safe=_],
     ) -> Bool:
         """Returns True if this pointer represents a higher address than rhs.
 
@@ -974,7 +976,7 @@ struct Pointer[
     @always_inline("nodebug")
     def __ge__(
         self,
-        rhs: Pointer[Self.type, _, address_space=Self.address_space, _safe=_],
+        rhs: Pointer[Self.T, _, address_space=Self.address_space, _safe=_],
     ) -> Bool:
         """Returns True if this pointer represents a higher than or equal
            address than rhs.
@@ -1007,14 +1009,14 @@ struct Pointer[
     def __merge_with__[
         other_type: type_of(
             Pointer[
-                Self.type,
+                Self.T,
                 origin=_,
                 address_space=Self.address_space,
                 _safe=_,
             ]
         ),
     ](self) -> Pointer[
-        type=Self.type,
+        T=Self.T,
         origin=origin_of(Self.origin, other_type.origin),
         address_space=Self.address_space,
         _safe=Self._safe and other_type._safe,
@@ -1074,7 +1076,7 @@ struct Pointer[
         """
         FormatStruct(writer, "Pointer").params(
             Named("mut", Self.mut),
-            TypeNames[Self.type](),
+            TypeNames[Self.T](),
             Named("address_space", Self.address_space),
         ).fields(self)
 
@@ -1087,7 +1089,7 @@ struct Pointer[
     """DeviceBuffer dtypes are remapped to Pointer when passed to accelerator devices."""
 
     @staticmethod
-    def _is_convertible_to_device_type[T: AnyType]() -> Bool:
+    def _is_convertible_to_device_type[U: AnyType]() -> Bool:
         comptime if Self.mut:
             return TypeList.of[
                 Self,
@@ -1095,13 +1097,13 @@ struct Pointer[
                 Self._OriginCastType[MutUntrackedOrigin],
                 Self._OriginCastType[ImmutAnyOrigin],
                 Self._OriginCastType[ImmUntrackedOrigin],
-            ]().contains[T]()
+            ]().contains[U]()
         else:
             return TypeList.of[
                 Self,
                 Self._OriginCastType[ImmutAnyOrigin],
                 Self._OriginCastType[ImmUntrackedOrigin],
-            ]().contains[T]()
+            ]().contains[U]()
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
@@ -1122,7 +1124,7 @@ struct Pointer[
         """
         return String(
             "UnsafePointer[",
-            reflect[Self.type].name(),
+            reflect[Self.T].name(),
             ", mut=",
             Self.mut,
             ", address_space=",
@@ -1151,7 +1153,7 @@ struct Pointer[
 
         - The pointer does not track the bounds of the memory it points
           into, so this does not check whether `offset` (in elements of
-          `type`) keeps the result within those bounds. Computing an
+          `T`) keeps the result within those bounds. Computing an
           out-of-bounds pointer is not itself unsafe, but dereferencing
           (loading from, storing to, or indexing) the result is undefined
           behavior unless it is back within bounds.
@@ -1191,7 +1193,7 @@ struct Pointer[
         # initializing it first! The pointer is not null but isn't valid either!
         ```
         """
-        comptime alignment = align_of[Self.type]()
+        comptime alignment = align_of[Self.T]()
         comptime if CurrentPlugin.unsafe_dangling_fn:
             comptime address = CurrentPlugin.unsafe_dangling_fn.value()[
                 alignment
@@ -1813,13 +1815,13 @@ struct Pointer[
 
     @always_inline("nodebug")
     def unsafe_strided_load[
-        dtype: DType, T: Intable, //, width: Int
-    ](self: Pointer[Scalar[dtype], ...], stride: T) -> SIMD[dtype, width]:
+        dtype: DType, S: Intable, //, width: Int
+    ](self: Pointer[Scalar[dtype], ...], stride: S) -> SIMD[dtype, width]:
         """Performs a strided load of the SIMD vector.
 
         Parameters:
             dtype: DType of returned SIMD value.
-            T: The Intable type of the stride.
+            S: The Intable type of the stride.
             width: The SIMD width.
 
         Args:
@@ -1842,10 +1844,10 @@ struct Pointer[
     @doc_hidden
     @always_inline("nodebug")
     def strided_load[
-        dtype: DType, T: Intable, //, width: Int
+        dtype: DType, S: Intable, //, width: Int
     ](
         self: Pointer[Scalar[dtype], ...],
-        stride: T,
+        stride: S,
     ) -> SIMD[
         dtype, width
     ] where type_of(self)._is_unsafe:
@@ -1854,19 +1856,19 @@ struct Pointer[
     @always_inline("nodebug")
     def unsafe_strided_store[
         dtype: DType,
-        T: Intable,
+        S: Intable,
         //,
         width: SIMDSize = 1,
     ](
         self: Pointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
-        stride: T,
+        stride: S,
     ):
         """Performs a strided store of the SIMD vector.
 
         Parameters:
             dtype: DType of `val`, the SIMD value to store.
-            T: The Intable type of the stride.
+            S: The Intable type of the stride.
             width: The SIMD width.
 
         Args:
@@ -1888,13 +1890,13 @@ struct Pointer[
     @always_inline("nodebug")
     def strided_store[
         dtype: DType,
-        T: Intable,
+        S: Intable,
         //,
         width: SIMDSize = 1,
     ](
         self: Pointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
-        stride: T,
+        stride: S,
     ) where type_of(self)._is_unsafe:
         self.unsafe_strided_store[width=width](val, stride)
 
@@ -2088,21 +2090,21 @@ struct Pointer[
     @doc_hidden
     @always_inline
     def free(
-        self: Pointer[mut=True, Self.type, ...]
+        self: Pointer[mut=True, Self.T, ...]
     ) where type_of(self)._is_unsafe:
         """Free the memory referenced by the pointer."""
         _free(self)
 
     @always_inline("builtin")
     def unsafe_bitcast[
-        T: AnyType
+        U: AnyType
     ](self) -> Pointer[
-        T, Self.origin, address_space=Self.address_space, _safe=Self._safe
+        U, Self.origin, address_space=Self.address_space, _safe=Self._safe
     ]:
         """Bitcasts a Pointer to a different type.
 
         Parameters:
-            T: The target type.
+            U: The target type.
 
         Returns:
             A new Pointer object with the specified type and the same address,
@@ -2110,15 +2112,15 @@ struct Pointer[
 
         Safety:
 
-        - This does not check that `T` is compatible with the pointee type
+        - This does not check that `U` is compatible with the pointee type
           in size, alignment, or bit layout. Reading or writing through the
           returned pointer is undefined behavior unless the memory it
-          points to actually holds (or is being written as) a valid `T`.
+          points to actually holds (or is being written as) a valid `U`.
         """
         return {
             _mlir_value = __mlir_op.`pop.pointer.bitcast`[
                 _type=Pointer[
-                    T,
+                    U,
                     Self.origin,
                     address_space=Self.address_space,
                     _safe=Self._safe,
@@ -2129,16 +2131,16 @@ struct Pointer[
     @doc_hidden
     @always_inline("builtin")
     def bitcast[
-        T: AnyType
+        U: AnyType
     ](self) -> Pointer[
-        T, Self.origin, address_space=Self.address_space, _safe=Self._safe
+        U, Self.origin, address_space=Self.address_space, _safe=Self._safe
     ] where Self._is_unsafe:
-        return self.unsafe_bitcast[T]()
+        return self.unsafe_bitcast[U]()
 
     comptime _OriginCastType[
         target_mut: Bool, //, target_origin: Origin[mut=target_mut]
     ] = Pointer[
-        Self.type,
+        Self.T,
         target_origin,
         address_space=Self.address_space,
         _safe=Self._safe,
@@ -2276,7 +2278,7 @@ struct Pointer[
     def unsafe_address_space_cast[
         target_address_space: AddressSpace = Self.address_space,
     ](self) -> Pointer[
-        Self.type,
+        Self.T,
         Self.origin,
         address_space=target_address_space,
         _safe=Self._safe,
@@ -2302,7 +2304,7 @@ struct Pointer[
         return {
             _mlir_value = __mlir_op.`pop.pointer.bitcast`[
                 _type=Pointer[
-                    Self.type,
+                    Self.T,
                     Self.origin,
                     address_space=target_address_space,
                     _safe=Self._safe,
@@ -2315,7 +2317,7 @@ struct Pointer[
     def address_space_cast[
         target_address_space: AddressSpace = Self.address_space,
     ](self) -> Pointer[
-        Self.type,
+        Self.T,
         Self.origin,
         address_space=target_address_space,
         _safe=Self._safe,
@@ -2326,8 +2328,8 @@ struct Pointer[
     @always_inline
     @deprecated(use=unsafe_deinit_pointee)
     def destroy_pointee[
-        T: ImplicitlyDeletable, //
-    ](self: Pointer[T, _, _safe=_]) where type_of(self).mut:
+        U: ImplicitlyDeletable, //
+    ](self: Pointer[U, _, _safe=_]) where type_of(self).mut:
         _ = __get_address_as_owned_value(self._mlir_value)
 
     @doc_hidden
@@ -2335,12 +2337,12 @@ struct Pointer[
     @deprecated(use=unsafe_deinit_pointee_with)
     def destroy_pointee_with(
         self: Pointer[
-            Self.type,
+            Self.T,
             _,
             address_space=AddressSpace.GENERIC,
             _safe=_,
         ],
-        destroy_func: def(var Self.type) thin,
+        destroy_func: def(var Self.T) thin,
     ) where type_of(self).mut:
         destroy_func(__get_address_as_owned_value(self._mlir_value))
 
@@ -2350,7 +2352,7 @@ struct Pointer[
     ) where (
         Self.mut
         and Self.address_space == AddressSpace.GENERIC
-        and conforms_to(Self.type, ImplicitlyDeletable)
+        and conforms_to(Self.T, ImplicitlyDeletable)
     ):
         """Destroys the pointed-to value.
 
@@ -2364,7 +2366,7 @@ struct Pointer[
           memory uninitialized. Subsequent reads of this pointer are
           invalid until a new valid value is written using an
           `unsafe_write()` method.
-        - `self` must point to a valid, initialized instance of `type`.
+        - `self` must point to a valid, initialized instance of `T`.
           Calling this on a pointer to uninitialized memory is undefined
           behavior.
         """
@@ -2373,7 +2375,7 @@ struct Pointer[
 
     @always_inline
     def unsafe_deinit_pointee_with(
-        self, deinit_func: Some[def(var Self.type)], /
+        self, deinit_func: Some[def(var Self.T)], /
     ) where Self.mut and Self.address_space == AddressSpace.GENERIC:
         """Destroys the pointed-to value using a user-provided deinitializer
         function.
@@ -2392,7 +2394,7 @@ struct Pointer[
           invalid until a new valid value is written using an
           `unsafe_write()` method.
         - `self` must point to a valid, initialized instance of
-          `Self.type`. Calling this on a pointer to uninitialized memory
+          `Self.T`. Calling this on a pointer to uninitialized memory
           is undefined behavior.
         """
         var this = self.unsafe_address_space_cast[AddressSpace.GENERIC]()
@@ -2400,9 +2402,9 @@ struct Pointer[
 
     @always_inline
     def unsafe_take_pointee[
-        T: Movable,
+        U: Movable,
         //,
-    ](self: Pointer[T, _, _safe=_]) -> T where type_of(self).mut:
+    ](self: Pointer[U, _, _safe=_]) -> U where type_of(self).mut:
         """Move the value at the pointer out, leaving it uninitialized.
 
         This performs a _consuming_ move, ending the origin of the value stored
@@ -2411,14 +2413,14 @@ struct Pointer[
         reading from this pointer becomes valid again.
 
         Parameters:
-            T: The type the pointer points to, which must be `Movable`.
+            U: The type the pointer points to, which must be `Movable`.
 
         Returns:
             The value at the pointer.
 
         Safety:
 
-        - `self` must point to a valid, initialized instance of `T`. Calling
+        - `self` must point to a valid, initialized instance of `U`. Calling
           this on a pointer to uninitialized memory is undefined behavior.
         - This moves the pointee out without running its destructor and
           leaves the pointee memory uninitialized. Subsequent reads of this
@@ -2430,9 +2432,9 @@ struct Pointer[
     @doc_hidden
     @always_inline
     def take_pointee[
-        T: Movable,
+        U: Movable,
         //,
-    ](self: Pointer[T, _, _safe=_]) -> T where type_of(self).mut where type_of(
+    ](self: Pointer[U, _, _safe=_]) -> U where type_of(self).mut where type_of(
         self
     )._is_unsafe:
         return self.unsafe_take_pointee()
@@ -2441,15 +2443,15 @@ struct Pointer[
     @always_inline
     @deprecated(use=unsafe_write)
     def init_pointee_move[
-        T: Movable,
+        U: Movable,
         //,
-    ](self: Pointer[T, _, _safe=_], var value: T) where type_of(self).mut:
+    ](self: Pointer[U, _, _safe=_], var value: U) where type_of(self).mut:
         __get_address_as_uninit_lvalue(self._mlir_value) = value^
 
     @always_inline
     def unsafe_write[
-        T: Movable, //
-    ](self: Pointer[T, _, _safe=_], var value: T, /) where type_of(self).mut:
+        U: Movable, //
+    ](self: Pointer[U, _, _safe=_], var value: U, /) where type_of(self).mut:
         """Write `value` into the pointer location, moving from `value`.
 
         The pointer memory location is assumed to contain uninitialized data,
@@ -2467,14 +2469,14 @@ struct Pointer[
         ```
 
         Parameters:
-            T: The type the pointer points to, which must be `Movable`.
+            U: The type the pointer points to, which must be `Movable`.
 
         Args:
             value: The value to emplace.
 
         Safety:
 
-        - `self` must point to writable memory for `T` that does not
+        - `self` must point to writable memory for `U` that does not
           currently hold a valid, live value. Writing into memory that
           already holds one overwrites it without running its destructor,
           leaking any resources it owned.
@@ -2483,9 +2485,9 @@ struct Pointer[
 
     @always_inline
     def unsafe_write[
-        T: Copyable,
+        U: Copyable,
         //,
-    ](self: Pointer[T, _, _safe=_], *, copy: T) where type_of(self).mut:
+    ](self: Pointer[U, _, _safe=_], *, copy: U) where type_of(self).mut:
         """Write a copy of `copy` into the pointer location.
 
         The pointer memory location is assumed to contain uninitialized data,
@@ -2497,14 +2499,14 @@ struct Pointer[
         side.
 
         Parameters:
-            T: The type the pointer points to, which must be `Copyable`.
+            U: The type the pointer points to, which must be `Copyable`.
 
         Args:
             copy: The value to copy.
 
         Safety:
 
-        - `self` must point to writable memory for `T` that does not
+        - `self` must point to writable memory for `U` that does not
           currently hold a valid, live value. Writing into memory that
           already holds one overwrites it without running its destructor,
           leaking any resources it owned.
@@ -2515,17 +2517,17 @@ struct Pointer[
     @always_inline
     @deprecated(use=unsafe_write)
     def init_pointee_copy[
-        T: Copyable,
+        U: Copyable,
         //,
-    ](self: Pointer[T, _, _safe=_], value: T) where type_of(self).mut:
+    ](self: Pointer[U, _, _safe=_], value: U) where type_of(self).mut:
         __get_address_as_uninit_lvalue(self._mlir_value) = value.copy()
 
     @doc_hidden
     @always_inline
     def init_pointee_move_from[
-        T: Movable,
+        U: Movable,
         //,
-    ](self: Pointer[T, _, _safe=_], src: Pointer[T, _, _safe=_]) where (
+    ](self: Pointer[U, _, _safe=_], src: Pointer[U, _, _safe=_]) where (
         type_of(self).mut and type_of(src).mut and type_of(self)._is_unsafe
     ):
         """Moves the value `src` points to into the memory location pointed to
@@ -2568,14 +2570,14 @@ struct Pointer[
 
         Safety:
 
-        * `src` must point to a valid, initialized instance of `T`.
-        * `self` must point to writable memory for `T`. The pointee contents
+        * `src` must point to a valid, initialized instance of `U`.
+        * `self` must point to writable memory for `U`. The pointee contents
           of `self` should be uninitialized; if `self` was previously written
           with a valid value, that value will be overwritten and its
           destructor will NOT be run.
 
         Parameters:
-            T: The type the pointer points to, which must be `Movable`.
+            U: The type the pointer points to, which must be `Movable`.
 
         Args:
             src: Source pointer that the value will be moved from.
@@ -2588,17 +2590,17 @@ struct Pointer[
 comptime UnsafePointer[
     mut: Bool,
     //,
-    type: AnyType,
+    T: AnyType,
     origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = Pointer[type, origin, address_space=address_space, _safe=False]
-"""An indirect reference to one or more values of `type` consecutively in
+] = Pointer[T, origin, address_space=address_space, _safe=False]
+"""An indirect reference to one or more values of `T` consecutively in
 memory, and can refer to uninitialized memory.
 
 Parameters:
     mut: Whether the pointer is mutable.
-    type: The type the pointer points to.
+    T: The type the pointer points to.
     origin: The origin of the memory being addressed.
     address_space: The address space of the pointer.
 """

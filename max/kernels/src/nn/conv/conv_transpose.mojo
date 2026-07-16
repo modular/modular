@@ -1327,7 +1327,7 @@ def pack_filter(
                         packed_filter_ptr.store(
                             f,
                             filter_ptr.load(f * C).cast[
-                                packed_filter_ptr.type.dtype
+                                packed_filter_ptr.T.dtype
                             ](),
                         )
 
@@ -1365,7 +1365,7 @@ def pack_filter(
                         packed_filter_ptr.store(
                             f,
                             filter_ptr.load(f * C).cast[
-                                packed_filter_ptr.type.dtype
+                                packed_filter_ptr.T.dtype
                             ](),
                         )
 
