@@ -584,5 +584,5 @@ def test_nested_mutability_disabled():
     var s : String
     nested_mutability_disabled1(s, s) # This is ok, 'ref' is treated readonly
     # expected-error @below {{allows reading a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'origin_of(s)' value is passed through aliasing 'read' argument}}
+    # expected-note @below {{'origin_of(s)' value is passed through aliasing 'imm' argument}}
     nested_mutability_disabled2(s, s)
