@@ -166,7 +166,7 @@ platform(
     exec_properties = {
         "Pool": "m7i-large-executors",
         "OSFamily": "Linux",
-        "container-image": "docker://466483404629.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204",
+        "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204",
         "dockerNetwork": "off",
     },
 )
@@ -402,4 +402,16 @@ config_setting(
     name = "gpu_memory_manager_disabled",
     flag_values = {"//:gpu_disable_memory_manager": "true"},
     tags = [ALLOW_UNUSED_TAG],
+)
+
+bool_flag(
+    name = "plugin",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "plugin_enabled",
+    flag_values = {
+        "//:plugin": "true",
+    },
 )

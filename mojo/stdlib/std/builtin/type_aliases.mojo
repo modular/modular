@@ -15,8 +15,12 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-comptime ImmutOrigin = Origin[mut=False]
+comptime ImmOrigin = Origin[mut=False]
 """Immutable origin reference type."""
+
+
+@doc_hidden
+comptime ImmutOrigin = ImmOrigin
 
 comptime MutOrigin = Origin[mut=True]
 """Mutable origin reference type."""
@@ -67,11 +71,15 @@ migrate away from; prefer a concrete origin so the compiler can continue to
 track lifetimes and exclusivity.
 """
 
-comptime ImmutUnsafeAnyOrigin = UnsafeAnyOrigin[mut=False]
+comptime ImmUnsafeAnyOrigin = UnsafeAnyOrigin[mut=False]
 """The immutable universal origin that might alias any memory value.
 
 This is an unsafe escape hatch slated for removal. See `UnsafeAnyOrigin`.
 """
+
+
+@doc_hidden
+comptime ImmutUnsafeAnyOrigin = ImmUnsafeAnyOrigin
 
 comptime MutUnsafeAnyOrigin = UnsafeAnyOrigin[mut=True]
 """The mutable universal origin that might alias any memory value.
@@ -86,8 +94,8 @@ comptime ExternalOrigin[*, mut: Bool] = UntrackedOrigin[mut=mut]
 
 
 @doc_hidden
-@deprecated(use=ImmutUntrackedOrigin)
-comptime ImmutExternalOrigin = ImmutUntrackedOrigin
+@deprecated(use=ImmUntrackedOrigin)
+comptime ImmutExternalOrigin = ImmUntrackedOrigin
 
 
 @doc_hidden
@@ -115,8 +123,12 @@ memory from outside the Mojo program. For example, the pointer returned by
 Mojo-owned value.
 """
 
-comptime ImmutUntrackedOrigin = UntrackedOrigin[mut=False]
+comptime ImmUntrackedOrigin = UntrackedOrigin[mut=False]
 """An immutable origin the lifetime checker does not track."""
+
+
+@doc_hidden
+comptime ImmutUntrackedOrigin = ImmUntrackedOrigin
 
 comptime MutUntrackedOrigin = UntrackedOrigin[mut=True]
 """A mutable origin the lifetime checker does not track."""

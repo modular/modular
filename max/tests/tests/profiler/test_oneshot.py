@@ -400,10 +400,10 @@ def test_strip_bazel_path_runfiles() -> None:
     assert (
         _strip_bazel_path(
             "/home/u/.cache/bazel/_bazel_u/abc/execroot/_main/bazel-out/"
-            "k8-dbg/bin/max/python/max/entrypoints/pipelines.runfiles/_main/"
-            "max/python/max/entrypoints/cli/generate.py"
+            "k8-dbg/bin/max/python/max/_entrypoints/pipelines.runfiles/_main/"
+            "max/python/max/_entrypoints/cli/generate.py"
         )
-        == "max/python/max/entrypoints/cli/generate.py"
+        == "max/python/max/_entrypoints/cli/generate.py"
     )
 
 

@@ -14,7 +14,7 @@
 from std.math import ceildiv, exp, inf, log
 
 from std.algorithm.functional import parallelize
-from extensibility import register
+from extensibility import register, register_shape_function
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
@@ -202,7 +202,7 @@ struct LogProbabilitiesRagged:
             comptime assert False, "unsupported target"
 
 
-@compiler.register_shape_function("compute_log_probabilities_ragged")
+@register_shape_function("compute_log_probabilities_ragged")
 def compute_log_probabilities_ragged_shape[
     levels: Int
 ](

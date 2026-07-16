@@ -14,13 +14,9 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
-from max.serve.parser.tool_call_validation import (
-    check_tool_call_conformance,
-    log_tool_call_conformance,
-)
+from max.serve.parser.tool_call_validation import check_tool_call_conformance
 
 _WEATHER_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -114,32 +110,43 @@ def test_multiple_calls_independently_classified() -> None:
     ]
 
 
-def test_log_is_silent_on_valid_and_never_raises(
-    caplog: Any,
-) -> None:
-    with caplog.at_level(logging.INFO, logger="max.serve"):
-        log_tool_call_conformance(
-            [("get_weather", '{"location": "NYC"}')],
-            _SCHEMAS,
-            request_id="req-1",
-            streaming=False,
-        )
-    assert not [r for r in caplog.records if "tool_call_conformance" in r.msg]
+# --- Draft 7 dialect: validation runs under Draft 7 to match the evaluator
+# that scores our tool-call error rate under that dialect. ---
 
 
-def test_log_emits_one_line_per_failing_call(caplog: Any) -> None:
-    with caplog.at_level(logging.INFO, logger="max.serve"):
-        log_tool_call_conformance(
-            [
-                ("get_weather", '{"location": "NYC"}'),  # valid -> silent
-                ("get_weather", "{}"),  # missing required
-            ],
-            _SCHEMAS,
-            request_id="req-2",
-            streaming=True,
-        )
-    lines = [r for r in caplog.records if "tool_call_conformance" in r.msg]
-    assert len(lines) == 1
-    rendered = lines[0].getMessage()
-    assert "outcome=schema_mismatch" in rendered
-    assert "stream=True" in rendered
+def test_draft7_tuple_items_is_enforced() -> None:
+    """Confirms validation runs under Draft 7: array-form ``items`` is validated
+    as a tuple (item i against schema i), a Draft 7 feature. Here the second
+    tuple element must be an integer, so a string there is a mismatch."""
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "pair": {
+                "type": "array",
+                "items": [{"type": "string"}, {"type": "integer"}],
+            },
+        },
+        "required": ["pair"],
+    }
+    [r] = check_tool_call_conformance(
+        [("f", '{"pair": ["a", "b"]}')], {"f": schema}
+    )
+    assert r.outcome == "schema_mismatch"
+    assert "type@$.pair[1]" in r.errors
+
+
+def test_oneof_still_flagged_under_draft7() -> None:
+    """Draft 7 enforces ``oneOf`` as exactly-one, matching the evaluator, so an
+    argument matching more than one branch is still a mismatch. We intentionally
+    keep counting it (consistency with the evaluator)."""
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "x": {"oneOf": [{"type": "number"}, {"type": "integer"}]},
+        },
+        "required": ["x"],
+    }
+    # ``5`` matches both the number and integer branches -> oneOf violated.
+    [r] = check_tool_call_conformance([("f", '{"x": 5}')], {"f": schema})
+    assert r.outcome == "schema_mismatch"
+    assert any(e.startswith("oneOf@") for e in r.errors)

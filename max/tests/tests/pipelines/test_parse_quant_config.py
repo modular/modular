@@ -859,9 +859,7 @@ def test_modelopt_ignore_normalizes_block_sparse_moe_shared_experts() -> None:
     )
     assert global_ignore == ["layers.*.mlp.shared_experts*"]
     assert (
-        _modelopt_shared_experts_quantized_dtype(
-            global_ignore, modules_prefix=""
-        )
+        _modelopt_shared_experts_quantized_dtype(global_ignore)
         == DType.bfloat16
     )
 

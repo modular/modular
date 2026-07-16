@@ -620,6 +620,50 @@ def test__cache_and_split_none_hash_not_cached() -> None:
     assert len(cache._cache) == 0
 
 
+def test__cache_and_split_zero_hash_not_cached() -> None:
+    """0 is the no-content-hash sentinel; lookup() treats it as a miss, so a
+    0-hash entry is never retrievable and must not be cached."""
+    cache = _make_cache()
+    total = _make_buffer(5, 4)
+    cache._cache_and_split(
+        vision_outputs=[total],
+        per_image_token_counts=[5],
+        image_hashes=[0],
+        request_ids=[RequestID("r1")],
+    )
+    assert len(cache._cache) == 0
+    assert cache.lookup(0) is None
+
+
+def test__cache_and_split_skips_zero_hash_keeps_offset() -> None:
+    """A 0 (no-content) hash is skipped, but its tokens still advance the split
+    offset so later real images get the correct slice."""
+    cache = _make_cache()
+    hidden = 4
+    total = _make_buffer(9, hidden)  # 2 (A) + 3 (zero) + 4 (B)
+    cache._cache_and_split(
+        vision_outputs=[total],
+        per_image_token_counts=[2, 3, 4],
+        image_hashes=[0xA, 0, 0xB],
+        request_ids=[RequestID("r1"), RequestID("r1"), RequestID("r1")],
+    )
+    # Only the two real hashes are cached; the 0-hash range is skipped.
+    assert cache.lookup(0) is None
+    assert len(cache._cache) == 2
+    entry_a = cache.lookup(0xA)
+    entry_b = cache.lookup(0xB)
+    assert entry_a is not None and entry_a.num_tokens == 2
+    assert entry_b is not None and entry_b.num_tokens == 4
+    # A takes rows [0:2]; B takes rows [5:9] -- the offset advanced past the
+    # 3 skipped zero-hash rows, so B is NOT [2:6].
+    np.testing.assert_array_equal(
+        entry_a.embeddings[0].to_numpy(), total.to_numpy()[0:2]
+    )
+    np.testing.assert_array_equal(
+        entry_b.embeddings[0].to_numpy(), total.to_numpy()[5:9]
+    )
+
+
 def test_assemble_concatenates_in_order() -> None:
     cache = _make_cache()
     hidden = 4
@@ -1075,3 +1119,54 @@ def test_prepare_vision_outputs_chunked_prefill() -> None:
     # positions 4,5 < processed_length=6 → OOB
     # positions 6,7,8,9 → offsets 0,1,2,3
     np.testing.assert_array_equal(indices, [oob, oob, 0, 1, 2, 3])
+
+
+# ---------------------------------------------------------------------------
+# Per-iteration metrics (pop_metrics) tests
+# ---------------------------------------------------------------------------
+
+
+def test_pop_metrics_none_for_text_only() -> None:
+    cache = _make_cache()
+    ctx = FakeContext(request_id=RequestID("r1"), images=[])
+    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    assert cache.pop_metrics() is None
+
+
+def test_pop_metrics_counts_hits_and_misses() -> None:
+    cache = _make_cache()
+    cache.insert(0xA, [_make_buffer(5)], 5)  # pre-cache image A -> hit
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 5, image_hash=0xA),  # cached hit, 5 tokens
+            _make_image_meta(5, 12, image_hash=0xB),  # miss, 7 tokens, 1 patch
+        ],
+    )
+    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    m = cache.pop_metrics()
+    assert m is not None
+    assert m.num_images_total == 2
+    assert m.num_images_cached == 1
+    assert m.num_images_encoded == 1
+    assert m.num_patches_encoded == 1  # only the miss is encoded
+    assert m.num_tokens_encoded == 7  # 12 - 5
+    assert m.cache_hit_rate == 0.5
+    # pop resets the accumulator.
+    assert cache.pop_metrics() is None
+
+
+def test_pop_metrics_disabled_cache_counts_all_as_encoded() -> None:
+    cache = _make_cache_sized(0)  # caching disabled
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 5, image_hash=0xA)],
+    )
+    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    m = cache.pop_metrics()
+    assert m is not None
+    assert m.num_images_total == 1
+    assert m.num_images_encoded == 1
+    assert m.num_images_cached == 0
+    assert m.num_patches_encoded == 1
+    assert m.num_tokens_encoded == 5

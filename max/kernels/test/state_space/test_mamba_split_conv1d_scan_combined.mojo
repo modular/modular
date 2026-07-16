@@ -205,7 +205,7 @@ def run_mamba_split_conv1d_scan_combined[
         random(outproj_weight_h)
         random(outproj_bias_h)
 
-    var epsilon = Scalar[dtype](0.001)
+    var epsilon = Float32(0.001)
 
     # Call kernel
     mamba_split_conv1d_scan_combined_cpu[
@@ -256,7 +256,7 @@ def run_mamba_split_conv1d_scan_combined[
         outproj_weight_h,
         outproj_bias_h,
         output_h,
-        epsilon,
+        epsilon.cast[dtype](),
     )
 
     # ===--- Reference implementation for numerical verification ---=== #
@@ -388,7 +388,7 @@ def run_mamba_split_conv1d_scan_combined[
                 # --- Step 6: Apply gating and optional RMSNorm ---
                 var out_val = ss_output
                 if has_rmsnorm:
-                    var eps = Float32(epsilon)
+                    var eps = epsilon
                     if norm_before_gate:
                         # RMSNorm(x) * SiLU(z)
                         var norm_val = (

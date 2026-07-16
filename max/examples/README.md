@@ -28,11 +28,6 @@ PyTorch custom operations can be defined in Mojo to try out new algorithms on
 GPUs. These examples show how to extend PyTorch layers using custom operations
 written in Mojo.
 
-## [Offline inference](offline-inference/)
-
-A simple example showing how to directly send inference to an LLMs using the
-MAX Python API, without starting a webserver (without an endpoint).
-
 ## [Custom MAX models](custom-models/)
 
 An example of how to define and register a custom architecture with MAX for
@@ -59,7 +54,7 @@ modular_py_binary(
     srcs = ["addition.py"],
     imports = ["."],
     deps = [
-        "//max/python/max",
+        "//max/python/max/graph",
         requirement("numpy"),
     ],
 )
@@ -134,8 +129,7 @@ environment might have different package versions.)
 
 To make every example easy to use, they should already have a `pixi.toml` file
 that specifies the code's dependencies. To add a test, just add a task named
-`test` to the code's local `pixi.toml` file that executes the code. For
-[example](https://github.com/modular/modular/blob/8d0650d/examples/offline-inference/pixi.toml):
+`test` to the code's local `pixi.toml` file that executes the code:
 
 ```toml
 [tasks]

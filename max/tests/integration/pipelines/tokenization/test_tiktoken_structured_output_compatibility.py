@@ -25,7 +25,9 @@ import llguidance.numpy
 import pytest
 from llguidance import LLMatcher, LLTokenizer
 from llguidance._tokenizer import TokenizerWrapper
-from max.pipelines.lib.pipeline_variants.utils import _TikTokenAdapter
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    _TikTokenAdapter,
+)
 from transformers import (
     AutoTokenizer,
     PreTrainedTokenizerBase,

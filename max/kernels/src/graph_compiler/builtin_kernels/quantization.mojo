@@ -105,7 +105,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         scales: OutputTensor[dtype=scale_dtype, rank=rank, ...],
         input: FusedInputTensor[dtype=input_dtype, rank=rank, ...],
         gamma: InputTensor[dtype=input_dtype, rank=1, ...],
-        epsilon: Scalar[dtype=input_dtype],
+        epsilon: Float32,
         weight_offset: Scalar[dtype=input_dtype],
         scale_ub: Float32,
         ctx: DeviceContext,
@@ -150,7 +150,7 @@ def composite_rms_norm_fused_quantize_dynamic_scaled_fp8_shape[
 ](
     input: InputTensor[dtype=input_dtype, rank=rank, ...],
     gamma: InputTensor[dtype=input_dtype, rank=1, ...],
-    epsilon: Scalar[dtype=input_dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype=input_dtype],
     scale_ub: Float32,
 ) -> IndexList[rank]:
@@ -698,7 +698,6 @@ struct Struct_quantize_dynamic_block_scaled:
             " block scaled support"
         )
 
-        cuda_ctx = context
         quantize_dynamic_block_scaled[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             target=target,
@@ -707,7 +706,7 @@ struct Struct_quantize_dynamic_block_scaled:
             scales.to_tile_tensor[DType.int64](),
             input.to_tile_tensor[DType.int64](),
             tensor_sf,
-            cuda_ctx,
+            context,
         )
 
 
@@ -736,7 +735,6 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
             target
         ](), "grouped quantize dynamic block scaled only supports GPUs"
 
-        cuda_ctx = context
         grouped_quantize_dynamic_scaled_fp4_async(
             output.to_tile_tensor[DType.int64](),
             scales.to_tile_tensor[DType.int64](),
@@ -745,7 +743,7 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
             scales_offsets.to_tile_tensor[DType.int64](),
             expert_ids.to_tile_tensor[DType.int64](),
             sf_tensor.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            context,
         )
 
 
@@ -804,8 +802,6 @@ struct Struct_dequant_mxfp4:
             scales_type == DType.float8_e8m0fnu
         ), "MXFP4 dequant scales must be float8_e8m0fnu"
 
-        cuda_ctx = context
-
         var in_tt = input.to_tile_tensor[DType.int64]()
         var scales_tt = scales.to_tile_tensor[DType.int64]()
         var out_tt = output.to_tile_tensor[DType.int64]()
@@ -815,7 +811,7 @@ struct Struct_dequant_mxfp4:
         var num_cols = Int(in_tt.dim[1]()) * 2
 
         dequant_mxfp4(
-            cuda_ctx,
+            context,
             out_tt,
             in_tt,
             scales_tt,
@@ -843,11 +839,10 @@ struct Struct_interleave_block_scales:
             " block scaled support"
         )
 
-        cuda_ctx = context
         block_scales_interleave[SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target](
             output_scales.to_tile_tensor[DType.int64](),
             input_scales.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            context,
         )
 
 
@@ -958,7 +953,8 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
         kv_blocks: MutableInputTensor[dtype=DType.float32, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
@@ -966,7 +962,8 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
             kv_blocks,
             cache_lengths,
             kv_lookup_table,
-            max_lengths,
+            max_prompt_length,
+            max_cache_length,
         )
         unfused_qkv_matmul_ragged_paged_gguf_quantized[
             quantization_encoding_q,

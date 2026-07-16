@@ -29,6 +29,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from max.pipelines.context import BaseContext
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    make_grammar_validator,
+)
 from max.pipelines.modeling.types import (
     PipelineOutput,
     PipelinesFactory,
@@ -37,6 +40,10 @@ from max.pipelines.modeling.types import (
 )
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.media import GeneratedMediaStore
+from max.serve.pipelines.eplb_stats_rpc import (
+    EplbStatsFrontend,
+    EplbStatsResetFrontend,
+)
 from max.serve.pipelines.general_handler import GeneralPipelineHandler
 from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
@@ -181,6 +188,7 @@ async def lifespan(
                 lora_queue=lora_queue,
                 model_worker=model_worker,
                 reasoning_parser_name=serving_settings.reasoning_parser_name,
+                min_chunk_tokens=settings.stream_min_chunk_tokens,
             ),
             PipelineTask.EMBEDDINGS_GENERATION: lambda: TokenGeneratorPipeline(
                 model_name=serving_settings.pipeline_config.models.model_name,
@@ -202,6 +210,20 @@ async def lifespan(
         # OpenResponses API uses GeneralPipelineHandler
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
+
+        # Admission-time grammar validator (text generation only). Rejects a
+        # response_format / tool schema the active backend cannot compile with a
+        # 400 up front.
+        app.state.grammar_validator = None
+        if serving_settings.task == PipelineTask.TEXT_GENERATION and hasattr(
+            serving_settings.tokenizer, "delegate"
+        ):
+            delegate = serving_settings.tokenizer.delegate
+            app.state.grammar_validator = make_grammar_validator(
+                serving_settings.pipeline_config.sampling.structured_output_backend,
+                delegate,
+                len(delegate),
+            )
 
         # Also store as handler for OpenResponses API route compatibility
         # For pixel generation, this is the same as pipeline
@@ -356,6 +378,42 @@ def fastapi_app(
         "/reset_prefix_cache", reset_prefix_cache, methods=["POST"]
     )
 
+    eplb_stats_frontend = EplbStatsFrontend(zmq_endpoint_base)
+
+    async def eplb_stats() -> Response:
+        """Get the EPLB stats snapshot."""
+        if not settings.eplb_profile:
+            return Response(
+                status_code=404,
+                content="EPLB stats profiling is not enabled.",
+            )
+        try:
+            snap = await eplb_stats_frontend.fetch_snapshot()
+        except TimeoutError:
+            return Response(
+                status_code=504,
+                content="EPLB stats fetch timed out.",
+            )
+        return JSONResponse(snap.to_dict())
+
+    app.add_api_route("/max_internal/eplb_stats", eplb_stats, methods=["GET"])
+
+    # reset eplb stat endpoint
+    eplb_stats_reset_frontend = EplbStatsResetFrontend(zmq_endpoint_base)
+
+    async def eplb_stats_reset() -> Response:
+        """Reset the EP stats accumulator on the worker."""
+        if not settings.eplb_profile:
+            return Response(
+                status_code=404,
+                content="EP stats profiling is not enabled.",
+            )
+        eplb_stats_reset_frontend.enqueue_reset()
+        return Response(status_code=200, content="Success")
+
+    app.add_api_route(
+        "/max_internal/eplb_stats_reset", eplb_stats_reset, methods=["POST"]
+    )
     for api_type in settings.api_types:
         app.include_router(ROUTES[api_type].router)
 
@@ -377,7 +435,7 @@ def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
         loop="uvloop",
         host=server_settings.host,
         port=server_settings.port,
-        timeout_graceful_shutdown=5,
+        timeout_graceful_shutdown=server_settings.graceful_shutdown_timeout_s,
         # The serving lifespan (model worker, pipeline, telemetry) is entered
         # explicitly by the entrypoint around `server.serve()` so that a worker
         # crash cancels the serving task directly. Keep uvicorn out of the

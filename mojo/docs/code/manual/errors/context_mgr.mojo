@@ -22,14 +22,12 @@ struct Timer(ImplicitlyCopyable):
         self.start_time = 0
 
     def __enter__(mut self) -> Self:
-        self.start_time = Int(std.time.perf_counter_ns())
+        self.start_time = std.time.perf_counter_ns()
         return self
 
     def __exit__(mut self):
         end_time = std.time.perf_counter_ns()
-        elapsed_time_ms = round(
-            Float64(end_time - UInt(self.start_time)) / 1e6, 3
-        )
+        elapsed_time_ms = round(Float64(end_time - self.start_time) / 1e6, 3)
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
 

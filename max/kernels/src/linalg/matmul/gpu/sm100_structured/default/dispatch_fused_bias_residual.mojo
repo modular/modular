@@ -82,6 +82,14 @@ def fused_bias_residual_matmul_dispatch_sm100[
     ), "a_type and b_type must be bfloat16 and must be the same"
     comptime assert c_type in (DType.bfloat16,), "c_type must be bfloat16"
 
+    # Zero-sized output (e.g. an ``(0, N)`` GEMM from the fused Linear layers
+    # of a diffusion VAE encoder running on the text-to-image ``(0, 0, 3)``
+    # placeholder image): nothing to compute.  The generic ``matmul`` entry
+    # guards this identically. The output buffer is pre-allocated zero-element
+    # by the caller, so an early return produces the correct empty output.
+    if m == 0 or Int(c.dim[1]()) == 0:
+        return
+
     # The bias/residual as a store epilogue: `c = (a @ b) + epilogue[coords]`,
     # broadcasting row 0 for a 1D bias. Every non-TMA kernel (GEMV, small-MN,
     # cuBLAS) applies this exactly once.
@@ -106,14 +114,13 @@ def fused_bias_residual_matmul_dispatch_sm100[
         _get_tuning_list_small_MN_gemms_bf16(), "small_MN_gemms_configs"
     )
 
-    @parameter
     @always_inline
-    def small_MN_gemms_rule(x: TuningConfigSmallMNGemms) -> Bool:
+    def small_MN_gemms_rule(x: TuningConfigSmallMNGemms) {} -> Bool:
         return x.K == static_K and x.N == static_N
 
-    comptime small_MN_gemms_configs = small_MN_gemms_table.find[
-        small_MN_gemms_rule
-    ]()
+    comptime small_MN_gemms_configs = small_MN_gemms_table.find(
+        rule=small_MN_gemms_rule
+    )
 
     comptime if small_MN_gemms_configs:
         comptime for config in small_MN_gemms_configs:

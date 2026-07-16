@@ -183,7 +183,7 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
-   build_max_lengths_tensor
+   build_max_lengths_tensors
    clamp
    forward_moe_sharded_layers
    split_batch

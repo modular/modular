@@ -15,7 +15,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.gpu.host.device_context import DefaultDeviceTypeEncoder
 from std.testing import assert_equal, TestSuite
 from std.utils import StaticTuple
-from std.utils.coord import Coord
+from std.utils.coord import ComptimeInt, Coord, Idx
 
 
 # A DevicePassable type whose `_to_device_type` scales the encoded value, so a
@@ -310,6 +310,35 @@ def test_to_device_type_encodes_fields_with_coord() raises:
     assert_equal(buf[].scaled.raw, 16)
     assert_equal(Int(buf[].dims[0].value()), 5)
     assert_equal(Int(buf[].dims[1].value()), 6)
+    buf.free()
+
+
+def test_coord_is_device_passable() raises:
+    comptime assert conforms_to(Coord[Int, Int], DevicePassable)
+    comptime C = Coord[Int, Int]
+    comptime assert C.device_type == C
+    comptime assert C._is_convertible_to_device_type[C]()
+
+
+def test_coord_to_device_type_bit_copies() raises:
+    var c = Coord[Int, Int](Int(3), Int(4))
+    var buf = alloc[Coord[Int, Int]](1)
+    var encoder = DefaultDeviceTypeEncoder()
+    c._to_device_type(encoder, buf.bitcast[NoneType]())
+    assert_equal(Int(buf[][0].value()), 3)
+    assert_equal(Int(buf[][1].value()), 4)
+    buf.free()
+
+
+# The static (zero-sized) dim lives entirely in the type, so the bit-copy
+# carries only the runtime leaf yet reads back with both dims intact.
+def test_coord_to_device_type_mixed_static_dynamic() raises:
+    var c = Coord[ComptimeInt[7], Int64](Idx[7], Int64(9))
+    var buf = alloc[type_of(c)](1)
+    var encoder = DefaultDeviceTypeEncoder()
+    c._to_device_type(encoder, buf.bitcast[NoneType]())
+    assert_equal(Int(buf[][0].value()), 7)
+    assert_equal(Int(buf[][1].value()), 9)
     buf.free()
 
 

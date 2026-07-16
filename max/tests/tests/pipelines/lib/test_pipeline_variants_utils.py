@@ -12,18 +12,87 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for pipeline_variants/utils.py."""
 
+from __future__ import annotations
+
+from typing import Any
+
+import max.pipelines.lib.pipeline_variants.structured_output_backend as _sob
 import numpy as np
+import numpy.typing as npt
+import pytest
 from max.pipelines.context import (
     GenerationStatus,
+    GrammarMatcher,
     StructuredOutputRegionDelimiters,
     TextContext,
     TokenBuffer,
+)
+from max.pipelines.context.exceptions import InputError
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    GrammarBackend,
 )
 from max.pipelines.lib.pipeline_variants.utils import (
     StructuredOutputHelper,
     build_response,
 )
-from max.pipelines.modeling.types import RequestID
+from max.pipelines.lib.tool_parsing import StructuralTagToolParser, register
+from max.pipelines.modeling.types import ParsedToolCall, RequestID
+from max.pipelines.sampling import DEFAULT_STRUCTURED_OUTPUT_BACKEND
+
+
+class _RecordingMatcher(GrammarMatcher):
+    """Minimal GrammarMatcher that records the tokens fed to it."""
+
+    def __init__(self) -> None:
+        self.consumed: list[list[int]] = []
+
+    def try_consume_tokens(self, tokens: list[int]) -> int:
+        self.consumed.append(list(tokens))
+        return len(tokens)
+
+    def is_accepting(self) -> bool:
+        return True
+
+    def is_stopped(self) -> bool:
+        return False
+
+    def get_error(self) -> str | None:
+        return None
+
+    def get_grammar_warnings(self) -> Any:
+        return None
+
+    def deep_copy(self) -> _RecordingMatcher:
+        # Speculative walks (Part 2) use a copy, never the original.
+        return _RecordingMatcher()
+
+
+class _NoopBackend(GrammarBackend[Any]):
+    """GrammarBackend stub so Part 2's fills don't touch llguidance."""
+
+    name = "noop"
+
+    def compile_json_schema(self, json_schema: str) -> Any:
+        return None
+
+    def create_matcher(self, grammar: Any) -> GrammarMatcher:
+        return _RecordingMatcher()
+
+    def validate_grammar(self, grammar: Any) -> None:
+        return None
+
+    def allocate_token_bitmask(
+        self, batch_size: int, vocab_size: int
+    ) -> npt.NDArray[np.int32]:
+        return np.zeros((batch_size, (vocab_size + 31) // 32), dtype=np.int32)
+
+    def fill_next_token_bitmask(
+        self,
+        matcher: GrammarMatcher,
+        bitmask: npt.NDArray[np.int32],
+        index: int,
+    ) -> None:
+        pass
 
 
 def create_text_context(prompt_len: int, max_length: int) -> TextContext:
@@ -43,6 +112,45 @@ def advance_to_processed(ctx: TextContext) -> None:
     """
     ctx.update_with_future_token()
     ctx.realize_future_token(new_token=99, log_probabilities=None)
+
+
+@register("_test_section_parser")
+class _SectionParser(StructuralTagToolParser):
+    """Minimal section-wrapped parser for region-tag derivation tests."""
+
+    SECTION_BEGIN = "<sec>"
+    SECTION_END = "</sec>"
+
+    def _parse_complete_section(
+        self, tool_section: str
+    ) -> list[ParsedToolCall]:
+        return []
+
+
+@register("_test_to_eos_parser")
+class _ToEosParser(_SectionParser):
+    """Section parser that opts into enforcement-to-EOS."""
+
+    ENFORCE_TOOL_REGION_TO_EOS = True
+
+
+class TestGetToolRegionTags:
+    """``StructuredOutputHelper._get_tool_region_tags``."""
+
+    def test_section_parser_returns_section_pair(self) -> None:
+        tags = StructuredOutputHelper._get_tool_region_tags(
+            "_test_section_parser"
+        )
+        assert tags == ("<sec>", "</sec>")
+
+    def test_to_eos_parser_has_no_end_tag(self) -> None:
+        """With no end tag, enforcement never flips off: the completed
+        grammar masks everything but EOS, so the turn ends with its single
+        tool-call section (e.g. MiniMax-M3; CENG-718)."""
+        tags = StructuredOutputHelper._get_tool_region_tags(
+            "_test_to_eos_parser"
+        )
+        assert tags == ("<sec>", None)
 
 
 class TestBuildResponse:
@@ -171,3 +279,287 @@ class TestTokensForConsume:
     def test_no_delimiters_feeds_single_token(self) -> None:
         helper = StructuredOutputHelper()
         assert helper._tokens_for_consume(5, was_enforced=False) == [5]
+
+
+class TestAdvanceFsmAndComputeBitmasks:
+    """``StructuredOutputHelper.advance_fsm_and_compute_bitmasks``.
+
+    A row that can't be attributed to a producing-batch slot (absent, or reset
+    to an initial prompt after enqueue) must be degraded to the all-valid -1
+    reset rather than raising -- a raise blanket-unconstrains the whole batch.
+    """
+
+    @staticmethod
+    def _decoding_ctx() -> TextContext:
+        """A continuing (non-initial-prompt) unconstrained decode row."""
+        ctx = create_text_context(prompt_len=4, max_length=128)
+        # Mirror handle_prefill_response on the decode engine: applying the
+        # first generated token makes generated_length > 0 and clears
+        # is_initial_prompt -- exactly the state of a KV-transferred row.
+        ctx.update(new_token=99)
+        assert ctx.tokens.generated_length > 0
+        assert not ctx.is_initial_prompt
+        return ctx
+
+    @staticmethod
+    def _empty_bitmask(num_rows: int, num_positions: int) -> np.ndarray:
+        # Packed int32 bitmask, [rows, K+1, ceil(vocab/32)]. Vocab is small;
+        # the callback resets each row to -1 before any fill, so the only
+        # requirement is a writable rectangle of the right outer shape.
+        return np.zeros((num_rows, num_positions, 1), dtype=np.int32)
+
+    def test_row_absent_from_producing_batch_degrades_not_raises(self) -> None:
+        """A row absent from the producing batch is degraded, not raised on."""
+        helper = StructuredOutputHelper(enabled=True, vocab_size=16)
+
+        producer = self._decoding_ctx()
+        transferred = self._decoding_ctx()
+
+        producing_batch = [producer]
+        consuming_batch = [transferred, producer]
+
+        # Producing-batch-shaped spec-decode arrays: K=1 draft token.
+        accepted = np.zeros((1, 1), dtype=np.int64)
+        num_accepted = np.zeros((1,), dtype=np.int64)
+        bonus = np.full((1,), 99, dtype=np.int64)
+        next_draft = np.zeros((1, 1), dtype=np.int64)
+        # Sentinel: every reached row is reset to -1, so a row still holding 7
+        # afterwards was never reached (the loop aborted early).
+        bitmask_out = self._empty_bitmask(len(consuming_batch), num_positions=2)
+        bitmask_out[:] = 7
+
+        helper.advance_fsm_and_compute_bitmasks(
+            context_batch=producing_batch,
+            accepted_draft_tokens=accepted,
+            num_accepted=num_accepted,
+            bonus_tokens=bonus,
+            next_draft_tokens=next_draft,
+            bitmask_out=bitmask_out,
+            output_context_batch=consuming_batch,
+        )
+
+        # No raise; the degraded row and the trailing row are both reached.
+        assert (bitmask_out == -1).all()
+
+    def test_row_preempted_in_flight_degrades_not_raises(self) -> None:
+        """Regression: a row reset (preempted) after enqueue is degraded, not
+        raised on, so the rest of the batch keeps its constraints."""
+        helper = StructuredOutputHelper(enabled=True, vocab_size=16)
+
+        survivor = self._decoding_ctx()
+        preempted = self._decoding_ctx()
+
+        producing_batch = [preempted, survivor]
+        consuming_batch = [preempted, survivor]
+
+        # Mirror an in-flight preemption: the scheduler resets the context
+        # (requeuing it to context encoding) after the callback was enqueued.
+        preempted.reset()
+        assert preempted.is_initial_prompt
+
+        accepted = np.zeros((2, 1), dtype=np.int64)
+        num_accepted = np.zeros((2,), dtype=np.int64)
+        bonus = np.full((2,), 99, dtype=np.int64)
+        next_draft = np.zeros((2, 1), dtype=np.int64)
+        bitmask_out = self._empty_bitmask(len(consuming_batch), num_positions=2)
+        bitmask_out[:] = 7
+
+        helper.advance_fsm_and_compute_bitmasks(
+            context_batch=producing_batch,
+            accepted_draft_tokens=accepted,
+            num_accepted=num_accepted,
+            bonus_tokens=bonus,
+            next_draft_tokens=next_draft,
+            bitmask_out=bitmask_out,
+            output_context_batch=consuming_batch,
+        )
+
+        # No raise; the preempted row and the survivor row are both reached.
+        assert (bitmask_out == -1).all()
+
+    def test_preempted_in_flight_row_matcher_not_advanced(self) -> None:
+        """Regression: a constrained row reset (preempted) after enqueue must
+        NOT have its matcher advanced in Part 1.
+
+        ``reset()`` rewinds the token buffer (dropping the in-flight committed
+        token) but preserves ``ctx.matcher``. Advancing the matcher through that
+        dropped token would leave it one token ahead of the sequence the row
+        re-primes from on resume -- a silent desync that yields schema-shaped
+        but invalid output. The matcher must be left untouched.
+        """
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=_NoopBackend()
+        )
+
+        matcher = _RecordingMatcher()
+        preempted = self._decoding_ctx()
+        preempted.set_matcher(matcher)
+        preempted.grammar_enforced = True
+
+        producing_batch = [preempted]
+        consuming_batch = [preempted]
+
+        # Mirror an in-flight preemption after the callback was enqueued.
+        preempted.reset()
+        assert preempted.is_initial_prompt
+        assert preempted.matcher is matcher  # reset preserves the matcher
+
+        accepted = np.zeros((1, 1), dtype=np.int64)
+        num_accepted = np.zeros((1,), dtype=np.int64)
+        # A non-EOS committed (bonus) token that, absent the skip, the matcher
+        # would be advanced through.
+        bonus = np.full((1,), 5, dtype=np.int64)
+        next_draft = np.zeros((1, 1), dtype=np.int64)
+        bitmask_out = self._empty_bitmask(len(consuming_batch), num_positions=2)
+        bitmask_out[:] = 7
+
+        helper.advance_fsm_and_compute_bitmasks(
+            context_batch=producing_batch,
+            accepted_draft_tokens=accepted,
+            num_accepted=num_accepted,
+            bonus_tokens=bonus,
+            next_draft_tokens=next_draft,
+            bitmask_out=bitmask_out,
+            output_context_batch=consuming_batch,
+        )
+
+        # The preempted row's matcher was never advanced (Part 1 skipped it),
+        # and its bitmask row was left unconstrained (Part 2 skipped it).
+        assert matcher.consumed == []
+        assert (bitmask_out == -1).all()
+
+    def test_continuing_row_matcher_is_advanced(self) -> None:
+        """Control: a constrained row NOT preempted still has its matcher
+        advanced through the committed token -- the skip is preemption-only."""
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=_NoopBackend()
+        )
+
+        matcher = _RecordingMatcher()
+        ctx = self._decoding_ctx()
+        ctx.set_matcher(matcher)
+        ctx.grammar_enforced = True
+        assert not ctx.is_initial_prompt
+
+        producing_batch = [ctx]
+        consuming_batch = [ctx]
+
+        accepted = np.zeros((1, 1), dtype=np.int64)
+        num_accepted = np.zeros((1,), dtype=np.int64)
+        bonus = np.full((1,), 5, dtype=np.int64)
+        next_draft = np.zeros((1, 1), dtype=np.int64)
+        bitmask_out = self._empty_bitmask(len(consuming_batch), num_positions=2)
+
+        helper.advance_fsm_and_compute_bitmasks(
+            context_batch=producing_batch,
+            accepted_draft_tokens=accepted,
+            num_accepted=num_accepted,
+            bonus_tokens=bonus,
+            next_draft_tokens=next_draft,
+            bitmask_out=bitmask_out,
+            output_context_batch=consuming_batch,
+        )
+
+        # Part 1 advanced the original matcher through the bonus token.
+        assert matcher.consumed == [[5]]
+
+    def test_all_consumer_rows_present_in_producing_batch_ok(self) -> None:
+        """Control: steady decode->decode, every consumer row attributable.
+
+        When no row was admitted from outside the producing batch (the
+        aggregated steady-state path), the callback attributes every consumer
+        row and does not assert.
+        """
+        helper = StructuredOutputHelper(enabled=True, vocab_size=16)
+
+        row_a = self._decoding_ctx()
+        row_b = self._decoding_ctx()
+
+        producing_batch = [row_a, row_b]
+        consuming_batch = [row_a, row_b]
+
+        accepted = np.zeros((2, 1), dtype=np.int64)
+        num_accepted = np.zeros((2,), dtype=np.int64)
+        bonus = np.full((2,), 99, dtype=np.int64)
+        next_draft = np.zeros((2, 1), dtype=np.int64)
+        bitmask_out = self._empty_bitmask(len(consuming_batch), num_positions=2)
+
+        helper.advance_fsm_and_compute_bitmasks(
+            context_batch=producing_batch,
+            accepted_draft_tokens=accepted,
+            num_accepted=num_accepted,
+            bonus_tokens=bonus,
+            next_draft_tokens=next_draft,
+            bitmask_out=bitmask_out,
+            output_context_batch=consuming_batch,
+        )
+
+        # Unconstrained rows: callback resets every row to all-valid (-1).
+        assert (bitmask_out == -1).all()
+
+
+class _RaisingBackend(GrammarBackend[Any]):
+    """GrammarBackend stub whose compiles always raise, to exercise the
+    validator's exception translation."""
+
+    name = "boom"
+
+    def compile_json_schema(self, json_schema: Any) -> Any:
+        raise ValueError("cannot compile schema")
+
+    def create_matcher(self, grammar: Any) -> GrammarMatcher:
+        raise ValueError("cannot compile grammar")
+
+    def validate_grammar(self, grammar: Any) -> None:
+        return None
+
+    def allocate_token_bitmask(
+        self, batch_size: int, vocab_size: int
+    ) -> npt.NDArray[np.int32]:
+        raise NotImplementedError
+
+    def fill_next_token_bitmask(
+        self,
+        matcher: GrammarMatcher,
+        bitmask: npt.NDArray[np.int32],
+        index: int,
+    ) -> None:
+        raise NotImplementedError
+
+
+class TestGrammarValidation:
+    """A backend's GrammarValidator checks turn a compile failure into an
+    InputError (400)."""
+
+    def test_tool_grammar_ok_does_not_raise(self) -> None:
+        _NoopBackend().check_tool_grammar("<grammar>")
+
+    def test_tool_grammar_uncompilable_raises_input_error(self) -> None:
+        with pytest.raises(InputError, match="boom"):
+            _RaisingBackend().check_tool_grammar("<grammar>")
+
+    def test_json_schema_ok_does_not_raise(self) -> None:
+        _NoopBackend().check_json_schema('{"type": "object"}')
+
+    def test_json_schema_uncompilable_raises_input_error(self) -> None:
+        with pytest.raises(InputError, match="boom"):
+            _RaisingBackend().check_json_schema('{"type": "object"}')
+
+    def test_make_validator_none_falls_back_to_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A None backend_name (unresolved config) builds the validator with
+        the default backend -- mirroring StructuredOutputHelper.from_tokenizer
+        -- so admission still fires when the worker would otherwise silently
+        fall back to xgrammar on an unresolved config and crash."""
+        captured: dict[str, Any] = {}
+
+        def fake_make(
+            name: Any, delegate: Any, vocab_size: Any
+        ) -> GrammarBackend[Any]:
+            captured["name"] = name
+            return _NoopBackend()
+
+        monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
+        _sob.make_grammar_validator(None, object(), 128)
+        assert captured["name"] == DEFAULT_STRUCTURED_OUTPUT_BACKEND

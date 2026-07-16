@@ -204,18 +204,15 @@ def _quantized_layers_from_modelopt_ignore(
 
 def _modelopt_shared_experts_quantized_dtype(
     ignore_patterns: Sequence[str],
-    *,
-    modules_prefix: str = "model.",
 ) -> DType | None:
     """Return quant dtype if MoE shared experts are quantized (not in ``ignore``)."""
-    probe_paths = (
-        f"{modules_prefix}layers.0.mlp.shared_experts.gate_up_proj.weight",
-        f"{modules_prefix}layers.0.mlp.shared_experts.gate_proj.weight",
-    )
-    for probe in probe_paths:
-        for pattern in ignore_patterns:
-            if fnmatch.fnmatch(probe, pattern):
-                return DType.bfloat16
+    # modelopt leaves unquantized modules in ``ignore`` as per-layer globs like
+    # ``layers.3.mlp.shared_experts*``, so any ignore entry naming shared_experts
+    # means they stay bf16. A substring test sidesteps the ``model.`` prefix that
+    # ``_normalize_modelopt_ignore_pattern`` strips from ``layers.*`` globs.
+    for pattern in ignore_patterns:
+        if "shared_experts" in pattern:
+            return DType.bfloat16
     return None
 
 
@@ -862,7 +859,7 @@ def _parse_modelopt_float4_config(
     )
 
     shared_experts_weight_dtype = _modelopt_shared_experts_quantized_dtype(
-        ignore_patterns, modules_prefix=ignored_modules_prefix
+        ignore_patterns
     )
 
     return QuantConfig(

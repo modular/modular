@@ -572,7 +572,6 @@ struct HopperMatmulSM90Kernel[
             mut=True,
             dtype=Self.c_type,
             address_space=AddressSpace.GENERIC,
-            element_size=1,
             ...,
         ],
         c_tile: Self.SMem.CTile,

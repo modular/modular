@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import Sequence
@@ -395,13 +396,14 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         video_num_soft_tokens: list[int] = []
 
         video_metadata_list: list[VideoMetadata] = []
+        video_hashes: list[int] = []
         if request.videos:
             (
                 padded_pvs,
                 padded_pos,
                 video_num_soft_tokens,
                 video_metadata_list,
-            ) = self.video_processor(request.videos)
+            ) = await asyncio.to_thread(self.video_processor, request.videos)
             k = self.video_processor.pooling_kernel_size
             for pv, pos in zip(padded_pvs, padded_pos, strict=True):
                 real_mask = pos[:, :, 0] >= 0
@@ -411,6 +413,30 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
                     video_frame_pos_ids.append(pos[f, :n_real, :])
                     video_frame_patch_counts.append(n_real)
                     video_frame_soft_token_counts.append(n_real // (k * k))
+
+            if self.enable_vision_caching:
+                # Key each video on its raw encoded bytes (+ the process-wide
+                # spatial/temporal resolution class), not on the decoded frame
+                # pixels: the raw-byte key is byte-identical across
+                # torch/BLAS/device and frame-sampling backends so a separate
+                # encoder can reproduce it, whereas the post-resize float hash
+                # cannot. request.videos[i] is 1:1 with padded_pvs[i] (the
+                # processor emits one padded clip per input video, in order).
+                # The tier packs the fixed per-frame soft-token budget and the
+                # max sampled-frame count (both small process-wide ints).
+                video_size_tier = (
+                    self.video_processor.max_soft_tokens << 16
+                    | self.video_processor.num_frames
+                )
+                # Pair against video_metadata_list (what video_hashes is
+                # indexed against downstream via video_token_ranges) under
+                # strict=True, so a processor that ever emits a different clip
+                # count than len(request.videos) fails loudly instead of
+                # silently keying each video with another video's hash.
+                for raw_bytes, _metadata in zip(
+                    request.videos, video_metadata_list, strict=True
+                ):
+                    video_hashes.append(hash_image(raw_bytes, video_size_tier))
 
         # Expand image placeholders
         if isinstance(prompt, str):
@@ -514,17 +540,31 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         image_token_ranges = find_contiguous_ranges(
             encoded_prompt, [self.image_token_id]
         )
+        # Key each image on its raw encoded bytes (+ the resolution size class),
+        # not on hash_image(pixel_values): the raw-byte key is byte-identical
+        # across torch/BLAS/device so a separate encoder can reproduce it for
+        # cache-aware routing, whereas the post-resize float hash cannot. The
+        # size tier is the process-wide soft-token budget (gemma4 has no
+        # per-request resolution knob). The zip below is 1:1 because
+        # decoded_images is 1:1 with request.images (see
+        # TextGenerationRequest.decoded_images) and the processor emits exactly
+        # one pixel_values entry per image, so image_token_ranges,
+        # pixel_values_list, and request.images all line up by index.
+        image_size_tier = self.img_processor.max_soft_tokens
         image_metadata = [
             ImageMetadata(
                 start_idx=start_idx,
                 end_idx=end_idx,
                 pixel_values=pixels,
-                image_hash=hash_image(pixels)
+                image_hash=hash_image(raw_bytes, image_size_tier)
                 if self.enable_prefix_caching or self.enable_vision_caching
                 else None,
             )
-            for (start_idx, end_idx), pixels in zip(
-                image_token_ranges, pixel_values_list, strict=True
+            for (start_idx, end_idx), pixels, raw_bytes in zip(
+                image_token_ranges,
+                pixel_values_list,
+                request.images,
+                strict=True,
             )
         ]
 
@@ -548,6 +588,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             video_frame_patch_counts=video_frame_patch_counts,
             video_frame_soft_token_counts=video_frame_soft_token_counts,
             video_token_ranges=video_token_ranges,
+            video_hashes=video_hashes,
             tokens=TokenBuffer(
                 array=encoded_prompt.astype(np.int64, copy=False),
             ),

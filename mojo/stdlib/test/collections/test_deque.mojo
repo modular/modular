@@ -1092,14 +1092,16 @@ def test_reversed_iter() raises:
 
 def _test_deque_iter_bounds[
     I: Iterator
-](var deque_iter: I, deque_len: Int) raises:
+](var deque_iter: I, deque_len: Int) raises where conforms_to(
+    I.Element, ImplicitlyDeletable
+):
     var iter = deque_iter^
 
     for i in range(deque_len):
         var lower, upper = iter.bounds()
         assert_equal(deque_len - i, lower)
         assert_equal(deque_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
+        _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -1169,10 +1171,7 @@ struct NonEquatable(Copyable):
     pass
 
 
-@explicit_destroy(
-    "You must use .destroy() to consume `CopyableExplicitDestroy`"
-)
-struct CopyableExplicitDestroy(Copyable):
+struct CopyableExplicitDestroy(Copyable, ImplicitlyDeletable where False):
     """Test type that is `Copyable` but must be explicitly destroyed."""
 
     var value: Int
@@ -1244,7 +1243,7 @@ def test_deque_with_explicit_destroy_type() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    deque^.destroy_with(destroy_closure)
+    deque^.deinit_with(destroy_closure)
 
     assert_equal(destroyed, [0, 1, 2])
 
@@ -1266,13 +1265,13 @@ def test_deque_copy_copyable_explicit_destroy_type() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    deque^.destroy_with(destroy_closure)
-    deque_copy^.destroy_with(destroy_closure)
+    deque^.deinit_with(destroy_closure)
+    deque_copy^.deinit_with(destroy_closure)
 
     assert_equal(destroyed, [0, 1, 2, 0, 1, 2])
 
 
-def test_deque_empty_destroy_with() raises:
+def test_deque_empty_deinit_with() raises:
     var deque = Deque[ExplicitDestroy]()
 
     var destroyed = List[Int]()
@@ -1281,7 +1280,7 @@ def test_deque_empty_destroy_with() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    deque^.destroy_with(destroy_closure)
+    deque^.deinit_with(destroy_closure)
 
     assert_equal(len(destroyed), 0)
 

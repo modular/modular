@@ -299,6 +299,7 @@ def _bench_one_kernel[
                     block_k_override=bk_4wave,
                 ](tensor_a, tensor_b, tensor_c, ctx)
             elif kernel_id == KERNEL_4WAVE_SPLIT_K:
+                var local_workspace = split_k_workspace.copy()
                 amd_4wave_split_k_matmul[
                     num_splits=num_splits,
                     enable_swizzle=enable_swizzle,
@@ -310,7 +311,7 @@ def _bench_one_kernel[
                     tensor_b,
                     tensor_c,
                     ctx,
-                    workspace=split_k_workspace,
+                    workspace=local_workspace,
                 )
             elif kernel_id == KERNEL_VENDOR:
                 vendor_blas.matmul[use_tf32=True](

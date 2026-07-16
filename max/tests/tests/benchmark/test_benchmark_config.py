@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -396,3 +397,55 @@ class TestResolveSeed:
         config = ServingBenchmarkConfig(model="m", seed=1234)
         _resolve_seed(config)
         assert config.seed == 1234
+
+
+# ===----------------------------------------------------------------------=== #
+# extra_body validator
+# ===----------------------------------------------------------------------=== #
+
+
+class TestExtraBodyValidator:
+    """``ServingBenchmarkConfig.extra_body`` accepts dict / inline JSON / file."""
+
+    # Covers the shapes the merge must preserve verbatim: a top-level array
+    # (with a tricky ``}``), a scalar, and a nested object.
+    _NESTED = {
+        "stop": ["}"],
+        "max_tokens": 15,
+        "chat_template_kwargs": {"reasoning_effort": "low"},
+    }
+
+    @staticmethod
+    def _build_with_extra(value: object) -> ServingBenchmarkConfig:
+        """Build a config routing ``value`` through the ``extra_body`` validator.
+
+        ``extra_body`` is typed ``dict[str, Any]`` (its resolved form), but the
+        CLI/file forms feed it a ``str``. ``model_validate`` accepts ``Any``, so
+        this exercises the same validator without a type-checker complaint at the
+        call site (mirroring how cyclopts hands the raw token to the model).
+        """
+        return ServingBenchmarkConfig.model_validate(
+            {"model": "m", "extra_body": value}
+        )
+
+    def test_dict_passthrough_preserves_nested(self) -> None:
+        """A mapping is stored verbatim with nested objects/arrays intact."""
+        config = ServingBenchmarkConfig(model="m", extra_body=self._NESTED)
+        assert config.extra_body == self._NESTED
+
+    def test_inline_json_string(self) -> None:
+        """An inline JSON string parses into the equivalent mapping."""
+        config = self._build_with_extra(json.dumps(self._NESTED))
+        assert config.extra_body == self._NESTED
+
+    def test_file_path(self, tmp_path: Path) -> None:
+        """A path to a YAML/JSON file is read and parsed."""
+        payload = tmp_path / "payload.yaml"
+        _write_yaml(payload, self._NESTED)
+        config = self._build_with_extra(str(payload))
+        assert config.extra_body == self._NESTED
+
+    def test_missing_file_rejected(self) -> None:
+        """A path that does not exist surfaces a clear, dual-cause error."""
+        with pytest.raises(ValueError, match="not a readable file path"):
+            self._build_with_extra("/nonexistent/payload.yaml")

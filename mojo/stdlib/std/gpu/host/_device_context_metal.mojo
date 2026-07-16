@@ -27,6 +27,7 @@ from .device_context import (
     DevicePointer,
 )
 from .dim import Dim
+from ._launch_args import _compact_zero_sized_capture_slots
 from .launch_attribute import LaunchAttribute
 
 
@@ -36,8 +37,9 @@ struct MetalEnqueueFunctionArgs:
     """Passes through Metal specific kernel launch data through to the
     driver."""
 
-    @__allow_legacy_any_origin_fields
-    var args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutUntrackedOrigin]
+    var args: UnsafePointer[
+        OpaquePointer[MutUntrackedOrigin], MutUntrackedOrigin
+    ]
     var arg_sizes: UnsafePointer[UInt64, ImmutUntrackedOrigin]
     var arg_is_device_ptr: UnsafePointer[Bool, MutUntrackedOrigin]
     var buffers: Optional[
@@ -96,6 +98,7 @@ def call_with_pack_metal[
     func_handle: _DeviceFunctionPtr[mut=True],
     device_context: DeviceContext,
     num_captures: Int,
+    effective_argc: Int,
     dense_args_addrs: UnsafePointer[
         OpaquePointer[MutAnyOrigin], MutUntrackedOrigin
     ],
@@ -127,9 +130,14 @@ def call_with_pack_metal[
         func_handle: Handle to the compiled `DeviceFunction` to launch.
         device_context: The device context backing the function, used for
             error reporting in `_checked_call`.
-        num_captures: The runtime number of captured values.
+        num_captures: The runtime number of captured values, used to size the
+            backing allocations (must match the caller's allocation size).
+        effective_argc: The number of argument slots the device actually reads
+            (`num_args` plus the non-zero-sized captures). Zero-sized captures
+            are compacted out of `dense_args_addrs`/`dense_args_sizes` by the
+            caller, so this is the count validated against the packed arrays.
         dense_args_addrs: Pre-populated per-argument value pointers (args
-            followed by captures), owned by the caller.
+            followed by the non-zero-sized captures), owned by the caller.
         dense_args_sizes: Pre-populated per-argument sizes in bytes (args
             followed by captures), owned by the caller.
         grid_dim: Grid dimensions for the kernel launch.
@@ -164,7 +172,7 @@ def call_with_pack_metal[
         )
 
     var metal_args = MetalEnqueueFunctionArgs(
-        dense_args_addrs,
+        dense_args_addrs.bitcast[OpaquePointer[MutUntrackedOrigin]](),
         dense_args_sizes,
         dense_args_is_device_ptr,
         None,
@@ -185,7 +193,7 @@ def call_with_pack_metal[
             attributes_ptr,
             num_attributes,
             metal_args_addrs,
-            UInt32(num_args + num_captures),
+            UInt32(effective_argc),
             Optional[UnsafePointer[UInt64, MutUntrackedOrigin]](),
         ),
         device_context=device_context,
@@ -336,12 +344,21 @@ def call_with_pack_checked_metal[
             )
             translated_arg_idx += 1
 
-    if num_captures > 0:
-        for i in range(num_captures):
-            dense_args_sizes[num_passed_args + i] = capture_sizes[i]
+    # Drop zero-sized captures so the packed slots (and their sizes) match the
+    # device kernel's declared parameter order; see
+    # `_compact_zero_sized_capture_slots` for why. The surviving capture slots
+    # keep the `False` their `dense_args_is_device_ptr` entries were
+    # initialized with above — captures are raw values, never device buffers.
+    var effective_argc = _compact_zero_sized_capture_slots(
+        dense_args_addrs,
+        capture_sizes,
+        num_translated_args,
+        num_captures,
+        dense_args_sizes=dense_args_sizes,
+    )
 
     var metal_args = MetalEnqueueFunctionArgs(
-        dense_args_addrs,
+        dense_args_addrs.bitcast[OpaquePointer[MutUntrackedOrigin]](),
         dense_args_sizes,
         dense_args_is_device_ptr,
         device_type_encoder._buffers.unsafe_ptr().unsafe_origin_cast[
@@ -364,7 +381,7 @@ def call_with_pack_checked_metal[
             attributes_ptr,
             num_attributes,
             metal_args_addrs,
-            UInt32(num_translated_args + num_captures),
+            UInt32(effective_argc),
             Optional[UnsafePointer[UInt64, MutUntrackedOrigin]](),
         ),
         device_context=device_context,
