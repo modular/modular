@@ -3831,6 +3831,8 @@ class DistributedEpDispatchMxfp4Op(max._core.Operation):
         n_gpus_per_node: max._core.dialects.builtin.IntegerAttr,
         n_nodes: max._core.dialects.builtin.IntegerAttr,
         fused_shared_expert: max._core.dialects.builtin.BoolAttr,
+        fuse_a_scale_preshuffle: max._core.dialects.builtin.BoolAttr,
+        max_padded_m: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
     @property
     def input_tokens(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -3885,6 +3887,18 @@ class DistributedEpDispatchMxfp4Op(max._core.Operation):
     @fused_shared_expert.setter
     def fused_shared_expert(
         self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+    @property
+    def fuse_a_scale_preshuffle(self) -> bool: ...
+    @fuse_a_scale_preshuffle.setter
+    def fuse_a_scale_preshuffle(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+    @property
+    def max_padded_m(self) -> int: ...
+    @max_padded_m.setter
+    def max_padded_m(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
     ) -> None: ...
 
 class DistributedEpDispatchOp(max._core.Operation):

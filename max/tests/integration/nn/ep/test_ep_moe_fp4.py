@@ -239,6 +239,20 @@ def simulate_fp4_blockwise_quantize(
     return x_deq.reshape(orig_shape)
 
 
+def _torch_swigluoai(
+    gate: torch.Tensor,
+    up: torch.Tensor,
+    alpha: float,
+    limit: float,
+) -> torch.Tensor:
+    gate_clamped = torch.clamp(gate.float(), max=limit)
+    up_clamped = torch.clamp(up.float(), min=-limit, max=limit)
+    activated = (
+        gate_clamped * torch.sigmoid(alpha * gate_clamped) * (up_clamped + 1.0)
+    )
+    return activated.to(gate.dtype)
+
+
 def torch_moe(
     input_token: torch.Tensor,
     moe_weights: dict[str, torch.Tensor],
@@ -247,6 +261,9 @@ def torch_moe(
     *,
     block_size: int,
     scale_dtype: torch.dtype,
+    use_swigluoai: bool = False,
+    swiglu_alpha: float = 0.0,
+    swiglu_limit: float = 0.0,
 ) -> torch.Tensor:
     """Single-token MoE reference with FP4 quantization simulation."""
     assert input_token.shape[0] == 1
@@ -267,8 +284,18 @@ def torch_moe(
 
         expert_gate = input_token @ gate_weight.T
         expert_up = input_token @ up_weight.T
+        activated = (
+            _torch_swigluoai(
+                expert_gate,
+                expert_up,
+                swiglu_alpha,
+                swiglu_limit,
+            )
+            if use_swigluoai
+            else torch.nn.functional.silu(expert_gate) * expert_up
+        )
         down_input = simulate_fp4_blockwise_quantize(
-            torch.nn.functional.silu(expert_gate) * expert_up,
+            activated,
             block_size=block_size,
             scale_dtype=scale_dtype,
         )
@@ -281,8 +308,18 @@ def torch_moe(
     shared_down_weight = moe_weights["shared_experts.down_proj.weight"]
     shared_expert_gate = input_token @ shared_gate_weight.T
     shared_expert_up = input_token @ shared_up_weight.T
+    shared_activated = (
+        _torch_swigluoai(
+            shared_expert_gate,
+            shared_expert_up,
+            swiglu_alpha,
+            swiglu_limit,
+        )
+        if use_swigluoai
+        else torch.nn.functional.silu(shared_expert_gate) * shared_expert_up
+    )
     shared_down_input = simulate_fp4_blockwise_quantize(
-        torch.nn.functional.silu(shared_expert_gate) * shared_expert_up,
+        shared_activated,
         block_size=block_size,
         scale_dtype=scale_dtype,
     )
@@ -551,18 +588,20 @@ def _shuffle_scale_4d(src: torch.Tensor) -> torch.Tensor:
     accelerator_api() != "hip", reason="FP4 kernel only supports AMD GPUs"
 )
 @pytest.mark.parametrize("n_devices", [2])
+@pytest.mark.parametrize(
+    "fused_shared_expert",
+    [False, True],
+    ids=["split-dispatch-wait", "distributed-fused-dispatch"],
+)
 def test_ep_moe_mxfp4(
     n_devices: int,
+    fused_shared_expert: bool,
     moe_weights_mxfp4: dict[str, torch.Tensor],
 ) -> None:
-    # Exercises the MXFP4 EP A-scale preshuffle fold (KS224 up-proj
-    # via ep_wait, KS64 down-proj via fused_silu) end-to-end against the torch
-    # reference. fused_shared_expert=False (below) routes the forward through
-    # the production `ep.dispatch_wait.mxfp4` path that carries the fold; the
-    # routed experts go through the preshuffled-B (preb) grouped matmul. The
-    # fold is numerically identical to the standalone preshuffle (proven
-    # byte-exact by the shmem kernel tests), so it has no fold-on/off numeric
-    # A/B; this gate validates the fold-fed preb grouped matmul output.
+    # Exercises the MXFP4 EP A-scale preshuffle fold end-to-end against the
+    # PyTorch reference. The false case covers split dispatch-wait with standard
+    # SiLU; the true case covers multi-device fused dispatch with SwiGLU-OAI.
+    # Both cases use the preshuffled-B grouped matmul.
     assert n_devices <= accelerator_count(), (
         "Devices are not enough to run EP test"
     )
@@ -571,6 +610,9 @@ def test_ep_moe_mxfp4(
     top_k = 8
     max_tokens_per_rank = 128
     dtype = DType.uint8
+    use_swigluoai = fused_shared_expert
+    swiglu_alpha = 1.702
+    swiglu_limit = 7.0
 
     # Copy weights to CPU for session.load (moe_weights_mxfp4 lives on GPU).
     moe_weights_fp4 = moe_weights_mxfp4
@@ -598,13 +640,13 @@ def test_ep_moe_mxfp4(
     # max/kernels/src/linalg/matmul/gpu/amd/mxfp4_preshuffle_layouts.mojo.
     for _k in list(wrapped_moe_weights_fp4):
         _v = wrapped_moe_weights_fp4[_k]
-        # The shared expert (fused_shared_expert=False) is computed by a
-        # separate dense MLP, not the grouped preb kernel, so its weights must
-        # stay row-major. Only the routed experts.* go through the preb matmul.
+        # With separate shared-expert execution, its weights remain row-major.
+        # With shared-expert fusion, it joins the grouped preb matmul and its
+        # weights and scales must also be preshuffled.
         if (
             not isinstance(_v, torch.Tensor)
             or _k == "gate.gate_score.weight"
-            or _k.startswith("shared_experts.")
+            or (_k.startswith("shared_experts.") and not fused_shared_expert)
         ):
             continue
         if _k.endswith(".weight") and _v.dtype == torch.uint8:
@@ -651,11 +693,9 @@ def test_ep_moe_mxfp4(
         n_gpus_per_node=n_devices,
         n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
         dispatch_quant_config=fp4_config,
-        # fused_shared_expert=False routes through the production
-        # `ep.dispatch_wait.mxfp4` path that carries the KS224/KS64 A-scale
-        # fold; the shared expert is computed separately (dense MLP) and added
-        # in _ep_forward, matching the torch reference.
-        fused_shared_expert=False,
+        # Cover both the split dispatch-wait path and the multi-device fused
+        # dispatch path.
+        fused_shared_expert=fused_shared_expert,
     )
 
     # Initialize EP communication
@@ -676,6 +716,9 @@ def test_ep_moe_mxfp4(
         apply_router_weight_first=False,
         ep_batch_manager=ep_batch_manager,
         quant_config=fp4_config,
+        use_swigluoai=use_swigluoai,
+        swiglu_alpha=swiglu_alpha,
+        swiglu_limit=swiglu_limit,
     )
     moe.sharding_strategy = ShardingStrategy.expert_parallel(n_devices)
     moe_shards = moe.shard(devices_ref)
@@ -803,6 +846,9 @@ def test_ep_moe_mxfp4(
             all_topk_weights[tok_idx : tok_idx + 1],
             block_size=32,
             scale_dtype=torch.float8_e8m0fnu,
+            use_swigluoai=use_swigluoai,
+            swiglu_alpha=swiglu_alpha,
+            swiglu_limit=swiglu_limit,
         )
         cos_sim = torch.nn.functional.cosine_similarity(
             all_outputs[tok_idx : tok_idx + 1].float(),

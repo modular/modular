@@ -835,22 +835,6 @@ def call_distributed_ep_dispatch(
             fused_shared_expert=config.fused_shared_expert,
         )
     elif is_mxfp4:
-        if config.mxfp4_a_scales_preshuffled:
-            # Defensive backstop: `_ep_forward` only enables the A-scale
-            # preshuffle fold for the use_allreduce dispatch and the
-            # dispatch-wait paths, so this multi-device single-op path should
-            # never see the flag set. `_ep_dispatch_output_types` above already
-            # sized the scale output for slots, but `dispatch_mxfp4` has no
-            # `fuse_a_scale_preshuffle`/`max_padded_M` params, so a row-major
-            # write into a slot-sized buffer would be silently wrong. Fail loud
-            # if the `_ep_forward` path guard and the op wiring ever diverge.
-            raise NotImplementedError(
-                "MXFP4 EP A-scale preshuffle fusion is not supported on the "
-                "multi-device single-op dispatch path "
-                "(`call_distributed_ep_dispatch`); it is only wired into the "
-                "use_allreduce dispatch and the dispatch-wait paths. The "
-                "`_ep_forward` driver should have left the fold disabled here."
-            )
         return ops.distributed_ep.dispatch_mxfp4(
             input_tokens,
             topk_ids,
@@ -866,6 +850,8 @@ def call_distributed_ep_dispatch(
             n_gpus_per_node=config.n_gpus_per_node,
             n_nodes=config.n_nodes,
             fused_shared_expert=config.fused_shared_expert,
+            fuse_a_scale_preshuffle=config.mxfp4_a_scales_preshuffled,
+            max_padded_m=ep_mxfp4_max_padded_m(config),
         )
     elif is_fp8:
         assert quant_config is not None

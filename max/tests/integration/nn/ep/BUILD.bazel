@@ -85,6 +85,9 @@ modular_py_test(
     mojo_deps = [
         "//max:shmem",
     ],
+    per_test_shard_count = {
+        "test_ep_moe_fp4.py": 2,
+    },
     tags = [
         "gpu",
         "requires-network",

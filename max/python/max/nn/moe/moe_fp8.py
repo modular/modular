@@ -72,20 +72,14 @@ class MoEQuantized(MoE):
         op (the dispatch output shape depends on this flag); the EP forward
         driver calls it once per layer before dispatch.
 
-        The fold writes the up-proj (KS224, ``ep_wait``) and down-proj (KS64,
-        ``fused_silu``) A-scale directly into the grouped-matmul slot layout,
-        dropping the standalone preshuffle kernels from the decode critical
-        path. It is enabled whenever this is an MXFP4 preshuffled-B EP layer and
-        the selected dispatch path wires the fold. This dispatch-coupled fold
-        (up + down) covers standard SiLU only; OAI-clamped SwiGLU keeps it off
-        and instead folds just the down-proj A-scale locally in the fused
-        activation kernel (see ``ep_mxfp4_down_slot_stride`` in ``_local_ep_compute``).
+        The fold writes the up-proj A-scale during dispatch and the down-proj
+        A-scale during ``fused_silu`` directly into the grouped-matmul slot
+        layout, dropping the standalone preshuffle kernels from the decode
+        critical path.
 
         Args:
-            dispatch_supports_fold: Whether the dispatch path selected for this
-                forward threads the fold params. The multi-device single-op
-                ``call_distributed_ep_dispatch`` does not, so the fold stays off
-                there and the standalone preshuffle runs.
+            dispatch_supports_fold: Whether the selected dispatch path threads the
+                fold parameters.
         """
         if self._ep_batch_manager is None:
             return
@@ -94,7 +88,6 @@ class MoEQuantized(MoE):
             and self.quant_config is not None
             and self.quant_config.is_mxfp4
             and self.quant_config.mxfp4_preshuffled_b
-            and not self.use_swigluoai
         )
 
     @property

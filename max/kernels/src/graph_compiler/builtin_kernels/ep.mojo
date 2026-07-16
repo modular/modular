@@ -1173,6 +1173,8 @@ struct DistributedEPDispatchMXFP4:
         n_gpus_per_node: Int,
         n_nodes: Int,
         fused_shared_expert: Bool,
+        fuse_a_scale_preshuffle: Bool,
+        max_padded_m: Int,
         //,
         target: StaticString,
         _trace_name: StaticString,
@@ -1194,7 +1196,7 @@ struct DistributedEPDispatchMXFP4:
         ],
         dev_ctxs: DeviceContextList,
     ) capturing raises:
-        """Multi-device fused Expert Parallelism NVFP4 dispatch.
+        """Multi-device fused Expert Parallelism MXFP4 dispatch.
 
         Launches the EP dispatch kernel on all devices simultaneously via
         _ep_launch_device_collective. Each device routes its tokens to experts
@@ -1225,9 +1227,14 @@ struct DistributedEPDispatchMXFP4:
             var out_tokens = output_tokens[index].to_tile_tensor[DType.int64]()
             var out_scales = output_scales[index].to_tile_tensor[DType.int64]()
 
-            var format_handler = MXFP4TokenFormat[hidden_size, top_k](
+            var format_handler = MXFP4TokenFormat[
+                hidden_size,
+                top_k,
+                fuse_a_scale_preshuffle=fuse_a_scale_preshuffle,
+            ](
                 out_tokens,
                 out_scales,
+                max_padded_m,
             )
 
             ep_fused_dispatch_kernel_api[
