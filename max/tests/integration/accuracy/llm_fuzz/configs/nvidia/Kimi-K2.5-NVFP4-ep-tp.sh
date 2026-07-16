@@ -21,7 +21,6 @@ extra_pipelines_args=(
   --ep-size 8
   --data-parallel-degree 1
   --max-batch-input-tokens 8192
-  --max-num-steps 1
   --enable-prefix-caching
   --enable-structured-output
   --kv-cache-format float8_e4m3fn
@@ -29,7 +28,7 @@ extra_pipelines_args=(
   --kv-connector-config '{"host_kvcache_swap_space_gb":512,"disk_offload_dir":"/tmp/max_kv_tiered","disk_offload_max_gb":1024}'
   --trust-remote-code
   # Eagle3 speculative decoding -- mirrors the
-  # ``nvfp4_eagle_tiered_kvconnector_tpep_8x_b200`` recipe so the
+  # ``nvfp4_eagle_tpep_ar_8x_b200_with_vision`` recipe so the
   # fuzz config matches the production serving setup.
   --speculative-method eagle
   --num-speculative-tokens 3

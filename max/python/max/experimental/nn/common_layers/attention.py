@@ -174,7 +174,7 @@ class AttentionWithRope(Module[..., Tensor]):
         **kwargs,
     ) -> Tensor:
         """Computes attention over the input tensor using the KV cache."""
-        total_seq_len = x.per_rank_shape[0]
+        total_seq_len = x.shape[0]
 
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
 

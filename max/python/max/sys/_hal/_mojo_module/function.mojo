@@ -15,16 +15,16 @@
 from std.memory import ArcPointer, UnsafePointer
 from std.os import abort
 from std.python import PythonObject
-from std.sys._hal.context import (
+from _hal.context import (
     Context as HALContext,
     RuntimeBundle as HALRuntimeBundle,
 )
-from std.sys._hal.device import get_device_spec
-from std.sys._hal.plugin import FunctionHandle
+from _hal.device import get_device_spec
+from _hal.plugin import FunctionHandle
 
 
 @fieldwise_init
-struct Function(ImplicitlyDestructible, Movable, Writable):
+struct Function(ImplicitlyDeletable, Movable, Writable):
     """Python projection of HAL ``FunctionHandle``."""
 
     # TODO: generalize to multi-device — currently hardcoded to device 0.

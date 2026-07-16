@@ -14,21 +14,19 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal, cast
 
 import numpy as np
 from max.driver import Buffer, Device
-from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental.tensor import default_dtype
-from max.graph import DeviceRef, TensorType
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -37,8 +35,8 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from transformers import AutoConfig
 
+from .batch_processor import Llama3ModuleV3BatchProcessor
 from .llama3 import Llama3
 from .model_config import Llama3Config
 
@@ -77,6 +75,9 @@ class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
     """Llama3 pipeline model using the ModuleV3 API."""
 
     model_config_cls: ClassVar[type[Any]] = Llama3Config
+    batch_processor_cls: ClassVar[type[Llama3ModuleV3BatchProcessor]] = (
+        Llama3ModuleV3BatchProcessor
+    )
 
     config_class: type[Llama3Config] = Llama3Config
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
@@ -92,6 +93,7 @@ class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -102,40 +104,13 @@ class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
             adapter,
             return_logits,
             return_hidden_states,
+            max_batch_size=max_batch_size,
         )
         self.model = self.load_model()
 
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
-
     def load_model(self) -> Callable[..., Any]:
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1, dtype=np.uint32
-            )
-        ).to(self.devices[0])
-
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=device0,
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
 
         huggingface_config = self.huggingface_config
         if self.adapter:
@@ -161,14 +136,14 @@ class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
             nn_model = Llama3(model_config, self.kv_params)
             nn_model.to(self.devices[0])
 
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = kv_inputs.flatten()
+        assert self.batch_processor is not None
+        compile_input_types = self.batch_processor.get_symbolic_inputs(
+            kv_params=self.kv_params,
+            device_refs=[device_ref],
+        )
 
         compiled_model = nn_model.compile(
-            tokens_type,
-            return_n_logits_type,
-            input_row_offsets_type,
-            *flattened_kv_types,
+            *compile_input_types,
             weights=state_dict,
         )
 
@@ -212,52 +187,3 @@ class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
                 logits=cast(Buffer, model_outputs[0].driver_tensor),
                 next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
             )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> ModelInputs:
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-        assert kv_cache_inputs is not None
-
-        input_row_offsets = np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-        )
-
-        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
-
-        input_row_offsets_tensor = Buffer.from_numpy(input_row_offsets).to(
-            self.devices[0]
-        )
-
-        return Llama3Inputs(
-            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=input_row_offsets_tensor,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            kv_cache_inputs=kv_cache_inputs,
-        )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> ModelInputs:
-        prev_model_inputs = cast(Llama3Inputs, prev_model_inputs)
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-
-        next_row_offsets = self._input_row_offsets_prealloc[
-            :row_offsets_size
-        ].to(self.devices[0])
-
-        return Llama3Inputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-        )

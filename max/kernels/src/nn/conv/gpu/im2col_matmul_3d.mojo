@@ -27,7 +27,14 @@ from std.math.uutils import udivmod
 from std.sys import simd_width_of, size_of
 from std.gpu import block_dim, block_idx, global_idx, thread_idx
 from std.gpu.host import DeviceContext
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import (
+    Coord,
+    Idx,
+    TensorLayout,
+    TensorStorage,
+    TileTensor,
+    row_major,
+)
 from linalg.matmul.gpu import _matmul_gpu
 from std.utils import IndexList
 from linalg.utils import elementwise_epilogue_type
@@ -47,12 +54,21 @@ def _im2col_ndhwc_kernel[
     input_layout_type: TensorLayout,
     filter_layout_type: TensorLayout,
     output_layout_type: TensorLayout,
+    input_storage: TensorStorage,
+    filter_storage: TensorStorage,
+    output_storage: TensorStorage,
     filter_is_fcrs: Bool,
 ](
     im2col_ptr: UnsafePointer[Scalar[input_dtype], MutAnyOrigin],
-    input: TileTensor[input_dtype, input_layout_type, ImmutAnyOrigin],
-    filter: TileTensor[filter_dtype, filter_layout_type, ImmutAnyOrigin],
-    output: TileTensor[output_dtype, output_layout_type, ImmutAnyOrigin],
+    input: TileTensor[
+        input_dtype, input_layout_type, ImmutAnyOrigin, Storage=input_storage
+    ],
+    filter: TileTensor[
+        filter_dtype, filter_layout_type, ImmutAnyOrigin, Storage=filter_storage
+    ],
+    output: TileTensor[
+        output_dtype, output_layout_type, ImmutAnyOrigin, Storage=output_storage
+    ],
     pad_d: Int,
     pad_h: Int,
     pad_w: Int,
@@ -153,8 +169,11 @@ def _im2col_ndhwc_kernel[
 def _transpose_qrscf_to_nk[
     dtype: DType,
     filter_layout_type: TensorLayout,
+    filter_storage: TensorStorage,
 ](
-    filter: TileTensor[dtype, filter_layout_type, ImmutAnyOrigin],
+    filter: TileTensor[
+        dtype, filter_layout_type, ImmutAnyOrigin, Storage=filter_storage
+    ],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
 ):
     """QRSCF [Q,R,S,C,F] -> [F, Q*R*S*C] row-major for matmul transpose_b."""
@@ -188,8 +207,11 @@ def _transpose_qrscf_to_nk[
 def _transpose_fcqrs_to_nk[
     dtype: DType,
     filter_layout_type: TensorLayout,
+    filter_storage: TensorStorage,
 ](
-    filter: TileTensor[dtype, filter_layout_type, ImmutAnyOrigin],
+    filter: TileTensor[
+        dtype, filter_layout_type, ImmutAnyOrigin, Storage=filter_storage
+    ],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
 ):
     """FCQRS [F,C,Q,R,S] -> [F, Q*R*S*C] row-major for matmul transpose_b."""
@@ -269,9 +291,6 @@ def dispatch_im2col_matmul_conv3d[
         return False
 
     var batch = Int(input.dim[0]())
-    var D = Int(input.dim[1]())
-    var H = Int(input.dim[2]())
-    var W = Int(input.dim[3]())
 
     var D_out = Int(output.dim[1]())
     var H_out = Int(output.dim[2]())
@@ -306,7 +325,9 @@ def dispatch_im2col_matmul_conv3d[
 
     comptime if filter_is_fcrs:
         ctx.enqueue_function[
-            _transpose_fcqrs_to_nk[filter_type, filter.LayoutType]
+            _transpose_fcqrs_to_nk[
+                filter_type, filter.LayoutType, filter.Storage
+            ]
         ](
             filter.as_immut(),
             filter_nk_buf,
@@ -315,7 +336,9 @@ def dispatch_im2col_matmul_conv3d[
         )
     else:
         ctx.enqueue_function[
-            _transpose_qrscf_to_nk[filter_type, filter.LayoutType]
+            _transpose_qrscf_to_nk[
+                filter_type, filter.LayoutType, filter.Storage
+            ]
         ](
             filter.as_immut(),
             filter_nk_buf,
@@ -332,13 +355,11 @@ def dispatch_im2col_matmul_conv3d[
     var m_tile_cap = (
         m_tile_by_budget if m_tile_by_budget > _MIN_M_TILE else _MIN_M_TILE
     )
-    var num_tiles: Int
     var m_tile: Int
     if full_M <= m_tile_cap:
-        num_tiles = 1
         m_tile = full_M
     else:
-        num_tiles = ceildiv(full_M, m_tile_cap)
+        var num_tiles = ceildiv(full_M, m_tile_cap)
         m_tile = ceildiv(full_M, num_tiles)
 
     var im2col_buf = ctx.enqueue_create_buffer[input_type](m_tile * K)
@@ -361,6 +382,9 @@ def dispatch_im2col_matmul_conv3d[
             input.LayoutType,
             filter.LayoutType,
             output.LayoutType,
+            input.Storage,
+            filter.Storage,
+            output.Storage,
             filter_is_fcrs,
         ]
         ctx.enqueue_function[im2col_kernel](

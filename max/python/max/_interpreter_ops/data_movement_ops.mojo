@@ -24,9 +24,10 @@ from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator, simd_width_of
 
 from std.algorithm.functional import elementwise, IndexList
+from std.utils.coord import Coord
 
 from extensibility import ManagedTensorSlice
-from extensibility import Input, MutableInput, Output
+from extensibility import IOSpec
 from extensibility import StaticTensorSpec
 from layout import IntTuple, create_unknown_int_tuple
 from builtin_kernels import (
@@ -53,7 +54,7 @@ from op_utils import (
 
 
 @export
-def PyInit_data_movement_ops() -> PythonObject:
+def PyInit_data_movement_ops() abi("C") -> PythonObject:
     """Create a Python module with data movement kernel function bindings."""
     try:
         var b = PythonModuleBuilder("data_movement_ops")
@@ -106,8 +107,8 @@ def _pad_shape_to_max_rank(
 def static_broadcast_to_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: IndexList[MAX_RANK],
     out_shape: IndexList[MAX_RANK],
     ctx: DeviceContext,
@@ -128,12 +129,12 @@ def static_broadcast_to_op[
     comptime in_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
     comptime out_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
 
-    var input_tensor = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
-        in_ptr, in_shape
-    )
+    var input_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=in_spec
+    ](in_ptr, in_shape)
 
     var output_tensor = ManagedTensorSlice[
-        io_spec=Output, static_spec=out_spec
+        io_spec=IOSpec.Output, static_spec=out_spec
     ](out_ptr, out_shape)
 
     if ctx.api() == "cpu":
@@ -236,8 +237,8 @@ def static_broadcast_to_dispatcher(
 def transpose_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: IndexList[MAX_RANK],
     out_shape: IndexList[MAX_RANK],
     perm_data: InlineArray[Int64, MAX_RANK],
@@ -260,20 +261,20 @@ def transpose_op[
     comptime out_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
     comptime perm_spec = StaticTensorSpec[DType.int64, 1, ...].get_unknown()
 
-    var input_tensor = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
-        in_ptr, in_shape
-    )
+    var input_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=in_spec
+    ](in_ptr, in_shape)
 
     var output_tensor = ManagedTensorSlice[
-        io_spec=Output, static_spec=out_spec
+        io_spec=IOSpec.Output, static_spec=out_spec
     ](out_ptr, out_shape)
 
     # TODO: ManagedTensorSlice should correctly propagate mutability to
     # prevent us from needing to unsafely cast the pointer mutability here.
     var perm_data_ptr = perm_data.unsafe_ptr().unsafe_mut_cast[True]()
-    var perm_tensor = ManagedTensorSlice[io_spec=Input, static_spec=perm_spec](
-        perm_data_ptr, IndexList[1](MAX_RANK)
-    )
+    var perm_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=perm_spec
+    ](perm_data_ptr, IndexList[1](MAX_RANK))
 
     if ctx.api() == "cpu":
         Transpose.execute[
@@ -456,8 +457,8 @@ def memcpy_dispatcher(
 def memcpy_op[
     dtype: DType
 ](
-    dst_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    src_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    dst_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    src_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dst_offset: Int,
     src_offset: Int,
     count: Int,
@@ -480,23 +481,17 @@ def memcpy_op[
     var s = src_ptr + src_offset
 
     @always_inline
-    @parameter
-    @__copy_capture(d, s)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = rebind[IndexList[1]](idx)[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        var i = Int(idx[0].value())
         d.store[width=width](i, s.load[width=width](i))
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=simd_width_of[dtype]()](
-            IndexList[1](count), ctx
-        )
+        elementwise[simd_width=simd_width_of[dtype]()](func, Coord(count), ctx)
     else:
         # GPU execution
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                elementwise[func, simd_width=1, target="gpu"](
-                    IndexList[1](count), ctx
-                )
+                elementwise[simd_width=1, target="gpu"](func, Coord(count), ctx)
             else:
                 raise Error(
                     "GPU execution not supported for memcpy with dtype float64"
@@ -514,13 +509,13 @@ def memcpy_op[
 def slice_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: IndexList[MAX_RANK],
     out_shape: IndexList[MAX_RANK],
-    starts_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    stops_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    steps_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
+    starts_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    stops_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    steps_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
     ctx: DeviceContext,
 ) raises:
     """Call Slice.execute with MAX_RANK tensors.
@@ -541,24 +536,24 @@ def slice_op[
     comptime in_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
     comptime out_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
 
-    var input_tensor = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
-        in_ptr, in_shape
-    )
+    var input_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=in_spec
+    ](in_ptr, in_shape)
     var output_tensor = ManagedTensorSlice[
-        io_spec=Output, static_spec=out_spec
+        io_spec=IOSpec.Output, static_spec=out_spec
     ](out_ptr, out_shape)
 
     comptime idx_spec = StaticTensorSpec[DType.int64, 1, ...].get_unknown()
 
-    var starts_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
-        starts_ptr, IndexList[1](MAX_RANK)
-    )
-    var stops_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
-        stops_ptr, IndexList[1](MAX_RANK)
-    )
-    var steps_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
-        steps_ptr, IndexList[1](MAX_RANK)
-    )
+    var starts_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=idx_spec
+    ](starts_ptr, IndexList[1](MAX_RANK))
+    var stops_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=idx_spec
+    ](stops_ptr, IndexList[1](MAX_RANK))
+    var steps_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=idx_spec
+    ](steps_ptr, IndexList[1](MAX_RANK))
 
     comptime unknown_starts = create_unknown_int_tuple(MAX_RANK)
     comptime unknown_steps = create_unknown_int_tuple(MAX_RANK)
@@ -613,9 +608,9 @@ struct _SliceBody(Dispatchable):
     var in_addr: Int
     var in_shape: IndexList[MAX_RANK]
     var out_shape: IndexList[MAX_RANK]
-    var starts_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
-    var stops_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
-    var steps_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
+    var starts_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin]
+    var stops_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin]
+    var steps_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin]
     var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
@@ -706,8 +701,8 @@ def slice_dispatcher(
 def mutable_store_slice_op[
     dtype: DType
 ](
-    dst_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    src_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    dst_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    src_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dst_shape: IndexList[MAX_RANK],
     src_shape: IndexList[MAX_RANK],
     starts: InlineArray[Int64, MAX_RANK],
@@ -734,11 +729,11 @@ def mutable_store_slice_op[
     comptime src_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
 
     var dst_tensor = ManagedTensorSlice[
-        io_spec=MutableInput, static_spec=dst_spec
+        io_spec=IOSpec.MutableInput, static_spec=dst_spec
     ](dst_ptr, dst_shape)
-    var src_tensor = ManagedTensorSlice[io_spec=Input, static_spec=src_spec](
-        src_ptr, src_shape
-    )
+    var src_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=src_spec
+    ](src_ptr, src_shape)
 
     comptime idx_spec = StaticTensorSpec[DType.int64, 1, ...].get_unknown()
 
@@ -748,15 +743,15 @@ def mutable_store_slice_op[
     var stops_ptr = stops.unsafe_ptr().unsafe_mut_cast[True]()
     var steps_ptr = steps.unsafe_ptr().unsafe_mut_cast[True]()
 
-    var starts_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
-        starts_ptr, IndexList[1](MAX_RANK)
-    )
-    var stops_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
-        stops_ptr, IndexList[1](MAX_RANK)
-    )
-    var steps_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
-        steps_ptr, IndexList[1](MAX_RANK)
-    )
+    var starts_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=idx_spec
+    ](starts_ptr, IndexList[1](MAX_RANK))
+    var stops_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=idx_spec
+    ](stops_ptr, IndexList[1](MAX_RANK))
+    var steps_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=idx_spec
+    ](steps_ptr, IndexList[1](MAX_RANK))
 
     if ctx.api() == "cpu":
         MutableStoreSlice.execute[target="cpu", dtype=dtype, rank=MAX_RANK](

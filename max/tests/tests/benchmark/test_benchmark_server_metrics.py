@@ -20,6 +20,7 @@ from unittest.mock import patch
 import pytest
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
+    PrefillDecodeStats,
     RatePercentileMetrics,
     SpecDecodeMetrics,
     SpecDecodeStats,
@@ -840,3 +841,220 @@ def test_spec_decode_metrics_iadd() -> None:
     assert a.per_pos_rate_count == {0: 15, 1: 10, 2: 5}
     assert a.avg_acceptance_length_sum == pytest.approx(8.0)
     assert a.avg_acceptance_length_count == pytest.approx(3.0)
+
+
+def _hist(sum_: float, count: float) -> HistogramData:
+    """HistogramData with no buckets (mean is derived from sum/count)."""
+    return HistogramData(buckets=[], sum=sum_, count=count)
+
+
+def _endpoint_with_batch_histograms() -> ParsedMetrics:
+    """Endpoint exposing all five CE/TG batch histograms the validator reads.
+
+    Distinct sum/count per (metric, batch_type) so attribution of CE->prefill
+    and TG->decode is unambiguous.
+    """
+    return ParsedMetrics(
+        counters={},
+        gauges={},
+        histograms={
+            'maxserve_batch_context_tokens{batch_type="CE"}': _hist(300.0, 3.0),
+            'maxserve_batch_context_tokens{batch_type="TG"}': _hist(20.0, 2.0),
+            'maxserve_batch_creation_time_milliseconds{batch_type="CE"}': _hist(
+                50.0, 5.0
+            ),
+            'maxserve_batch_creation_time_milliseconds{batch_type="TG"}': _hist(
+                80.0, 4.0
+            ),
+            'maxserve_batch_prompt_throughput_tokens_per_second{batch_type="CE"}': _hist(
+                4000.0, 2.0
+            ),
+            'maxserve_batch_prompt_throughput_tokens_per_second{batch_type="TG"}': _hist(
+                300.0, 3.0
+            ),
+            'maxserve_batch_input_tokens{batch_type="CE"}': _hist(600.0, 3.0),
+            'maxserve_batch_input_tokens{batch_type="TG"}': _hist(40.0, 2.0),
+            'maxserve_batch_generation_throughput_tokens_per_second{batch_type="CE"}': _hist(
+                150.0, 3.0
+            ),
+            'maxserve_batch_generation_throughput_tokens_per_second{batch_type="TG"}': _hist(
+                900.0, 3.0
+            ),
+        },
+        raw_text="",
+    )
+
+
+def test_prefill_decode_stats_to_result_dict_populates_all_fields() -> None:
+    """Every histogram present -> mean/count/sum derived for all five metrics."""
+    stats = PrefillDecodeStats(
+        context_tokens=_hist(300.0, 3.0),
+        creation_time_milliseconds=_hist(50.0, 5.0),
+        prompt_throughput_tokens_per_second=_hist(4000.0, 2.0),
+        input_tokens=_hist(600.0, 3.0),
+        generation_throughput_tokens_per_second=_hist(150.0, 3.0),
+    )
+
+    d = stats.to_result_dict()
+    assert d["maxserve_batch_context_tokens_mean"] == 100.0
+    assert d["maxserve_batch_context_tokens_count"] == 3.0
+    assert d["maxserve_batch_context_tokens_sum"] == 300.0
+    assert d["maxserve_batch_creation_time_milliseconds_mean"] == 10.0
+    assert (
+        d["maxserve_batch_prompt_throughput_tokens_per_second_mean"] == 2000.0
+    )
+    assert d["maxserve_batch_input_tokens_mean"] == 200.0
+    assert d["maxserve_batch_input_tokens_sum"] == 600.0
+    assert (
+        d["maxserve_batch_generation_throughput_tokens_per_second_mean"] == 50.0
+    )
+
+
+def test_prefill_decode_stats_all_none_is_all_none() -> None:
+    """Regression: a missing batch type must not crash on ``.mean`` access.
+
+    Every histogram absent -> every derived field None (the validator leaves a
+    histogram unset when an endpoint never emitted that CE/TG metric)."""
+    stats = PrefillDecodeStats()
+
+    assert stats == PrefillDecodeStats()
+    assert all(value is None for value in stats.to_result_dict().values())
+
+
+def test_prefill_decode_stats_partial_presence() -> None:
+    """Only the histograms that exist are derived; the rest stay None."""
+    stats = PrefillDecodeStats(
+        context_tokens=_hist(300.0, 3.0),
+        input_tokens=_hist(600.0, 3.0),
+    )
+
+    d = stats.to_result_dict()
+    assert d["maxserve_batch_context_tokens_mean"] == 100.0
+    assert d["maxserve_batch_input_tokens_mean"] == 200.0
+    assert d["maxserve_batch_creation_time_milliseconds_mean"] is None
+    assert d["maxserve_batch_prompt_throughput_tokens_per_second_mean"] is None
+    assert (
+        d["maxserve_batch_generation_throughput_tokens_per_second_mean"] is None
+    )
+
+
+def test_prefill_decode_stats_to_result_dict_keys_and_values() -> None:
+    """``to_result_dict`` emits the flat 15-key layout consumers expect."""
+    stats = PrefillDecodeStats(
+        context_tokens=_hist(300.0, 3.0),
+    )
+
+    d = stats.to_result_dict()
+    assert d["maxserve_batch_context_tokens_mean"] == 100.0
+    assert d["maxserve_batch_context_tokens_count"] == 3.0
+    assert d["maxserve_batch_context_tokens_sum"] == 300.0
+    assert set(d.keys()) == {
+        "maxserve_batch_context_tokens_mean",
+        "maxserve_batch_context_tokens_count",
+        "maxserve_batch_context_tokens_sum",
+        "maxserve_batch_creation_time_milliseconds_mean",
+        "maxserve_batch_creation_time_milliseconds_count",
+        "maxserve_batch_creation_time_milliseconds_sum",
+        "maxserve_batch_generation_throughput_tokens_per_second_mean",
+        "maxserve_batch_generation_throughput_tokens_per_second_count",
+        "maxserve_batch_generation_throughput_tokens_per_second_sum",
+        "maxserve_batch_input_tokens_mean",
+        "maxserve_batch_input_tokens_count",
+        "maxserve_batch_input_tokens_sum",
+        "maxserve_batch_prompt_throughput_tokens_per_second_mean",
+        "maxserve_batch_prompt_throughput_tokens_per_second_count",
+        "maxserve_batch_prompt_throughput_tokens_per_second_sum",
+    }
+
+
+def test_derive_prefill_decode_stats_attributes_ce_to_prefill_tg_to_decode() -> (
+    None
+):
+    """Regression for the HistogramMetric enum-name mismatch that raised
+    ``AttributeError`` while building any result with server metrics.
+
+    CE histograms feed ``prefill_stats``; TG histograms feed ``decode_stats``.
+    """
+    result = _make_metrics({"server": _endpoint_with_batch_histograms()})
+
+    assert result.prefill_stats is not None
+    assert result.decode_stats is not None
+
+    prefill = result.prefill_stats.to_result_dict()
+    decode = result.decode_stats.to_result_dict()
+
+    assert prefill["maxserve_batch_context_tokens_mean"] == 100.0
+    assert prefill["maxserve_batch_input_tokens_mean"] == 200.0
+    assert (
+        prefill["maxserve_batch_prompt_throughput_tokens_per_second_mean"]
+        == 2000.0
+    )
+    assert (
+        prefill["maxserve_batch_generation_throughput_tokens_per_second_mean"]
+        == 50.0
+    )
+
+    assert decode["maxserve_batch_context_tokens_mean"] == 10.0
+    assert decode["maxserve_batch_input_tokens_mean"] == 20.0
+    assert (
+        decode["maxserve_batch_prompt_throughput_tokens_per_second_mean"]
+        == 100.0
+    )
+    assert (
+        decode["maxserve_batch_generation_throughput_tokens_per_second_mean"]
+        == 300.0
+    )
+
+
+def test_derive_prefill_decode_stats_scans_past_first_endpoint() -> None:
+    """The validator scans all endpoints, so an orchestrator with no batch
+    histograms listed first must not shadow the engine's histograms."""
+    orchestrator = ParsedMetrics(
+        counters={"requests": 1.0}, gauges={}, histograms={}, raw_text=""
+    )
+    result = _make_metrics(
+        {"orch": orchestrator, "engine-0": _endpoint_with_batch_histograms()}
+    )
+
+    assert result.prefill_stats is not None
+    assert (
+        result.prefill_stats.to_result_dict()[
+            "maxserve_batch_context_tokens_mean"
+        ]
+        == 100.0
+    )
+    assert result.decode_stats is not None
+    assert (
+        result.decode_stats.to_result_dict()[
+            "maxserve_batch_context_tokens_mean"
+        ]
+        == 10.0
+    )
+
+
+def test_derive_prefill_decode_stats_none_without_endpoints() -> None:
+    """No ``metrics_by_endpoint`` -> stats stay None (nothing to derive)."""
+    result = _make_metrics({})
+
+    assert result.prefill_stats is None
+    assert result.decode_stats is None
+
+
+def test_to_result_dict_includes_prefill_decode_stats_when_present() -> None:
+    """Derived stats surface as nested dicts in ``to_result_dict`` output."""
+    result = _make_metrics({"server": _endpoint_with_batch_histograms()})
+
+    d = result.to_result_dict()
+    assert isinstance(d["prefill_stats"], dict)
+    assert isinstance(d["decode_stats"], dict)
+    assert d["prefill_stats"]["maxserve_batch_context_tokens_mean"] == 100.0
+    assert d["decode_stats"]["maxserve_batch_context_tokens_mean"] == 10.0
+
+
+def test_to_result_dict_omits_prefill_decode_stats_when_absent() -> None:
+    """Without server metrics the keys are omitted entirely (not None)."""
+    result = _make_metrics({})
+
+    d = result.to_result_dict()
+    assert "prefill_stats" not in d
+    assert "decode_stats" not in d

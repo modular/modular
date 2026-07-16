@@ -18,6 +18,7 @@ from std.python.bindings import PythonModuleBuilder
 
 from _mojo_module import (
     Buffer,
+    BufferView,
     Bundle,
     Context,
     Device,
@@ -26,11 +27,12 @@ from _mojo_module import (
     Function,
     Queue,
     Stream,
+    copy,
 )
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     """Initializes the ``mojo_module`` Python extension."""
     try:
         var b = PythonModuleBuilder("mojo_module")
@@ -51,16 +53,34 @@ def PyInit_mojo_module() -> PythonObject:
 
         _ = (
             b.add_type[Context]("Context")
+            .def_method[Context.get_driver_name]("get_driver_name")
+            .def_method[Context.get_device_id]("get_device_id")
+            .def_method[Context.get_dlpack_device]("get_dlpack_device")
             .def_method[Context.create_queue]("create_queue")
             .def_method[Context.create_stream]("create_stream")
             .def_method[Context.alloc_sync]("alloc_sync")
             .def_method[Context.alloc_host_pinned]("alloc_host_pinned")
+            .def_method[Context.wrap_memory]("wrap_memory")
+            .def_method[Context.unwrap_memory]("unwrap_memory")
             .def_method[Context.memory_get_address]("memory_get_address")
             .def_method[Context.load_function]("load_function")
+            .def_method[Context.copy_to_device_sync]("copy_to_device_sync")
+            .def_method[Context.copy_from_device_sync]("copy_from_device_sync")
+            .def_method[Context.copy_intra_device_sync](
+                "copy_intra_device_sync"
+            )
         )
 
-        _ = b.add_type[Buffer]("Buffer").def_method[Buffer.get_byte_size](
-            "get_byte_size"
+        _ = (
+            b.add_type[Buffer]("Buffer")
+            .def_method[Buffer.get_byte_size]("get_byte_size")
+            .def_method[Buffer.view]("view")
+        )
+
+        _ = (
+            b.add_type[BufferView]("BufferView")
+            .def_method[BufferView.get_byte_offset]("get_byte_offset")
+            .def_method[BufferView.get_byte_size]("get_byte_size")
         )
 
         _ = b.add_type[Bundle]("Bundle").def_method[Bundle.get_function_name](
@@ -72,21 +92,31 @@ def PyInit_mojo_module() -> PythonObject:
         _ = (
             b.add_type[Queue]("Queue")
             .def_method[Queue.synchronize]("synchronize")
+            .def_method[Queue.native_handle]("native_handle")
             .def_method[Queue.record_event]("record_event")
+            .def_method[Queue.copy]("copy")
             .def_method[Queue.copy_to_device]("copy_to_device")
             .def_method[Queue.copy_from_device]("copy_from_device")
             .def_method[Queue.copy_intra_device]("copy_intra_device")
+            .def_method[Queue.set_memory]("set_memory")
+            .def_method[Queue.fill]("fill")
             .def_method[Queue.wait_for_events]("wait_for_events")
+            .def_method[Queue.execute]("execute")
         )
 
         _ = (
             b.add_type[Stream]("Stream")
             .def_method[Stream.synchronize]("synchronize")
+            .def_method[Stream.native_handle]("native_handle")
             .def_method[Stream.record_event]("record_event")
+            .def_method[Stream.copy]("copy")
             .def_method[Stream.copy_to_device]("copy_to_device")
             .def_method[Stream.copy_from_device]("copy_from_device")
             .def_method[Stream.copy_intra_device]("copy_intra_device")
+            .def_method[Stream.set_memory]("set_memory")
+            .def_method[Stream.fill]("fill")
             .def_method[Stream.wait_for_events]("wait_for_events")
+            .def_method[Stream.execute]("execute")
         )
 
         _ = (
@@ -94,6 +124,8 @@ def PyInit_mojo_module() -> PythonObject:
             .def_method[Event.synchronize]("synchronize")
             .def_method[Event.is_ready]("is_ready")
         )
+
+        b.def_function[copy]("copy")
 
         return b.finalize()
     except e:

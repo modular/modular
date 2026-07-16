@@ -34,7 +34,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.pipelines.core.exceptions import InputError
+from max.pipelines.context.exceptions import InputError
 from max.support.math import ceildiv
 from PIL import Image, UnidentifiedImageError
 

@@ -137,11 +137,6 @@ We categorize GPU compatibility into two levels:
       <td><code>sm_100</code></td>
     </tr>
     <tr>
-      <td>H100</td>
-      <td>Hopper</td>
-      <td><code>sm_90</code></td>
-    </tr>
-    <tr>
       <td colSpan="3"><strong>Known compatible</strong></td>
     </tr>
     <tr>
@@ -161,6 +156,11 @@ We categorize GPU compatibility into two levels:
     </tr>
     <tr>
       <td>H200</td>
+      <td>Hopper</td>
+      <td><code>sm_90</code></td>
+    </tr>
+    <tr>
+      <td>H100</td>
       <td>Hopper</td>
       <td><code>sm_90</code></td>
     </tr>
@@ -332,6 +332,11 @@ system `ptxas` binary compatible with your hardware and driver version.
       <td>RDNA2</td>
       <td><code>gfx1030</code></td>
     </tr>
+    <tr>
+      <td>Van Gogh (Steam Deck)</td>
+      <td>RDNA2</td>
+      <td><code>gfx1033</code></td>
+    </tr>
   </tbody>
 </table>
 
@@ -405,7 +410,7 @@ To check that your system's GPU is accessible at runtime, try a minimal GPU
 program:
 
 ```mojo title="check_gpu.mojo"
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 def main():
     var ctx = DeviceContext()

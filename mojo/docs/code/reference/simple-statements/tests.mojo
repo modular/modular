@@ -361,7 +361,7 @@ def test_comptime_constants() raises:
 # Trait composition alias and a trait with an associated comptime type.
 # Declaring these at module scope is the test: the file compiling is the
 # verification that the syntax and the semantic check pass.
-comptime Permissive = ImplicitlyCopyable & ImplicitlyDestructible
+comptime Permissive = ImplicitlyCopyable & ImplicitlyDeletable
 
 
 trait SimpleTrait(Writable):

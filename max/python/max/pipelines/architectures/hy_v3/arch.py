@@ -13,7 +13,7 @@
 """Hy3-preview registration shell."""
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
@@ -21,6 +21,8 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import HyV3BatchProcessor
+from .memory_planner import HyV3MemoryPlanner
 from .model import HYV3Model
 from .model_config import HYV3Config
 
@@ -42,4 +44,8 @@ hy_v3_arch = SupportedArchitecture(
     },
     config=HYV3Config,
     multi_gpu_supported=True,
+    batching=HyV3BatchProcessor,
+    memory_planner=HyV3MemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

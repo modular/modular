@@ -23,7 +23,7 @@ from max.experimental.nn.linear import Linear
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from ..llama3_modulev3.layers.transformer_block import LlamaTransformerBlock
@@ -185,9 +185,9 @@ class PixtralLanguage(Module[..., tuple[Tensor, ...]]):
     ) -> tuple[Tensor, ...]:
         assert self.kv_params is not None
         kv_inputs = iter(x._graph_value for x in variadic_args)
-        kv_collections = (
-            self.kv_params.get_symbolic_inputs().unflatten(kv_inputs).inputs
-        )
+        symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)
+        assert isinstance(symbolic_inputs, KVCacheInputs)
+        kv_collections = symbolic_inputs.inputs
 
         inputs_embeds = self.language_model.embed_tokens(input_ids)
 

@@ -18,19 +18,21 @@ Submodules
    :maxdepth: 1
 
    pipelines.architectures
-   pipelines.core
+   pipelines.context
    pipelines.diffusion
    pipelines.kv_cache
    pipelines.lib
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities
    pipelines.lib.registry
+   pipelines.logging_utils
    pipelines.modeling.base
    pipelines.modeling.dataprocessing
-   pipelines.modeling.kv_cache_config
    pipelines.modeling.types
-   pipelines.modeling.weights
+   pipelines.weights
+   pipelines.lora
    pipelines.request
+   pipelines.sampling
    pipelines.speculative
 
 Configuration
@@ -42,8 +44,8 @@ Configuration
    :template: autosummary/class.rst
 
    KVCacheConfig
-   LoRAConfig
    MAXModelConfig
+   PipelineArgs
    PipelineConfig
    ProfilingConfig
    SamplingConfig
@@ -75,18 +77,6 @@ Model interface
    ModelInputs
    ModelOutputs
    PipelineModel
-
-Context
--------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   PixelContext
-   TextAndVisionContext
-   TextContext
 
 Tokenizers
 ----------

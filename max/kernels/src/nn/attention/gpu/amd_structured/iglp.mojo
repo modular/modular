@@ -12,26 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 """IGroupLP `sched_group_barrier` aggregate-pair helpers for AMD MHA.
 
-Comptime-recursive expansions of HipKittens' `sched_barrier_pairs<Pairs,
+Comptime-recursive expansions of the reference's `sched_barrier_pairs<Pairs,
 VALU_CNT, Group>` and `sched_barrier_exp_pairs<...>` C++ templates
-(see `~/HipKittens/kernels/attn/gqa_causal/kernel.cpp:44-56`).
+(see the reference `attn/gqa_causal/kernel.cpp:44-56`).
 
 These helpers prescribe IGroupLP groupings to LLVM's AMDGPU instruction
 scheduler via the `llvm.amdgcn.sched.group.barrier` intrinsic. They were
-defined identically across 5 attention kernels (`hk_mha`, `hk_mha_hk_exact`,
-`hk_mha_prefill`, `hk_mha_hk_exact_v3`, `aiter_mha`); pulled here to a
-shared module to (a) give one place to fix when the language evolves,
-(b) reduce duplication.
+defined identically across several attention kernels and pulled here to a
+shared module: one place to fix as the language evolves, no duplication.
+Current consumers: `mha_prefill_v2`, `mla_prefill`, `mla_prefill_v2`,
+`mla_components`.
 
 Per-kernel hint-pair parameters (which N, M for QK / PV / EXP cluster
-types) are tuned via parameter sweep at the kernel — see
-[[patterns/amd-iglp-hint-pair-sweep]]. Only the helper expansion logic
-is shared; the per-cluster `(N, M)` defaults belong with each kernel
-(they're shape-dependent and kernel-specific).
-
-For `size` semantics, `sync_id` ordering, and why these intrinsics
-leave no asm trace, see
-[[patterns/amd-iglp-instruction-group-interleave-pattern]].
+types) are tuned via parameter sweep at the kernel. Only the helper
+expansion logic is shared; the per-cluster `(N, M)` defaults belong with
+each kernel (they're shape-dependent and kernel-specific).
 """
 
 from std.sys import llvm_intrinsic
@@ -63,8 +58,8 @@ struct AMDIGLPStrategy(Equatable, Intable, TrivialRegisterPassable):
     comptime MFMA_EXP_INTERLEAVE = Self(2)
     """`MFMAExpInterleaveOpt` — multi-phase attention preset (MFMA + `exp2`).
 
-    The preset HKMhaPrefill uses: drives the MFMA/VALU/TRANS triple
-    interleave that flash-attention-style softmax wants.
+    Drives the MFMA/VALU/TRANS triple interleave that flash-attention-style
+    softmax wants (used by `mla_prefill`).
     """
 
     comptime MFMA_EXP_SIMPLE_INTERLEAVE = Self(3)
@@ -95,8 +90,7 @@ def sched_barrier_pairs[pairs: Int, valu_cnt: Int, group: Int]() -> None:
     `sync_id=group`: one declaring "1 MFMA in this group" and one
     declaring "`valu_cnt` VALUs in this group". `pairs > 1` recurses to
     emit additional pairs in the same `sync_id`, all of which LLVM
-    orders relative to each other (see
-    [[patterns/amd-iglp-instruction-group-interleave-pattern]]).
+    orders relative to each other.
 
     Note `valu_cnt` is the **count of VALU instructions in each group**,
     not a VALU-to-MFMA ratio; LLVM derives the interleave from the
@@ -129,7 +123,7 @@ def sched_dsread_valu_pairs[pairs: Int, valu_cnt: Int, group: Int]() -> None:
 
     DS_READ variant of `sched_barrier_pairs` for clusters that have NO
     MFMAs but want to interleave LDS-reads with VALU work — typically
-    V-load + causal-mask clusters (HK MHA C5 / EPI_C5 / EPI_C9). The
+    V-load + causal-mask clusters (the MHA kernel's C5 / EPI_C5 / EPI_C9). The
     interleave hides the v_cmp→v_cndmask wait state (5 cycles, gated by
     `s_nop 1` if not filled) behind useful `ds_read_b64_tr_b16` work.
 
@@ -162,7 +156,7 @@ def sched_barrier_exp_pairs[pairs: Int, exp_cnt: Int, group: Int]() -> None:
     (mask `0x400` per LLVM AMDGPU). Pair this with
     `sched_barrier_pairs` under the same `sync_id` to declare both
     interleavings within one cluster — LLVM orders the declarations as
-    a single sequence (see HipKittens
+    a single sequence (see the reference
     `kernel.cpp:44-56` for the canonical pattern).
 
     Parameters:

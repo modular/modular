@@ -183,7 +183,7 @@ class RotaryEmbedding(Module[..., Tensor]):
 
         # Cast back to the activations dtype, which may differ from
         # freqs_cis's dtype.
-        return F.cast(F.reshape(rope_complex, v.per_rank_shape), v.dtype)
+        return F.cast(F.reshape(rope_complex, v.shape), v.dtype)
 
 
 class YarnRotaryEmbedding(RotaryEmbedding):

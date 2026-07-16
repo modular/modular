@@ -15,15 +15,17 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
-from max.pipelines.core import TextContext
+from max.pipelines.context import (
+    GenerationStatus,
+    TextContext,
+    TextGenerationOutput,
+    TokenBuffer,
+)
 from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.modeling.types import (
-    GenerationStatus,
     Pipeline,
     RequestID,
     TextGenerationInputs,
-    TextGenerationOutput,
-    TokenBuffer,
 )
 from max.serve.scheduler.batch_constructor.text_batch_constructor import (
     TextBatchConstructor,
@@ -145,7 +147,6 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
         max_batch_total_tokens=None,
-        max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
@@ -182,7 +183,6 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
     # 9 * 4 = 36 tokens, since no max_batch_total_tokens is set, we should have 4 requests in the batch
     assert len(inputs.batches[0]) == 4
     # since this is CE, we should have 1 step
-    assert inputs.num_steps == 1
 
     # test that we have 2 requests remaining in the queue
     assert len(batch_constructor.replicas[0].ce_reqs) == 2
@@ -227,7 +227,6 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
 
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 2
-    assert inputs.num_steps == 1
 
     for batch in inputs.batches:
         for context in batch:
@@ -243,7 +242,6 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
     assert batch_constructor._identify_priority(0) == RequestType.TG
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 4
-    assert inputs.num_steps == 10
 
 
 def test_text_batch_constructor__batch_construction_no_requests(
@@ -252,7 +250,6 @@ def test_text_batch_constructor__batch_construction_no_requests(
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
         max_batch_total_tokens=None,
-        max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
@@ -274,7 +271,6 @@ def test_text_batch_constructor__batch_construction_no_requests(
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches) == 1
     assert len(inputs.batches[0]) == 0
-    assert inputs.num_steps == 0
 
 
 def test_text_batch_constructor__batch_construction_no_room_in_cache(
@@ -283,7 +279,6 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
         max_batch_total_tokens=None,
-        max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
@@ -327,7 +322,6 @@ def test_text_batch_constructor__insufficient_blocks_defers_then_retries(
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
         max_batch_total_tokens=None,
-        max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
@@ -375,7 +369,6 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
         max_batch_total_tokens=None,
-        max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=True,
         target_tokens_per_batch_ce=30,
@@ -506,7 +499,6 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
         max_batch_total_tokens=None,
-        max_forward_steps_tg=10,
         enable_in_flight_batching=True,
         enable_chunked_prefill=True,
         target_tokens_per_batch_ce=30,
@@ -573,7 +565,6 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
         max_batch_total_tokens=None,
-        max_forward_steps_tg=10,
         enable_in_flight_batching=True,
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
@@ -643,7 +634,6 @@ def test_single_lora_scheduling() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=100,
     )
 
@@ -672,7 +662,6 @@ def test_multi_lora_within_budget() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=200,
     )
 
@@ -706,7 +695,6 @@ def test_lora_preemption_over_budget() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=200,
     )
 
@@ -745,7 +733,6 @@ def test_age_based_scheduling_with_lora() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=40,
     )
 
@@ -780,7 +767,6 @@ def test_tg_batch_with_active_loras() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=100,
     )
 
@@ -817,7 +803,6 @@ def test_ce_lora_activation_within_budget() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=100,
     )
 
@@ -855,7 +840,6 @@ def test_tg_pure_age_based_preemption() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=100,
     )
 
@@ -891,7 +875,6 @@ def test_lora_swapping_ce_to_tg() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=100,
     )
 
@@ -933,7 +916,6 @@ def test_mixed_requests_scheduling() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=100,
     )
 
@@ -985,7 +967,6 @@ def test_text_batch_constructor__load_based_replica_assignment_with_kv_cache() -
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=1000,
         data_parallel_degree=data_parallel_degree,
     )
@@ -1040,7 +1021,6 @@ def test_text_batch_constructor__data_parallel_explicit_replica_assignment() -> 
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=1000,
         data_parallel_degree=data_parallel_degree,
     )
@@ -1090,7 +1070,6 @@ def test_text_batch_constructor__load_based_handles_imbalance() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=1000,
         data_parallel_degree=data_parallel_degree,
     )
@@ -1158,7 +1137,6 @@ def test_batch_scheduling_strategy__per_replica_default() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=100,
         data_parallel_degree=data_parallel_degree,
         enable_in_flight_batching=False,
@@ -1244,7 +1222,6 @@ def test_batch_scheduling_strategy__prefill_first() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=100,
         data_parallel_degree=data_parallel_degree,
         enable_in_flight_batching=False,
@@ -1322,7 +1299,6 @@ def test_batch_scheduling_strategy__decode_first() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=100,
         data_parallel_degree=data_parallel_degree,
         enable_in_flight_batching=True,
@@ -1400,7 +1376,6 @@ def test_batch_scheduling_strategy__balanced_majority_ce() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=100,
         data_parallel_degree=data_parallel_degree,
         enable_in_flight_batching=False,
@@ -1468,7 +1443,6 @@ def test_batch_scheduling_strategy__balanced_majority_tg() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=100,
         data_parallel_degree=data_parallel_degree,
         enable_in_flight_batching=True,
@@ -1536,7 +1510,6 @@ def test_batch_scheduling_strategy__balanced_tie_defaults_to_tg() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=100,
         data_parallel_degree=data_parallel_degree,
         enable_in_flight_batching=True,
@@ -1606,7 +1579,6 @@ def test_batch_scheduling_strategy__all_replicas_empty() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=100,
         data_parallel_degree=data_parallel_degree,
     )
@@ -1629,4 +1601,3 @@ def test_batch_scheduling_strategy__all_replicas_empty() -> None:
         # All batches should be empty
         assert len(inputs.batches) == data_parallel_degree
         assert all(len(batch) == 0 for batch in inputs.batches)
-        assert inputs.num_steps == 0

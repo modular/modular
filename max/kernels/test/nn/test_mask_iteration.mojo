@@ -12,8 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 from nn.attention.mha_mask import (
     CausalMask,
+    ChunkedMask,
     SlidingWindowCausalMask,
+    SlidingWindowNonCausalMask,
     ChunkedCausalMask,
+    MaskStrategy,
     MHAMask,
     TileMaskStatus,
 )
@@ -154,7 +157,49 @@ def test_mask[
     )
 
 
+def test_noncausal_strategies_bitmask[
+    MaskType: MHAMask, //, BM: Int, BN: Int
+](mask: MaskType) raises:
+    # SlidingWindowNonCausalMask must mask every nonfull tile with BITMASK.
+    # The final tile can straddle num_keys when num_keys % BN != 0; BITMASK's
+    # mask_bits() folds in the col < num_keys clip, whereas a NO_MASK strategy
+    # lets the comptime softmax path skip that clip and attend out-of-bounds
+    # KV slots past the valid extent.
+    comptime strategies = MaskType.mask_strategies[BM, BN]()
+    for i in range(len(strategies)):
+        assert_equal(
+            Int(strategies[i]._value), Int(MaskStrategy.BITMASK._value)
+        )
+
+
+def test_no_mask_strategy_in_bounds[
+    MaskType: MHAMask, //, BM: Int, BN: Int, page_size: Int = 1
+](mask: MaskType, q_row: UInt32, num_keys: UInt32) raises:
+    # A set whose STRATEGY is NO_MASK skips the `col < num_keys` clip, so every
+    # tile it iterates must be fully in-bounds. Assert the cumulative end of
+    # each non-empty NO_MASK-strategy set stays within num_keys. (Empty sets --
+    # e.g. the interior set on a boundary-crossing block -- are skipped.)
+    comptime seq_id: UInt32 = 0
+    comptime strategies = MaskType.mask_strategies[BM, BN]()
+    var start = mask.start_column[BM, BN, page_size](seq_id, q_row)
+    var ends = mask.masked_set_ends[BM=BM, BN=BN, page_size=page_size](
+        seq_id, q_row, num_keys
+    )
+    for i in range(len(strategies)):
+        if strategies[i]._value == MaskStrategy.NO_MASK._value:
+            var prev: UInt32 = ends[i - 1] if i > 0 else UInt32(0)
+            if ends[i] > prev:
+                assert_true(start + ends[i] * UInt32(BN) <= num_keys)
+
+
 def main() raises:
+    test_noncausal_strategies_bitmask[BM=128, BN=128](
+        SlidingWindowNonCausalMask[16]()
+    )
+    test_noncausal_strategies_bitmask[BM=128, BN=64](
+        SlidingWindowNonCausalMask[1024]()
+    )
+
     # alias BM = 2
     # alias BN = 2
     comptime BM = 128
@@ -162,7 +207,19 @@ def main() raises:
     comptime causal_mask = CausalMask()
     comptime sliding_mask16 = SlidingWindowCausalMask[16]()
     comptime sliding_mask1024 = SlidingWindowCausalMask[1024]()
+    comptime noncausal_mask16 = SlidingWindowNonCausalMask[16]()
+    comptime noncausal_mask1024 = SlidingWindowNonCausalMask[1024]()
+    comptime noncausal_mask4096 = SlidingWindowNonCausalMask[4096]()
     comptime chunked_causal_mask = ChunkedCausalMask[256]()
+    # Bare ChunkedMask with the 3-set partition gate satisfied
+    # (W % BN == 0 and W >= BM). W == BM exercises the single-tile chunk;
+    # larger W exercises a non-empty NO_MASK interior set.
+    comptime chunked_mask128 = ChunkedMask[128]()
+    comptime chunked_mask256 = ChunkedMask[256]()
+    comptime chunked_mask512 = ChunkedMask[512]()
+    # W < BM: every block straddles a chunk boundary, so the gate falls back to
+    # the single PARTIAL set (which is exact here -- no tile fits in a chunk).
+    comptime chunked_mask64 = ChunkedMask[64]()
     for num_keys in range(1, 8193):
         for q_row in range(num_keys):
             test_mask[BM=BM, BN=BN, page_size=1](
@@ -182,6 +239,61 @@ def main() raises:
             )
             test_mask[BM=BM, BN=BN, page_size=512](
                 sliding_mask1024, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=1](
+                noncausal_mask16, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=512](
+                noncausal_mask16, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=1](
+                noncausal_mask1024, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=512](
+                noncausal_mask1024, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=1](
+                noncausal_mask4096, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=512](
+                noncausal_mask4096, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=1](
+                chunked_mask128, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=512](
+                chunked_mask128, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=1](
+                chunked_mask256, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=512](
+                chunked_mask256, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=1](
+                chunked_mask512, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=512](
+                chunked_mask512, UInt32(q_row), UInt32(num_keys)
+            )
+            # NO_MASK-strategy interior set must never straddle num_keys.
+            test_no_mask_strategy_in_bounds[BM=BM, BN=BN, page_size=1](
+                chunked_mask128, UInt32(q_row), UInt32(num_keys)
+            )
+            test_no_mask_strategy_in_bounds[BM=BM, BN=BN, page_size=512](
+                chunked_mask128, UInt32(q_row), UInt32(num_keys)
+            )
+            test_no_mask_strategy_in_bounds[BM=BM, BN=BN, page_size=1](
+                chunked_mask256, UInt32(q_row), UInt32(num_keys)
+            )
+            test_no_mask_strategy_in_bounds[BM=BM, BN=BN, page_size=512](
+                chunked_mask512, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=1](
+                chunked_mask64, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=512](
+                chunked_mask64, UInt32(q_row), UInt32(num_keys)
             )
             count0 = compute_total_iters0[BM=BM, BN=BN](
                 chunked_causal_mask, UInt32(q_row), UInt32(num_keys)
@@ -207,3 +319,19 @@ def main() raises:
             assert_equal(count0, count1)
             assert_equal(count0, count2)
             assert_equal(count0, count3)
+            # ChunkedCausalMask = OrMask[CausalMask, ChunkedMask] now exposes a
+            # precise merged partition; validate it tile-by-tile against the
+            # true combined status (and that no NO_MASK-strategy set straddles
+            # num_keys).
+            test_mask[BM=BM, BN=BN, page_size=1](
+                chunked_causal_mask, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=512](
+                chunked_causal_mask, UInt32(q_row), UInt32(num_keys)
+            )
+            test_no_mask_strategy_in_bounds[BM=BM, BN=BN, page_size=1](
+                chunked_causal_mask, UInt32(q_row), UInt32(num_keys)
+            )
+            test_no_mask_strategy_in_bounds[BM=BM, BN=BN, page_size=512](
+                chunked_causal_mask, UInt32(q_row), UInt32(num_keys)
+            )

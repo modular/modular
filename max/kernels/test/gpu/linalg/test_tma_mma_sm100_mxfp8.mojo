@@ -209,10 +209,14 @@ def block_scaled_mxfp8_kernel[
         Scalar[b_scales_type]
     ]()
 
-    var a_smem_tile = a_smem_tile_t(a_smem)
-    var b_smem_tile = b_smem_tile_t(b_smem)
-    var a_scales_smem_tile = a_scales_smem_tile_t(a_scales_smem)
-    var b_scales_smem_tile = b_scales_smem_tile_t(b_scales_smem)
+    var a_smem_tile = a_smem_tile_t(a_smem.as_unsafe_any_origin())
+    var b_smem_tile = b_smem_tile_t(b_smem.as_unsafe_any_origin())
+    var a_scales_smem_tile = a_scales_smem_tile_t(
+        a_scales_smem.as_unsafe_any_origin()
+    )
+    var b_scales_smem_tile = b_scales_smem_tile_t(
+        b_scales_smem.as_unsafe_any_origin()
+    )
 
     # Shared memory pointer to hold tensor memory address
     var ptr_tmem_addr = (b_scales_smem + b_scales_size).bitcast[UInt32]()
@@ -563,9 +567,7 @@ def sm100_block_scaled_mxfp8[
     comptime a_scales_4d_layout = scales_4d_layout[a_scales_layout]
     comptime b_scales_4d_layout = scales_4d_layout[b_scales_layout]
 
-    var a_scales_4d = LayoutTensor[
-        a_scales_type, a_scales_4d_layout, MutAnyOrigin
-    ](
+    var a_scales_4d = LayoutTensor[a_scales_type, a_scales_4d_layout](
         a_scales.ptr,
         RuntimeLayout[a_scales_4d_layout].row_major(
             IndexList[4](
@@ -577,7 +579,8 @@ def sm100_block_scaled_mxfp8[
         ),
     )
     var b_scales_4d = LayoutTensor[
-        b_scales_type, b_scales_4d_layout, MutAnyOrigin
+        b_scales_type,
+        b_scales_4d_layout,
     ](
         b_scales.ptr,
         RuntimeLayout[b_scales_4d_layout].row_major(
@@ -874,7 +877,7 @@ def test_block_scaled_mxfp8[
         block_tile_shape=block_tile_shape,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
     ](
-        c.to_layout_tensor().as_any_origin(),
+        c.to_layout_tensor().as_unsafe_any_origin(),
         a.to_layout_tensor(),
         b.to_layout_tensor(),
         a_scales.to_layout_tensor(),

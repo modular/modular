@@ -119,7 +119,7 @@ coverage:
 | Change type                                                      | Suggested command                                                                                                                       | Typical prerequisites                                 |
 |------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------|
 | Core Python logic and lightweight local regression               | `./bazelw test //max/tests/tests:cpu_local_tests`                                                                                       | No GPU; usually no `HF_TOKEN`                         |
-| Serve process-control unit tests                                 | `./bazelw test //max/tests/tests/serve/unit:tests`                                                                                      | CPU-only, but slower than the default local suite     |
+| Serve process-control unit tests                                 | `./bazelw test //max/tests/tests/serve:tests`                                                                                           | CPU-only, but slower than the default local suite     |
 | Pipeline library or architecture logic that should stay CPU-safe | `./bazelw test //max/tests/tests/pipelines/... //max/tests/integration/pipelines:tests`                                                 | Network may be needed for some pipeline tests         |
 | Tokenization or HF-backed pipeline integration                   | `./bazelw test //max/tests/integration/pipelines/tokenization:tests //max/tests/integration/architectures/internvl_network_tests:tests` | Hugging Face auth, network, and a GPU-capable machine |
 | GPU runtime, graph, or kernel-facing changes                     | `./bazelw test //max/tests/tests:test_interpreter_ops_gpu //max/tests/integration/pipelines:tests_gpu`                                  | GPU required; network often required                  |
@@ -153,7 +153,7 @@ running inference with [`max
 generate`](https://docs.modular.com/max/cli/generate):
 
 ```bash
-./bazelw run //max/python/max/entrypoints:pipelines -- generate \
+./bazelw run //max/python/max/_entrypoints:pipelines -- generate \
   --model OpenGVLab/InternVL3-8B-Instruct \
   --prompt "Hello, world!"
 ```
@@ -162,7 +162,7 @@ And this is equivalent to creating an endpoint with [`max
 serve`](https://docs.modular.com/max/cli/serve):
 
 ```bash
-./bazelw run //max/python/max/entrypoints:pipelines -- serve \
+./bazelw run //max/python/max/_entrypoints:pipelines -- serve \
   --model OpenGVLab/InternVL3-8B-Instruct \
   --trust-remote-code
 ```

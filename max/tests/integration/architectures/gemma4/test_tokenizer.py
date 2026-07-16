@@ -23,15 +23,19 @@ import numpy as np
 import pytest
 from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
 from max.pipelines.architectures.gemma4.video_processor import VideoMetadata
+from max.pipelines.context import (
+    SamplingParams,
+    TextGenerationResponseFormat,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.modeling.types import (
     ImageContentPart,
+    ReasoningPipelineTokenizer,
     RequestID,
-    SamplingParams,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
-    TextGenerationResponseFormat,
     VideoContentPart,
 )
 from PIL import Image
@@ -262,12 +266,44 @@ async def test_no_response_format(
     assert context.json_schema is None
 
 
+def test_gemma4_tokenizer_satisfies_reasoning_pipeline_tokenizer_protocol(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """``Gemma4Tokenizer`` exposes ``reasoning_start_token_id`` and
+    ``reasoning_end_token_id`` as instance attributes so it satisfies the
+    ``ReasoningPipelineTokenizer`` ``@runtime_checkable`` ``Protocol``.
+
+    This lets the overlap pipeline's thinking-mode temperature scaling
+    resolve the per-model delimiter ids without depending on the reasoning
+    parser registry.
+    """
+    delegate = _make_mock_delegate()
+    # Distinct ids for <|channel> vs <channel|> so we can assert the values.
+
+    def _convert(token: str) -> int:
+        if token == "<|channel>":
+            return 100
+        if token == "<channel|>":
+            return 101
+        return VIDEO_TOKEN_ID
+
+    delegate.convert_tokens_to_ids.side_effect = _convert
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+
+    assert isinstance(tokenizer, ReasoningPipelineTokenizer)
+    assert tokenizer.reasoning_start_token_id == 100
+    assert tokenizer.reasoning_end_token_id == 101
+
+
 @pytest.mark.asyncio
 async def test_prompt_too_long(
     mocker: MockerFixture,
     mock_pipeline_config: MagicMock,
 ) -> None:
-    """Prompt exceeding max_length raises ValueError."""
+    """Prompt exceeding max_length raises PromptTooLongError."""
     delegate = _make_mock_delegate()
     delegate.model_max_length = 5
     long_tokens = list(range(10))
@@ -287,11 +323,10 @@ async def test_prompt_too_long(
         model_name="test-model",
     )
 
-    with pytest.raises(
-        ValueError,
-        match="encoded_prompt is greater than the max_length",
-    ):
+    with pytest.raises(PromptTooLongError) as exc_info:
         await tokenizer.new_context(request)
+    assert exc_info.value.num_tokens == 10
+    assert exc_info.value.max_length == 5
 
 
 @pytest.mark.asyncio
@@ -663,3 +698,84 @@ async def test_no_response_format_no_grammar(
 
     assert context.json_schema is None
     assert context.grammar is None
+
+
+def test_apply_chat_template_prefills_reasoning_open_when_thinking(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """With thinking enabled, the generation prompt is forced open with
+    ``<|channel>thought`` so the model reasons on *every* assistant turn --
+    including the turn after a ``tool`` result. Without it Gemma skips
+    thinking post-tool and OpenRouter's reasoning-enabled-tool-call-step-5
+    test fails, auto-disabling tools."""
+    delegate = _make_mock_delegate()
+    # Pretend the base template rendered a generation prompt that does NOT
+    # open a reasoning block.
+    delegate.apply_chat_template.return_value = "PROMPT<|model>"
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+    msgs = [TextGenerationRequestMessage(role="user", content="hi")]
+
+    # enable_thinking=True -> reasoning channel forced open at the tail.
+    out = tokenizer.apply_chat_template(msgs, enable_thinking=True)
+    assert out.endswith("<|channel>thought\n")
+
+    # The tokenizer keys off ``enable_thinking`` only (matching the chat
+    # template). OpenRouter's ``reasoning`` toggle is mapped to
+    # ``enable_thinking`` upstream (#89137), so the bare ``thinking`` alias
+    # alone does not force the channel open here.
+    out_thinking_alias = tokenizer.apply_chat_template(msgs, thinking=True)
+    assert "<|channel>thought" not in out_thinking_alias
+
+    # Disabled -> no prefill.
+    out_off = tokenizer.apply_chat_template(msgs, enable_thinking=False)
+    assert "<|channel>thought" not in out_off
+
+
+def test_apply_chat_template_reopens_turn_after_tool_response(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """After a tool result the chat template leaves the model mid-turn, so the
+    prompt ends with ``<tool_response|>``. The prefill must re-open a fresh
+    model turn before the channel, matching the user-turn structure that
+    actually reasons."""
+    delegate = _make_mock_delegate()
+    # Real post-tool render: turn left open, ends with the tool-response close.
+    delegate.apply_chat_template.return_value = (
+        "<|turn>model\n<|tool_call>call:f{}<tool_call|>"
+        "<|tool_response>response:f{value:42}<tool_response|>"
+    )
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+    msgs = [TextGenerationRequestMessage(role="user", content="hi")]
+
+    out = tokenizer.apply_chat_template(msgs, enable_thinking=True)
+
+    # A fresh model turn is opened between the tool response and the channel,
+    # mirroring the user-turn structure (`<|turn>model\n<|channel>thought\n`).
+    assert out.endswith(
+        "<tool_response|><turn|>\n<|turn>model\n<|channel>thought\n"
+    )
+    # The bare-channel-after-tool-response shape (which doesn't reason) is gone.
+    assert not out.endswith("<tool_response|><|channel>thought\n")
+
+
+def test_apply_chat_template_no_double_prefill(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """If the base template already opened the reasoning channel, don't
+    append a second opener."""
+    delegate = _make_mock_delegate()
+    delegate.apply_chat_template.return_value = "PROMPT<|channel>thought\n"
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+    msgs = [TextGenerationRequestMessage(role="user", content="hi")]
+
+    out = tokenizer.apply_chat_template(msgs, enable_thinking=True)
+    assert out.count("<|channel>thought") == 1

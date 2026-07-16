@@ -33,7 +33,9 @@ def copy_via_shared(
     var thread_id = thread_idx.x
     var mem_buff: UnsafePointer[
         Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ] = stack_allocation[16, Float32, address_space=AddressSpace.SHARED]()
+    ] = stack_allocation[
+        16, Float32, address_space=AddressSpace.SHARED
+    ]().as_unsafe_any_origin()
     var src_global: UnsafePointer[
         Float32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
     ] = src.address_space_cast[AddressSpace.GLOBAL]()

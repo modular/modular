@@ -18,7 +18,6 @@ from std.sys import align_of, simd_width_of
 
 import std.benchmark
 from layout import *
-from internal_utils import ScalarArray
 
 comptime MR = 6
 comptime NR = 64
@@ -168,21 +167,19 @@ def main():
     print(K)
 
     # FIXME: Something causes sporadic crashes on intel with TensorBuilder.Build()
-    var a_ptr = ScalarArray[dtype](count=M * K, alignment=alignment)
-    var b_ptr = ScalarArray[dtype](count=K * N, alignment=alignment)
-    var b_packed_ptr = ScalarArray[dtype](count=K * N, alignment=alignment)
-    var c_ptr = ScalarArray[dtype](count=M * N, alignment=alignment)
-    var c2_ptr = ScalarArray[dtype](count=M * N, alignment=alignment)
+    var a_ptr = alloc[Float32](M * K, alignment=alignment)
+    var b_ptr = alloc[Float32](K * N, alignment=alignment)
+    var b_packed_ptr = alloc[Float32](K * N, alignment=alignment)
+    var c_ptr = alloc[Float32](M * N, alignment=alignment)
+    var c2_ptr = alloc[Float32](M * N, alignment=alignment)
 
-    var a = TileTensor(a_ptr.unsafe_ptr(), row_major[M, K]())
+    var a = TileTensor(a_ptr, row_major[M, K]())
 
-    var b = TensorBuilder[K, N, dtype].Wrap(b_ptr.unsafe_ptr())
-    var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(
-        b_packed_ptr.unsafe_ptr()
-    )
+    var b = TensorBuilder[K, N, dtype].Wrap(b_ptr)
+    var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(b_packed_ptr)
 
-    var c = TileTensor(c_ptr.unsafe_ptr(), row_major[M, N]())
-    var c2 = TileTensor(c2_ptr.unsafe_ptr(), row_major[M, N]())
+    var c = TileTensor(c_ptr, row_major[M, N]())
+    var c2 = TileTensor(c2_ptr, row_major[M, N]())
 
     for j in range(M):
         for i in range(K):
@@ -212,12 +209,11 @@ def main():
     print(M * N, end="")
     print(" errors")
 
-    @parameter
-    def bench_gemm():
+    def bench_gemm() {var}:
         gemm[N, K](c2, a, b_packed)
 
     var num_warmup: Int = 1
-    var time = std.benchmark.run[func3=bench_gemm](num_warmup).mean()
+    var time = std.benchmark.run(bench_gemm, num_warmup).mean()
     var flops = 2.0 * M * N * K / time / 1e9
     print(time, end="")
     print(" seconds")
@@ -229,4 +225,8 @@ def main():
     print(rpeak, end="")
     print(" measured/peak FLOPS assuming 2.9 GHz")
 
-    _ = (a_ptr^, b_ptr^, b_packed_ptr^, c_ptr^, c2_ptr^)
+    a_ptr.free()
+    b_ptr.free()
+    b_packed_ptr.free()
+    c_ptr.free()
+    c2_ptr.free()

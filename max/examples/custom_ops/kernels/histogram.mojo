@@ -11,11 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import compiler
+
 from std.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.atomic import Atomic
 
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
+from std.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    barrier,
+    global_idx,
+    thread_idx,
+)
 from std.gpu.host.info import is_cpu
 from std.gpu.host import DeviceBuffer
 from std.gpu.memory import AddressSpace

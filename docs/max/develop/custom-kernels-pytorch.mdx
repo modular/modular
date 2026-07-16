@@ -8,7 +8,6 @@ is_tutorial: true
 ---
 
 import InstallModular from '../../_includes/install-modular.mdx';
-import MDXListing from '@site/src/components/Listing/MDXListing';
 
 When working with PyTorch models, you might encounter performance bottlenecks in
 specific operations that could benefit from custom optimization. You might also
@@ -47,7 +46,7 @@ the interface.
 Create a new file called `grayscale.py` and add the following code:
 
 ```python title="grayscale.py"
-from std.pathlib import Path
+from pathlib import Path
 import torch
 
 @torch.compile
@@ -72,7 +71,7 @@ which allows you to load and use compiled Mojo operations directly in PyTorch.
 Update the `grayscale.py` file to include the following code:
 
 ```python title="grayscale.py"
-from std.pathlib import Path
+from pathlib import Path
 import torch
 from max.experimental.torch import CustomOpLibrary
 
@@ -99,22 +98,34 @@ manage build steps.
 ## Implement the Mojo kernel
 
 Now for the core implementation—our high-performance Mojo kernel. We'll create a
-Mojo package that defines our grayscale conversion operation
+Mojo package that defines our grayscale conversion operation.
 
-Create a new file called `grayscale.mojo` inside the `operations` folder and add
-the following code:
+First, create an empty file called `__init__.mojo` inside the `operations`
+folder. This file marks the folder as a Mojo package, which `CustomOpLibrary`
+requires:
+
+```bash
+touch operations/__init__.mojo
+```
+
+Then create a new file called `grayscale.mojo` inside the `operations` folder
+and add the following code:
 
 ```mojo title="grayscale.mojo"
-from compiler import register
-from max.tensor import InputTensor, OutputTensor, foreach
+import compiler
+
 from std.gpu.host import DeviceContext
+from extensibility import InputTensor, OutputTensor, foreach
+
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 
-@register("grayscale")
+
+@compiler.register("grayscale")
 struct Grayscale:
     @staticmethod
     def execute[
-        target: StaticString,
+        target: StaticString,  # "cpu" or "gpu"
     ](
         img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
         img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
@@ -124,13 +135,16 @@ struct Grayscale:
         @always_inline
         def color_to_grayscale[
             simd_width: Int
-        ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
+        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
             @parameter
-            def load(idx: IndexList[img_in.rank]) -> SIMD[DType.float32, simd_width]:
+            def load(
+                idx: IndexList[img_in.rank],
+            ) -> SIMD[DType.float32, simd_width]:
                 return img_in.load[simd_width](idx).cast[DType.float32]()
 
-            var row = idx[0]
-            var col = idx[1]
+            var idx_l = coord_to_index_list(idx)
+            var row = idx_l[0]
+            var col = idx_l[1]
 
             # Load RGB values
             var r = load(IndexList[3](row, col, 0))
@@ -144,18 +158,15 @@ struct Grayscale:
         foreach[color_to_grayscale, target=target, simd_width=1](img_out, ctx)
 ```
 
-First, the `@register("grayscale")` decorator makes this operation available to
-PyTorch under the name `grayscale`. This is the `ops.grayscale(output, pic)`
-function called in the PyTorch model.
+First, the `@compiler.register("grayscale")` decorator makes this operation
+available to PyTorch under the name `grayscale`. This is the
+`ops.grayscale(output, pic)` function called in the PyTorch model.
 
-Then, the
+The `color_to_grayscale` function takes a coordinate into the output tensor and
+returns a SIMD vector of the grayscale value. The
 [`foreach`](/max/api/kernels/extensibility/managed_tensor_slice/foreach/)
 primitive automatically parallelizes the operation across available compute
 units.
-
-The `color_to_grayscale` function takes an index list and returns a SIMD vector
-of the grayscale value. The `foreach` primitive automatically parallelizes the
-operation across available compute units.
 
 Finally, the `target` parameter allows the same code to run on both CPU and GPU.
 
@@ -213,9 +224,8 @@ improvements over CPU-only implementations.
 Now that you wrote a Mojo kernel with your PyTorch model, check out these
 other tutorials:
 
-export const docs = [
-  '../../develop/build-custom-ops.mdx',
-  '../../develop/modules.mdx',
-];
-
-<MDXListing mdxList={docs} />
+- [Build custom ops for GPUs](/max/develop/build-custom-ops): Write custom GPU
+  and CPU operations in Mojo and load them into a MAX graph.
+- [Build a model graph with Module](/max/develop/modules): Learn how to
+  compose modules, write custom modules with explicit weights, load checkpoint
+  data, and construct a model graph.

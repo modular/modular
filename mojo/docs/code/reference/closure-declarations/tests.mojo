@@ -31,10 +31,6 @@
 #   - `{var^}` copy-ctor timing assertion (the [copied] print at
 #     closure-value assignment, not at declaration). Verified
 #     empirically; cannot be asserted without redirecting stdout.
-#   - Bare `{name^}` move form. The compiler accepts it (verified
-#     empirically as equivalent to `{var name^}`), but `mojo
-#     format` rejects it as a parse error. Use `{var name^}` in
-#     code that must round-trip through the formatter.
 from std.testing import assert_equal, assert_true
 
 
@@ -160,6 +156,19 @@ def test_var_move_capture() raises:
     var data: List[Int] = [1, 2, 3]
 
     def take_data() {var data^} -> Int:
+        return len(data)
+
+    assert_equal(take_data(), 3)
+    # data is consumed; referencing it here would be a compile error
+
+
+# --- bare name^: move capture (equivalent to var name^) ---
+
+
+def test_bare_move_capture() raises:
+    var data: List[Int] = [1, 2, 3]
+
+    def take_data() {data^} -> Int:
         return len(data)
 
     assert_equal(take_data(), 3)
@@ -402,6 +411,7 @@ def main() raises:
     test_var_explicit_snapshot()
     test_var_implicit()
     test_var_move_capture()
+    test_bare_move_capture()
     test_var_caret_copyable_closure()
     test_ref_parametric_mutability()
     test_empty_capture_list()

@@ -18,11 +18,11 @@ import faulthandler
 import os
 import signal
 import sys
-import threading
 from collections.abc import Iterable, Mapping, Sequence
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
+from types import TracebackType
 from typing import Any, Literal, cast
 from unittest import mock
 
@@ -35,7 +35,27 @@ from max._core.engine import ModelMetadata as ModelMetadata
 from max._core.engine import PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.mlrt import AsyncValue as _AsyncValue
-from max._core.profiler import set_gpu_profiling_state
+from max._core.profiler import (
+    kineto_disable as _kineto_disable,
+)
+from max._core.profiler import (
+    kineto_enable as _kineto_enable,
+)
+from max._core.profiler import (
+    kineto_is_enabled as _kineto_is_enabled,
+)
+from max._core.profiler import (
+    kineto_last_trace_error as _kineto_last_trace_error,
+)
+from max._core.profiler import (
+    kineto_state as _kineto_state,
+)
+from max._core.profiler import (
+    kineto_wait_for_trace as _kineto_wait_for_trace,
+)
+from max._core.profiler import (
+    set_gpu_profiling_state,
+)
 from max.driver import CPU, Buffer, Device, DLPackArray, is_virtual_device_mode
 from max.engine._compilation_stats import _record_phase
 from max.graph import Graph, Module
@@ -410,6 +430,176 @@ class CompiledModel:
     def __repr__(self) -> str:
         return "CompiledModel()"
 
+    def export_mef(self, path: str | Path) -> None:
+        """Exports this compiled artifact to a MEF file.
+
+        Writes the serialized model straight from the compiled artifact, so
+        it does not require the model to be initialized on a device. This
+        makes it usable in cross-compilation / virtual-device scenarios where
+        the target device may not be attached.
+
+        Args:
+            path: Filesystem path to write the MEF to.
+        """
+        self._compiled.wait()
+        if (exc := self._compiled.exception()) is not None:
+            raise exc
+        self._compiled.result().export_mef(str(path))
+
+
+class ProfilingError(Exception):
+    """Raised when the libkineto profiler fails to serialize its trace.
+
+    The most common causes are an unwritable
+    :attr:`InferenceSession.debug.profiling_output_path`, a missing parent
+    directory, or libkineto failing to flush its in-memory ring buffer (the
+    underlying I/O error appears on libkineto's stderr).  For write
+    failures, the exception message includes the resolved output path so
+    the failure can be diagnosed without rerunning the workload.
+
+    Raised by :meth:`InferenceSession.profiling.wait_for_trace`.
+    """
+
+
+class _ProfilingNamespace:
+    """Runtime control surface for the libkineto-backed MAX profiler.
+
+    Exposes the on-demand profiling lifecycle (start, stop, wait, state)
+    that produces HTA-compatible Chrome trace JSON. Configuration lives on
+    the ``ProfilingConfig`` model in
+    ``max.pipelines.lib.config.profiling_config`` (e.g.
+    ``profiling_output_path``).
+
+    .. note::
+
+       libkineto's profiler state is **process-global**. Calling
+       :meth:`start` on one ``InferenceSession`` enables the profiler for the
+       whole process, including any other live sessions.  Single-host
+       tensor-parallel serving is one process driving multiple devices, so
+       one :meth:`start` covers every device.  In a multi-process multi-rank
+       deployment (one OS process per rank, e.g. an MPI-launched run),
+       enabling all ranks means calling :meth:`start` on each rank's own
+       session.  Use a ``{rank}``-templated
+       :attr:`~InferenceSession.debug.profiling_output_path` so the per-rank
+       traces don't collide.
+
+       For the same reason, ``with session.profiling:`` blocks **must not be
+       nested**: an inner ``__exit__`` will call :meth:`stop` and disable the
+       profiler for any enclosing scope.
+
+    This namespace is created automatically as ``session.profiling`` and
+    should not be instantiated by user code.
+
+    Example:
+
+    .. code-block:: python
+
+        session = InferenceSession(devices=[Accelerator()])
+        model = session.load(my_graph)
+        session.profiling.start()
+        model.execute(input_data)
+        session.profiling.stop()
+        session.profiling.wait_for_trace()
+    """
+
+    def start(self) -> None:
+        """Enable libkineto and begin recording.
+
+        Subscribes to CUPTI activity callbacks. Tracy and libkineto are
+        mutually exclusive at build time, so in ``--config=tracy`` builds
+        (which do not link libkineto) this is a no-op. Idempotent — calling
+        :meth:`start` while already enabled is a no-op.
+
+        On builds without libkineto (today: macOS and Linux aarch64) or
+        hosts without a live CUDA primary context, this is a safe no-op:
+        ``state`` will still report ``"warmup"`` but no trace file is
+        written by the matching :meth:`stop`.
+        """
+        _kineto_enable()
+
+    def stop(self) -> None:
+        """Disable libkineto and flush the trace.
+
+        Unregisters CUPTI callbacks and finalizes the trace file; use
+        :meth:`wait_for_trace` if you need to ensure serialization is
+        complete before reading it.
+
+        This method does not raise on a serialization failure — the error is
+        recorded and surfaced by :meth:`wait_for_trace`, so call that to
+        observe whether the trace was written.
+        """
+        _kineto_disable()
+
+    def wait_for_trace(self) -> None:
+        """Block until the most recent :meth:`stop` finishes serializing.
+
+        Raises:
+            ProfilingError: If libkineto could not write the trace file —
+                most commonly an unwritable
+                :attr:`InferenceSession.debug.profiling_output_path` or a
+                missing parent directory.  For write failures, the
+                exception message includes the resolved output path.
+        """
+        _kineto_wait_for_trace()
+        err = _kineto_last_trace_error()
+        if err:
+            raise ProfilingError(err)
+
+    @property
+    def state(self) -> Literal["idle", "warmup", "active", "flushing"]:
+        """Current profiler state.
+
+        Returns:
+            One of ``"idle"``, ``"warmup"``, ``"active"``, or ``"flushing"``.
+        """
+        return cast(
+            Literal["idle", "warmup", "active", "flushing"], _kineto_state()
+        )
+
+    @property
+    def is_enabled(self) -> bool:
+        """``True`` between :meth:`start` and :meth:`stop`.
+
+        Equivalent to ``state in {"warmup", "active"}``; ``False`` in
+        ``"idle"`` and ``"flushing"``.
+
+        Cheap relative to constructing a trace name you would otherwise skip,
+        but still crosses the Python/C++ FFI boundary on every call — cache
+        the result if you need it inside a tight loop.
+        """
+        return _kineto_is_enabled()
+
+    def __enter__(self) -> _ProfilingNamespace:
+        """Enter a profiling context: equivalent to calling :meth:`start`.
+
+        Lets callers write::
+
+            with session.profiling:
+                model.execute(input_data)
+
+        and have :meth:`stop` invoked automatically on scope exit, even if
+        the body raises.  The returned object is the namespace itself, so
+        ``state`` / ``is_enabled`` remain accessible from inside the block.
+        """
+        self.start()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """Exit the profiling context: calls :meth:`stop`.
+
+        Does NOT wait for the trace to serialize — callers that need the
+        file on disk before reading it should call :meth:`wait_for_trace`
+        after the ``with`` block.  This matches the rule that ``stop()``
+        and ``wait_for_trace()`` are split so callers can interleave other
+        cleanup between them.
+        """
+        self.stop()
+
 
 class InferenceSession:
     """Manages an inference session in which you can load and run models.
@@ -443,13 +633,16 @@ class InferenceSession:
     """
 
     _impl: _InferenceSession
-    # This is shared across sessions. Compilation is currently not thread safe.
-    _compilation_lock = threading.Lock()
     # DebugConfig is a process-wide singleton. Assigning it as a class
     # attribute at import time means both ``InferenceSession.debug`` and
     # ``session.debug`` return the same underlying object, and any
     # ``MODULAR_DEBUG`` env-var parsing happens exactly once (at import).
     debug: DebugConfig = _InferenceSession.debug
+    # libkineto's profiler state is process-global (see _ProfilingNamespace
+    # docstring), so a single shared instance — matching ``debug`` above —
+    # accurately reflects that scope. The namespace carries no per-session
+    # state.
+    profiling: _ProfilingNamespace = _ProfilingNamespace()
 
     def __init__(
         self,
@@ -511,10 +704,6 @@ class InferenceSession:
                 ) from e
             self.set_mojo_assert_level(assert_level)
 
-        # TODO: Remove this once the new topk kernel is stable.
-        if use_old_top_k_kernel := os.getenv("USE_OLD_TOP_K_KERNEL"):
-            self.use_old_top_k_kernel(use_old_top_k_kernel)
-
         if use_fi_topk := os.getenv("USE_FI_TOPK_KERNEL"):
             self.use_fi_topk_kernel(use_fi_topk)
 
@@ -550,6 +739,7 @@ class InferenceSession:
         *,
         custom_extensions: CustomExtensionsType | None = None,
         weights_registry: Mapping[str, DLPackArray] | None = None,
+        tile_based_fusion: bool = False,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
@@ -575,6 +765,11 @@ class InferenceSession:
                 ``weights_registry`` is technically optional, you'll always
                 need to load weights in practice.
 
+            tile_based_fusion: When ``True``, compile the graph under the tile-based
+                programming model. Only applies when ``model`` is a
+                :class:`Graph`; ignored for precompiled ``.mef`` paths.
+                Defaults to ``False``.
+
         Returns:
             The loaded model, compiled and ready to execute.
 
@@ -585,6 +780,7 @@ class InferenceSession:
             model,
             custom_extensions=custom_extensions,
             weights_registry=weights_registry,
+            tile_based_fusion=tile_based_fusion,
         )
         if len(models) != 1:
             raise ValueError(
@@ -599,6 +795,7 @@ class InferenceSession:
         *,
         custom_extensions: CustomExtensionsType | None = None,
         weights_registry: Mapping[str, DLPackArray] | None = None,
+        tile_based_fusion: bool = False,
     ) -> dict[str, Model]:
         """Loads multiple models and compiles them for inference.
 
@@ -632,6 +829,11 @@ class InferenceSession:
                 ``weights_registry`` is technically optional, you'll always
                 need to load weights in practice.
 
+            tile_based_fusion: When ``True``, compile the graph under the tile-based
+                programming model. Only applies when ``model`` is a
+                :class:`Graph` or :class:`max.graph.Module`; ignored for
+                precompiled ``.mef`` paths. Defaults to ``False``.
+
         Returns:
             A mapping from each model's ``sym_name`` to its loaded
             :class:`Model`, ready to execute.
@@ -639,23 +841,28 @@ class InferenceSession:
         Raises:
             RuntimeError: If the path provided is invalid.
         """
-        compiled = self.compile(model, custom_extensions=custom_extensions)
+        compiled = self.compile(
+            model,
+            custom_extensions=custom_extensions,
+            tile_based_fusion=tile_based_fusion,
+        )
         return self.init_all(compiled, weights_registry=weights_registry)
 
-    def compile(
+    def compile_async(
         self,
         model: str | Path | Module | Graph,
         *,
         custom_extensions: CustomExtensionsType | None = None,
+        tile_based_fusion: bool = False,
     ) -> CompiledModel:
-        """Compiles a model without binding weights or device memory.
+        """Compiles a model without blocking on the compilation finishing.
 
-        Use this when you want to separate compilation from initialization, for
-        example to populate a compile cache ahead of time, including in
-        cross-compilation scenarios where the target device may not be
-        attached. The returned :class:`CompiledModel` requires initialization
-        before execution. Pass it to :meth:`init` or :meth:`init_all` to
-        produce an executable :class:`Model`.
+        Returns as soon as the compile is scheduled; the returned
+        :class:`CompiledModel` wraps a pending compilation that runs on the
+        runtime's worker pool. Compilation errors are not raised here — they
+        surface when the artifact is awaited, for example by :meth:`init`,
+        :meth:`init_all`, or :meth:`CompiledModel.export_mef`. Use
+        :meth:`compile` for the synchronous variant that blocks and raises.
 
         Args:
             model: A :class:`Graph` instance, a :class:`max.graph.Module`
@@ -665,12 +872,15 @@ class InferenceSession:
             custom_extensions: The extensions to load for the model.
                 Supports paths to ``.mojopkg`` custom ops.
 
-        Returns:
-            A :class:`CompiledModel` artifact ready to be initialized.
+            tile_based_fusion: When ``True``, compile the graph under the tile-based
+                programming model, in which the graph compiler selects
+                tile-based kernels (operating on ``TileTensor`` values instead
+                of SIMD). Only applies when ``model`` is a :class:`Graph` or
+                :class:`max.graph.Module`; ignored for precompiled ``.mef``
+                paths. Defaults to ``False``.
 
-        Raises:
-            RuntimeError: If the path provided is invalid or compilation
-                fails.
+        Returns:
+            A :class:`CompiledModel` artifact wrapping the pending compilation.
         """
         custom_extensions_final: list[CustomExtensionType] = []
         if custom_extensions is not None:
@@ -683,45 +893,42 @@ class InferenceSession:
         module: Module | None = None
         expected_weights: dict[str, Any] | None = None
 
-        with _record_phase("compile_seconds"):
-            if isinstance(model, Path | str):
-                handle = self._impl.compile_from_path(
-                    model, custom_extensions_final
-                )
-            elif isinstance(model, Graph):
-                module = model.module
-                custom_extensions_final.extend(
-                    _process_custom_extensions_objects(
-                        model.kernel_libraries_paths
-                    )
-                )
+        if isinstance(model, Path | str):
+            handle = self._impl.compile(model, custom_extensions_final)
+        elif isinstance(model, Graph):
+            module = model.module
+            custom_extensions_final.extend(
+                _process_custom_extensions_objects(model.kernel_libraries_paths)
+            )
 
-                # TODO: if the model has been loaded from a serialized MLIR
-                # file, we don't have the _weights attribute available to us
-                if hasattr(model, "_weights"):
-                    expected_weights = {
-                        name: weight.value.device
-                        for name, weight in model._weights.items()
-                    }
+            # TODO: if the model has been loaded from a serialized MLIR
+            # file, we don't have the _weights attribute available to us
+            if hasattr(model, "_weights"):
+                expected_weights = {
+                    name: weight.value.device
+                    for name, weight in model._weights.items()
+                }
 
-                # Seed the model module with kernel decls + the opaque-type
-                # mapping from the graph's KernelLibrary. The GC pipeline
-                # detects the mapping attribute and skips
-                # `mogg-import-packages`, so the expensive package-loading
-                # step (run once at KernelLibrary construction) doesn't
-                # repeat on every compile.
-                kernel_library = getattr(model, "_kernel_library", None)
-                if kernel_library is not None:
-                    kernel_library._analysis.seed_kernel_decls(
-                        module.mlir_module
-                    )
+            # Seed the model module with kernel decls + the opaque-type
+            # mapping from the graph's KernelLibrary. The GC pipeline
+            # detects the mapping attribute and skips
+            # `mogg-import-packages`, so the expensive package-loading
+            # step (run once at KernelLibrary construction) doesn't
+            # repeat on every compile.
+            kernel_library = getattr(model, "_kernel_library", None)
+            if kernel_library is not None:
+                kernel_library._analysis.seed_kernel_decls(module.mlir_module)
 
-                handle = self._compile_module(module, custom_extensions_final)
-            elif isinstance(model, Module):
-                module = model
-                handle = self._compile_module(module, custom_extensions_final)
-            else:
-                raise RuntimeError("The model is not a valid path or module.")
+            handle = self._compile_module(
+                module, custom_extensions_final, tile_based_fusion
+            )
+        elif isinstance(model, Module):
+            module = model
+            handle = self._compile_module(
+                module, custom_extensions_final, tile_based_fusion
+            )
+        else:
+            raise RuntimeError("The model is not a valid path or module.")
 
         compiled = CompiledModel(
             compiled=handle, expected_weights=expected_weights
@@ -729,6 +936,66 @@ class InferenceSession:
         if module is not None:
             compiled._graph_names = tuple(module.top_level_graph_names())
         return compiled
+
+    def compile(
+        self,
+        model: str | Path | Module | Graph,
+        *,
+        custom_extensions: CustomExtensionsType | None = None,
+        tile_based_fusion: bool = False,
+    ) -> CompiledModel:
+        """Compiles a model without binding weights or device memory.
+
+        Use this when you want to separate compilation from initialization, for
+        example to populate a compile cache ahead of time, including in
+        cross-compilation scenarios where the target device may not be
+        attached. The returned :class:`CompiledModel` requires initialization
+        before execution. Pass it to :meth:`init` or :meth:`init_all` to
+        produce an executable :class:`Model`.
+
+        Blocks until compilation finishes and raises on failure. Use
+        :meth:`compile_async` to schedule compilation without blocking.
+
+        Args:
+            model: A :class:`Graph` instance, a :class:`max.graph.Module`
+                containing one or more ``mo.graph`` ops, or the path to a
+                saved model file (for example, a ``.mef`` file).
+
+            custom_extensions: The extensions to load for the model.
+                Supports paths to ``.mojopkg`` custom ops.
+
+            tile_based_fusion: When ``True``, compile the graph under the tile-based
+                programming model, in which the graph compiler selects
+                tile-based kernels (operating on ``TileTensor`` values instead
+                of SIMD). Only applies when ``model`` is a :class:`Graph` or
+                :class:`max.graph.Module`; ignored for precompiled ``.mef``
+                paths. Defaults to ``False``.
+
+        Returns:
+            A :class:`CompiledModel` artifact ready to be initialized.
+
+        Raises:
+            RuntimeError: If the path provided is invalid or compilation
+                fails.
+        """
+        with _record_phase("compile_seconds"):
+            compiled = self.compile_async(
+                model,
+                custom_extensions=custom_extensions,
+                tile_based_fusion=tile_based_fusion,
+            )
+            # Synchronously complete the compilation and raise errors.
+            compiled._compiled.wait()
+        exception = compiled._compiled.exception()
+        if exception is None:
+            return compiled
+        # compile_async surfaces the compile failure here rather than from the
+        # compile call, so the Graph/Module wrapping that _compile_module
+        # applies to synchronous setup errors is repeated here for the async
+        # failure.
+        if isinstance(model, (Graph, Module)):
+            raise RuntimeError(self._compile_failure_message()) from exception
+        raise exception
 
     def init(
         self,
@@ -772,8 +1039,9 @@ class InferenceSession:
     ) -> dict[str, Model]:
         """Initializes all models in a compiled artifact for execution.
 
-        Use this to complete the second half of a :meth:`compile`/:meth:`init`
-        pair. Returns one :class:`Model` per top-level graph in the artifact,
+        Use this to complete the second half of a
+        :meth:`compile`/:meth:`init_all` pair. Returns one :class:`Model` per
+        top-level graph in the artifact,
         keyed by ``sym_name``.
 
         Args:
@@ -849,37 +1117,49 @@ class InferenceSession:
             )
         return result
 
+    def _compile_failure_message(self) -> str:
+        """Returns the wrapper text for a Graph/Module compilation failure.
+
+        Shared by the synchronous setup-error path in :meth:`_compile_module`
+        and the asynchronous compile-failure path in :meth:`compile`, so both
+        surface identical guidance.
+        """
+        msg = (
+            "Failed to compile the model. Please file an issue, "
+            "all models should be correct by construction and "
+            "this error should have been caught during construction."
+        )
+        if not self.debug.source_tracebacks:
+            msg += (
+                "\nFor more detailed failure information enable the "
+                "`max-debug.source-tracebacks` config key (for example, "
+                "`Graph.debug.source_tracebacks = True` or "
+                "`MODULAR_DEBUG=source-tracebacks`)."
+            )
+        return msg
+
     def _compile_module(
         self,
         module: Module,
         custom_extensions_final: list[CustomExtensionType],
+        tile_based_fusion: bool = False,
     ) -> _AsyncValue[_CompiledModels]:
         """Compiles an MLIR module under the session's compilation lock.
 
-        Wraps any compilation failure in a ``RuntimeError`` pointing at the
-        ``max-debug.source-tracebacks`` config key for richer diagnostics.
+        Wraps any synchronous setup failure in a ``RuntimeError`` pointing at
+        the ``max-debug.source-tracebacks`` config key for richer diagnostics.
+        Compilation itself is asynchronous; that failure surfaces when the
+        returned value is awaited (see :meth:`compile`).
         """
-        with self._compilation_lock:
-            try:
-                return self._impl.compile_from_object(
-                    module.mlir_module._CAPIPtr,
-                    custom_extensions_final,
-                    _derive_pipeline_name(module),
-                )
-            except Exception as e:
-                msg = (
-                    "Failed to compile the model. Please file an issue, "
-                    "all models should be correct by construction and "
-                    "this error should have been caught during construction."
-                )
-                if not self.debug.source_tracebacks:
-                    msg += (
-                        "\nFor more detailed failure information enable the "
-                        "`max-debug.source-tracebacks` config key (for example, "
-                        "`Graph.debug.source_tracebacks = True` or "
-                        "`MODULAR_DEBUG=source-tracebacks`)."
-                    )
-                raise RuntimeError(msg) from e
+        try:
+            return self._impl.compile(
+                module.mlir_module._CAPIPtr,
+                custom_extensions_final,
+                _derive_pipeline_name(module),
+                tile_based_fusion,
+            )
+        except Exception as e:
+            raise RuntimeError(self._compile_failure_message()) from e
 
     def set_debug_print_options(
         self,
@@ -1071,23 +1351,6 @@ class InferenceSession:
             self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING_DETAILED", 1)
 
         set_gpu_profiling_state(mode)
-
-    def use_old_top_k_kernel(self, mode: str) -> None:
-        """Falls back to the previous top-k kernel implementation.
-
-        By default, the session uses a newer top-k kernel. Use this
-        fallback only if you encounter correctness or performance issues
-        with the default kernel.
-
-        Args:
-            mode: The enable/disable flag. Accepts ``"false"``, ``"off"``,
-                ``"no"``, or ``"0"`` to disable. Any other value enables the
-                old top-k kernel.
-        """
-        if mode.lower() in ("false", "off", "no", "0"):
-            return
-
-        self._set_mojo_define("USE_OLD_TOP_K_KERNEL", 1)
 
     def use_fi_topk_kernel(self, mode: str) -> None:
         """Enables the fused-inference top-k kernel.

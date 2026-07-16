@@ -15,7 +15,7 @@ from std.builtin.device_passable import DevicePassable
 from std.collections import OptionalReg
 from std.memory import (
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
 )
 from std.sys import size_of
@@ -159,7 +159,7 @@ def test_optional_conformance() raises:
 
 @fieldwise_init
 struct _NonWritable(Movable):
-    """A `Movable & ImplicitlyDestructible` type that is not `Writable`,
+    """A `Movable & ImplicitlyDeletable` type that is not `Writable`,
     `Copyable`, or `Hashable` — used to exercise the negative case of
     `Optional`'s conditional conformances."""
 
@@ -186,7 +186,7 @@ struct _NonTrivial(Copyable):
     def __init__(out self, *, copy: Self):
         pass
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         pass
 
     def __del__(deinit self):
@@ -197,12 +197,12 @@ def test_optional_triviality() raises:
     comptime trivial = Optional[Int]
     assert_true(is_trivially_copyable[trivial]())
     assert_true(is_trivially_movable[trivial]())
-    assert_true(is_trivially_destructible[trivial]())
+    assert_true(is_trivially_deletable[trivial]())
 
     comptime not_trivial = Optional[_NonTrivial]
     assert_false(is_trivially_copyable[not_trivial]())
     assert_false(is_trivially_movable[not_trivial]())
-    assert_false(is_trivially_destructible[not_trivial]())
+    assert_false(is_trivially_deletable[not_trivial]())
 
 
 def test_optional_write_to() raises:
@@ -212,10 +212,14 @@ def test_optional_write_to() raises:
 
 def test_optional_write_repr_to() raises:
     check_write_to(
-        Optional[Int](None), expected="Optional[Int](None)", is_repr=True
+        Optional[Int](None),
+        expected="Optional[SIMD[DType.int, 1]](None)",
+        is_repr=True,
     )
     check_write_to(
-        Optional[Int](42), expected="Optional[Int](Int(42))", is_repr=True
+        Optional[Int](42),
+        expected="Optional[SIMD[DType.int, 1]](Int(42))",
+        is_repr=True,
     )
 
 
@@ -274,9 +278,9 @@ def test_optional_unwrap() raises:
 
 def test_optional_repr_wrap() raises:
     var o = Optional(10)
-    assert_equal(repr(o), "Optional[Int](Int(10))")
+    assert_equal(repr(o), "Optional[SIMD[DType.int, 1]](Int(10))")
     o = None
-    assert_equal(repr(o), "Optional[Int](None)")
+    assert_equal(repr(o), "Optional[SIMD[DType.int, 1]](None)")
 
 
 def test_optional_iter() raises:
@@ -401,14 +405,14 @@ def double(var x: Int) -> Float64:
 
 def test_map_with_value() raises:
     var opt = Optional(21)
-    var result = opt^.map[To=Float64](double)
+    var result = opt^.map(double)
     assert_true(result)
     assert_equal(result.value(), 42.0)
 
 
 def test_map_with_none() raises:
     var opt = Optional[Int](None)
-    var result = opt^.map[To=Float64](double)
+    var result = opt^.map(double)
     assert_false(result)
 
 
@@ -418,7 +422,7 @@ def test_map_with_closure_that_takes_by_read() raises:
     def closure_by_read(s: String) -> String:
         return s + "42"
 
-    var result1 = opt.map[To=String](closure_by_read)
+    var result1 = opt.map(closure_by_read)
     assert_equal(result1[], "hello42")
 
 
@@ -431,55 +435,55 @@ def try_parse_int(var s: String) -> Optional[Int]:
 
 def test_and_then_with_value() raises:
     var opt = Optional("42")
-    var result = opt^.and_then[To=Int](try_parse_int)
+    var result = opt^.and_then(try_parse_int)
     assert_true(result)
     assert_equal(result.value(), 42)
 
 
 def test_and_then_with_value_returns_none() raises:
     var opt = Optional("not_a_number")
-    var result = opt^.and_then[To=Int](try_parse_int)
+    var result = opt^.and_then(try_parse_int)
     assert_false(result)
 
 
 def test_and_then_with_none() raises:
     var opt = Optional[String](None)
-    var result = opt^.and_then[To=Int](try_parse_int)
+    var result = opt^.and_then(try_parse_int)
     assert_false(result)
 
 
-def test_optional_linear_type_destroy_with() raises:
-    # `Optional` holding a linear value is retired via `destroy_with`.
+def test_optional_linear_type_deinit_with() raises:
+    # `Optional` holding a linear value is retired via `deinit_with`.
     var v1 = Optional(ExplicitDelOnly(5))
-    v1^.destroy_with(ExplicitDelOnly.destroy)
+    v1^.deinit_with(ExplicitDelOnly.destroy)
 
     # `Optional[T]` holding `None` is retired without invoking
-    # `destroy_func`.
+    # `deinit_func`.
     var v2 = Optional[ExplicitDelOnly](None)
-    v2^.destroy_with(ExplicitDelOnly.destroy)
+    v2^.deinit_with(ExplicitDelOnly.destroy)
 
 
-def test_optional_destroy_with_runs_exactly_once() raises:
-    # Verify `destroy_func` runs exactly once on the contained value.
+def test_optional_deinit_with_runs_exactly_once() raises:
+    # Verify `deinit_func` runs exactly once on the contained value.
     var counter = 0
 
     def increment_counter(var _value: Int) {mut counter}:
         counter += 1
 
     var opt = Optional[Int](42)
-    opt^.destroy_with(increment_counter)
+    opt^.deinit_with(increment_counter)
     assert_equal(counter, 1)
 
 
-def test_optional_destroy_with_none_does_not_call_destroy() raises:
-    # Verify `destroy_func` is not called when the `Optional` is empty.
+def test_optional_deinit_with_none_does_not_call_destroy() raises:
+    # Verify `deinit_func` is not called when the `Optional` is empty.
     var counter = 0
 
     def increment_counter(var _value: Int) {mut counter}:
         counter += 1
 
     var opt = Optional[Int](None)
-    opt^.destroy_with(increment_counter)
+    opt^.deinit_with(increment_counter)
     assert_equal(counter, 0)
 
 

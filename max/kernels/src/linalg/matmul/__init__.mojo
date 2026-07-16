@@ -33,7 +33,7 @@ from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
 
-import .cpu
+from . import cpu
 from ..gemv import gemv
 from ..utils import (
     GemmShape,
@@ -55,22 +55,21 @@ def matmul[
     saturated_vnni: Bool = False,
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
-    has_epilogue_tensor: Bool = False,
+    # Kept last so existing positional-parameter callers (e.g. the mo.matmul
+    # op) are unaffected; set it by keyword.
+    use_tf32: Bool = True,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[address_space=AddressSpace.GENERIC, ...],
     b: TileTensor[address_space=AddressSpace.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
-    epilogue_tensor: OptionalReg[
-        TileTensor[
-            c.dtype,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
-    ] = None,
 ) raises:
     """Primary TileTensor matmul implementation. Routes GPU directly, delegates
-    CPU path to cpu.matmul."""
+    CPU path to cpu.matmul.
+
+    `use_tf32=False` (GPU only) requires IEEE-fp32 multiplies for fp32
+    inputs instead of TF32 tensor-core truncation; see `_matmul_gpu`. The
+    CPU path is always IEEE fp32."""
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"
     comptime assert b.rank == 2, "b must be rank 2"
@@ -115,9 +114,9 @@ def matmul[
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=transpose_b,
+                use_tf32=use_tf32,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                has_epilogue_tensor=has_epilogue_tensor,
             ](c, a, b, ctx.value())
     else:
         # CPU path: handle tracing and compute lambda wrapping, then

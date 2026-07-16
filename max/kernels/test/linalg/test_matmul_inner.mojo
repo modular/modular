@@ -182,7 +182,7 @@ def test_micro_kernel[
 
 
 @export
-def kernel_export_dynamic(m: Int, n: Int, k: Int) abi("C") raises:
+def kernel_export_dynamic(m: Int, n: Int, k: Int) abi("Mojo") raises:
     test_micro_kernel[DType.float32, DType.float32, DType.float32](m, n, k)
 
 

@@ -15,7 +15,7 @@ from std.sys import size_of
 from std.sys.info import CompilationTarget, is_64bit
 
 from std.bit import count_leading_zeros
-from std.memory import alloc, free, Layout
+from std.memory import alloc, dealloc, ThinAllocation, Layout
 from std.memory.unsafe import bitcast
 from std.builtin.simd import _modf
 from std.itertools import product
@@ -72,7 +72,7 @@ def test_cast() raises:
 
     # Test with a number right on the boundary of 32 bit and 64 bit, to make
     # sure the compiler can cast between the platform dependent types.
-    comptime u1 = Scalar[DType.uint](4294967296)
+    comptime u1 = UInt(4294967296)
     comptime i1 = Scalar[DType.int](4294967296)
     comptime uc1 = i1.cast[DType.uint]()
     comptime ic1 = u1.cast[DType.int]()
@@ -81,11 +81,11 @@ def test_cast() raises:
 
     comptime if is_64bit():
         assert_equal(
-            Scalar[DType.uint](18446744073709551615).cast[DType.int](),
+            UInt(18446744073709551615).cast[DType.int](),
             Scalar[DType.int](-1),
         )
 
-        comptime u2 = Scalar[DType.uint](18446744073709551615)
+        comptime u2 = UInt(18446744073709551615)
         comptime i2 = Scalar[DType.int](-1)
         comptime uc2 = i2.cast[DType.uint]()
         comptime ic2 = u2.cast[DType.int]()
@@ -93,11 +93,11 @@ def test_cast() raises:
         assert_equal(ic2, i2)
     else:
         assert_equal(
-            Scalar[DType.uint](4294967295).cast[DType.int](),
+            UInt(4294967295).cast[DType.int](),
             Scalar[DType.int](-1),
         )
 
-        comptime u3 = Scalar[DType.uint](4294967295)
+        comptime u3 = UInt(4294967295)
         comptime i3 = Scalar[DType.int](-1)
         comptime uc3 = i3.cast[DType.uint]()
         comptime ic3 = u3.cast[DType.int]()
@@ -405,15 +405,19 @@ def test_issue_1625() raises:
 
 def test_issue_20421() raises:
     var a_layout = Layout[UInt8](count=16 * 64, alignment=64)
-    var a = alloc(a_layout)
+    var ptr = alloc(a_layout).unsafe_leak()
     for i in range(16 * 64):
-        a[i] = UInt8(i & 255)
-    var av16 = (a + 128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
+        ptr[i] = UInt8(i & 255)
+    var av16 = (
+        (ptr + 128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
+    )
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(a_layout)
+    )
     assert_equal(
         av16,
         SIMD[DType.int32, 4](-943274556, -875902520, -808530484, -741158448),
     )
-    free(a, a_layout)
 
 
 def test_issue_30237() raises:
@@ -2635,7 +2639,7 @@ def test_int_literal_init() raises:
     assert_equal(Int64(-9223372036854775809), Int64(9223372036854775807))
 
     comptime Index = Scalar[DType.int]
-    comptime UIndex = Scalar[DType.uint]
+    comptime UIndex = UInt
 
     comptime if is_64bit():
         assert_equal(Index(-9223372036854775808), Index(9223372036854775808))

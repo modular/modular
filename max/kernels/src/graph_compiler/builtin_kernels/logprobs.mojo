@@ -14,7 +14,7 @@
 from std.math import ceildiv, exp, inf, log
 
 from std.algorithm.functional import parallelize
-from extensibility import register
+from extensibility import register, register_shape_function
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
@@ -201,19 +201,20 @@ struct LogProbabilitiesRagged:
         else:
             comptime assert False, "unsupported target"
 
-    @staticmethod
-    def shape[
-        levels: Int
-    ](
-        logits: InputTensor[dtype=logit_dtype, rank=2, ...],
-        tokens: InputTensor[dtype=token_dtype, rank=1, ...],
-        sampled_tokens: InputTensor[dtype=token_dtype, rank=1, ...],
-        logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
-        token_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
-        lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
-        lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1, ...],
-    ) -> IndexList[2]:
-        return IndexList[2](
-            Int(lp_output_offsets_host[lp_output_offsets_host.shape()[0] - 1]),
-            2**levels,
-        )
+
+@register_shape_function("compute_log_probabilities_ragged")
+def compute_log_probabilities_ragged_shape[
+    levels: Int
+](
+    logits: InputTensor[dtype=logit_dtype, rank=2, ...],
+    tokens: InputTensor[dtype=token_dtype, rank=1, ...],
+    sampled_tokens: InputTensor[dtype=token_dtype, rank=1, ...],
+    logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+    token_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+    lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+    lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1, ...],
+) -> IndexList[2]:
+    return IndexList[2](
+        Int(lp_output_offsets_host[lp_output_offsets_host.shape()[0] - 1]),
+        2**levels,
+    )

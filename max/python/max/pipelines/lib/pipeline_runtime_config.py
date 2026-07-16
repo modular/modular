@@ -89,6 +89,16 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    eplb_profile: bool = Field(
+        default_factory=lambda: os.getenv("MAX_SERVE_EPLB_PROFILE", "").lower()
+        in ("1", "true", "yes"),
+        description=(
+            "When True, enables expert-parallel load balancing (EPLB) MoE "
+            "routing histogram profiling in the pipeline. Mirrors "
+            "Settings.eplb_profile for pipeline code that doesn't have "
+            "access to Settings."
+        ),
+    )
     ce_delay_ms: float = Field(
         default=0.0,
         description=(
@@ -121,13 +131,24 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    max_num_steps: int = Field(
-        default=-1,
+    eplb_replicas_per_gpu: int = Field(
+        default=0,
         description=(
-            "The number of steps to run for multi-step scheduling. ``-1`` "
-            "specifies a default value based on configuration and platform. "
-            "Ignored for models which are not auto-regressive (for example, "
-            "embedding models)."
+            "Number of redundant expert replicas to add per GPU when EPLB is "
+            "active. 0 (default) means no replication. k > 0 adds k extras "
+            "per GPU; total redundant slots = k * ep_size (so num_redundant "
+            "is always a multiple of the device count, which the rebalance "
+            "algorithm requires)."
+        ),
+    )
+
+    max_num_steps: int = Field(
+        default=1,
+        description=(
+            "Deprecated. Multi-step pipeline execution is no longer supported; "
+            "the pipeline always runs single-step decode. Values other than "
+            "``1`` (including the legacy default ``-1``) are ignored after "
+            "logging a warning."
         ),
     )
 
@@ -177,7 +198,12 @@ class PipelineRuntimeConfig(ConfigFileModel):
 
     execute_empty_batches: bool = Field(
         default=False,
-        description="Whether the scheduler should execute empty batches.",
+        description=(
+            "When enabled, the scheduler runs the model's forward pass even "
+            "for an empty batch, so expert-parallel and data-parallel replicas "
+            "still reach their collective barrier points; output processing is "
+            "skipped. The architecture must support empty batches."
+        ),
     )
 
     max_batch_total_tokens: int | None = Field(
@@ -309,6 +335,18 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    emit_reasoning_content: bool = Field(
+        default=False,
+        description=(
+            "When ``True``, chat completion responses emit a thinking model's "
+            "chain-of-thought under ``reasoning_content`` only (``reasoning`` "
+            "is omitted). The ``reasoning_content`` alias is used by vLLM, "
+            "SGLang, and the DeepSeek API; some clients require it. When "
+            "``False`` (default), responses emit reasoning under ``reasoning`` "
+            "only."
+        ),
+    )
+
     temperature: float | None = Field(
         default=None,
         description=(
@@ -320,6 +358,14 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    top_k: int | None = Field(
+        default=None,
+        description=(
+            "Default top-k sampling limit. When set, this server-level default "
+            "applies to all requests that do not explicitly provide ``top_k``."
+        ),
+    )
+
     thinking_temperature: float | None = Field(
         default=None,
         description=(
@@ -328,13 +374,6 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "that do not explicitly provide ``thinking_temperature``. Requires "
             "a reasoning parser to be configured; ignored otherwise."
         ),
-    )
-
-    # TODO(SERVSYS-1096): Remove this field once we've reworked how required
-    # config fields are validated.
-    defer_resolve: bool = Field(
-        default=False,
-        description="Whether to defer resolving the pipeline config.",
     )
 
     max_vision_cache_entries: int = Field(

@@ -24,10 +24,10 @@ from std.ffi import (
     c_size_t,
     c_ssize_t,
     external_call,
+    CStringSlice,
     _CPointer,
 )
 from std.memory.unsafe_pointer import unsafe_cast
-from std.reflection.traits import AllWritable
 from std.sys import (
     is_amd_gpu,
     is_apple_gpu,
@@ -44,11 +44,19 @@ from std.sys._amdgpu import (
 from std.sys._metal_print import _metal_print_write
 from std.sys._libc import dup, fclose, fdopen, fflush, FILE_ptr
 from std.sys.info import CompilationTarget
-from std.sys.intrinsics import _type_is_eq
 
 from std.memory import bitcast
 
 from .file_descriptor import FileDescriptor
+
+
+# FIXME(MOCO-3871): Alias is to workaround function type comparison bug.
+comptime _PrintEmitPluginHookFnType = def[O: Origin](
+    cstr: CStringSlice[O],
+    file_value: FileDescriptor,
+) thin -> None
+"""Plugin-hook signature for `PluginHooks.print_emit_fn`; keep in sync with the `print` emit path."""
+
 
 # ===----------------------------------------------------------------------=== #
 #  _file_handle
@@ -136,7 +144,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         ```
         """
         # getdelim will allocate the buffer using malloc().
-        var buffer = _CPointer[UInt8, MutExternalOrigin]()
+        var buffer = _CPointer[UInt8, MutUntrackedOrigin]()
         var n = c_size_t(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
@@ -156,7 +164,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
-            StringSlice[MutExternalOrigin](
+            StringSlice[MutUntrackedOrigin](
                 unsafe_from_utf8=Span(
                     ptr=buffer.unsafe_value(), length=bytes_read - 1
                 )
@@ -233,31 +241,31 @@ def _printf[
         # AMD printf calls:
         # https://github.com/triton-lang/triton/blob/1c28e08971a0d70c4331432994338ee05d31e633/third_party/amd/lib/TritonAMDGPUToLLVM/TargetInfo.cpp#L321
         def _to_uint64[T: AnyType, //](value: T) -> UInt64:
-            comptime if _type_is_eq[T, UInt64]():
+            comptime if T == UInt64:
                 return rebind[UInt64](value)
-            elif _type_is_eq[T, UInt32]():
+            elif T == UInt32:
                 return UInt64(rebind[UInt32](value))
-            elif _type_is_eq[T, UInt16]():
+            elif T == UInt16:
                 return UInt64(rebind[UInt16](value))
-            elif _type_is_eq[T, UInt8]():
+            elif T == UInt8:
                 return UInt64(rebind[UInt8](value))
-            elif _type_is_eq[T, Int64]():
+            elif T == Int64:
                 return UInt64(rebind[Int64](value))
-            elif _type_is_eq[T, Int32]():
+            elif T == Int32:
                 return UInt64(rebind[Int32](value))
-            elif _type_is_eq[T, Int16]():
+            elif T == Int16:
                 return UInt64(rebind[Int16](value))
-            elif _type_is_eq[T, Int8]():
+            elif T == Int8:
                 return UInt64(rebind[Int8](value))
-            elif _type_is_eq[T, Float16]():
+            elif T == Float16:
                 return bitcast[DType.uint64](Float64(rebind[Float16](value)))
-            elif _type_is_eq[T, Float32]():
+            elif T == Float32:
                 return bitcast[DType.uint64](Float64(rebind[Float32](value)))
-            elif _type_is_eq[T, Float64]():
+            elif T == Float64:
                 return bitcast[DType.uint64](rebind[Float64](value))
-            elif _type_is_eq[T, Int]():
+            elif T == Int:
                 return UInt64(rebind[Int](value))
-            elif _type_is_eq[T, UInt]():
+            elif T == UInt:
                 return UInt64(rebind[UInt](value))
             return 0
 
@@ -293,9 +301,10 @@ def _printf[
         # print buffer. Metal doesn't support printf-style variadic args.
         var buf = _WriteBufferHeap()
         buf.write_string(fmt)
-        _ = buf.nul_terminate()
-        var s = buf.as_string_slice()
-        _metal_print_write(s)
+        var cstr = buf.nul_terminate()
+        _metal_print_write(
+            StringSlice(unsafe_from_utf8=cstr.as_bytes_with_nul())
+        )
     elif not is_gpu():
         _printf_cpu[fmt](*args, file=file)
     else:
@@ -367,8 +376,8 @@ def print[
     *Ts: Writable
 ](
     *values: *Ts,
-    sep: StaticString = " ",
-    end: StaticString = "\n",
+    sep: StringSlice = " ",
+    end: StringSlice = "\n",
     flush: Bool = False,
     var file: FileDescriptor = stdout,
 ):
@@ -411,7 +420,9 @@ def print[
         file: The output stream.
     """
 
-    comptime assert AllWritable[*Ts]  # satisfy _write_to where clause.
+    comptime assert Ts.all_conforms_to[
+        Writable
+    ]()  # satisfy _write_to where clause.
 
     if __is_run_in_comptime_interpreter:
         var buffer = _WriteBufferStack(file)
@@ -437,17 +448,19 @@ def print[
         var buffer = _WriteBufferHeap()
         values._write_to(buffer, sep=sep, end=end)
 
-        _ = buffer.nul_terminate()
-
-        var slice = buffer.as_string_slice()
+        var cstr = buffer.nul_terminate()
 
         comptime if is_nvidia_gpu():
-            _printf["%s"](slice.unsafe_ptr())
+            _printf["%s"](cstr.unsafe_ptr())
         elif is_amd_gpu():
             var msg = printf_begin()
-            _ = printf_append_string_n(msg, slice.as_bytes(), is_last=True)
+            _ = printf_append_string_n(
+                msg, cstr.as_bytes_with_nul(), is_last=True
+            )
         elif is_apple_gpu():
-            _metal_print_write(slice)
+            _metal_print_write(
+                StringSlice(unsafe_from_utf8=cstr.as_bytes_with_nul())
+            )
         else:
             CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name()

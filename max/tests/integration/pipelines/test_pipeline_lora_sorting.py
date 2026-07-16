@@ -22,8 +22,12 @@ import numpy as np
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
-from max.pipelines.core import TextContext
+from max.nn.kv_cache import KVCacheInputsInterface, KVCacheParams
+from max.pipelines.context import (
+    TextContext,
+    TextGenerationOutput,
+    TokenBuffer,
+)
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
@@ -34,17 +38,16 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
     SamplingConfig,
 )
-from max.pipelines.lib.lora import LoRAManager, LoRAModel
+from max.pipelines.lib.memory_estimation import _MemoryPlan
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipeline,
 )
 from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
+from max.pipelines.lora import LoRAManager, LoRAModel
 from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
-    TextGenerationOutput,
-    TokenBuffer,
 )
 from transformers import AutoConfig
 
@@ -55,7 +58,7 @@ class MockModelInputs(ModelInputs):
     def __init__(
         self,
         batch_size: int,
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
     ) -> None:
         self._batch_size = batch_size
         self.kv_cache_inputs = MagicMock()
@@ -131,7 +134,7 @@ class MockPipelineModel(PipelineModelWithKVCache[ContextT]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[ContextT]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         if len(replica_batches) > 1:
@@ -142,18 +145,6 @@ class MockPipelineModel(PipelineModelWithKVCache[ContextT]):
         return MockModelInputs(
             batch_size=len(context_batch),
             kv_cache_inputs=kv_cache_inputs,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> ModelInputs:
-        del next_tokens
-        mock_prev = cast(MockModelInputs, prev_model_inputs)
-        return MockModelInputs(
-            batch_size=mock_prev.active_batch_size,
-            kv_cache_inputs=mock_prev.kv_cache_inputs,
         )
 
 
@@ -228,6 +219,7 @@ def create_lora_manager(
         n_heads=32,
         n_kv_heads=8,
         head_dim=128,
+        max_lora_seq_len=128,
     )
 
     for name in lora_names:
@@ -271,6 +263,11 @@ def create_pipeline_with_lora(
         self._pipeline_config = pipeline_config
         self._pipeline_model = pipeline_model
         self._devices = [CPU()]
+        self._sampler_device = (
+            CPU()
+            if pipeline_config.sampling.sample_on_host
+            else self._devices[0]
+        )
         self._eos_token_id = {999}
         self._tokenizer = MagicMock()
         self.batch_info_output_fname = None
@@ -290,6 +287,7 @@ def create_pipeline_with_lora(
             eos_token_id=999,
             weight_adapters={},
             tokenizer=MagicMock(),
+            memory_plan=_MemoryPlan(max_batch_size=1, footprint=0),
         )
 
 
@@ -302,7 +300,6 @@ def execute_pipeline(
     patch_base = "max.pipelines.lib.pipeline_variants.text_generation"
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[list(batch.values())],
-        num_steps=1,
     )
     with (
         patch(

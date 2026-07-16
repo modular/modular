@@ -22,8 +22,7 @@ from typing import Any, Literal
 
 from max.experimental.sharding.action import Action, ActionSet
 from max.experimental.sharding.cost import (
-    admissible_rows_at_axis,
-    memory_budget_bytes_per_rank,
+    feasible_rows_at_axis,
     pair_transition_cost,
     tensor_byte_count,
 )
@@ -43,7 +42,6 @@ __all__ = [
     "PartialsOnly",
     "ReshardBehavior",
     "Solver",
-    "_filter_by_budget",
     "action_input_for_slot",
     "cheapest_action",
     "enumerate_feasible_actions",
@@ -71,12 +69,12 @@ def enumerate_feasible_actions(
     combos = list(
         itertools.product(
             *(
-                admissible_rows_at_axis(menu, ax, placements)
-                for ax in range(mesh.ndim)
+                feasible_rows_at_axis(menu, mesh_axis, placements)
+                for mesh_axis in range(mesh.ndim)
             )
         )
     )
-    actions = [
+    return [
         Action(
             inputs=(
                 *tuple(
@@ -93,9 +91,18 @@ def enumerate_feasible_actions(
         )
         for combo in combos
     ]
+
+
+def _finalize(menu: ActionSet, action: Action) -> Action:
+    """Applies the rule's post-pick ``finalize`` to the chosen action, if any.
+
+    Pickers select among the raw (un-finalized) actions from
+    :func:`enumerate_feasible_actions` so the cost model and passthrough
+    checks see plain input mappings, then call this on the single winner.
+    """
     if menu.finalize is None:
-        return actions
-    return [menu.finalize(a, menu.finalize_ctx) for a in actions]
+        return action
+    return menu.finalize(action)
 
 
 def action_input_for_slot(action: Action, slot_idx: int) -> Any:
@@ -112,33 +119,6 @@ def action_input_for_slot(action: Action, slot_idx: int) -> Any:
         else:
             flat.append(entry)
     return flat[slot_idx] if slot_idx < len(flat) else None
-
-
-def _filter_by_budget(
-    actions: Sequence[Action],
-    in_layouts: Sequence[TensorLayout],
-    mesh: DeviceMesh,
-) -> list[Action]:
-    """Keeps only actions whose per-rank input bytes fit ``mesh``'s budget."""
-    budget = memory_budget_bytes_per_rank(mesh)
-    if budget is None:
-        return list(actions)
-    bytes_per_input = tuple(tensor_byte_count(l) for l in in_layouts)
-    fits: list[Action] = []
-    for action in actions:
-        total = 0.0
-        for slot, bpi in enumerate(bytes_per_input):
-            mapping = action_input_for_slot(action, slot)
-            if not isinstance(mapping, PlacementMapping):
-                continue
-            divisor = 1
-            for ax, p in enumerate(mapping.placements):
-                if p.localized_axis() is not None:
-                    divisor *= mesh.mesh_shape[ax]
-            total += bpi / divisor
-        if total <= budget:
-            fits.append(action)
-    return fits
 
 
 def cheapest_action(
@@ -170,7 +150,7 @@ def cheapest_action(
 
 @dataclass
 class GreedyReshard:
-    """Default per-op picker: enumerate → filter-by-budget → cheapest.
+    """Default per-op picker: enumerate → cheapest.
 
     The shipped default. Plug your own callable matching the
     :data:`Solver` protocol to override.
@@ -204,18 +184,12 @@ class GreedyReshard:
         menu: ActionSet,
         in_layouts: Sequence[TensorLayout],
     ) -> Action:
-        """Picks the cheapest action that fits the per-rank memory budget."""
+        """Picks the cheapest feasible action."""
         mesh = menu.mesh
         actions = enumerate_feasible_actions(menu, mesh)
         if not actions:
             raise RuntimeError(
                 "GreedyReshard: rule returned no feasible actions."
-            )
-        actions = _filter_by_budget(actions, in_layouts, mesh)
-        if not actions:
-            raise RuntimeError(
-                "GreedyReshard: all candidate actions exceed per-rank "
-                "memory budget."
             )
         if not self.allow_partial_to_sharded:
             actions = _reject_partial_to_sharded(actions, in_layouts)
@@ -227,7 +201,7 @@ class GreedyReshard:
                     "allow_partial_to_sharded=True to permit "
                     "sequence-parallel resharding here."
                 )
-        return cheapest_action(actions, in_layouts, mesh)
+        return _finalize(menu, cheapest_action(actions, in_layouts, mesh))
 
 
 def _reject_partial_to_sharded(
@@ -314,13 +288,12 @@ def _only_partial_to_replicated(
 
 
 class NoReshard:
-    """Cost-model-free picker: returns the first feasible action.
+    """Passthrough-only picker: returns the first zero-reshard action.
 
-    Walks the menu in order and prefers actions whose input mappings
-    already match the actual input layouts (no reshard needed). Falls
-    back to the first feasible action when none does. Never computes a
-    transition cost. No ``on_reshard`` diagnostic — picking the first
-    feasible row is a best-effort policy, not a cost-driven one.
+    Refuses any reshard, including a ``Partial → Replicated`` allreduce. If
+    no input-matching action exists, raises
+    :class:`~max.experimental.sharding.placements.ShardingError` instead of
+    silently inserting a collective. Never computes a transition cost.
     """
 
     def __call__(
@@ -328,14 +301,18 @@ class NoReshard:
         menu: ActionSet,
         in_layouts: Sequence[TensorLayout],
     ) -> Action:
-        """Picks the first zero-reshard action, else the first feasible one."""
+        """Picks the first zero-reshard action; raises if none exists."""
         actions = enumerate_feasible_actions(menu, menu.mesh)
         if not actions:
             raise RuntimeError("NoReshard: rule returned no feasible actions.")
         for action in actions:
             if _zero_reshard(action, in_layouts):
-                return action
-        return actions[0]
+                return _finalize(menu, action)
+        raise ShardingError(
+            "NoReshard: no zero-reshard action for input layouts "
+            f"{[layout.mapping for layout in in_layouts]}; an input would need "
+            "resharding. Use PartialsOnly or GreedyReshard to allow it."
+        )
 
 
 class PartialsOnly:
@@ -371,10 +348,10 @@ class PartialsOnly:
             )
         for action in actions:
             if _zero_reshard(action, in_layouts):
-                return action
+                return _finalize(menu, action)
         for action in actions:
             if _only_partial_to_replicated(action, in_layouts):
-                return action
+                return _finalize(menu, action)
         raise ShardingError(
             "PartialsOnly: no feasible action that only resolves "
             "Partial → Replicated. Pin input placements upstream or switch "

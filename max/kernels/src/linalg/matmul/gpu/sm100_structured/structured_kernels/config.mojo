@@ -31,7 +31,8 @@ from std.itertools.itertools import product
 from layout.tensor_core import get_mma_shape
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
-from std.math import align_down
+from std.sys import size_of
+from std.math import align_down, align_up, ceildiv
 from ...tile_scheduler import RasterOrder
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -207,6 +208,18 @@ def _compute_output_tile_shape(
         return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
             output_tile_m, output_tile_n
         )
+    elif c_type == DType.float32:
+        var c_tile_n = mma_shape[1] if (
+            mma_shape[0] == 256 or cta_group == 1
+        ) else (mma_shape[1] // 2)
+        var output_tile_n = 8
+        if c_tile_n % 32 == 0 and not AB_swapped:
+            output_tile_n = 32
+        elif c_tile_n % 16 == 0:
+            output_tile_n = 16
+        return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
+            output_tile_m, output_tile_n
+        )
     else:  # FP8 output tile shape
         var output_tile_n = 16  # no swizzle for fp8 output dtype
         return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
@@ -225,19 +238,22 @@ def _compute_swizzle_modes(
     var b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     var c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
 
-    if c_type == DType.bfloat16:
+    if c_type == DType.bfloat16 or c_type == DType.float32:
         if AB_swapped:
             c_swizzle = (
                 TensorMapSwizzle.SWIZZLE_32B if is_gmm else TensorMapSwizzle.SWIZZLE_128B
             )
         else:
-            # When not swapped, output_tile_shape[1] is the N dimension
-            var tile_n = output_tile_shape[1]
-            if tile_n == 64:
+            # When not swapped, output_tile_shape[1] is the N dimension.
+            # Key the swizzle off bytes so it is dtype-generic: bf16 tile_n
+            # {64,32,16} and fp32 tile_n {32,16,8} both map to {128B,64B,32B}.
+            var elem_size = 2 if c_type == DType.bfloat16 else 4
+            var row_bytes = output_tile_shape[1] * elem_size
+            if row_bytes == 128:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_128B
-            elif tile_n == 32:
+            elif row_bytes == 64:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-            elif tile_n == 16:
+            elif row_bytes == 32:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_32B
     else:
         c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
@@ -590,8 +606,13 @@ struct MatmulConfig[
         use_tma_epilogue_load: Bool = False,
         num_tma_epilogue_pipeline_stages: Optional[Int] = None,
         epilogue_is_1d: Bool = False,
+        output_tile_shape: Optional[IndexList[2]] = None,
+        c_swizzle: Optional[TensorMapSwizzle] = None,
     ):
         comptime assert Self.a_type == Self.b_type
+        comptime assert (
+            Self.a_type != DType.float32 or Self.c_type == DType.float32
+        ), "float32 input only supports float32 output"
 
         self.cta_group = cta_group
         self.mma_shape = mma_shape
@@ -692,12 +713,26 @@ struct MatmulConfig[
             ), "MatmulConfig requested num_pipeline_stages exceeds smem budget."
             self.num_pipeline_stages = num_pipeline_stages.value()
         else:
-            self.num_pipeline_stages = max_num_pipeline_stages
+            self.num_pipeline_stages = (
+                max_num_pipeline_stages if max_num_pipeline_stages <= 16 else 16
+            )
 
         # SM100 kernel only supports k grouping when num_pipeline_stages is a multiple of k_group_size.
         self.num_pipeline_stages = align_down(
             self.num_pipeline_stages, self.k_group_size
         )
+
+        # Optional caller overrides for decode-mode matmul+RS. The fused
+        # kernel widens the C SMEM row (output_tile_shape[1]) so per-row
+        # TMA slices meet the 128B source-alignment requirement, and forces
+        # a non-swizzled C layout so per-row slicing composes. Neither is
+        # derivable from mma_shape, so they are explicit opt-in knobs;
+        # applied last so the default derivations (block_tile_shape, A/B
+        # swizzles) are unaffected.
+        if output_tile_shape:
+            self.output_tile_shape = output_tile_shape.value()
+        if c_swizzle:
+            self.c_swizzle = c_swizzle.value()
 
     def swap_AB_type(
         self,
@@ -1052,6 +1087,7 @@ struct BlockScaledMatmulConfig[
     var num_sf_k_tiles: Int
     var is_small_bn: Bool
     var gemm_kind: GEMMKind
+    var prefetch_tiles_n: Int
 
     def __init__(
         out self,
@@ -1072,6 +1108,7 @@ struct BlockScaledMatmulConfig[
         is_small_bn: Bool = False,
         register_based_epilogue: Bool = True,
         gemm_kind: GEMMKind = GEMMKind.GEMM,
+        prefetch_tiles_n: Int = 0,
     ):
         comptime assert Self.a_type == Self.b_type
 
@@ -1093,6 +1130,7 @@ struct BlockScaledMatmulConfig[
         )
 
         self.gemm_kind = gemm_kind
+        self.prefetch_tiles_n = prefetch_tiles_n
 
         # Scaling factors configuration (SFA, SFB)
         self.scaling_kind = scaling_kind
@@ -1211,6 +1249,7 @@ struct BlockScaledMatmulConfig[
             is_small_bn=self.is_small_bn,
             register_based_epilogue=self.register_based_epilogue,
             gemm_kind=self.gemm_kind,
+            prefetch_tiles_n=self.prefetch_tiles_n,
         )
 
     def write_to[W: Writer](self, mut writer: W):
@@ -1486,7 +1525,7 @@ def default_matmul_config_bf16_fp8[
     # Nvidia mma instruction process 32B in K.
     comptime Kbytes_per_mma = 32
 
-    comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+    comptime MMA_K = 32 // size_of[a_type]()
     comptime BK = TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
 
     comptime block_tile_shape = Index(128, 128, BK)

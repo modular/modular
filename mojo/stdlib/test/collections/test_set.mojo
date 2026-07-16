@@ -531,14 +531,14 @@ def test_set_write_repr_to() raises:
     var s = {1, 2, 3}
     var output = String()
     s.write_repr_to(output)
-    assert_true(output.startswith("Set[Int, Hasher="))
+    assert_true(output.startswith("Set[SIMD[DType.int, 1], Hasher="))
     assert_true(output.endswith("]({Int(1), Int(2), Int(3)})"))
 
     # Test empty set
     var empty = Set[Int]()
     var empty_output = String()
     empty.write_repr_to(empty_output)
-    assert_true(empty_output.startswith("Set[Int, Hasher="))
+    assert_true(empty_output.startswith("Set[SIMD[DType.int, 1], Hasher="))
     assert_true(empty_output.endswith("]({})"), empty_output)
 
 
@@ -559,6 +559,7 @@ def test_set_conditional_conformances() raises:
     assert_true(conforms_to(Set[Int], Comparable))
     assert_true(conforms_to(Set[Int], Hashable))
     assert_true(conforms_to(Set[Int], Writable))
+    assert_true(conforms_to(Set[MoveOnly[Int]], IterableOwned))
 
     # Move-only element type drops the copy-requiring conformances.
     assert_false(conforms_to(Set[MoveOnly[Int]], Copyable))
@@ -569,10 +570,15 @@ def test_set_conditional_conformances() raises:
 
 
 def test_set_iter_owned() raises:
-    var s = Set[Int](1, 2, 3)
+    # Test that owned iteration works, for non-Copyable types
+    var s = Set[MoveOnly[Int]]()
+    s.add(MoveOnly(1))
+    s.add(MoveOnly(2))
+    s.add(MoveOnly(3))
+
     var elems = List[Int]()
-    for elem in s^:
-        elems.append(elem)
+    for var elem in s^:
+        elems.append(elem.data)
 
     assert_equal(len(elems), 3)
     assert_true(1 in elems)
@@ -594,7 +600,7 @@ def test_set_iter_owned_bounds() raises:
 
 def test_set_move_only_element() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `Set[T: KeyElement & ImplicitlyDestructible, H]`
+    # conformance path of `Set[T: KeyElement & ImplicitlyDeletable, H]`
     # where the element type is move-only. Copy-requiring ops (`union`,
     # `intersection`, iteration, ...) are unavailable for this `T`, but the
     # add / remove / contains / pop / discard / clear core remains usable.

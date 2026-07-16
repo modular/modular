@@ -26,7 +26,6 @@ from layout import Layout, LayoutTensor, RuntimeLayout
 from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import (
     CacheBustingBuffer,
-    ScalarArray,
     get_defined_shape,
     int_list_to_tuple,
 )
@@ -49,7 +48,9 @@ def run_reduce[
     rank: Int,
     num_reductions: Int = 1,
     cache_busting: Bool = True,
-](mut m: Bench, shape: IndexList[rank], axis: Int, ctx: DeviceContext,) raises:
+    *,
+    axis: Int,
+](mut m: Bench, shape: IndexList[rank], ctx: DeviceContext,) raises:
     print("run_reduce", shape)
 
     var out_shape = shape
@@ -63,7 +64,7 @@ def run_reduce[
     var cb_in = CacheBustingBuffer[dtype](in_size, align, ctx, cache_busting)
 
     # Allocate & initialize host data
-    var expected_vals = ScalarArray[dtype](count=out_size, alignment=align)
+    var expected_vals = alloc[Scalar[dtype]](out_size, alignment=align)
 
     var in_host = List(length=cb_in.alloc_size(), fill=Scalar[dtype](1))
     var res_host = List(length=out_size, fill=Scalar[dtype](0))
@@ -102,16 +103,13 @@ def run_reduce[
             rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
         )
 
-    @__copy_capture(axis)
     @parameter
     @always_inline
     def bench_func(mut b: Bencher):
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var input_lt = LayoutTensor[
-                dtype, Layout.row_major[rank](), MutAnyOrigin
-            ](
+            var input_lt = LayoutTensor[dtype, Layout.row_major[rank]()](
                 cb_in.offset_ptr(iteration),
                 RuntimeLayout[Layout.row_major[rank]()].row_major(shape),
             )
@@ -128,8 +126,14 @@ def run_reduce[
                 )
 
             reduce_launch[
-                num_reductions, input_fn, output_fn, reduce_wrapper, rank, dtype
-            ](shape, axis, StaticTuple[_, num_reductions](init), ctx)
+                num_reductions,
+                input_fn,
+                output_fn,
+                reduce_wrapper,
+                rank,
+                dtype,
+                reduce_dim=axis,
+            ](shape, StaticTuple[_, num_reductions](init), ctx)
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -158,7 +162,9 @@ def run_reduce[
     _ = cb_in
     _ = res_device
 
+    expected_vals.free()
     _ = in_host^
+    _ = res_host^
 
 
 @parameter
@@ -182,10 +188,9 @@ def main() raises:
     var m = Bench()
     with DeviceContext() as ctx:
         comptime dims = shape
-        run_reduce[reduce_add, dtype, cache_busting=cache_busting](
+        run_reduce[reduce_add, dtype, cache_busting=cache_busting, axis=axis](
             m,
             dims,
-            axis,
             ctx,
         )
 

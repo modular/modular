@@ -54,9 +54,9 @@ different order. These views all access the same data, so changing the stored
 data in one view changes the data seen by all of the views.
 
 Each element in a tensor can be either a single (scalar) value or a SIMD vector
-of values. This is determined by the `element_size` parameter on the tensor.
-For more information,
-see [Vectorizing tensors](#vectorizing-tensors).
+of values. This is reflected by the tensor's `element_size`, which is derived
+from its `Storage` parameter (`PointerStorage[element_width=N]`). For more
+information, see [Vectorizing tensors](#vectorizing-tensors).
 
 :::note TileTensor and LayoutTensor
 
@@ -97,13 +97,13 @@ coordinates.
 
 ```mojo
 # Indexing into a 2D tensor requires two indices
-def takes_2d(tensor2d: TileTensor[...]):
+def takes_2d(tensor2d: TileTensor):
     comptime assert tensor2d.flat_rank == 2
     el0 = tensor2d[0, 0]  # Works
     # el0 = tensor2d[x]  # Compile-time error
 
 # OR
-def takes_2d_constrained(tensor2d: TileTensor[...]) where tensor2d.flat_rank == 2:
+def takes_2d_constrained(tensor2d: TileTensor) where tensor2d.flat_rank == 2:
     el0 = tensor2d[0, 0]
 ```
 
@@ -124,12 +124,15 @@ paths for loading and storing data.
 The `__getitem__()` method returns a SIMD vector of elements, where the size of
 the vector is equal to the `element_size` of the tensor (default 1). As long
 as the `element_size` is known to be 1 at the call site, you can treat the
-return value as a scalar value. For example, the following function takes a
-`TileTensor` with `element_size=1`, so you can cast the element value directly
-to an `Int`.
+return value as a scalar value. For example, the following function constrains
+its parameter to a non-vectorized tensor using the default storage
+(`Storage=PointerStorage[element_width=1]`), so you can cast the element value
+directly to an `Int`.
 
 ```mojo
-def takes_scalar_tensor(tensor: TileTensor[DType.int32, element_size=1, ...]) -> Int:
+def takes_scalar_tensor(
+    tensor: TileTensor[DType.int32, Storage=PointerStorage[element_width=1], ...]
+) -> Int:
     comptime assert tensor.flat_rank == 2
     return Int(tensor[1, 1])
 ```
@@ -412,9 +415,11 @@ or easily addressed by logical coordinates
 ([`zipped_divide()`](/docs/layout/tile_layout/zipped_divide/)).
 
 These functions are distinct from the `TileTensor.tile()` method, which extracts
-a sub-tensor from a parent tensor. The `tile()` method imposes its own grid on
-the parent tensor. Currently the `tile()` method can only be used on flat
-tensors—not blocked or tiled tensors.
+a sub-tensor from a parent tensor. The `tile()` method works on both flat and
+nested (tiled) parent layouts. On a flat parent, it imposes its own grid on the
+parent tensor and returns a sub-tile with the parent's strides. On a nested
+parent, it slices one outer index per mode and returns the inner fragment. See
+[Extracting a tile](#extracting-a-tile) for both forms.
 
 :::
 
@@ -422,8 +427,9 @@ tensors—not blocked or tiled tensors.
 
 The
 [`TileTensor.tile()`](/docs/layout/tile_tensor/TileTensor/#tile)
-method extracts a tile with a given size at a given set of coordinates.
-The `tile()` method only works on tensors with flat (non-nested) layouts.
+method extracts a tile with a given size at a given set of coordinates. It works
+on both flat and nested parent layouts. The flat case is shown first, followed
+by the nested case.
 
 ```mojo
 comptime tile_size = 32
@@ -457,6 +463,50 @@ The layout of the extracted tile depends on the layout of the parent tensor. For
 example, if the parent tensor has a row-major layout, as above, the extracted
 tile also has a row-major layout (with a stride of 1 between columns). But the
 stride between rows is the same as the parent's row stride.
+
+On a nested (tiled) parent layout, `tile()` behaves differently: instead of
+imposing its own grid, it slices one outer index per mode and returns the inner
+fragment at that position. This corresponds to the CuTe `local_tile` operation
+and is the common way to address a single register or shared-memory fragment of
+a tiled tensor.
+
+For a nested shape like `((2, 3), (2, 4))`—a 2x2 outer grid of 3x4 inner
+fragments—the tile sizes you pass are the *inner* dimensions, and you pass one
+coordinate per mode to select the *outer* grid position: the first coordinate
+selects the tile along the row mode, the second along the column mode.
+
+```mojo
+# A nested layout whose outer mode is a 2x2 grid of tiles and whose
+# inner mode is a 3x4 fragment: shape ((2, 3), (2, 4)).
+comptime grid_rows = 2
+comptime frag_rows = 3
+comptime grid_cols = 2
+comptime frag_cols = 4
+comptime total = grid_rows * frag_rows * grid_cols * frag_cols
+var layout = row_major_nested(
+    Coord(
+        Coord(Idx[grid_rows], Idx[frag_rows]),
+        Coord(Idx[grid_cols], Idx[frag_cols]),
+    )
+)
+var storage = InlineArray[Float32, total](uninitialized=True)
+for i in range(total):
+    storage[i] = Float32(i)
+var tensor = TileTensor(storage, layout)
+
+# On a nested parent, tile() slices one outer index per mode: the
+# first coordinate selects the tile along the row mode, the second
+# along the column mode. Here (1, 0) selects grid row 1, column 0,
+# returning that (frag_rows x frag_cols) fragment.
+var fragment = tensor.tile[frag_rows, frag_cols](1, 0)
+```
+
+The returned `fragment` is a rank-2 view of shape `(frag_rows, frag_cols)` whose
+strides are the parent's innermost sub-strides. See
+[`TileTensor` layouts](/docs/manual/tile-tensor/layouts/#nested-layouts) for how
+to construct nested layouts with
+[`row_major_nested()`](/docs/layout/tile_layout/row_major_nested/) and
+[`col_major_nested()`](/docs/layout/tile_layout/col_major_nested/).
 
 ## Vectorizing tensors
 
@@ -559,25 +609,88 @@ Given a 16x16 tile size, a warp size of 32 and a `simd_size` of 4, this code
 produces a 16x4 tensor of 1x4 vectors. The thread layout is an 8x4 row major
 layout.
 
+## Splitting a tensor
+
+The [`split()`](/docs/layout/tile_tensor/TileTensor/#split) method divides a
+tensor into non-overlapping partitions along an axis. Unlike `tile()`, which
+returns a single sub-tile, `split()` returns every partition at once (or a
+single requested partition). Split views are immutable, so call
+[`as_immut()`](/docs/layout/tile_tensor/TileTensor/#as_immut) on a mutable
+tensor first.
+
+`split()` has two forms. The static form, `split[count]()`, takes a compile-time
+partition count and returns a `StaticTuple` of `count` equal-sized views. The
+split axis must be statically divisible by `count`:
+
+```mojo
+var data = InlineArray[Int32, 16](uninitialized=True)
+for i in range(16):
+    data[i] = Int32(i)
+var tensor = TileTensor(data, row_major[4, 4]())
+
+# Split into 2 equal halves along axis 0. Split views are immutable,
+# so call as_immut() first.
+var halves = tensor.as_immut().split[2]()
+```
+
+The dynamic form, `split(count, idx)`, takes a run-time partition count and
+returns a single partition with a run-time-sized split axis:
+
+```mojo
+var data = InlineArray[Int32, 16](uninitialized=True)
+for i in range(16):
+    data[i] = Int32(i)
+var tensor = TileTensor(data, row_major[8, 2]())
+
+# Return a single runtime-sized partition: split axis 0 into 4 parts
+# and take partition index 1.
+var partition = tensor.as_immut().split[axis=0](4, 1)
+```
+
+By default, the dynamic form divides the axis as evenly as possible. The
+optional `split_alignment` parameter rounds each partition's base size up to a
+multiple of the given alignment, which can make the leading partitions larger
+and clamp (or empty) the trailing ones.
+
 ## Copying tensors
 
-`TileTensor` provides a basic `copy()` method for copying tensor data. In
-addition, the `tile_io` module provides a set of utilities specialized for
-copying between various GPU memory spaces. All of the tensor copy methods
-respect the layouts—so you can transform a tensor by copying it to a tensor with
-a different layout (provided both layouts are the same size).
+`TileTensor` provides a
+[`copy_from()`](/docs/layout/tile_tensor/TileTensor/#copy_from) method for
+copying tensor data. In addition, the
+[`tile_io`](/docs/layout/tile_io/) module provides a set of
+utilities specialized for copying between various GPU memory spaces. All of the
+tensor copy methods respect the layouts—so you can transform a tensor by copying
+it to a tensor with a different layout (provided both layouts have the same
+total number of elements).
 
-The `TileTensor.copy()` method copies data from a source tensor to the current
-tensor, which may be in a different memory space.
+The `TileTensor.copy_from()` method copies data from a source tensor into the
+current tensor, which may be in a different memory space. Because the copy is
+layout-aware, the source and destination can have different shapes or strides as
+long as they agree on the total element count and element size: each logical
+element is loaded using the source's layout and stored using the destination's
+layout. The source and destination dtypes may also differ, in which case each
+element is cast to the destination dtype:
 
-This method copies data element-by-element. This method doesn't divide work
-among multiple threads. If using this method on GPU, use `distribute()` to
-create thread-specific tensor fragments for copying. Or use the thread-aware
-copy methods discussed in the next section.
+```mojo
+var src_data: InlineArray[Int32, 4] = [1, 2, 3, 4]
+var dst_data = InlineArray[Float32, 4](fill=0.0)
 
-Depending on the tensor layout, `copy()` may vectorize the tensor to make the
-copy more efficient. You can also `vectorize()` the tensor before calling
-`copy()`.
+var src = TileTensor(src_data, row_major[2, 2]())
+var dst = TileTensor(dst_data, row_major[2, 2]())
+
+# Copy from src into dst, casting each Int32 element to Float32.
+dst.copy_from(src)
+```
+
+This method copies data element-by-element. It doesn't divide work among
+multiple threads. If using this method on GPU, use `distribute()` to create
+thread-specific tensor fragments for copying. Or use the thread-aware copy
+methods discussed in the next section.
+
+When both tensors have fully static, row-major layouts, `copy_from()` widens the
+copy to a SIMD load, cast, and SIMD store, using the narrower of the two dtypes'
+native SIMD widths. You can also `vectorize()` the tensors before calling
+`copy_from()`.
 
 ### Tile copiers
 
@@ -587,7 +700,7 @@ spaces, such as copying from shared memory to local memory. These copiers are
 all *thread-layout-aware*: instead of passing in tensor fragments, you configure
 the copier with a thread layout which it uses to partition the work.
 
-As with the `copy()` method, you can use the `vectorize()`
+As with the `copy_from()` method, you can use the `vectorize()`
 method prior to copying to take advantage of vectorized copy operations.
 
 Many of the tile copiers have very specific requirements for the

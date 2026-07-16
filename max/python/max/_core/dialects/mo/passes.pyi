@@ -391,3 +391,17 @@ def ValidateDevicesPass(
     This pass checks the inputs and outputs of the graph, verifying that the
     data type for each tensor can be implemented on the target device.
     """
+
+def VerifyDeviceGraphPass() -> max._core.Pass:
+    """
+    When a `mo.graph` carries the `isDeviceGraph` attribute, every
+    kernel-backed op in its body must correspond to a `mogg.kernel.decl`
+    whose `build_graph` field is populated. This pass walks the graph body,
+    looks up each op in the module's `MojoRegistry`, and emits an error for
+    any op whose resolved kernel registration lacks a `build_graph` entry
+    point.
+
+    Ops with no registration in the registry (for example dialect-intrinsic
+    ops such as `mo.constant` or `mo.output`) are skipped. Graphs without
+    the `isDeviceGraph` attribute are no-ops.
+    """

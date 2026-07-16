@@ -1458,7 +1458,7 @@ def test_conv_gpu_residual[
         IndexList[4](pad, pad, pad, pad),
         1,
         ctx,
-        source_dev.unsafe_ptr(),
+        source_dev.unsafe_ptr().as_unsafe_any_origin(),
         Float32(1.0),
     )
 
@@ -1583,7 +1583,7 @@ def test_conv_gpu_residual_diag_no_lambda[
         IndexList[4](pad, pad, pad, pad),
         1,
         ctx,
-        source_dev.unsafe_ptr(),
+        source_dev.unsafe_ptr().as_unsafe_any_origin(),
         Float32(1.0),
     )
 
@@ -1717,7 +1717,7 @@ def test_conv_gpu_residual_with_bias[
     @always_inline
     @__copy_capture(out_tt)
     def add_bias_epilogue[
-        _dtype: DType, _rank: Int, _width: Int, _alignment: Int = 1
+        _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         var coord = Coord(coords[0], coords[1], coords[2], coords[3])
         var existing = out_tt.load[
@@ -1745,7 +1745,7 @@ def test_conv_gpu_residual_with_bias[
         IndexList[4](pad, pad, pad, pad),
         1,
         ctx,
-        source_dev.unsafe_ptr(),
+        source_dev.unsafe_ptr().as_unsafe_any_origin(),
         Float32(1.0),
     )
 

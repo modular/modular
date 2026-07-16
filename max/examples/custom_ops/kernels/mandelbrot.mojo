@@ -20,6 +20,7 @@ from std.complex import ComplexSIMD
 
 from extensibility import OutputTensor, foreach
 
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 
 comptime float_dtype = DType.float32
@@ -46,10 +47,11 @@ struct Mandelbrot:
         @always_inline
         def elementwise_mandelbrot[
             width: Int
-        ](idx: IndexList[output.rank]) -> SIMD[output.dtype, width]:
+        ](idx: Coord) -> SIMD[output.dtype, width]:
             # Obtain the position in the grid from the X, Y thread locations.
-            var row = idx[0]
-            var col = idx[1]
+            var idx_l = coord_to_index_list(idx)
+            var row = idx_l[0]
+            var col = idx_l[1]
 
             # Calculate the complex C corresponding to that grid location.
             var cx = (

@@ -15,7 +15,12 @@ from layout import TileTensor, Idx, Coord, coord
 from std.math import ceildiv
 from std.collections import InlineArray
 
-from layout.tile_layout import row_major, col_major, blocked_product
+from layout.tile_layout import (
+    row_major,
+    col_major,
+    blocked_product,
+    row_major_nested,
+)
 from std.memory import UnsafePointer, alloc, memset
 from std.testing import assert_equal
 
@@ -48,9 +53,7 @@ def accessing_tensor_elements_example() raises:
 
 
 # start-scalar-tensor-example
-def takes_scalar_tensor(
-    tensor: TileTensor[DType.int32, element_size=1, ...]
-) -> Int:
+def takes_scalar_tensor(tensor: TileTensor[DType.int32, ...]) -> Int:
     comptime assert tensor.flat_rank == 2
     return Int(tensor[1, 1])
 
@@ -187,6 +190,80 @@ def layout_tensor_iterator_example2() raises:
             _ = tile
 
 
+def nested_tile_example() raises:
+    # start-nested-tile-example
+    # A nested layout whose outer mode is a 2x2 grid of tiles and whose
+    # inner mode is a 3x4 fragment: shape ((2, 3), (2, 4)).
+    comptime grid_rows = 2
+    comptime frag_rows = 3
+    comptime grid_cols = 2
+    comptime frag_cols = 4
+    comptime total = grid_rows * frag_rows * grid_cols * frag_cols
+    var layout = row_major_nested(
+        Coord(
+            Coord(Idx[grid_rows], Idx[frag_rows]),
+            Coord(Idx[grid_cols], Idx[frag_cols]),
+        )
+    )
+    var storage = InlineArray[Float32, total](uninitialized=True)
+    for i in range(total):
+        storage[i] = Float32(i)
+    var tensor = TileTensor(storage, layout)
+
+    # On a nested parent, tile() slices one outer index per mode: the
+    # first coordinate selects the tile along the row mode, the second
+    # along the column mode. Here (1, 0) selects grid row 1, column 0,
+    # returning that (frag_rows x frag_cols) fragment.
+    var fragment = tensor.tile[frag_rows, frag_cols](1, 0)
+    # end-nested-tile-example
+    assert_equal(fragment[0, 0], Float32(24))
+    assert_equal(fragment[2, 3], Float32(43))
+
+
+def copy_from_example() raises:
+    # start-copy-from-example
+    var src_data: InlineArray[Int32, 4] = [1, 2, 3, 4]
+    var dst_data = InlineArray[Float32, 4](fill=0.0)
+
+    var src = TileTensor(src_data, row_major[2, 2]())
+    var dst = TileTensor(dst_data, row_major[2, 2]())
+
+    # Copy from src into dst, casting each Int32 element to Float32.
+    dst.copy_from(src)
+    # end-copy-from-example
+    assert_equal(dst[1, 1], Float32(4))
+
+
+def split_static_example() raises:
+    # start-split-static-example
+    var data = InlineArray[Int32, 16](uninitialized=True)
+    for i in range(16):
+        data[i] = Int32(i)
+    var tensor = TileTensor(data, row_major[4, 4]())
+
+    # Split into 2 equal halves along axis 0. Split views are immutable,
+    # so call as_immut() first.
+    var halves = tensor.as_immut().split[2]()
+    # end-split-static-example
+    assert_equal(halves[0][0, 0], 0)
+    assert_equal(halves[1][0, 0], 8)
+
+
+def split_dynamic_example() raises:
+    # start-split-dynamic-example
+    var data = InlineArray[Int32, 16](uninitialized=True)
+    for i in range(16):
+        data[i] = Int32(i)
+    var tensor = TileTensor(data, row_major[8, 2]())
+
+    # Return a single runtime-sized partition: split axis 0 into 4 parts
+    # and take partition index 1.
+    var partition = tensor.as_immut().split[axis=0](4, 1)
+    # end-split-dynamic-example
+    assert_equal(partition.layout.shape[0]().value(), 2)
+    assert_equal(partition[0, 0], 4)
+
+
 def main() raises:
     accessing_tensor_elements_example()
     accessing_nested_tensor_elements_example()
@@ -194,5 +271,9 @@ def main() raises:
     tile_tensor_on_cpu_example()
     tile_tensor_from_list_example()
     tile_tensor_tile_example()
+    nested_tile_example()
     layout_tensor_iterator_example()
     layout_tensor_iterator_example2()
+    copy_from_example()
+    split_static_example()
+    split_dynamic_example()

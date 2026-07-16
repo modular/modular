@@ -1402,6 +1402,51 @@ def test_schema_aware_nested_array_rejects_wrong_item_type(
     assert accepted < len(tokens)
 
 
+def test_schema_aware_nullable_array_enforces_items(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """Nullable array (type: ["array","null"]) with items enforces item type."""
+    tool_schemas = {
+        "process": {
+            "type": "object",
+            "properties": {
+                "tags": {
+                    "type": ["array", "null"],
+                    "items": {"type": "string"},
+                },
+            },
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    good_arr = (
+        f"<|tool_call>call:process{{tags:[{sd}a{sd},{sd}b{sd}]}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(good_arr)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), "nullable array should accept valid items"
+
+    good_null = "<|tool_call>call:process{tags:null}<tool_call|><turn|>"
+    tokens = minimal_tokenizer(good_null)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), "nullable array should accept null"
+
+    bad = "<|tool_call>call:process{tags:[42,true]}<tool_call|>"
+    tokens = minimal_tokenizer(bad)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted < len(tokens), (
+        "nullable array should reject wrong item types"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Required / optional / ordering / duplicate enforcement
 # ---------------------------------------------------------------------------
@@ -2479,3 +2524,350 @@ def test_additional_properties_true_no_properties_top_level(
     assert accepted == len(tokens), (
         "additionalProperties:true with no properties should accept any extras"
     )
+
+
+# ---------------------------------------------------------------------------
+# $ref / $defs resolution tests
+# ---------------------------------------------------------------------------
+
+
+def test_ref_defs_simple_object(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """Schema-aware grammar resolves $ref/$defs and enforces property types."""
+    tool_schemas = {
+        "add_item": {
+            "type": "object",
+            "properties": {
+                "item": {"$ref": "#/$defs/Item"},
+            },
+            "$defs": {
+                "Item": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "price": {"type": "number"},
+                    },
+                    "required": ["name", "price"],
+                },
+            },
+            "required": ["item"],
+            "additionalProperties": False,
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    good = (
+        f"<|tool_call>call:add_item"
+        f"{{item:{{name:{sd}Widget{sd},price:9.99}}}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(good)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), (
+        "$ref/$defs should resolve and accept correct types"
+    )
+
+
+def test_ref_defs_rejects_wrong_type(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """Schema-aware grammar rejects wrong types after $ref resolution."""
+    tool_schemas = {
+        "add_item": {
+            "type": "object",
+            "properties": {
+                "item": {"$ref": "#/$defs/Item"},
+            },
+            "$defs": {
+                "Item": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "price": {"type": "number"},
+                    },
+                    "required": ["name", "price"],
+                },
+            },
+            "required": ["item"],
+            "additionalProperties": False,
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    # price should be a number, not a string
+    bad = (
+        f"<|tool_call>call:add_item"
+        f"{{item:{{name:{sd}Widget{sd},price:{sd}cheap{sd}}}}}"
+        f"<tool_call|>"
+    )
+    tokens = minimal_tokenizer(bad)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted < len(tokens), (
+        "$ref/$defs should reject wrong types after resolution"
+    )
+
+
+def test_ref_defs_array_items(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """$ref used in array items is resolved and enforced."""
+    tool_schemas = {
+        "submit": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {"$ref": "#/$defs/Entry"},
+                },
+            },
+            "$defs": {
+                "Entry": {
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string"},
+                        "val": {"type": "integer"},
+                    },
+                    "required": ["key", "val"],
+                },
+            },
+            "required": ["entries"],
+            "additionalProperties": False,
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    good = (
+        f"<|tool_call>call:submit"
+        f"{{entries:[{{key:{sd}a{sd},val:1}},{{key:{sd}b{sd},val:2}}]}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(good)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), (
+        "$ref in array items should resolve and enforce types"
+    )
+
+
+def test_ref_defs_recursive_depth_capped(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """Recursive $ref/$defs resolves up to depth limit without crashing."""
+    tool_schemas = {
+        "build_list": {
+            "type": "object",
+            "properties": {
+                "head": {"$ref": "#/$defs/Node"},
+            },
+            "$defs": {
+                "Node": {
+                    "type": "object",
+                    "properties": {
+                        "value": {"type": "string"},
+                        "next": {
+                            "anyOf": [
+                                {"$ref": "#/$defs/Node"},
+                                {"type": "null"},
+                            ],
+                        },
+                    },
+                    "required": ["value", "next"],
+                },
+            },
+            "required": ["head"],
+            "additionalProperties": False,
+        },
+    }
+    # Should not raise — recursive refs are depth-capped
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    wire = (
+        f"<|tool_call>call:build_list"
+        f"{{head:{{value:{sd}a{sd},next:{{value:{sd}b{sd},next:null}}}}}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(wire)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), (
+        "Recursive $ref should resolve to usable depth and accept valid input"
+    )
+
+
+# ---------------------------------------------------------------------------
+# anyOf support tests
+# ---------------------------------------------------------------------------
+
+
+def _anyof_nullable_string_schemas() -> dict[str, dict[str, Any]]:
+    return {
+        "greet": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "nickname": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                },
+            },
+            "required": ["name", "nickname"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def test_anyof_nullable_string_accepts_string(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """anyOf [string, null] accepts a string value."""
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(_anyof_nullable_string_schemas()),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    wire = (
+        f"<|tool_call>call:greet"
+        f"{{name:{sd}Alice{sd},nickname:{sd}Ali{sd}}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(wire)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), "anyOf [string, null] should accept string"
+
+
+def test_anyof_nullable_string_accepts_null(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """anyOf [string, null] accepts null."""
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(_anyof_nullable_string_schemas()),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    wire = (
+        f"<|tool_call>call:greet"
+        f"{{name:{sd}Alice{sd},nickname:null}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(wire)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), "anyOf [string, null] should accept null"
+
+
+def test_anyof_nullable_string_rejects_number(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """anyOf [string, null] rejects a number."""
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(_anyof_nullable_string_schemas()),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    bad = (
+        f"<|tool_call>call:greet{{name:{sd}Alice{sd},nickname:42}}<tool_call|>"
+    )
+    tokens = minimal_tokenizer(bad)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted < len(tokens), "anyOf [string, null] should reject number"
+
+
+def test_anyof_object_branches(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """anyOf with two object branches accepts either shape."""
+    tool_schemas = {
+        "pay": {
+            "type": "object",
+            "properties": {
+                "payment": {
+                    "anyOf": [
+                        {
+                            "type": "object",
+                            "properties": {
+                                "method": {"type": "string"},
+                                "card": {"type": "string"},
+                            },
+                            "required": ["method", "card"],
+                        },
+                        {
+                            "type": "object",
+                            "properties": {
+                                "method": {"type": "string"},
+                                "bank": {"type": "string"},
+                            },
+                            "required": ["method", "bank"],
+                        },
+                    ],
+                },
+            },
+            "required": ["payment"],
+            "additionalProperties": False,
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    sd = '<|"|>'
+
+    # First branch (card)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    wire1 = (
+        f"<|tool_call>call:pay"
+        f"{{payment:{{method:{sd}card{sd},card:{sd}1234{sd}}}}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(wire1)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), "anyOf should accept first object branch"
+
+    # Second branch (bank)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    wire2 = (
+        f"<|tool_call>call:pay"
+        f"{{payment:{{method:{sd}bank{sd},bank:{sd}Chase{sd}}}}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(wire2)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), "anyOf should accept second object branch"

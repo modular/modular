@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from typing import Any, cast
 from unittest.mock import Mock
 
 import numpy as np
@@ -21,8 +22,15 @@ from max.pipelines.architectures.kimik2_5.reasoning import (
 from max.pipelines.architectures.minimax_m2.reasoning import (
     MiniMaxM2ReasoningParser,
 )
+from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
+    _resolve_thinking_token_ids,
+)
 from max.pipelines.lib.reasoning import create
-from max.pipelines.modeling.types.reasoning import ReasoningSpan
+from max.pipelines.lib.tokenizer import resolve_single_special_token
+from max.pipelines.modeling.types.reasoning import (
+    ReasoningPipelineTokenizer,
+    ReasoningSpan,
+)
 
 
 def test_reasoning_span_extract_content_removes_delimited_span() -> None:
@@ -125,3 +133,62 @@ async def test_minimax_m2_register_and_create() -> None:
     assert parser.think_start_token_id == 100
     assert parser.think_end_token_id == 200
     assert parser.tool_call_start_token_id == 300
+
+
+# ---------------------------------------------------------------------------
+# ReasoningPipelineTokenizer protocol + _resolve_thinking_token_ids
+# ---------------------------------------------------------------------------
+
+
+def _stub_reasoning_tokenizer(start_id: int, end_id: int) -> Mock:
+    """Build a Mock that satisfies the full ``ReasoningPipelineTokenizer``."""
+    tok = Mock()
+    tok.eos = 0
+    tok.expects_content_wrapping = False
+    tok.reasoning_start_token_id = start_id
+    tok.reasoning_end_token_id = end_id
+    return tok
+
+
+def test_protocol_isinstance_check_negative_for_bare_object() -> None:
+    """An object without the protocol surface does not satisfy the protocol."""
+    assert not isinstance(object(), ReasoningPipelineTokenizer)
+
+
+def test_resolve_thinking_token_ids_reads_protocol_properties() -> None:
+    """``_resolve_thinking_token_ids`` returns the two property values
+    declared by a :class:`ReasoningPipelineTokenizer`."""
+    tok = _stub_reasoning_tokenizer(start_id=100, end_id=101)
+    assert _resolve_thinking_token_ids(
+        cast(ReasoningPipelineTokenizer[Any, Any, Any], tok)
+    ) == (100, 101)
+
+
+# ---------------------------------------------------------------------------
+# resolve_single_special_token helper
+# ---------------------------------------------------------------------------
+
+
+def _stub_delegate(vocab: dict[str, int | list[int]], unk_id: int = 0) -> Mock:
+    """Build a Mock HF-style delegate with ``convert_tokens_to_ids``."""
+    delegate = Mock()
+    delegate.unk_token_id = unk_id
+    delegate.convert_tokens_to_ids = lambda token: vocab.get(token, unk_id)
+    return delegate
+
+
+def test_resolve_single_special_token_returns_id() -> None:
+    delegate = _stub_delegate({"<think>": 42})
+    assert resolve_single_special_token(delegate, "<think>") == 42
+
+
+def test_resolve_single_special_token_raises_when_missing() -> None:
+    delegate = _stub_delegate(vocab={}, unk_id=3)
+    with pytest.raises(ValueError, match="not found in tokenizer vocabulary"):
+        resolve_single_special_token(delegate, "<think>")
+
+
+def test_resolve_single_special_token_raises_when_multi_id() -> None:
+    delegate = _stub_delegate({"<think>": [1, 2, 3]})
+    with pytest.raises(ValueError, match="resolved to multiple ids"):
+        resolve_single_special_token(delegate, "<think>")

@@ -45,7 +45,7 @@ from max.graph.weights import load_weights
 from max.pipelines.architectures.qwen3.text_encoder import (
     Qwen3TextEncoderKleinModel,
 )
-from max.pipelines.core import PixelContext
+from max.pipelines.context import PixelContext
 from max.pipelines.diffusion.cache import (
     DenoisingCacheConfig,
     TaylorSeerBufferState,

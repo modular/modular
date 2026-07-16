@@ -73,6 +73,7 @@ from .creation_ops import (
     zeros,
     zeros_like,
 )
+from .print import print
 from .spmd_ops import (
     abs,
     acos,
@@ -90,6 +91,7 @@ from .spmd_ops import (
     buffer_store,
     buffer_store_slice,
     cast,
+    ceil,
     chunk,
     clamp,
     clip,
@@ -110,6 +112,7 @@ from .spmd_ops import (
     exp,
     flatten,
     floor,
+    floor_div,
     fold,
     functional,
     gather,
@@ -216,6 +219,7 @@ __all__ = [
     "buffer_store",
     "buffer_store_slice",
     "cast",
+    "ceil",
     "chunk",
     "clamp",
     "clip",
@@ -240,6 +244,7 @@ __all__ = [
     "exp",
     "flatten",
     "floor",
+    "floor_div",
     "fold",
     "full",
     "full_like",
@@ -289,6 +294,7 @@ __all__ = [
     "per_shard_dispatch",
     "permute",
     "pow",
+    "print",
     "prod",
     "qmatmul",
     "range",

@@ -13,7 +13,7 @@
 
 
 from layout import TileTensor
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 
 
 # ===-----------------------------------------------------------------------===#
@@ -24,7 +24,7 @@ from std.memory import memcpy
 def _get_rightmost_broadcast_axis[
     dtype: DType,
 ](
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
 ) -> Int:
     """
@@ -56,7 +56,9 @@ def broadcast[
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
 ):
     """
     For each axis of `input`, if the dimension is 1, duplicate the data at
@@ -80,7 +82,7 @@ def broadcast[
     if input_output_have_same_shape:
         var src_ptr = input.ptr
         var dst_ptr = output.ptr
-        memcpy(dest=dst_ptr, src=src_ptr, count=input.num_elements())
+        unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=input.num_elements())
         return
 
     comptime init_axis = 0
@@ -106,7 +108,9 @@ def broadcast_impl[
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     # using `prev` because otherwise computing `next_input_axis_stride` requires
     # dim[axis+1](), which requires more `comptime assert` to keep in bound
     input_prev_axis_stride: Int,
@@ -168,7 +172,10 @@ def broadcast_impl[
     if Int(input.dim(axis)) != Int(output.dim(axis)):
         var output_tile_start = output.ptr + output_offset
         _tile_1d(
-            output_tile_start + output_axis_stride,  # 1st tile is already there
+            # AnyOrigin needed for exclusivity check
+            (
+                output_tile_start + output_axis_stride
+            ).as_unsafe_any_origin(),  # 1st tile is already there
             output_tile_start,
             output_axis_stride,  # elems_to_copy
             Int(output.dim(axis)) - 1,  # 1st tile is already there
@@ -181,11 +188,13 @@ def _tile_1d[
     init_dst_ptr: UnsafePointer[
         mut=True,
         Scalar[dtype],
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.GENERIC,
     ],
-    src_ptr: ImmutUnsafePointer[
+    src_ptr: UnsafePointer[
+        mut=False,
         Scalar[dtype],
+        _,
         address_space=AddressSpace.GENERIC,
         ...,
     ],
@@ -197,5 +206,5 @@ def _tile_1d[
     """
     var dst_ptr = init_dst_ptr
     for _ in range(n):
-        memcpy(dest=dst_ptr, src=src_ptr, count=tile_num_elems)
+        unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=tile_num_elems)
         dst_ptr = dst_ptr + tile_num_elems

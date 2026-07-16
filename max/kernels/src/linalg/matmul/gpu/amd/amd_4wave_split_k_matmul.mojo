@@ -51,6 +51,7 @@ from .amd_4wave_matmul import AMD4WaveMatmul, KernelConfig
 # ===----------------------------------------------------------------------=== #
 
 
+@__name(t"amd_4wave_split_k_reduce_{c_type}_SK{num_splits}")
 def _split_k_reduce_kernel[
     num_splits: Int,
     c_type: DType,
@@ -156,7 +157,7 @@ def amd_4wave_split_k_matmul[
     c: TileTensor[mut=True, c_type, ...],
     ctx: DeviceContext,
     *,
-    workspace: SplitKWorkspace[num_splits],
+    mut workspace: SplitKWorkspace[num_splits],
 ) raises:
     """Launches the single-launch split-K 4-wave matmul on the device.
 

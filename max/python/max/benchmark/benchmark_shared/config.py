@@ -16,15 +16,25 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Literal
+from pathlib import Path
+from typing import Annotated, Any, Literal
 
+import yaml
+from cyclopts import Parameter
 from max.config import ConfigFileModel
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from .datasets import DatasetMode, DistributionParameter
 from .utils import int_or_none, parse_comma_separated
 
+# Fixed default seed for the workload generator and request sampling. Scheduled
+# and repeated benchmark runs pin this so run-to-run deltas reflect the change
+# under test rather than workload-draw variance. Pass ``--seed none`` (or
+# ``seed: null`` in YAML) to draw a fresh random seed instead.
+DEFAULT_BENCHMARK_SEED = 0x5EED  # spells "SEED" (= 24301)
+
 BaseBackend = Literal[
+    "atom",
     "mcloud",
     "modular",
     "sglang",
@@ -33,6 +43,8 @@ BaseBackend = Literal[
 ]
 
 Backend = Literal[
+    "atom",
+    "atom-chat",
     "mcloud",
     "modular",
     "modular-chat",
@@ -55,6 +67,8 @@ Endpoint = Literal[
 ]
 
 CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
+    "atom": "/reset_prefix_cache",
+    "atom-chat": "/reset_prefix_cache",
     "modular": "/reset_prefix_cache",
     "modular-chat": "/reset_prefix_cache",
     "vllm": "/reset_prefix_cache",
@@ -68,12 +82,21 @@ BenchmarkTask = Literal[
     "text-to-image",
     "image-to-image",
     "text-to-video",
+    "image-to-video",
 ]
 
 PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
     "text-to-image",
     "image-to-image",
     "text-to-video",
+    "image-to-video",
+)
+
+# Pixel-generation tasks that emit video. These route to the dedicated video
+# endpoints on backends that have one (see VIDEO_GEN_DEFAULT_ENDPOINT).
+VIDEO_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
+    "text-to-video",
+    "image-to-video",
 )
 
 # Default endpoint per backend for pixel generation tasks.
@@ -84,14 +107,15 @@ PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
 PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
     "modular": "/v1/responses",
     "modular-chat": "/v1/responses",
+    "mcloud": "/v1/responses",
     "sglang": "/v1/images/generations",
     "sglang-chat": "/v1/images/generations",
     "vllm": "/v1/chat/completions",
     "vllm-chat": "/v1/chat/completions",
 }
 
-# Override endpoint per backend for text-to-video tasks. For vllm-omni
-# use the dedicated /v1/videos/sync endpoint.
+# Override endpoint per backend for video tasks (text-to-video and
+# image-to-video). For vllm-omni use the dedicated /v1/videos/sync endpoint.
 VIDEO_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
     "vllm": "/v1/videos/sync",
     "vllm-chat": "/v1/videos/sync",
@@ -108,7 +132,7 @@ PIXEL_GENERATION_ENDPOINTS: frozenset[Endpoint] = frozenset(
 
 def get_pixel_gen_endpoint(backend: Backend, task: BenchmarkTask) -> Endpoint:
     """Return the pixel-generation endpoint for a given backend and task."""
-    if task == "text-to-video" and backend in VIDEO_GEN_DEFAULT_ENDPOINT:
+    if task in VIDEO_GENERATION_TASKS and backend in VIDEO_GEN_DEFAULT_ENDPOINT:
         return VIDEO_GEN_DEFAULT_ENDPOINT[backend]
     if backend in PIXEL_GEN_DEFAULT_ENDPOINT:
         return PIXEL_GEN_DEFAULT_ENDPOINT[backend]
@@ -240,13 +264,15 @@ class BaseBenchmarkConfig(ConfigFileModel):
     )
 
     seed: int | None = Field(
-        default=None,
+        default=DEFAULT_BENCHMARK_SEED,
         description=(
-            "Random seed for reproducibility. When set, the same seed is used "
-            "for every benchmark iteration instead of drawing a fresh random "
-            "seed per concurrency level. Useful for reproducing a specific "
-            "concurrency level from a prior sweep without re-running the full "
-            "sweep."
+            "Random seed for the workload generator and request sampling. "
+            "Defaults to a fixed value so repeated and scheduled runs are "
+            "reproducible and run-to-run deltas reflect the change under test "
+            "rather than workload-draw variance. Pass ``--seed none`` (or "
+            "``seed: null`` in YAML) to draw a fresh random seed instead; the "
+            "drawn seed is logged and recorded with the results so the run "
+            "stays reproducible after the fact."
         ),
     )
 
@@ -265,6 +291,14 @@ class BaseBenchmarkConfig(ConfigFileModel):
         default=False,
         description="Enable detailed DEBUG logging.",
     )
+
+    @field_validator("seed", mode="before")
+    @classmethod
+    def _parse_seed_cli_string(cls, value: object) -> object:
+        """Map the CLI/YAML string ``none`` to ``None`` (draw a random seed)."""
+        if isinstance(value, str):
+            return int_or_none(value)
+        return value
 
 
 class BaseServingBenchmarkConfig(BaseBenchmarkConfig):
@@ -379,7 +413,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     benchmark_task: BenchmarkTask = Field(
         default="text-generation",
-        description="Benchmark task type. Choices: text-generation, text-to-image, image-to-image, text-to-video",
+        description="Benchmark task type. Choices: text-generation, text-to-image, image-to-image, text-to-video, image-to-video",
         json_schema_extra={"group": "Backend and API Configuration"},
     )
 
@@ -416,6 +450,17 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
             "more open sessions than active turns grows the footprint and "
             "increases the likelihood of offloading or dropping pre-computed "
             "historical KV data."
+        ),
+        json_schema_extra={"group": "Request Configuration"},
+    )
+
+    kv_block_size: int = Field(
+        default=128,
+        description=(
+            "KV cache block (page) size in tokens, used to block-align the "
+            "per-turn cache retention metric. Should match the server's "
+            "--kv-cache-page-size so retention reflects true block-aligned "
+            "cache reuse."
         ),
         json_schema_extra={"group": "Request Configuration"},
     )
@@ -511,6 +556,32 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Output Control"},
     )
 
+    # cyclopts wants scalar key=value pairs by default and can't take a single
+    # nested-JSON object or file path as one value. accepts_keys=False passes
+    # the raw token through for the validator to parse.
+    extra_body: Annotated[dict[str, Any], Parameter(accepts_keys=False)] = (
+        Field(
+            default_factory=dict,
+            description=(
+                "Extra top-level fields to add to every text-generation request "
+                "body, for fields without a dedicated flag (e.g. stop, "
+                "chat_template_kwargs). On the CLI, pass an inline JSON object "
+                '(e.g. \'{"stop": ["}"], "chat_template_kwargs": '
+                '{"reasoning_effort": "low"}}\') or a path to a YAML/JSON file; '
+                "it can also be set as a field in a --config-file YAML. Nested "
+                "objects and "
+                "arrays are kept verbatim. Applied after the dedicated flags "
+                "(--temperature, --max-output-len, --response-format, etc.), so a "
+                "key that collides with one overrides it (last-writer-wins, and "
+                "the collision is logged). Currently applied only to "
+                "text-generation requests (the chat/completions, completions, "
+                "and TensorRT-LLM generate_stream endpoints); ignored for "
+                "image/video generation tasks."
+            ),
+            json_schema_extra={"group": "Output Control"},
+        )
+    )
+
     # Image generation options (serving-specific)
     image_width: int | None = Field(
         default=None,
@@ -603,15 +674,27 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
-    warmup_concurrency: int = Field(
-        default=128,
-        description="Maximum in-flight requests during prefix-cache priming (--warm-shared-prefix) and steady-state warmup (--warmup-to-steady-state).",
+    warmup_delay_biased: bool = Field(
+        default=False,
+        description="Bias warmup session/turn selection by inter-turn think time (sum of delays) instead of turn count. Requires delays to be configured; falls back to turn-based when none are present.",
         json_schema_extra={"group": "Traffic Control"},
     )
 
-    randomize_session_start: bool = Field(
-        default=True,
-        description="Add a random sleep (0 to inter-turn delay) before each session's first measured query to spread out the initial wave of requests.",
+    warmup_delay_estimated_ttft_ms: float = Field(
+        default=0.0,
+        description="Estimated time-to-first-token in milliseconds per turn. When set (with --warmup-delay-biased), warmup weights each turn by its occupancy (estimated generation time + inter-turn delay) instead of delay alone, better matching steady state for high-TPOT / long-output workloads. 0 = off.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    warmup_delay_estimated_tpot_ms: float = Field(
+        default=0.0,
+        description="Estimated time-per-output-token in milliseconds, used with --warmup-delay-estimated-ttft-ms to weight warmup by per-turn generation time (ttft + tpot * output_len). Only valid with --warmup-delay-biased. 0 = off.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    warmup_concurrency: int = Field(
+        default=128,
+        description="Maximum in-flight requests during prefix-cache priming (--warm-shared-prefix) and steady-state warmup (--warmup-to-steady-state).",
         json_schema_extra={"group": "Traffic Control"},
     )
 
@@ -661,7 +744,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     )
     random_input_len: DistributionParameter = Field(
         default=1024,
-        description="Number of input tokens per request, used only for random sampling. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
+        description="Number of input tokens per request, used by the random and artificial-analysis datasets. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
         json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
     random_max_num_unique_sys_prompt: int = Field(
@@ -676,7 +759,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     )
     random_output_len: DistributionParameter = Field(
         default=128,
-        description="Number of output tokens per request, used only for random sampling. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
+        description="Number of output tokens per request, used by the random and artificial-analysis datasets. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
         json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
     random_sys_prompt_ratio: float = Field(
@@ -723,6 +806,18 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     collect_cpu_stats: bool = Field(
         default=True,
         description="Enable CPU stats collection for serving benchmarks.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    server_pids: list[int] = Field(
+        default_factory=list,
+        description=(
+            "Explicit PIDs to monitor for CPU stats, including their children."
+            " Bypasses automatic port-based PID detection. Useful when the"
+            " server runs inside a container."
+            " Example: --server-pids $(docker inspect -f '{{.State.Pid}}'"
+            " <container_name>)"
+        ),
         json_schema_extra={"group": "Control Flags"},
     )
 
@@ -908,6 +1003,76 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         if isinstance(value, str):
             return parse_comma_separated(value, float)
         return value
+
+    @field_validator("extra_body", mode="before")
+    @classmethod
+    def _parse_extra_body(cls, value: object) -> dict[str, Any]:
+        """Parse ``extra_body`` into a dict from one of three inputs:
+
+        - a mapping (e.g. from a ``--config-file`` YAML), used directly;
+        - an inline JSON object string (leading ``{``), parsed with ``yaml.safe_load``;
+        - any other non-empty string, treated as a YAML/JSON file path.
+
+        Raises:
+            ValueError: If the string is neither an inline object nor a readable
+                file, the content fails to parse, or it does not resolve to an
+                object.
+        """
+        if value is None:
+            return {}
+        if isinstance(value, Mapping):
+            return dict(value)
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return {}
+            if text.startswith("{"):
+                source, origin = text, "inline JSON"
+            else:
+                path = Path(text)
+                if not path.is_file():
+                    raise ValueError(
+                        f"extra_body {text!r} is not a readable file path; "
+                        "an inline value must be a JSON object starting "
+                        "with '{'."
+                    )
+                try:
+                    source = path.read_text()
+                except OSError as e:
+                    raise ValueError(
+                        f"extra_body {text!r} is not a readable file path: {e}"
+                    ) from e
+                origin = f"file {text!r}"
+            try:
+                parsed = yaml.safe_load(source)
+            except yaml.YAMLError as e:
+                raise ValueError(
+                    f"Failed to parse extra_body ({origin}): {e}"
+                ) from e
+            if not isinstance(parsed, Mapping):
+                raise ValueError(
+                    f"extra_body ({origin}) must be a mapping/object, got "
+                    f"{type(parsed).__name__}."
+                )
+            return dict(parsed)
+        raise ValueError(
+            "extra_body must be a mapping, an inline JSON string, or a path "
+            f"to a YAML/JSON file; got {type(value).__name__}."
+        )
+
+    @model_validator(mode="after")
+    def _check_warmup_runtime_estimates(self) -> ServingBenchmarkConfig:
+        """Runtime estimates only refine delay-biased warmup."""
+        if (
+            self.warmup_delay_estimated_ttft_ms > 0.0
+            or self.warmup_delay_estimated_tpot_ms > 0.0
+        ) and not self.warmup_delay_biased:
+            raise ValueError(
+                "--warmup-delay-estimated-ttft-ms /"
+                " --warmup-delay-estimated-tpot-ms require"
+                " --warmup-delay-biased to be set."
+            )
+        return self
 
     @property
     def sampling(self) -> SamplingConfig:

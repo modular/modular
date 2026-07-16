@@ -20,7 +20,6 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal
 
 from max.graph.dim import AlgebraicDim, Dim, DimLike, StaticDim, SymbolicDim
 from max.graph.shape import Shape
@@ -28,25 +27,26 @@ from max.graph.shape import Shape
 from .mesh import DeviceMesh
 from .per_shard_dim import (
     is_per_shard_dim,
+    local_shape_at,
     make_per_shard_dim,
-    shape_at,
 )
 
-Collective = Literal[
-    "nop",
-    "local_slice",
-    "allgather",
-    "all_to_all",
-    "allreduce",
-    "reduce_scatter",
-    "infeasible",
-]
-"""Names of the collectives the cost model understands.
 
-A :meth:`Placement.transition_to` return value must be one of these
-strings. Custom :class:`Placement` subclasses that return anything else
-are reported as infeasible by the cost model.
-"""
+class Collective(Enum):
+    """The collectives the cost model understands.
+
+    A :meth:`Placement.transition_to` return value must be one of these.
+    Custom :class:`Placement` subclasses that return anything else are
+    reported as infeasible by the cost model.
+    """
+
+    NOOP = "noop"
+    LOCAL_SLICE = "local_slice"
+    ALLGATHER = "allgather"
+    ALL_TO_ALL = "all_to_all"
+    ALLREDUCE = "allreduce"
+    REDUCE_SCATTER = "reduce_scatter"
+    INFEASIBLE = "infeasible"
 
 
 class ShardingError(RuntimeError):
@@ -80,8 +80,8 @@ class Placement(ABC):
         return None
 
     def transition_to(self, other: Placement) -> Collective:
-        """Returns the :data:`Collective` for ``self -> other``."""
-        return "nop" if self == other else "infeasible"
+        """Returns the :class:`Collective` for ``self -> other``."""
+        return Collective.NOOP if self == other else Collective.INFEASIBLE
 
     def local_dim(
         self,
@@ -136,9 +136,9 @@ class Replicated(Placement):
     def transition_to(self, other: Placement) -> Collective:
         """Replicated-to-Sharded is a free local split."""
         if self == other:
-            return "nop"
+            return Collective.NOOP
         if isinstance(other, Sharded):
-            return "local_slice"
+            return Collective.LOCAL_SLICE
         return super().transition_to(other)
 
 
@@ -170,11 +170,11 @@ class Sharded(Placement):
     def transition_to(self, other: Placement) -> Collective:
         """Sharded-to-Replicated is allgather; Sharded-to-Sharded is all-to-all."""
         if self == other:
-            return "nop"
+            return Collective.NOOP
         if isinstance(other, Replicated):
-            return "allgather"
+            return Collective.ALLGATHER
         if isinstance(other, Sharded):
-            return "all_to_all"
+            return Collective.ALL_TO_ALL
         return super().transition_to(other)
 
     def local_dim(
@@ -272,14 +272,14 @@ class Partial(Placement):
 
     def transition_to(self, other: Placement) -> Collective:
         """Partial-to-Replicated is allreduce; Partial-to-Sharded is reduce-scatter."""
-        if self.reduce_op.value in ("min", "max"):
-            return "infeasible"
+        if self.reduce_op in (ReduceOp.MIN, ReduceOp.MAX):
+            return Collective.INFEASIBLE
         if self == other:
-            return "nop"
+            return Collective.NOOP
         if isinstance(other, Replicated):
-            return "allreduce"
+            return Collective.ALLREDUCE
         if isinstance(other, Sharded):
-            return "reduce_scatter"
+            return Collective.REDUCE_SCATTER
         return super().transition_to(other)
 
 
@@ -342,4 +342,4 @@ def local_shard_shape_from_global(
             if norm_axes[mesh_axis] == ti:
                 x = p.local_dim(x, mesh, mesh_axis)
         wrapped.append(x)
-    return [shape_at(wrapped, r) for r in range(mesh.num_devices)]
+    return [local_shape_at(wrapped, r) for r in range(mesh.num_devices)]

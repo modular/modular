@@ -12,10 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from .batch_processor import Idefics3BatchProcessor
 from .model import Idefics3Model
 from .model_config import Idefics3Config
 from .tokenizer import Idefics3Tokenizer
@@ -38,4 +40,8 @@ idefics3_arch = SupportedArchitecture(
         "enable_prefix_caching": False,
     },
     config=Idefics3Config,
+    batching=Idefics3BatchProcessor,
+    memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

@@ -17,23 +17,20 @@ from typing import Any
 
 import numpy as np
 import pytest
-from max.pipelines.core import (
-    PixelContext,
-    SpecDecodingState,
-    TextAndVisionContext,
-    TextContext,
-)
-from max.pipelines.core.context import FUTURE_TOKEN
-from max.pipelines.modeling.types import (
+from max.pipelines.context import (
     EOSTracker,
     GenerationStatus,
     ImageMetadata,
-    PixelGenerationContext,
-    RequestID,
+    PixelContext,
     SamplingParams,
-    TextGenerationContext,
+    SpecDecodingState,
+    TextAndVisionContext,
+    TextContext,
     TokenBuffer,
-    VLMTextGenerationContext,
+)
+from max.pipelines.context.context import FUTURE_TOKEN
+from max.pipelines.modeling.types import (
+    RequestID,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -663,6 +660,61 @@ def test_text_context_update_with_preemption_and_future_token() -> None:
     assert context.tokens.generated_length == 0
 
 
+def test_text_context_to_generation_output_validates_vocab_size() -> None:
+    """Generated tokens must be non-negative and within vocab when vocab_size is set."""
+    request_id = RequestID()
+
+    context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+        vocab_size=100,
+    )
+    context.update(42)
+    output = context.to_generation_output()
+    assert output.tokens == [42]
+    assert output.request_id == request_id
+
+    negative_context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+        vocab_size=100,
+    )
+    negative_context.update(-1)
+    with pytest.raises(
+        RuntimeError,
+        match=r"Generated negative token_id=-1",
+    ):
+        negative_context.to_generation_output()
+
+    oob_context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+        vocab_size=10,
+    )
+    oob_context.update(10)
+    with pytest.raises(
+        RuntimeError,
+        match=r"Generated out-of-vocabulary token_id=10.*\(valid range: \[0, 10\)\)",
+    ):
+        oob_context.to_generation_output()
+
+    unset_vocab_context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+    )
+    unset_vocab_context.update(999)
+    output = unset_vocab_context.to_generation_output()
+    assert output.tokens == [999]
+
+
 def test_vision_context_reset() -> None:
     context = TextAndVisionContext(
         max_length=50,
@@ -909,6 +961,37 @@ def test_text_and_vision_context_happy_case() -> None:
     assert len(ctx.next_images) == 0
 
 
+def test_text_and_vision_context_adjacent_images_allowed() -> None:
+    # Image ranges are half-open [start_idx, end_idx), so two images whose
+    # token runs touch (next.start_idx == prev.end_idx) do not overlap. Chat
+    # templates that emit no separator token between consecutive images
+    # produce exactly such touching ranges, and they must be accepted.
+    # fmt: off
+    #                                  |<-img0->|<-img1->|
+    #                   0   1   2   3   4   5   6   7   8   9
+    tokens = np.array([51, 52, 53, 54, 98, 98, 98, 98, 59, 60])
+    # fmt: on
+    ctx = TextAndVisionContext(
+        max_length=50,
+        tokens=TokenBuffer(tokens),
+        images=[
+            ImageMetadata(
+                start_idx=4,
+                end_idx=6,
+                pixel_values=np.array([99]),
+            ),
+            ImageMetadata(
+                start_idx=6,
+                end_idx=8,
+                pixel_values=np.array([99]),
+            ),
+        ],
+        vision_token_ids=[98],
+    )
+    assert len(ctx.images) == 2
+    assert ctx.needs_vision_encoding is True
+
+
 def test_text_and_vision_context_sad_case() -> None:
     # fmt: off
     #                                      |<-- img0 --->|                         |<--- img1 -->|
@@ -926,9 +1009,9 @@ def test_text_and_vision_context_sad_case() -> None:
                     end_idx=9,
                     pixel_values=np.array([99]),
                 ),
-                # This overlaps with img0
+                # This overlaps with img0 (starts at 8, before img0 ends at 9).
                 ImageMetadata(
-                    start_idx=9,
+                    start_idx=8,
                     end_idx=19,
                     pixel_values=np.array([99]),
                 ),
@@ -1024,14 +1107,12 @@ def does_not_raise_due_to_check_in_property_method() -> None:
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
     )
 
-    # Protocol structural checks should NOT trigger the method body!
-    # (TextGenerationContext, VLMTextGenerationContext, and PixelGenerationContext are Protocols)
-    _ = isinstance(ctx, TextGenerationContext)
-    # The original bug report indicated that MAX threw a ValueError in call to
-    # isinstance(ctx, VLMTextGenerationContext) so we are validating this case here.
-    # See GENAI-318 for details.
-    _ = isinstance(ctx, VLMTextGenerationContext)
-    _ = isinstance(ctx, PixelGenerationContext)
+    # isinstance checks against concrete context classes should not raise.
+    # The original bug report (GENAI-318) indicated that isinstance on VLM
+    # contexts threw a ValueError; validate the concrete-class equivalents.
+    assert isinstance(ctx, TextContext)
+    _ = isinstance(ctx, TextAndVisionContext)
+    _ = isinstance(ctx, PixelContext)
 
 
 def test_context__spec_decoding_state_lazy_init() -> None:

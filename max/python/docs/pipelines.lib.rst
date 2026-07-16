@@ -32,6 +32,7 @@ Configuration
    KVConnectorConfig
    MAXConfig
    MAXModelConfigBase
+   PipelineArgs
    PipelineRuntimeConfig
 
 Pipelines
@@ -76,7 +77,6 @@ LoRA
    :template: autosummary/class.rst
 
    LoRAManager
-   LoRARequestProcessor
 
 Utilities
 ---------
@@ -108,10 +108,7 @@ Functions
    get_default_max_config_file_section_name
    max_tokens_to_generate
    parse_quant_config
-   rejection_sampler
-   rejection_sampler_with_residuals
    resolve_max_config_inheritance
-   token_sampler
    try_to_load_from_cache
    validate_hf_repo_access
 

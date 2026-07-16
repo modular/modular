@@ -122,11 +122,9 @@ class ActionSet:
     feasibility check reject output :class:`Sharded` rows whose result
     dim is too small."""
 
-    finalize: Callable[[Action, Any], Action] | None = None
-    """Optional post-pick transform applied as
-    ``finalize(action, finalize_ctx)``. Used by rules that need the
-    picked placement to compute per-rank metadata or repack inputs
-    into a user-facing container."""
-
-    finalize_ctx: Any = None
-    """Opaque per-op context passed to :attr:`finalize`."""
+    finalize: Callable[[Action], Action] | None = None
+    """Optional post-pick transform applied as ``finalize(action)``. Used
+    by rules that need the picked placement to compute per-rank metadata
+    or repack inputs into a user-facing container. Rules pre-bind any
+    per-op context by closing over it, so no separate context field is
+    needed."""

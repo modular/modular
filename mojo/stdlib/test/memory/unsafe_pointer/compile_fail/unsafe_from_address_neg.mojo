@@ -15,5 +15,5 @@
 
 
 def main() raises:
-    # CHECK: UnsafePointer's address cannot be negative.
-    var _p = UnsafePointer[Int, MutExternalOrigin](unsafe_from_address=-1)
+    # CHECK: Pointer's address cannot be negative.
+    var _p = UnsafePointer[Int, MutUntrackedOrigin](unsafe_from_address=-1)

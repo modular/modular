@@ -16,6 +16,7 @@ import compiler
 from std.gpu.host import DeviceContext
 from extensibility import InputTensor, OutputTensor, foreach
 
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 
@@ -31,9 +32,7 @@ struct AddConstantCustom[value: Int]:
     ) raises:
         @parameter
         @always_inline
-        def add_constant[
-            width: Int
-        ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
+        def add_constant[width: Int](idx: Coord) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + Scalar[outp.dtype](Self.value)
 
         foreach[add_constant, target=target](outp, ctx)

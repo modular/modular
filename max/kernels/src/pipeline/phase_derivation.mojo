@@ -65,21 +65,21 @@ struct PhaseStep(ImplicitlyCopyable, Movable):
 
     Specifies what to emit: either infrastructure ops (BARRIER, FENCE) or
     data ops matched from the body by role and predicates (EMIT).
-
-    For EMIT steps:
-      - match_role: required OpRole of body op
-      - match_subtile: -1 = any, else specific subtile value
-      - exclude_lc: True = skip loop-carried ops (subtile == lc.selector)
-      - match_lc_only: True = emit only loop-carried ops
-      - match_all: True = emit ALL matching ops, False = first match only
     """
 
     var action: PhaseAction
+    """Action type for this step (`EMIT`, `BARRIER`, or `FENCE`)."""
     var match_role: OpRole
+    """For `EMIT` steps: required `OpRole` of the body op to match."""
     var match_subtile: Int
+    """For `EMIT` steps: `-1` = any, else a specific subtile value."""
     var exclude_lc: Bool
+    """For `EMIT` steps: skip loop-carried ops (`subtile == lc.selector`)."""
     var match_lc_only: Bool
+    """For `EMIT` steps: emit only loop-carried ops."""
     var match_all: Bool
+    """For `EMIT` steps: emit all matching ops (`True`) or first match only
+    (`False`)."""
 
     @staticmethod
     def emit(

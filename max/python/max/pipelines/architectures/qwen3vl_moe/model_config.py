@@ -25,8 +25,8 @@ from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
-    ArchConfigWithDecoderSubconfigKVParams,
     ArchConfigWithKVCache,
+    ArchVLConfigWithTextSubconfig,
 )
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
@@ -128,9 +128,7 @@ class VisionConfig:
 
 
 @dataclass(kw_only=True)
-class Qwen3VLConfig(
-    ArchConfigWithDecoderSubconfigKVParams, ArchConfigWithKVCache
-):
+class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     """Configuration for Qwen3VL models."""
 
     devices: list[DeviceRef]
@@ -185,10 +183,6 @@ class Qwen3VLConfig(
         """Returns the KV cache parameters from the embedded LLM config."""
         return self.llm_config.get_kv_params()
 
-    def get_max_seq_len(self) -> int:
-        """Returns the maximum sequence length from the embedded LLM config."""
-        return self.llm_config.get_max_seq_len()
-
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         # Delegate to Llama3Config for language model parameters.
@@ -196,20 +190,6 @@ class Qwen3VLConfig(
             huggingface_config, "text_config", huggingface_config
         )
         return Llama3Config.get_num_layers(llm_config)
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculate maximum sequence length for Qwen3VL."""
-        # Delegate to Llama3Config for language model parameters.
-        llm_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config=pipeline_config,
-            huggingface_config=llm_config,
-        )
 
     @override
     @classmethod

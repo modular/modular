@@ -637,7 +637,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
         b_type,
         Layout.row_major(num_experts * N, K),
         address_space=AddressSpace.GENERIC,
-    ](b.ptr.as_any_origin())
+    ](b.ptr.as_unsafe_any_origin())
     b_tma_op = create_tensor_tile[
         Index(BN, BK) if config.transpose_b else Index(BK, BN),
         swizzle_mode=config.b_swizzle,
@@ -738,22 +738,29 @@ def _get_accumulator_size[
 @always_inline
 def _tile_fits_full_tma[
     a_scales_type: DType, BM: Int
-](expert_end_row: Int, m_tile_global_start: Int, total_m: Int) -> Bool:
+](m_tile_global_start: Int, total_m: Int) -> Bool:
     """Whether a full BM-row A/a_scales TMA is safe for this tile.
 
-    Three conditions must hold (all enforce the scales TMA's 16-byte
-    strided-coord byte-offset alignment; misalignment faults with
-    ``ILLEGAL_INSTRUCTION``):
-      * the tile lies entirely within the current expert's rows,
-      * ``m_tile_global_start`` is aligned (column offset within a K row),
-        and
-      * ``total_m`` is aligned, since it is the K-row stride: at any K>0
-        the byte offset is ``k * total_m * size_of(scales)``, which is only
-        16-byte aligned when the stride itself is.
+    The bound is the A buffer, not the current expert. A tile may read BM rows
+    past this expert's end into the next expert's rows: that read is in-bounds
+    as long as the whole BM strip lies within total_m, and the epilogue masks
+    the over-read rows with m < M (per-expert count) so they are never written.
+    The next expert's own tile recomputes them correctly. That makes the
+    expert boundary irrelevant to safety and lets small-M-per-expert decode
+    tiles keep the fast TMA path instead of falling onto the partial copy.
+
+    Three conditions must hold:
+      * the full BM-row strip stays within total_m, so the TMA load and the
+        matching a_scales strip never read past the A buffer,
+      * m_tile_global_start is aligned (column offset within a K row), and
+      * total_m is aligned, since it is the K-row stride: at any K>0 the scales
+        byte offset is k * total_m * size_of(scales), which is only 16-byte
+        aligned when the stride itself is. Misalignment faults with
+        ILLEGAL_INSTRUCTION.
     """
     comptime SCALES_M_ALIGN = 16 // size_of[a_scales_type]()
     return (
-        (expert_end_row - m_tile_global_start) >= BM
+        (total_m - m_tile_global_start) >= BM
         and m_tile_global_start % SCALES_M_ALIGN == 0
         and total_m % SCALES_M_ALIGN == 0
     )
@@ -796,11 +803,14 @@ def _copy_partial_a_tile_blockwise_from_gmem[
     iter_idx: Int,
 ):
     """Cooperative warp copy of A and matching `a_scales` strip from gmem into
-    SMEM. Rows beyond `expert_end_row` are zeroed so MMA sees a full BM×BK
-    tile without issuing a TMA past the expert boundary. Writes go to the
-    physical SMEM offset produced by `make_swizzle` so the MMA descriptor's
-    swizzle XOR reads back the value we just stored. All lanes of the calling
-    warp must execute this."""
+    SMEM. Used when the full-width TMA load is ineligible: the final
+    buffer-tail tile whose BM-row strip would run past total_m, or a misaligned
+    scale stride that the scales TMA cannot address. Rows at or past the current
+    expert's end are zeroed so MMA still sees a full BM×BK tile without reading
+    past the activation buffer; the epilogue masks those rows, so the fill only
+    needs to be safe, not exact. Writes go to the physical SMEM offset produced
+    by `make_swizzle` so the MMA descriptor's swizzle XOR reads back the value
+    we just stored. All lanes of the calling warp must execute this."""
     comptime BM = block_tile_shape[0]
     comptime BK = block_tile_shape[2]
     comptime a_sw = make_swizzle[a_type, a_swizzle]()
@@ -824,9 +834,7 @@ def _copy_partial_a_tile_blockwise_from_gmem[
         var g_row = m_tile_global_start + row
         var av = zero_vec
         if g_row < expert_end_row:
-            av = rebind[SIMD[a_type, VEC]](
-                a_gmem.load[width=VEC](g_row, iter_idx * BK + k0)
-            )
+            av = a_gmem.load[width=VEC](g_row, iter_idx * BK + k0)
         (a_smem_tile.ptr + Int(a_sw(Int32(row * BK + k0)))).store(av)
 
     # a_scales: BM scalars total; each lane writes one row per outer iteration.
@@ -873,13 +881,13 @@ def load_AB[
         a_scales_desc_shape,
     ],
     a_smem_base: UnsafePointer[
-        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_type], _, address_space=AddressSpace.SHARED
     ],
     b_smem_base: UnsafePointer[
-        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[b_type], _, address_space=AddressSpace.SHARED
     ],
     a_scales_smem_base: UnsafePointer[
-        Scalar[a_scales_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_scales_type], _, address_space=AddressSpace.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -938,21 +946,18 @@ def load_AB[
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_smem_base + Int(stage) * a_smem_tile_size)
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](b_smem_base + Int(stage) * b_smem_tile_size)
     var a_scales_smem_tile = LayoutTensor[
         a_scales_type,
         a_scales_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_scales_smem_base + Int(stage) * a_scales_smem_tile_size)
@@ -1017,13 +1022,13 @@ def load_AB_partial[
     ],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     a_smem_base: UnsafePointer[
-        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_type], _, address_space=AddressSpace.SHARED
     ],
     b_smem_base: UnsafePointer[
-        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[b_type], _, address_space=AddressSpace.SHARED
     ],
     a_scales_smem_base: UnsafePointer[
-        Scalar[a_scales_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_scales_type], _, address_space=AddressSpace.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -1073,21 +1078,18 @@ def load_AB_partial[
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_smem_base + Int(stage) * a_smem_tile_size)
     var a_scales_smem_tile = LayoutTensor[
         a_scales_type,
         a_scales_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_scales_smem_base + Int(stage) * a_scales_smem_tile_size)
     var b_smem_slice = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](
@@ -1162,7 +1164,7 @@ def multi_stage_reg_epilogue[
         Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
-    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    c_ptr: UnsafePointer[mut=True, Scalar[c_type], _],
     c_coord: Tuple[Int, Int],
     elect_one_warp: Bool,
     group_end_idx: UInt32,
@@ -1289,7 +1291,7 @@ def multi_stage_reg_epilogue[
 
         if (
             size_of[c_type]() != 2
-            or UInt32(coord_m) + UInt32(TMA_BM) >= group_end_idx
+            or UInt32(coord_m) + UInt32(TMA_BM) > group_end_idx
         ):
             comptime output_threads = num_output_warps * WARP_SIZE
             comptime c_smem_M = c_smem_tile.layout.shape[0].value()
@@ -1395,7 +1397,7 @@ def promote_accumulators[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     b_scales_n: Int,
     a_scales_smem_base: UnsafePointer[
-        Scalar[a_scales_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_scales_type], _, address_space=AddressSpace.SHARED
     ],
     c_upper_main_tile: LayoutTensor[
         accum_type,
@@ -1592,7 +1594,6 @@ def promote_accumulators[
     var a_scales_smem = LayoutTensor[
         a_scales_type,
         a_scales_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_scales_smem_base + Int(tma_load_stage_index) * a_scales_smem_tile_size)
@@ -1884,13 +1885,13 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     # Load warp as producer and mma warp as consumer
     var load_mma_pipeline = ProducerConsumerPipeline[num_pipeline_stages](
-        load_mma_mbar_ptr.unsafe_origin_cast[MutExternalOrigin]()
+        load_mma_mbar_ptr.unsafe_origin_cast[MutUntrackedOrigin]()
     )
 
     var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * num_pipeline_stages
     var mma_output_pipeline = ProducerConsumerPipeline[
         config.num_accum_pipeline_stages
-    ](mma_output_mbar_ptr.unsafe_origin_cast[MutExternalOrigin]())
+    ](mma_output_mbar_ptr.unsafe_origin_cast[MutUntrackedOrigin]())
 
     var clc_full_mbar_ptr = (
         mma_output_mbar_ptr + 2 * config.num_accum_pipeline_stages
@@ -1906,7 +1907,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     ](
         (
             clc_empty_mbar_ptr + config.num_clc_pipeline_stages
-        ).unsafe_origin_cast[MutExternalOrigin]()
+        ).unsafe_origin_cast[MutUntrackedOrigin]()
     )
 
     var clc_response_ptr = (
@@ -2069,7 +2070,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             var m_tile_global_start = Int(work_info.m)
             var use_full_tma = _tile_fits_full_tma[
                 a_scales_type, config.block_tile_shape[0]
-            ](expert_end_row, m_tile_global_start, total_m)
+            ](m_tile_global_start, total_m)
 
             for i in range(num_iters):
                 if not use_full_tma:
@@ -2296,7 +2297,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             ](
                 c_upper_main_tile,
                 c_lower_main_tile,
-                c_smem_base,
+                c_smem_base.as_unsafe_any_origin(),
                 c_tma_op,
                 c_ptr,
                 c_coord=(Int(work_info.m), Int(work_info.n)),
@@ -2432,7 +2433,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         b_type,
         Layout.row_major(num_experts * N, K),
         address_space=AddressSpace.GENERIC,
-    ](b.ptr.as_any_origin())
+    ](b.ptr.as_unsafe_any_origin())
     b_tma_op = create_tensor_tile[
         Index(
             BN // (config.cluster_shape[0] // config.cta_group), BK
@@ -2532,7 +2533,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         b_scales_type,
         Layout.row_major(b_scales_expert * b_scales_n, b_scales_k),
         address_space=AddressSpace.GENERIC,
-    ](b_scales.ptr.as_any_origin())
+    ](b_scales.ptr.as_unsafe_any_origin())
 
     comptime kernel = blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_type,

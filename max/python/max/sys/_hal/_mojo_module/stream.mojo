@@ -13,16 +13,17 @@
 """Python projection of HAL ``Stream``."""
 
 from std.collections import List
-from std.memory import ArcPointer, UnsafePointer
+from std.memory import ArcPointer, OpaquePointer, UnsafePointer
 from std.os import abort
 from std.python import PythonObject
-from std.sys._hal.device import get_device_spec
-from std.sys._hal.event import EVENT_FLAG_CPU_VISIBLE
-from std.sys._hal.plugin import EventHandle, RawDriver
-from std.sys._hal.stream import Stream as HALStream
+from _hal.device import get_device_spec
+from _hal.event import EVENT_FLAG_CPU_VISIBLE
+from _hal.plugin import EventHandle, FunctionHandle, RawDriver
+from _hal.stream import Stream as HALStream
 
-from .buffer import Buffer
+from .buffer import Buffer, BufferView
 from .event import Event
+from .function import Function
 
 
 @fieldwise_init
@@ -53,6 +54,14 @@ struct Stream(Movable, Writable):
         self_ptr[]._arc[].synchronize()
 
     @staticmethod
+    def native_handle(py_self: PythonObject) raises -> PythonObject:
+        var self_ptr = Self._self_ptr(py_self)
+        var handle = self_ptr[]._arc[].native_handle()
+        if handle:
+            return PythonObject(handle.value())
+        return PythonObject(None)
+
+    @staticmethod
     def record_event(py_self: PythonObject) raises -> PythonObject:
         var self_ptr = Self._self_ptr(py_self)
         var hal_evt = self_ptr[]._arc[].record_event[EVENT_FLAG_CPU_VISIBLE]()
@@ -60,52 +69,79 @@ struct Stream(Movable, Writable):
         return PythonObject(alloc=Event(_hal=hal_evt^, _ctx_keepalive=ctx_arc))
 
     @staticmethod
+    def copy(
+        py_self: PythonObject,
+        dst_obj: PythonObject,
+        src_obj: PythonObject,
+    ) raises:
+        var self_ptr = Self._self_ptr(py_self)
+        var dst_ptr = dst_obj.downcast_value_ptr[Buffer]()
+        var src_ptr = src_obj.downcast_value_ptr[Buffer]()
+        self_ptr[]._arc[].copy(dst=dst_ptr[]._hal, src=src_ptr[]._hal)
+
+    @staticmethod
     def copy_to_device(
         py_self: PythonObject,
         dst_obj: PythonObject,
         src_addr_obj: PythonObject,
-        size_obj: PythonObject,
     ) raises:
         var self_ptr = Self._self_ptr(py_self)
-        var dst_ptr = dst_obj.downcast_value_ptr[Buffer]()
-        var size = UInt64(Int(py=size_obj))
+        var dst_view = dst_obj.downcast_value_ptr[BufferView]()
         var src_ptr = UnsafePointer[UInt8, ImmutAnyOrigin](
             unsafe_from_address=Int(py=src_addr_obj)
         )
         # Route through HALStream so the chain-wait / chain-signal logic
         # (needed to preserve in-order semantics on non-stream queues)
         # runs around the copy.
-        self_ptr[]._arc[].copy_to_device(dst_ptr[]._hal, src_ptr, size)
+        self_ptr[]._arc[].copy_to_device(dst_view[]._hal, src_ptr)
 
     @staticmethod
     def copy_from_device(
         py_self: PythonObject,
         dst_addr_obj: PythonObject,
         src_obj: PythonObject,
-        size_obj: PythonObject,
     ) raises:
         var self_ptr = Self._self_ptr(py_self)
-        var src_ptr_buf = src_obj.downcast_value_ptr[Buffer]()
-        var size = UInt64(Int(py=size_obj))
+        var src_view = src_obj.downcast_value_ptr[BufferView]()
         var dst_ptr = UnsafePointer[UInt8, MutAnyOrigin](
             unsafe_from_address=Int(py=dst_addr_obj)
         )
-        self_ptr[]._arc[].copy_from_device(dst_ptr, src_ptr_buf[]._hal, size)
+        self_ptr[]._arc[].copy_from_device(dst_ptr, src_view[]._hal)
 
     @staticmethod
     def copy_intra_device(
         py_self: PythonObject,
         dst_obj: PythonObject,
         src_obj: PythonObject,
-        size_obj: PythonObject,
     ) raises:
         var self_ptr = Self._self_ptr(py_self)
-        var dst_ptr = dst_obj.downcast_value_ptr[Buffer]()
-        var src_ptr_buf = src_obj.downcast_value_ptr[Buffer]()
-        var size = UInt64(Int(py=size_obj))
-        self_ptr[]._arc[].copy_intra_device(
-            dst_ptr[]._hal, src_ptr_buf[]._hal, size
-        )
+        var dst_view = dst_obj.downcast_value_ptr[BufferView]()
+        var src_view = src_obj.downcast_value_ptr[BufferView]()
+        self_ptr[]._arc[].copy_intra_device(dst_view[]._hal, src_view[]._hal)
+
+    @staticmethod
+    def set_memory(
+        py_self: PythonObject,
+        dst_obj: PythonObject,
+        value_obj: PythonObject,
+    ) raises:
+        var self_ptr = Self._self_ptr(py_self)
+        var dst_view = dst_obj.downcast_value_ptr[BufferView]()
+        var value = UInt8(Int(py=value_obj))
+        self_ptr[]._arc[].set_memory(dst_view[]._hal, value)
+
+    @staticmethod
+    def fill(
+        py_self: PythonObject,
+        dst_obj: PythonObject,
+        value_obj: PythonObject,
+        value_size_obj: PythonObject,
+    ) raises:
+        var self_ptr = Self._self_ptr(py_self)
+        var dst_view = dst_obj.downcast_value_ptr[BufferView]()
+        var value = UInt64(Int(py=value_obj))
+        var value_size = UInt64(Int(py=value_size_obj))
+        self_ptr[]._arc[].fill(dst_view[]._hal, value, value_size)
 
     @staticmethod
     def wait_for_events(py_self: PythonObject, events_obj: PythonObject) raises:
@@ -125,6 +161,49 @@ struct Stream(Movable, Writable):
             hal_stream._queue[]._handle, handles.unsafe_ptr(), UInt32(n)
         )
         hal_stream._chain_signal()
+
+    @staticmethod
+    def execute(
+        py_self: PythonObject,
+        func_obj: PythonObject,
+        grid_obj: PythonObject,
+        block_obj: PythonObject,
+        args_obj: PythonObject,
+        arg_sizes_obj: PythonObject,
+        shared_mem_bytes_obj: PythonObject,
+    ) raises:
+        var self_ptr = Self._self_ptr(py_self)
+        var func_ptr = func_obj.downcast_value_ptr[Function]()
+        var grid = (
+            UInt32(Int(py=grid_obj[0])),
+            UInt32(Int(py=grid_obj[1])),
+            UInt32(Int(py=grid_obj[2])),
+        )
+        var block = (
+            UInt32(Int(py=block_obj[0])),
+            UInt32(Int(py=block_obj[1])),
+            UInt32(Int(py=block_obj[2])),
+        )
+        var n = len(args_obj)
+        var args = List[OpaquePointer[MutUntrackedOrigin]](capacity=n)
+        var arg_sizes = List[UInt64](capacity=n)
+        for i in range(n):
+            args.append(
+                OpaquePointer[MutUntrackedOrigin](
+                    unsafe_from_address=Int(py=args_obj[i])
+                )
+            )
+            arg_sizes.append(UInt64(Int(py=arg_sizes_obj[i])))
+        var shared_mem_bytes = UInt32(Int(py=shared_mem_bytes_obj))
+        self_ptr[]._arc[].execute(
+            func_ptr[]._handle,
+            grid,
+            block,
+            args.unsafe_ptr(),
+            arg_sizes.unsafe_ptr(),
+            UInt32(n),
+            shared_mem_bytes=shared_mem_bytes,
+        )
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write("Stream()")

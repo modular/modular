@@ -23,9 +23,9 @@ from max.nn.kv_cache import KVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
-    ArchConfigWithDecoderSubconfigKVParams,
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
+    ArchVLConfigWithTextSubconfig,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
@@ -35,7 +35,7 @@ from typing_extensions import Self, override
 
 @dataclass(kw_only=True)
 class PixtralConfig(
-    ArchConfigWithDecoderSubconfigKVParams,
+    ArchVLConfigWithTextSubconfig,
     ArchConfigWithStoredKVParams,
     ArchConfigWithKVCache,
 ):
@@ -75,19 +75,21 @@ class PixtralConfig(
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     """Whether to return the last token, all logits, or a variable number of logits."""
 
-    def get_max_seq_len(self) -> int:
-        return self.max_seq_len
-
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         return huggingface_config.text_config.num_hidden_layers
 
-    @staticmethod
+    @classmethod
     def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
     ) -> int:
-        """Calculates the maximum sequence length for the model."""
-        max_seq_len = pipeline_config.model.max_length
+        # Permissive on text_config (config path). PixtralModel upper-bounds
+        # max_length in model.py; divergence flagged for follow-up in PR.
+        model_config = model_config or pipeline_config.model
+        max_seq_len = model_config.max_length
         if max_seq_len:
             return max_seq_len
         return huggingface_config.text_config.max_position_embeddings

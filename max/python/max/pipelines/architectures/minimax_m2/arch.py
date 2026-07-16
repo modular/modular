@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.context import TextContext
+from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import MiniMaxM2BatchProcessor
+from .memory_planner import MiniMaxM2MemoryPlanner
 from .model import MiniMaxM2Model
 from .model_config import MiniMaxM2Config
+from .tokenizer import MiniMaxM2Tokenizer
 
 minimax_m2_arch = SupportedArchitecture(
     name="MiniMaxM2ForCausalLM",
@@ -39,7 +39,7 @@ minimax_m2_arch = SupportedArchitecture(
         "float4_e2m1fnx2",
     },
     pipeline_model=MiniMaxM2Model,
-    tokenizer=TextTokenizer,
+    tokenizer=MiniMaxM2Tokenizer,
     context_type=TextContext,
     rope_type="normal",
     weight_adapters={
@@ -47,6 +47,8 @@ minimax_m2_arch = SupportedArchitecture(
     },
     config=MiniMaxM2Config,
     multi_gpu_supported=True,
+    batching=MiniMaxM2BatchProcessor,
     tool_parser="minimax_m2",
     reasoning_parser="minimax_m2",
+    memory_planner=MiniMaxM2MemoryPlanner,
 )

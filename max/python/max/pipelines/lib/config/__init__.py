@@ -15,9 +15,14 @@
 
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.kv_cache.config import (
+    KVCacheConfig,
+    KVConnectorConfig,
+)
 from max.pipelines.lib.pipeline_runtime_config import (
     DEFAULT_MAX_BATCH_INPUT_TOKENS,
 )
+from max.pipelines.lora import LoRAConfig
 from max.pipelines.modeling.config_enums import (
     PipelineRole,
     RepoType,
@@ -30,20 +35,16 @@ from max.pipelines.modeling.config_enums import (
     supported_encoding_supported_devices,
     supported_encoding_supported_on,
 )
-from max.pipelines.modeling.kv_cache_config import (
-    KVCacheConfig,
-    KVConnectorConfig,
-)
 from max.pipelines.speculative.config import (
     SpeculativeConfig,
     SpeculativeMethod,
 )
 
+from ..pipeline_args import PipelineArgs
 from .config import (
     PipelineConfig,
     PrometheusMetricsMode,
 )
-from .lora_config import LoRAConfig
 from .model_config import (
     MAXModelConfig,
     MAXModelConfigBase,
@@ -60,6 +61,7 @@ __all__ = [
     "LoRAConfig",
     "MAXModelConfig",
     "MAXModelConfigBase",
+    "PipelineArgs",
     "PipelineConfig",
     "PipelineRole",
     "ProfilingConfig",

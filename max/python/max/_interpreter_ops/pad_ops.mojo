@@ -36,6 +36,7 @@ from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 
 from std.algorithm.functional import elementwise, IndexList
+from std.utils.coord import Coord
 
 
 from op_utils import (
@@ -53,7 +54,7 @@ comptime MAX_PAD_SIZE = 2 * MAX_RANK
 
 
 @export
-def PyInit_pad_ops() -> PythonObject:
+def PyInit_pad_ops() abi("C") -> PythonObject:
     """Create a Python module with pad kernel function bindings."""
     try:
         var b = PythonModuleBuilder("pad_ops")
@@ -80,8 +81,8 @@ def PyInit_pad_ops() -> PythonObject:
 def pad_constant_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     constant: Scalar[dtype],
     paddings: InlineArray[Int, MAX_PAD_SIZE],
     out_shape: InlineArray[Int, MAX_RANK],
@@ -116,6 +117,11 @@ def pad_constant_op[
         ctx: Device context.
     """
 
+    # TODO: This body captures `InlineArray` shape/stride/padding args, which
+    # makes the closure memory-only, so it cannot satisfy the unified-closure
+    # `elementwise` overload's `RegisterPassable` bound. Keep using the
+    # deprecated parameter-closure overload until the array data is staged in
+    # device memory (or the unified overload accepts memory-only closures).
     @always_inline
     @parameter
     @__copy_capture(
@@ -129,8 +135,8 @@ def pad_constant_op[
         in_strides,
         rank,
     )
-    def func[width: Int, rank_: Int, alignment: Int = 1](idx: IndexList[rank_]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var rem = i
         var in_flat = 0
         var in_bounds = True
@@ -149,12 +155,10 @@ def pad_constant_op[
             out_ptr[i] = constant
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](IndexList[1](total), ctx)
+        elementwise[func, simd_width=1](Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), ctx
-            )
+            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 
@@ -168,8 +172,8 @@ def pad_constant_op[
 def pad_reflect_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     paddings: InlineArray[Int, MAX_PAD_SIZE],
     out_shape: InlineArray[Int, MAX_RANK],
     in_shape: InlineArray[Int, MAX_RANK],
@@ -202,6 +206,11 @@ def pad_reflect_op[
         ctx: Device context (CPU).
     """
 
+    # TODO: This body captures `InlineArray` shape/stride/padding args, which
+    # makes the closure memory-only, so it cannot satisfy the unified-closure
+    # `elementwise` overload's `RegisterPassable` bound. Keep using the
+    # deprecated parameter-closure overload until the array data is staged in
+    # device memory (or the unified overload accepts memory-only closures).
     @always_inline
     @parameter
     @__copy_capture(
@@ -214,8 +223,8 @@ def pad_reflect_op[
         in_strides,
         rank,
     )
-    def func[width: Int, rank_: Int, alignment: Int = 1](idx: IndexList[rank_]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var rem = i
         var in_flat = 0
         for d in range(rank):
@@ -230,7 +239,7 @@ def pad_reflect_op[
             in_flat += input_coord * in_strides[d]
         out_ptr[i] = in_ptr[in_flat]
 
-    elementwise[func, simd_width=1](IndexList[1](total), ctx)
+    elementwise[func, simd_width=1](Coord(total), ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -242,8 +251,8 @@ def pad_reflect_op[
 def pad_repeat_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     paddings: InlineArray[Int, MAX_PAD_SIZE],
     out_shape: InlineArray[Int, MAX_RANK],
     in_shape: InlineArray[Int, MAX_RANK],
@@ -275,6 +284,11 @@ def pad_repeat_op[
         ctx: Device context (CPU).
     """
 
+    # TODO: This body captures `InlineArray` shape/stride/padding args, which
+    # makes the closure memory-only, so it cannot satisfy the unified-closure
+    # `elementwise` overload's `RegisterPassable` bound. Keep using the
+    # deprecated parameter-closure overload until the array data is staged in
+    # device memory (or the unified overload accepts memory-only closures).
     @always_inline
     @parameter
     @__copy_capture(
@@ -287,8 +301,8 @@ def pad_repeat_op[
         in_strides,
         rank,
     )
-    def func[width: Int, rank_: Int, alignment: Int = 1](idx: IndexList[rank_]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var rem = i
         var in_flat = 0
         for d in range(rank):
@@ -300,7 +314,7 @@ def pad_repeat_op[
             in_flat += input_coord * in_strides[d]
         out_ptr[i] = in_ptr[in_flat]
 
-    elementwise[func, simd_width=1](IndexList[1](total), ctx)
+    elementwise[func, simd_width=1](Coord(total), ctx)
 
 
 # ===----------------------------------------------------------------------=== #

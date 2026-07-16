@@ -32,6 +32,7 @@ from extensibility import (
     foreach,
 )
 
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 
 
@@ -50,9 +51,10 @@ struct Grayscale:
         @always_inline
         def color_to_grayscale[
             simd_width: Int
-        ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
-            var row = idx[0]
-            var col = idx[1]
+        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
+            var idx_l = coord_to_index_list(idx)
+            var row = idx_l[0]
+            var col = idx_l[1]
 
             var r_idx = IndexList[3](row, col, 0)
             var g_idx = IndexList[3](row, col, 1)
@@ -82,9 +84,7 @@ struct MyAdd:
     ) raises:
         @parameter
         @always_inline
-        def doit[
-            simd_width: Int
-        ](idx: IndexList[C.rank]) -> SIMD[C.dtype, simd_width]:
+        def doit[simd_width: Int](idx: Coord) -> SIMD[C.dtype, simd_width]:
             var a = A.load[simd_width](idx)
             var b = B.load[simd_width](idx)
             return a + b
@@ -104,9 +104,7 @@ struct ParameterIncrement:
     ) raises:
         @parameter
         @always_inline
-        def doit[
-            simd_width: Int
-        ](idx: IndexList[B.rank]) -> SIMD[B.dtype, simd_width]:
+        def doit[simd_width: Int](idx: Coord) -> SIMD[B.dtype, simd_width]:
             var a = A.load[simd_width](idx)
             return a + type_of(a)(increment)
 
@@ -141,9 +139,7 @@ struct UnsupportedTypeOp:
         # The String parameter should cause a validation error
         @parameter
         @always_inline
-        def copy[
-            simd_width: Int
-        ](idx: IndexList[output.rank]) -> SIMD[output.dtype, simd_width]:
+        def copy[simd_width: Int](idx: Coord) -> SIMD[output.dtype, simd_width]:
             return input.load[simd_width](idx)
 
         foreach[copy, target="cpu"](output, ctx)

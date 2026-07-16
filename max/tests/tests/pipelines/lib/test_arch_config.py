@@ -27,7 +27,11 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, KVConnectorType
+from max.nn.kv_cache import (
+    KVCacheParams,
+    KVConnectorType,
+    MHAKVCacheParams,
+)
 from max.pipelines.lib import (
     KVCacheConfig,
     KVConnectorConfig,
@@ -255,6 +259,7 @@ class TestArchConfigWithAttentionKVCache:
         kv_params = config.get_kv_params()
 
         # Verify the KVCacheParams fields
+        assert isinstance(kv_params, MHAKVCacheParams)
         assert kv_params.dtype == DType.bfloat16
         assert kv_params.n_kv_heads == 8  # from ConcreteArchConfig
         assert kv_params.head_dim == 64  # from ConcreteArchConfig
@@ -327,3 +332,53 @@ class TestArchConfigWithAttentionKVCache:
             match=r"default value provided \(4096\) exceeds the upper bound \(2048\)",
         ):
             _ = config.get_max_seq_len()
+
+
+def test_to_params_reads_allow_kv_head_replication_from_config() -> None:
+    """``to_params`` falls back to the config's allow_kv_head_replication.
+
+    The base Llama3/M2 ``construct_kv_params`` paths call ``to_params`` without
+    threading the flag, so architectures (e.g. MiniMax-M3) enable wide tensor
+    parallelism by setting it on the shared ``KVCacheConfig``.
+    """
+    kv_cache_config = KVCacheConfig(allow_kv_head_replication=True)
+    # 4 KV heads over 8 devices would normally fail the divisibility check; the
+    # config flag relaxes it so each head replicates across 2 devices.
+    params = kv_cache_config.to_params(
+        dtype=DType.bfloat16,
+        n_kv_heads=4,
+        head_dim=128,
+        num_layers=1,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
+    )
+    assert params.n_kv_heads_per_device == 1
+
+
+def test_to_params_replication_disabled_by_default() -> None:
+    """Without the config flag, wide TP still raises the strict error."""
+    kv_cache_config = KVCacheConfig()
+    with pytest.raises(
+        ValueError,
+        match=r"Number of KV heads \(4\) must be divisible by the tensor parallel degree \(8\)",
+    ):
+        kv_cache_config.to_params(
+            dtype=DType.bfloat16,
+            n_kv_heads=4,
+            head_dim=128,
+            num_layers=1,
+            devices=[DeviceRef.GPU(i) for i in range(8)],
+        )
+
+
+def test_to_params_explicit_arg_overrides_config() -> None:
+    """An explicit allow_kv_head_replication argument wins over the config."""
+    kv_cache_config = KVCacheConfig(allow_kv_head_replication=False)
+    params = kv_cache_config.to_params(
+        dtype=DType.bfloat16,
+        n_kv_heads=4,
+        head_dim=128,
+        num_layers=1,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
+        allow_kv_head_replication=True,
+    )
+    assert params.n_kv_heads_per_device == 1

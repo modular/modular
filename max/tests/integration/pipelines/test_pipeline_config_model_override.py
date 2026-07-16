@@ -11,22 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Regression test for ``--model-override`` revision sequencing.
+"""Regression tests for CLI overrides reaching ``MAXModelConfig`` construction.
 
-Under ``HF_HUB_OFFLINE`` the cache is keyed by revision, so any HF lookup
-that uses the dataclass-default revision ``"main"`` will fail when only
-the pinned SHA is pre-downloaded. ``main.*`` and ``draft.*`` overrides
-must therefore reach ``MAXModelConfig`` construction before
+``test_main_override_revision_used_for_offline_cache_lookup``: under
+``HF_HUB_OFFLINE`` the cache is keyed by revision, so any HF lookup that
+uses the dataclass-default revision ``"main"`` will fail when only the
+pinned SHA is pre-downloaded. ``main.*`` and ``draft.*`` overrides must
+therefore reach ``MAXModelConfig`` construction before
 ``HuggingFaceRepo.__post_init__`` resolves the offline cache.
 """
 
 from unittest.mock import patch
 
 from max.pipelines import PipelineConfig
+from max.pipelines.lib import MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 
-GENERATE_LOCAL_PATH = (
-    "max.pipelines.modeling.weights.hf_utils.generate_local_model_path"
-)
+GENERATE_LOCAL_PATH = "max.pipelines.weights.hf_utils.generate_local_model_path"
 HF_OFFLINE = "huggingface_hub.constants.HF_HUB_OFFLINE"
 
 PINNED_SHA = "abcdef123"
@@ -44,7 +45,7 @@ def test_main_override_revision_used_for_offline_cache_lookup() -> None:
         # from the fake path; what we care about is which revisions were
         # asked for during HuggingFaceRepo construction.
         try:
-            PipelineConfig(  # type: ignore[call-arg]
+            PipelineConfig.from_flat_kwargs(
                 model_path="some/repo",
                 model_override=[
                     f"main.huggingface_model_revision={PINNED_SHA}",
@@ -58,3 +59,37 @@ def test_main_override_revision_used_for_offline_cache_lookup() -> None:
         f"Expected every offline lookup to use the pinned SHA "
         f"{PINNED_SHA!r}; got {revisions_seen}"
     )
+
+
+def test_data_parallel_degree_cli_flag_reaches_config() -> None:
+    with (
+        patch(HF_OFFLINE, True),
+        patch(
+            GENERATE_LOCAL_PATH,
+            return_value="/fake/cache/some/repo",
+        ),
+    ):
+        config = PipelineConfig.from_flat_kwargs(
+            model_path="some/repo",
+            data_parallel_degree=4,
+        )
+
+    assert config.model is not None
+    assert config.model.data_parallel_degree == 4
+
+
+def test_data_parallel_degree_cli_override_of_default_value_applied() -> None:
+    # data_parallel_degree defaults to 1, so this exercises the merge into an
+    # already-populated "main" model (e.g. loaded via --config-file): the
+    # explicit override must win even though it matches the field default,
+    # rather than being mistaken for "flag never passed".
+    manifest = ModelManifest(
+        {"main": MAXModelConfig(model_path="some/repo", data_parallel_degree=8)}
+    )
+
+    config = PipelineConfig.from_flat_kwargs(
+        models=manifest, data_parallel_degree=1
+    )
+
+    assert config.model is not None
+    assert config.model.data_parallel_degree == 1

@@ -23,14 +23,44 @@ A ``mode(...)`` block selects the solver for the ops inside it:
 
 .. code-block:: python
 
-    from max.experimental.functional import matmul, relu
-    from max.experimental.sharding import GreedyReshard, mode
+    import numpy as np
+    from max.driver import CPU
+    from max.dtype import DType
+    from max.experimental.functional import full, matmul, relu, transfer_to
+    from max.experimental.sharding import (
+        DeviceMesh,
+        GreedyReshard,
+        PlacementMapping,
+        Sharded,
+        mode,
+    )
+
+    # A simulated two-device mesh (both slots are the same CPU).
+    mesh = DeviceMesh(devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",))
+
+    # ``a`` is column-sharded, ``b`` is row-sharded: a @ b contracts the
+    # sharded dimension, so the picker resolves the result back to replicated.
+    a = transfer_to(
+        full([4, 8], 1.0, dtype=DType.float32, device=mesh.devices[0]),
+        PlacementMapping(mesh, (Sharded(1),)),
+    )
+    b = transfer_to(
+        full([8, 2], 1.0, dtype=DType.float32, device=mesh.devices[0]),
+        PlacementMapping(mesh, (Sharded(0),)),
+    )
 
     with mode(GreedyReshard(on_reshard="warn")):
         y = relu(matmul(a, b))
 
+.. invisible-code-block: python
+
+    import numpy as np
+
+    # full(4, 8) @ full(8, 2) = 8 * ones(4, 2), then relu is a no-op (positive).
+    assert np.allclose(y.to_numpy(), np.full((4, 2), 8.0))
+
 Shipped solvers: :class:`GreedyReshard` (cheapest feasible action),
-:class:`NoReshard` (first feasible, prefers passthrough), and
+:class:`NoReshard` (passthrough only; errors on any reshard), and
 :class:`PartialsOnly` (only ``Partial -> Replicated`` resolutions).
 
 This module avoids the overloaded word "rank". A *device* is one accelerator;
@@ -46,43 +76,28 @@ from .action import (
     PerShard,
 )
 from .cost import (
-    FeasibilityContext,
     P,
     R,
     build_action_set,
     force_replicated_action_set,
-    transition_cost,
 )
 from .mappings import (
     ConversionError,
     DeviceMapping,
     NamedMapping,
     PlacementMapping,
-    SpecEntry,
-    is_fully_replicated,
 )
-from .mesh import DeviceMesh, MeshContext, get_active_mesh
+from .mesh import DeviceMesh, get_active_mesh, mesh_context
 
 # Re-export so ``sharding.mode(...)`` resolves to the function, not the submodule.
-from .mode import ShardingError, current_solver, isolated_solver, mode
-from .per_shard_dim import (
-    PerShardDim,
-    cell_at,
-    global_dim,
-    global_shape,
-    is_one,
-    is_per_shard_dim,
-    make_per_shard_dim,
-    shape_at,
-)
+from .mode import ShardingError, isolated_solver, mode
+from .per_shard_dim import PerShardDim
 from .picker import (
     GreedyReshard,
     NoReshard,
     PartialsOnly,
     ReshardBehavior,
     Solver,
-    cheapest_action,
-    enumerate_feasible_actions,
 )
 from .placements import (
     Collective,
@@ -91,9 +106,6 @@ from .placements import (
     ReduceOp,
     Replicated,
     Sharded,
-    _shard_sizes_along_axis,
-    local_shard_shape_from_global,
-    shard_shape,
 )
 from .rules import *
 from .types import (
@@ -114,9 +126,7 @@ __all__ = [
     "DistributedBufferType",
     "DistributedTensorType",
     "DistributedType",
-    "FeasibilityContext",
     "GreedyReshard",
-    "MeshContext",
     "NamedMapping",
     "NoReshard",
     "P",
@@ -133,26 +143,11 @@ __all__ = [
     "Sharded",
     "ShardingError",
     "Solver",
-    "SpecEntry",
     "TensorLayout",
-    "_shard_sizes_along_axis",
     "build_action_set",
-    "cell_at",
-    "cheapest_action",
-    "current_solver",
-    "enumerate_feasible_actions",
     "force_replicated_action_set",
     "get_active_mesh",
-    "global_dim",
-    "global_shape",
-    "is_fully_replicated",
-    "is_one",
-    "is_per_shard_dim",
     "isolated_solver",
-    "local_shard_shape_from_global",
-    "make_per_shard_dim",
+    "mesh_context",
     "mode",
-    "shape_at",
-    "shard_shape",
-    "transition_cost",
 ]

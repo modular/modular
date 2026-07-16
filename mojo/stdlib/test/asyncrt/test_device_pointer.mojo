@@ -16,10 +16,16 @@
 These tests exercise the host-side offset math on `DevicePointer` without
 touching the device. They run against any `DeviceContext` backend, including
 `api="cpu"`, so no GPU is required.
+
+A `DevicePointer` keeps its `DeviceBuffer` alive for as long as the pointer is
+live, so tests can use a pointer freely after the buffer's last *textual* use
+without manually extending the buffer's lifetime;
+`test_pointer_outlives_buffer_last_use` is the regression guard for that
+property.
 """
 
 from asyncrt_test_utils import create_test_device_context
-from std.gpu.host import DeviceContext, DevicePointer
+from std.gpu.host import DevicePointer
 from std.testing import (
     TestSuite,
     assert_equal,
@@ -32,11 +38,6 @@ from std.testing import (
 comptime _LENGTH = 64
 
 
-def _make_pointer(ctx: DeviceContext) raises -> DevicePointer[DType.float32]:
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
-    return buf.device_ptr()
-
-
 # ===-----------------------------------------------------------------------===#
 # Acquisition
 # ===-----------------------------------------------------------------------===#
@@ -44,7 +45,8 @@ def _make_pointer(ctx: DeviceContext) raises -> DevicePointer[DType.float32]:
 
 def test_device_ptr_starts_at_offset_zero() raises:
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     assert_equal(p.offset(), 0)
 
 
@@ -98,13 +100,37 @@ def test_init_offset_past_end_raises() raises:
 
 
 # ===-----------------------------------------------------------------------===#
+# Lifetime
+# ===-----------------------------------------------------------------------===#
+
+
+def test_pointer_outlives_buffer_last_use() raises:
+    """Regression guard: a `DevicePointer` keeps its `DeviceBuffer` alive.
+
+    `buf`'s last *textual* use is the `device_ptr()` call, yet the pointer is
+    dereferenced afterwards (`p + 8` reads the buffer size, `unsafe_ptr()` reads
+    its address). The borrow checker must extend `buf`'s lifetime past these
+    uses; otherwise ASAP destruction would free `buf` while the pointer is
+    still in use, producing a heap-use-after-free (caught by ASAN).
+    """
+    var ctx = create_test_device_context()
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
+    var q = p + 8
+    assert_equal(q.offset(), 8)
+    assert_equal(len(p.buffer()), _LENGTH)
+    assert_true(p.unsafe_ptr() == buf.unsafe_ptr().as_unsafe_any_origin())
+
+
+# ===-----------------------------------------------------------------------===#
 # Forward arithmetic: __add__
 # ===-----------------------------------------------------------------------===#
 
 
 def test_add_advances_offset() raises:
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     var q = p + 8
     assert_equal(q.offset(), 8)
     # Original is unchanged.
@@ -113,21 +139,24 @@ def test_add_advances_offset() raises:
 
 def test_add_zero_is_noop() raises:
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     var q = p + 0
     assert_equal(q.offset(), 0)
 
 
 def test_add_chained() raises:
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     var q = (p + 4) + 4
     assert_equal(q.offset(), 8)
 
 
 def test_add_negative_offsets_backward() raises:
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     # Move forward, then add a negative.
     var q = p + 10
     var r = q + -3
@@ -136,14 +165,16 @@ def test_add_negative_offsets_backward() raises:
 
 def test_add_below_zero_raises() raises:
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     with assert_raises(contains="invalid offset"):
         _ = p + -1
 
 
 def test_add_past_end_raises() raises:
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     with assert_raises(contains="invalid offset"):
         _ = p + _LENGTH
 
@@ -155,7 +186,8 @@ def test_add_past_end_raises() raises:
 
 def test_sub_decreases_offset() raises:
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     var q = p + 16
     var r = q - 4
     assert_equal(r.offset(), 12)
@@ -163,7 +195,8 @@ def test_sub_decreases_offset() raises:
 
 def test_sub_zero_is_noop() raises:
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     var q = (p + 8) - 0
     assert_equal(q.offset(), 8)
 
@@ -171,7 +204,8 @@ def test_sub_zero_is_noop() raises:
 def test_sub_round_trip() raises:
     """`(p + n) - n` returns to the original offset."""
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     var q = (p + 16) - 16
     assert_equal(q.offset(), p.offset())
 
@@ -179,14 +213,16 @@ def test_sub_round_trip() raises:
 def test_sub_negative_advances_forward() raises:
     """`p - (-n)` is equivalent to `p + n`."""
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     var q = p - -8
     assert_equal(q.offset(), 8)
 
 
 def test_sub_below_zero_raises() raises:
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     with assert_raises(contains="invalid offset"):
         _ = p - 1
 
@@ -194,7 +230,8 @@ def test_sub_below_zero_raises() raises:
 def test_sub_negative_past_end_raises() raises:
     """`p - (-n)` is equivalent to `p + n`."""
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     with assert_raises(contains="invalid offset"):
         var q = p - -_LENGTH
 
@@ -206,14 +243,16 @@ def test_sub_negative_past_end_raises() raises:
 
 def test_iadd_mutates_offset() raises:
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     p += 12
     assert_equal(p.offset(), 12)
 
 
 def test_isub_mutates_offset() raises:
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     p += 20
     p -= 5
     assert_equal(p.offset(), 15)
@@ -221,7 +260,8 @@ def test_isub_mutates_offset() raises:
 
 def test_iadd_past_end_raises() raises:
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     with assert_raises(contains="invalid offset"):
         p += _LENGTH + 1
     # After a failed in-place op, offset should be unchanged.
@@ -230,7 +270,8 @@ def test_iadd_past_end_raises() raises:
 
 def test_isub_below_zero_raises() raises:
     var ctx = create_test_device_context()
-    var p = _make_pointer(ctx)
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr()
     p += 4
     with assert_raises(contains="invalid offset"):
         p -= 5
@@ -271,6 +312,29 @@ def test_equality_different_buffer() raises:
     assert_true(a != b)
 
 
+def test_equality_buffer_copies_same_allocation() raises:
+    """Pointers from two `DeviceBuffer` copies of one allocation compare equal.
+
+    `DeviceBuffer` is refcounted: a copy names the *same* device allocation but
+    is a distinct host object at a different address. Equality and ordering are
+    defined by the underlying C++ handle, so pointers borrowed from the two
+    copies compare equal and order without raising. This guards against
+    regressing to host-object-address identity.
+    """
+    var ctx = create_test_device_context()
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf_copy = buf  # Same handle, distinct host object.
+    var p = buf.device_ptr()
+    var q = buf_copy.device_ptr()
+    assert_true(p == q)
+    assert_false(p != q)
+    # Ordering across the copies shares the allocation, so it must not raise.
+    assert_true(p <= q)
+    assert_true(p >= q)
+    assert_false(p < q)
+    assert_false(p > q)
+
+
 def test_ordering_same_buffer() raises:
     var ctx = create_test_device_context()
     var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
@@ -309,7 +373,7 @@ def test_unsafe_ptr_matches_buffer_at_offset_zero() raises:
     var ctx = create_test_device_context()
     var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
     var p = buf.device_ptr()
-    assert_true(p.unsafe_ptr() == buf.unsafe_ptr())
+    assert_equal(p.unsafe_ptr(), buf.unsafe_ptr().as_unsafe_any_origin())
 
 
 def test_unsafe_ptr_advances_by_offset() raises:

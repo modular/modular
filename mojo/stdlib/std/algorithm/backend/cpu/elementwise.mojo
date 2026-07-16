@@ -34,7 +34,7 @@ def _elementwise_impl_cpu[
     simd_width: Int,
     FuncType: def[width: Int, alignment: Int = 1](Coord) -> None,
     *,
-    trace_description: StaticString = "",
+    trace_description: StaticString,
 ](func: FuncType, *, shape: Coord, ctx: Optional[DeviceContext] = None,):
     """Dispatches elementwise execution on CPU to the 1D or ND implementation
     based on the rank of the input shape.
@@ -76,7 +76,7 @@ def _elementwise_impl_cpu_1d[
 
     comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
-    var problem_size = SIMDSize(shape.product())
+    var problem_size = shape.product()
 
     var num_workers = _get_num_workers(problem_size, ctx=ctx)
     var chunk_size = ceildiv(problem_size, num_workers)
@@ -132,7 +132,7 @@ def _elementwise_impl_cpu_nd[
 
     # Compute the number of workers to allocate based on ALL work, not just
     # the dimensions we split across.
-    var total_size = SIMDSize(shape.product())
+    var total_size = shape.product()
 
     var num_workers = _get_num_workers(total_size, ctx=ctx)
     var parallelism_size = total_size // SIMDSize(shape[rank - 1].value())

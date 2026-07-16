@@ -32,7 +32,7 @@ from max.pipelines.modeling.base.component_model import ComponentModel
 from max.pipelines.modeling.dataprocessing.causal_attention_mask import (
     causal_attention_mask_with_token_mask,
 )
-from max.pipelines.modeling.weights.weight_loading import (
+from max.pipelines.weights.weight_loading import (
     auto_cast_weights_from_env,
 )
 

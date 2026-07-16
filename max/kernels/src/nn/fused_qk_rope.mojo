@@ -28,6 +28,7 @@ from layout import (
     RowMajorLayout,
     TensorLayout,
     TileTensor,
+    coord_to_index_list,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
 
@@ -238,21 +239,22 @@ def fused_qk_rope[
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
+    # TODO: This elementwise body captures a KV cache view (`CacheType`),
+    # which fails codegen when stored into a unified closure ('pop.store'
+    # pointer element-type verification). Keep using the deprecated
+    # parameter-closure overload until cache captures in unified closures are
+    # supported.
     @always_inline
     @parameter
     @__copy_capture(k_cache, valid_lengths)
-    def rope_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
-        comptime assert rank == 4, "Invalid rank passed to rope kernel"
-        comptime assert freqs_cis.flat_rank >= 2
+    def rope_fn[width: Int, alignment: Int = 1](idx: Coord):
+        comptime assert idx.rank == 4, "Invalid rank passed to rope kernel"
 
         comptime if width == 1:
             return
         else:
-            var idx = rebind[IndexList[4]](idx_arg)
-            var bs_idx = idx[0]
-            var seq_idx = idx[1]
+            var bs_idx = Int(idx[0].value())
+            var seq_idx = Int(idx[1].value())
 
             # Check if this position is within the valid length for this batch
             var valid_len = Int(valid_lengths[bs_idx])
@@ -262,8 +264,8 @@ def fused_qk_rope[
             # post_seq_idx: sum of start_pos (cache_lengths[batch_idx]) and
             # seq_idx (idx[1]).
             var post_seq_idx = k_cache.cache_length(bs_idx) + seq_idx
-            var head_idx = idx[2]
-            var head_dim_idx = idx[3]
+            var head_idx = Int(idx[2].value())
+            var head_dim_idx = Int(idx[3].value())
 
             # WARN assumes head_size % simd_width == 0
             # guarded by constrained statement below
@@ -277,7 +279,11 @@ def fused_qk_rope[
 
             if is_q_proj:
                 rope_q_proj[interleaved=interleaved, alignment=_alignment](
-                    q_proj, output, idx, f_c_temp, head_size
+                    q_proj,
+                    output,
+                    coord_to_index_list(idx),
+                    f_c_temp,
+                    head_size,
                 )
             else:
                 head_idx -= num_q_heads
@@ -291,7 +297,7 @@ def fused_qk_rope[
                     head_size,
                 )
 
-    var launch_shape = IndexList[4](
+    var launch_shape = (
         batch_size,
         new_seq_len,
         num_q_heads + num_k_heads,  # concat q and k along head dim
@@ -304,14 +310,12 @@ def fused_qk_rope[
     comptime kernel_simd_width = gcd(target_simd_width, kv_params.head_size)
     comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
-    comptime if is_cpu[target]():
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context
-        )
-    else:
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context
-        )
+    elementwise[
+        func=rope_fn,
+        simd_width=kernel_simd_width,
+        target=target,
+        _trace_description="fused_qk_rope",
+    ](launch_shape, context)
 
 
 @always_inline
@@ -389,21 +393,21 @@ def fused_qk_rope_ragged[
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
+    # TODO: This elementwise body captures a KV cache view (`CacheType`),
+    # which fails codegen when stored into a unified closure ('pop.store'
+    # pointer element-type verification). Keep using the deprecated
+    # parameter-closure overload until cache captures in unified closures are
+    # supported.
     @always_inline
     @parameter
     @__copy_capture(k_cache, batch_size, input_row_offsets, position_ids)
-    def rope_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
-        comptime assert rank == 3, "Invalid rank passed to rope kernel"
-        comptime assert freqs_cis.flat_rank >= 2
+    def rope_fn[width: Int, alignment: Int = 1](idx: Coord):
+        comptime assert idx.rank == 3, "Invalid rank passed to rope kernel"
 
         comptime if width == 1:
             return
         else:
-            var idx = rebind[IndexList[3]](idx_arg)
-
-            var global_token_idx = idx[0]
+            var global_token_idx = Int(idx[0].value())
 
             var batch_idx: Int = get_batch_from_row_offsets(
                 input_row_offsets, global_token_idx
@@ -411,8 +415,8 @@ def fused_qk_rope_ragged[
             var token_idx = Int(
                 UInt32(global_token_idx) - input_row_offsets[batch_idx]
             )
-            var head_idx = idx[1]
-            var head_dim_idx = idx[2]
+            var head_idx = Int(idx[1].value())
+            var head_dim_idx = Int(idx[2].value())
 
             # Use position_ids if provided, otherwise fall back to cache calculation
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
@@ -472,7 +476,13 @@ def fused_qk_rope_ragged[
                     has_nope_prefix=has_nope_prefix,
                     rope_dim=rope_dim,
                     alignment=_alignment,
-                ](q_proj, output, idx, f_c_temp, q_head_size)
+                ](
+                    q_proj,
+                    output,
+                    coord_to_index_list(idx),
+                    f_c_temp,
+                    q_head_size,
+                )
             else:
                 comptime if has_nope_prefix:
                     if head_dim_idx >= rope_dim:
@@ -498,7 +508,7 @@ def fused_qk_rope_ragged[
                     k_head_size,
                 )
 
-    var launch_shape = IndexList[3](
+    var launch_shape = (
         Int(q_proj.dim[0]()),
         num_q_heads + num_k_heads,  # concat q and k along head dim
         q_head_size,
@@ -517,11 +527,9 @@ def fused_qk_rope_ragged[
 
     comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
-    comptime if is_cpu[target]():
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context
-        )
-    else:
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context
-        )
+    elementwise[
+        func=rope_fn,
+        simd_width=kernel_simd_width,
+        target=target,
+        _trace_description="fused_qk_rope_ragged",
+    ](launch_shape, context)

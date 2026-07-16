@@ -13,11 +13,12 @@
 """Architecture registration for Bert sentence transformer."""
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import BertBatchProcessor
 from .model import BertPipelineModel
 from .model_config import BertModelConfig
 from .tokenizer import BertTokenizer
@@ -43,4 +44,5 @@ bert_arch = SupportedArchitecture(
     },
     required_arguments={"enable_prefix_caching": False},
     config=BertModelConfig,
+    batching=BertBatchProcessor,
 )

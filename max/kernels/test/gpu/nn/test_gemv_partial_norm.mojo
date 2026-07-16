@@ -34,13 +34,13 @@ from nn.gemv_partial_norm import gemv_and_partial_norm
 def _host_reference[
     c_type: DType, a_type: DType
 ](
-    y_ref_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    gamma_ptr: UnsafePointer[Scalar[a_type], MutAnyOrigin],
-    normed_ref: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    unnormed_ref: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    y_ref_ptr: UnsafePointer[mut=False, Scalar[c_type], _],
+    gamma_ptr: UnsafePointer[mut=False, Scalar[a_type], _],
+    normed_ref: UnsafePointer[mut=True, Scalar[c_type], _],
+    unnormed_ref: UnsafePointer[mut=True, Scalar[c_type], _],
     n: Int,
     n_normed: Int,
-    eps: Scalar[a_type],
+    eps: Float32,
 ):
     """Reference partial RMS norm on a [1, n] row."""
     var n_unnormed = n - n_normed
@@ -132,7 +132,7 @@ def test_gemv_partial_norm[
     ctx.enqueue_copy(b_dev, b_host_ptr)
     ctx.enqueue_copy(gamma_dev, gamma_host_ptr)
 
-    var eps = Scalar[a_type](0.001)
+    var eps = Float32(0.001)
 
     vendor_blas.matmul(
         ctx,

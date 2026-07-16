@@ -12,12 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 # Reuse the tokenizer from the V2 implementation.
 from ..idefics3.tokenizer import Idefics3Tokenizer
+from .batch_processor import Idefics3ModuleV3BatchProcessor
 from .model import Idefics3Model
 from .model_config import Idefics3Config
 
@@ -38,4 +40,8 @@ idefics3_modulev3_arch = SupportedArchitecture(
         "enable_prefix_caching": False,
     },
     config=Idefics3Config,
+    batching=Idefics3ModuleV3BatchProcessor,
+    memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

@@ -27,6 +27,7 @@ from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     KVCacheQuantizationConfig,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
@@ -36,7 +37,7 @@ from test_common.context_utils import create_text_context
 def _make_session_and_kv_manager() -> tuple[Accelerator, PagedKVCacheManager]:
     device = Accelerator()
     session = InferenceSession(devices=[device])
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=64,
@@ -60,14 +61,16 @@ def _allocate_batch(
     for prompt_len in prompt_lens:
         context = create_text_context(np.empty(prompt_len, dtype=np.int64))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch.append(context)
-    return kv_manager.runtime_inputs([batch]).inputs[0]
+    return kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
 
 
 def test_kv_cache_store_ragged_executes() -> None:
     device, kv_manager = _make_session_and_kv_manager()
-    kv_params = kv_manager.cache_params()
+    kv_params = kv_manager.params
+    assert isinstance(kv_params, MHAKVCacheParams)
+    assert isinstance(kv_params, KVCacheParams)
 
     prompt_lens = [33, 66, 1]
     batch_size = len(prompt_lens)
@@ -87,7 +90,8 @@ def test_kv_cache_store_ragged_executes() -> None:
     blocks_type = kv_symbolic_inputs.kv_blocks
     cache_lengths_type = kv_symbolic_inputs.cache_lengths
     lookup_table_type = kv_symbolic_inputs.lookup_table
-    max_lengths_type = kv_symbolic_inputs.max_lengths
+    max_prompt_length_type = kv_symbolic_inputs.max_prompt_length
+    max_cache_length_type = kv_symbolic_inputs.max_cache_length
 
     with Graph(
         "kv_cache_store_ragged",
@@ -97,7 +101,8 @@ def test_kv_cache_store_ragged_executes() -> None:
             blocks_type,
             cache_lengths_type,
             lookup_table_type,
-            max_lengths_type,
+            max_prompt_length_type,
+            max_cache_length_type,
         ],
     ) as graph:
         (
@@ -106,13 +111,15 @@ def test_kv_cache_store_ragged_executes() -> None:
             blocks_in,
             cache_lengths_in,
             lookup_table_in,
-            max_lengths_in,
+            max_prompt_length_in,
+            max_cache_length_in,
         ) = graph.inputs
         kv_collection = PagedCacheValues(
             blocks_in.buffer,
             cache_lengths_in.tensor,
             lookup_table_in.tensor,
-            max_lengths_in.tensor,
+            max_prompt_length_in.tensor,
+            max_cache_length_in.tensor,
         )
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
         store_k_cache_ragged(
@@ -144,7 +151,8 @@ def test_kv_cache_store_ragged_executes() -> None:
         runtime_inputs.kv_blocks,
         runtime_inputs.cache_lengths,
         runtime_inputs.lookup_table,
-        runtime_inputs.max_lengths,
+        runtime_inputs.max_prompt_length,
+        runtime_inputs.max_cache_length,
     )
 
     assert runtime_inputs.kv_blocks.to_numpy().any()
@@ -152,7 +160,9 @@ def test_kv_cache_store_ragged_executes() -> None:
 
 def test_kv_cache_store_padded_executes() -> None:
     device, kv_manager = _make_session_and_kv_manager()
-    kv_params = kv_manager.cache_params()
+    kv_params = kv_manager.params
+    assert isinstance(kv_params, MHAKVCacheParams)
+    assert isinstance(kv_params, KVCacheParams)
 
     valid_lengths = [33, 66, 1]
     batch_size = len(valid_lengths)
@@ -172,7 +182,8 @@ def test_kv_cache_store_padded_executes() -> None:
     blocks_type = kv_symbolic_inputs.kv_blocks
     cache_lengths_type = kv_symbolic_inputs.cache_lengths
     lookup_table_type = kv_symbolic_inputs.lookup_table
-    max_lengths_type = kv_symbolic_inputs.max_lengths
+    max_prompt_length_type = kv_symbolic_inputs.max_prompt_length
+    max_cache_length_type = kv_symbolic_inputs.max_cache_length
 
     with Graph(
         "kv_cache_store_padded",
@@ -182,7 +193,8 @@ def test_kv_cache_store_padded_executes() -> None:
             blocks_type,
             cache_lengths_type,
             lookup_table_type,
-            max_lengths_type,
+            max_prompt_length_type,
+            max_cache_length_type,
         ],
     ) as graph:
         (
@@ -191,13 +203,15 @@ def test_kv_cache_store_padded_executes() -> None:
             blocks_in,
             cache_lengths_in,
             lookup_table_in,
-            max_lengths_in,
+            max_prompt_length_in,
+            max_cache_length_in,
         ) = graph.inputs
         kv_collection = PagedCacheValues(
             blocks_in.buffer,
             cache_lengths_in.tensor,
             lookup_table_in.tensor,
-            max_lengths_in.tensor,
+            max_prompt_length_in.tensor,
+            max_cache_length_in.tensor,
         )
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
         store_k_cache_padded(
@@ -226,7 +240,8 @@ def test_kv_cache_store_padded_executes() -> None:
         runtime_inputs.kv_blocks,
         runtime_inputs.cache_lengths,
         runtime_inputs.lookup_table,
-        runtime_inputs.max_lengths,
+        runtime_inputs.max_prompt_length,
+        runtime_inputs.max_cache_length,
     )
 
     assert runtime_inputs.kv_blocks.to_numpy().any()
@@ -238,14 +253,13 @@ def _make_session_and_kv_manager_fp8() -> tuple[
     """Create session and KV manager with FP8 quantized cache (includes kv_scales)."""
     device = Accelerator()
     session = InferenceSession(devices=[device])
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float8_e4m3fn,
         n_kv_heads=1,
         head_dim=128,
         num_layers=1,
         page_size=128,
         devices=[DeviceRef.GPU()],
-        is_mla=False,
         kvcache_quant_config=KVCacheQuantizationConfig(
             scale_dtype=DType.float32,
             quantization_granularity=128,
@@ -263,7 +277,9 @@ def _make_session_and_kv_manager_fp8() -> tuple[
 def test_store_k_scale_cache_executes() -> None:
     """Test that store_k_scale_cache kernel executes and writes to kv_scales buffer."""
     device, kv_manager = _make_session_and_kv_manager_fp8()
-    kv_params = kv_manager.cache_params()
+    kv_params = kv_manager.params
+    assert isinstance(kv_params, MHAKVCacheParams)
+    assert isinstance(kv_params, KVCacheParams)
 
     prompt_lens = [33, 66, 1]
     batch_size = len(prompt_lens)
@@ -301,14 +317,16 @@ def test_store_k_scale_cache_executes() -> None:
         blocks_in = graph.inputs[2].buffer
         cache_lengths_in = graph.inputs[3].tensor
         lookup_table_in = graph.inputs[4].tensor
-        max_lengths_in = graph.inputs[5].tensor
-        kv_scales_in = graph.inputs[6].buffer if len(graph.inputs) > 6 else None
+        max_prompt_length_in = graph.inputs[5].tensor
+        max_cache_length_in = graph.inputs[6].tensor
+        kv_scales_in = graph.inputs[7].buffer if len(graph.inputs) > 7 else None
 
         kv_collection = PagedCacheValues(
             kv_blocks=blocks_in,
             cache_lengths=cache_lengths_in,
             lookup_table=lookup_table_in,
-            max_lengths=max_lengths_in,
+            max_prompt_length=max_prompt_length_in,
+            max_cache_length=max_cache_length_in,
             kv_scales=kv_scales_in,
         )
 

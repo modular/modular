@@ -39,7 +39,7 @@ struct ConstantMemoryMapping(TrivialRegisterPassable):
     kernel references to constant memory symbols.
     """
 
-    var ptr: OpaquePointer[MutExternalOrigin]
+    var ptr: OpaquePointer[MutUntrackedOrigin]
     """Pointer to the host memory location that will be mapped to device constant memory.
 
     This raw pointer represents the starting address of the memory region that will be
