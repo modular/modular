@@ -687,25 +687,11 @@ interface; the field holds the actual MLIR representation.
 # Bool wraps a single MLIR bit. The struct provides Mojo-level
 # operators; the i1 field holds the actual hardware value.
 struct Bool:
-    var _mlir_value: __mlir_type.i1  # 1-bit integer: true or false
+    var _mlir_value: __mlir_type.`!kgen.scalar<bool>`
+                     # 1-bit integer: true or false
 
-    def __init__(out self, value: __mlir_type.i1):
+    def __init__(out self, value: __mlir_type.`!kgen.scalar<bool>`):
         self._mlir_value = value     # Store the raw bit directly
-```
-
-`Int` wraps the machine-width index type:
-
-```mojo
-# Int wraps the machine-width index type. Two constructors:
-# default (zero) and from a raw MLIR value.
-struct Int:
-    var _mlir_value: __mlir_type.index  # Machine-width signed integer
-
-    def __init__(out self):
-        self._mlir_value = __mlir_attr.`0 : index`  # Default to zero
-
-    def __init__(out self, *, mlir_value: __mlir_type.index):
-        self._mlir_value = mlir_value  # Wrap an existing MLIR value
 ```
 
 When the storage type depends on struct parameters, define it

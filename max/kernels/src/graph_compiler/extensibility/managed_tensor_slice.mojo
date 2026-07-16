@@ -115,29 +115,32 @@ struct IOSpec[mut: Bool, input: IO](TrivialRegisterPassable):
     is an output, input, or mutable input.
 
     ```mojo
-    Input == IOSpec[False, IO.Input]()
-    Output == IOSpec[True, IO.Output]()
-    MutableInput == IOSpec[True, IO.Input]()
-    FusedInput == IOSpec[False, IO.FusedInput]()
-    FusedOutput == IOSpec[True, IO.FusedOutput]()
+    IOSpec.Input == IOSpec[False, IO.Input]()
+    IOSpec.Output == IOSpec[True, IO.Output]()
+    IOSpec.MutableInput == IOSpec[True, IO.Input]()
+    IOSpec.FusedInput == IOSpec[False, IO.FusedInput]()
+    IOSpec.FusedOutput == IOSpec[True, IO.FusedOutput]()
     ```
+
+    These value aliases live as static members of `IOSpec` (rather than as
+    module-level aliases) so that the bare names `Input`/`Output`/`MutableInput`
+    are free for the tensor-argument traits in `tensor_arg_traits.mojo`.
     """
 
-    ...
+    comptime Unknown = IOSpec[True, IO.Unknown]()
 
+    comptime Input = IOSpec[False, IO.Input]()
+    comptime Output = IOSpec[True, IO.Output]()
+    comptime MutableInput = IOSpec[True, IO.Input]()
 
-comptime IOUnknown = IOSpec[True, IO.Unknown]()
+    comptime FusedInput = IOSpec[False, IO.FusedInput]()
+    comptime FusedOutput = IOSpec[True, IO.FusedOutput]()
 
-comptime Input = IOSpec[False, IO.Input]()
-comptime Output = IOSpec[True, IO.Output]()
-comptime MutableInput = IOSpec[True, IO.Input]()
+    comptime _FusedComputeOutput = IOSpec[True, IO._FusedComputeOutput]()
 
-comptime FusedInput = IOSpec[False, IO.FusedInput]()
-comptime FusedOutput = IOSpec[True, IO.FusedOutput]()
-
-comptime _FusedComputeOutput = IOSpec[True, IO._FusedComputeOutput]()
-
-comptime _FusedComputeOutputTile = IOSpec[True, IO._FusedComputeOutputTile]()
+    comptime _FusedComputeOutputTile = IOSpec[
+        True, IO._FusedComputeOutputTile
+    ]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -393,6 +396,28 @@ struct _NoComputeFusionTile(ComputeOutputFusionTile):
         comptime assert (
             False
         ), "compute() not implemented for this ComputeOutputFusionTile"
+
+
+trait ElementwiseFusionTile(TrivialRegisterPassable):
+    """The `TileTensor` variant of `ElementwiseFusion`: a tile-based pure
+    elementwise fusion struct emitted by the graph compiler.
+
+    `compute` fills the driver-provided `dst` tile (which carries the tile
+    layout) and returns it.
+    """
+
+    def compute[
+        dtype: DType,
+        rank: Int,
+        LayoutType: TensorLayout,
+        Copier: TileCopier,
+    ](
+        self,
+        tile_coords: IndexList[rank],
+        copier: Copier,
+        dst: TileTensor[dtype, LayoutType, MutAnyOrigin],
+    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin]:
+        ...
 
 
 # Compile time Tensor information
@@ -959,23 +984,27 @@ def simd_load_from_managed_tensor_slice[
 # ManagedTensorSlice class
 # ===----------------------------------------------------------------------=== #
 
-comptime OutputTensor = ManagedTensorSlice[io_spec=Output, ...]
-comptime InputTensor = ManagedTensorSlice[io_spec=Input, ...]
+comptime OutputTensor = ManagedTensorSlice[io_spec=IOSpec.Output, ...]
+comptime InputTensor = ManagedTensorSlice[io_spec=IOSpec.Input, ...]
 
-comptime _MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput, ...]
-comptime _FusedOutputTensor = ManagedTensorSlice[io_spec=FusedOutput, ...]
-comptime _FusedInputTensor = ManagedTensorSlice[io_spec=FusedInput, ...]
+comptime _MutableInputTensor = ManagedTensorSlice[
+    io_spec=IOSpec.MutableInput, ...
+]
+comptime _FusedOutputTensor = ManagedTensorSlice[
+    io_spec=IOSpec.FusedOutput, ...
+]
+comptime _FusedInputTensor = ManagedTensorSlice[io_spec=IOSpec.FusedInput, ...]
 
 comptime _FusedComputeOutputTensor = ManagedTensorSlice[
-    io_spec=_FusedComputeOutput, ...
+    io_spec=IOSpec._FusedComputeOutput, ...
 ]
 
 comptime _FusedComputeOutputTileTensor = ManagedTensorSlice[
-    io_spec=_FusedComputeOutputTile, ...
+    io_spec=IOSpec._FusedComputeOutputTile, ...
 ]
 
 comptime DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
-    io_spec=IOUnknown,
+    io_spec=IOSpec.Unknown,
     static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
 ]
 
@@ -1885,7 +1914,7 @@ struct ManagedTensorSlice[
         out result: ManagedTensorSlice[
             dtype=Self.dtype,
             rank=Self.rank,
-            io_spec=FusedInput,
+            io_spec=IOSpec.FusedInput,
             static_spec=Self.static_spec.with_input_fusion[F](),
         ],
     ):
@@ -1919,7 +1948,7 @@ struct ManagedTensorSlice[
         out result: ManagedTensorSlice[
             dtype=Self.dtype,
             rank=Self.rank,
-            io_spec=FusedOutput,
+            io_spec=IOSpec.FusedOutput,
             static_spec=Self.static_spec.with_output_fusion[F](),
         ],
     ):
@@ -1950,7 +1979,7 @@ struct ManagedTensorSlice[
         out result: ManagedTensorSlice[
             dtype=Self.dtype,
             rank=Self.rank,
-            io_spec=_FusedComputeOutput,
+            io_spec=IOSpec._FusedComputeOutput,
             static_spec=Self.static_spec.with_output_fusion[F](),
         ],
     ):
@@ -1981,7 +2010,7 @@ struct ManagedTensorSlice[
         out result: ManagedTensorSlice[
             dtype=Self.dtype,
             rank=Self.rank,
-            io_spec=_FusedComputeOutput,
+            io_spec=IOSpec._FusedComputeOutput,
             static_spec=Self.static_spec.with_compute_fusion[F](),
         ],
     ):
@@ -2012,7 +2041,7 @@ struct ManagedTensorSlice[
         out result: ManagedTensorSlice[
             dtype=Self.dtype,
             rank=Self.rank,
-            io_spec=_FusedComputeOutputTile,
+            io_spec=IOSpec._FusedComputeOutputTile,
             static_spec=Self.static_spec.with_compute_fusion_tile[F](),
         ],
     ):
@@ -2126,11 +2155,11 @@ def trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:
 # VariadicTensors
 # ===----------------------------------------------------------------------=== #
 
-comptime InputVariadicTensors = VariadicTensors[io_spec=Input, ...]
-comptime OutputVariadicTensors = VariadicTensors[io_spec=Output, ...]
+comptime InputVariadicTensors = VariadicTensors[io_spec=IOSpec.Input, ...]
+comptime OutputVariadicTensors = VariadicTensors[io_spec=IOSpec.Output, ...]
 
 comptime _MutableInputVariadicTensors = VariadicTensors[
-    io_spec=MutableInput, ...
+    io_spec=IOSpec.MutableInput, ...
 ]
 
 
@@ -2319,7 +2348,7 @@ struct _FusedInputVariadicTensors[
     ](
         self,
         out result: ManagedTensorSlice[
-            io_spec=FusedInput,
+            io_spec=IOSpec.FusedInput,
             static_spec=Self.static_specs[index].with_input_fusion[
                 Self.FusionTypes[index]
             ](),
@@ -2409,7 +2438,7 @@ struct _FusedOutputVariadicTensors[
     ](
         self,
         out result: ManagedTensorSlice[
-            io_spec=FusedOutput,
+            io_spec=IOSpec.FusedOutput,
             static_spec=Self.static_specs[index].with_output_fusion[
                 Self.FusionTypes[index]
             ](),
@@ -2472,6 +2501,26 @@ def get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
         return simd_width_of[dtype, target=get_gpu_target()]()
 
     return simd_width_of[dtype]()
+
+
+@doc_hidden
+def get_kernel_tile_shape[dtype: DType, target: StaticString]() -> IndexList[2]:
+    """Get the 2D tile shape used by tile-programming-model fusion kernels.
+
+    The tile analog of `get_kernel_simd_width`: returns the `(rows, cols)` of
+    the register / on-chip tile a tile-based kernel (e.g. `Add.elementwise` on a
+    `TileTensor`) operates on for `target`. It is returned as an `IndexList[2]`
+    — the same lightweight, comptime-materializable shape descriptor used for
+    tensor shapes elsewhere in this file — so a driver can splat it into e.g.
+    `row_major[s[0], s[1]]()`.
+
+    TODO(GEX-3905): currently hardcoded for CPU/GPU, needs to be extended to
+    derive from the target device.
+    """
+    comptime if _is_gpu[target]():
+        return IndexList[2](16, 16)
+
+    return IndexList[2](8, 8)
 
 
 def foreach[

@@ -23,16 +23,11 @@ DType support matrix (compiler team, Notion),
 BFloat16 Apple Silicon status (DevRel)
 -->
 
-Mojo represents numbers in two ways. `Int` is a general-purpose integer
-that matches the hardware's native word size. Other numeric types are built
-on `SIMD`: `Float32`, `Int64`, `UInt8`, and even `UInt`.
-
-:::note
-Most types on this page require no imports. They're built into the
-language or included in the Standard Library prelude, which is
-automatically available. The exception is `Float4_e2m1fn`, which
-requires `from std.builtin.simd import Float4_e2m1fn`.
-:::
+Mojo's numeric primitives are built on `SIMD` vectors. Every fixed-width
+numeric type is a one-element `SIMD` called a `Scalar`. The `DType`
+specifies the kind of values stored in a `SIMD` vector, such as `int`,
+`uint`, `float32`, `int64`, or `uint8`. Mojo provides sized and unsized
+integer types, floating-point types, and `Byte` for raw byte data.
 
 ## `SIMD` {#simd}
 
@@ -209,26 +204,20 @@ you assign an `Int`. It's the type behind loop counters, collection
 indices, and `len()` results:
 
 ```mojo
-from std.reflection import reflect
-
 def main():
     var a: Int = 42
-
-    comptime a_type = reflect[type_of(a)]().name()
-
-    print("a:", a_type) # a: Int
+    comptime a_type = reflect[type_of(a)].name()
+    print("a:", a_type) # a: SIMD[DType.int, 1]
 ```
 
-`Int` matches the hardware's native word size. It isn't built on `SIMD`.
-Under the hood it wraps the machine's index register directly, which is why
-it's the natural choice for counting and addressing.
+`Int` matches the hardware's native word size. Under the hood it wraps the
+machine's index register directly, which is why it's the natural choice for
+counting and addressing.
 
 `Int` is 64-bit on most platforms today, but that isn't guaranteed. Code
 that depends on a specific width should use a sized type.
 
-`Int` conforms to
-`Intable`, `Writable`, `Hashable`, `Comparable`, and
-`TrivialRegisterPassable`.
+`Int` is equivalent to `Scalar[DType.int]` and `SIMD[DType.int, 1]`.
 
 ### Integer-type bounds
 
@@ -267,17 +256,12 @@ print(SIMD[DType.int16, 1].MIN)  # -32768
 
 ### `UInt` {#uint}
 
-`UInt` is a machine-width unsigned integer. Unlike `Int`, it's built on
-`SIMD`:
+`UInt` is a machine-width unsigned integer:
 
 ```mojo
-from std.reflection import reflect
-
 def main():
     var b: UInt = 42
-
-    comptime b_type = reflect[type_of(b)]().name()
-
+    comptime b_type = reflect[type_of(b)].name()
     print("b:", b_type) # b: SIMD[DType.uint, 1]
 ```
 
@@ -299,10 +283,6 @@ Each is an alias for a one-element `SIMD`. For example,
 `Int32` is `Scalar[DType.int32]`, which is
 `SIMD[DType.int32, 1]`. The unsigned types follow the same
 pattern.
-
-Because these are built on `SIMD`, they share its traits:
-`TrivialRegisterPassable`, `Hashable`, `Comparable`,
-`Writable`.
 
 **Using sized vs unsized integers**:
 

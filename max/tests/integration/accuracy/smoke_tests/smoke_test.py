@@ -87,20 +87,10 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "deepseek-ai/DeepSeek-R1-0528": "max/pipelines/architectures/deepseekV3/recipes/r1_0528_8x_b200.yaml",
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": "max/pipelines/architectures/deepseekV2_modulev3/recipes/deepseekv2_lite.yaml",
     "deepseek-ai/DeepSeek-V3.1-Terminus": "max/pipelines/architectures/deepseekV3/recipes/terminus_8x_b200.yaml",
-    "google/gemma-4-26B-A4B-it__no_dgc": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_no_dgc.yaml",
-    "google/gemma-4-26B-A4B-it__localkv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_localkv.yaml",
-    "google/gemma-4-26B-A4B-it__tieredkv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tieredkv.yaml",
-    "google/gemma-4-31B-it__fp8kv": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_fp8kv_b200.yaml",
-    "google/gemma-4-31B-it__localkv": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_localkv.yaml",
-    "google/gemma-4-31B-it__mtp": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_mtp.yaml",
-    "google/gemma-4-31B-it__tieredkv": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tieredkv.yaml",
-    "google/gemma-4-31B-it__tp2": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tp2.yaml",
-    "nvidia/Gemma-4-26B-A4B-NVFP4__no_dgc": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_no_dgc.yaml",
-    "nvidia/Gemma-4-26B-A4B-NVFP4__fp8kv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_fp8kv.yaml",
-    "nvidia/Gemma-4-26B-A4B-NVFP4__localkv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_localkv.yaml",
-    "nvidia/Gemma-4-26B-A4B-NVFP4__tieredkv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tieredkv.yaml",
-    "nvidia/Gemma-4-31B-IT-NVFP4__localkv": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_nvfp4_localkv.yaml",
-    "nvidia/Gemma-4-31B-IT-NVFP4__tieredkv": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_nvfp4_tieredkv.yaml",
+    "google/gemma-4-26B-A4B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tuned.yaml",
+    "google/gemma-4-31B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tuned.yaml",
+    "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tuned.yaml",
+    "nvidia/Gemma-4-31B-IT-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_nvfp4_tuned.yaml",
     "google/gemma-3-27b-it__modulev3": "max/pipelines/architectures/gemma3_modulev3/recipes/gemma3_27b.yaml",
     "MiniMaxAI/MiniMax-M2.7": "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_8x_b200.yaml",
     "amd/MiniMax-M2.7-MXFP4": "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_mxfp4_8x_mi355.yaml",
@@ -120,6 +110,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_ar_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tptp_8x_b200.yaml",
+    "nvidia/GLM-5.2-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_2_fp8_tp_ep_8x_b200_mtp.yaml",
     "amd/Kimi-K2.5-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_8x_mi355.yaml",
     "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",
     "nvidia/Kimi-K2.5-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_with_vision_8x_b200.yaml",
@@ -194,18 +185,7 @@ class ServerCommand(NamedTuple):
 def is_vision_model(model: str) -> bool:
     """Check if the model supports vision tasks."""
     model = model.casefold()
-    if any(
-        kw in model
-        for kw in (
-            "no_vision",
-            "__eagle",
-            "__mtp",
-            "__dflash",
-            "_kvconnector",
-            "__internal",
-            "gemma-3-1b",
-        )
-    ):
+    if any(kw in model for kw in ("gemma-3-1b",)):
         return False
     return any(
         kw in model

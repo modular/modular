@@ -18,7 +18,7 @@ from std.collections.string.string import (
 from std.collections.string.string_slice import _to_string_list
 from std.math import isinf, isnan
 
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from std.python import Python, PythonObject
 from std.testing import (
     assert_equal,
@@ -1472,7 +1472,7 @@ def test_resize() raises:
 def test_uninit_ctor() raises:
     var hello_len = "hello".byte_length()
     var s = String(unsafe_uninit_length=hello_len)
-    memcpy(
+    unsafe_memcpy(
         dest=s.unsafe_ptr_mut(),
         src=StaticString("hello").unsafe_ptr(),
         count=hello_len,
@@ -1482,7 +1482,7 @@ def test_uninit_ctor() raises:
     # Resize with uninitialized memory.
     var s2 = String()
     s2.resize(unsafe_uninit_length=hello_len)
-    memcpy(
+    unsafe_memcpy(
         dest=s2.unsafe_ptr_mut(),
         src=StaticString("hello").unsafe_ptr(),
         count=hello_len,
@@ -1493,7 +1493,7 @@ def test_uninit_ctor() raises:
     var s3 = String()
     var long: StaticString = "hellohellohellohellohellohellohellohellohellohel"
     s3.resize(unsafe_uninit_length=long.byte_length())
-    memcpy(
+    unsafe_memcpy(
         dest=s3.unsafe_ptr_mut(),
         src=long.unsafe_ptr(),
         count=long.byte_length(),
@@ -1593,7 +1593,7 @@ def test_sso() raises:
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    comptime expected_capacity = UInt((String.INLINE_CAPACITY * 2 + 7) & ~7)
+    comptime expected_capacity = (String.INLINE_CAPACITY * 2 + 7) & ~7
     assert_equal(s.capacity(), Int(expected_capacity))
     assert_equal(s._is_inline(), False)
 

@@ -26,7 +26,12 @@ from .weight_adapters import convert_safetensor_state_dict
 unified_mtp_gemma4_arch = SupportedArchitecture(
     name="UnifiedMTPGemma4ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["nvidia/Gemma-4-31B-IT-NVFP4", "google/gemma-4-31B-it"],
+    example_repo_ids=[
+        "nvidia/Gemma-4-31B-IT-NVFP4",
+        "google/gemma-4-31B-it",
+        "nvidia/Gemma-4-26B-A4B-NVFP4",
+        "google/gemma-4-26B-A4B-it",
+    ],
     default_encoding="float4_e2m1fnx2",
     supported_encodings={"bfloat16", "float4_e2m1fnx2"},
     pipeline_model=UnifiedMTPGemma4Model,
@@ -51,4 +56,9 @@ unified_mtp_gemma4_arch = SupportedArchitecture(
     # graph) and produces variable-shape image embeddings, so this path does
     # not auto-enable device graph capture (mirrors the non-MTP gemma4 arch).
     supports_device_graph_capture=False,
+    # Pin to llguidance: the gemma4 tool parser emits llguidance-format
+    # grammars the xgrammar StructuralTag matcher rejects (crashes the worker).
+    # The base Gemma4ForConditionalGeneration also pins this.
+    # Override with --structured-output-backend.
+    default_structured_output_backend="llguidance",
 )

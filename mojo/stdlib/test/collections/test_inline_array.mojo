@@ -629,7 +629,7 @@ def test_inline_array_with_explicit_destroy_type() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    arr^.destroy_with(destroy_closure)
+    arr^.deinit_with(destroy_closure)
 
     assert_equal(destroyed, [0, 1, 2])
 

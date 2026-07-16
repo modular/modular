@@ -314,16 +314,16 @@ class KimiToolParser(StructuralTagToolParser):
         response_format_schema: dict[str, Any] | None = None,
         tools: list[dict[str, Any]] | None = None,
         tokenizer: PipelineTokenizer[Any, Any, Any] | None = None,
-        backend: str = "llguidance",
+        backend: str = "xgrammar",
         tool_choice: str | dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> str:
         """Generates a grammar for constrained decoding of Kimi tool calls.
 
-        With ``backend="xgrammar"`` this returns a serialized xgrammar
-        StructuralTag (which constrains each call's arguments to that tool's
-        JSON schema). With the default ``backend="llguidance"`` it returns a
-        Lark grammar whose argument body is freeform.
+        With the default ``backend="xgrammar"`` this returns a serialized
+        xgrammar StructuralTag (which constrains each call's arguments to that
+        tool's JSON schema). With ``backend="llguidance"`` it returns a Lark
+        grammar whose argument body is freeform.
 
         Kimi K2.5 performs "interleaved thinking": a single assistant turn
         can interleave multiple ``<think>...</think>`` reasoning blocks with

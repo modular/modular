@@ -52,7 +52,7 @@ def _insertion_sort[
             (array + j).init_pointee_move_from(array + j - 1)
             j -= 1
 
-        (array + j).init_pointee_move(value^)
+        (array + j).unsafe_write(value^)
 
 
 # put everything that's "<" to the left of pivot

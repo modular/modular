@@ -40,7 +40,7 @@ from std.gpu.primitives.cluster import (
     elect_one_sync,
 )
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx, lane_id, thread_idx
+from std.gpu import block_idx, lane_id
 from std.gpu.memory import (
     AddressSpace,
     async_copy,
@@ -2448,16 +2448,16 @@ struct BlackwellMatmulSM100FallbackKernel[
         var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
         var mma_mbar = tma_mbar + 1
 
-        if thread_idx.x == 0:
+        var elect_one_warp = get_warp_id() == 0
+        var elect_one_thread = elect_one_warp and elect_one_sync()
+        var elect_one_cta = block_rank_in_cluster() % 2 == 0
+
+        if elect_one_thread:
             tma_mbar[0].init()
             mma_mbar[0].init()
 
         var tma_phase: UInt32 = 0
         var mma_phase: UInt32 = 0
-
-        var elect_one_warp = get_warp_id() == 0
-        var elect_one_thread = thread_idx.x == 0
-        var elect_one_cta = block_rank_in_cluster() % 2 == 0
 
         # Allocate tensor memory
         if elect_one_warp:

@@ -1171,10 +1171,7 @@ struct NonEquatable(Copyable):
     pass
 
 
-@explicit_destroy(
-    "You must use .destroy() to consume `CopyableExplicitDestroy`"
-)
-struct CopyableExplicitDestroy(Copyable):
+struct CopyableExplicitDestroy(Copyable, ImplicitlyDeletable where False):
     """Test type that is `Copyable` but must be explicitly destroyed."""
 
     var value: Int
@@ -1246,7 +1243,7 @@ def test_deque_with_explicit_destroy_type() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    deque^.destroy_with(destroy_closure)
+    deque^.deinit_with(destroy_closure)
 
     assert_equal(destroyed, [0, 1, 2])
 
@@ -1268,13 +1265,13 @@ def test_deque_copy_copyable_explicit_destroy_type() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    deque^.destroy_with(destroy_closure)
-    deque_copy^.destroy_with(destroy_closure)
+    deque^.deinit_with(destroy_closure)
+    deque_copy^.deinit_with(destroy_closure)
 
     assert_equal(destroyed, [0, 1, 2, 0, 1, 2])
 
 
-def test_deque_empty_destroy_with() raises:
+def test_deque_empty_deinit_with() raises:
     var deque = Deque[ExplicitDestroy]()
 
     var destroyed = List[Int]()
@@ -1283,7 +1280,7 @@ def test_deque_empty_destroy_with() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    deque^.destroy_with(destroy_closure)
+    deque^.deinit_with(destroy_closure)
 
     assert_equal(len(destroyed), 0)
 

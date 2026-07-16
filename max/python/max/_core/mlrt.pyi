@@ -21,7 +21,7 @@ class AsyncValue(Generic[T]):
     """
     Reference-counted handle to an asynchronous value.
 
-    Maps to `MLRT::AsyncValueRef<T>`, but duck-types like
+    Maps to `AsyncRT::AsyncValueRef<T>`, but duck-types like
     `asyncio.Future`: `done()` / `result()` / `exception()`,
     `set_result()` / `set_exception()`, `add_done_callback()`,
     and `await` are all supported.

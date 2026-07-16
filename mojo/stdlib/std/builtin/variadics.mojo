@@ -114,6 +114,27 @@ struct TypeList[
         idx: The index of the type to access.
     """
 
+    comptime _get_type_at_index[idx: __mlir_type.index] = __mlir_attr[
+        `#kgen.param_list.get<:`,
+        Self._mlir_type,
+        ` `,
+        +Self.values,
+        `, `,
+        idx,
+        `> : `,
+        +Self.Trait,
+    ]
+    """Gets a type at the given raw `index`.
+
+    Unlike `__getitem_param__`, this accepts a raw `!kgen.index` so callers can
+    index without constructing a `SIMDSize` (and thus without pulling in
+    `SIMDSize` comparison machinery). Used by the stdlib plugin router during
+    bootstrap.
+
+    Parameters:
+        idx: The raw `index` of the type to access.
+    """
+
     @implicit
     @always_inline("builtin")
     def __init__(
@@ -409,10 +430,6 @@ struct TypeList[
         this_element: Self.Trait,
     ] = last_value and predicate[this_element]
 
-    comptime _ConformsToPredicate[
-        T: type_of(AnyType), Type: Self.Trait
-    ]: Bool = conforms_to(Type, T)
-
     @always_inline("builtin")
     @staticmethod
     def all_conforms_to[_trait: type_of(AnyType)]() -> Bool:
@@ -424,7 +441,7 @@ struct TypeList[
         Returns:
             True if all types in this list conform to `Trait`, False otherwise.
         """
-        return Self.all_satisfies[Self._ConformsToPredicate[_trait, _]]()
+        return conforms_to(Self.values, _trait)
 
     @always_inline("builtin")
     @staticmethod
@@ -1234,9 +1251,9 @@ struct VariadicList[
     ](
         out self,
         value: Pointer[
-            _MLIR.POPArrayType[size, Self._EltPointerType._mlir_type],
+            _MLIR.POPArrayType[size, Self._EltPointerType._mlir_lit_ref],
             container_origin,
-        ]._mlir_type,
+        ]._mlir_lit_ref,
     ):
         """Constructs a VariadicList from a compiler-generated array of element
         pointers.
@@ -1254,8 +1271,8 @@ struct VariadicList[
             to=Pointer(_mlir_value=value)[]
         ).unsafe_origin_cast[UntrackedOrigin[mut=False]]()
         var elt_ptr = UnsafePointer[_, UntrackedOrigin[mut=False]](
-            __mlir_op.`pop.array.gep`(
-                array_up.address,
+            _mlir_value=__mlir_op.`pop.array.gep`(
+                array_up._get_kgen_pointer(),
                 Int(0).__mlir_index__(),
             )
         ).bitcast[Self._EltPointerType]()
@@ -1282,7 +1299,9 @@ struct VariadicList[
 
             for i in reversed(range(len(self))):
                 # Safety: We own the elements in this list.
-                UnsafePointer(to=self[i]).mut_cast[True]().destroy_pointee()
+                UnsafePointer(to=self[i]).mut_cast[
+                    True
+                ]().unsafe_deinit_pointee()
 
     def consume_elements(
         deinit self,
@@ -1305,7 +1324,9 @@ struct VariadicList[
             var ptr = UnsafePointer(to=self[i])
             # TODO: Cannot use UnsafePointer.take_pointee because it requires
             # the element to be Movable, which is not required here.
-            elt_handler(i, __get_address_as_owned_value(ptr.address))
+            elt_handler(
+                i, __get_address_as_owned_value(ptr._get_kgen_pointer())
+            )
 
     # FIXME: This is a hack to work around a miscompile, do not use.
     def _annihilate(deinit self):
@@ -1549,7 +1570,9 @@ struct VariadicPack[
                 comptime assert conforms_to(element_type, ImplicitlyDeletable)
 
                 # Safety: We own the elements in this pack.
-                UnsafePointer(to=self[i]).mut_cast[True]().destroy_pointee()
+                UnsafePointer(to=self[i]).mut_cast[
+                    True
+                ]().unsafe_deinit_pointee()
 
     def consume_elements[
         elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
@@ -1571,7 +1594,9 @@ struct VariadicPack[
             var ptr = UnsafePointer(to=self[i])
             # TODO: Cannot use UnsafePointer.take_pointee because it requires
             # the element to be Movable, which is not required here.
-            elt_handler[i](__get_address_as_owned_value(ptr.address))
+            elt_handler[i](
+                __get_address_as_owned_value(ptr._get_kgen_pointer())
+            )
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations

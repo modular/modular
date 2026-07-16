@@ -23,8 +23,9 @@ that seeds the SVG is removed after use. HTML is the source of truth;
 everything here is derived from it.
 
 Usage:
-    python3 bin/build.py <card>    # one card (light + dark, all formats)
-    python3 bin/build.py all       # every card present + combined PDFs
+    python3 bin/build.py <card>     # one card (light + dark, all formats)
+    python3 bin/build.py all        # every card present + combined PDFs
+    python3 bin/build.py svg [all|<card>]  # only (re)build the SVGs
 
 <card> is the <topic> in a src/body-<topic>.html file. The build discovers
 cards from the body files present; it never hardcodes a card list.
@@ -320,7 +321,7 @@ def measure_sheet_height(stem: str, width: int) -> int:
     return int(h) if h.isdigit() else 1600
 
 
-def make_svg(stem: str, width: int, cols: int) -> None:
+def make_svg(stem: str, width: int, cols: int, svg_only: bool = False) -> None:
     h = measure_sheet_height(stem, width) + 6
     media = (
         "@media print{html,body{font-size:11px;}"
@@ -369,6 +370,18 @@ def make_svg(stem: str, width: int, cols: int) -> None:
     )
     if os.path.exists(svg_tmp):
         os.replace(svg_tmp, svg)
+    # mutool tags every glyph <use> with a data-text attribute holding the
+    # original character. It never renders, it mojibakes every non-ASCII
+    # character (ellipsis, emoji, arrows) into latin-1 garbage, and it is
+    # ~3.8k dead attributes per card. Strip it bytewise (encoding-agnostic):
+    # removes the corruption at zero visual cost and shrinks the file before
+    # svgo runs. data-text values never contain a literal " (quotes are escaped
+    # to &quot;), so [^"]* is safe.
+    with open(svg, "rb") as f:
+        data = f.read()
+    data = re.sub(rb'\s*data-text="[^"]*"', b"", data)
+    with open(svg, "wb") as f:
+        f.write(data)
     # svgo at precision 1 trims another ~37% (path coordinates) with no visible
     # loss, keeping even the densest card near 1MB.
     subprocess.run(
@@ -377,7 +390,26 @@ def make_svg(stem: str, width: int, cols: int) -> None:
         stderr=subprocess.DEVNULL,
         check=False,
     )
+    # Make the SVG scale to its container: drop the fixed pixel width/height on
+    # the root <svg> element but keep the viewBox. A standalone file then fits
+    # the window (Quick Look, browser) and resizes; on the site a CSS box drives
+    # the size. Only the first <svg ...> tag is touched, so inner geometry is
+    # untouched. (svgo's removeDimensions plugin isn't in the default preset, so
+    # this does it explicitly and encoding-agnostically.)
+    with open(svg, "rb") as f:
+        data = f.read()
+    data = re.sub(
+        rb"<svg\b[^>]*>",
+        lambda m: re.sub(rb'\s+(?:width|height)="[^"]*"', b"", m.group(0)),
+        data,
+        count=1,
+    )
+    with open(svg, "wb") as f:
+        f.write(data)
     os.remove(svg_src_pdf)
+
+    if svg_only:
+        return
 
     # Deliverable PDF: same content area (width x h) plus a 24px margin so the
     # right-aligned header and the rightmost column don't sit flush against the
@@ -416,6 +448,9 @@ def main() -> None:
         print(__doc__)
         print("cards present:", " ".join(cards) if cards else "(none)")
         return
+    svg_only = args[0] == "svg"
+    if svg_only:
+        args = args[1:] or ["all"]
     ids = cards if args == ["all"] else args
     for slug in ids:
         if not os.path.exists(os.path.join(SRC, f"body-{slug}.html")):
@@ -424,10 +459,13 @@ def main() -> None:
         _, _, cols, width, _ = card_meta(slug)
         for dark in (False, True):
             stem = build_html(slug, dark)
-            render_normal(stem, dark, width)
-            make_svg(stem, width, cols)
-            print("built", stem, "(pdf + png + svg)")
-    if args == ["all"]:
+            if not svg_only:
+                render_normal(stem, dark, width)
+            make_svg(stem, width, cols, svg_only=svg_only)
+            print(
+                "built", stem, "(svg only)" if svg_only else "(pdf + png + svg)"
+            )
+    if args == ["all"] and not svg_only:
         combine(False)
         combine(True)
         print(

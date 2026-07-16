@@ -27,7 +27,10 @@ from max.engine import InferenceSession
 from max.experimental.tensor import Tensor
 from max.graph import Module as GraphModule
 from max.pipelines.context import PixelContext
-from max.pipelines.diffusion.cache import DenoisingCacheConfig, TaylorSeerCache
+from max.pipelines.diffusion.cache import (
+    DenoisingCacheConfig,
+    TaylorSeerCache,
+)
 from max.pipelines.lib import float32_array_to_buffer
 from max.pipelines.lib.compiled_component import CompiledComponent
 from max.pipelines.lib.model_manifest import ModelManifest
@@ -40,6 +43,7 @@ from typing_extensions import Self
 
 from .components import (
     DenoiseCompute,
+    DenoiseComputeFBCache,
     DenoisePredict,
     Denoiser,
     ImageEncoder,
@@ -217,6 +221,12 @@ class Flux2Executor(
     # Fallback VAE scale factor when not derivable from the manifest.
     _DEFAULT_VAE_SCALE_FACTOR: int = 8
 
+    # First-Block-Cache relative-difference threshold: skip the remaining
+    # transformer blocks when the block-0 residual's relative L1 diff vs. the
+    # previous step is below this.  Matches the generic diffusion default
+    # (interface.DiffusionPipeline.default_residual_threshold = 0.05).
+    _DEFAULT_FBCACHE_RESIDUAL_THRESHOLD: float = 0.05
+
     def __init__(
         self,
         manifest: ModelManifest,
@@ -227,10 +237,20 @@ class Flux2Executor(
         self._session = session
         self._runtime_config = runtime_config
 
-        # Cache configuration (TaylorSeer).
+        # Cache configuration (TaylorSeer / First-Block-Cache).  The two
+        # denoising-cache strategies are mutually exclusive alternatives:
+        # reject enabling both rather than silently picking a precedence.
         self._cache_config: DenoisingCacheConfig = (
             runtime_config.denoising_cache
         )
+        if (
+            self._cache_config.taylorseer
+            and self._cache_config.first_block_caching
+        ):
+            raise ValueError(
+                "TaylorSeer and first-block caching are mutually exclusive; "
+                "enable only one (--taylorseer OR --first-block-caching)."
+            )
         self._resolve_cache_defaults()
 
         # Derive VAE scale factor from manifest config, falling back to 8.
@@ -260,6 +280,14 @@ class Flux2Executor(
         )[0]
         self._in_channels: int = 128  # Flux2 in_channels (pre-patchify: 32)
 
+        # Transformer inner_dim = num_attention_heads * attention_head_dim.
+        # This is the channel size of the double-stream block-0 residual that
+        # FBCache compares across steps; needed to allocate prev_residual.
+        _tcfg = transformer_config.huggingface_config.to_dict()
+        self._fbcache_inner_dim: int = int(
+            _tcfg.get("num_attention_heads", 48)
+        ) * int(_tcfg.get("attention_head_dim", 128))
+
         # Build all FLUX2 component graphs into one shared Module so we
         # can compile them together via session.load_all in a single
         # parallel compile pass (MODELS-1440).  Each component records its
@@ -284,8 +312,14 @@ class Flux2Executor(
             latents_in_dtype=self._model_dtype,
         )
 
-        # Conditionally build fused OR split denoise graphs.
+        # Conditionally build fused (no cache) OR split denoise graphs.
+        # Three mutually-exclusive paths:
+        #   - no cache:     fused Denoiser (concat + transformer + Euler).
+        #   - TaylorSeer:   DenoiseCompute (transformer-only) + DenoisePredict.
+        #   - FBCache:      DenoiseComputeFBCache (transformer + first-block
+        #                   conditional) + DenoisePredict.
         self._denoise_compute: DenoiseCompute | None
+        self._denoise_compute_fbcache: DenoiseComputeFBCache | None
         self._denoise_predict: DenoisePredict | None
         self._taylor_cache: TaylorSeerCache | None
 
@@ -301,6 +335,26 @@ class Flux2Executor(
             self._denoise_compute = DenoiseCompute(
                 manifest, session, graphs_module=self._graphs_module
             )
+            self._denoise_compute_fbcache = None
+            self._denoise_predict = DenoisePredict(
+                manifest,
+                session,
+                self._model_dtype,
+                self._model_device,
+                graphs_module=self._graphs_module,
+            )
+        elif self._cache_config.first_block_caching:
+            logger.info(
+                "First-Block-Cache enabled: building DenoiseComputeFBCache "
+                "(transformer + first-block conditional) + DenoisePredict "
+                "graphs (residual_threshold=%.4f).",
+                self._DEFAULT_FBCACHE_RESIDUAL_THRESHOLD,
+            )
+            self.denoiser = None
+            self._denoise_compute = None
+            self._denoise_compute_fbcache = DenoiseComputeFBCache(
+                manifest, session, graphs_module=self._graphs_module
+            )
             self._denoise_predict = DenoisePredict(
                 manifest,
                 session,
@@ -313,6 +367,7 @@ class Flux2Executor(
                 manifest, session, graphs_module=self._graphs_module
             )
             self._denoise_compute = None
+            self._denoise_compute_fbcache = None
             self._denoise_predict = None
 
         # Compile every component graph in one load_all.  Each
@@ -327,6 +382,11 @@ class Flux2Executor(
         ]
         if self.denoiser is not None:
             components.append(self.denoiser)
+        elif self._denoise_compute_fbcache is not None:
+            assert self._denoise_predict is not None
+            components.extend(
+                [self._denoise_compute_fbcache, self._denoise_predict]
+            )
         else:
             assert self._denoise_compute is not None
             assert self._denoise_predict is not None
@@ -374,6 +434,17 @@ class Flux2Executor(
             )
         else:
             self._taylor_cache = None
+
+        # FBCache runtime threshold as a scalar device buffer.  Kept as a
+        # graph input so it can be tuned per-request later without a
+        # recompile (matching the shared FBCache design in diffusion/cache).
+        self._fbcache_residual_threshold: Buffer | None = None
+        if self._cache_config.first_block_caching:
+            self._fbcache_residual_threshold = Buffer.from_dlpack(
+                np.array(
+                    self._DEFAULT_FBCACHE_RESIDUAL_THRESHOLD, dtype=np.float32
+                )
+            ).to(self._model_device)
 
     # -- PipelineExecutor interface -------------------------------------------
 
@@ -676,8 +747,25 @@ class Flux2Executor(
         """
         num_steps: int = np.from_dlpack(num_inference_steps).item()  # type: ignore[assignment]
 
-        if self._taylor_cache is None:
-            # Fused path (no TaylorSeer).
+        if self._denoise_compute_fbcache is not None:
+            # First-Block-Cache path: split compute (with in-graph
+            # first-block conditional) + predict.  The host loop threads
+            # prev_residual/prev_output across steps (mirrors the generic
+            # run_denoising_step in diffusion/taylorseer.py).
+            latents = self._run_fbcache_loop(
+                latents=latents,
+                image_latents=image_latents,
+                image_latent_ids=image_latent_ids,
+                prompt_embeds=prompt_embeds,
+                text_ids=text_ids,
+                latent_image_ids=latent_image_ids,
+                timesteps=timesteps,
+                dts=dts,
+                guidance=guidance,
+                num_steps=num_steps,
+            )
+        elif self._taylor_cache is None:
+            # Fused path (no cache).
             for i in range(num_steps):
                 timestep_i = timesteps[i : i + 1]
                 dt_i = dts[i : i + 1]
@@ -726,6 +814,108 @@ class Flux2Executor(
                     self._taylor_cache.update(state, noise_pred, i)
 
                 latents = self._denoise_predict(latents, noise_pred, dt_i)
+        return latents
+
+    @traced(message="run_fbcache_loop")
+    def _run_fbcache_loop(
+        self,
+        latents: Buffer,
+        image_latents: Buffer,
+        image_latent_ids: Buffer,
+        prompt_embeds: Buffer,
+        text_ids: Buffer,
+        latent_image_ids: Buffer,
+        timesteps: Buffer,
+        dts: Buffer,
+        guidance: Buffer,
+        num_steps: int,
+    ) -> Buffer:
+        """Run the denoising loop with First-Block-Cache.
+
+        Each step runs :class:`DenoiseComputeFBCache`, which internally
+        decides (via ``ops.cond`` on the block-0 relative-diff) whether to
+        skip the remaining transformer blocks and reuse the previous step's
+        ``noise_pred``.  The returned ``(new_residual, noise_pred)`` is
+        threaded into the next step's ``prev_residual``/``prev_output``.
+
+        Args:
+            latents: Preprocessed packed latents, shape ``(B, seq, C)``.
+            image_latents: Packed image latents for img2img (zero-seq for
+                text-to-image).
+            image_latent_ids: Image latent position IDs (zero-seq for t2i).
+            prompt_embeds: Text encoder embeddings, shape ``(B, S, D)``.
+            text_ids: Text position IDs, shape ``(B, S, 4)`` int64.
+            latent_image_ids: Latent position IDs, shape ``(B, seq, 4)``.
+            timesteps: Precomputed timesteps, shape ``(num_steps,)``.
+            dts: Precomputed step deltas, shape ``(num_steps,)`` float32.
+            guidance: Guidance scale, shape ``(B,)``.
+            num_steps: Number of denoising steps.
+
+        Returns:
+            Final denoised latents, shape ``(B, seq, C)``.
+        """
+        assert self._denoise_compute_fbcache is not None
+        assert self._denoise_predict is not None
+        assert self._fbcache_residual_threshold is not None
+
+        # State dims: residual is on the transformer's inner_dim; output is
+        # the packed noise_pred channel dim (== latents channel dim).  On the
+        # first step prev_residual is all-zeros so the relative-diff check
+        # returns False (shapes match but mean_prev == 0 -> relative_diff is
+        # large), forcing a full compute — matching the FBCache warmup.  The
+        # per-stream state is a pair of driver Buffers here (the executor is
+        # buffer-based); the generic Tensor-based DenoisingCacheState is used
+        # by the modulev3/interface pipelines, not this executor.
+        batch_size, seq_len, output_dim = latents.shape
+        inner_dim = self._fbcache_inner_dim
+        prev_residual = Buffer.zeros(
+            (batch_size, seq_len, inner_dim),
+            self._model_dtype,
+            device=self._model_device,
+        )
+        prev_output = Buffer.zeros(
+            (batch_size, seq_len, output_dim),
+            self._model_dtype,
+            device=self._model_device,
+        )
+
+        skipped = 0
+        for i in range(num_steps):
+            timestep_i = timesteps[i : i + 1]
+            dt_i = dts[i : i + 1]
+
+            new_residual, noise_pred, used_cache = (
+                self._denoise_compute_fbcache(
+                    latents,
+                    image_latents,
+                    prompt_embeds,
+                    timestep_i,
+                    guidance,
+                    latent_image_ids,
+                    image_latent_ids,
+                    text_ids,
+                    prev_residual,
+                    prev_output,
+                    self._fbcache_residual_threshold,
+                )
+            )
+            # ``used_cache`` is a scalar CPU bool: True when this step reused
+            # the cache (remaining blocks skipped).
+            if bool(np.from_dlpack(used_cache).item()):
+                skipped += 1
+            # Thread this step's residual + output into the next step.
+            prev_residual = new_residual
+            prev_output = noise_pred
+
+            latents = self._denoise_predict(latents, noise_pred, dt_i)
+
+        logger.info(
+            "First-Block-Cache: %d/%d steps reused the cache (skipped the "
+            "remaining transformer blocks); %d full DiT forwards.",
+            skipped,
+            num_steps,
+            num_steps - skipped,
+        )
         return latents
 
     # -- Latent preprocessing -------------------------------------------------

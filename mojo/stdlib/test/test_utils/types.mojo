@@ -40,13 +40,57 @@ from std.utils._nicheable import UnsafeNicheable, NicheIndex
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy("You must use .destroy() to consume `ExplicitDestroy`")
+@explicit_destroy("Use .destroy() to consume `ExplicitDestroy`")
 @fieldwise_init
-struct ExplicitDestroy(Movable):
+struct ExplicitDestroy(ImplicitlyDeletable where False, Movable):
     """Test type that is explicitly-destroyed."""
 
     var value: Int
     """Int data."""
+
+    def destroy(deinit self):
+        """Destroys self."""
+        pass
+
+
+# ===----------------------------------------------------------------------=== #
+# ExplicitDestroyKey
+# ===----------------------------------------------------------------------=== #
+
+
+@explicit_destroy("Use .destroy() to consume `ExplicitDestroyKey`")
+@fieldwise_init
+struct ExplicitDestroyKey(
+    Equatable, Hashable, ImplicitlyDeletable where False, Movable
+):
+    """Linear key type for testing linear-keyed containers: `Movable`,
+    `Hashable`, and `Equatable`, but explicitly-destroyed (not
+    `ImplicitlyDeletable`)."""
+
+    var value: Int
+    """Int data."""
+
+    def __eq__(self, other: Self) -> Bool:
+        """Compare two keys on their payload.
+
+        Args:
+            other: The other key to compare against.
+
+        Returns:
+            `True` if the payloads are equal, `False` otherwise.
+        """
+        return self.value == other.value
+
+    def __hash__[H: Hasher](self, mut hasher: H):
+        """Hash the payload using the given hasher.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        self.value.__hash__(hasher)
 
     def destroy(deinit self):
         """Destroys self."""
@@ -448,7 +492,7 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
 
     def __del__(deinit self):
         """Sets the target flag to True when destroyed."""
-        self.target.init_pointee_move(True)
+        self.target.unsafe_write(True)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -456,9 +500,8 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy
 @fieldwise_init
-struct ExplicitDelOnly(Movable):
+struct ExplicitDelOnly(ImplicitlyDeletable where False, Movable):
     """Utility for testing container support for linear types."""
 
     var data: Int

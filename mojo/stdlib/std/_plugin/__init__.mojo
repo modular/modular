@@ -26,5 +26,5 @@ field and call sites guard the vendor path with
 code-size cost for hooks the active backend does not set.
 """
 
-from ._impl import CurrentPlugin
+from ._impl import CurrentPlugin, PluginForTarget
 from ._trait import DefaultPlugin, PluginHooks

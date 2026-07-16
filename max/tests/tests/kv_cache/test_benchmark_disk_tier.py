@@ -30,7 +30,6 @@ MIB = 1024 * 1024
 BYTES = 4 * MIB  # Kimi 128 token page size is ~4MiB
 
 
-@pytest.mark.parametrize("use_direct_io", [False, True])
 @pytest.mark.parametrize("num_workers", [4, 8, 16, 64])
 @pytest.mark.parametrize("batch_size", [2048])  # 75k tokens is ~585 pages
 def test_benchmark_batch_write(
@@ -38,7 +37,6 @@ def test_benchmark_batch_write(
     tmp_path: Path,
     batch_size: int,
     num_workers: int,
-    use_direct_io: bool,
 ) -> None:
     """Measure throughput of submitting a batch of writes concurrently."""
     total_batches = ITERATIONS + WARMUP_ROUNDS + 1
@@ -55,7 +53,6 @@ def test_benchmark_batch_write(
         block_nbytes=BYTES,
         max_disk_size_bytes=total_blocks * BYTES,
         num_workers=num_workers,
-        use_direct_io=use_direct_io,
     )
 
     def write_batch() -> None:
@@ -77,7 +74,6 @@ def test_benchmark_batch_write(
     tier.shutdown()
 
 
-@pytest.mark.parametrize("use_direct_io", [False, True])
 @pytest.mark.parametrize("num_workers", [4, 8, 16, 64])
 @pytest.mark.parametrize("batch_size", [2048])
 def test_benchmark_batch_read(
@@ -85,7 +81,6 @@ def test_benchmark_batch_read(
     tmp_path: Path,
     batch_size: int,
     num_workers: int,
-    use_direct_io: bool,
 ) -> None:
     """Measure throughput of submitting a batch of reads concurrently."""
     tier = DiskTier(
@@ -93,7 +88,6 @@ def test_benchmark_batch_read(
         block_nbytes=BYTES,
         max_disk_size_bytes=batch_size * BYTES,
         num_workers=num_workers,
-        use_direct_io=use_direct_io,
     )
 
     # Pre-populate the cache with batch_size blocks.

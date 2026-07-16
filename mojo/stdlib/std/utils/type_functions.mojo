@@ -19,6 +19,7 @@ parameters and evaluate to a type, with no runtime component.
 """
 
 
+@deprecated("Use the ternary expression `T if cond else U` instead.")
 comptime ConditionalType[
     Trait: type_of(AnyType),
     //,

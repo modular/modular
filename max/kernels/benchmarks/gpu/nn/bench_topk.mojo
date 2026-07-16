@@ -713,21 +713,29 @@ def bench_dispatch_all() raises:
 
         # Bitonic sort top-k (MLA indexer shape: k = N = 2048).
         bench_bitonic_topk(b, ctx)
+        # Streaming path (N > 2048, k = 2048): GLM 5.x long-context / prefill.
+        bench_bitonic_topk(b, ctx, N=16384, K=2048, batch_size=48)
+        bench_bitonic_topk(b, ctx, N=163840, K=2048, batch_size=8)
+        bench_bitonic_topk(b, ctx, N=2560, K=2048, batch_size=2048)
 
         print()
         b.dump_report()
 
 
-def bench_bitonic_topk(mut b: Bench, ctx: DeviceContext) raises:
-    """Benchmark persistent_topk_block at the MLA indexer shape (N=K=2048).
+def bench_bitonic_topk(
+    mut b: Bench,
+    ctx: DeviceContext,
+    N: Int = PERSISTENT_TOPK_MAX_N,
+    K: Int = PERSISTENT_TOPK_MAX_N,
+    batch_size: Int = 1,
+) raises:
+    """Benchmark persistent_topk_block at MLA indexer shapes.
 
-    Uses the Bench harness so results appear in the same table as the
-    existing topk_gpu entries for easy side-by-side comparison.
+    Defaults to the single-block shape (N=K=2048); larger N exercises the
+    streaming path.  Uses the Bench harness so results appear in the same table
+    as the existing topk_gpu entries for easy side-by-side comparison.
     """
     comptime dtype = DType.float32
-    var batch_size = 1
-    var N = PERSISTENT_TOPK_MAX_N  # 2048
-    var K = N
 
     var scores_buf = ctx.enqueue_create_buffer[dtype](batch_size * N)
     var idxs_buf = ctx.enqueue_create_buffer[DType.int32](batch_size * K)

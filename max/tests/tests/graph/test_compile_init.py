@@ -226,18 +226,28 @@ def test_accelerator_constructs_in_virtual_device_mode(
 ) -> None:
     """Virtual-device mode must apply to device creation, not just counting.
 
-    The virtual-device settings are process-wide globals in the MLRT driver.
-    If the ``_core`` extension ever links its own copy of that library, the
+    The virtual-device settings are process-wide state in the MLRT driver. If
+    any image in the process (the ``_core`` extension, libmax, the Mojo
+    bindings dylib) ends up with its own copy of that state, the
     ``set_virtual_device_*`` setters and ``accelerator_count()`` see one copy
-    while ``Accelerator()`` construction (which goes through libmax) sees the
-    other — and on a machine with no physical GPU, construction fails with
-    'No supported "gpu" device available' even though the count says one is
-    present. This is exactly what broke the compile benchmarks on CPU-only
-    runners; constructing here guards against the globals splitting again.
+    while ``Accelerator()`` construction sees another — so construction takes
+    the real-hardware path even though the count reports virtual devices.
+    That split broke CPU-only Linux runners ('No supported "gpu" device
+    available') when the extension statically linked the driver
+    implementation, and macOS for any device id beyond the physical GPU
+    (DRIV-209, Mach-O two-level namespace binding the two halves of the API
+    to different dylibs).
+
+    Requesting id 1 with a virtual count of 2 is the discriminating check:
+    no CI machine class is guaranteed two physical GPUs, so this only
+    succeeds if creation consults the same virtual-device state the setters
+    wrote.
     """
-    assert accelerator_count() >= 1
-    # Must not raise, even on machines with no physical GPU.
-    Accelerator()
+    set_virtual_device_count(2)
+    assert accelerator_count() == 2
+    # Must not raise, even on machines with zero or one physical GPU.
+    Accelerator(0)
+    Accelerator(1)
 
 
 def test_init_all_in_virtual_device_mode_returns_dict(

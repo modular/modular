@@ -62,6 +62,7 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_prefill_kv_cache_ragged,
 )
 from nn.attention.gpu.mla import _k_cache_to_buffer, mla_decode_max_seq_len
+from nn.attention.gpu.nvidia.sm100.mla_prefill import mla_sm100_prefill_sparse
 from nn.normalization import _rms_norm_warp_tiling_subkernel
 
 
@@ -1295,6 +1296,204 @@ def mla_decode_branch_fp8[
     ](output_t, raw_output, w_uv, w_uv_scale, ctx)
 
 
+@always_inline
+def mla_prefill_branch_sparse_fp8[
+    dtype: DType,
+    fp8_dtype: DType,
+    fp8_scale_dtype: DType,
+    collection_t: KVCollectionT,
+    //,
+    m_scale_granularity: Int,
+    n_scale_granularity: Int,
+    k_scale_granularity: Int,
+    kv_input_fn: def[width: Int](IndexList[2]) capturing -> SIMD[
+        DType.bfloat16, width
+    ],
+    indices_stride: Int,
+    target: StaticString = "cpu",
+](
+    output: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input_row_offsets: TileTensor[
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    freqs_cis: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
+    kv_norm_gamma: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    scale: Float32,
+    epsilon: Float32,
+    w_uk: TileTensor[fp8_dtype, address_space=AddressSpace.GENERIC, ...],
+    w_uk_scale: TileTensor[
+        fp8_scale_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    w_uv: TileTensor[fp8_dtype, address_space=AddressSpace.GENERIC, ...],
+    w_uv_scale: TileTensor[
+        fp8_scale_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    ctx: DeviceContext,
+    d_indices: UnsafePointer[Int32, MutAnyOrigin],
+    topk_lengths: UnsafePointer[Int32, MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ],
+) raises:
+    """Sparse MLA prefill branch (DSv3.2/GLM absorbed shape, FP8 weights).
+
+    Reuses `mla_decode_branch_fp8`'s absorbed-Q construction (q_nope up-proj via
+    `w_uk` + RoPE/RMSNorm) and the identical `w_uv` output up-projection, and
+    swaps the attention call to the existing `mla_sm100_prefill_sparse` kernel
+    over the paged BF16 latent cache. The caller (`.fp8.sparse` op) has already
+    remapped `d_indices` from logical to physical rows, so they are passed
+    straight through. Only supported for a BF16 KV cache; the FP8-cache case is
+    handled by the caller (dense fallback).
+    """
+    comptime kv_params = collection_t.kv_params
+    comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
+    comptime assert kv_params.num_heads == 1, "kv_params.num_heads should be 1"
+
+    comptime num_heads = q.static_shape[1]
+    comptime q_head_dim = q.static_shape[2]
+    comptime qk_rope_head_dim = freqs_cis.static_shape[1]
+    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
+    comptime v_head_dim = output.static_shape[2]
+    comptime k_cache_dim = kv_params.head_size
+
+    comptime assert (
+        w_uk.shape_known and w_uv.shape_known
+    ), "w_uk and w_uv's shapes should be static"
+    comptime assert (
+        w_uk.static_shape[2] == qk_nope_head_dim
+    ), "w_uk.static_shape[2] should be equal to qk_nope_head_dim"
+    comptime assert (
+        w_uv.static_shape[1] == v_head_dim
+    ), "w_uv.static_shape[1] should be equal to v_head_dim"
+    comptime kv_latent_dim = w_uk.static_shape[1]
+    comptime assert (
+        kv_latent_dim + qk_rope_head_dim == k_cache_dim
+    ), "kv_latent_dim + qk_rope_head_dim should be equal to kv_params.head_size"
+
+    var seq_len = Int(q.dim(0))
+    if seq_len == 0:
+        return
+
+    var mla_decode_input_buf = ctx.enqueue_create_buffer[dtype](
+        seq_len * num_heads * k_cache_dim
+    )
+    var mla_decode_input = TileTensor(
+        mla_decode_input_buf,
+        row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
+    )
+
+    var q_nope = TileTensor(
+        q.ptr,
+        TileLayout(
+            (seq_len, Idx[num_heads], Idx[qk_nope_head_dim]),
+            (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
+        ),
+    )
+    var mla_decode_input_nope = TileTensor(
+        mla_decode_input.ptr,
+        TileLayout(
+            (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
+            (Idx[k_cache_dim], Idx[num_heads * k_cache_dim], Idx[1]),
+        ),
+    )
+    quantize_and_bmm_fp8_helper[
+        m_scale_granularity=m_scale_granularity,
+        n_scale_granularity=n_scale_granularity,
+        k_scale_granularity=k_scale_granularity,
+        target=target,
+    ](mla_decode_input_nope, q_nope, w_uk, w_uk_scale, ctx)
+
+    var q_rope = TileTensor(
+        q.ptr + qk_nope_head_dim,
+        TileLayout(
+            (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
+            (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
+        ),
+    )
+    var mla_decode_input_rope = TileTensor(
+        mla_decode_input.ptr + kv_latent_dim,
+        TileLayout(
+            (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
+            (Idx[num_heads * k_cache_dim], Idx[k_cache_dim], Idx[1]),
+        ),
+    )
+    mla_fused_rope_rmsnorm_quantization[kv_input_fn=kv_input_fn](
+        mla_decode_input_rope,
+        q_rope,
+        input_row_offsets,
+        freqs_cis,
+        kv_norm_gamma,
+        kv_collection,
+        layer_idx,
+        epsilon,
+        ctx,
+    )
+
+    var raw_output_buf = ctx.enqueue_create_buffer[dtype](
+        seq_len * num_heads * kv_latent_dim
+    )
+    var raw_output = TileTensor(
+        raw_output_buf,
+        row_major(seq_len, Idx[num_heads], Idx[kv_latent_dim]),
+    )
+
+    # `d_indices` / `topk_lengths` are int32 buffers reinterpreted as uint32:
+    # invalid `-1` slots become 0xFFFFFFFF and are rejected by the kernel's
+    # `idx >= 0` gather producer.
+    var indices_tt = TileTensor(
+        d_indices.bitcast[Scalar[DType.uint32]](),
+        row_major(seq_len * indices_stride),
+    )
+    var topk_lengths_tt = TileTensor(
+        topk_lengths.bitcast[Scalar[DType.uint32]](),
+        row_major(seq_len),
+    )
+    var attn_sink_opt = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None)
+    if attn_sink_ptr:
+        attn_sink_opt = UnsafePointer[Float32, ImmutAnyOrigin](
+            attn_sink_ptr.value()
+        )
+
+    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+    mla_sm100_prefill_sparse[
+        num_q_heads=num_heads,
+        qk_depth=k_cache_dim,
+        v_depth=kv_latent_dim,
+        indices_stride=indices_stride,
+    ](
+        raw_output,
+        mla_decode_input,
+        k_cache,
+        indices_tt,
+        topk_lengths_tt,
+        attn_sink_opt,
+        scale,
+        ctx,
+    )
+
+    var output_t = TileTensor(
+        output.ptr,
+        TileLayout(
+            (Idx[num_heads], seq_len, Idx[v_head_dim]),
+            (Idx[v_head_dim], Idx[num_heads * v_head_dim], Idx[1]),
+        ),
+    )
+    quantize_and_bmm_fp8_helper[
+        dtype=dtype,
+        fp8_dtype=fp8_dtype,
+        fp8_scale_dtype=fp8_scale_dtype,
+        m_scale_granularity=m_scale_granularity,
+        n_scale_granularity=n_scale_granularity,
+        k_scale_granularity=k_scale_granularity,
+        target=target,
+    ](output_t, raw_output, w_uv, w_uv_scale, ctx)
+
+
 # ===-----------------------------------------------------------------------===#
 # MLA prefill-decode graph (FP8)
 # ===-----------------------------------------------------------------------===#
@@ -1316,6 +1515,7 @@ def mla_prefill_decode_graph_fp8[
     ],
     target: StaticString = "cpu",
     sparse_mla: Bool = False,
+    sparse_indices_stride: Int = 0,
 ](
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
@@ -1420,32 +1620,65 @@ def mla_prefill_decode_graph_fp8[
         )
 
     else:
-        mla_prefill_branch_fp8[
-            m_scale_granularity=m_scale_granularity,
-            n_scale_granularity=n_scale_granularity,
-            k_scale_granularity=k_scale_granularity,
-            mask_str=mask_str,
-            kv_input_fn=kv_input_fn,
-            target=target,
-        ](
-            output,
-            q,
-            input_row_offsets,
-            freqs_cis,
-            kv_norm_gamma,
-            kv_collection,
-            layer_idx,
-            scale,
-            epsilon,
-            buffer_row_offsets,
-            cache_offsets,
-            buffer_length,
-            w_k,
-            w_k_scale,
-            w_uv,
-            w_uv_scale,
-            ctx,
-        )
+        comptime if sparse_mla and collection_t.CacheType.dtype == (
+            DType.bfloat16
+        ):
+            mla_prefill_branch_sparse_fp8[
+                m_scale_granularity=m_scale_granularity,
+                n_scale_granularity=n_scale_granularity,
+                k_scale_granularity=k_scale_granularity,
+                kv_input_fn=kv_input_fn,
+                indices_stride=sparse_indices_stride,
+                target=target,
+            ](
+                output,
+                q,
+                input_row_offsets,
+                freqs_cis,
+                kv_norm_gamma,
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                w_uk,
+                w_uk_scale,
+                w_uv,
+                w_uv_scale,
+                ctx,
+                d_indices.value(),
+                topk_lengths.value(),
+                attn_sink_ptr,
+            )
+        else:
+            # Dense prefill. FP8-cache sparse is deferred: the sparse kernel
+            # needs external fp32 per-token scales, but the paged FP8 MLA cache
+            # stores int8 granularity-32 scales (layout mismatch).
+            mla_prefill_branch_fp8[
+                m_scale_granularity=m_scale_granularity,
+                n_scale_granularity=n_scale_granularity,
+                k_scale_granularity=k_scale_granularity,
+                mask_str=mask_str,
+                kv_input_fn=kv_input_fn,
+                target=target,
+            ](
+                output,
+                q,
+                input_row_offsets,
+                freqs_cis,
+                kv_norm_gamma,
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                buffer_row_offsets,
+                cache_offsets,
+                buffer_length,
+                w_k,
+                w_k_scale,
+                w_uv,
+                w_uv_scale,
+                ctx,
+            )
 
 
 @always_inline

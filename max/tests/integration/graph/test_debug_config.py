@@ -141,6 +141,170 @@ class TestValuePropertySetters:
 
 
 # ---------------------------------------------------------------------------
+# libkineto / HTA / Dynolog profiler knobs (MXTOOLS-190)
+# ---------------------------------------------------------------------------
+
+
+class TestProfilingPropertyDefaults:
+    """Profiling debug properties should match the ProfilingConfig pydantic defaults."""
+
+    def test_profiling_enabled_default(self) -> None:
+        assert InferenceSession.debug.profiling_enabled is False
+
+    def test_profiling_output_path_default(self) -> None:
+        assert InferenceSession.debug.profiling_output_path == ""
+
+    def test_profiling_dynolog_enabled_default(self) -> None:
+        assert InferenceSession.debug.profiling_dynolog_enabled is True
+
+    def test_profiling_warmup_steps_default(self) -> None:
+        assert InferenceSession.debug.profiling_warmup_steps == 0
+
+    def test_profiling_active_steps_default(self) -> None:
+        assert InferenceSession.debug.profiling_active_steps == 10
+
+    def test_profiling_periodic_flush_seconds_default(self) -> None:
+        assert InferenceSession.debug.profiling_periodic_flush_seconds == 60
+
+
+class TestProfilingPropertySetters:
+    """Profiling knobs should round-trip through Config via setter and getter."""
+
+    def test_profiling_enabled_set(self) -> None:
+        InferenceSession.debug.profiling_enabled = True
+        assert InferenceSession.debug.profiling_enabled is True
+
+    def test_profiling_output_path_set(self, tmp_path: Path) -> None:
+        # This is the one knob with a live consumer today:
+        # Range.cpp::disable() reads `max-debug.profiling-output-path` from
+        # Config and uses it as the trace destination.
+        trace_path = str(tmp_path / "trace.json")
+        InferenceSession.debug.profiling_output_path = trace_path
+        assert InferenceSession.debug.profiling_output_path == trace_path
+
+    def test_profiling_dynolog_enabled_disable(self) -> None:
+        InferenceSession.debug.profiling_dynolog_enabled = False
+        assert InferenceSession.debug.profiling_dynolog_enabled is False
+
+    def test_profiling_warmup_steps_set(self) -> None:
+        InferenceSession.debug.profiling_warmup_steps = 5
+        assert InferenceSession.debug.profiling_warmup_steps == 5
+
+    def test_profiling_active_steps_set(self) -> None:
+        InferenceSession.debug.profiling_active_steps = 20
+        assert InferenceSession.debug.profiling_active_steps == 20
+
+    def test_profiling_periodic_flush_seconds_set(self) -> None:
+        InferenceSession.debug.profiling_periodic_flush_seconds = 30
+        assert InferenceSession.debug.profiling_periodic_flush_seconds == 30
+
+
+class TestProfilingPropertyBounds:
+    """Integer knobs must enforce the same lower bounds as ProfilingConfig
+    (``warmup >= 0``, ``active >= 1``, ``flush >= 1``) so the Python-config and
+    ``session.debug`` surfaces agree on what's valid."""
+
+    def test_warmup_steps_rejects_negative(self) -> None:
+        with pytest.raises(ValueError):
+            InferenceSession.debug.profiling_warmup_steps = -1
+
+    def test_warmup_steps_allows_zero(self) -> None:
+        InferenceSession.debug.profiling_warmup_steps = 0
+        assert InferenceSession.debug.profiling_warmup_steps == 0
+
+    def test_active_steps_rejects_zero(self) -> None:
+        with pytest.raises(ValueError):
+            InferenceSession.debug.profiling_active_steps = 0
+
+    def test_active_steps_rejects_negative(self) -> None:
+        with pytest.raises(ValueError):
+            InferenceSession.debug.profiling_active_steps = -5
+
+    def test_active_steps_allows_one(self) -> None:
+        InferenceSession.debug.profiling_active_steps = 1
+        assert InferenceSession.debug.profiling_active_steps == 1
+
+    def test_periodic_flush_seconds_rejects_zero(self) -> None:
+        with pytest.raises(ValueError):
+            InferenceSession.debug.profiling_periodic_flush_seconds = 0
+
+    def test_periodic_flush_seconds_allows_one(self) -> None:
+        InferenceSession.debug.profiling_periodic_flush_seconds = 1
+        assert InferenceSession.debug.profiling_periodic_flush_seconds == 1
+
+
+def _run_with_env(
+    env_overrides: dict[str, str], check_script: str
+) -> subprocess.CompletedProcess[str]:
+    """Run a Python snippet in a subprocess with extra env vars set."""
+    env = os.environ.copy()
+    env.update(env_overrides)
+    return subprocess.run(
+        [sys.executable, "-c", textwrap.dedent(check_script)],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+    )
+
+
+class TestProfilingEnvVarRoute:
+    """The MODULAR_MAX_DEBUG_PROFILING_* env vars are a parallel route into the
+    same Config keys; a non-numeric value falls back to the default, and a
+    Python setter overrides the env var (setGlobalValue precedence)."""
+
+    def test_active_steps_env_var(self) -> None:
+        result = _run_with_env(
+            {"MODULAR_MAX_DEBUG_PROFILING_ACTIVE_STEPS": "7"},
+            """\
+            from max.engine import InferenceSession
+            got = InferenceSession.debug.profiling_active_steps
+            assert got == 7, f"expected 7 from env var, got {got}"
+            print("PASS")
+            """,
+        )
+        assert result.returncode == 0, (
+            f"Script failed.\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        assert "PASS" in result.stdout
+
+    def test_non_numeric_env_var_falls_back_to_default(self) -> None:
+        # readInt64() returns the default on a non-numeric value rather than
+        # raising, so a fat-fingered env var degrades gracefully.
+        result = _run_with_env(
+            {"MODULAR_MAX_DEBUG_PROFILING_ACTIVE_STEPS": "ten"},
+            """\
+            from max.engine import InferenceSession
+            got = InferenceSession.debug.profiling_active_steps
+            assert got == 10, f"expected default 10 for bad env var, got {got}"
+            print("PASS")
+            """,
+        )
+        assert result.returncode == 0, (
+            f"Script failed.\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        assert "PASS" in result.stdout
+
+    def test_setter_overrides_env_var(self) -> None:
+        # setGlobalValue takes precedence over env vars (see Configuration.h),
+        # so a Python-side write wins even when the env var is set.
+        result = _run_with_env(
+            {"MODULAR_MAX_DEBUG_PROFILING_ACTIVE_STEPS": "7"},
+            """\
+            from max.engine import InferenceSession
+            InferenceSession.debug.profiling_active_steps = 3
+            got = InferenceSession.debug.profiling_active_steps
+            assert got == 3, f"expected setter to override env var, got {got}"
+            print("PASS")
+            """,
+        )
+        assert result.returncode == 0, (
+            f"Script failed.\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        assert "PASS" in result.stdout
+
+
+# ---------------------------------------------------------------------------
 # Source tracebacks (lives on Graph.debug)
 # ---------------------------------------------------------------------------
 
@@ -241,15 +405,7 @@ def _run_debug_env_check(
     env_value: str, check_script: str
 ) -> subprocess.CompletedProcess[str]:
     """Run a Python snippet in a subprocess with MODULAR_DEBUG set."""
-    env = os.environ.copy()
-    env["MODULAR_DEBUG"] = env_value
-    return subprocess.run(
-        [sys.executable, "-c", textwrap.dedent(check_script)],
-        capture_output=True,
-        text=True,
-        env=env,
-        timeout=60,
-    )
+    return _run_with_env({"MODULAR_DEBUG": env_value}, check_script)
 
 
 class TestModularDebugEnvVar:

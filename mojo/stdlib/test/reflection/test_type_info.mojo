@@ -279,7 +279,7 @@ def test_get_type_name_through_generic() raises:
     assert_equal(_get_type_name_generic[String](), "String")
 
 
-struct UIndexParam[value: Scalar[DType.uint]]:
+struct UIndexParam[value: UInt]:
     pass
 
 
@@ -291,7 +291,7 @@ def test_get_type_name_uint_int_simd_value() raises:
     """Test that DType.uint and DType.int SIMD values are printed correctly."""
 
     # Test unsigned uindex value - should print as large positive number
-    comptime uint_max: Scalar[DType.uint] = Scalar[DType.uint].MAX
+    comptime uint_max: UInt = UInt.MAX
     var name = reflect[UIndexParam[uint_max]].name()
     if is_64bit():
         assert_equal(

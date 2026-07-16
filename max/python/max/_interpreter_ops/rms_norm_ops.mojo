@@ -25,7 +25,7 @@ from std.math import sqrt
 from layout import Coord, coord_to_index_list
 
 from extensibility import ManagedTensorSlice
-from extensibility import Input
+from extensibility import IOSpec
 from extensibility import StaticTensorSpec
 from nn.normalization import rms_norm as nn_rms_norm
 
@@ -182,7 +182,7 @@ def rms_norm_op[
                     dtype, 1, ...
                 ].get_unknown()
                 var gamma_tensor = ManagedTensorSlice[
-                    io_spec=Input, static_spec=gamma_spec
+                    io_spec=IOSpec.Input, static_spec=gamma_spec
                 ](gamma_ptr, gamma_shape)
 
                 nn_rms_norm[

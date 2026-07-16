@@ -48,6 +48,7 @@ from layout import (
     CoordLike,
     Idx,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     coord_to_index_list,
     row_major,
@@ -65,6 +66,7 @@ from std.utils.numerics import get_accum_type, max_finite, min_finite
 from comm.rms_norm_fp8 import rms_norm_fused_fp8
 from std.gpu.primitives.grid_controls import PDLLevel
 from .reshape import reshape
+from .shapes import _get_start_indices_of_nth_subvolume_static
 
 comptime _APPLE_STATIC_SHMEM_MAX_BYTES = 32 * 1024
 """Maximum number of bytes that can be used on Apple GPUs (32K)."""
@@ -310,6 +312,7 @@ def layer_norm_gpu_warp_tiling[
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
     dtype: DType,
+    Storage: TensorStorage,
     //,
     simd_width: Int,
     max_warps_per_block: Int,
@@ -324,7 +327,7 @@ def layer_norm_gpu_warp_tiling[
     ) capturing -> None,
 ](
     shape: IndexList[2],
-    beta: TileTensor[dtype, LayoutType, origin],
+    beta: TileTensor[dtype, LayoutType, origin, Storage=Storage],
     epsilon: Float32,
 ):
     comptime assert beta.rank == 1, "beta must have rank 1"
@@ -391,6 +394,7 @@ def layer_norm_gpu_block[
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
     dtype: DType,
+    Storage: TensorStorage,
     //,
     simd_width: Int,
     input_fn: def[width: Int, alignment: Int](
@@ -404,7 +408,7 @@ def layer_norm_gpu_block[
     ) capturing -> None,
 ](
     shape: IndexList[2],
-    beta: TileTensor[dtype, LayoutType, origin],
+    beta: TileTensor[dtype, LayoutType, origin, Storage=Storage],
     epsilon: Float32,
 ):
     comptime assert beta.rank == 1, "beta must have rank 1"
@@ -497,54 +501,94 @@ def layer_norm_reshape[
 
 def layer_norm_gpu[
     dtype: DType,
-    rank: Int,
     //,
-    input_fn: def[width: Int, rank: Int, alignment: Int](
-        IndexList[rank]
-    ) capturing -> SIMD[dtype, width],
+    rank: Int,
+    input_fn: def[width: Int, alignment: Int](Coord) capturing -> SIMD[
+        dtype, width
+    ],
     gamma_fn: def[width: Int, rank: Int, alignment: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
-    output_fn: def[width: SIMDSize, rank: Int, alignment: Int](
-        idx: IndexList[rank], val: SIMD[dtype, width]
+    output_fn: def[width: SIMDSize, alignment: Int](
+        Coord, SIMD[dtype, width]
     ) capturing -> None,
 ](
-    shape: IndexList[rank, ...],
+    shape: Coord,
     beta: TileTensor[mut=False, dtype, ...],
     epsilon: Float32,
     *,
     ctx: DeviceContext,
 ) raises:
+    # Boundary `IndexList` -> `Coord` migration (mirror of the `rms_norm_gpu` /
+    # softmax migration): the public `shape` arrives as a `Coord` (statically
+    # known outer dims are encoded in its type), then is materialized to a
+    # runtime `IndexList` once. The existing runtime arithmetic and the row/col
+    # 2D wrappers run on `shape_il`; `gamma_fn` is column-indexed only (never
+    # row-translated) so it keeps its n-D `IndexList` form and passes straight
+    # through to the kernels.
     comptime assert beta.rank == 1, "beta must have rank 1"
     if rank == 0:
         return
 
+    var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
+
     comptime rank_rs = 2
-    var flattened_shape = layer_norm_reshape[rank_rs](shape)
+    var flattened_shape = layer_norm_reshape[rank_rs](shape_il)
     var rows = flattened_shape[0]
     var cols = flattened_shape[1]
 
     if rows == 0 or cols == 0:
         return
 
+    # The 2D wrappers translate each flattened `(row, col)` back to the original
+    # n-D coordinate. The row -> n-D decomposition divides by the outer dims; on
+    # the static-shape path those divisors are the `ComptimeInt` dims carried in
+    # `type_of(shape)` (a `Coord`), so the per-row `divmod` strength-reduces to
+    # magic-multiply + shift instead of the runtime Newton-reciprocal `IDIV` that
+    # a plain `IndexList` divisor forces. Dynamic dims fall back to the runtime
+    # value in `shape_il`, so this path is behavior-identical to the pre-migration
+    # `_get_start_indices_of_nth_subvolume` form for non-static shapes.
+    #
+    # `@__copy_capture(shape_il)` is required: these wrappers are embedded into
+    # GPU kernels as `capturing` closures, and a captured *local* `var` (unlike
+    # the pre-migration `shape` function parameter, which the old code captured
+    # directly) is not carried to the device without an explicit copy-capture.
+    # Without it the rank-N divmod reads garbage outer dims on device (rank-2 is
+    # unaffected since its outer translation is trivial; rank>=3 produces wrong
+    # results / launch failures).
+    @__copy_capture(shape_il)
     @parameter
     @always_inline
     def input_fn_2d[
         simd_width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        # Translate a given 2D index back to the original n-D tensor
-        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        var shape_witness = type_of(shape)()
+        var shape_coord = _index_list_to_typed_coord(
+            shape_witness,
+            rebind[IndexList[shape_witness.rank]](shape_il),
+        )
+        var indices = _get_start_indices_of_nth_subvolume_static(
+            row, shape_coord
+        )
         indices[rank - 1] = col
-        return input_fn[simd_width, rank, alignment](indices.canonicalize())
+        return input_fn[simd_width, alignment](Coord(indices))
 
+    @__copy_capture(shape_il)
     @parameter
     @always_inline
     def output_fn_2d[
         simd_width: SIMDSize, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]):
-        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        var shape_witness = type_of(shape)()
+        var shape_coord = _index_list_to_typed_coord(
+            shape_witness,
+            rebind[IndexList[shape_witness.rank]](shape_il),
+        )
+        var indices = _get_start_indices_of_nth_subvolume_static(
+            row, shape_coord
+        )
         indices[rank - 1] = col
-        output_fn[simd_width, rank, alignment](indices.canonicalize(), val)
+        output_fn[simd_width, alignment](Coord(indices), val)
 
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
@@ -579,6 +623,7 @@ def layer_norm_gpu[
                 mut=beta.mut,
                 LayoutType=beta.LayoutType,
                 origin=beta.origin,
+                Storage=beta.Storage,
                 simd_width * 2,
                 max_warps_per_block,
                 input_fn_2d,
@@ -598,6 +643,7 @@ def layer_norm_gpu[
                 mut=beta.mut,
                 LayoutType=beta.LayoutType,
                 origin=beta.origin,
+                Storage=beta.Storage,
                 simd_width,
                 max_warps_per_block,
                 input_fn_2d,
@@ -617,6 +663,7 @@ def layer_norm_gpu[
                 mut=beta.mut,
                 LayoutType=beta.LayoutType,
                 origin=beta.origin,
+                Storage=beta.Storage,
                 simd_width,
                 input_fn_2d,
                 gamma_fn,
@@ -635,6 +682,7 @@ def layer_norm_gpu[
             mut=beta.mut,
             LayoutType=beta.LayoutType,
             origin=beta.origin,
+            Storage=beta.Storage,
             1,
             input_fn_2d,
             gamma_fn,
@@ -825,9 +873,9 @@ def layer_norm_cpu[
 def layer_norm[
     dtype: DType,
     rank: Int,
-    input_0_fn: def[_width: Int, _rank: Int, alignment: Int](
-        IndexList[_rank]
-    ) capturing -> SIMD[dtype, _width],
+    input_0_fn: def[_width: Int, alignment: Int](Coord) capturing -> SIMD[
+        dtype, _width
+    ],
     input_1_fn: def[_width: Int, _rank: Int, alignment: Int](
         IndexList[_rank]
     ) capturing -> SIMD[dtype, _width],
@@ -837,24 +885,55 @@ def layer_norm[
     /,
     target: StaticString = "cpu",
 ](
-    shape: IndexList[rank],
+    shape: Coord,
     gamma_shape: IndexList[1],
     beta: TileTensor[mut=False, dtype, ...],
     epsilon: Float32,
     ctx: DeviceContext,
 ) raises:
+    # Boundary `IndexList` -> `Coord` migration (mirror of public `rms_norm` /
+    # softmax migration). `input_0_fn` and `shape` are `Coord`; `input_1_fn`
+    # (gamma) and `output_0_fn` keep their n-D `IndexList` form for source
+    # compatibility. `shape_il` materializes the runtime `IndexList` once for the
+    # reduction-dim guards, the trace string, and the IndexList-form CPU path;
+    # the GPU path receives the `Coord` directly so its static outer dims fold.
     comptime assert beta.rank == 1, "beta must have rank 1"
+
+    var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
+
     # Note: we only support reduction along the last dimension
-    if gamma_shape[0] != shape[rank - 1]:
+    if gamma_shape[0] != shape_il[rank - 1]:
         raise Error("Gamma size does not match dimension of reduction.")
 
-    if Int(beta.layout.shape[0]().value()) != shape[rank - 1]:
+    if Int(beta.layout.shape[0]().value()) != shape_il[rank - 1]:
         raise Error("Beta size does not match dimension of reduction.")
+
+    # The CPU path consumes an n-D `IndexList`-form input lambda; wrap the
+    # `Coord`-form public lambda back to that interface.
+    @parameter
+    @always_inline
+    def input_fn_il[
+        width: Int, _rank: Int, alignment: Int
+    ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
+        return input_0_fn[width, alignment](
+            Coord(rebind[IndexList[rank]](indices))
+        )
+
+    # The GPU path consumes a `Coord`-form output lambda; wrap the n-D
+    # `IndexList`-form public lambda forward to that interface.
+    @parameter
+    @always_inline
+    def output_fn_coord[
+        width: SIMDSize, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+        output_0_fn[width, rank, alignment](
+            rebind[IndexList[rank]](coord_to_index_list(coords)), val
+        )
 
     @always_inline
     @parameter
     def description_fn() -> String:
-        return trace_arg("input", shape, dtype)
+        return trace_arg("input", shape_il, dtype)
 
     with Trace[TraceLevel.OP, target=target](
         "layer_norm",
@@ -862,15 +941,15 @@ def layer_norm[
         task_id=Int(ctx.id()),
     ):
         comptime if is_cpu[target]():
-            layer_norm_cpu[input_0_fn, input_1_fn, output_0_fn](
-                shape.canonicalize(),
+            layer_norm_cpu[input_fn_il, input_1_fn, output_0_fn](
+                shape_il.canonicalize(),
                 beta,
                 epsilon,
                 Optional[DeviceContext](ctx),
             )
         elif is_gpu[target]():
-            layer_norm_gpu[input_0_fn, input_1_fn, output_0_fn](
-                shape.canonicalize(),
+            layer_norm_gpu[rank, input_0_fn, input_1_fn, output_fn_coord](
+                shape,
                 beta,
                 epsilon,
                 ctx=ctx,
@@ -962,6 +1041,7 @@ def rms_norm_gpu_warp_tiling_128[
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
     dtype: DType,
+    Storage: TensorStorage,
     //,
     simd_width: Int,
     warps_per_block: Int,
@@ -973,7 +1053,7 @@ def rms_norm_gpu_warp_tiling_128[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[dtype, LayoutType, origin],
+    gamma: TileTensor[dtype, LayoutType, origin, Storage=Storage],
     epsilon: Float32,
     weight_offset: Scalar[dtype],
     num_rows: Int,
@@ -1042,6 +1122,7 @@ def rms_norm_gpu_warp_per_row[
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
     dtype: DType,
+    Storage: TensorStorage,
     //,
     simd_width: Int,
     rows_per_block: Int,
@@ -1055,7 +1136,7 @@ def rms_norm_gpu_warp_per_row[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[dtype, LayoutType, origin],
+    gamma: TileTensor[dtype, LayoutType, origin, Storage=Storage],
     epsilon: Float32,
     weight_offset: Scalar[dtype],
     num_rows: Int,
@@ -1159,54 +1240,26 @@ def rms_norm_gpu_warp_per_row[
                     col += stride
 
 
-# Static-divisor row -> n-D start-index decomposition.
-#
-# Functionally identical to `_get_start_indices_of_nth_subvolume[1](n, shape)`
-# (the `subvolume_rank == 1` row-translation: dim `rank-1` is the column, set by
-# the caller; dims `1..rank-2` are decomposed; dim 0 is the final quotient), but
-# the shape arrives as the `Coord` *type* `ShapeCoord` rather than a runtime
-# `IndexList`. For dims whose extent is statically known in the `Coord` type
-# (`ParamListType[i].is_static_value`), the divisor becomes a compile-time
-# literal, so the `divmod` strength-reduces to a magic-multiply + shift
-# (verified: SASS `IMAD.HI`/`SHF`, no `IDIV`/`MUFU.RCP`) instead of the runtime
-# Newton-reciprocal divide that an `IndexList` divisor forces. Dynamic dims fall
-# back to the runtime value carried in `shape`.
-#
-# The row index `n` stays runtime, so the *result* indices are runtime; only the
-# DIVISORS fold. The `Coord` is never passed to the device (a static-typed
-# `Coord` is not `DevicePassable`); its static dims live in the type and dynamic
-# dims (if any) are read from the captured runtime `shape` value.
+# Rebuild a statically-typed `Coord` from a runtime `IndexList`, preserving the
+# `Coord`'s static dims (`ComptimeInt`) and filling its dynamic leaves from the
+# `IndexList`. Needed at the rms_norm/layer_norm call sites: the static-divisor
+# `divmod` fold needs the `Coord` *type* (its static dims), but a static-typed
+# `Coord` is not `DevicePassable`, so the device closures capture the
+# `DevicePassable` `IndexList` and rebuild the typed `Coord` in-kernel here.
 @always_inline
-def _get_row_start_indices_static[
-    ShapeCoord: CoordLike, rank: Int
-](n: Int, runtime_shape: IndexList[rank]) -> IndexList[rank]:
-    var res = IndexList[rank]()
+def _index_list_to_typed_coord[
+    element_types: TypeList[Trait=CoordLike, ...]
+](witness: Coord[*element_types], il: IndexList[witness.rank]) -> Coord[
+    *element_types
+]:
+    # Default-construct sets every static dim to its `ComptimeInt` literal.
+    var res = Coord[*element_types]()
 
-    # Match `_get_start_indices_of_nth_subvolume`'s fast paths so behavior is
-    # bit-identical for the shapes that reach it.
-    comptime if rank == 2:
-        res[0] = n
-        return res
+    comptime for i in range(witness.rank):
+        comptime ElemT = element_types[i]
+        comptime if not ElemT.is_static_value:
+            res[i] = rebind[ElemT](Scalar[ElemT.DTYPE](il[i]))
 
-    var curr = n
-
-    comptime for i in reversed(range(1, rank - 1)):
-        comptime ElemT = ShapeCoord.ParamListType[i]
-        comptime if ElemT.is_static_value:
-            # Compile-time divisor -> magic-multiply + shift (no `IDIV`).
-            comptime divisor = ElemT.static_value
-            res[i] = umod(curr, divisor)
-            curr = ufloordiv(curr, divisor)
-        else:
-            # Dynamic dim: read the divisor from the runtime `IndexList` (which,
-            # unlike a static-typed `Coord`, is `DevicePassable` and transfers as
-            # a closure capture). This path emits a runtime divide, same as the
-            # `_get_start_indices_of_nth_subvolume` baseline.
-            var divisor = runtime_shape[i]
-            res[i] = umod(curr, divisor)
-            curr = ufloordiv(curr, divisor)
-
-    res[0] = curr
     return res
 
 
@@ -1242,6 +1295,7 @@ def rms_norm_gpu_warp_tiling[
     origin: Origin[mut=mut],
     dtype: DType,
     rank: Int,
+    Storage: TensorStorage,
     //,
     simd_width: Int,
     max_warps_per_block: Int,
@@ -1256,7 +1310,7 @@ def rms_norm_gpu_warp_tiling[
     multiply_before_cast: Bool,
 ](
     shape: IndexList[rank],
-    gamma: TileTensor[dtype, LayoutType, origin],
+    gamma: TileTensor[dtype, LayoutType, origin, Storage=Storage],
     epsilon: Float32,
     weight_offset: Scalar[dtype],
     num_cols: Int,
@@ -1476,17 +1530,20 @@ def row_mean_of_squares_qk_gpu_block[
     out_mut: Bool,
     out_layout: TensorLayout,
     out_origin: Origin[mut=out_mut],
+    out_storage: TensorStorage,
     q_layout: TensorLayout,
     q_origin: Origin,
+    q_storage: TensorStorage,
     k_layout: TensorLayout,
     k_origin: Origin,
+    k_storage: TensorStorage,
     //,
     simd_width: Int,
     max_warps_per_block: Int,
 ](
-    output: TileTensor[out_dtype, out_layout, out_origin],
-    q: TileTensor[in_dtype, q_layout, q_origin],
-    k: TileTensor[in_dtype, k_layout, k_origin],
+    output: TileTensor[out_dtype, out_layout, out_origin, Storage=out_storage],
+    q: TileTensor[in_dtype, q_layout, q_origin, Storage=q_storage],
+    k: TileTensor[in_dtype, k_layout, k_origin, Storage=k_storage],
     q_cols: Int,
     k_cols: Int,
 ) where out_mut:
@@ -1544,6 +1601,7 @@ def rms_norm_gpu_block[
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
     dtype: DType,
+    Storage: TensorStorage,
     //,
     simd_width: Int,
     max_warps_per_block: Int,
@@ -1555,7 +1613,7 @@ def rms_norm_gpu_block[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[dtype, LayoutType, origin],
+    gamma: TileTensor[dtype, LayoutType, origin, Storage=Storage],
     epsilon: Float32,
     weight_offset: Scalar[dtype],
     num_cols: Int,
@@ -1627,7 +1685,15 @@ def rms_norm_gpu[
 
     var rows = shape_il.flattened_length() // cols
 
-    @parameter
+    # The 2D wrappers translate each flattened `(row, col)` back to the original
+    # n-D coordinate. The row -> n-D decomposition divides by the outer dims; on
+    # the static-shape path those divisors are the `ComptimeInt` dims carried in
+    # `type_of(shape)` (a `Coord`), so the per-row `divmod` strength-reduces to
+    # magic-multiply + shift instead of the runtime Newton-reciprocal `IDIV` that
+    # a plain `IndexList` divisor forces. Dynamic dims fall back to the runtime
+    # value in `shape_il`, so this path is behavior-identical to the pre-migration
+    # `_get_start_indices_of_nth_subvolume` form for non-static shapes.
+    #
     # `@__copy_capture(shape_il)` is required: these wrappers are embedded into
     # GPU kernels as `capturing` closures, and a captured *local* `var` (unlike
     # a function parameter, which the pre-migration code captured directly) is
@@ -1635,14 +1701,27 @@ def rms_norm_gpu[
     # rank-N `_get_start_indices_of_nth_subvolume` divmod reads garbage outer
     # dims on device (rank-2 is unaffected since its outer translation is
     # trivial; rank>=3 produces wrong results / launch failures).
+    #
+    # The static-divisor fold needs the `Coord` *type* (its static dims): a
+    # static-typed `Coord` local `var` captured into a `capturing` closure is
+    # not carried to the device, so capture the `DevicePassable` `shape_il`
+    # (`IndexList`) and rebuild the typed `Coord` in-kernel. `type_of(shape)()`
+    # reconstructs the static dims at comptime; the dynamic leaves are filled
+    # from `shape_il`.
     @__copy_capture(shape_il)
     @parameter
     @always_inline
     def output_fn_2d[
         simd_width: SIMDSize, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
-        # Translate a given 2D index back to the original n-D tensor
-        var indices = _get_start_indices_of_nth_subvolume(row, shape_il)
+        var shape_witness = type_of(shape)()
+        var shape_coord = _index_list_to_typed_coord(
+            shape_witness,
+            rebind[IndexList[shape_witness.rank]](shape_il),
+        )
+        var indices = _get_start_indices_of_nth_subvolume_static(
+            row, shape_coord
+        )
         indices[rank - 1] = col
         output_fn[simd_width, alignment](Coord(indices), val)
 
@@ -1652,39 +1731,13 @@ def rms_norm_gpu[
     def input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        # Translate a given 2D index back to the original n-D tensor
-        var indices = _get_start_indices_of_nth_subvolume(row, shape_il)
-        indices[rank - 1] = col
-        return input_fn[simd_width](Coord(indices))
-
-    # Static-divisor variants of the 2D wrappers. Identical translation, but the
-    # row -> n-D decomposition divides by the statically-known outer dims carried
-    # in `type_of(shape)` (a `Coord` whose inner dims are `ComptimeInt` on the
-    # static-shape path), so the per-row `divmod` strength-reduces to magic-multiply
-    # + shift instead of the runtime Newton-reciprocal `IDIV` that the
-    # `shape_il`-form wrappers above emit.
-    comptime ShapeCoordType = type_of(shape)
-
-    @__copy_capture(shape_il)
-    @parameter
-    @always_inline
-    def output_fn_2d_static[
-        simd_width: SIMDSize, alignment: Int
-    ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
-        var indices = _get_row_start_indices_static[ShapeCoordType, rank](
-            row, shape_il
+        var shape_witness = type_of(shape)()
+        var shape_coord = _index_list_to_typed_coord(
+            shape_witness,
+            rebind[IndexList[shape_witness.rank]](shape_il),
         )
-        indices[rank - 1] = col
-        output_fn[simd_width, alignment](Coord(indices), val)
-
-    @__copy_capture(shape_il)
-    @parameter
-    @always_inline
-    def input_fn_2d_static[
-        simd_width: Int
-    ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        var indices = _get_row_start_indices_static[ShapeCoordType, rank](
-            row, shape_il
+        var indices = _get_start_indices_of_nth_subvolume_static(
+            row, shape_coord
         )
         indices[rank - 1] = col
         return input_fn[simd_width](Coord(indices))
@@ -1787,6 +1840,7 @@ def rms_norm_gpu[
                 mut=gamma.mut,
                 LayoutType=gamma.LayoutType,
                 origin=gamma.origin,
+                Storage=gamma.Storage,
                 eff_simd,
                 max_warps_per_block,
                 chunks,
@@ -1826,10 +1880,11 @@ def rms_norm_gpu[
                 mut=gamma.mut,
                 LayoutType=gamma.LayoutType,
                 origin=gamma.origin,
+                Storage=gamma.Storage,
                 simd_width,
                 warps_per_block,
-                input_fn_2d_static,
-                output_fn_2d_static,
+                input_fn_2d,
+                output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
             ctx.enqueue_function[kernel](
@@ -1871,12 +1926,13 @@ def rms_norm_gpu[
                             mut=gamma.mut,
                             LayoutType=gamma.LayoutType,
                             origin=gamma.origin,
+                            Storage=gamma.Storage,
                             simd_width,
                             rows_per_block,
                             True,
                             cc,
-                            input_fn_2d_static,
-                            output_fn_2d_static,
+                            input_fn_2d,
+                            output_fn_2d,
                             multiply_before_cast=multiply_before_cast,
                         ]
                         ctx.enqueue_function[kernel](
@@ -1894,12 +1950,13 @@ def rms_norm_gpu[
                     mut=gamma.mut,
                     LayoutType=gamma.LayoutType,
                     origin=gamma.origin,
+                    Storage=gamma.Storage,
                     simd_width,
                     rows_per_block,
                     False,
                     1,
-                    input_fn_2d_static,
-                    output_fn_2d_static,
+                    input_fn_2d,
+                    output_fn_2d,
                     multiply_before_cast=multiply_before_cast,
                 ]
                 ctx.enqueue_function[kernel](
@@ -1954,10 +2011,11 @@ def rms_norm_gpu[
                 mut=gamma.mut,
                 LayoutType=gamma.LayoutType,
                 origin=gamma.origin,
+                Storage=gamma.Storage,
                 simd_width,
                 max_warps_per_block,
-                input_fn_2d_static,
-                output_fn_2d_static,
+                input_fn_2d,
+                output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
             ctx.enqueue_function[kernel](
@@ -1974,10 +2032,11 @@ def rms_norm_gpu[
             mut=gamma.mut,
             LayoutType=gamma.LayoutType,
             origin=gamma.origin,
+            Storage=gamma.Storage,
             1,
             max_warps_per_block,
-            input_fn_2d_static,
-            output_fn_2d_static,
+            input_fn_2d,
+            output_fn_2d,
             multiply_before_cast=multiply_before_cast,
         ]
         ctx.enqueue_function[kernel](
@@ -2224,9 +2283,11 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
     mut1: Bool,
     LayoutType1: TensorLayout,
     origin1: Origin[mut=mut1],
+    Storage1: TensorStorage,
     mut2: Bool,
     LayoutType2: TensorLayout,
     origin2: Origin[mut=mut2],
+    Storage2: TensorStorage,
     dtype: DType,
     //,
     simd_width: Int,
@@ -2245,10 +2306,10 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma1: TileTensor[dtype, LayoutType1, origin1],
+    gamma1: TileTensor[dtype, LayoutType1, origin1, Storage=Storage1],
     epsilon1: Float32,
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, LayoutType2, origin2],
+    gamma2: TileTensor[dtype, LayoutType2, origin2, Storage=Storage2],
     epsilon2: Float32,
     weight_offset2: Scalar[dtype],
     num_cols: Int,
@@ -2324,9 +2385,11 @@ def rms_norm_fused_residual_add_gpu_block[
     mut1: Bool,
     LayoutType1: TensorLayout,
     origin1: Origin[mut=mut1],
+    Storage1: TensorStorage,
     mut2: Bool,
     LayoutType2: TensorLayout,
     origin2: Origin[mut=mut2],
+    Storage2: TensorStorage,
     dtype: DType,
     //,
     simd_width: Int,
@@ -2345,10 +2408,10 @@ def rms_norm_fused_residual_add_gpu_block[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma1: TileTensor[dtype, LayoutType1, origin1],
+    gamma1: TileTensor[dtype, LayoutType1, origin1, Storage=Storage1],
     epsilon1: Float32,
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, LayoutType2, origin2],
+    gamma2: TileTensor[dtype, LayoutType2, origin2, Storage=Storage2],
     epsilon2: Float32,
     weight_offset2: Scalar[dtype],
     num_cols: Int,
@@ -2585,9 +2648,11 @@ def rms_norm_fused_residual_add_gpu[
                 mut1=gamma1.mut,
                 LayoutType1=gamma1.LayoutType,
                 origin1=gamma1.origin,
+                Storage1=gamma1.Storage,
                 mut2=gamma2.mut,
                 LayoutType2=gamma2.LayoutType,
                 origin2=gamma2.origin,
+                Storage2=gamma2.Storage,
                 simd_width,
                 max_warps_per_block,
                 input_fn_2d,
@@ -2617,9 +2682,11 @@ def rms_norm_fused_residual_add_gpu[
                 mut1=gamma1.mut,
                 LayoutType1=gamma1.LayoutType,
                 origin1=gamma1.origin,
+                Storage1=gamma1.Storage,
                 mut2=gamma2.mut,
                 LayoutType2=gamma2.LayoutType,
                 origin2=gamma2.origin,
+                Storage2=gamma2.Storage,
                 simd_width,
                 max_warps_per_block,
                 input_fn_2d,
@@ -2652,9 +2719,11 @@ def rms_norm_fused_residual_add_gpu[
             mut1=gamma1.mut,
             LayoutType1=gamma1.LayoutType,
             origin1=gamma1.origin,
+            Storage1=gamma1.Storage,
             mut2=gamma2.mut,
             LayoutType2=gamma2.LayoutType,
             origin2=gamma2.origin,
+            Storage2=gamma2.Storage,
             1,
             max_warps_per_block,
             input_fn_2d,
@@ -2773,6 +2842,7 @@ def _rms_norm_rope_gpu_warp_tiling[
     input_dtype: DType,
     output_dtype: DType,
     cos_sin_dtype: DType,
+    Storage: TensorStorage,
     //,
     simd_width: Int,
     max_warps_per_block: Int,
@@ -2790,7 +2860,7 @@ def _rms_norm_rope_gpu_warp_tiling[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[input_dtype, LayoutType, origin],
+    gamma: TileTensor[input_dtype, LayoutType, origin, Storage=Storage],
     epsilon: Float32,
     weight_offset: Scalar[input_dtype],
     num_cols: Int,
@@ -2927,6 +2997,7 @@ def _rms_norm_rope_gpu_warp_tiling_128[
     input_dtype: DType,
     output_dtype: DType,
     cos_sin_dtype: DType,
+    Storage: TensorStorage,
     //,
     simd_width: Int,
     warps_per_block: Int,
@@ -2944,7 +3015,7 @@ def _rms_norm_rope_gpu_warp_tiling_128[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[input_dtype, LayoutType, origin],
+    gamma: TileTensor[input_dtype, LayoutType, origin, Storage=Storage],
     epsilon: Float32,
     weight_offset: Scalar[input_dtype],
     num_rows: Int,
@@ -3115,6 +3186,7 @@ def _rms_norm_rope_gpu_block[
     input_dtype: DType,
     output_dtype: DType,
     cos_sin_dtype: DType,
+    Storage: TensorStorage,
     //,
     simd_width: Int,
     max_warps_per_block: Int,
@@ -3132,7 +3204,7 @@ def _rms_norm_rope_gpu_block[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[input_dtype, LayoutType, origin],
+    gamma: TileTensor[input_dtype, LayoutType, origin, Storage=Storage],
     epsilon: Float32,
     weight_offset: Scalar[input_dtype],
     num_cols: Int,
@@ -3364,6 +3436,7 @@ def rms_norm_rope_gpu[
             mut=gamma.mut,
             LayoutType=gamma.LayoutType,
             origin=gamma.origin,
+            Storage=gamma.Storage,
             simd_width,
             warps_per_block,
             input_fn_2d,
@@ -3395,6 +3468,7 @@ def rms_norm_rope_gpu[
             mut=gamma.mut,
             LayoutType=gamma.LayoutType,
             origin=gamma.origin,
+            Storage=gamma.Storage,
             simd_width,
             max_warps_per_block,
             input_fn_2d,
@@ -3424,6 +3498,7 @@ def rms_norm_rope_gpu[
             mut=gamma.mut,
             LayoutType=gamma.LayoutType,
             origin=gamma.origin,
+            Storage=gamma.Storage,
             simd_width,
             max_warps_per_block,
             input_fn_2d,
@@ -3447,6 +3522,7 @@ def rms_norm_rope_gpu[
             mut=gamma.mut,
             LayoutType=gamma.LayoutType,
             origin=gamma.origin,
+            Storage=gamma.Storage,
             1,
             max_warps_per_block,
             input_fn_2d,
@@ -3713,10 +3789,13 @@ def row_mean_of_squares_qk_gpu[
             out_mut=output.mut,
             out_layout=output.LayoutType,
             out_origin=output.origin,
+            out_storage=output.Storage,
             q_layout=q.LayoutType,
             q_origin=q.origin,
+            q_storage=q.Storage,
             k_layout=k.LayoutType,
             k_origin=k.origin,
+            k_storage=k.Storage,
             simd_width=simd_width,
             max_warps_per_block=max_warps_per_block,
         ]
@@ -3742,10 +3821,13 @@ def row_mean_of_squares_qk_gpu[
             out_mut=output.mut,
             out_layout=output.LayoutType,
             out_origin=output.origin,
+            out_storage=output.Storage,
             q_layout=q.LayoutType,
             q_origin=q.origin,
+            q_storage=q.Storage,
             k_layout=k.LayoutType,
             k_origin=k.origin,
+            k_storage=k.Storage,
             simd_width=1,
             max_warps_per_block=max_warps_per_block,
         ]
@@ -3889,32 +3971,49 @@ def apply_qk_rms_norm_gpu_block[
     q_out_mut: Bool,
     q_out_layout: TensorLayout,
     q_out_origin: Origin[mut=q_out_mut],
+    q_out_storage: TensorStorage,
     k_out_mut: Bool,
     k_out_layout: TensorLayout,
     k_out_origin: Origin[mut=k_out_mut],
+    k_out_storage: TensorStorage,
     gamma_q_mut: Bool,
     gamma_q_layout: TensorLayout,
     gamma_q_origin: Origin[mut=gamma_q_mut],
+    gamma_q_storage: TensorStorage,
     gamma_k_mut: Bool,
     gamma_k_layout: TensorLayout,
     gamma_k_origin: Origin[mut=gamma_k_mut],
+    gamma_k_storage: TensorStorage,
     var_mut: Bool,
     var_layout: TensorLayout,
     var_origin: Origin[mut=var_mut],
+    var_storage: TensorStorage,
     q_layout: TensorLayout,
     q_origin: Origin,
+    q_storage: TensorStorage,
     k_layout: TensorLayout,
     k_origin: Origin,
+    k_storage: TensorStorage,
     //,
     simd_width: Int,
 ](
-    q_out: TileTensor[out_dtype, q_out_layout, q_out_origin],
-    k_out: TileTensor[out_dtype, k_out_layout, k_out_origin],
-    gamma_q: TileTensor[DType.float32, gamma_q_layout, gamma_q_origin],
-    gamma_k: TileTensor[DType.float32, gamma_k_layout, gamma_k_origin],
-    qk_var: TileTensor[DType.float32, var_layout, var_origin],
-    q: TileTensor[in_dtype, q_layout, q_origin],
-    k: TileTensor[in_dtype, k_layout, k_origin],
+    q_out: TileTensor[
+        out_dtype, q_out_layout, q_out_origin, Storage=q_out_storage
+    ],
+    k_out: TileTensor[
+        out_dtype, k_out_layout, k_out_origin, Storage=k_out_storage
+    ],
+    gamma_q: TileTensor[
+        DType.float32, gamma_q_layout, gamma_q_origin, Storage=gamma_q_storage
+    ],
+    gamma_k: TileTensor[
+        DType.float32, gamma_k_layout, gamma_k_origin, Storage=gamma_k_storage
+    ],
+    qk_var: TileTensor[
+        DType.float32, var_layout, var_origin, Storage=var_storage
+    ],
+    q: TileTensor[in_dtype, q_layout, q_origin, Storage=q_storage],
+    k: TileTensor[in_dtype, k_layout, k_origin, Storage=k_storage],
     epsilon: Float32,
     q_cols: Int,
     k_cols: Int,
@@ -4021,22 +4120,29 @@ def apply_qk_rms_norm_gpu[
             q_out_mut=q_out.mut,
             q_out_layout=q_out.LayoutType,
             q_out_origin=q_out.origin,
+            q_out_storage=q_out.Storage,
             k_out_mut=k_out.mut,
             k_out_layout=k_out.LayoutType,
             k_out_origin=k_out.origin,
+            k_out_storage=k_out.Storage,
             gamma_q_mut=gamma_q.mut,
             gamma_q_layout=gamma_q.LayoutType,
             gamma_q_origin=gamma_q.origin,
+            gamma_q_storage=gamma_q.Storage,
             gamma_k_mut=gamma_k.mut,
             gamma_k_layout=gamma_k.LayoutType,
             gamma_k_origin=gamma_k.origin,
+            gamma_k_storage=gamma_k.Storage,
             var_mut=qk_var.mut,
             var_layout=qk_var.LayoutType,
             var_origin=qk_var.origin,
+            var_storage=qk_var.Storage,
             q_layout=q.LayoutType,
             q_origin=q.origin,
+            q_storage=q.Storage,
             k_layout=k.LayoutType,
             k_origin=k.origin,
+            k_storage=k.Storage,
             simd_width=simd_width,
         ]
         ctx.enqueue_function[kernel](
@@ -4066,22 +4172,29 @@ def apply_qk_rms_norm_gpu[
             q_out_mut=q_out.mut,
             q_out_layout=q_out.LayoutType,
             q_out_origin=q_out.origin,
+            q_out_storage=q_out.Storage,
             k_out_mut=k_out.mut,
             k_out_layout=k_out.LayoutType,
             k_out_origin=k_out.origin,
+            k_out_storage=k_out.Storage,
             gamma_q_mut=gamma_q.mut,
             gamma_q_layout=gamma_q.LayoutType,
             gamma_q_origin=gamma_q.origin,
+            gamma_q_storage=gamma_q.Storage,
             gamma_k_mut=gamma_k.mut,
             gamma_k_layout=gamma_k.LayoutType,
             gamma_k_origin=gamma_k.origin,
+            gamma_k_storage=gamma_k.Storage,
             var_mut=qk_var.mut,
             var_layout=qk_var.LayoutType,
             var_origin=qk_var.origin,
+            var_storage=qk_var.Storage,
             q_layout=q.LayoutType,
             q_origin=q.origin,
+            q_storage=q.Storage,
             k_layout=k.LayoutType,
             k_origin=k.origin,
+            k_storage=k.Storage,
             simd_width=1,
         ]
         ctx.enqueue_function[kernel](

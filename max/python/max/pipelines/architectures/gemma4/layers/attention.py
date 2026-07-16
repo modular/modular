@@ -67,6 +67,7 @@ class Gemma4Attention(Module, Shardable):
         qk_norm_eps: float = 1e-6,
         local_window_size: int = 1024,
         quant_config: QuantConfig | None = None,
+        fused_qkv: bool = False,
     ) -> None:
         """Initializes the attention layer.
 
@@ -93,6 +94,10 @@ class Gemma4Attention(Module, Shardable):
             has_bias: Whether to use an attention bias. Defaults to False.
             qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
             quant_config: Scaled quantization configuration. Defaults to None.
+            fused_qkv: When True, the qkv/qk projection uses a single stacked
+                weight (``StackedLinear(stacked=True)``) loaded pre-fused from
+                the checkpoint instead of concatenating per-projection weights
+                in-graph (DISTINF-194). Defaults to False.
         """
 
         super().__init__()
@@ -152,7 +157,7 @@ class Gemma4Attention(Module, Shardable):
                 names=["q_proj", "k_proj", "v_proj"],
                 dtype=dtype,
                 device=devices[0],
-                stacked=False,
+                stacked=fused_qkv,
                 has_bias=has_bias,
                 linear_cls=linear_cls,
                 quant_config=quant_config,
@@ -164,7 +169,7 @@ class Gemma4Attention(Module, Shardable):
                 names=["q_proj", "k_proj"],
                 dtype=dtype,
                 device=devices[0],
-                stacked=False,
+                stacked=fused_qkv,
                 has_bias=has_bias,
                 linear_cls=linear_cls,
                 quant_config=quant_config,

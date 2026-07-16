@@ -40,6 +40,7 @@ modular_py_test(
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/sampling",
         "//max/python/max/pipelines/weights",
         "//max/python/max/serve/parser",
         requirement("click"),

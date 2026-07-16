@@ -43,7 +43,6 @@
       "type": "category",
       "collapsed": false,
       "items": [
-        "max/deploy/cloud",
         {
           "type": "doc",
           "id": "max/deploy/local-to-cloud",
@@ -78,7 +77,8 @@
           "collapsed": true,
           "items": [
             "max/develop/graph",
-            "max/develop/modules"
+            "max/develop/modules",
+            "max/develop/layers"
           ]
         },
         {
@@ -695,6 +695,17 @@
             },
             "__AUTOGEN:max.profiler__"
           ]
+        },
+        {
+          "type": "category",
+          "label": "max.support.image",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/support.image"
+          },
+          "items": [
+            "__AUTOGEN:max.support.image__"
+          ]
         }
       ]
     },
@@ -731,11 +742,6 @@
       "label": "Create embeddings",
       "type": "link",
       "href": "/max/rest-api/#POST/v1/embeddings"
-    },
-    {
-      "label": "Create batch",
-      "type": "link",
-      "href": "/max/rest-api/#POST/v1/batches"
     },
     {
       "label": "List models",

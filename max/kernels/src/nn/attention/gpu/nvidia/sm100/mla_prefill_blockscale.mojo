@@ -166,9 +166,9 @@ __extension SM100MLA:
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_dtype,
             Self.config.output_swizzle_mode,
-            # `// fa4_config.num_qo` matches fa4_softmax's unified
-            # 1Q/2Q signature; numerically `// 2` for num_qo=2.
-            BM=Self.config.fa4_config.BM // Self.config.fa4_config.num_qo,
+            # `// fa4_config.num_q` matches fa4_softmax's unified
+            # 1Q/2Q signature; numerically `// 2` for num_q=2.
+            BM=Self.config.fa4_config.BM // Self.config.fa4_config.num_q,
             BN=Self.config.fa4_config.ov_depth,
             middle_dim=Self.config.num_q_heads,
             group=config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
@@ -228,11 +228,11 @@ __extension SM100MLA:
         max_seq_len = pack.max_seq_len
         partition = pack.partition
 
-        comptime num_qo = Self.config.num_qo()
-        # TODO: We may want to support num_qo>2 for depth=64?
+        comptime num_q = Self.config.num_q()
+        # TODO: We may want to support num_q>2 for depth=64?
         comptime assert (
-            num_qo == 1 or num_qo == 2
-        ), "Currently only support num_qo == 1 or 2"
+            num_q == 1 or num_q == 2
+        ), "Currently only support num_q == 1 or 2"
         # Blockscale uses its own extra barriers for the FP8→BF16 rope
         # conversion pipeline, so skip FA4MiscMBars rope barriers to stay
         # within the 32-barrier hardware limit.
@@ -1746,7 +1746,7 @@ def mla_sm100_prefill_blockscale[
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_dtype,
         fa4_config.output_swizzle_mode,
-        BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_qo,
+        BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_q,
         BN=ov_depth,
         middle_dim=fa4_config.num_q_heads,
         tma_blocks_per_op=store_blocks_per_op,
@@ -1841,7 +1841,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
     ragged_tma_store: RaggedTMA3DTile[
         output_dtype,
         fa4_config.output_swizzle_mode,
-        BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_qo,
+        BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_q,
         BN=fa4_config.fa4_config.ov_depth,
         # Inferred from the created store; forwarded to the kernel impl.
         middle_dim=_,

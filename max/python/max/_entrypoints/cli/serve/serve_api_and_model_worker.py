@@ -20,7 +20,8 @@ import signal
 from types import FrameType
 
 import uvloop
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY
+from max.pipelines.lib import PipelineArgs, PipelineConfig
 from max.pipelines.logging_utils import log_basic_config, log_pipeline_info
 from max.pipelines.modeling.types import PipelineTask
 from max.profiler import Tracer
@@ -56,32 +57,34 @@ def _exit_on_signal(signum: int, frame: FrameType | None) -> None:
 
 def serve_api_server_and_model_worker(
     settings: Settings,
-    pipeline_config: PipelineConfig,
+    pipeline_args: PipelineArgs,
 ) -> None:
     # Register custom architectures before any architecture-name lookup. Both
     # retrieve_pipeline_task and retrieve_factory below resolve by name; a custom
     # arch that overrides a built-in must be imported first, or the stale lazy
     # built-in entry is materialized instead (and may fail to import).
     PIPELINE_REGISTRY._import_custom_architectures(
-        pipeline_config.runtime.custom_architectures
+        pipeline_args.custom_architectures
     )
 
     # Auto-detect pipeline task from the model architecture if not explicitly set.
-    if pipeline_config.task == PipelineTask.UNDEFINED:
-        pipeline_config.task = PIPELINE_REGISTRY.retrieve_pipeline_task(
-            pipeline_config.models.main_architecture_name,
+    if pipeline_args.task == PipelineTask.UNDEFINED:
+        arch_name = pipeline_args.main_architecture_name
+        pipeline_args = pipeline_args.model_copy(
+            update={"task": PIPELINE_REGISTRY.retrieve_pipeline_task(arch_name)}
         )
         logger.info(
-            f"Auto-detected pipeline task: {pipeline_config.task.value} "
-            f"(model architecture: {pipeline_config.models.main_architecture_name})"
+            f"Auto-detected pipeline task: {pipeline_args.task.value} "
+            f"(model architecture: {arch_name})"
         )
 
     override_architecture: str | None = None
 
     # Load tokenizer and pipeline from PIPELINE_REGISTRY.
+    pipeline_config = PipelineConfig.from_args(pipeline_args)
     tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config,
-        task=pipeline_config.task,
+        task=pipeline_args.task,
         override_architecture=override_architecture,
     )
     log_basic_config(pipeline_config)

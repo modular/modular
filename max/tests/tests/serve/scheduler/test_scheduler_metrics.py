@@ -17,9 +17,18 @@ import logging
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from max.pipelines.modeling.types import BatchType
-from max.serve.scheduler.utils import BatchMetrics
+from max.pipelines.lib.vision_encoder_cache import VisionEncoderMetrics
+from max.pipelines.modeling.types import BatchType, CompletedBatchStats
+from max.serve.scheduler.utils import (
+    BatchMetrics,
+    publish_completed_batch_metrics,
+)
 from pythonjsonlogger import jsonlogger
+from tests.serve.scheduler.common import (
+    FakeOverlapPipeline,
+    create_paged_scheduler,
+    enqueue_request,
+)
 
 
 def _make_metrics(**overrides: Any) -> BatchMetrics:
@@ -483,6 +492,79 @@ def test_publish_metrics_disk_kv_active() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Vision encoder metrics tests
+# ---------------------------------------------------------------------------
+
+
+def _make_vision_metrics(**overrides: Any) -> VisionEncoderMetrics:
+    base = dict[str, Any](
+        num_images_total=4,
+        num_images_encoded=3,
+        num_images_cached=1,
+        num_patches_encoded=1200,
+        num_tokens_encoded=256,
+    )
+    base.update(overrides)
+    return VisionEncoderMetrics(**base)
+
+
+def test_vision_metrics_cache_hit_rate() -> None:
+    vm = _make_vision_metrics()
+    assert vm.cache_hit_rate == 0.25
+    # No images -> avoid divide-by-zero, report 0.0.
+    assert VisionEncoderMetrics().cache_hit_rate == 0.0
+
+
+def test_metric_to_string_with_vision() -> None:
+    # Vision info is appended inline to the language model batch line.
+    metrics = _make_metrics(vision_metrics=_make_vision_metrics())
+    assert (
+        "Vision Encoder: 3 imgs, 1200 patches, 256 toks encoded, "
+        "cache hit rate 25.0% (1 hit, 3 miss) |"
+    ) in metrics.pretty_format()
+
+
+def test_metric_to_string_no_vision_clause_when_absent() -> None:
+    # No vision metrics at all (text-only model).
+    assert "Vision Encoder" not in _make_metrics().pretty_format()
+    # Vision metrics present but with no images (guarded off).
+    empty = _make_metrics(vision_metrics=VisionEncoderMetrics())
+    assert "Vision Encoder" not in empty.pretty_format()
+
+
+def test_to_log_extra_vision() -> None:
+    extra = _make_metrics(vision_metrics=_make_vision_metrics()).to_log_extra()
+    assert extra["vision_images_total"] == 4
+    assert extra["vision_images_encoded"] == 3
+    assert extra["vision_images_cached"] == 1
+    assert extra["vision_patches_encoded"] == 1200
+    assert extra["vision_tokens_encoded"] == 256
+    assert extra["vision_cache_hit_rate"] == 0.25
+
+    # Absent for text-only batches.
+    assert "vision_images_total" not in _make_metrics().to_log_extra()
+
+
+def test_publish_metrics_vision_active() -> None:
+    metrics = _make_metrics(vision_metrics=_make_vision_metrics())
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+    mock_metrics.vision_images_encoded.assert_called_once_with(3)
+    mock_metrics.vision_images_cached.assert_called_once_with(1)
+    mock_metrics.vision_patches_encoded.assert_called_once_with(1200)
+    mock_metrics.vision_tokens_encoded.assert_called_once_with(256)
+    mock_metrics.vision_cache_hit_rate.assert_called_once_with(25.0)
+
+
+def test_publish_metrics_vision_gated_off() -> None:
+    # No vision metrics -> no vision emissions.
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        _make_metrics().publish_metrics()
+    mock_metrics.vision_images_encoded.assert_not_called()
+    mock_metrics.vision_cache_hit_rate.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # _SpeculativeDecodingMetrics tests
 # ---------------------------------------------------------------------------
 
@@ -547,12 +629,12 @@ def _mock_inputs(batch_size: int, batch_type: BatchType) -> MagicMock:
     return inputs
 
 
-def _mock_sch_config() -> MagicMock:
+def _mock_sch_config(dp: int = 1) -> MagicMock:
     config = MagicMock()
     config.max_batch_size = 32
     config.target_tokens_per_batch_ce = 4096
     config.max_batch_total_tokens = 0
-    config.data_parallel_degree = 1
+    config.data_parallel_degree = dp
     return config
 
 
@@ -610,6 +692,20 @@ def test_batch_metrics_create_ce_with_spec_decode_uses_standard_formula() -> (
     )
     assert metrics.generation_throughput == 2 * 1 / 0.1
 
+    # Acceptance metrics describe the decode/verify step, so a CE batch must
+    # not report them even when stale spec_metrics leak from a previous TG
+    # batch. The zeroed draft fields make every downstream consumer drop the
+    # spec-decode info.
+    assert metrics.draft_tokens_generated == 0
+    assert metrics.draft_tokens_accepted == 0
+    assert metrics.avg_acceptance_length == 0.0
+    assert metrics.max_acceptance_length == 0
+    assert metrics.acceptance_rate_per_position == []
+    formatted = metrics.pretty_format()
+    assert "Draft Tokens" not in formatted
+    assert "Acceptance Len" not in formatted
+    assert "draft_tokens_generated" not in metrics.to_log_extra()
+
 
 def test_batch_metrics_create_no_spec_decode() -> None:
     """Without spec decode metrics, standard throughput formula and zero draft fields."""
@@ -630,3 +726,270 @@ def test_batch_metrics_create_no_spec_decode() -> None:
     assert metrics.avg_acceptance_length == 0.0
     assert metrics.max_acceptance_length == 0
     assert metrics.acceptance_rate_per_position == []
+
+
+# ---------------------------------------------------------------------------
+# Overlap-scheduling execution-metric attribution tests
+# ---------------------------------------------------------------------------
+
+
+def test_publish_metrics_defers_execution_metrics() -> None:
+    """With defer_execution_metrics=True (overlap scheduling), execution-time
+    and throughput metrics are suppressed — they are published separately from
+    CompletedBatchStats — while the current batch's composition metrics are
+    still emitted.
+    """
+    metrics = _make_metrics()
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics(defer_execution_metrics=True)
+    mock_metrics.batch_execution_time.assert_not_called()
+    mock_metrics.batch_prompt_throughput.assert_not_called()
+    mock_metrics.batch_generation_throughput.assert_not_called()
+    # Current-batch composition metrics are unaffected.
+    mock_metrics.batch_size.assert_called_once_with(1, batch_type="CE")
+    mock_metrics.batch_input_tokens.assert_called_once_with(6, batch_type="CE")
+    mock_metrics.batch_creation_time.assert_called_once_with(
+        10000.0, batch_type="CE"
+    )
+
+
+def _make_completed_stats(**overrides: Any) -> CompletedBatchStats:
+    base = dict[str, Any](
+        batch_type=BatchType.CE,
+        batch_size=2,
+        num_input_tokens=4096,
+        num_context_tokens=8192,
+        execution_time_s=0.25,
+    )
+    base.update(overrides)
+    return CompletedBatchStats(**base)
+
+
+def test_publish_completed_batch_metrics_ce() -> None:
+    """Execution metrics carry the completed batch's label and are computed
+    from that batch's own token counts and duration."""
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        publish_completed_batch_metrics(_make_completed_stats())
+    mock_metrics.batch_execution_time.assert_called_once_with(
+        250.0, batch_type="CE"
+    )
+    mock_metrics.batch_prompt_throughput.assert_called_once_with(
+        4096 / 0.25, batch_type="CE"
+    )
+    mock_metrics.batch_generation_throughput.assert_called_once_with(
+        2 / 0.25, batch_type="CE"
+    )
+
+
+def test_publish_completed_batch_metrics_tg_spec_decode() -> None:
+    """TG batches with known output tokens (spec decode) use them for
+    generation throughput, mirroring BatchMetrics.create."""
+    stats = _make_completed_stats(batch_type=BatchType.TG, num_output_tokens=12)
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        publish_completed_batch_metrics(stats)
+    mock_metrics.batch_execution_time.assert_called_once_with(
+        250.0, batch_type="TG"
+    )
+    mock_metrics.batch_generation_throughput.assert_called_once_with(
+        12 / 0.25, batch_type="TG"
+    )
+
+
+def test_publish_completed_batch_metrics_ce_ignores_output_tokens() -> None:
+    """CE batches use the standard batch_size formula even when stale spec
+    metrics report output tokens, mirroring BatchMetrics.create."""
+    stats = _make_completed_stats(num_output_tokens=12)
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        publish_completed_batch_metrics(stats)
+    mock_metrics.batch_generation_throughput.assert_called_once_with(
+        2 / 0.25, batch_type="CE"
+    )
+
+
+def test_publish_completed_batch_metrics_zero_duration_skipped() -> None:
+    """A zero-duration record cannot produce meaningful throughput; nothing
+    is published."""
+    stats = _make_completed_stats(execution_time_s=0.0)
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        publish_completed_batch_metrics(stats)
+    mock_metrics.batch_execution_time.assert_not_called()
+    mock_metrics.batch_prompt_throughput.assert_not_called()
+    mock_metrics.batch_generation_throughput.assert_not_called()
+
+
+class _ExecMetricsRecorder:
+    """Captures labeled execution/creation metric calls; no-ops the rest."""
+
+    def __init__(self) -> None:
+        self.execution_calls: list[tuple[float, str]] = []
+        self.creation_calls: list[tuple[float, str]] = []
+        self.prompt_throughput_calls: list[tuple[float, str]] = []
+
+    def batch_execution_time(self, ms: float, batch_type: str) -> None:
+        self.execution_calls.append((ms, batch_type))
+
+    def batch_creation_time(self, ms: float, batch_type: str) -> None:
+        self.creation_calls.append((ms, batch_type))
+
+    def batch_prompt_throughput(self, tps: float, batch_type: str) -> None:
+        self.prompt_throughput_calls.append((tps, batch_type))
+
+    def __getattr__(self, _name: str) -> Any:
+        return MagicMock()
+
+
+def test_scheduler_overlap_attributes_execution_metrics_to_completed_batch() -> (
+    None
+):
+    """Under overlap scheduling, execution-time and throughput telemetry must
+    be labeled with the batch that actually completed (one iteration lagged),
+    not the batch enqueued in the current iteration.
+
+    Regression test: previously a CE batch's execution time was published
+    under the next iteration's batch type (usually TG), corrupting the CE/TG
+    split of maxserve.batch_execution_time and both throughput histograms.
+    """
+    recorder = _ExecMetricsRecorder()
+    with patch("max.serve.scheduler.utils.METRICS", recorder):
+        scheduler, request_queue = create_paged_scheduler(
+            max_seq_len=128,
+            num_blocks=64,
+            max_batch_size=4,
+            page_size=8,
+        )
+        scheduler.pipeline = FakeOverlapPipeline(
+            kv_manager=scheduler.batch_constructor.kv_cache,
+            max_seq_len=128,
+        )
+        enqueue_request(request_queue, prompt_len=16, max_seq_len=128)
+
+        # Iteration 1: the CE batch is enqueued but has not completed. No
+        # execution metrics may be published; the current batch's composition
+        # metrics still are.
+        scheduler.run_iteration()
+        assert recorder.execution_calls == []
+        assert recorder.prompt_throughput_calls == []
+        assert recorder.creation_calls
+        assert recorder.creation_calls[-1][1] == "CE"
+
+        # Iteration 2: the CE batch completes while a TG batch is enqueued.
+        # Execution metrics must carry the CE label with the completed
+        # batch's duration and token counts.
+        scheduler.run_iteration()
+        expected_ms = FakeOverlapPipeline.FAKE_EXECUTION_TIME_S * 1000
+        assert recorder.execution_calls == [(expected_ms, "CE")]
+        assert recorder.prompt_throughput_calls == [
+            (16 / FakeOverlapPipeline.FAKE_EXECUTION_TIME_S, "CE")
+        ]
+        assert recorder.creation_calls[-1][1] == "TG"
+
+
+# ---------------------------------------------------------------------------
+# DP active-token occupancy tests
+# ---------------------------------------------------------------------------
+
+
+def _mock_ctx(active_length: int, padding: bool = False) -> MagicMock:
+    ctx = MagicMock()
+    ctx.tokens.active_length = active_length
+    # Explicit False: an auto-created Mock attribute would be truthy and the
+    # context would be skipped as a padding dummy.
+    ctx._is_padding_ctx = padding
+    return ctx
+
+
+def _mock_dp_inputs(
+    rank_batches: list[list[MagicMock]],
+    batch_type: BatchType = BatchType.CE,
+) -> MagicMock:
+    inputs = MagicMock()
+    inputs.batches = rank_batches
+    inputs.flat_batch = [ctx for batch in rank_batches for ctx in batch]
+    inputs.input_tokens = sum(
+        ctx.tokens.active_length for ctx in inputs.flat_batch
+    )
+    inputs.context_tokens = 0
+    inputs.batch_type = batch_type
+    return inputs
+
+
+def _create_dp_metrics(inputs: MagicMock, dp: int) -> BatchMetrics:
+    return BatchMetrics.create(
+        sch_config=_mock_sch_config(dp=dp),
+        inputs=inputs,
+        kv_cache=None,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+
+
+def test_dp_occupancy_imbalanced_ce() -> None:
+    """The motivating case: one rank prefills 8k tokens while the other has
+    a handful of decodes -> ~50% occupancy at DP2."""
+    inputs = _mock_dp_inputs([[_mock_ctx(8000)], [_mock_ctx(8)]])
+    metrics = _create_dp_metrics(inputs, dp=2)
+    assert metrics.dp_active_token_occupancy_pct == 100.0 * 8008 / 16000
+
+
+def test_dp_occupancy_balanced() -> None:
+    inputs = _mock_dp_inputs(
+        [[_mock_ctx(4000)], [_mock_ctx(2000), _mock_ctx(2000)]]
+    )
+    metrics = _create_dp_metrics(inputs, dp=2)
+    assert metrics.dp_active_token_occupancy_pct == 100.0
+
+
+def test_dp_occupancy_skipped_at_dp1() -> None:
+    inputs = _mock_dp_inputs([[_mock_ctx(8000)]])
+    metrics = _create_dp_metrics(inputs, dp=1)
+    assert metrics.dp_active_token_occupancy_pct is None
+
+
+def test_dp_occupancy_skipped_on_empty_batch() -> None:
+    inputs = _mock_dp_inputs([[], []])
+    metrics = _create_dp_metrics(inputs, dp=2)
+    assert metrics.dp_active_token_occupancy_pct is None
+
+
+def test_dp_occupancy_excludes_padding_dummies() -> None:
+    """Padding dummies keep device-graph shapes valid but are not scheduler
+    placement decisions; a padded-out rank counts as zero load."""
+    inputs = _mock_dp_inputs([[_mock_ctx(8000)], [_mock_ctx(1, padding=True)]])
+    metrics = _create_dp_metrics(inputs, dp=2)
+    assert metrics.dp_active_token_occupancy_pct == 50.0
+
+
+def test_dp_occupancy_missing_replicas_count_as_zero() -> None:
+    inputs = _mock_dp_inputs([[_mock_ctx(8000)]])
+    metrics = _create_dp_metrics(inputs, dp=2)
+    assert metrics.dp_active_token_occupancy_pct == 50.0
+
+
+def test_publish_metrics_dp_occupancy() -> None:
+    metrics = _make_metrics(dp_active_token_occupancy_pct=50.0)
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+    mock_metrics.dp_active_token_occupancy.assert_called_once_with(
+        50.0, batch_type="CE"
+    )
+
+
+def test_publish_metrics_dp_occupancy_skipped_when_unset() -> None:
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        _make_metrics().publish_metrics()
+    mock_metrics.dp_active_token_occupancy.assert_not_called()
+
+
+def test_dp_occupancy_in_log_line_and_extra() -> None:
+    metrics = _make_metrics(dp_active_token_occupancy_pct=50.0)
+    assert "DP Occupancy: 50.0% | " in metrics.pretty_format()
+    extra = metrics.to_log_extra()
+    assert extra["dp_active_token_occupancy_pct"] == 50.0
+
+    # Absent at DP1 (field defaults to None).
+    plain = _make_metrics()
+    assert "DP Occupancy" not in plain.pretty_format()
+    assert "dp_active_token_occupancy_pct" not in plain.to_log_extra()
