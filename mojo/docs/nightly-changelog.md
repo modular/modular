@@ -331,6 +331,11 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `List.capacity` is now a `capacity()` method instead of a public field. This
+  keeps the allocated capacity out of the stable public field surface, since it
+  should only change indirectly through operations like `append()`. Replace
+  `my_list.capacity` with `my_list.capacity()`.
+
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
   `destroy_func`, so it can clear a `Dict` whose key or value type is not

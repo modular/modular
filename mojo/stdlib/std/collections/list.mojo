@@ -291,7 +291,7 @@ struct List[T: Movable, /](
 
     # List properties
     print('len:', len(my_list))          # Current number of elements
-    print('cap:', my_list.capacity)      # Current allocated capacity
+    print('cap:', my_list.capacity())    # Current allocated capacity
 
     # Multiply a list
     var repeated = [1, 2] * 3
@@ -335,7 +335,7 @@ struct List[T: Movable, /](
     """The underlying storage for the list."""
     var _len: Int
     """The number of elements in the list."""
-    var capacity: Int
+    var _capacity: Int
     """The amount of elements that can fit in the list without resizing it."""
 
     comptime IteratorType[
@@ -357,23 +357,23 @@ struct List[T: Movable, /](
     def _annotate_new(self):
         __sanitizer_annotate_contiguous_container(
             beg=self._data.bitcast[NoneType](),
-            end=(self._data + self.capacity).bitcast[NoneType](),
-            old_mid=(self._data + self.capacity).bitcast[NoneType](),
+            end=(self._data + self._capacity).bitcast[NoneType](),
+            old_mid=(self._data + self._capacity).bitcast[NoneType](),
             new_mid=(self._data + self._len).bitcast[NoneType](),
         )
 
     def _annotate_delete(self):
         __sanitizer_annotate_contiguous_container(
             beg=self._data.bitcast[NoneType](),
-            end=(self._data + self.capacity).bitcast[NoneType](),
+            end=(self._data + self._capacity).bitcast[NoneType](),
             old_mid=(self._data + self._len).bitcast[NoneType](),
-            new_mid=(self._data + self.capacity).bitcast[NoneType](),
+            new_mid=(self._data + self._capacity).bitcast[NoneType](),
         )
 
     def _annotate_increase(self, n: Int = 1):
         __sanitizer_annotate_contiguous_container(
             beg=self._data.bitcast[NoneType](),
-            end=(self._data + self.capacity).bitcast[NoneType](),
+            end=(self._data + self._capacity).bitcast[NoneType](),
             old_mid=(self._data + self._len).bitcast[NoneType](),
             new_mid=(self._data + self._len + n).bitcast[NoneType](),
         )
@@ -381,7 +381,7 @@ struct List[T: Movable, /](
     def _annotate_shrink(self, old_size: Int):
         __sanitizer_annotate_contiguous_container(
             beg=self._data.bitcast[NoneType](),
-            end=(self._data + self.capacity).bitcast[NoneType](),
+            end=(self._data + self._capacity).bitcast[NoneType](),
             old_mid=(self._data + old_size).bitcast[NoneType](),
             new_mid=(self._data + self._len).bitcast[NoneType](),
         )
@@ -395,7 +395,7 @@ struct List[T: Movable, /](
         """Constructs an empty list."""
         self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
-        self.capacity = 0
+        self._capacity = 0
 
     @stable(since="1.0")
     def __init__(out self, *, capacity: Int):
@@ -409,7 +409,7 @@ struct List[T: Movable, /](
         else:
             self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
-        self.capacity = capacity
+        self._capacity = capacity
         self._annotate_new()
 
     def __init__(
@@ -487,18 +487,18 @@ struct List[T: Movable, /](
         Args:
             copy: The list to copy.
         """
-        self = Self(capacity=copy.capacity)
+        self = Self(capacity=copy._capacity)
         self.extend(Span(copy))
 
     def _unsafe_assume_destroyed_and_deallocate(deinit self):
         """Assumes self's values are already destroyed and deallocate the backing storage.
         """
-        if self.capacity > 0:
+        if self._capacity > 0:
             self._annotate_delete()
             dealloc(
                 ThinAllocation(
                     unsafe_assume_ownership=self._data
-                ).unsafe_with_layout(Layout[Self.T](count=self.capacity))
+                ).unsafe_with_layout(Layout[Self.T](count=self._capacity))
             )
 
     @stable(since="1.0")
@@ -787,6 +787,22 @@ struct List[T: Movable, /](
         """
         return len(self) * size_of[Self.T]()
 
+    @always_inline("nodebug")
+    def capacity(self) -> Int:
+        """Gets the number of elements that can fit in the list without resizing.
+
+        Returns:
+            The amount of elements that can fit in the list without resizing it.
+
+        Examples:
+
+        ```mojo
+        var my_list = [1, 2, 3]
+        print(my_list.capacity())  # Current allocated capacity
+        ```
+        """
+        return self._capacity
+
     @no_inline
     def _realloc(mut self, new_capacity: Int):
         var new_data = alloc(Layout[Self.T](count=new_capacity)).unsafe_leak()
@@ -795,15 +811,15 @@ struct List[T: Movable, /](
             dest=new_data, src=self._data, count=len(self)
         )
 
-        if self.capacity > 0:
+        if self._capacity > 0:
             self._annotate_delete()
             dealloc(
                 ThinAllocation(
                     unsafe_assume_ownership=self._data
-                ).unsafe_with_layout(Layout[Self.T](count=self.capacity))
+                ).unsafe_with_layout(Layout[Self.T](count=self._capacity))
             )
         self._data = new_data
-        self.capacity = new_capacity
+        self._capacity = new_capacity
         self._annotate_new()
 
     # FIXME: This annotation is needed to support List[Span[x, o]] types with
@@ -827,8 +843,8 @@ struct List[T: Movable, /](
         print(list) # [1, 2, 3, 4, 5, 6]
         ```
         """
-        if self._len >= self.capacity:
-            self._realloc(self.capacity * 2 | Int(self.capacity == 0))
+        if self._len >= self._capacity:
+            self._realloc(self._capacity * 2 | Int(self._capacity == 0))
         self._annotate_increase()
         self._unsafe_next_uninit_ptr().unsafe_write(value^)
         self._len += 1
@@ -929,9 +945,9 @@ struct List[T: Movable, /](
         """
         var elements_len = len(elements)
         var new_num_elts = self._len + elements_len
-        if new_num_elts > self.capacity:
+        if new_num_elts > self._capacity:
             # Make sure our capacity at least doubles to avoid O(n^2) behavior.
-            self._realloc(max(self.capacity * 2, new_num_elts))
+            self._realloc(max(self._capacity * 2, new_num_elts))
 
         self._annotate_increase(elements_len)
         var i = self._len
@@ -1066,7 +1082,7 @@ struct List[T: Movable, /](
             If the current capacity is greater or equal, this is a no-op.
             Otherwise, the storage is reallocated and the date is moved.
         """
-        if self.capacity >= new_capacity:
+        if self._capacity >= new_capacity:
             return
         self._realloc(new_capacity)
 
@@ -1296,7 +1312,7 @@ struct List[T: Movable, /](
         var ptr = self._data
         self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
-        self.capacity = 0
+        self._capacity = 0
         return ptr
 
     def __getitem__(
@@ -1510,7 +1526,7 @@ struct List[T: Movable, /](
             after the last initialized element. This is equivalent to
             `list.unsafe_ptr() + len(list)`.
         """
-        assert self.capacity > 0 and self.capacity > self._len, (
+        assert self._capacity > 0 and self._capacity > self._len, (
             "safety violation: Insufficient capacity to retrieve pointer to"
             " next uninitialized element"
         )
