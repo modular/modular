@@ -423,7 +423,7 @@ modular_cc_library(
     ],
 )
 
-modular_cc_library(
+modular_shared_library(
     name = "Profiling",
     # RangeKineto.cpp is the libkineto backend; it lives in :ProfilingKineto so
     # libkineto stays out of this Mojo-facing library. RangeBackend.h is the
@@ -441,7 +441,14 @@ modular_cc_library(
     ),
     # TracyRocm.cpp uses a constructor to promote Tracy symbols to RTLD_GLOBAL
     # so that the rocprofiler-sdk plugin can resolve them via dlsym.
-    copts = ["-Wno-global-constructors"],
+    #
+    # -fvisibility=default exports every symbol the way a static library
+    # would have, so existing consumers (which call non-Range.cpp APIs like
+    # TimeTraceProfiler, Tracy CUDA helpers, Configuration glue) keep
+    # working without needing per-symbol MODULAR_VISIBILITY_EXPORT annotations.
+    copts = [
+        "-fvisibility=default",
+    ],
     # NOTE: Passed as defines to propagate to dependents.
     # TRACY_CUDA_ENABLE is propagated so consumers (e.g. CUDADeviceContext.cpp)
     # see the same define and the no-op vs. real initTracyCuda() are consistent.
@@ -454,6 +461,11 @@ modular_cc_library(
         "//:tracy_rocm_enabled": ["TRACY_ROCM_ENABLE=1"],
         "//conditions:default": ["TRACY_ROCM_ENABLE=0"],
     }),
+    # Shared library so Range.cpp's statics (enable flag, registered backend
+    # pointer, TLS registration guard) are single-instance in the process.
+    # As a static library they would be duplicated into every consuming DSO,
+    # making enable() in one DSO invisible to isEnabled() in another.
+    output_name = "MAXProfiling",
     deps = [
         ":Base",
         # Configuration backs the session.debug.profiling_* settings that
@@ -461,6 +473,7 @@ modular_cc_library(
         ":Configuration",
         ":Globals",
         ":MArchTargetMinimal",
+        ":SymbolExport",
         "//Config",
         "@llvm-project//llvm:Support",
     ] + select({
@@ -492,29 +505,25 @@ modular_cc_library(
     }),
 )
 
-# libkineto backend for the Range API (MXTOOLS-190). This is the ONLY target
-# that links libkineto + the on-demand CUPTI / cudart stubs; the base :Profiling
-# library above stays free of them so it can be linked into the Mojo compiler
-# runtime (KGEN CompilerRT, MLRT) without dragging libkineto's GPU-profiling
-# shared objects into the Mojo package (which the release linter rejects).
-# It also keeps the @libkineto repo "used" (find_unused_repos) even though no
-# Mojo-reachable target depends on it.
-#
-# Range.cpp is dormant at this point in the stack, so nothing calls the backend
-# yet; a later change wires Range.cpp's recording paths through it. max._core
-# (the only consumer) links this target and registers the KinetoBackend
-# function table by calling Detail::initKinetoBackend() from its nanobind
-# module init — an explicit call rather than a static initializer, per the C++
-# coding standard's ban on global constructors.
+# libkineto backend for the Range API (MXTOOLS-190).  This is the ONLY target
+# that links libkineto + the on-demand CUPTI / cudart / cuda stubs; the base
+# :Profiling library above stays free of them so it can be linked into the Mojo
+# compiler runtime (KGEN CompilerRT, MLRT) without dragging libkineto's
+# GPU-profiling shared objects into the Mojo package (which the release linter
+# rejects).  Only the MAX runtime (max._core) depends on this target; it
+# registers the KinetoBackend function table that Range.cpp routes through by
+# calling Detail::initKinetoBackend() from its nanobind module init.  When the
+# target is absent, kinetoBackend() is null and the recording paths are no-ops.
 #
 # Tracy and libkineto are mutually exclusive at build time (both subscribe to
-# CUPTI), so this is gated to Linux x86_64 with Tracy disabled. The max._core
+# CUPTI), so this is gated to Linux x86_64 with Tracy disabled — `--config=tracy`
+# builds simply do not link it and drive Tracy CUDA exclusively. The max._core
 # edge is additionally opt-in via `--config=kineto` (//:linux_x86_64_kineto):
-# this target links shared-library stubs (libcuda / libcudart / libcupti) that
-# the external wheel / conda packages do not ship, so a default-configuration
-# max._core must stay free of it or `import max._core` fails outside bazel
-# with a missing libcuda-tracy-stub.so.
-modular_cc_library(
+# this target links the on-demand libcuda / libcudart / libcupti stub shared
+# objects, which the external wheel / conda packages do not ship, so a
+# default-configuration max._core must stay free of it or `import max._core`
+# fails outside bazel with a missing stub shared object.
+modular_shared_library(
     name = "ProfilingKineto",
     srcs = [
         "lib/Profiling/internal/RangeBackend.h",
