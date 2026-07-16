@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from enum import Enum
-from typing import Any, TypeVar
+from typing import TypeVar
 
 from max.dtype import DType
 from max.graph import (
@@ -23,13 +23,18 @@ from max.graph import (
     Graph,
     TensorValue,
     TensorValueLike,
-    Value,
     ops,
 )
 
 from ..embedding import Embedding
 from ..kv_cache import KVCacheParams, PagedCacheValues
-from ..layer import Layer, LayerList, Module
+from ..layer import (
+    Layer,
+    LayerList,
+    Module,
+    SubgraphInput,
+    _flatten_graph_inputs,
+)
 from ..linear import Linear
 from ..rotary_embedding import RotaryEmbedding
 
@@ -58,7 +63,7 @@ def forward_sharded_layers(
 
 def _call_layer_directly(
     layer: Module,
-    values: list[Value[Any] | Sequence[Value[Any]]],
+    values: Sequence[SubgraphInput],
 ) -> list[TensorValue]:
     result = layer(*values)
     if isinstance(result, tuple):
@@ -71,7 +76,7 @@ def forward_sequential_layers(
     *,
     inputs_for_layer: Callable[
         [int, list[TensorValue]],
-        list[Value[Any] | Sequence[Value[Any]]],
+        Sequence[SubgraphInput],
     ],
     initial_hidden_states: list[TensorValue],
     on_layer_output: Callable[[int, list[TensorValue]], None] | None = None,
@@ -148,20 +153,16 @@ def forward_sequential_layers(
             if group_idx not in group_idx_to_subgraph:
                 group_idx_to_subgraph[group_idx] = layer.build_subgraph(
                     name=name_for_subgraph(group_idx),
-                    input_types=[
-                        v.type if isinstance(v, Value) else [x.type for x in v]
-                        for v in values
-                    ],
+                    inputs=values,
                     weight_prefix=weight_prefix_for_layer(layer_idx),
                 )
 
+            flat_args = [
+                leaf for v in values for leaf in _flatten_graph_inputs(v)
+            ]
             call_results = ops.call(
                 group_idx_to_subgraph[group_idx],
-                *[
-                    x
-                    for v in values
-                    for x in (v if isinstance(v, list) else [v])
-                ],
+                *flat_args,
                 prefix=weight_prefix_for_layer(layer_idx),
             )
             h = [x.tensor for x in call_results]

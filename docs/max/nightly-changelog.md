@@ -530,6 +530,16 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- `max.nn.Module.build_subgraph()` now takes representative input *values*
+  (`inputs=`) instead of input *types* (`input_types=`). Each argument may be a
+  single `Value`, a nested list/tuple of values, or a structured
+  `FlattenableGraphInput` such as `PagedCacheValues`; the subgraph signature is
+  derived from the flattened leaves and the structure is rebuilt before the
+  layer runs. This lets structured inputs cross the subgraph boundary directly,
+  so `DistributedTransformerBlock` now accepts `list[PagedCacheValues]` rather
+  than the hand-decomposed per-field lists. Update call sites from
+  `build_subgraph(name, input_types=[v.type for v in values])` to
+  `build_subgraph(name, inputs=values)`.
 - Removed the `MAX_SERVE_METRIC_LEVEL` and
   `MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR` environment variables along with
   the `BASIC`/`DETAILED` metric-level distinction. MAX Serve now always emits
