@@ -2,6 +2,7 @@
 
 load("@llvm-project//mlir:tblgen.bzl", _gentbl_cc_library = "gentbl_cc_library", _td_library = "td_library")
 load("@rules_pkg//pkg:mappings.bzl", _pkg_filegroup = "pkg_filegroup", _pkg_files = "pkg_files", _strip_prefix = "strip_prefix")
+load("@with_cfg.bzl//with_cfg/private:select.bzl", "decompose_select_elements")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:copy_files.bzl", _copy_files = "copy_files")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:dialect_checksum.bzl", _dialect_checksum = "dialect_checksum")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:kgen.bzl", _kgen_kernel = "kgen_kernel")  # buildifier: disable=bzl-visibility
@@ -53,15 +54,46 @@ requirement = _requirement
 strip_prefix = _strip_prefix
 td_library = _td_library
 
-_EXTRA_LOCAL_DEFINES = [
-    "MODULAR_KGEN_PROFILING_ENABLED=0",
-    "MLRT_ACCELERATOR_SUPPORT=0",
-]
+_OVERRIDE_DEFINES = {
+    "MOJO_COMPILER_ACCELERATOR_SUPPORT": "0",
+    "MODULAR_KGEN_PROFILING_ENABLED": "0",
+    "MLRT_ACCELERATOR_SUPPORT": "0",
+}
 
 def modular_py_test(tags = [], **kwargs):
     if "external-exclusive" in tags:
         tags.append("exclusive")
     _modular_py_test(tags = tags, **kwargs)
+
+def _process_define_list(defines):
+    # poor dev's type check, for sanity:
+    if type(defines) != type([]):
+        fail("_process_define_list: expected list")
+    result = []
+    for define in defines:
+        key = define.split("=")[0]
+        override = _OVERRIDE_DEFINES.get(key)
+        if override:
+            result.append(key + "=" + override)
+        else:
+            result.append(define)
+    return result
+
+def _process_defines(defines):
+    if type(defines) == type([]):
+        return _process_define_list(defines)
+    else:
+        # Decompose the select()s, process, and recombine
+        result = []
+        for is_select, elements in decompose_select_elements(defines):
+            if is_select:
+                new_select = {}
+                for key, values in elements.items():
+                    new_select[key] = _process_define_list(values)
+                result += select(new_select)
+            else:
+                result += _process_define_list(elements)
+        return result
 
 def _process_cc_deps(data, deps):
     # TODO: This will break in the presence of select()s
@@ -87,9 +119,10 @@ def _process_cc_deps(data, deps):
 
 # Ignore internal_deps for public builds
 # buildifier: disable=unused-variable
-def modular_cc_binary(data = [], deps = [], internal_deps = [], local_defines = [], **kwargs):
+def modular_cc_binary(data = [], deps = [], internal_deps = [], defines = [], local_defines = [], **kwargs):
     _modular_cc_binary(
-        local_defines = local_defines + _EXTRA_LOCAL_DEFINES,
+        local_defines = _process_defines(local_defines),
+        defines = _process_defines(defines),
         **(kwargs | _process_cc_deps(
             data = data,
             deps = deps,
@@ -98,7 +131,7 @@ def modular_cc_binary(data = [], deps = [], internal_deps = [], local_defines = 
 
 # Ignore internal_deps for public builds
 # buildifier: disable=unused-variable
-def modular_cc_library(name, data = [], deps = [], internal_deps = [], local_defines = [], **kwargs):
+def modular_cc_library(name, data = [], deps = [], internal_deps = [], defines = [], local_defines = [], **kwargs):
     if name in ["Profiling", "ProfilingKineto"]:
         # Provide TimeProfiler for now since that may be what they're actually after
         _modular_cc_library(name = name, deps = ["//Support:TimeProfiler"])
@@ -106,7 +139,8 @@ def modular_cc_library(name, data = [], deps = [], internal_deps = [], local_def
 
     _modular_cc_library(
         name = name,
-        local_defines = local_defines + _EXTRA_LOCAL_DEFINES,
+        local_defines = _process_defines(local_defines),
+        defines = _process_defines(defines),
         **(kwargs | _process_cc_deps(
             data = data,
             deps = deps,
@@ -115,9 +149,10 @@ def modular_cc_library(name, data = [], deps = [], internal_deps = [], local_def
 
 # Ignore internal_deps for public builds
 # buildifier: disable=unused-variable
-def modular_cc_test(data = [], deps = [], internal_deps = [], local_defines = [], **kwargs):
+def modular_cc_test(data = [], deps = [], internal_deps = [], defines = [], local_defines = [], **kwargs):
     _modular_cc_test(
-        local_defines = local_defines + _EXTRA_LOCAL_DEFINES,
+        local_defines = _process_defines(local_defines),
+        defines = _process_defines(defines),
         **(kwargs | _process_cc_deps(
             data = data,
             deps = deps,
@@ -126,8 +161,12 @@ def modular_cc_test(data = [], deps = [], internal_deps = [], local_defines = []
 
 # Ignore internal_deps for public builds
 # buildifier: disable=unused-variable
-def modular_shared_library(internal_deps = [], **kwargs):
-    _modular_shared_library(**kwargs)
+def modular_shared_library(internal_deps = [], defines = [], local_defines = [], **kwargs):
+    _modular_shared_library(
+        local_defines = _process_defines(local_defines),
+        defines = _process_defines(defines),
+        **kwargs
+    )
 
 def modular_generate_stubfiles(name, pyi_srcs, deps = [], tags = [], **_kwargs):
     modular_py_library(
