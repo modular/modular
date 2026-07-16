@@ -426,9 +426,9 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     @staticmethod
     @always_inline
     def load_input_tiles[
-        a_tma_origin: ImmutOrigin,
-        b_tma_origin: ImmutOrigin,
-        a_scales_tma_origin: ImmutOrigin,
+        a_tma_origin: ImmOrigin,
+        b_tma_origin: ImmOrigin,
+        a_scales_tma_origin: ImmOrigin,
         tiles_origin: MutOrigin,
         //,
     ](

@@ -86,7 +86,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 # UMMA instructions need alignment on only the M dimension. When we use it, we
 # ought to enable swapAB for grouped matmul.
 struct TileScheduler[
-    group_offsets_origin: ImmutOrigin,
+    group_offsets_origin: ImmOrigin,
     offsets_layout: Layout,
     //,
     *,

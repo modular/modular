@@ -386,6 +386,24 @@ cc_binary(
     deps = [":ucx_plugin_lib_cuda"],
 )
 
+# CPU flavor of the UCX plugin, linked against the CUDA-free static UCX
+# (tcp/shm/cma transports only). Unlike the CUDA flavor it has no load-time
+# GPU driver dependencies, so it is dlopen-able on hosts with no GPU stack.
+# The subdirectory in the target name gives the flavor its own directory:
+# NIXL discovers plugins by the fixed filename `libplugin_UCX.so` within a
+# single NIXL_PLUGIN_DIR, so consumers (e.g. the hermetic DRAM transfer tests
+# on CPU-only CI workers) point NIXL_PLUGIN_DIR at the cpu/ directory.
+cc_binary(
+    name = "cpu/libplugin_UCX.so",
+    linkopts = [
+        "-Wl,-z,undefs",
+    ],
+    linkshared = True,
+    linkstatic = True,
+    target_compatible_with = _LINUX_X86,
+    deps = [":ucx_plugin_lib_cpu"],
+)
+
 cc_binary(
     name = "libplugin_LIBFABRIC.so",
     linkopts = [

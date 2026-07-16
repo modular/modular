@@ -25,7 +25,7 @@ def _compact_zero_sized_capture_slots(
     dense_args_addrs: UnsafePointer[
         OpaquePointer[MutAnyOrigin], MutUntrackedOrigin
     ],
-    capture_sizes: UnsafePointer[UInt64, ImmutUntrackedOrigin],
+    capture_sizes: UnsafePointer[UInt64, ImmUntrackedOrigin],
     num_leading_args: Int,
     num_captures: Int,
     dense_args_sizes: Optional[

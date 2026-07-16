@@ -177,6 +177,10 @@ build:disable-mypy --output_groups=-mypy
 
 build:disable-lint --config=disable-mypy
 
+# Always skip tsc lib checking.
+common --@aspect_rules_ts//ts:skipLibCheck=always
+common --experimental_propagate_custom_flag=@aspect_rules_ts//ts:skipLibCheck
+
 build --remote_download_outputs=toplevel
 build --remote_download_regex='.*\.(inc|h)$'
 # Required for debug info references from binaries

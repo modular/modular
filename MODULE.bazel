@@ -37,32 +37,11 @@ register_toolchains(
     "//bazel/internal:mojo_copts_toolchain",
 )
 
-http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+llvm_source = use_extension("//bazel/public-patches:llvm_source.bzl", "llvm_source")
+use_repo(llvm_source, "llvm-raw")
 
-# This section is derived from the full LLVM workspace, available at
-# llvm-project/utils/bazel/WORKSPACE. If there are changes in
-# LLVM that require updating these dependencies, this file may also need to
-# be updated in the future.
-bazel_dep(name = "zlib-ng", version = "2.3.3", repo_name = "llvm_zlib")
-bazel_dep(name = "zstd", version = "1.5.7.bcr.1", repo_name = "llvm_zstd")
-
-# NOTE: These versions don't particularly match what modular uses internally, this is only used for test dependencies
-LLVM_COMMIT = "afac572cd4c58b02ebe9a72c04f63a91dccc7901"
-
-LLVM_SHA = "8d10cdc806b01b96d0ff925ee096cda508cd8b01b158f366f9db3af1318cdb44"
-
-http_archive(
-    name = "llvm-raw",
-    build_file_content = "exports_files(glob([\"**\"]))",
-    dev_dependency = True,
-    sha256 = LLVM_SHA,
-    strip_prefix = "llvm-project-{}".format(LLVM_COMMIT),
-    url = "https://github.com/llvm/llvm-project/archive/{}.tar.gz".format(LLVM_COMMIT),
-)
-
-llvm_configure = use_repo_rule("@llvm-raw//utils/bazel:configure.bzl", "llvm_configure")
-
-llvm_configure(name = "llvm-project")
+llvm_configure = use_extension("//bazel/public-patches:llvm_project.bzl", "llvm_configure")
+use_repo(llvm_configure, "llvm-project")
 
 cfg_workaround = use_repo_rule("//bazel/internal:cfg_workaround.bzl", "cfg_workaround")
 

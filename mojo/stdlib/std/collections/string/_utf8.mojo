@@ -148,7 +148,7 @@ def validate_chunk[
     return must23_as_80 ^ sc
 
 
-def _is_valid_utf8_runtime(span: Span[mut=False, Byte, ...]) -> Bool:
+def _is_valid_utf8_runtime(span: Span[mut=False, Byte, _]) -> Bool:
     """Fast utf-8 validation using SIMD instructions.
 
     References for this algorithm:
@@ -191,7 +191,7 @@ def _is_valid_utf8_runtime(span: Span[mut=False, Byte, ...]) -> Bool:
     return all(has_error.eq(0))
 
 
-def _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
+def _is_valid_utf8_comptime(span: Span[mut=False, Byte, _]) -> Bool:
     var ptr = span.unsafe_ptr()
     var length = Int(len(span))
     var offset = 0
@@ -231,7 +231,7 @@ def _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
 
 
 @always_inline("nodebug")
-def _is_valid_utf8(span: Span[mut=False, Byte, ...]) -> Bool:
+def _is_valid_utf8(span: Span[mut=False, Byte, _]) -> Bool:
     """Verify that the bytes are valid UTF-8.
 
     Args:
@@ -366,7 +366,7 @@ def _is_newline_char_utf8[
         return b0 == 0xE2 and b1 == 0x80 and (b2 == 0xA8 or b2 == 0xA9)
 
 
-struct UTF8Chunk[origin: ImmutOrigin](ImplicitlyCopyable):
+struct UTF8Chunk[origin: ImmOrigin](ImplicitlyCopyable):
     var valid: StringSlice[Self.origin]
     """The valid UTF-8 bytes."""
 
@@ -386,7 +386,7 @@ struct UTF8Chunk[origin: ImmutOrigin](ImplicitlyCopyable):
 
 # This is an implementation of Rust's `UTF8Chunk` iterator.
 # https://doc.rust-lang.org/src/core/str/lossy.rs.html#194
-struct UTF8Chunks[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
+struct UTF8Chunks[origin: ImmOrigin](ImplicitlyCopyable, Iterable, Iterator):
     """An iterator over valid and invalid UTF-8 chunks."""
 
     comptime IteratorType[

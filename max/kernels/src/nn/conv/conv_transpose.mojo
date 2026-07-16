@@ -390,8 +390,8 @@ struct ConvTransposedPacked[
     OutputLayoutType: TensorLayout,
     conv_attr_rank: Int,
     //,
-    input_origin: ImmutOrigin,
-    filter_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
+    filter_origin: ImmOrigin,
     output_origin: MutOrigin,
     input_type: DType,
     filter_type: DType,
@@ -686,13 +686,13 @@ struct ConvTransposedPacked[
 
         # Filter pointer to the current cf tile offset location.
         var filter_ptr: UnsafePointer[
-            Scalar[Self.filter_type], ImmutUntrackedOrigin
+            Scalar[Self.filter_type], ImmUntrackedOrigin
         ]
 
         # Move the pointer to the current group's start.
         filter_ptr = _get_group_filter_base(
             self.filter.as_immut(), g, self.conv_shape.f_per_group()
-        ).unsafe_origin_cast[ImmutUntrackedOrigin]()
+        ).unsafe_origin_cast[ImmUntrackedOrigin]()
         # Move the pointer to (c_tile_offset, f_tile_offset) mapped in
         # current group.
         filter_ptr = filter_ptr + (
@@ -784,8 +784,8 @@ struct ConvTransposedPacked[
     ](
         self,
         output: MutUnsafePointer[Scalar[output_dt], _],
-        input: ImmutUnsafePointer[Scalar[input_dt], _],
-        filter: ImmutUnsafePointer[Scalar[filter_dt], _],
+        input: ImmUnsafePointer[Scalar[input_dt], _],
+        filter: ImmUnsafePointer[Scalar[filter_dt], _],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -865,8 +865,8 @@ struct ConvTransposedPacked[
     ](
         self,
         output: MutUnsafePointer[Scalar[output_dt], _],
-        input: ImmutUnsafePointer[Scalar[input_dt], _],
-        filter: ImmutUnsafePointer[Scalar[filter_dt], _],
+        input: ImmUnsafePointer[Scalar[input_dt], _],
+        filter: ImmUnsafePointer[Scalar[filter_dt], _],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -1083,8 +1083,8 @@ def update_w_tile_3d[
     filter_dt: DType,
 ](
     output: MutUnsafePointer[Scalar[output_dt], _],
-    input: ImmutUnsafePointer[Scalar[input_dt], _],
-    filter: ImmutUnsafePointer[Scalar[filter_dt], _],
+    input: ImmUnsafePointer[Scalar[input_dt], _],
+    filter: ImmUnsafePointer[Scalar[filter_dt], _],
     _init_output: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,

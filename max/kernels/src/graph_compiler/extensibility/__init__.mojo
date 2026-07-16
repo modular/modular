@@ -17,7 +17,7 @@ Provides the `@register` / `@register_internal` decorators, the
 elementwise operation traits.
 
 For registering [custom operations](/max/develop/custom-ops/), use the Mojo
-[@compiler.register](https://mojolang.org/docs/reference/decorators/compiler-register/)
+[@extensibility.register](https://mojolang.org/docs/reference/decorators/extensibility-register/)
 decorator instead.
 """
 

@@ -770,7 +770,7 @@ struct _TakeWhileIterator[
 
 @always_inline
 def take_while[
-    origin: ImmutOrigin,
+    origin: ImmOrigin,
     IterableType: Iterable,
     //,
     predicate: def(IterableType.IteratorType[origin].Element) thin -> Bool,
@@ -932,7 +932,7 @@ struct _DropWhileIterator[
 
 @always_inline
 def drop_while[
-    origin: ImmutOrigin,
+    origin: ImmOrigin,
     IterableType: Iterable,
     //,
     predicate: def(IterableType.IteratorType[origin].Element) thin -> Bool,
@@ -1170,7 +1170,7 @@ struct _TakeIterator[InnerIteratorType: Iterator](
 
 @always_inline
 def take[
-    origin: ImmutOrigin,
+    origin: ImmOrigin,
     IterableType: Iterable,
     //,
 ](ref[origin] iterable: IterableType, count: Int) -> _TakeIterator[
@@ -1315,7 +1315,7 @@ struct _DropIterator[InnerIteratorType: Iterator](
 
 @always_inline
 def drop[
-    origin: ImmutOrigin,
+    origin: ImmOrigin,
     IterableType: Iterable,
     //,
 ](ref[origin] iterable: IterableType, count: Int) -> _DropIterator[

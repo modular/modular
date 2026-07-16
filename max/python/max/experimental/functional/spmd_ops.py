@@ -38,9 +38,10 @@ from max.experimental.sharding import (
 )
 from max.experimental.sharding.per_shard_dim import global_dim
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue, TensorValueLike, Type, ops
+from max.graph import ShapeLike, TensorValue, TensorValueLike, Type, ops
 from max.graph.dim import Dim, DimLike, StaticDim
 from max.graph.ops.slice_tensor import SliceIndices
+from max.graph.quantization import QuantizationEncoding
 
 from ..sharding import (
     ActionSet,
@@ -784,73 +785,90 @@ Returns:
     of each element.
 """
 
-sigmoid = functional(ops.sigmoid, rule=unary_rule)
-sigmoid.__doc__ = """Applies the sigmoid activation function element-wise.
+_sigmoid_impl = functional(ops.sigmoid, rule=unary_rule)
 
-Computes ``1 / (1 + exp(-x))`` for each element, mapping all values to
-the range ``(0, 1)``.
 
-.. code-block:: python
+def sigmoid(x: Tensor) -> Tensor:
+    """Applies the sigmoid activation function element-wise.
 
-    from max.experimental import Tensor
-    from max.experimental import functional as F
+    Computes ``1 / (1 + exp(-x))`` for each element, mapping all values
+    to the range ``(0, 1)``.
 
-    x = Tensor([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])
-    result = F.sigmoid(x)
-    # result is approximately:
-    # [[0.119, 0.269, 0.5], [0.731, 0.881, 0.953]]
+    .. code-block:: python
 
-Args:
-    x: The input tensor.
+        from max.experimental import Tensor
+        from max.experimental import functional as F
 
-Returns:
-    A tensor of the same shape and dtype with values in the range ``(0, 1)``.
-"""
+        x = Tensor([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])
+        result = F.sigmoid(x)
+        # result is approximately:
+        # [[0.119, 0.269, 0.5], [0.731, 0.881, 0.953]]
 
-silu = functional(ops.silu, rule=unary_rule)
-silu.__doc__ = """Applies the SiLU (Swish) activation function element-wise.
+    Args:
+        x: The input tensor.
 
-Computes ``x * sigmoid(x)`` for each element.
+    Returns:
+        A tensor of the same shape and dtype with values in the range
+        ``(0, 1)``.
+    """
+    return _sigmoid_impl(x)
 
-.. code-block:: python
 
-    from max.experimental import Tensor
-    from max.experimental import functional as F
+_silu_impl = functional(ops.silu, rule=unary_rule)
 
-    x = Tensor([-1.0, 0.0, 1.0, 2.0])
-    result = F.silu(x)
-    # result is approximately [-0.269, 0.0, 0.731, 1.762]
 
-Args:
-    x: The input tensor.
+def silu(x: Tensor) -> Tensor:
+    """Applies the SiLU (Swish) activation function element-wise.
 
-Returns:
-    A tensor of the same shape and dtype with the SiLU activation applied
-    element-wise.
-"""
+    Computes ``x * sigmoid(x)`` for each element.
 
-gelu = functional(ops.gelu, rule=unary_rule)
-gelu.__doc__ = """Applies the GELU (Gaussian Error Linear Unit) activation element-wise.
+    .. code-block:: python
 
-.. code-block:: python
+        from max.experimental import Tensor
+        from max.experimental import functional as F
 
-    from max.experimental import Tensor
-    from max.experimental import functional as F
+        x = Tensor([-1.0, 0.0, 1.0, 2.0])
+        result = F.silu(x)
+        # result is approximately [-0.269, 0.0, 0.731, 1.762]
 
-    x = Tensor([-1.0, 0.0, 1.0])
-    result = F.gelu(x)
-    # result is approximately [-0.159, 0.0, 0.841]
+    Args:
+        x: The input tensor.
 
-Args:
-    x: The input tensor.
-    approximate: The approximation method. Defaults to ``"none"`` (exact
-        form using ``erf``). Use ``"tanh"`` for the tanh-based approximation
-        or ``"quick"`` for the sigmoid-based approximation.
+    Returns:
+        A tensor of the same shape and dtype with the SiLU activation
+        applied element-wise.
+    """
+    return _silu_impl(x)
 
-Returns:
-    A tensor of the same shape and dtype with the GELU activation applied
-    element-wise.
-"""
+
+_gelu_impl = functional(ops.gelu, rule=unary_rule)
+
+
+def gelu(x: Tensor, approximate: str = "none") -> Tensor:
+    """Applies the GELU (Gaussian Error Linear Unit) activation element-wise.
+
+    .. code-block:: python
+
+        from max.experimental import Tensor
+        from max.experimental import functional as F
+
+        x = Tensor([-1.0, 0.0, 1.0])
+        result = F.gelu(x)
+        # result is approximately [-0.159, 0.0, 0.841]
+
+    Args:
+        x: The input tensor.
+        approximate: The approximation method. Defaults to ``"none"``
+            (exact form using ``erf``). Use ``"tanh"`` for the tanh-based
+            approximation or ``"quick"`` for the sigmoid-based
+            approximation.
+
+    Returns:
+        A tensor of the same shape and dtype with the GELU activation
+        applied element-wise.
+    """
+    return _gelu_impl(x, approximate)
+
 
 tanh = functional(ops.tanh, rule=unary_rule)
 tanh.__doc__ = """Computes the hyperbolic tangent of a tensor element-wise.
@@ -1121,10 +1139,54 @@ Returns:
     of each element.
 """
 
-acos = functional(ops.acos, rule=unary_rule)
+_acos_impl = functional(ops.acos, rule=unary_rule)
+
+
+def acos(x: Tensor) -> Tensor:
+    """Computes the arccosine of a tensor element-wise.
+
+    .. code-block:: python
+
+        from max.experimental import Tensor
+        from max.experimental import functional as F
+
+        x = Tensor([-1.0, 0.0, 1.0])
+        result = F.acos(x)
+        # result is approximately [3.1416, 1.5708, 0.0] or [pi, pi/2, 0]
+
+    Args:
+        x: The input tensor, with values in the range ``[-1, 1]``. Values
+            outside this domain are clamped. Must have a floating-point
+            dtype.
+
+    Returns:
+        A tensor of the same shape and dtype with values in the range
+        ``[0, pi]`` (radians).
+    """
+    return _acos_impl(x)
+
+
 #: Dequantizes a tensor. Distributed via SPMD.
 #: See :func:`max.graph.ops.dequantize` for details.
-dequantize = functional(ops.dequantize, rule=dequantize_rule)
+_dequantize_impl = functional(ops.dequantize, rule=dequantize_rule)
+
+
+def dequantize(encoding: QuantizationEncoding, quantized: Tensor) -> Tensor:
+    """Dequantizes a quantized tensor back to a floating-point representation.
+
+    Currently supports the ``Q4_0``, ``Q4_K``, and ``Q6_K`` encodings.
+
+    Args:
+        encoding: The :class:`~max.graph.quantization.QuantizationEncoding`
+            used to pack ``quantized``.
+        quantized: The input quantized tensor.
+
+    Returns:
+        A floating-point tensor with the values reconstructed from the
+        quantized input.
+    """
+    return _dequantize_impl(encoding, quantized)
+
 
 equal = _binary_with_scalar_promotion(functional(ops.equal, rule=binary_rule))
 equal.__doc__ = """Tests element-wise equality between two tensors.
@@ -1505,7 +1567,8 @@ max_pool2d = functional(ops.max_pool2d, rule=pool_rule)
 max_pool2d.__doc__ = """Applies 2D max pooling to a tensor.
 
 Slides a window of size ``kernel_size`` over the spatial dimensions and
-replaces each window with its maximum value.
+replaces each window with its maximum value. The input is in
+``(N, H, W, C)`` (channels-last) layout.
 
 Args:
     input: The input tensor with shape ``(N, H, W, C)``.
@@ -1619,20 +1682,41 @@ Returns:
 
 pad = functional(ops.pad, rule=pad_rule)
 #: SPMD-distributed wrapper around :func:`max.graph.ops.broadcast_to`.
-broadcast_to = functional(ops.broadcast_to, rule=broadcast_to_rule)
-broadcast_to.__doc__ = """Broadcasts a tensor to a target shape.
+_broadcast_to_impl = functional(ops.broadcast_to, rule=broadcast_to_rule)
 
-Follows NumPy broadcasting semantics: dimensions of size 1 in the input
-expand to match larger dimensions in the target shape.
 
-Args:
-    x: The input tensor.
-    shape: The target shape. Each dimension must match the input dimension
-        or be broadcastable from size 1.
+def broadcast_to(x: Tensor, shape: ShapeLike) -> Tensor:
+    """Broadcasts a tensor to a target shape.
 
-Returns:
-    A tensor broadcast to the target shape.
-"""
+    Each input dimension must either equal the corresponding target
+    dimension or be ``1`` (which is then stretched to match). This
+    follows NumPy broadcasting semantics and is equivalent to PyTorch's
+    :func:`torch.broadcast_to`.
+
+    .. code-block:: python
+
+        from max.experimental import Tensor
+        from max.experimental import functional as F
+
+        x = Tensor.ones([3, 1])
+        result = F.broadcast_to(x, [3, 4])
+        # result has shape (3, 4)
+
+        # Add a new leading dimension
+        result = F.broadcast_to(x, [2, 3, 4])
+        # result has shape (2, 3, 4)
+
+    Args:
+        x: The input tensor. Must not contain any dynamic dimensions.
+        shape: The target shape. A static shape (no dynamic dimensions).
+
+    Returns:
+        A tensor with the same elements as ``x`` but with the target
+        shape.
+    """
+    return _broadcast_to_impl(x, shape)
+
+
 #: Repeats elements of a tensor. Distributed via SPMD.
 #: See :func:`max.graph.ops.repeat_interleave` for details.
 repeat_interleave = functional(
@@ -1933,28 +2017,62 @@ Returns:
 gather_nd = functional(ops.gather_nd, rule=gather_nd_rule)
 gather_nd.__doc__ = """Selects elements from a tensor by N-dimensional index.
 
-Unlike :func:`gather`, which indexes a single axis, ``gather_nd`` indexes
-multiple dimensions at once. The trailing dimension of ``indices``
-selects elements from ``input`` immediately after any ``batch_dims``
-leading dimensions; remaining trailing dimensions of ``input`` are
-sliced into the output.
+Unlike :func:`gather()`, which indexes along a single axis,
+``gather_nd()`` indexes along multiple dimensions at once. The last
+dimension of ``indices`` is the index vector: its values select
+elements from ``input`` immediately after any ``batch_dims`` leading
+dimensions. Any remaining trailing dimensions of ``input`` are sliced
+into the output as features.
+
+.. code-block:: python
+
+    from max.experimental import Tensor
+    from max.experimental import functional as F
+
+    # input.shape=(2, 3, 4, 5, 6); indices.shape=(2, 7, 3); batch_dims=1
+    gathered = F.gather_nd(input, indices, batch_dims=1)
+    # gathered.shape == (2, 7, 6)
+
+In this example:
+
+- ``batch_dims`` is 1, so ``input`` and ``indices`` share the leading
+  dimension (size 2).
+- ``indices`` has an additional dimension (size 7) which becomes part
+  of the output.
+- The last dimension of ``indices`` (size 3) is the index vector; each
+  value selects into dims 1, 2, and 3 of ``input``.
+- Since ``batch_dims (1) + index size (3) < input.rank (5)``, the
+  remaining dimension (size 6) is sliced into the output.
 
 Args:
     input: The input tensor to gather from.
     indices: An integer tensor of multi-dimensional indices. Its last
-        dimension must be static and gives the size of the index vector.
-    batch_dims: The number of leading batch dimensions shared between
+        dimension must be static and gives the size of the index
+        vector.
+    batch_dims: The number of leading batch dimensions shared by
         ``input`` and ``indices``. The shapes must match exactly along
-        these leading dimensions. Defaults to ``0``.
+        these leading dimensions. This function does not broadcast.
+        Defaults to ``0``.
 
 Returns:
     A tensor with the same dtype as ``input``. Its shape is the
     concatenation of:
 
-    - ``input.shape[:batch_dims]`` (the leading batch dimensions),
-    - ``indices.shape[batch_dims:-1]`` (the index dimensions), and
-    - ``input.shape[batch_dims + indices.shape[-1]:]`` (the trailing
-      sliced dimensions).
+    - ``input.shape[:batch_dims]`` — the leading batch dimensions.
+    - ``indices.shape[batch_dims:-1]`` — the gather dimensions.
+    - ``input.shape[batch_dims + indices.shape[-1]:]`` — the trailing
+      sliced dimensions.
+
+Raises:
+    ValueError: If any of the following:
+
+        - ``indices``'s last dimension is not static.
+        - ``indices`` is not an integer tensor.
+        - ``batch_dims`` is negative or greater than
+          ``indices.rank - 1``.
+        - ``batch_dims + indices.shape[-1]`` exceeds ``input.rank``.
+        - The leading ``batch_dims`` of ``input`` and ``indices``
+          don't match.
 """
 
 masked_scatter = functional(ops.masked_scatter, rule=masked_scatter_rule)
@@ -2155,14 +2273,38 @@ def argmax(
 ) -> Tensor:
     """Returns the indices of the maximum values along an axis.
 
+    It's useful for finding the position of the largest element along a
+    given dimension, such as determining predicted classes in
+    classification.
+
+    When the input contains ties (identical maximum values), behavior
+    depends on the device: CPU returns the first matching index, while
+    GPU may return any of them.
+
+    .. code-block:: python
+
+        from max.experimental import Tensor
+        from max.experimental import functional as F
+
+        x = Tensor([[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]])
+        indices = F.argmax(x, axis=-1)
+        # indices has shape (2, 1): [[1], [2]]
+
+        # Or flatten before reducing:
+        flat_index = F.argmax(x, axis=None)
+        # flat_index has shape (1,): [6] (flattened index of max value 4.2)
+
     Args:
         x: The input tensor.
-        axis: The axis along which to find the maximum. When ``None``, the
-            tensor is flattened to 1-D first. Defaults to ``-1``.
+        axis: The axis along which to compute the argmax. Negative values
+            index from the last dimension. When ``None``, the tensor is
+            flattened to 1-D first. Defaults to ``-1``.
 
     Returns:
         An integer tensor of indices marking the positions of the maximum
-        values along ``axis``.
+        values along ``axis``. For integer ``axis``, the result has the
+        same rank as ``x`` with the ``axis`` dimension reduced to size
+        ``1``. When ``axis`` is ``None``, the result has shape ``(1,)``.
     """
     return _argmax_impl(x, axis=axis)
 
@@ -2888,38 +3030,6 @@ Returns:
     A tensor with the same data and the new symbolic shape.
 """
 
-acos.__doc__ = """Computes the arccosine of a tensor element-wise.
-
-.. code-block:: python
-
-    from max.experimental import Tensor
-    from max.experimental import functional as F
-
-    x = Tensor([-1.0, 0.0, 1.0])
-    result = F.acos(x)
-    # result is approximately [3.1416, 1.5708, 0.0] or [pi, pi/2, 0]
-
-Args:
-    x: The input tensor, with values in the range ``[-1, 1]``. Values
-        outside this domain are clamped. Must have a floating-point dtype.
-
-Returns:
-    A tensor of the same shape and dtype with values in the range
-    ``[0, pi]`` (radians).
-"""
-dequantize.__doc__ = """Dequantizes a quantized tensor back to a floating-point representation.
-
-Currently supports the ``Q4_0``, ``Q4_K``, and ``Q6_K`` encodings.
-
-Args:
-    encoding: The :class:`~max.graph.quantization.QuantizationEncoding`
-        used to pack ``quantized``.
-    quantized: The input quantized tensor.
-
-Returns:
-    A floating-point tensor with the values reconstructed from the
-    quantized input.
-"""
 group_norm.__doc__ = """Applies group normalization over the channel axis of a tensor.
 
 Splits the channel axis (axis 1) of ``input`` into ``num_groups``

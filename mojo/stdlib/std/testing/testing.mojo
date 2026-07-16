@@ -145,7 +145,7 @@ def assert_equal[
 #   compared, then drop this overload.
 @always_inline
 def assert_equal[
-    O1: ImmutOrigin, O2: ImmutOrigin
+    O1: ImmOrigin, O2: ImmOrigin
 ](
     lhs: List[StringSlice[O1]],
     rhs: List[StringSlice[O2]],

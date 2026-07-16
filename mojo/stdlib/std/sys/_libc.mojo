@@ -133,7 +133,7 @@ struct BufferMode:
 
 @always_inline
 def posix_spawnp[
-    argv_origin: ImmutOrigin,
+    argv_origin: ImmOrigin,
     //,
 ](
     pid: UnsafePointer[mut=True, c_pid_t, _],
@@ -205,7 +205,7 @@ def dup(oldfd: c_int) -> c_int:
 
 @always_inline
 def execvp[
-    origin: ImmutOrigin,
+    origin: ImmOrigin,
     //,
 ](
     file: UnsafePointer[mut=False, c_char, _],

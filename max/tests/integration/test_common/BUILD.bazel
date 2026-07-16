@@ -376,3 +376,53 @@ modular_py_library(
         requirement("transformers"),
     ],
 )
+
+modular_py_library(
+    name = "modular_graph_test",
+    testonly = True,
+    srcs = ["modular_graph_test.py"],
+    imports = [".."],
+    deps = [
+        ":graph_utils",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_library(
+    name = "graph_error_messages_scenario",
+    testonly = True,
+    srcs = ["graph_error_messages_scenario.py"],
+    imports = [".."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+# Shared row-wise reduction graph construction. Not testonly, so the Kepler
+# rowwise-reductions benchmark (a non-testonly binary) can share this builder
+# with the correctness test.
+modular_py_library(
+    name = "reduction_graphs",
+    srcs = ["reduction_graphs.py"],
+    imports = [".."],
+    visibility = [
+        "//:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+        "//utils/benchmarking/kepler/graph:__pkg__",
+    ],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+    ],
+)

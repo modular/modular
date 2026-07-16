@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import compiler
+import extensibility
 
 from std.gpu.host import DeviceContext
 from extensibility import InputTensor, OutputTensor, foreach
@@ -20,7 +20,7 @@ from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 
-@compiler.register("add_constant_custom")
+@extensibility.register("add_constant_custom")
 struct AddConstantCustom[value: Int]:
     @staticmethod
     def execute[

@@ -20,7 +20,7 @@ This module registers operations for variable-length causal 1D convolution:
 
 from std.math import ceildiv
 
-import extensibility as compiler
+import extensibility
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 
@@ -53,7 +53,7 @@ from state_space.varlen_causal_conv1d import (
 # ============================================================================
 
 
-@compiler.register("causal_conv1d_varlen_update")
+@extensibility.register("causal_conv1d_varlen_update")
 struct CausalConv1DVarlenUpdate[activation: StaticString]:
     """Varlen causal conv1d update for autoregressive decoding.
 
@@ -396,7 +396,7 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
             raise Error("Unsupported target device")
 
 
-@compiler.register_shape_function("causal_conv1d_varlen_update")
+@extensibility.register_shape_function("causal_conv1d_varlen_update")
 def causal_conv1d_varlen_update_shape[
     dtype: DType,
 ](
@@ -414,7 +414,7 @@ def causal_conv1d_varlen_update_shape[
 # ============================================================================
 
 
-@compiler.register("causal_conv1d_varlen_states")
+@extensibility.register("causal_conv1d_varlen_states")
 struct CausalConv1DVarlenStates:
     """Extract conv states from variable-length sequences.
 
@@ -510,7 +510,7 @@ struct CausalConv1DVarlenStates:
             raise Error("Unsupported target device")
 
 
-@compiler.register_shape_function("causal_conv1d_varlen_states")
+@extensibility.register_shape_function("causal_conv1d_varlen_states")
 def causal_conv1d_varlen_states_shape[
     dtype: DType,
 ](

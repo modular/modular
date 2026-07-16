@@ -235,6 +235,15 @@ def test_dynamic[
     ctx.enqueue_copy(scales_host, scales_device)
     ctx.synchronize()
 
+    # `input_fn` captures only the raw `in_ptr`, not `in_device`, so without an
+    # explicit keep-alive Mojo's ASAP destruction frees `in_device` right after
+    # its last use (`unsafe_ptr()`) — before the kernel that reads it runs. The
+    # caching allocator masks the resulting use-after-free, but the sanitizer's
+    # 1:1 allocator (`--//:gpu_disable_memory_manager`) reports it as an OOB read
+    # of the input. Keep the buffer alive through the launch (mirrors the
+    # `_ = data_d` guard in test_rms_norm.mojo).
+    _ = in_device
+
     var num_mismatches = 0
     for i in range(input_size):
         if bitcast[DType.uint8](out_host[i]) != bitcast[DType.uint8](

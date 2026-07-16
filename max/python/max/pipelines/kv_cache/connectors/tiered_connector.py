@@ -400,6 +400,14 @@ class TieredConnector:
             if self._synchronous_d2h_copy_mode:
                 pending_disk_write.d2h_copy_complete_event.synchronize()
 
+    def touch(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> None:
+        """No-op: this connector does not refresh recency on device-cache hits."""
+        return None
+
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""
         self._block_copy_engine.wait_for_completion()

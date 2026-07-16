@@ -72,7 +72,7 @@ comptime _DeviceGraphPtr[
 
 
 @fieldwise_init
-struct DeviceGraphNode[arena_origin: ImmutOrigin](
+struct DeviceGraphNode[arena_origin: ImmOrigin](
     TrivialRegisterPassable, Writable
 ):
     """A handle to a node in an under-construction device graph.
@@ -113,14 +113,14 @@ struct _GraphDepArgs(TrivialRegisterPassable):
     side never dereferences it).
     """
 
-    var ids: UnsafePointer[Int32, ImmutUntrackedOrigin]
+    var ids: UnsafePointer[Int32, ImmUntrackedOrigin]
     var count: Int64
 
 
 @doc_hidden
 @always_inline
 def _pack_dep_args[
-    o: ImmutOrigin
+    o: ImmOrigin
 ](deps: List[DeviceGraphNode[o]]) -> _GraphDepArgs:
     """Packs an explicit dependency list into the (ids, count) pair used by
     the AsyncRT_DeviceGraphBuilder_add* C ABI exports.
@@ -135,7 +135,7 @@ def _pack_dep_args[
     return _GraphDepArgs(
         ids=deps.unsafe_ptr()
         .bitcast[Int32]()
-        .unsafe_origin_cast[ImmutUntrackedOrigin](),
+        .unsafe_origin_cast[ImmUntrackedOrigin](),
         count=Int64(len(deps)),
     )
 
@@ -233,7 +233,7 @@ struct DeviceGraph(ImplicitlyCopyable):
     @staticmethod
     def create(
         ctx: DeviceContext,
-        build: Some[def[o: ImmutOrigin](mut DeviceGraphBuilder[o]) raises],
+        build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
     ) raises -> DeviceGraph:
         """Builds and instantiates a device graph within a scoped callback.
 
@@ -300,7 +300,7 @@ struct DeviceGraph(ImplicitlyCopyable):
         return builder^.instantiate()
 
 
-struct DeviceGraphBuilder[arena_origin: ImmutOrigin](Movable):
+struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     """Builder for explicit device graph construction.
 
     A `DeviceGraphBuilder` is handed to the callback passed to
@@ -1032,7 +1032,7 @@ struct DeviceGraphBuilder[arena_origin: ImmutOrigin](Movable):
 
     def region(
         mut self,
-        work: Some[def[o: ImmutOrigin](mut DeviceGraphBuilder[o]) raises],
+        work: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
         *,
         var dependencies: List[Self.Node] = [],
     ) raises -> Self.Node:
@@ -1207,7 +1207,7 @@ struct DeviceGraphBuilder[arena_origin: ImmutOrigin](Movable):
 
 @doc_hidden
 struct _DeviceGraphBuilderEnqueuer[
-    arena_origin: ImmutOrigin,
+    arena_origin: ImmOrigin,
     builder_origin: Origin[mut=False],
 ](_FunctionEnqueuer):
     """Transient `_FunctionEnqueuer` pairing a `DeviceGraphBuilder` borrow

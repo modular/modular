@@ -180,7 +180,7 @@ struct Color(Intable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct _C_EventAttributes[message_origin: ImmutOrigin](TrivialRegisterPassable):
+struct _C_EventAttributes[message_origin: ImmOrigin](TrivialRegisterPassable):
     var version: UInt16
     """Version flag of the structure."""
 
@@ -214,8 +214,8 @@ struct _C_EventAttributes[message_origin: ImmutOrigin](TrivialRegisterPassable):
 
 def c_event_attrs_ffi(
     attrs: _C_EventAttributes[_],
-) -> _C_EventAttributes[ImmutUntrackedOrigin]:
-    return rebind[_C_EventAttributes[ImmutUntrackedOrigin]](attrs)
+) -> _C_EventAttributes[ImmUntrackedOrigin]:
+    return rebind[_C_EventAttributes[ImmUntrackedOrigin]](attrs)
 
 
 @always_inline
@@ -231,7 +231,7 @@ def color_from_category(category: Int) -> Color:
     return Color.PURPLE
 
 
-struct EventAttributes[message_origin: ImmutOrigin](TrivialRegisterPassable):
+struct EventAttributes[message_origin: ImmOrigin](TrivialRegisterPassable):
     var _value: _C_EventAttributes[Self.message_origin]
 
     @always_inline
@@ -250,7 +250,7 @@ struct EventAttributes[message_origin: ImmutOrigin](TrivialRegisterPassable):
             resolved_color = color_from_category(category)
         self._value = _C_EventAttributes(
             version=NVTXVersion,
-            size=UInt16(size_of[_C_EventAttributes[ImmutUntrackedOrigin]]()),
+            size=UInt16(size_of[_C_EventAttributes[ImmUntrackedOrigin]]()),
             category=UInt32(category),
             color_type=Color.FORMAT,
             color=UInt32(Int(resolved_color)),
@@ -278,7 +278,7 @@ struct _dylib_function[fn_name: StaticString, fn_type: TrivialRegisterPassable](
 comptime _nvtxMarkEx = _dylib_function[
     "nvtxMarkEx",
     def(
-        UnsafePointer[_C_EventAttributes[ImmutUntrackedOrigin], ImmutAnyOrigin]
+        UnsafePointer[_C_EventAttributes[ImmUntrackedOrigin], ImmutAnyOrigin]
     ) thin -> NoneType,
 ]
 
@@ -286,7 +286,7 @@ comptime _nvtxMarkEx = _dylib_function[
 comptime _nvtxRangeStartEx = _dylib_function[
     "nvtxRangeStartEx",
     def(
-        UnsafePointer[_C_EventAttributes[ImmutUntrackedOrigin], ImmutAnyOrigin]
+        UnsafePointer[_C_EventAttributes[ImmUntrackedOrigin], ImmutAnyOrigin]
     ) thin -> RangeID,
 ]
 
@@ -299,7 +299,7 @@ comptime _nvtxRangeEnd = _dylib_function[
 comptime _nvtxRangePushEx = _dylib_function[
     "nvtxRangePushEx",
     def(
-        UnsafePointer[_C_EventAttributes[ImmutUntrackedOrigin], ImmutAnyOrigin]
+        UnsafePointer[_C_EventAttributes[ImmUntrackedOrigin], ImmutAnyOrigin]
     ) thin -> Int32,
 ]
 

@@ -20,6 +20,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+import psutil
 from max._distributed_ops import batched_copy_d2h, batched_copy_h2d
 from max.driver import (
     Buffer,
@@ -63,6 +64,26 @@ class DeviceEventBundle:
 
 
 _GIB = 1024**3
+
+
+def _check_host_memory_capacity(requested_bytes: int) -> None:
+    """Raises when a pinned host allocation exceeds host availability."""
+    try:
+        available_bytes = psutil.virtual_memory().available
+    except (OSError, RuntimeError) as error:
+        _logger.warning(
+            "Unable to determine available host memory; skipping KV cache "
+            "host capacity preflight: %s",
+            error,
+        )
+        return
+    if requested_bytes > available_bytes:
+        raise RuntimeError(
+            "KV cache host offload buffer requires "
+            f"{requested_bytes / _GIB:.1f} GiB of pinned host memory but only "
+            f"{available_bytes / _GIB:.1f} GiB is available. Reduce "
+            "host_kvcache_swap_space_gb or provision more host memory."
+        )
 
 
 @dataclass
@@ -132,10 +153,18 @@ class BlockOffloadEngine:
             self._build_replica_state(units) for units in replica_kv_memory
         ]
 
+        # gpu0 owns the shared host buffer; its main stream is the sync hub in
+        # wait_for_completion(). Held by identity so the barrier can exclude it.
+        self._gpu0_stream = self._replicas[0].main_streams[gpu0.id]
+
         # 2-D [num_host_blocks, bytes_per_page] page-locked host region shared
         # by all replicas; row ``bid`` is block ``bid``. Not GC-freed --
         # close() releases it.
         total_bytes = total_num_host_blocks * bytes_per_page
+        # Fail fast on an over-provisioned host budget: the pinned allocation
+        # below faults page by page and would otherwise OOM-kill the process
+        # instead of surfacing an actionable error.
+        _check_host_memory_capacity(total_bytes)
         total_gib = total_bytes / _GIB
         # Large allocations take minutes; log before so the wait is explained.
         _logger.info(
@@ -304,23 +333,32 @@ class BlockOffloadEngine:
 
     @traced
     def wait_for_completion(self) -> None:
-        """Synchronize main streams with the auxiliary streams (all replicas).
+        """Barrier across every main and auxiliary stream of all replicas.
 
-        This ensures that the d2h copies from BatchN completes before
-        BatchN+1 begins. This is needed because BatchN+1 may write to the
-        same blocks as BatchN is reading from.
+        This ensures the d2h copies from BatchN complete before BatchN+1
+        begins (BatchN+1 may overwrite blocks BatchN is still reading), and
+        that the d2h offload of BatchN starts only after BatchN completes.
 
-        Additionally, ensure that d2h offload of BatchN starts after BatchN
-        completes. As such this needs to be a duplex sync.
+        Because the host buffer is shared across replicas, the barrier must
+        also be cross-replica: a page written by one replica's d2h can be read
+        by another replica's h2d. gpu0's stream is used as a hub -- it first
+        waits for every other stream, then every other stream waits for it,
+        transitively ordering all streams against each other.
         """
-        for replica in self._replicas:
-            for main_stream, d2h_auxiliary_stream in zip(
-                replica.main_streams.values(),
-                replica.d2h_auxiliary_streams.values(),
-                strict=True,
-            ):
-                main_stream.wait_for(d2h_auxiliary_stream)
-                d2h_auxiliary_stream.wait_for(main_stream)
+        hub = self._gpu0_stream
+        other_streams = [
+            stream
+            for replica in self._replicas
+            for stream in (
+                *replica.main_streams.values(),
+                *replica.d2h_auxiliary_streams.values(),
+            )
+            if stream is not hub
+        ]
+        for stream in other_streams:
+            hub.wait_for(stream)
+        for stream in other_streams:
+            stream.wait_for(hub)
 
     @traced
     def record_d2h_event(self, replica_idx: int = 0) -> DeviceEventBundle:

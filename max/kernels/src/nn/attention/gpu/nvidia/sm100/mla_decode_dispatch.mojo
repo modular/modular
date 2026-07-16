@@ -3341,15 +3341,7 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
         MaskType=MaskType,
         SplitAccumType=SplitAccumType,
     ](mask, valid_len, lse_accum_split_ptr, num_partitions)
-    var block_x = ceildiv(config.num_q_heads, config.BM)
-    var grid_dim = (block_x, q_max_seq_len, block_z)
-    var block_dim = (config.num_threads, 1, 1)
-
-    logger.info(
-        "------ Dispatching to SM100 Sparse MLA-DECODE (all-BF16 KV) ------"
-    )
-
-    comptime kernel = MLA_SM100_Decode_Sparse_KV_BF16[
+    comptime KernelStruct = MLA_SM100_Decode_Sparse_KV_BF16[
         q_type=q_type,
         KVLUTType=KVLUTType,
         output_type=output_type,
@@ -3362,13 +3354,23 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
         has_attn_sink=has_attn_sink,
         has_extra_kv=has_extra_kv,
         has_variable_topk=has_variable_topk,
-    ].kernel
+    ]
+    var block_x = ceildiv(config.num_q_heads, config.BM)
+    var grid_dim = (block_x, q_max_seq_len, block_z)
+    # config's num_threads is the shared 3-WG default; the 4-WG sparse
+    # kernel supplies its own block size.
+    var block_dim = (KernelStruct.num_threads, 1, 1)
+
+    logger.info(
+        "------ Dispatching to SM100 Sparse MLA-DECODE (all-BF16 KV) ------"
+    )
+
+    comptime kernel = KernelStruct.kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
     # Extra SMEM beyond the dense config:
-    #   - 4 idx_bars barriers (4 * mbar_size bytes)
     #   - ptr_tmem_addr (4 bytes, UInt32)
     #   - idx_smem double-buffered (2 * BN_QK * sizeof(Int32) = 512 bytes)
-    comptime sparse_extra_smem = 4 * config.mbar_size + 4 + 2 * config.BN_QK * 4
+    comptime sparse_extra_smem = 4 + 2 * config.BN_QK * 4
     comptime sparse_smem_used = config.smem_used + sparse_extra_smem
 
     ctx.enqueue_function[kernel](

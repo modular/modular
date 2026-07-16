@@ -106,7 +106,7 @@ def _vectorized_copy_row[
 @__name(t"padded_copy_{dtype}_w{simd_width}")
 def padded_copy_kernel[
     InputLayoutType: TensorLayout,
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     dtype: DType,
@@ -188,7 +188,7 @@ def _pad_constant_impl[
 
     comptime block_rows = max_threads // threads_per_row
     comptime kernel = padded_copy_kernel[
-        input_origin=ImmutOrigin(input_tensor.origin),
+        input_origin=ImmOrigin(input_tensor.origin),
         InputLayoutType=input_tensor.LayoutType,
         output_origin=output_tensor.origin,
         OutputLayoutType=output_tensor.LayoutType,

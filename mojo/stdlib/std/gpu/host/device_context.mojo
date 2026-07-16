@@ -530,7 +530,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             new_handle, new_host_ptr._unsafe_nullable()
         )
 
-    def enqueue_copy_to(self, dst: HostBuffer[Self.dtype, ...]) raises:
+    def enqueue_copy_to(self, dst: HostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to another host buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -545,7 +545,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         """
         dst.context().enqueue_copy(dst, self)
 
-    def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype, ...]) raises:
+    def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to a device buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -562,7 +562,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         dst.context().enqueue_copy(dst, self)
 
     def enqueue_copy_to(
-        self, dst_ptr: OptionalUnsafePointer[mut=True, Scalar[Self.dtype], _]
+        self, dst_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
@@ -579,7 +579,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self.context().enqueue_copy(dst_ptr, self)
 
-    def enqueue_copy_from(self, src: HostBuffer[Self.dtype, ...]) raises:
+    def enqueue_copy_from(self, src: HostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy to this buffer from another host buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -595,7 +595,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src)
 
-    def enqueue_copy_from(self, src: DeviceBuffer[Self.dtype, ...]) raises:
+    def enqueue_copy_from(self, src: DeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy to this buffer from a device buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -612,7 +612,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         self.context().enqueue_copy(self, src)
 
     def enqueue_copy_from(
-        self, src_ptr: OptionalUnsafePointer[Scalar[Self.dtype], _]
+        self, src_ptr: UnsafePointer[mut=False, Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
@@ -629,7 +629,9 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src_ptr)
 
-    def enqueue_copy_from(self, src: Span[Scalar[Self.dtype], _]) raises:
+    def enqueue_copy_from(
+        self, src: Span[mut=False, Scalar[Self.dtype], _]
+    ) raises:
         """Enqueues an asynchronous copy to this buffer from a `Span`.
 
         This method schedules a memory copy operation to this buffer from the
@@ -1076,7 +1078,7 @@ struct DevicePointer[
     # Comparison
     # ===------------------------------------------------------------------=== #
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __eq__(self, other: Self) -> Bool:
         """Returns `True` if `self` and `other` reference the same buffer and
         offset.
@@ -1092,7 +1094,7 @@ struct DevicePointer[
             and self._offset == other._offset
         )
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __eq__(self, other: DevicePointer[Self.dtype, _]) -> Bool:
         """Returns `True` if `self` and `other` reference the same buffer and
         offset.
@@ -1108,7 +1110,7 @@ struct DevicePointer[
             and self._offset == other._offset
         )
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __ne__(self, other: Self) -> Bool:
         """Returns `True` if `self` and `other` differ in buffer or offset.
 
@@ -1120,7 +1122,7 @@ struct DevicePointer[
         """
         return not (self == other)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __ne__(self, other: DevicePointer[Self.dtype, _]) -> Bool:
         """Returns `True` if `self` and `other` differ in buffer or offset.
 
@@ -1132,7 +1134,7 @@ struct DevicePointer[
         """
         return not (self == other)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __lt__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` precedes `other` within the same buffer.
 
@@ -1152,7 +1154,7 @@ struct DevicePointer[
             )
         return self._offset < other._offset
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __le__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` precedes or equals `other` within the
         same buffer.
@@ -1173,7 +1175,7 @@ struct DevicePointer[
             )
         return self._offset <= other._offset
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __gt__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` follows `other` within the same buffer.
 
@@ -1193,7 +1195,7 @@ struct DevicePointer[
             )
         return self._offset > other._offset
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __ge__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` follows or equals `other` within the same
         buffer.
@@ -1596,7 +1598,7 @@ struct DeviceBuffer[dtype: DType](
         )
         return DeviceBuffer[view_type](new_handle, new_device_ptr.value())
 
-    def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype, ...]) raises:
+    def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to another device buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -1612,7 +1614,7 @@ struct DeviceBuffer[dtype: DType](
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         dst.context().enqueue_copy(dst, self)
 
-    def enqueue_copy_to(self, dst: HostBuffer[Self.dtype, ...]) raises:
+    def enqueue_copy_to(self, dst: HostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to a host buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -1629,7 +1631,7 @@ struct DeviceBuffer[dtype: DType](
         dst.context().enqueue_copy(dst, self)
 
     def enqueue_copy_to(
-        self, dst_ptr: OptionalUnsafePointer[mut=True, Scalar[Self.dtype], _]
+        self, dst_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
@@ -1646,7 +1648,7 @@ struct DeviceBuffer[dtype: DType](
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         self.context().enqueue_copy(dst_ptr, self)
 
-    def enqueue_copy_from(self, src: DeviceBuffer[Self.dtype, ...]) raises:
+    def enqueue_copy_from(self, src: DeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy to this buffer from another device buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -1662,7 +1664,7 @@ struct DeviceBuffer[dtype: DType](
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src)
 
-    def enqueue_copy_from(self, src: HostBuffer[Self.dtype, ...]) raises:
+    def enqueue_copy_from(self, src: HostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy to this buffer from a host buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -1679,7 +1681,7 @@ struct DeviceBuffer[dtype: DType](
         self.context().enqueue_copy(self, src)
 
     def enqueue_copy_from(
-        self, src_ptr: OptionalUnsafePointer[Scalar[Self.dtype], _]
+        self, src_ptr: UnsafePointer[mut=False, Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
@@ -1696,7 +1698,9 @@ struct DeviceBuffer[dtype: DType](
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src_ptr)
 
-    def enqueue_copy_from(self, src: Span[Scalar[Self.dtype], _]) raises:
+    def enqueue_copy_from(
+        self, src: Span[mut=False, Scalar[Self.dtype], _]
+    ) raises:
         """Enqueues an asynchronous copy to this buffer from a `Span`.
 
         This method schedules a memory copy operation to this buffer from the
@@ -1823,7 +1827,7 @@ struct DeviceBuffer[dtype: DType](
         mut: Bool,
         //,
         origin: Origin[mut=mut],
-    ](ref[origin] self,) -> UnsafePointer[Scalar[Self.dtype], origin]:
+    ](ref[origin] self) -> UnsafePointer[Scalar[Self.dtype], origin]:
         """Returns the raw device pointer without transferring ownership.
 
         This method provides direct access to the underlying device pointer
@@ -3833,7 +3837,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
     ```text
     from std.gpu.host import DeviceContext
-    from compiler import register
+    from extensibility import register
 
     @register("custom_op")
     struct CustomOp:
@@ -5874,7 +5878,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     @always_inline
     def enqueue_cpu_range[
         func: def(count: Int) capturing -> None,
-    ](self, count: Int,) raises:
+    ](self, count: Int) raises:
         """Enqueues a function to be executed in parallel over a 1D range.
 
         The function is called as `func(i)` for each `i` in `range(count)`.
@@ -5925,7 +5929,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     @always_inline
     def enqueue_cpu_range[
         FuncType: def(Int) -> None,
-    ](self, func: FuncType, count: Int,) raises:
+    ](self, func: FuncType, count: Int) raises:
         """Enqueues a function to be executed in parallel over a 1D range.
 
         The function is called as `func(i)` for each `i` in `range(count)`.
@@ -6308,8 +6312,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         dtype: DType
     ](
         self,
-        dst_buf: DeviceBuffer[dtype, ...],
-        src_ptr: OptionalUnsafePointer[Scalar[dtype], ...],
+        dst_buf: DeviceBuffer[dtype],
+        src_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
     ) raises:
         """Enqueues an async copy from the host to the provided device
         buffer. The number of bytes copied is determined by the size of the
@@ -6342,8 +6346,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         dtype: DType
     ](
         self,
-        dst_buf: HostBuffer[dtype, ...],
-        src_ptr: OptionalUnsafePointer[Scalar[dtype], ...],
+        dst_buf: HostBuffer[dtype],
+        src_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
     ) raises:
         """Enqueues an async copy from the host to the provided device
         buffer. The number of bytes copied is determined by the size of the
@@ -6376,8 +6380,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         dtype: DType
     ](
         self,
-        dst_ptr: OptionalUnsafePointer[mut=True, Scalar[dtype], ...],
-        src_buf: DeviceBuffer[dtype, ...],
+        dst_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+        src_buf: DeviceBuffer[dtype],
     ) raises:
         """Enqueues an async copy from the device to the host. The
         number of bytes copied is determined by the size of the device buffer.
@@ -6409,8 +6413,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         dtype: DType
     ](
         self,
-        dst_ptr: OptionalUnsafePointer[mut=True, Scalar[dtype], ...],
-        src_buf: HostBuffer[dtype, ...],
+        dst_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+        src_buf: HostBuffer[dtype],
     ) raises:
         """Enqueues an async copy from the device to the host. The
         number of bytes copied is determined by the size of the device buffer.
@@ -6442,8 +6446,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         dtype: DType
     ](
         self,
-        dst_ptr: OptionalUnsafePointer[mut=True, Scalar[dtype], ...],
-        src_ptr: OptionalUnsafePointer[Scalar[dtype], ...],
+        dst_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+        src_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
         size: Int,
     ) raises:
         """Enqueues an async copy of `size` elements from a device pointer to
@@ -6462,17 +6466,14 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         """
 
         def to_device_buffer(
-            pointer: OptionalUnsafePointer[Scalar[dtype], ...]
+            pointer: UnsafePointer[Scalar[dtype], _]
         ) {read} -> DeviceBuffer[dtype]:
-            if pointer:
-                return DeviceBuffer[dtype](
-                    self,
-                    pointer.unsafe_value(),
-                    size,
-                    owning=False,
-                )
-            else:
-                return DeviceBuffer[dtype].empty(self)
+            return DeviceBuffer[dtype](
+                self,
+                pointer,
+                size,
+                owning=False,
+            )
 
         self.enqueue_copy(to_device_buffer(dst_ptr), to_device_buffer(src_ptr))
 
@@ -6481,8 +6482,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         dtype: DType
     ](
         self,
-        dst_buf: DeviceBuffer[dtype, ...],
-        src: Span[Scalar[dtype], _],
+        dst_buf: DeviceBuffer[dtype],
+        src: Span[mut=False, Scalar[dtype], _],
     ) raises:
         """Enqueues an async copy from a host `Span` to a device buffer.
 
@@ -6511,8 +6512,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         dtype: DType
     ](
         self,
-        dst_buf: HostBuffer[dtype, ...],
-        src: Span[Scalar[dtype], _],
+        dst_buf: HostBuffer[dtype],
+        src: Span[mut=False, Scalar[dtype], _],
     ) raises:
         """Enqueues an async copy from a host `Span` to a host buffer.
 
@@ -6543,7 +6544,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     ](
         self,
         dst: Span[mut=True, Scalar[dtype], _],
-        src_buf: DeviceBuffer[dtype, ...],
+        src_buf: DeviceBuffer[dtype],
     ) raises:
         """Enqueues an async copy from a device buffer to a host `Span`.
 
@@ -6574,7 +6575,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     ](
         self,
         dst: Span[mut=True, Scalar[dtype], _],
-        src_buf: HostBuffer[dtype, ...],
+        src_buf: HostBuffer[dtype],
     ) raises:
         """Enqueues an async copy from a host buffer to a host `Span`.
 
@@ -6602,11 +6603,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     @always_inline
     def enqueue_copy[
         dtype: DType
-    ](
-        self,
-        dst_buf: DeviceBuffer[dtype, ...],
-        src_buf: DeviceBuffer[dtype, ...],
-    ) raises:
+    ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -6639,11 +6636,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     @always_inline
     def enqueue_copy_no_cross_stream_sync[
         dtype: DType
-    ](
-        self,
-        dst_buf: DeviceBuffer[dtype, ...],
-        src_buf: DeviceBuffer[dtype, ...],
-    ) raises:
+    ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
         """Enqueues a device-to-device copy without cross-stream synchronization.
 
         This behaves like `enqueue_copy` for two device buffers, except that
@@ -6683,9 +6676,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     @always_inline
     def enqueue_copy[
         dtype: DType
-    ](
-        self, dst_buf: DeviceBuffer[dtype, ...], src_buf: HostBuffer[dtype, ...]
-    ) raises:
+    ](self, dst_buf: DeviceBuffer[dtype], src_buf: HostBuffer[dtype]) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -6718,9 +6709,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     @always_inline
     def enqueue_copy[
         dtype: DType
-    ](
-        self, dst_buf: HostBuffer[dtype, ...], src_buf: DeviceBuffer[dtype, ...]
-    ) raises:
+    ](self, dst_buf: HostBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -6753,9 +6742,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     @always_inline
     def enqueue_copy[
         dtype: DType
-    ](
-        self, dst_buf: HostBuffer[dtype, ...], src_buf: HostBuffer[dtype, ...]
-    ) raises:
+    ](self, dst_buf: HostBuffer[dtype], src_buf: HostBuffer[dtype]) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 

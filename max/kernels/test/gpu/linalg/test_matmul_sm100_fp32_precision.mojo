@@ -93,9 +93,9 @@ def _stats_vs_ref(
 def _run_matmul[
     use_tf32: Bool = True
 ](
-    a_host: TileTensor[f32, ...],
+    a_host: TileTensor[f32, address_space=AddressSpace.GENERIC, ...],
     b_dev: TileTensor[f32, ...],
-    c_host: TileTensor[mut=True, f32, ...],
+    c_host: TileTensor[mut=True, f32, address_space=AddressSpace.GENERIC, ...],
     m: Int,
     ctx: DeviceContext,
 ) raises:

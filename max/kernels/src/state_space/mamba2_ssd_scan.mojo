@@ -771,6 +771,488 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
                 ssm_pool.raw_store(off, state[i])
 
 
+struct DStateVecLoader[
+    state_dtype: DType,
+    kernel_dtype: DType,
+    ssm_pool_LT: TensorLayout,
+    B_LT: TensorLayout,
+    C_LT: TensorLayout,
+    Storage: TensorStorage,
+    VEC: Int,
+    NCHUNK: Int,
+](ImplicitlyCopyable, Movable):
+    """Owner of the Apple SSD kernel's vectorized dstate state / B / C I/O.
+
+    Target hardware family: Apple silicon GPU (Metal 4). The B200
+    ``..._dstate_split`` sibling performs the identical widen-on-load /
+    round-on-store / vectorized-vs-scalar-fallback logic inline; it COULD reuse
+    this owner later (it is parameterized on the storage dtypes / layouts /
+    ``Storage``), but is not wired to it here (Apple-scoped change).
+
+    Every DRAM <-> register transition on the innermost (dstate) axis has an
+    owner here instead of a ``raw_load`` / ``raw_store`` scattered across the
+    kernel body -- the owner-per-transition pattern (see ``VarlenConvIO`` in
+    ``varlen_causal_conv1d.mojo``, ``Fp4WeightLoader`` in ``matmul2d_fp4.mojo``,
+    and ``new-primitives/amd-tile-io-expert-objects``). Three verbs:
+
+      - ``load_state``: widen ``ssm_pool`` storage -> fp32 register chunks
+        (the ``NCHUNK`` ``VEC``-wide initial-state read).
+      - ``load_bc``: widen one ``VEC``-lane B and C chunk -> fp32.
+      - ``store_state``: round the fp32 state chunks -> ``ssm_pool`` storage.
+
+    Each verb owns the ``VEC``-wide aligned ``raw_load`` / ``raw_store`` and the
+    scalar fallback, so the recurrence in the kernel body indexes only fp32
+    registers and issues no raw load/store. ``load_state`` / ``store_state``
+    each own their contig branch, which wraps the whole ``NCHUNK`` loop (a
+    verbatim relocation of the prior inline loops). ``load_bc`` runs inside the
+    fused recurrence loop, so it takes the contig decision as a COMPTIME
+    ``contig`` parameter: the caller hoists the runtime ``bc_contig`` branch
+    ONCE outside the chunk loop, keeping the fast path a straight-line unrolled
+    vec-load loop (a per-chunk runtime branch measured ~18% slower on M5). Every
+    method is ``@always_inline``. The vectorized fast path (unit innermost
+    stride) serves every row-major caller; a non-unit stride selects the exact
+    v1 scalar gather/scatter, so the result is bit-identical for any layout.
+
+    Parameters:
+        state_dtype: ``ssm_pool`` storage dtype (fp32 or bf16).
+        kernel_dtype: B / C element dtype.
+        ssm_pool_LT: Layout type of the ``ssm_pool`` view.
+        B_LT: Layout type of the ``B`` view.
+        C_LT: Layout type of the ``C`` view.
+        Storage: Shared tensor-storage policy of the views.
+        VEC: SIMD load/store width over the contiguous dstate axis.
+        NCHUNK: Number of ``VEC``-wide chunks spanning ``DSTATE``.
+    """
+
+    var ssm_pool: TileTensor[
+        Self.state_dtype,
+        Self.ssm_pool_LT,
+        MutUntrackedOrigin,
+        Storage=Self.Storage,
+    ]
+    var B: TileTensor[
+        Self.kernel_dtype, Self.B_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var C: TileTensor[
+        Self.kernel_dtype, Self.C_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    # Innermost (dstate) strides for the scalar fallback gather/scatter.
+    var pool_dstate_stride: Int
+    var b_dstate_stride: Int
+    var c_dstate_stride: Int
+    # Row-major contiguity of the dstate axis (unit innermost stride). Runtime
+    # because strides are runtime; a non-unit stride selects the scalar path.
+    var pool_contig: Bool
+    var bc_contig: Bool
+
+    def __init__(
+        out self,
+        ssm_pool: TileTensor[
+            Self.state_dtype,
+            Self.ssm_pool_LT,
+            MutUntrackedOrigin,
+            Storage=Self.Storage,
+        ],
+        B: TileTensor[
+            Self.kernel_dtype,
+            Self.B_LT,
+            MutUntrackedOrigin,
+            Storage=Self.Storage,
+        ],
+        C: TileTensor[
+            Self.kernel_dtype,
+            Self.C_LT,
+            MutUntrackedOrigin,
+            Storage=Self.Storage,
+        ],
+        pool_dstate_stride: Int,
+        b_dstate_stride: Int,
+        c_dstate_stride: Int,
+    ):
+        self.ssm_pool = ssm_pool
+        self.B = B
+        self.C = C
+        self.pool_dstate_stride = pool_dstate_stride
+        self.b_dstate_stride = b_dstate_stride
+        self.c_dstate_stride = c_dstate_stride
+        self.pool_contig = pool_dstate_stride == 1
+        self.bc_contig = (b_dstate_stride == 1) and (c_dstate_stride == 1)
+
+    @always_inline
+    def load_state(
+        self,
+        mut state: InlineArray[SIMD[DType.float32, Self.VEC], Self.NCHUNK],
+        pool_base: UInt32,
+    ):
+        """Fill fp32 ``state`` from ``ssm_pool[.., pool_base + n]`` (widening).
+
+        The load widens to fp32 (a no-op when ``state_dtype`` is fp32); the
+        recurrence downstream runs on the fp32 register copy.
+        """
+        comptime pool_align = align_of[SIMD[Self.state_dtype, Self.VEC]]()
+        if self.pool_contig:
+            comptime for c in range(Self.NCHUNK):
+                state[c] = self.ssm_pool.raw_load[
+                    width=Self.VEC, alignment=pool_align
+                ](pool_base + UInt32(c * Self.VEC)).cast[DType.float32]()
+        else:
+            comptime for c in range(Self.NCHUNK):
+                var chunk = SIMD[DType.float32, Self.VEC](0.0)
+                comptime for i in range(Self.VEC):
+                    chunk[i] = self.ssm_pool.raw_load(
+                        pool_base
+                        + UInt32((c * Self.VEC + i) * self.pool_dstate_stride)
+                    ).cast[DType.float32]()
+                state[c] = chunk
+
+    @always_inline
+    def load_bc[
+        c: Int, contig: Bool
+    ](
+        self,
+        b_base: UInt32,
+        c_base: UInt32,
+        mut b_c: SIMD[DType.float32, Self.VEC],
+        mut c_c: SIMD[DType.float32, Self.VEC],
+    ):
+        """Load B and C chunk ``c`` (``VEC`` dstate lanes each), widening to fp32.
+
+        ``contig`` is a COMPTIME parameter: the caller reads ``self.bc_contig``
+        and hoists the runtime branch ONCE outside the ``NCHUNK`` chunk loop,
+        then instantiates the pure vectorized (``contig=True``) or pure
+        scalar-gather (``contig=False``) path here. A per-chunk *runtime* branch
+        interleaves the cold scalar-gather code into the hot vectorized loop and
+        measured ~18% slower on M5 (33.6 vs 28.4 us/launch at the decode shape),
+        so the fast path must stay a straight-line unrolled vec-load loop.
+        """
+        comptime bc_align = align_of[SIMD[Self.kernel_dtype, Self.VEC]]()
+        comptime if contig:
+            b_c = self.B.raw_load[width=Self.VEC, alignment=bc_align](
+                b_base + UInt32(c * Self.VEC)
+            ).cast[DType.float32]()
+            c_c = self.C.raw_load[width=Self.VEC, alignment=bc_align](
+                c_base + UInt32(c * Self.VEC)
+            ).cast[DType.float32]()
+        else:
+            comptime for i in range(Self.VEC):
+                var n = c * Self.VEC + i
+                b_c[i] = Scalar[Self.kernel_dtype](
+                    self.B.raw_load(b_base + UInt32(n * self.b_dstate_stride))
+                ).cast[DType.float32]()
+                c_c[i] = Scalar[Self.kernel_dtype](
+                    self.C.raw_load(c_base + UInt32(n * self.c_dstate_stride))
+                ).cast[DType.float32]()
+
+    @always_inline
+    def store_state(
+        self,
+        state: InlineArray[SIMD[DType.float32, Self.VEC], Self.NCHUNK],
+        pool_wb: UInt32,
+    ):
+        """Round fp32 ``state`` to ``state_dtype`` and write back to ``ssm_pool``.
+
+        The round happens once here at the final write-back (a no-op when
+        ``state_dtype`` is fp32); the recurrent accumulator never leaves fp32.
+        """
+        comptime pool_align = align_of[SIMD[Self.state_dtype, Self.VEC]]()
+        if self.pool_contig:
+            comptime for c in range(Self.NCHUNK):
+                self.ssm_pool.raw_store[width=Self.VEC, alignment=pool_align](
+                    pool_wb + UInt32(c * Self.VEC),
+                    state[c].cast[Self.state_dtype](),
+                )
+        else:
+            comptime for c in range(Self.NCHUNK):
+                comptime for i in range(Self.VEC):
+                    self.ssm_pool.raw_store(
+                        pool_wb
+                        + UInt32((c * Self.VEC + i) * self.pool_dstate_stride),
+                        state[c][i].cast[Self.state_dtype](),
+                    )
+
+
+def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
+    kernel_dtype: DType,
+    DSTATE: Int,
+    x_LT: TensorLayout,
+    dt_LT: TensorLayout,
+    A_LT: TensorLayout,
+    B_LT: TensorLayout,
+    C_LT: TensorLayout,
+    D_LT: TensorLayout,
+    dt_bias_LT: TensorLayout,
+    y_LT: TensorLayout,
+    ssm_pool_LT: TensorLayout,
+    query_start_loc_LT: TensorLayout,
+    has_initial_state_LT: TensorLayout,
+    cache_indices_LT: TensorLayout,
+    # SSM-state pool STORAGE dtype: fp32 (default) or bf16. bf16 halves the
+    # dominant per-step pool traffic on Apple silicon; the recurrence still
+    # accumulates in fp32 registers (loads widen, only the final write-back
+    # rounds). See the docstring numerics contract.
+    state_dtype: DType = DType.float32,
+    # SIMD load/store width over the contiguous dstate axis. 4 fp32 = 16 B is
+    # the proven M5 vector-load cap; 2/8 are sweepable in the microbench. NOTE:
+    # VEC=8 is fp32-ONLY -- a width-8 bf16/fp16 load scalarizes on the M5 (AGX)
+    # backend (`<8 x half>`/`<8 x bfloat>` under-alignment cliff), so the
+    # shipping default VEC=4 is the safe choice across state dtypes.
+    VEC: Int = 4,
+    # All operands share one storage policy (see the v1 variant); a single
+    # param binds it for every tile argument.
+    Storage: TensorStorage = PointerStorage[element_width=1],
+](
+    nheads: Int,
+    head_dim: Int,
+    ngroups: Int,
+    nheads_ngroups_ratio: Int,
+    batch: Int,
+    dt_softplus: Int8,
+    x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin, Storage=Storage],
+    dt: TileTensor[kernel_dtype, dt_LT, MutUntrackedOrigin, Storage=Storage],
+    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin, Storage=Storage],
+    B: TileTensor[kernel_dtype, B_LT, MutUntrackedOrigin, Storage=Storage],
+    C: TileTensor[kernel_dtype, C_LT, MutUntrackedOrigin, Storage=Storage],
+    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin, Storage=Storage],
+    dt_bias: TileTensor[
+        kernel_dtype, dt_bias_LT, MutUntrackedOrigin, Storage=Storage
+    ],
+    y: TileTensor[kernel_dtype, y_LT, MutUntrackedOrigin, Storage=Storage],
+    ssm_pool: TileTensor[
+        state_dtype, ssm_pool_LT, MutUntrackedOrigin, Storage=Storage
+    ],
+    query_start_loc: TileTensor[
+        DType.int32, query_start_loc_LT, MutUntrackedOrigin, Storage=Storage
+    ],
+    has_initial_state: TileTensor[
+        DType.bool, has_initial_state_LT, MutUntrackedOrigin, Storage=Storage
+    ],
+    cache_indices: TileTensor[
+        DType.uint32, cache_indices_LT, MutUntrackedOrigin, Storage=Storage
+    ],
+    x_strides: Strides3D,
+    dt_strides: Strides2D,
+    A_strides: Strides1D,
+    B_strides: Strides3D,
+    C_strides: Strides3D,
+    D_strides: Strides1D,
+    dt_bias_strides: Strides1D,
+    y_strides: Strides3D,
+    ssm_pool_strides: Strides4D,
+):
+    """GPU kernel: Mamba-2 SSD varlen in-place scan, Apple-M5 vectorized I/O.
+
+    Target hardware family: Apple silicon GPU (Metal 4, `compute_capability()
+    == 5`). Numerically equivalent to
+    ``mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu`` (the portable v1 kernel);
+    same one-thread-per-``(b, h, p)``-channel mapping and launch geometry
+    (grid ``(ceildiv(head_dim, BLOCK), nheads, batch)``, ``block (BLOCK,1,1)``).
+
+    The only change from v1 is the state / B / C I/O. v1 walks the ``dstate``
+    axis with a ``comptime for n in range(DSTATE)`` loop of scalar
+    ``raw_load`` / ``raw_store`` (128 dependent scalar fp32 loads/thread for
+    the state read + 128 for B + 128 for C + 128 scalar stores at the served
+    decode shape), which is per-thread scalar-load latency bound on M5 (the
+    scan realized ~15-17% of HBM at c32, flat across batch). This variant moves
+    the innermost ``dstate`` run in ``VEC``-wide contiguous SIMD loads/stores
+    over ``NCHUNK = DSTATE // VEC`` chunks -- the same vectorized-contiguous-I/O
+    lever as the B200 ``..._dstate_split`` sibling, WITHOUT its warp-32
+    ``lane_group_sum`` cooperative split (Metal simdgroup width; and c32
+    occupancy is already full, so the split's bs=1 occupancy benefit does not
+    apply here).
+
+    Per-thread state is carried as ``InlineArray[SIMD[fp32, VEC], NCHUNK]`` --
+    native ``float4`` chunks rather than v1's monolithic ``SIMD[fp32,
+    MAX_DSTATE=256]`` (whose upper ``MAX_DSTATE - DSTATE`` lanes were always
+    zero and only inflated register pressure). The recurrence
+    ``state = state*dA + B*dt_x`` and the output reduction ``y = sum_n
+    state[n]*C[n]`` run per-chunk in fp32; fp32 wide-SIMD arithmetic is safe on
+    the M5 backend (per `Kernels/claude_kb/entries/known-limitations/
+    apple-m5-wide-16bit-simd-codegen-crash.md`: only >=24-lane 16-bit-element
+    arithmetic crashes; B/C are cast to fp32 immediately after each load, so no
+    wide bf16 arithmetic occurs). Uses neither `SIMD.insert` (no Apple-GPU
+    codegen path in the stdlib) nor `SIMD.slice`.
+
+    ``state_dtype`` selects the ``ssm_pool`` STORAGE dtype only (fp32 default;
+    bf16 for the Apple decode path, halving the pool bytes — the pool
+    read+write dominates the decode-step traffic). Numerics contract: pool
+    loads widen to fp32 in registers, the full per-timestep recurrence
+    ``state = state*dA + B*dt_x`` and the ``y`` reduction stay in fp32
+    exactly as in the fp32 path, and rounding to ``state_dtype`` happens once
+    per kernel invocation at the final write-back — never inside the
+    recurrent accumulate. At ``state_dtype == float32`` both boundary casts
+    are no-ops, so the fp32 path is byte-identical to before. Across decode
+    steps the persistent state is thus re-rounded to bf16 once per step (each
+    launch reloads the stored state); a single round is <= 2^-9 relative and
+    the recurrence is contractive (``dA = exp(A*dt) < 1``, ``A < 0``), so the
+    rounding does not compound. bf16 chunks at ``VEC = 4`` are 8 B
+    ``<4 x bfloat>`` accesses, within the <=4-lane alignment-robust regime on
+    M5 (see `.claude/agent-memory/mojo-kernel-engineer/
+    apple-m5-width8-dtype-asymmetry.md`); the win is the halved bytes, not
+    lane width.
+
+    The ``*_contig`` guards fall back to the exact v1 scalar path when a caller
+    passes a non-unit innermost stride, so the result matches v1 for any
+    layout; the row-major callers (every production path) take the vectorized
+    branch. ``DSTATE`` and every dispatched value (16/64/128/256) are multiples
+    of ``VEC in {2,4,8}``, and the row-major dstate-axis base offset is a
+    multiple of ``VEC``, so each SIMD access is naturally aligned.
+    """
+    comptime assert (
+        DSTATE % VEC == 0
+    ), "DSTATE must be a multiple of the SIMD I/O width VEC"
+    # fp16 is deliberately excluded: the state magnitude is unbounded by the
+    # recurrence (fp16 max 65504 risks overflow) and wide fp16 loads hit the
+    # M5 scalarization trap. Only the two validated storage dtypes compile.
+    comptime assert (
+        state_dtype == DType.float32 or state_dtype == DType.bfloat16
+    ), "state_dtype must be float32 or bfloat16"
+
+    var p = block_dim.x * block_idx.x + thread_idx.x
+    var h = block_idx.y
+    var b = block_idx.z
+
+    if p >= head_dim or h >= nheads or b >= batch:
+        return
+
+    var has_D = Int(D.dim[0]()) > 0
+    var has_dt_bias = Int(dt_bias.dim[0]()) > 0
+    var has_init_tensor = Int(has_initial_state.dim[0]()) > 0
+    var dt_softplus_bool = Bool(Int(dt_softplus) != 0)
+
+    var group_id = h // nheads_ngroups_ratio
+
+    var seq_start = Int(query_start_loc.raw_load(b))
+    var seq_end = Int(query_start_loc.raw_load(b + 1))
+    var seq_len = seq_end - seq_start
+    if seq_len <= 0:
+        return
+
+    var A_val = (
+        Scalar[kernel_dtype](A.raw_load(UInt32(h * A_strides[0]))).cast[
+            DType.float32
+        ]()
+        * LOG2E
+    )
+
+    var dt_bias_val = Float32(0.0)
+    if has_dt_bias:
+        dt_bias_val = Scalar[kernel_dtype](
+            dt_bias.raw_load(UInt32(h * dt_bias_strides[0]))
+        ).cast[DType.float32]()
+
+    var D_val = Float32(0.0)
+    if has_D:
+        D_val = Scalar[kernel_dtype](D.raw_load(UInt32(h * D_strides[0]))).cast[
+            DType.float32
+        ]()
+
+    comptime NCHUNK = DSTATE // VEC
+    # This loader owns every width=VEC state / B / C DRAM<->register transition
+    # (the raw_load/raw_store + the scalar fallback), so the kernel body below
+    # indexes only fp32 registers. The innermost (dstate) strides pick the
+    # vectorized fast path (unit stride, every row-major caller) or the exact
+    # v1 scalar fallback (non-unit stride, bit-identical). The B/C `bc_contig`
+    # branch is hoisted once in the recurrence loop below (comptime `contig`),
+    # not per chunk -- a per-chunk branch regressed ~18% on M5.
+    var loader = DStateVecLoader[
+        state_dtype,
+        kernel_dtype,
+        ssm_pool_LT,
+        B_LT,
+        C_LT,
+        Storage,
+        VEC,
+        NCHUNK,
+    ](ssm_pool, B, C, ssm_pool_strides[3], B_strides[2], C_strides[2])
+
+    # Per-thread dstate state as native VEC-wide fp32 chunks (see docstring).
+    var state = InlineArray[SIMD[DType.float32, VEC], NCHUNK](
+        fill=SIMD[DType.float32, VEC](0.0)
+    )
+
+    var slot = Int(cache_indices.raw_load(b))
+    var use_initial = False
+    if has_init_tensor:
+        use_initial = Bool(has_initial_state.raw_load(b))
+    if use_initial:
+        var pool_base = UInt32(
+            slot * ssm_pool_strides[0]
+            + h * ssm_pool_strides[1]
+            + p * ssm_pool_strides[2]
+        )
+        # Widen to fp32 at the load boundary (no-op when state_dtype is fp32);
+        # all recurrence math below runs on the fp32 register copy.
+        loader.load_state(state, pool_base)
+
+    for t in range(seq_len):
+        var gt = seq_start + t
+
+        var x_val = Scalar[kernel_dtype](
+            x.raw_load(
+                UInt32(gt * x_strides[0] + h * x_strides[1] + p * x_strides[2])
+            )
+        ).cast[DType.float32]()
+
+        var dt_val = Scalar[kernel_dtype](
+            dt.raw_load(UInt32(gt * dt_strides[0] + h * dt_strides[1]))
+        ).cast[DType.float32]()
+        if has_dt_bias:
+            dt_val += dt_bias_val
+        if dt_softplus_bool:
+            dt_val = softplus(dt_val)
+
+        var dA = exp2(A_val * dt_val)
+        var dt_x = dt_val * x_val
+
+        # y = sum_n C_n * state_n, accumulated lane-wise across chunks then
+        # reduced once (fp32; associativity differs from v1's flat reduce by
+        # <ULP-scale rounding, within the equivalence tolerance). The loader
+        # owns each chunk's B/C widen-load; the recurrence and reduction stay
+        # in fp32 registers. The runtime `bc_contig` branch is hoisted ONCE
+        # here (not per chunk) and the comptime `contig` specializes the loader
+        # so each arm is a straight-line unrolled loop -- a per-chunk runtime
+        # branch measured ~18% slower on M5 (33.6 vs 28.4 us at the decode
+        # shape) by interleaving cold scalar-gather code into the hot loop.
+        var y_acc = SIMD[DType.float32, VEC](0.0)
+        var B_base = UInt32(gt * B_strides[0] + group_id * B_strides[1])
+        var C_base = UInt32(gt * C_strides[0] + group_id * C_strides[1])
+        if loader.bc_contig:
+            comptime for c in range(NCHUNK):
+                var b_c = SIMD[DType.float32, VEC](0.0)
+                var c_c = SIMD[DType.float32, VEC](0.0)
+                loader.load_bc[c, True](B_base, C_base, b_c, c_c)
+                var s_c = state[c] * dA + b_c * dt_x
+                state[c] = s_c
+                y_acc += s_c * c_c
+        else:
+            comptime for c in range(NCHUNK):
+                var b_c = SIMD[DType.float32, VEC](0.0)
+                var c_c = SIMD[DType.float32, VEC](0.0)
+                loader.load_bc[c, False](B_base, C_base, b_c, c_c)
+                var s_c = state[c] * dA + b_c * dt_x
+                state[c] = s_c
+                y_acc += s_c * c_c
+
+        var y_val = y_acc.reduce_add()
+        if has_D:
+            y_val += D_val * x_val
+
+        y.raw_store(
+            UInt32(gt * y_strides[0] + h * y_strides[1] + p * y_strides[2]),
+            Scalar[kernel_dtype](y_val.cast[kernel_dtype]()),
+        )
+
+    # Write final state back into ssm_pool at slot cache_indices[b].
+    var pool_wb = UInt32(
+        slot * ssm_pool_strides[0]
+        + h * ssm_pool_strides[1]
+        + p * ssm_pool_strides[2]
+    )
+    # Round to state_dtype only here, at the final write-back (no-op when
+    # state_dtype is fp32); the recurrent accumulator itself never leaves fp32.
+    loader.store_state(state, pool_wb)
+
+
 def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
     kernel_dtype: DType,
     DSTATE: Int,

@@ -364,7 +364,7 @@ def _is_grapheme_break(mut state: _GraphemeBreakState, cp: UInt32) -> Bool:
 
 @always_inline
 def _decode_previous_codepoint(
-    span: Span[mut=False, Byte, ...], end: Int
+    span: Span[mut=False, Byte, _], end: Int
 ) -> Tuple[UInt32, Int]:
     """Decode the codepoint whose last byte is at `end - 1`.
 
@@ -387,9 +387,7 @@ def _decode_previous_codepoint(
     return (cp.to_u32(), byte_len)
 
 
-def _find_safe_grapheme_start(
-    span: Span[mut=False, Byte, ...], end: Int
-) -> Int:
+def _find_safe_grapheme_start(span: Span[mut=False, Byte, _], end: Int) -> Int:
     """Find a byte offset `<= end` that is a guaranteed grapheme boundary.
 
     Used by reverse grapheme iteration: given the end of a range, walk

@@ -112,7 +112,7 @@ Then create a new file called `grayscale.mojo` inside the `operations` folder
 and add the following code:
 
 ```mojo title="grayscale.mojo"
-import compiler
+import extensibility
 
 from std.gpu.host import DeviceContext
 from extensibility import InputTensor, OutputTensor, foreach
@@ -121,7 +121,7 @@ from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 
 
-@compiler.register("grayscale")
+@extensibility.register("grayscale")
 struct Grayscale:
     @staticmethod
     def execute[
@@ -158,7 +158,7 @@ struct Grayscale:
         foreach[color_to_grayscale, target=target, simd_width=1](img_out, ctx)
 ```
 
-First, the `@compiler.register("grayscale")` decorator makes this operation
+First, the `@extensibility.register("grayscale")` decorator makes this operation
 available to PyTorch under the name `grayscale`. This is the
 `ops.grayscale(output, pic)` function called in the PyTorch model.
 

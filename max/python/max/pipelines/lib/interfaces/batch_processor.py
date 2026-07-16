@@ -84,6 +84,50 @@ class BatchProcessorRuntime:
     max_batch_size: int | None = None
 
 
+class ModelInputCachingAllocator:
+    """Caches reusable, non-pinned device input buffers across steps.
+
+    Buffers are keyed by ``(name, device, dtype, shape)`` and reused so a
+    captured graph replays in place (the replay copy is a no-op when the model
+    inputs already are the captured buffers). Callers own copying host data
+    into the returned buffer.
+
+    Never cache pinned host staging buffers here: those must be allocated fresh
+    every step so the next overlap step's host writes can't clobber an
+    in-flight H2D copy.
+    """
+
+    def __init__(self) -> None:
+        self._cache: dict[tuple[str, int, DType, tuple[int, ...]], Buffer] = {}
+
+    def alloc(
+        self,
+        *,
+        name: str,
+        dtype: DType,
+        shape: tuple[int, ...],
+        device: Device,
+    ) -> Buffer:
+        """Returns the cached buffer for ``(name, device, dtype, shape)``.
+
+        Allocated on first use and reused thereafter. Distinct ``name``s never
+        alias, and each device gets its own buffer under a given name.
+
+        Args:
+            name: Stable identifier for this logical buffer.
+            dtype: Element type.
+            shape: Buffer shape (ragged inputs change shape per step).
+            device: Target device for the buffer.
+        """
+        shape = tuple(shape)
+        key = (name, id(device), dtype, shape)
+        buffer = self._cache.get(key)
+        if buffer is None:
+            buffer = Buffer(shape=shape, dtype=dtype, device=device)
+            self._cache[key] = buffer
+        return buffer
+
+
 class BatchProcessor(ABC, Generic[ContextT, InputsT]):
     """Batches pipeline contexts into model inputs and parses execution outputs."""
 
@@ -94,6 +138,9 @@ class BatchProcessor(ABC, Generic[ContextT, InputsT]):
     ) -> None:
         self.config = config
         self.runtime = runtime
+        # Caches reusable non-pinned device input buffers so captured graphs
+        # replay in place. Pinned host staging is never cached here.
+        self._device_input_allocator = ModelInputCachingAllocator()
 
     @abstractmethod
     def get_symbolic_inputs(

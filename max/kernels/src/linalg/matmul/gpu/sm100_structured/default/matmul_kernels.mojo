@@ -756,7 +756,7 @@ struct BlackwellMatmulSM100Kernel[
     @staticmethod
     @always_inline
     def write_output_tile[
-        tma_origin: ImmutOrigin
+        tma_origin: ImmOrigin
     ](
         c_tma_ops: Pointer[
             InlineArray[Self.CTmaOp, Self.num_c_tma_descriptors], tma_origin
@@ -1300,8 +1300,8 @@ struct BlackwellMatmulSM100Kernel[
     @staticmethod
     @always_inline
     def load_input_tiles_splitk[
-        a_tma_origin: ImmutOrigin,
-        b_tma_origin: ImmutOrigin,
+        a_tma_origin: ImmOrigin,
+        b_tma_origin: ImmOrigin,
         tiles_origin: MutOrigin,
         //,
     ](

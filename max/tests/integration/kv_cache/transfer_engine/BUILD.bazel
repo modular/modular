@@ -35,6 +35,32 @@ modular_py_binary(
 )
 
 modular_py_test(
+    name = "test_transfer_engine_dram",
+    srcs = ["test_transfer_engine_dram.py"],
+    # The CPU-flavor UCX plugin has no GPU driver load-time deps, so these
+    # tests run real NIXL DRAM transfers on CPU-only workers (presubmit).
+    # The test sets NIXL_PLUGIN_DIR to this dependency's cpu/ directory;
+    # the shared conftest.py is deliberately not included since it points
+    # NIXL_PLUGIN_DIR at the CUDA-flavor plugin location.
+    data = [
+        "@nixl_upstream//:cpu/libplugin_UCX.so",
+    ],
+    imports = ["."],
+    # One test per shard: NIXL transfers can hit invalid-FD errors when
+    # multiple transfers share a process (see test_send_recv.py header).
+    shard_count = 4,
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/kv_cache",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_notification_latency",
     srcs = [
         "conftest.py",

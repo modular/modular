@@ -28,10 +28,23 @@ bazel_dep(name = "tomlplusplus", version = "3.4.0")
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 bazel_dep(name = "xxhash", version = "0.8.3.bcr.1")
 
+# Necessary for LLVM
+bazel_dep(name = "zlib-ng", version = "2.3.3", repo_name = "llvm_zlib")
+bazel_dep(name = "zstd", version = "1.5.7.bcr.1", repo_name = "llvm_zstd")
+
 # TODO: Bump when deps go past this version
 bazel_dep(name = "nlohmann_json", version = "3.12.0.bcr.1")
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True)
+
+archive_override(
+    module_name = "rules_cc",
+    integrity = "sha256-xPt/jPo70Y+LPhowjcTLhMxwtkZtw7QBwO969n7mWPo=",
+    strip_prefix = "rules_cc-ad214a9cb17d41e4e03199d61d436974a2261885",
+    urls = [
+        "https://github.com/bazelbuild/rules_cc/archive/ad214a9cb17d41e4e03199d61d436974a2261885.tar.gz",
+    ],
+)
 
 archive_override(
     module_name = "rules_mojo",
@@ -692,6 +705,16 @@ single_version_override(
         "//bazel/public-patches:tcmalloc-numa.patch",
         "//bazel/public-patches:tcmalloc-glibc-rseq.patch",
     ],
+)
+
+# TODO: Comment very out of date
+# Must be rebuilt when updating with: MACOSX_DEPLOYMENT_TARGET=11.0 build-tcmalloc
+# And uploaded to s3 with: aws s3 cp tcmalloc.tar.gz s3://modular-bazel-artifacts-public/artifacts/gperftools/VERSION/SHA/tcmalloc.tar.gz
+http_archive(
+    name = "gperftools-macos",
+    build_file = "//bazel/public-patches:gperftools-macos.BUILD",
+    sha256 = "0d1dbb0273d94d32e28ccb53971d1473cab9bde90a463251f6f117867cf2d680",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/gperftools/2.15/0d1dbb0273d94d32e28ccb53971d1473cab9bde90a463251f6f117867cf2d680/tcmalloc.tar.gz",
 )
 
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)

@@ -238,7 +238,7 @@ def test_skip_a2a[
     var topk_ids_immut_ptr = (
         device_topk_buf.unsafe_ptr()
         .as_immutable()
-        .unsafe_origin_cast[ImmutUntrackedOrigin]()
+        .unsafe_origin_cast[ImmUntrackedOrigin]()
     )
 
     ep_fused_combine_kernel_api[

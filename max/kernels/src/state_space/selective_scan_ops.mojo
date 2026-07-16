@@ -20,7 +20,7 @@ This module registers the following ops:
 
 from std.math import ceildiv
 
-import extensibility as compiler
+import extensibility
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 
@@ -37,7 +37,7 @@ from state_space.selective_scan import (
 )
 
 
-@compiler.register("selective_scan_fwd")
+@extensibility.register("selective_scan_fwd")
 struct SelectiveScanFwd[delta_softplus: Bool = False]:
     """Selective scan forward pass operation for Mamba SSM.
 
@@ -307,7 +307,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
             raise Error("Unsupported target: " + target)
 
 
-@compiler.register_shape_function("selective_scan_fwd")
+@extensibility.register_shape_function("selective_scan_fwd")
 def selective_scan_fwd_shape[
     dtype: DType,
 ](
@@ -323,7 +323,7 @@ def selective_scan_fwd_shape[
     return u.shape()
 
 
-@compiler.register("selective_scan_fwd_minimal")
+@extensibility.register("selective_scan_fwd_minimal")
 struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
     """Minimal selective scan forward pass - no optional D, z, or delta_bias.
 
@@ -535,7 +535,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
             raise Error("Unsupported target device")
 
 
-@compiler.register_shape_function("selective_scan_fwd_minimal")
+@extensibility.register_shape_function("selective_scan_fwd_minimal")
 def selective_scan_fwd_minimal_shape[
     dtype: DType,
 ](
@@ -548,7 +548,7 @@ def selective_scan_fwd_minimal_shape[
     return u.shape()
 
 
-@compiler.register("selective_scan_update")
+@extensibility.register("selective_scan_update")
 struct SelectiveScanUpdate[delta_softplus: Bool = False]:
     """Selective scan update operation for autoregressive inference.
 
@@ -807,7 +807,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
             raise Error("Unsupported target: " + target)
 
 
-@compiler.register_shape_function("selective_scan_update")
+@extensibility.register_shape_function("selective_scan_update")
 def selective_scan_update_shape[
     dtype: DType,
 ](

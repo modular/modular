@@ -58,7 +58,7 @@ Parameters:
 
 comptime ImmSpan[
     T: AnyType,
-    origin: ImmutOrigin,
+    origin: ImmOrigin,
 ] = Span[T, origin]
 """A span providing read-only access to its elements.
 
@@ -69,6 +69,7 @@ Parameters:
 
 
 @doc_hidden
+@deprecated(use=ImmSpan)
 comptime ImmutSpan = ImmSpan
 
 
@@ -184,7 +185,7 @@ struct Span[
     """
 
     # Aliases
-    comptime Immutable = Span[Self.T, ImmutOrigin(Self.origin)]
+    comptime Immutable = Span[Self.T, ImmOrigin(Self.origin)]
     """The immutable version of the `Span`."""
     comptime _UnsafePointerType = UnsafePointer[
         Self.T,
@@ -246,7 +247,7 @@ struct Span[
     @doc_hidden
     @implicit
     @always_inline("nodebug")
-    def __init__(other: Span, out self: ImmutSpan[other.T, other.origin]):
+    def __init__(other: Span, out self: ImmSpan[other.T, other.origin]):
         """Implicitly cast the mutable origin of self to an immutable one.
 
         Args:
@@ -624,7 +625,7 @@ struct Span[
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __eq__(
         self, rhs: Span[Self.T, _]
     ) -> Bool where conforms_to(Self.T, Equatable):

@@ -55,7 +55,12 @@ from max.tests.integration.xarch_warm.warm_config import WARM_DEVICE_COUNT
     help="Virtual host-CPU target descriptor, e.g. "
     "'triple=x86_64-unknown-linux-gnu;cpu=x86-64-v3'.",
 )
-def main(target: str, cpu_target: str) -> None:
+@click.option(
+    "--family",
+    default=None,
+    help="Warm only this GC family (a GC_FAMILIES name); default warms all.",
+)
+def main(target: str, cpu_target: str, family: str | None) -> None:
     device_api, _, device_arch = target.partition(":")
     if not device_api or not device_arch:
         raise click.BadParameter(
@@ -88,12 +93,15 @@ def main(target: str, cpu_target: str) -> None:
 
     print(
         f"XARCH_WARM_ACCELERATORS: warming {device_arch} x{WARM_DEVICE_COUNT} "
-        f"(GPU slots only) + host {cpu_target}",
+        f"(GPU slots only, family={family or 'all'}) + host {cpu_target}",
         flush=True,
     )
     derived = os.environ["MODULAR_DERIVED_PATH"]
     entries = warm_lib.export_slots(
-        derived, include_cpu=False, include_accelerators=True
+        derived,
+        include_cpu=False,
+        include_accelerators=True,
+        only_family=family,
     )
     # Unset MODULAR_DERIVED_PATH means the warm wasn't pinned to the output dir,
     # so nothing consumable was produced, hard-fail the build action.

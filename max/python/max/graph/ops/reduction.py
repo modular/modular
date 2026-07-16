@@ -206,21 +206,34 @@ def argmin(x: TensorValueLike, axis: int = -1) -> TensorValue:
 
 
 def argmax(x: TensorValueLike, axis: int = -1) -> TensorValue:
-    """Reduces a symbolic tensor using an argmax operation.
+    """Returns the indices of the maximum values along an axis.
 
-    When provided with a tensor with all identical elements,
-    on CPU this will return the first element index in the tensor,
-    on GPU this will return an arbitrary index.
+    It's useful for finding the position of the largest element along a
+    given dimension, such as determining predicted classes in
+    classification.
+
+    When the input contains ties (identical maximum values), behavior
+    depends on the device: CPU returns the first matching index, while
+    GPU may return any of them.
+
+    .. code-block:: python
+
+        x = ops.constant(
+            [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
+            DType.float32,
+            device=device,
+        )
+        indices = ops.argmax(x, axis=-1)
+        # indices has shape (2, 1): [[1], [2]]
 
     Args:
-        x: The input tensor for the operation.
-        axis: The axis along which to compute the reduction. If negative,
-            indexes from the last dimension. For example, a value of ``-1`` will
-            compute the reduction along the last dimension.
+        x: The input tensor.
+        axis: The axis along which to compute the argmax. Negative values
+            index from the last dimension. Defaults to ``-1``.
 
     Returns:
-        A symbolic tensor representing the result of the argmax operation.
-        The tensor will have the same rank as the input tensor, and the same
-        shape except along the ``axis`` dimension which will have size ``1``.
+        A symbolic integer tensor of indices marking the positions of the
+        maximum values along ``axis``. The result has the same rank as
+        ``x``, with the ``axis`` dimension reduced to size ``1``.
     """
     return _reduce(rmo.MoReduceArgMaxOp, x, axis, out_dtype=DType.int64)

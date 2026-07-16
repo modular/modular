@@ -157,7 +157,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     """
 
     # Aliases
-    comptime Immutable = StringSlice[ImmutOrigin(Self.origin)]
+    comptime Immutable = StringSlice[ImmOrigin(Self.origin)]
     """The immutable version of the `StringSlice`."""
     # Fields
     var _slice: Span[Byte, Self.origin]
@@ -176,7 +176,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     @always_inline("nodebug")
     def __init__(
         other: StringSlice,
-        out self: StringSlice[ImmutOrigin(other.origin)],
+        out self: StringSlice[ImmOrigin(other.origin)],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -240,7 +240,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
     @always_inline
     def __init__[
-        cstring_origin: ImmutOrigin,
+        cstring_origin: ImmOrigin,
         //,
     ](
         out self: StringSlice[cstring_origin],
@@ -666,7 +666,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __eq__(self, rhs_same: Self) -> Bool:
         """Verify if a `StringSlice` is equal to another `StringSlice` with the
         same origin.
@@ -694,7 +694,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __eq__(self, rhs: StringSlice) -> Bool:
         """Verify if a `StringSlice` is equal to another `StringSlice`.
 
@@ -715,7 +715,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             return True
         return memcmp(s_ptr, rhs_ptr, s_len) == 0
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __ne__(self, rhs_same: Self) -> Bool:
         """Verify if a `StringSlice` is not equal to another `StringSlice` with
         the same origin.
@@ -729,7 +729,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return Self.__ne__(self, rhs=rhs_same)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline
     def __ne__(self, rhs: StringSlice) -> Bool:
         """Verify if span is not equal to another `StringSlice`.
@@ -1576,12 +1576,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         var total = len(self._slice)
         var prefix = Self.Immutable(
-            unsafe_from_utf8=Span[Byte, ImmutOrigin(Self.origin)](
+            unsafe_from_utf8=Span[Byte, ImmOrigin(Self.origin)](
                 ptr=self._slice.unsafe_ptr(), length=split_bytes
             )
         )
         var suffix = Self.Immutable(
-            unsafe_from_utf8=Span[Byte, ImmutOrigin(Self.origin)](
+            unsafe_from_utf8=Span[Byte, ImmOrigin(Self.origin)](
                 ptr=self._slice.unsafe_ptr() + split_bytes,
                 length=total - split_bytes,
             )
@@ -2511,7 +2511,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     def join[
         T: Copyable & Writable,
         //,
-    ](self, elems: Span[T, ...]) -> String:
+    ](self, elems: Span[T, _]) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
@@ -2602,7 +2602,7 @@ def get_static_string[
 
 
 def _to_string_list[
-    O: ImmutOrigin,
+    O: ImmOrigin,
     T: Copyable,
     //,
     len_fn: def(T) thin -> Int,
@@ -2626,7 +2626,7 @@ def _to_string_list[
 
 @always_inline
 def _to_string_list[
-    O: ImmutOrigin, //
+    O: ImmOrigin, //
 ](items: List[StringSlice[O]]) -> List[String]:
     """Create a list of Strings **copying** the existing data.
 
@@ -2653,7 +2653,7 @@ def _to_string_list[
 
 @always_inline
 def _to_string_list[
-    O: ImmutOrigin, //
+    O: ImmOrigin, //
 ](items: List[Span[Byte, O]]) -> List[String]:
     """Create a list of Strings **copying** the existing data.
 

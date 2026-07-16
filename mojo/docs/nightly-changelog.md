@@ -46,7 +46,7 @@ This version is still a work in progress.
 
   ```mojo
   var fp1: def(*Int) thin -> None
-  var fp2: def[a: ImmutOrigin](ref [a] x: Int) thin -> None
+  var fp2: def[a: ImmOrigin](ref [a] x: Int) thin -> None
   ...
   fp1(1, 2)
   fp2(42)
@@ -139,6 +139,21 @@ This version is still a work in progress.
   packages are pulled in as they're treated as privileged and implicitly
   imported into every module. This includes if the user explicitly imports all
   or part of the standard library themselves.
+
+- `imm` is now the preferred spelling for the `read` argument and
+  closure-capture convention. `read` still works but will soon be deprecated.
+
+- A file can now import another identically named module or package, assuming
+  it is found first during import resolution (#4534):
+
+  ```mojo
+  # -------- #
+  # foo.mojo #
+  # -------- #
+  from foo import bar   # a package on the system
+
+  bar()
+  ```
 
 ## Language changes
 
@@ -297,6 +312,46 @@ This version is still a work in progress.
       pass
   ```
 
+- The compiler now rejects newlines in the middle of certain statements, where
+  they were previously permitted:
+
+  - Between `def`/`struct`/`trait`/`comptime` keywords and the following
+    identifier
+  - Between the `async` and `def` keywords on function definitions
+  - Anywhere in the midst of an `import` statement, save for parenthesized
+    import lists.
+
+- It is now possible to import modules & packages through regular directories
+  using the same path-like syntax.
+
+  For example, given the following structure:
+
+  ```text
+  dir
+  └── nested_dir
+      ├── module.mojo
+      └── package
+          └── __init__.mojo
+  ```
+
+  It is possible to import from the modules and packages inside the directories
+  `dir` and `nested_dir`:
+
+  ```mojo
+  import dir.nested_dir.module
+
+  from dir.nested_dir.package import foo
+  ```
+
+  Note that an import statement *resolving* to a directory cannot later be used
+  for scoped lookups as if it were a module or package:
+
+  ```mojo
+  import dir
+
+  dir.nested_dir.package.foo() # error
+  ```
+
 ## Library stabilizations
 
 - `trait ImplicitlyDeletable`
@@ -318,6 +373,11 @@ This version is still a work in progress.
 - Span
 
 ## Library changes
+
+- `List.capacity` is now a `capacity()` method instead of a public field. This
+  keeps the allocated capacity out of the stable public field surface, since it
+  should only change indirectly through operations like `append()`. Replace
+  `my_list.capacity` with `my_list.capacity()`.
 
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
@@ -370,19 +430,19 @@ This version is still a work in progress.
   return type, so every range flavor (including the typed scalar ranges) can
   conform and return its own reversed iterator.
 
-- Added `to_numpy_array` and `from_numpy_array` to the new `python.numpy` module
-  for moving flat numeric data between Mojo `Span`/`List` and NumPy arrays
-  without hand-written `ctypes` plumbing:
+- Added `copy_to_numpy_array` and `from_numpy_array` to the new `python.numpy`
+  module for moving flat numeric data between Mojo `Span`/`List` and NumPy
+  arrays without hand-written `ctypes` plumbing:
 
   ```mojo
-  from std.python.numpy import from_numpy_array, to_numpy_array
+  from std.python.numpy import from_numpy_array, copy_to_numpy_array
 
   var values: List[Float64] = [1.0, 2.0, 3.0]
-  var array = to_numpy_array(values)                 # NumPy array (copies)
+  var array = copy_to_numpy_array(values)            # NumPy array (copies)
   var span = from_numpy_array[DType.float64](array)  # borrow array as a Span
   ```
 
-  Both support the fixed-width numeric dtypes. `to_numpy_array` copies its
+  Both support the fixed-width numeric dtypes. `copy_to_numpy_array` copies its
   input into a new, independent array; `from_numpy_array` borrows the array's
   buffer zero-copy.
 
@@ -554,7 +614,7 @@ This version is still a work in progress.
   `__iter__()`.
 
 - The implicit conversion constructors that cast an `UnsafePointer` to
-  `MutUnsafeAnyOrigin` or `ImmutUnsafeAnyOrigin` are now deprecated and emit a
+  `MutUnsafeAnyOrigin` or `ImmUnsafeAnyOrigin` are now deprecated and emit a
   deprecation warning when used. `UnsafeAnyOrigin` is an unsafe escape hatch
   that silently extends unrelated lifetimes and disables exclusivity checking,
   so it should never be applied implicitly. Prefer keeping a concrete origin;
@@ -658,6 +718,18 @@ This version is still a work in progress.
   `ImplicitlyDeletable` pointee, or pass a deinitializing closure to destroy a
   non-`ImplicitlyDeletable` pointee in place.
 
+- `Pointer` gained explicit `unsafe_`-prefixed methods for operations that are
+  individually unsafe — unchecked bounds, aliasing casts, moving or overwriting
+  memory — rather than requiring the whole pointer to be typed unsafe:
+  `unsafe_offset()`, `unsafe_load()`, `unsafe_store()`, `unsafe_strided_load()`,
+  `unsafe_strided_store()`, `unsafe_gather()`, `unsafe_scatter()`,
+  `unsafe_as_noalias()`, `unsafe_address_space_cast()`, and
+  `unsafe_take_pointee()`. These methods work on any `Pointer`. The previous
+  unprefixed names still work, but are now hidden from the generated docs and
+  remain gated behind an unsafe pointer type; prefer the `unsafe_`-prefixed
+  names going forward. Each method's docstring documents the exact `Safety:`
+  requirements the caller must uphold.
+
 ## Tooling changes
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.
@@ -688,6 +760,10 @@ This version is still a work in progress.
   (such as warp-tiling parameters) could silently take the wrong path and fail
   a downstream `comptime` constraint. `amd:<arch>` is also now accepted as an
   alias for `amdgpu:<arch>`, mirroring the existing `nvidia:<arch>` prefix.
+
+- The GPU `Vendor` type can now be imported from `std.sys`
+  (`from std.sys import Vendor`). It remains importable from
+  `std.gpu.host.info` for backward compatibility.
 
 - `DeviceContext.load_function` now keys its runtime cache on the requested
   entry-point name as well as the blob. Loading two different entry points
@@ -876,4 +952,17 @@ This version is still a work in progress.
   @fieldwise_init
   struct Iter[T: ImplicitlyDeletable]:
       var _collection: Collection[Self.T]
+  ```
+
+- A struct using `where False` to opt out of a builtin trait's implicit
+  synthesis (e.g. `Movable where False`) no longer spuriously fails to
+  compile when one of its fields also opts out of that same trait. For
+  example, this now compiles:
+
+  ```mojo
+  struct One(Movable where False):
+      pass
+
+  struct Two(Movable where False):
+      var y: One
   ```

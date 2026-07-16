@@ -600,6 +600,21 @@ class DKVConnector:
         listen_port = int(os.getenv("MODULAR_DKV_NIXL_LISTEN_PORT", "0"))
         backend = os.getenv("MODULAR_NIXL_TRANSFER_BACKEND") or None
 
+        # Kill-switch (CLIN-1534): a G0 prefix-cache hit refreshes dKV recency
+        # via touch(). Set MODULAR_DKV_DISABLE_G0_TOUCH to make touch() a no-op
+        # so the behavior can be backed out with an env var + restart, no code
+        # revert. Read once here (not per call); BlockManager always calls
+        # touch, the connector decides. Same truthy convention as block_manager's
+        # MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE flag.
+        self._g0_touch_disabled = os.getenv(
+            "MODULAR_DKV_DISABLE_G0_TOUCH", "0"
+        ).lower() in (
+            "1",
+            "true",
+            "yes",
+            "y",
+        )
+
         # Tenant deployment identity (CLIN-1477). MODULAR_DKV_TENANT_ID is
         # injected by the operator (the trust boundary — not a user-facing
         # override flag, which would be forgeable). It is REQUIRED: dKV has no
@@ -882,6 +897,47 @@ class DKVConnector:
             block_ids=block_ids,
             block_hashes=dkv_hashes,
         )
+
+    def touch(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> None:
+        """Refreshes ``replica_idx``'s dkv recency for device-served blocks.
+
+        A block served from MAX's on-device (G0) prefix cache issues no other
+        dkv traffic, so its dkv LRU recency can freeze and dkv can evict it
+        while it is still hot on device. This forwards the served blocks'
+        hashes to the Rust client's ``touch``, which the server treats as an
+        access that bumps recency.
+
+        Each ``block_hashes`` element follows the same 8-or-32 byte contract as
+        :meth:`load` (truncated to its first 8 bytes at the dkv boundary; see
+        :func:`_to_dkv_u64`). Best-effort and fire-and-forget: the Rust client
+        spawns the touch RPC and returns immediately, so this never blocks the
+        caller and a missed touch costs at most a later refetch, never
+        correctness. A no-op when ``MODULAR_DKV_DISABLE_G0_TOUCH`` is set (the
+        kill-switch, read once at construction).
+
+        Routes to the processing replica's single client (backend dedup: one
+        client per DP replica, registering that replica's full TP GPU set).
+        """
+        if self._g0_touch_disabled:
+            return
+        # Honor the KVConnector.touch contract ("never raises into the caller").
+        # This runs on the scheduler thread BEFORE the Rust client's fire-and-
+        # forget spawn, so a bad hash length (_to_dkv_u64 -> ValueError) or an
+        # out-of-range replica_idx (IndexError) would otherwise propagate here.
+        # A missed recency touch is never a correctness issue, so swallow and
+        # log at debug (matches offload's swallow posture; design section 4).
+        try:
+            dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
+            self._clients[replica_idx].touch(
+                group_id=_DKV_GROUP_FULL_ATTENTION,
+                block_hashes=dkv_hashes,
+            )
+        except Exception as exc:
+            _logger.debug("dKV touch skipped: %s", exc)
 
     def wait_for_loads(self) -> None:
         for client in self._clients:

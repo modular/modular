@@ -91,12 +91,12 @@ def fused_rope_rmsnorm_kernel[
     q_rope_output: TileTensor[
         mut=True, dtype, QRopeOutputLayoutType, MutUntrackedOrigin
     ],
-    q_rope: TileTensor[dtype, QRopeLayoutType, ImmutUntrackedOrigin],
+    q_rope: TileTensor[dtype, QRopeLayoutType, ImmUntrackedOrigin],
     input_row_offsets: TileTensor[
-        DType.uint32, InputRowOffsetsLayoutType, ImmutUntrackedOrigin
+        DType.uint32, InputRowOffsetsLayoutType, ImmUntrackedOrigin
     ],
-    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin],
-    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin],
+    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmUntrackedOrigin],
+    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmUntrackedOrigin],
     k_cache: cache_t,
     epsilon: Float32,
 ) -> None:
@@ -145,13 +145,11 @@ def fused_rope_rmsnorm_kernel[
 
     # Evidence asserts for TileTensor load/store Coord constraints.
     comptime assert (
-        TileTensor[
-            freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin
-        ].flat_rank
+        TileTensor[freq_dtype, FreqsCisLayoutType, ImmUntrackedOrigin].flat_rank
         >= 2
     )
     comptime assert (
-        TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin].flat_rank
+        TileTensor[gamma_dtype, GammaLayoutType, ImmUntrackedOrigin].flat_rank
         >= 1
     )
 
@@ -279,12 +277,12 @@ def fused_rope_rmsnorm_quantization_kernel[
     q_rope_output: TileTensor[
         mut=True, out_rope_dtype, QRopeOutputLayoutType, MutUntrackedOrigin
     ],
-    q_rope: TileTensor[dtype, QRopeLayoutType, ImmutUntrackedOrigin],
+    q_rope: TileTensor[dtype, QRopeLayoutType, ImmUntrackedOrigin],
     input_row_offsets: TileTensor[
-        DType.uint32, InputRowOffsetsLayoutType, ImmutUntrackedOrigin
+        DType.uint32, InputRowOffsetsLayoutType, ImmUntrackedOrigin
     ],
-    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin],
-    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin],
+    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmUntrackedOrigin],
+    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmUntrackedOrigin],
     k_cache: cache_t,
     epsilon: Float32,
 ) -> None:
@@ -338,13 +336,11 @@ def fused_rope_rmsnorm_quantization_kernel[
 
     # Evidence asserts for TileTensor load/store Coord constraints.
     comptime assert (
-        TileTensor[
-            freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin
-        ].flat_rank
+        TileTensor[freq_dtype, FreqsCisLayoutType, ImmUntrackedOrigin].flat_rank
         >= 2
     )
     comptime assert (
-        TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin].flat_rank
+        TileTensor[gamma_dtype, GammaLayoutType, ImmUntrackedOrigin].flat_rank
         >= 1
     )
 

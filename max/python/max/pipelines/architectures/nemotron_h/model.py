@@ -54,7 +54,7 @@ from max.profiler import traced
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
 from .model_config import NemotronHConfig, build_fp8_quant_config
-from .nemotron_h import NemotronH
+from .nemotron_h import NemotronH, _ssm_state_dtype
 from .state_cache import NemotronHStateCache
 
 logger = logging.getLogger("max.pipelines")
@@ -165,6 +165,10 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
             max_slots=max_batch_size,
             device=self.devices[0],
             conv_dtype=self._model_dtype,
+            # bf16 on Apple GPUs (halves the dominant decode-step pool
+            # traffic; the scan still accumulates in fp32), fp32 elsewhere.
+            # Must match the graph-side BufferType in NemotronH.input_types.
+            ssm_dtype=_ssm_state_dtype(),
         )
         if not is_virtual_device_mode():
             self._slot_idx_prealloc = Buffer(

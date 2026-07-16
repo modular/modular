@@ -204,7 +204,7 @@ finding, write the computation as a custom operation in Mojo and wrap it in a
 layer that calls the op with
 [`ops.custom()`](/max/api/python/graph.ops/#max.graph.ops.custom) in
 `__call__()`. The op's `name` matches the string your Mojo kernel registers with
-[`@compiler.register`](https://mojolang.org/docs/reference/decorators/compiler-register/),
+[`@extensibility.register`](https://mojolang.org/docs/reference/decorators/extensibility-register/),
 and `out_types` declares the shapes it returns:
 
 ```python

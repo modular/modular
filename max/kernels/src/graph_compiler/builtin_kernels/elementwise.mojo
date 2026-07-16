@@ -32,7 +32,7 @@ from std.math import (
     tanh,
 )
 from std.sys import llvm_intrinsic
-import extensibility as compiler
+import extensibility
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
@@ -102,7 +102,7 @@ def _elementwise_tile[
     return lhs
 
 
-@compiler.register("mo.add")
+@extensibility.register("mo.add")
 struct Add(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
@@ -124,7 +124,7 @@ struct Add(ElementwiseBinaryOp):
         return _elementwise_tile[Self, dtype, LayoutType](lhs, rhs)
 
 
-@compiler.register("mo.sub")
+@extensibility.register("mo.sub")
 struct Sub(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
@@ -134,7 +134,7 @@ struct Sub(ElementwiseBinaryOp):
         return lhs - rhs
 
 
-@compiler.register("mo.mul")
+@extensibility.register("mo.mul")
 struct Mul(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
@@ -156,7 +156,7 @@ struct Mul(ElementwiseBinaryOp):
         return _elementwise_tile[Self, dtype, LayoutType](lhs, rhs)
 
 
-@compiler.register("mo.div")
+@extensibility.register("mo.div")
 struct Div(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
@@ -166,7 +166,7 @@ struct Div(ElementwiseBinaryOp):
         return lhs / rhs
 
 
-@compiler.register("mo.mod")
+@extensibility.register("mo.mod")
 struct Mod(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
@@ -176,7 +176,7 @@ struct Mod(ElementwiseBinaryOp):
         return lhs % rhs
 
 
-@compiler.register("mo.equal")
+@extensibility.register("mo.equal")
 struct Equal(ElementwiseBinaryComparisonOp):
     @staticmethod
     def elementwise[
@@ -188,7 +188,7 @@ struct Equal(ElementwiseBinaryComparisonOp):
         return lhs.eq(rhs)
 
 
-@compiler.register("mo.greater")
+@extensibility.register("mo.greater")
 struct Greater(ElementwiseBinaryComparisonOp):
     @staticmethod
     def elementwise[
@@ -200,7 +200,7 @@ struct Greater(ElementwiseBinaryComparisonOp):
         return lhs.gt(rhs)
 
 
-@compiler.register("mo.greater_equal")
+@extensibility.register("mo.greater_equal")
 struct GreaterEqual(ElementwiseBinaryComparisonOp):
     @staticmethod
     def elementwise[
@@ -212,7 +212,7 @@ struct GreaterEqual(ElementwiseBinaryComparisonOp):
         return lhs.ge(rhs)
 
 
-@compiler.register("mo.not_equal")
+@extensibility.register("mo.not_equal")
 struct NotEqual(ElementwiseBinaryComparisonOp):
     @staticmethod
     def elementwise[
@@ -224,7 +224,7 @@ struct NotEqual(ElementwiseBinaryComparisonOp):
         return lhs.ne(rhs)
 
 
-@compiler.register("mo.and")
+@extensibility.register("mo.and")
 struct And(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
@@ -235,7 +235,7 @@ struct And(ElementwiseBinaryOp):
         return lhs & rhs
 
 
-@compiler.register("mo.or")
+@extensibility.register("mo.or")
 struct Or(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
@@ -246,7 +246,7 @@ struct Or(ElementwiseBinaryOp):
         return lhs | rhs
 
 
-@compiler.register("mo.xor")
+@extensibility.register("mo.xor")
 struct Xor(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
@@ -257,7 +257,7 @@ struct Xor(ElementwiseBinaryOp):
         return lhs ^ rhs
 
 
-@compiler.register("mo.pow")
+@extensibility.register("mo.pow")
 struct Pow:
     @staticmethod
     def elementwise[
@@ -270,7 +270,7 @@ struct Pow:
         return _pow(lhs, rhs)
 
 
-@compiler.register("mo.max")
+@extensibility.register("mo.max")
 struct Max(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
@@ -280,7 +280,7 @@ struct Max(ElementwiseBinaryOp):
         return max(lhs, rhs)
 
 
-@compiler.register("mo.min")
+@extensibility.register("mo.min")
 struct Min(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
@@ -290,7 +290,7 @@ struct Min(ElementwiseBinaryOp):
         return min(lhs, rhs)
 
 
-@compiler.register("mo.cast")
+@extensibility.register("mo.cast")
 struct Cast(ElementwiseUnaryMixedOp):
     @staticmethod
     def elementwise[
@@ -301,7 +301,7 @@ struct Cast(ElementwiseUnaryMixedOp):
         return x.cast[out_dtype]()
 
 
-@compiler.register("mo.negative")
+@extensibility.register("mo.negative")
 struct Negative(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -311,7 +311,7 @@ struct Negative(ElementwiseUnaryOp):
         return -x
 
 
-@compiler.register("mo.relu")
+@extensibility.register("mo.relu")
 struct ReLU(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -333,7 +333,7 @@ struct ReLU(ElementwiseUnaryOp):
         return x
 
 
-@compiler.register("mo.gelu")
+@extensibility.register("mo.gelu")
 struct Gelu(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -343,7 +343,7 @@ struct Gelu(ElementwiseUnaryOp):
         return gelu(x)
 
 
-@compiler.register("mo.gelu_tanh")
+@extensibility.register("mo.gelu_tanh")
 struct GeluTanh(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -353,7 +353,7 @@ struct GeluTanh(ElementwiseUnaryOp):
         return gelu_tanh(x)
 
 
-@compiler.register("mo.gelu_quick")
+@extensibility.register("mo.gelu_quick")
 struct GeluQuick(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -363,7 +363,7 @@ struct GeluQuick(ElementwiseUnaryOp):
         return gelu_quick(x)
 
 
-@compiler.register("mo.sigmoid")
+@extensibility.register("mo.sigmoid")
 struct Sigmoid(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -373,7 +373,7 @@ struct Sigmoid(ElementwiseUnaryOp):
         return sigmoid(x)
 
 
-@compiler.register("mo.silu")
+@extensibility.register("mo.silu")
 struct Silu(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -383,7 +383,7 @@ struct Silu(ElementwiseUnaryOp):
         return silu(x)
 
 
-@compiler.register("mo.ceil")
+@extensibility.register("mo.ceil")
 struct Ceil(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -393,7 +393,7 @@ struct Ceil(ElementwiseUnaryOp):
         return ceil(x)
 
 
-@compiler.register("mo.floor")
+@extensibility.register("mo.floor")
 struct Floor(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -403,7 +403,7 @@ struct Floor(ElementwiseUnaryOp):
         return floor(x)
 
 
-@compiler.register("mo.tanh")
+@extensibility.register("mo.tanh")
 struct Tanh(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -416,7 +416,7 @@ struct Tanh(ElementwiseUnaryOp):
         return tanh(x)
 
 
-@compiler.register("mo.acos")
+@extensibility.register("mo.acos")
 struct ACos(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -429,7 +429,7 @@ struct ACos(ElementwiseUnaryOp):
         return acos(x)
 
 
-@compiler.register("mo.atanh")
+@extensibility.register("mo.atanh")
 struct ATanh(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -442,7 +442,7 @@ struct ATanh(ElementwiseUnaryOp):
         return atanh(x)
 
 
-@compiler.register("mo.cos")
+@extensibility.register("mo.cos")
 struct Cos(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -455,7 +455,7 @@ struct Cos(ElementwiseUnaryOp):
         return cos(x)
 
 
-@compiler.register("mo.sin")
+@extensibility.register("mo.sin")
 struct Sin(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -468,7 +468,7 @@ struct Sin(ElementwiseUnaryOp):
         return sin(x)
 
 
-@compiler.register("mo.erf")
+@extensibility.register("mo.erf")
 struct Erf(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -481,7 +481,7 @@ struct Erf(ElementwiseUnaryOp):
         return erf(x)
 
 
-@compiler.register("mo.exp")
+@extensibility.register("mo.exp")
 struct Exp(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -494,7 +494,7 @@ struct Exp(ElementwiseUnaryOp):
         return exp(x)
 
 
-@compiler.register("mo.round")
+@extensibility.register("mo.round")
 struct Round(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -504,7 +504,7 @@ struct Round(ElementwiseUnaryOp):
         return round(x)
 
 
-@compiler.register("mo.sqrt")
+@extensibility.register("mo.sqrt")
 struct Sqrt(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -514,7 +514,7 @@ struct Sqrt(ElementwiseUnaryOp):
         return sqrt(x)
 
 
-@compiler.register("mo.rsqrt")
+@extensibility.register("mo.rsqrt")
 struct Rsqrt(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -524,7 +524,7 @@ struct Rsqrt(ElementwiseUnaryOp):
         return rsqrt(x)
 
 
-@compiler.register("mo.select")
+@extensibility.register("mo.select")
 struct Select:
     @staticmethod
     def elementwise[
@@ -539,7 +539,7 @@ struct Select:
         return cond.select(tc, fc)
 
 
-@compiler.register("mo.trunc")
+@extensibility.register("mo.trunc")
 struct Trunc(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -551,7 +551,7 @@ struct Trunc(ElementwiseUnaryOp):
         )
 
 
-@compiler.register("mo.log")
+@extensibility.register("mo.log")
 struct Log(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -564,7 +564,7 @@ struct Log(ElementwiseUnaryOp):
         return log(x)
 
 
-@compiler.register("mo.log1p")
+@extensibility.register("mo.log1p")
 struct Log1p(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -577,7 +577,7 @@ struct Log1p(ElementwiseUnaryOp):
         return log1p(x)
 
 
-@compiler.register("mo.is_nan")
+@extensibility.register("mo.is_nan")
 struct IsNan(ElementwiseUnaryMixedOp):
     @staticmethod
     def elementwise[
@@ -591,7 +591,7 @@ struct IsNan(ElementwiseUnaryMixedOp):
         return rebind[SIMD[out_dtype, width]](isnan(x))
 
 
-@compiler.register("mo.is_inf")
+@extensibility.register("mo.is_inf")
 struct IsInf(ElementwiseUnaryMixedOp):
     @staticmethod
     def elementwise[
@@ -605,7 +605,7 @@ struct IsInf(ElementwiseUnaryMixedOp):
         return rebind[SIMD[out_dtype, width]](isinf(x))
 
 
-@compiler.register("mo.not")
+@extensibility.register("mo.not")
 struct Not(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -616,7 +616,7 @@ struct Not(ElementwiseUnaryOp):
         return ~x
 
 
-@compiler.register("mo.abs")
+@extensibility.register("mo.abs")
 struct Abs(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[

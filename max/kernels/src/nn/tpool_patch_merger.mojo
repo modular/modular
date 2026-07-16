@@ -28,11 +28,11 @@ from layout import Coord, Idx, TensorLayout, TileTensor
 def tpool_patch_merger_kernel[
     dtype: DType,
     XLayout: TensorLayout,
-    x_origin: ImmutOrigin,
+    x_origin: ImmOrigin,
     OutLayout: TensorLayout,
     out_origin: MutOrigin,
     GridThwLayout: TensorLayout,
-    grid_thw_origin: ImmutOrigin,
+    grid_thw_origin: ImmOrigin,
     vec_width: Int,
     num_threads: Int,
 ](
@@ -181,11 +181,11 @@ def tpool_patch_merger[
         comptime kernel = tpool_patch_merger_kernel[
             dtype,
             x.LayoutType,
-            ImmutOrigin(x.origin),
+            ImmOrigin(x.origin),
             output.LayoutType,
             output.origin,
             bounds.LayoutType,
-            ImmutOrigin(bounds.origin),
+            ImmOrigin(bounds.origin),
             simd_width,
             num_threads,
         ]
@@ -205,11 +205,11 @@ def tpool_patch_merger[
         comptime kernel = tpool_patch_merger_kernel[
             dtype,
             x.LayoutType,
-            ImmutOrigin(x.origin),
+            ImmOrigin(x.origin),
             output.LayoutType,
             output.origin,
             bounds.LayoutType,
-            ImmutOrigin(bounds.origin),
+            ImmOrigin(bounds.origin),
             1,
             num_threads,
         ]

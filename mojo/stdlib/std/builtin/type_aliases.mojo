@@ -20,6 +20,7 @@ comptime ImmOrigin = Origin[mut=False]
 
 
 @doc_hidden
+@deprecated(use=ImmOrigin)
 comptime ImmutOrigin = ImmOrigin
 
 comptime MutOrigin = Origin[mut=True]
@@ -79,6 +80,7 @@ This is an unsafe escape hatch slated for removal. See `UnsafeAnyOrigin`.
 
 
 @doc_hidden
+@deprecated(use=ImmUnsafeAnyOrigin)
 comptime ImmutUnsafeAnyOrigin = ImmUnsafeAnyOrigin
 
 comptime MutUnsafeAnyOrigin = UnsafeAnyOrigin[mut=True]
@@ -128,6 +130,7 @@ comptime ImmUntrackedOrigin = UntrackedOrigin[mut=False]
 
 
 @doc_hidden
+@deprecated(use=ImmUntrackedOrigin)
 comptime ImmutUntrackedOrigin = ImmUntrackedOrigin
 
 comptime MutUntrackedOrigin = UntrackedOrigin[mut=True]
@@ -180,7 +183,7 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
 
     @always_inline("builtin")
     @implicit
-    def __init__(v: Origin) -> ImmutOrigin[_mlir_origin=v._mlir_origin]:
+    def __init__(v: Origin) -> ImmOrigin[_mlir_origin=v._mlir_origin]:
         """Implicitly convert an origin to an immutable one.
 
         Args:

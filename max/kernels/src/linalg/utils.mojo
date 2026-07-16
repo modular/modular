@@ -19,9 +19,10 @@ from std.sys.intrinsics import masked_load, masked_store
 from std.utils.index import Index, IndexList
 from std.algorithm import vectorize
 from layout.layout import *
-from layout import LayoutTensor, TileTensor, Coord
+from layout import LayoutTensor, TileTensor, Coord, TensorLayout
 from layout.tile_layout import Layout as _NewLayout
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
+from std.reflection import reflect
 
 
 @always_inline
@@ -113,7 +114,7 @@ comptime elementwise_compute_lambda_type = def[
 ](IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
-trait TileConsumer(DevicePassable, ImplicitlyCopyable, Movable):
+trait TileConsumer(DevicePassable, TrivialRegisterPassable):
     """Trait for an epilogue operation which consumes a tile of data.
 
     The kernel feeds the consumer a tile (in `src_address_space`); the
@@ -126,28 +127,50 @@ trait TileConsumer(DevicePassable, ImplicitlyCopyable, Movable):
     comptime src_address_space: AddressSpace
     """AddressSpace of the tile being consumed"""
 
+    # Default `DevicePassable` boilerplate so conformers need not restate it:
+    # the device type is the consumer itself, encoding bit-copies it, and the
+    # name comes from reflection.
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return String(reflect[Self].name())
+
     def __call__[
-        thread_layout: _NewLayout, dtype: DType
+        dtype: DType,
+        LayoutType: TensorLayout,
     ](
         ref self,
         tile_coord: Coord,
         tile: TileTensor[
             dtype,
+            LayoutType,
             ...,
             address_space=Self.src_address_space,
         ],
+        thread_layout: _NewLayout,
     ) -> None:
-        """The epilogue operation.
+        """Consume `tile`; terminal (returns nothing).
+
         Parameters:
-            thread_layout: The logical layout of threads which collaborate on this epilogue.
+            dtype: Element type of the tile.
+            LayoutType: Layout of the tile.
         Args:
-            tile: the tile of data being consumed.
-            tile_coord: the coordinate of this tile within the global output tensor.
+            tile_coord: Absolute element coord of this sub-tile's top-left in the
+                global output tensor.
+            tile: The tile of data being consumed.
+            thread_layout: Logical layout of the threads collaborating on this
+                call
         """
         ...
 
 
-trait TileOperation(DevicePassable, ImplicitlyCopyable, Movable):
+trait TileOperation(DevicePassable, TrivialRegisterPassable):
     """Non-terminal counterpart to `TileConsumer`: mutates a tile in
     place between MMA and store. Composes additively with capability
     subtraits like `AuxLoading` for ops that need pre-loaded data.
@@ -162,39 +185,55 @@ trait TileOperation(DevicePassable, ImplicitlyCopyable, Movable):
     comptime src_address_space: AddressSpace
     """AddressSpace of the tile being transformed (typically LOCAL)."""
 
+    # Default `DevicePassable` boilerplate so conformers need not restate it:
+    # the device type is the op itself, encoding bit-copies it, and the name
+    # comes from reflection.
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return String(reflect[Self].name())
+
     def __call__[
-        thread_layout: _NewLayout,
         dtype: DType,
+        LayoutType: TensorLayout,
     ](
         mut self,
         tile_coord: Coord,
         tile: TileTensor[
-            mut=True,
             dtype,
+            LayoutType,
+            MutAnyOrigin,
             ...,
             address_space=Self.src_address_space,
         ],
+        thread_layout: _NewLayout,
     ) -> type_of(tile):
         """Transform `tile` and return it.
 
         Returns a `TileTensor` of the same shape as its tile argument.
 
         Parameters:
-            thread_layout: Logical layout of threads collaborating on the tile.
             dtype: Element type of the tile.
+            LayoutType: Layout of the tile.
         Args:
             tile_coord: Absolute element coord of this sub-tile's top-left in
-                the global output tensor — consistent with
-                `TileConsumer.__call__` and the legacy
-                `elementwise_compute_lambda_type`. The kernel bakes per-warp,
-                per-inner-stage, per-data-path-half offsets into this coord
-                (on top of the per-CTA tile origin). Aux-loading impls can
-                recover the SMEM-local position via `tile_coord % (tile shape)`,
-                given their comptime knowledge of the per-CTA tile dims.
+                the global output tensor — consistent with `TileConsumer.__call__`
+                and the legacy `elementwise_compute_lambda_type`.
+            thread_layout: Logical layout of the threads collaborating on this
+                call. Passed as a value (its static dims are comptime-readable
+                via `type_of(thread_layout)`), so the kernel states "this call
+                runs over these threads" the way the `tile` argument states
+                "this tile is M x N". Impls that load aux inputs use it (e.g. to
+                build a load copier) and should `comptime assert` it is static.
             tile: Per-warp tile (kernel side passes a `TileTensor` view over the
                 per-thread register storage; `tile.static_shape` is the warp
-                tile shape, `distribute_with_offset[thread_layout]` slices per
-                lane).
+                tile shape).
         """
         ...
 
@@ -207,28 +246,21 @@ struct NullTileConsumer(TileConsumer):
 
     comptime src_address_space = AddressSpace.LOCAL
 
-    comptime device_type: AnyType = Self
-
-    def _to_device_type(
-        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
-    ):
-        encoder.encode(self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "NullTileConsumer"
-
     def __init__(out self):
         comptime assert (
             False
         ), "NullTileConsumer is a null sentinel. Do not use!"
 
     def __call__[
-        thread_layout: _NewLayout, dtype: DType
+        dtype: DType,
+        LayoutType: TensorLayout,
     ](
         ref self,
         tile_coord: Coord,
-        tile: TileTensor[dtype, ..., address_space=Self.src_address_space],
+        tile: TileTensor[
+            dtype, LayoutType, ..., address_space=Self.src_address_space
+        ],
+        thread_layout: _NewLayout,
     ) -> None:
         pass
 
@@ -241,33 +273,44 @@ struct NullTileOperation(TileOperation):
 
     comptime src_address_space = AddressSpace.LOCAL
 
-    comptime device_type: AnyType = Self
-
-    def _to_device_type(
-        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
-    ):
-        encoder.encode(self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "NullTileOperation"
-
     def __init__(out self):
         comptime assert (
             False
         ), "NullTileOperation is a null sentinel. Do not use!"
 
     def __call__[
-        thread_layout: _NewLayout,
         dtype: DType,
+        LayoutType: TensorLayout,
     ](
         mut self,
         tile_coord: Coord,
         tile: TileTensor[
-            mut=True, dtype, ..., address_space=Self.src_address_space
+            dtype,
+            LayoutType,
+            MutAnyOrigin,
+            ...,
+            address_space=Self.src_address_space,
         ],
+        thread_layout: _NewLayout,
     ) -> type_of(tile):
         return tile
+
+
+@always_inline
+def is_valid_epilogue[T: AnyType]() -> Bool:
+    """Whether `T` is a real epilogue rather than a null sentinel.
+
+    A kernel that accepts a `TileOperation`/`TileConsumer` type parameter
+    (defaulting to `NullTileOperation`/`NullTileConsumer`) uses this in a
+    `comptime if` to elide the epilogue call when no epilogue was bound.
+
+    Parameters:
+        T: The epilogue type to test (a `TileOperation` or `TileConsumer`).
+
+    Returns:
+        False iff `T` is one of the epilogue null sentinels.
+    """
+    return not (T == NullTileOperation or T == NullTileConsumer)
 
 
 @fieldwise_init

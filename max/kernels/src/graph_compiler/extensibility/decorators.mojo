@@ -24,7 +24,7 @@ def register_internal(name: StaticString):
     [MAX Graph operations](/max/api/python/graph.ops).
 
     For registering [custom operations](/max/develop/custom-ops/), use the
-    [@compiler.register](/mojo/manual/decorators/compiler-register) decorator,
+    [@extensibility.register](/mojo/manual/decorators/extensibility-register) decorator,
     instead.
 
     For instance:
@@ -78,31 +78,31 @@ def register(
 
     ```mojo
     # Matches all devices (backward-compatible default).
-    @compiler.register("mo.matmul")
+    @extensibility.register("mo.matmul")
 
     # Matches all CPU devices.
-    @compiler.register("mo.matmul", type="cpu")
+    @extensibility.register("mo.matmul", type="cpu")
 
     # Matches all GPU devices regardless of vendor or architecture.
-    @compiler.register("mo.matmul", type="gpu")
+    @extensibility.register("mo.matmul", type="gpu")
 
     # Matches all CUDA GPUs (any architecture).
-    @compiler.register("mo.matmul", type="gpu", api="cuda")
+    @extensibility.register("mo.matmul", type="gpu", api="cuda")
 
     # Matches only the NVIDIA SM100A architecture.
-    @compiler.register("mo.matmul", type="gpu", api="cuda", arch="sm_100a")
+    @extensibility.register("mo.matmul", type="gpu", api="cuda", arch="sm_100a")
 
     # Matches only the NVIDIA B200.
-    @compiler.register("mo.matmul", type="gpu", api="cuda", arch="sm_100a", model="NVIDIA B200")
+    @extensibility.register("mo.matmul", type="gpu", api="cuda", arch="sm_100a", model="NVIDIA B200")
     ```
 
     Example — selection with multiple registrations in scope:
 
     ```mojo
-    @compiler.register("mo.matmul")                                          # wildcard
-    @compiler.register("mo.matmul", type="cpu")                              # least specific
-    @compiler.register("mo.matmul", type="gpu")                              # least specific
-    @compiler.register("mo.matmul", type="gpu", api="cuda", arch="sm_100a")  # more specific
+    @extensibility.register("mo.matmul")                                          # wildcard
+    @extensibility.register("mo.matmul", type="cpu")                              # least specific
+    @extensibility.register("mo.matmul", type="gpu")                              # least specific
+    @extensibility.register("mo.matmul", type="gpu", api="cuda", arch="sm_100a")  # more specific
     ```
 
     - SM100A CUDA GPU → all four match; `arch` registration wins (most specific).

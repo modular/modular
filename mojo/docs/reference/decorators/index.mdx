@@ -48,19 +48,19 @@ import DocCardList from '@theme/DocCardList';
 Not every decorator works on every declaration. This table shows
 which decorators are valid on which targets.
 
-| Decorator            | `struct` | `def` | method | `trait` | `comptime` | `var` | field |
-|----------------------|----------|-------|--------|---------|------------|-------|-------|
-| `@align`             | yes      |       |        |         |            |       |       |
-| `@always_inline`     |          | yes   | yes    |         |            |       |       |
-| `@compiler.register` | yes      |       |        |         |            |       |       |
-| `@__copy_capture`    |          |       | yes    |         |            |       |       |
-| `@deprecated`        | yes      | yes   | yes    | yes     | yes        |       |       |
-| `@doc_hidden`        | yes      | yes   | yes    |         | yes        |       | yes   |
-| `@explicit_destroy`  | yes      |       |        |         |            |       |       |
-| `@export`            |          | yes   |        |         |            |       |       |
-| `@fieldwise_init`    | yes      |       |        |         |            |       |       |
-| `@implicit`          |          |       | yes    |         |            |       |       |
-| `@no_inline`         |          | yes   | yes    |         |            |       |       |
-| `@nonmaterializable` | yes      |       |        |         |            |       |       |
-| `@parameter`         |          |       | yes    |         |            |       |       |
-| `@staticmethod`      |          |       | yes    |         |            |       |       |
+| Decorator                 | `struct` | `def` | method | `trait` | `comptime` | `var` | field |
+|---------------------------|----------|-------|--------|---------|------------|-------|-------|
+| `@align`                  | yes      |       |        |         |            |       |       |
+| `@always_inline`          |          | yes   | yes    |         |            |       |       |
+| `@extensibility.register` | yes      |       |        |         |            |       |       |
+| `@__copy_capture`         |          |       | yes    |         |            |       |       |
+| `@deprecated`             | yes      | yes   | yes    | yes     | yes        |       |       |
+| `@doc_hidden`             | yes      | yes   | yes    |         | yes        |       | yes   |
+| `@explicit_destroy`       | yes      |       |        |         |            |       |       |
+| `@export`                 |          | yes   |        |         |            |       |       |
+| `@fieldwise_init`         | yes      |       |        |         |            |       |       |
+| `@implicit`               |          |       | yes    |         |            |       |       |
+| `@no_inline`              |          | yes   | yes    |         |            |       |       |
+| `@nonmaterializable`      | yes      |       |        |         |            |       |       |
+| `@parameter`              |          |       | yes    |         |            |       |       |
+| `@staticmethod`           |          |       | yes    |         |            |       |       |

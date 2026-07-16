@@ -189,6 +189,12 @@ struct _ClcKernel[
                             0
                         ](global_packed_idx * Self.simd_width, self.shape)
                         comptime if Self.handle_uneven_simd:
+                            # Even when simd_width doesn't evenly divide the shape, we can still guarantee alignment when rank == 1.
+                            # TODO(GEX-3960): for N-D tensors, `alignment = gcd(simd_width, shape[-1])`.
+                            # This needs the static shape propagated via the `Coord` type.
+                            comptime alignment = (
+                                Self.simd_width if Self.rank == 1 else 1
+                            )
                             if (
                                 start_indices[Self.rank - 1] + Self.simd_width
                                 > self.shape[Self.rank - 1]
@@ -201,7 +207,7 @@ struct _ClcKernel[
                                     _advance_indices(si, self.shape)
                                     self.func[1](Coord(si.canonicalize()))
                             else:
-                                self.func[Self.simd_width](
+                                self.func[Self.simd_width, alignment](
                                     Coord(start_indices.canonicalize())
                                 )
                         else:
@@ -393,6 +399,12 @@ struct _GridStrideKernel[
                             0
                         ](idx * Self.simd_width, self.shape)
                         comptime if Self.handle_uneven_simd:
+                            # Even when simd_width doesn't evenly divide the shape, we can still guarantee alignment when rank == 1.
+                            # TODO(GEX-3960): for N-D tensors, `alignment = gcd(simd_width, shape[-1])`.
+                            # This needs the static shape propagated via the `Coord` type.
+                            comptime alignment = (
+                                Self.simd_width if Self.rank == 1 else 1
+                            )
                             if (
                                 start_indices[Self.rank - 1] + Self.simd_width
                                 > self.shape[Self.rank - 1]
@@ -405,7 +417,7 @@ struct _GridStrideKernel[
                                     _advance_indices(si, self.shape)
                                     self.func[1](Coord(si.canonicalize()))
                             else:
-                                self.func[Self.simd_width](
+                                self.func[Self.simd_width, alignment](
                                     Coord(start_indices.canonicalize())
                                 )
                         else:

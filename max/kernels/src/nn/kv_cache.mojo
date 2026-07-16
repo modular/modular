@@ -2003,7 +2003,7 @@ def rms_norm_value_cache_ragged_paged[
 # because this is a read-only debug helper, and it lets the (non-enqueued) print
 # wrappers stay origin-generic (`...`) instead of pinning their args to
 # any-origin.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def _print_cache[
     collection_t: KVCollectionT,
     *,

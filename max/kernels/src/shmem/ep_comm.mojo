@@ -14,7 +14,7 @@
 from std.math import align_up, ceildiv
 from std.math.uutils import uceildiv, udivmod, ufloordiv, umod
 from std.os import abort
-from std.atomic import Atomic, Ordering
+from std.atomic import Atomic, Ordering, fence
 from std.sys import is_amd_gpu, is_nvidia_gpu
 from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
 from std.ffi import c_size_t
@@ -2599,9 +2599,9 @@ def dispatch_async_kernel[
     use_shmem: Bool = True,
 ](
     input_tokens: TileTensor[
-        input_type, input_tokens_layout, ImmutUntrackedOrigin
+        input_type, input_tokens_layout, ImmUntrackedOrigin
     ],
-    topk_ids: TileTensor[DType.int32, topk_ids_layout, ImmutUntrackedOrigin],
+    topk_ids: TileTensor[DType.int32, topk_ids_layout, ImmUntrackedOrigin],
     send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
     recv_buf_ptrs: InlineArray[
         UnsafePointer[UInt8, MutUntrackedOrigin], p2p_world_size
@@ -3208,7 +3208,7 @@ struct EPCombineKernel[
         recv_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
         atomic_counter: UnsafePointer[Int32, MutUntrackedOrigin],
         my_rank: Int32,
-        topk_ids_p: Optional[UnsafePointer[Int32, ImmutUntrackedOrigin]] = None,
+        topk_ids_p: Optional[UnsafePointer[Int32, ImmUntrackedOrigin]] = None,
     ) -> None:
         """Communication SM logic for combine_wait_kernel.
 
@@ -3251,6 +3251,8 @@ struct EPCombineKernel[
                     atomic_counter.load[volatile=True](sm_id) != DATA_READY_FLAG
                 ):
                     pass
+                # Acquire the flag's release; the volatile poll is unordered.
+                fence[ordering=Ordering.ACQUIRE, scope=DEVICE_SCOPE]()
             else:
                 while (
                     _counter_atomic.load[ordering=Ordering.ACQUIRE](
@@ -3311,10 +3313,10 @@ struct EPCombineKernel[
                         chunk_idx_in_token * n_chunk_bytes,
                     )
                 )
+                # recv_buf is fresh peer data each round: not invariant.
                 var recv_chunk = bitcast[output_type, dst_simd_width](
                     recv_buf_ptr.load[
                         width=byte_simd_width,
-                        invariant=True,
                         alignment=_align,
                     ](
                         lane_id() * byte_simd_width,
@@ -3394,9 +3396,9 @@ def combine_async_kernel[
     use_shmem: Bool = True,
 ](
     input_tokens: TileTensor[
-        input_type, input_tokens_layout, ImmutUntrackedOrigin
+        input_type, input_tokens_layout, ImmUntrackedOrigin
     ],
-    src_info: TileTensor[DType.int32, src_info_layout, ImmutUntrackedOrigin],
+    src_info: TileTensor[DType.int32, src_info_layout, ImmUntrackedOrigin],
     send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
     recv_buf_ptrs: InlineArray[
         UnsafePointer[UInt8, MutUntrackedOrigin], p2p_world_size
@@ -3602,9 +3604,9 @@ def dispatch_kernel[
     allreduce_world_size: Int = 1,
 ](
     input_tokens: TileTensor[
-        input_type, input_tokens_layout, ImmutUntrackedOrigin
+        input_type, input_tokens_layout, ImmUntrackedOrigin
     ],
-    topk_ids: TileTensor[DType.int32, topk_ids_layout, ImmutUntrackedOrigin],
+    topk_ids: TileTensor[DType.int32, topk_ids_layout, ImmUntrackedOrigin],
     format_handler: token_fmt_type,
     row_offsets: TileTensor[
         DType.uint32, row_offsets_layout, MutUntrackedOrigin
@@ -3815,9 +3817,9 @@ def combine_kernel[
     allreduce_world_size: Int = 1,
 ](
     input_tokens: TileTensor[
-        input_type, input_tokens_layout, ImmutUntrackedOrigin
+        input_type, input_tokens_layout, ImmUntrackedOrigin
     ],
-    src_info: TileTensor[DType.int32, src_info_layout, ImmutUntrackedOrigin],
+    src_info: TileTensor[DType.int32, src_info_layout, ImmUntrackedOrigin],
     output_tokens: TileTensor[
         input_type, output_tokens_layout, MutUntrackedOrigin
     ],
@@ -3829,7 +3831,7 @@ def combine_kernel[
         UnsafePointer[UInt64, MutUntrackedOrigin], p2p_world_size
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
-    topk_ids_p: Optional[UnsafePointer[Int32, ImmutUntrackedOrigin]],
+    topk_ids_p: Optional[UnsafePointer[Int32, ImmUntrackedOrigin]],
     my_rank: Int32,
 ):
     """
@@ -4041,9 +4043,9 @@ def fused_silu_kernel[
     num_sms: Int,
 ](
     output_tensor: TileTensor[output_dtype, output_layout, MutUntrackedOrigin],
-    input_tensor: TileTensor[input_dtype, input_layout, ImmutUntrackedOrigin],
+    input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
     row_offsets: TileTensor[
-        DType.uint32, row_offsets_layout, ImmutUntrackedOrigin
+        DType.uint32, row_offsets_layout, ImmUntrackedOrigin
     ],
 ):
     """
@@ -4128,8 +4130,8 @@ def fused_silu_fp8_kernel[
 ](
     output_tensor: TileTensor[fp8_dtype, output_layout, MutUntrackedOrigin],
     scales_tensor: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
-    input_tensor: TileTensor[input_dtype, input_layout, ImmutUntrackedOrigin],
-    row_offsets: TileTensor[DType.uint32, offsets_layout, ImmutUntrackedOrigin],
+    input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
+    row_offsets: TileTensor[DType.uint32, offsets_layout, ImmUntrackedOrigin],
 ):
     """
     This kernel performs the SILU operation for all the MLPs in the EP MoE
@@ -4242,13 +4244,13 @@ def fused_silu_nvfp4_kernel[
 ](
     output_tensor: TileTensor[fp4_dtype, output_layout, MutUntrackedOrigin],
     scales_tensor: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
-    input_tensor: TileTensor[input_dtype, input_layout, ImmutUntrackedOrigin],
-    row_offsets: TileTensor[DType.uint32, offsets_layout, ImmutUntrackedOrigin],
+    input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
+    row_offsets: TileTensor[DType.uint32, offsets_layout, ImmUntrackedOrigin],
     scales_offsets: TileTensor[
-        DType.uint32, scales_offsets_layout, ImmutUntrackedOrigin
+        DType.uint32, scales_offsets_layout, ImmUntrackedOrigin
     ],
     input_scales: TileTensor[
-        DType.float32, input_scales_layout, ImmutUntrackedOrigin
+        DType.float32, input_scales_layout, ImmUntrackedOrigin
     ],
 ):
     """
@@ -4425,13 +4427,13 @@ def fused_silu_nvfp4_interleaved_kernel[
 ](
     output_tensor: TileTensor[fp4_dtype, output_layout, MutUntrackedOrigin],
     scales_tensor: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
-    input_tensor: TileTensor[input_dtype, input_layout, ImmutUntrackedOrigin],
-    row_offsets: TileTensor[DType.uint32, offsets_layout, ImmutUntrackedOrigin],
+    input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
+    row_offsets: TileTensor[DType.uint32, offsets_layout, ImmUntrackedOrigin],
     scales_offsets: TileTensor[
-        DType.uint32, scales_offsets_layout, ImmutUntrackedOrigin
+        DType.uint32, scales_offsets_layout, ImmUntrackedOrigin
     ],
     input_scales: TileTensor[
-        DType.float32, input_scales_layout, ImmutUntrackedOrigin
+        DType.float32, input_scales_layout, ImmUntrackedOrigin
     ],
 ):
     """SwiGLU + NVFP4 quantization for interleaved gate/up layout.
@@ -4641,8 +4643,8 @@ def fused_silu_mxfp4_kernel[
 ](
     output_tensor: TileTensor[fp4_dtype, output_layout, MutUntrackedOrigin],
     scales_tensor: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
-    input_tensor: TileTensor[input_dtype, input_layout, ImmutUntrackedOrigin],
-    row_offsets: TileTensor[DType.uint32, offsets_layout, ImmutUntrackedOrigin],
+    input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
+    row_offsets: TileTensor[DType.uint32, offsets_layout, ImmUntrackedOrigin],
     max_padded_M: Int = 0,
     # Clamped-variant alpha/L; unused when clamp_activation=False.
     alpha: Float32 = 0.0,
@@ -4822,10 +4824,10 @@ def fused_silu_mxfp8_interleaved_kernel[
 ](
     output_tensor: TileTensor[fp8_dtype, output_layout, MutUntrackedOrigin],
     scales_tensor: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
-    input_tensor: TileTensor[input_dtype, input_layout, ImmutUntrackedOrigin],
-    row_offsets: TileTensor[DType.uint32, offsets_layout, ImmutUntrackedOrigin],
+    input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
+    row_offsets: TileTensor[DType.uint32, offsets_layout, ImmUntrackedOrigin],
     scales_offsets: TileTensor[
-        DType.uint32, scales_offsets_layout, ImmutUntrackedOrigin
+        DType.uint32, scales_offsets_layout, ImmUntrackedOrigin
     ],
     # Runtime alpha and L for the clamped activation; ignored when
     # `clamp_activation=False`.

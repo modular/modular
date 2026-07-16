@@ -650,6 +650,24 @@ class BlockManager:
         if self.connector.num_host_blocks == 0:
             return device_blocks
 
+        # Refresh external-tier recency for this request's cached prefix. A G0
+        # hit sends no external-tier traffic, so the (G0-resident) prefix ROOT's
+        # recency would freeze and dKV could evict it while it is still hot on
+        # device. Pass the FULL sequence from the true root, in order -- NOT a
+        # root-omitting slice -- so the prefix root stays MRU under dKV's
+        # reverse (full-attention) policy. dKV touches the resident subset and
+        # tolerates missing keys. Best-effort. The num_host_blocks early-return
+        # above gates on "has host blocks," NOT "has an external tier": it
+        # skips only a connector with no host blocks (NullConnector). The
+        # CPU/disk (local/tiered) connectors have host blocks too, so they pass
+        # the gate and build the payload + call their no-op touch -- a minor
+        # once-per-admission residual; only DKVConnector does real touch work.
+        if device_blocks:
+            self.connector.touch(
+                [to_block_hash_bytes(h) for h in req_hashes],
+                replica_idx=replica_idx,
+            )
+
         # remove the hashes that were found in the device prefix cache
         if len(device_blocks) > 0:
             uncommitted_hashes = uncommitted_hashes[len(device_blocks) :]

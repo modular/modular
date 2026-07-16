@@ -50,7 +50,7 @@ def topk_wrapper[
     K: Int,
     num_elements: Int,
     num_blocks_per_input: Int,
-    in_buffer: UnsafePointer[Scalar[input_type], ImmutUntrackedOrigin],
+    in_buffer: UnsafePointer[Scalar[input_type], ImmUntrackedOrigin],
     local_topk_vals: UnsafePointer[
         Scalar[input_type], MutUntrackedOrigin
     ],  # Output buffer of size num_blocks_per_input * K

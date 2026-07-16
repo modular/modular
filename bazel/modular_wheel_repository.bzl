@@ -124,7 +124,7 @@ cc_import(
     name = "max_lib",
     shared_library = glob(["modular/lib/libmax.*"])[0],
     visibility = ["//visibility:public"],
-    data = ["modular/lib/*.so"],
+    data = glob(["modular/lib/*.so"]),
     deps = [":" + dep + "_lib" for dep in INDIRECT_DEPENDENCIES] + select({
         "@//:linux_x86_64": [":NVPTX_lib", ":nixl_lib"],
         "@//:linux_aarch64": [":NVPTX_lib"],

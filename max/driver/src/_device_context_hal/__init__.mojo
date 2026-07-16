@@ -191,7 +191,7 @@ struct DeviceContext(
 
     ```text
     from std.gpu.host import DeviceContext
-    from compiler import register
+    from extensibility import register
 
     @register("custom_op")
     struct CustomOp:

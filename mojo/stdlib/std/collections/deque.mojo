@@ -693,7 +693,7 @@ struct Deque[ElementType: Movable](
             self._prepare_for_new_elements(n_move_total, n_move_self)
 
         # we will consume all elements of `values`
-        var values_capacity = values.capacity
+        var values_capacity = values.capacity()
         values_data = values.steal_data()
 
         # pop excess elements from `values`
@@ -737,7 +737,7 @@ struct Deque[ElementType: Movable](
             self._prepare_for_new_elements(n_move_total, n_move_self)
 
         # we will consume all elements of `values`
-        var values_capacity = values.capacity
+        var values_capacity = values.capacity()
         values_data = values.steal_data()
 
         # pop excess elements from `values`

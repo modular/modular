@@ -21,6 +21,7 @@ modular_py_library(
         "//max/python/max/pipelines/context",
         requirement("numpy"),
         requirement("msgspec"),
+        requirement("psutil"),
         requirement("pydantic"),
         "//max/python/max:_core",
         "//max/python/max/_core_mojo",

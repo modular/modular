@@ -23,7 +23,7 @@ float32 where precision makes it meaningful.
 
 These are small, fast CI shapes. The bandwidth-oriented perf grid for the same
 ops lives in the manual benchmark at
-``//max/kernels/benchmarks/graph:bench_rowwise_reductions`` and is not run here.
+``//utils/benchmarking/kepler/graph:reductions`` and is not run here.
 
 Each parametrization builds one symbolic-dimension graph and loads it once, then
 feeds several concrete shapes as data (per the guidance against per-case graph
@@ -41,11 +41,14 @@ import torch
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, TensorType
+from test_common.reduction_graphs import (
+    LAYER_NORM_EPS,
+    RMS_NORM_EPS,
+    build_reduction,
+)
 
 _DEV = DeviceRef.CPU()
-_RMS_EPS = 1e-6
-_LN_EPS = 1e-5
 
 # Ops whose output is integer indices.
 _INT_OUT = {"argmax", "argmin"}
@@ -74,52 +77,8 @@ def _build_graph(op: str, dtype: DType, axis: int) -> Graph:
 
     with Graph(f"{op}_ax{axis}", input_types=input_types) as graph:
         x = graph.inputs[0].tensor
-        if op == "reduce_sum":
-            out: TensorValue = ops.sum(x, axis=axis)
-        elif op == "reduce_max":
-            out = ops.max(x, axis=axis)
-        elif op == "reduce_min":
-            out = ops.min(x, axis=axis)
-        elif op == "reduce_mean":
-            out = ops.mean(x, axis=axis)
-        elif op == "reduce_product":
-            out = ops.prod(x, axis=axis)
-        elif op == "argmax":
-            out = ops.argmax(x, axis=axis)
-        elif op == "argmin":
-            out = ops.argmin(x, axis=axis)
-        elif op == "reduce_min_and_max":
-            norm_axis = axis + x.rank if axis < 0 else axis
-            out_shape: list[str | int] = ["r", "c"]
-            out_shape[norm_axis] = 2
-            out = ops.custom(
-                "mo.reduce.reduce_min_and_max",
-                device=_DEV,
-                values=[x],
-                out_types=[TensorType(dtype, out_shape, device=_DEV)],
-                parameters={"axis": axis},
-            )[0].tensor
-        elif op == "softmax":
-            out = ops.softmax(x, axis=axis)
-        elif op == "logsoftmax":
-            out = ops.logsoftmax(x, axis=axis)
-        elif op == "layer_norm":
-            gamma = graph.inputs[1].tensor
-            beta = graph.inputs[2].tensor
-            out = ops.layer_norm(x, gamma, beta, epsilon=_LN_EPS)
-        elif op == "rms_norm":
-            weight = graph.inputs[1].tensor
-            out = ops.rms_norm(x, weight, epsilon=_RMS_EPS)
-        elif op == "row_mean_of_squares":
-            out = ops.custom(
-                "mo.reduce.row_mean_of_squares",
-                device=_DEV,
-                values=[x],
-                out_types=[TensorType(DType.float32, ["r", 1], device=_DEV)],
-            )[0].tensor
-        else:
-            raise ValueError(f"unknown op {op!r}")
-        graph.output(out)
+        weights = [inp.tensor for inp in graph.inputs[1:]]
+        graph.output(build_reduction(op, x, axis, weights=weights))
     return graph
 
 
@@ -274,12 +233,12 @@ def _reference_and_check(
     elif op == "layer_norm":
         gamma, beta = weights[0].to(torch.float32), weights[1].to(torch.float32)
         ref = torch.nn.functional.layer_norm(
-            xf, (xf.shape[-1],), gamma, beta, eps=_LN_EPS
+            xf, (xf.shape[-1],), gamma, beta, eps=LAYER_NORM_EPS
         ).numpy()
     elif op == "rms_norm":
         weight = weights[0].to(torch.float32)
         ms = xf.pow(2).mean(dim=-1, keepdim=True)
-        ref = (xf * torch.rsqrt(ms + _RMS_EPS) * weight).numpy()
+        ref = (xf * torch.rsqrt(ms + RMS_NORM_EPS) * weight).numpy()
     else:
         raise ValueError(f"no reference for {op!r}")
     _assert_close(got, ref, op, dtype, label)

@@ -40,7 +40,7 @@ struct MetalEnqueueFunctionArgs:
     var args: UnsafePointer[
         OpaquePointer[MutUntrackedOrigin], MutUntrackedOrigin
     ]
-    var arg_sizes: UnsafePointer[UInt64, ImmutUntrackedOrigin]
+    var arg_sizes: UnsafePointer[UInt64, ImmUntrackedOrigin]
     var arg_is_device_ptr: UnsafePointer[Bool, MutUntrackedOrigin]
     var buffers: Optional[
         UnsafePointer[
@@ -221,7 +221,7 @@ def call_with_pack_checked_metal[
     *args: *Ts,
     func_handle: _DeviceFunctionPtr[mut=True],
     device_context: DeviceContext,
-    capture_sizes: UnsafePointer[UInt64, ImmutUntrackedOrigin],
+    capture_sizes: UnsafePointer[UInt64, ImmUntrackedOrigin],
     num_captures: Int,
     num_translated_args: Int,
     translated_arg_offsets: InlineArray[Int, num_passed_args],

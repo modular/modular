@@ -557,8 +557,8 @@ struct Conv2dFpropKernel[
     @staticmethod
     @always_inline
     def load_input_tiles[
-        act_tma_origin: ImmutOrigin,
-        filter_tma_origin: ImmutOrigin,
+        act_tma_origin: ImmOrigin,
+        filter_tma_origin: ImmOrigin,
         tiles_origin: MutOrigin,
         //,
     ](

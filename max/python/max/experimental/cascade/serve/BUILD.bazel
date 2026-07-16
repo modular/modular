@@ -14,7 +14,7 @@ modular_py_library(
         requirement("pydantic"),
         requirement("sse-starlette"),
         requirement("uvicorn"),
-        "//max/python/max/experimental/cascade/pipelines",
+        "//max/python/max/experimental/cascade/interfaces",
         "//max/python/max/pipelines/request",
         "//max/python/max/serve/schemas",
     ],
@@ -25,6 +25,10 @@ modular_py_binary(
     name = "main",
     srcs = ["main.py"],
     main = "main.py",
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
     deps = [
         requirement("cyclopts"),
         "//max/python/max/experimental/cascade",

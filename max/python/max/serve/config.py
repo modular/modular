@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
-from enum import Enum, IntEnum
+from enum import Enum
 from pathlib import Path
 
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -39,17 +39,6 @@ class APIType(Enum):
 class RunnerType(Enum):
     PYTORCH = "pytorch"
     TOKEN_GEN = "token_gen"
-
-
-class MetricLevel(IntEnum):
-    """Metric levels in increasing granularity"""
-
-    # no metrics
-    NONE = 0
-    # basic api-worker and model worker metrics. minimal performance impact.
-    BASIC = 10
-    # high detail metrics. may impact performance
-    DETAILED = 20
 
 
 class MetricRecordingMethod(Enum):
@@ -259,18 +248,6 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_METRIC_RECORDING_METHOD",
     )
 
-    metric_level: MetricLevel = Field(
-        default=MetricLevel.BASIC,
-        description="Determines the level of detail in the metrics emitted. Metrics tagged at a higher level will be dropped. This does nothing if metric recording is disabled.",
-        alias="MAX_SERVE_METRIC_LEVEL",
-    )
-
-    detailed_metric_buffer_factor: int = Field(
-        default=20,
-        description="How many detailed metrics to buffer before sending them to the telemetry worker",
-        alias="MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR",
-    )
-
     stream_min_chunk_tokens: int = Field(
         default=1,
         ge=1,
@@ -284,13 +261,6 @@ class Settings(BaseSettings):
         ),
         alias="MAX_SERVE_STREAM_MIN_CHUNK_TOKENS",
     )
-
-    @field_validator("metric_level", mode="before")
-    def validate_metric_level(cls, value: str | MetricLevel) -> MetricLevel:
-        # Support string values ("BASIC") even though Metric is an IntEnum
-        if isinstance(value, str):
-            return MetricLevel[value]
-        return value
 
     transaction_recording_file: Path | None = Field(
         default=None,
@@ -404,12 +374,6 @@ class Settings(BaseSettings):
         logger.info("=" * 60)
         logger.info(
             f"    metric_recording       : {self.metric_recording.value}"
-        )
-        logger.info(
-            f"    metric_level           : {self.metric_level.name} ({self.metric_level.value})"
-        )
-        logger.info(
-            f"    detailed_buffer_factor : {self.detailed_metric_buffer_factor}"
         )
         logger.info(f"    disable_telemetry      : {self.disable_telemetry}")
 

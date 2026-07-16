@@ -17,7 +17,7 @@
 # ===-----------------------------------------------------------------------===#
 
 from std.sys.info import simd_width_of
-import extensibility as compiler
+import extensibility
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
@@ -67,7 +67,7 @@ from std.utils.index import Index
 from .kernels import *
 
 
-@compiler.register("mo.reduce.arg_max")
+@extensibility.register("mo.reduce.arg_max")
 struct ArgMax:
     @staticmethod
     def execute[
@@ -103,7 +103,7 @@ struct ArgMax:
             )
 
 
-@compiler.register("mo.reduce.arg_min")
+@extensibility.register("mo.reduce.arg_min")
 struct ArgMin:
     @staticmethod
     def execute[
@@ -137,7 +137,7 @@ struct ArgMin:
             )
 
 
-@compiler.register("mo.arg_nonzero")
+@extensibility.register("mo.arg_nonzero")
 struct ArgNonZero:
     @staticmethod
     def execute(
@@ -150,14 +150,14 @@ struct ArgNonZero:
         )
 
 
-@compiler.register_shape_function("mo.arg_nonzero")
+@extensibility.register_shape_function("mo.arg_nonzero")
 def arg_nonzero_shape(input_buffer: InputTensor) -> IndexList[2]:
     return arg_nonzero.arg_nonzero_shape(
         input_buffer.to_tile_tensor[DType.int64]()
     )
 
 
-@compiler.register("mo.reduce.mean")
+@extensibility.register("mo.reduce.mean")
 struct Mean:
     @staticmethod
     def execute[
@@ -196,7 +196,7 @@ struct Mean:
         ](Coord(input.shape()), Coord(output.shape()), ctx)
 
 
-@compiler.register_shape_function("mo.reduce.mean")
+@extensibility.register_shape_function("mo.reduce.mean")
 def reduce_mean_shape[
     input_rank: Int,
     input_type: DType,
@@ -207,7 +207,7 @@ def reduce_mean_shape[
     return reduce_shape(input, axis)
 
 
-@compiler.register("mo.reduce.row_mean_of_squares")
+@extensibility.register("mo.reduce.row_mean_of_squares")
 struct RowMeanOfSquares:
     """Per-row mean of squares over the last axis, accumulated in float32.
 
@@ -247,14 +247,14 @@ struct RowMeanOfSquares:
         )
 
 
-@compiler.register_shape_function("mo.reduce.row_mean_of_squares")
+@extensibility.register_shape_function("mo.reduce.row_mean_of_squares")
 def reduce_row_mean_of_squares_shape(
     input: InputTensor[rank=2, ...],
 ) -> IndexList[2]:
     return Index(input.shape()[0], 1)
 
 
-@compiler.register("mo.reduce.row_mean_of_squares_qk")
+@extensibility.register("mo.reduce.row_mean_of_squares_qk")
 struct RowMeanOfSquaresQK:
     """Fused per-row mean of squares for two operands Q and K.
 
@@ -296,7 +296,7 @@ struct RowMeanOfSquaresQK:
         )
 
 
-@compiler.register_shape_function("mo.reduce.row_mean_of_squares_qk")
+@extensibility.register_shape_function("mo.reduce.row_mean_of_squares_qk")
 def reduce_row_mean_of_squares_qk_shape(
     q: InputTensor[rank=2, ...],
     k: InputTensor[rank=2, ...],
@@ -304,7 +304,7 @@ def reduce_row_mean_of_squares_qk_shape(
     return Index(q.shape()[0], 2)
 
 
-@compiler.register("mo.norm.apply_qk_rms_norm")
+@extensibility.register("mo.norm.apply_qk_rms_norm")
 struct ApplyQKRMSNorm:
     """Fused per-element QK-RMSNorm apply for two operands Q and K.
 
@@ -377,7 +377,7 @@ struct ApplyQKRMSNorm:
         )
 
 
-@compiler.register("mo.reduce.add")
+@extensibility.register("mo.reduce.add")
 struct ReduceAdd:
     @staticmethod
     def execute[
@@ -417,7 +417,7 @@ struct ReduceAdd:
         ](Coord(input.shape()), ctx)
 
 
-@compiler.register_shape_function("mo.reduce.add")
+@extensibility.register_shape_function("mo.reduce.add")
 def reduce_add_shape[
     input_rank: Int,
     input_type: DType,
@@ -428,7 +428,7 @@ def reduce_add_shape[
     return reduce_shape(input, axis)
 
 
-@compiler.register("mo.reduce.mul")
+@extensibility.register("mo.reduce.mul")
 struct ReduceMul:
     @staticmethod
     def execute[
@@ -468,7 +468,7 @@ struct ReduceMul:
         ](Coord(input.shape()), ctx)
 
 
-@compiler.register_shape_function("mo.reduce.mul")
+@extensibility.register_shape_function("mo.reduce.mul")
 def reduce_mul_shape[
     input_rank: Int,
     input_type: DType,
@@ -479,7 +479,7 @@ def reduce_mul_shape[
     return reduce_shape(input, axis)
 
 
-@compiler.register("mo.reduce.max")
+@extensibility.register("mo.reduce.max")
 struct ReduceMax:
     @staticmethod
     def execute[
@@ -519,7 +519,7 @@ struct ReduceMax:
         ](Coord(input.shape()), ctx)
 
 
-@compiler.register_shape_function("mo.reduce.max")
+@extensibility.register_shape_function("mo.reduce.max")
 def reduce_max_shape[
     input_rank: Int,
     input_type: DType,
@@ -530,7 +530,7 @@ def reduce_max_shape[
     return reduce_shape(input, axis)
 
 
-@compiler.register("mo.reduce.min")
+@extensibility.register("mo.reduce.min")
 struct ReduceMin:
     @staticmethod
     def execute[
@@ -570,7 +570,7 @@ struct ReduceMin:
         ](Coord(input.shape()), ctx)
 
 
-@compiler.register_shape_function("mo.reduce.min")
+@extensibility.register_shape_function("mo.reduce.min")
 def reduce_min_shape[
     input_rank: Int,
     input_type: DType,
@@ -581,7 +581,7 @@ def reduce_min_shape[
     return reduce_shape(input, axis)
 
 
-@compiler.register("mo.reduce.layer_norm")
+@extensibility.register("mo.reduce.layer_norm")
 struct LayerNorm:
     @staticmethod
     def execute[
@@ -644,7 +644,7 @@ struct LayerNorm:
         )
 
 
-@compiler.register_shape_function("mo.reduce.layer_norm")
+@extensibility.register_shape_function("mo.reduce.layer_norm")
 def reduce_layer_norm_shape[
     dtype: DType,
     rank: Int,
@@ -657,7 +657,7 @@ def reduce_layer_norm_shape[
     return input.shape()
 
 
-@compiler.register("mo.reduce.rms_norm")
+@extensibility.register("mo.reduce.rms_norm")
 struct ReduceRMSNorm:
     @staticmethod
     def execute[
@@ -716,7 +716,7 @@ struct ReduceRMSNorm:
         )
 
 
-@compiler.register_shape_function("mo.reduce.rms_norm")
+@extensibility.register_shape_function("mo.reduce.rms_norm")
 def reduce_rms_norm_shape[
     dtype: DType,
     rank: Int,
@@ -729,7 +729,7 @@ def reduce_rms_norm_shape[
     return input.shape()
 
 
-@compiler.register("mo.composite.rms_norm_rope")
+@extensibility.register("mo.composite.rms_norm_rope")
 struct ReduceRMSNormRoPE:
     """Fuses RMS normalization and Rotary Position Embedding (RoPE) into one operation.
 
@@ -813,7 +813,7 @@ struct ReduceRMSNormRoPE:
         )
 
 
-@compiler.register_shape_function("mo.composite.rms_norm_rope")
+@extensibility.register_shape_function("mo.composite.rms_norm_rope")
 def composite_rms_norm_rope_shape[
     dtype: DType,
     cos_sin_dtype: DType,
@@ -829,7 +829,7 @@ def composite_rms_norm_rope_shape[
     return input.shape()
 
 
-@compiler.register("mo.reduce.group_norm")
+@extensibility.register("mo.reduce.group_norm")
 struct ReduceGroupNorm:
     @staticmethod
     def execute[
@@ -873,7 +873,7 @@ struct ReduceGroupNorm:
         )
 
 
-@compiler.register_shape_function("mo.reduce.group_norm")
+@extensibility.register_shape_function("mo.reduce.group_norm")
 def reduce_group_norm_shape[
     dtype: DType,
     rank: Int,
@@ -887,7 +887,7 @@ def reduce_group_norm_shape[
     return input.shape()
 
 
-@compiler.register("mo.reduce.reduce_min_and_max")
+@extensibility.register("mo.reduce.reduce_min_and_max")
 struct ReduceMinAndMax:
     @staticmethod
     def execute[
@@ -997,7 +997,7 @@ struct ReduceMinAndMax:
         )
 
 
-@compiler.register_shape_function("mo.reduce.reduce_min_and_max")
+@extensibility.register_shape_function("mo.reduce.reduce_min_and_max")
 def reduce_reduce_min_and_max_shape[
     axis: Int,
 ](input: InputTensor) -> IndexList[input.rank]:
@@ -1007,7 +1007,7 @@ def reduce_reduce_min_and_max_shape[
     return new_shape
 
 
-@compiler.register("mo.composite.rms_norm_fused_residual_add")
+@extensibility.register("mo.composite.rms_norm_fused_residual_add")
 struct ReduceRMSNormFusedResidualAdd:
     @staticmethod
     def execute[
@@ -1093,7 +1093,9 @@ struct ReduceRMSNormFusedResidualAdd:
         )
 
 
-@compiler.register_shape_function("mo.composite.rms_norm_fused_residual_add")
+@extensibility.register_shape_function(
+    "mo.composite.rms_norm_fused_residual_add"
+)
 def composite_rms_norm_fused_residual_add_shape[
     dtype: DType,
     rank: Int,
@@ -1110,7 +1112,7 @@ def composite_rms_norm_fused_residual_add_shape[
     return input.shape()
 
 
-@compiler.register("mo.bottom_k")
+@extensibility.register("mo.bottom_k")
 struct BottomK:
     @staticmethod
     def execute[
@@ -1137,7 +1139,7 @@ struct BottomK:
         )
 
 
-@compiler.register_shape_function("mo.bottom_k")
+@extensibility.register_shape_function("mo.bottom_k")
 def bottom_k_shape(
     input: InputTensor,
     k: Scalar,
@@ -1153,7 +1155,7 @@ def bottom_k_shape(
     )
 
 
-@compiler.register("mo.top_k")
+@extensibility.register("mo.top_k")
 struct TopK:
     @staticmethod
     def execute[
@@ -1181,7 +1183,7 @@ struct TopK:
         )
 
 
-@compiler.register_shape_function("mo.top_k")
+@extensibility.register_shape_function("mo.top_k")
 def top_k_shape(
     input: InputTensor,
     k: Scalar,
@@ -1197,7 +1199,7 @@ def top_k_shape(
     )
 
 
-@compiler.register("mo.reduce.softmax")
+@extensibility.register("mo.reduce.softmax")
 struct Softmax:
     @staticmethod
     def execute[
@@ -1234,7 +1236,7 @@ struct Softmax:
         )
 
 
-@compiler.register("mo.reduce.logsoftmax")
+@extensibility.register("mo.reduce.logsoftmax")
 struct LogSoftmax:
     @staticmethod
     def execute[
@@ -1267,7 +1269,7 @@ struct LogSoftmax:
         )
 
 
-@compiler.register("mo.cumsum")
+@extensibility.register("mo.cumsum")
 struct CumSum:
     @staticmethod
     def execute[
@@ -1287,7 +1289,7 @@ struct CumSum:
         )
 
 
-@compiler.register("mx.argsort")
+@extensibility.register("mx.argsort")
 struct ArgSort[*, ascending: Bool]:
     @staticmethod
     def execute[

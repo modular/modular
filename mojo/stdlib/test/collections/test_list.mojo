@@ -153,11 +153,11 @@ def test_list_unsafe_set() raises:
 def test_list_clear() raises:
     var list = [1, 2, 3]
     assert_equal(len(list), 3)
-    assert_equal(list.capacity, 3)
+    assert_equal(list.capacity(), 3)
     list.clear()
 
     assert_equal(len(list), 0)
-    assert_equal(list.capacity, 3)
+    assert_equal(list.capacity(), 3)
 
 
 def test_list_to_bool_conversion() raises:
@@ -592,17 +592,17 @@ def test_2d_dynamic_list() raises:
     assert_equal(3, list[1][2])
 
     assert_equal(2, len(list))
-    assert_equal(2, list.capacity)
+    assert_equal(2, list.capacity())
 
     assert_equal(3, len(list[0]))
 
     list[0].clear()
     assert_equal(0, len(list[0]))
-    assert_equal(4, list[0].capacity)
+    assert_equal(4, list[0].capacity())
 
     list.clear()
     assert_equal(0, len(list))
-    assert_equal(2, list.capacity)
+    assert_equal(2, list.capacity())
 
 
 def test_list_explicit_copy() raises:

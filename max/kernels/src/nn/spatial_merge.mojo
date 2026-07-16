@@ -22,11 +22,11 @@ from std.utils.index import IndexList
 def spatial_merge_kernel[
     dtype: DType,
     InputLayoutType: TensorLayout,
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     GridThwLayoutType: TensorLayout,
-    grid_thw_origin: ImmutOrigin,
+    grid_thw_origin: ImmOrigin,
 ](
     output: TileTensor[dtype, OutputLayoutType, output_origin],
     input: TileTensor[dtype, InputLayoutType, input_origin],
@@ -187,11 +187,11 @@ def spatial_merge[
     comptime kernel = spatial_merge_kernel[
         dtype,
         input.LayoutType,
-        ImmutOrigin(input.origin),
+        ImmOrigin(input.origin),
         output.LayoutType,
         output.origin,
         grid_thw.LayoutType,
-        ImmutOrigin(grid_thw.origin),
+        ImmOrigin(grid_thw.origin),
     ]
 
     ctx.enqueue_function[kernel](

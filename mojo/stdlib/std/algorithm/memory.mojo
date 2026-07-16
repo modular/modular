@@ -50,6 +50,8 @@ def unsafe_parallel_memcpy[
         count_per_task: Task size.
         num_tasks: Number of tasks to run in parallel.
     """
+    if count == 0:
+        return
 
     @parameter
     @always_inline
@@ -142,9 +144,6 @@ def parallel_memcpy[
     Safety:
         `dest` or `src` can only be `None` when `count == 0`.
     """
-    if count == 0:
-        return
-
     unsafe_parallel_memcpy(
         dest=dest.unsafe_value(),
         src=src.unsafe_value(),

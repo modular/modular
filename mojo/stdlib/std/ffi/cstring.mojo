@@ -29,7 +29,7 @@ def _validate_bytes(slice: Span[Byte, _]) raises:
         raise Error("CStringSlice has interior nul byte")
 
 
-struct CStringSlice[origin: ImmutOrigin](
+struct CStringSlice[origin: ImmOrigin](
     Equatable,
     ImplicitlyCopyable,
     Sized,

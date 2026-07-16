@@ -43,7 +43,7 @@ from std.utils.index import IndexList
 
 
 struct TileLoaderTMA[
-    tma_origin: ImmutOrigin,
+    tma_origin: ImmOrigin,
     dtype: DType,
     tma_rank: Int,
     tile_shape: IndexList[tma_rank],
@@ -153,7 +153,7 @@ struct TileLoaderTMA[
 
 
 struct TileLoader[
-    tma_origin: ImmutOrigin,
+    tma_origin: ImmOrigin,
     dtype: DType,
     tile_layout: TensorLayout,
     desc_layout: TensorLayout,
@@ -212,7 +212,7 @@ struct TileLoader[
 
 
 struct ScalesLoader[
-    tma_origin: ImmutOrigin,
+    tma_origin: ImmOrigin,
     dtype: DType,
     tile_layout: TensorLayout,
     desc_layout: TensorLayout = tile_layout,

@@ -19,7 +19,10 @@ build the in-process dummy pipelines used by the experimental CLI and tests.
 
 from __future__ import annotations
 
-from max.experimental.cascade.pipelines import CascadePipeline
+from max.experimental.cascade.interfaces.pipeline import CascadePipeline
+from max.experimental.cascade.pipelines.common_textgen import (
+    build_common_textgen_pipeline,
+)
 from max.experimental.cascade.pipelines.dummy_imgen import (
     build_dummy_imgen_pipeline,
 )
@@ -48,8 +51,11 @@ async def build_pipeline(
     if model_path == "dummy_imgen":
         return await build_dummy_imgen_pipeline()
 
+    if "smollm" in model_path.lower():
+        return await build_common_textgen_pipeline(config)
+
     raise ValueError(
         f"Unsupported model {model_path!r}. "
         "cascade currently supports the dummy_textgen and dummy_imgen "
-        "pipelines."
+        "pipelines, and SmolLM via the common text-generation pipeline."
     )

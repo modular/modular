@@ -150,7 +150,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         self.count = count
 
     @always_inline
-    def get(self, index: Int) -> StringSlice[ImmutOrigin(origin_of(self))]:
+    def get(self, index: Int) -> StringSlice[ImmOrigin(origin_of(self))]:
         var keys_ptr = self.keys.as_immutable().unsafe_origin_cast[
             origin_of(self)
         ]()
@@ -169,7 +169,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
     @always_inline
     def __getitem__(
         self, index: Int
-    ) -> StringSlice[ImmutOrigin(origin_of(self))]:
+    ) -> StringSlice[ImmOrigin(origin_of(self))]:
         return self.get(index)
 
     @always_inline

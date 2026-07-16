@@ -39,8 +39,8 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
-from modular_graph_test import modular_graph_test
 from test_common.context_utils import create_text_context
+from test_common.modular_graph_test import modular_graph_test
 from torch.utils.dlpack import from_dlpack
 
 

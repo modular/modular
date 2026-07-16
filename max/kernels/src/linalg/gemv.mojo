@@ -1393,7 +1393,7 @@ struct _MmaCpAsyncGmemLoaderA[
 
 
 struct _MmaCpAsyncGmemLoaderB[
-    weight_origin: ImmutOrigin,
+    weight_origin: ImmOrigin,
     //,
     b_type: DType,
     b_layout: TensorLayout,

@@ -465,7 +465,7 @@ struct MmaOpApple[
 
     @always_inline
     def _load_a_im2col_fragment_x2[
-        input_origin: ImmutOrigin, bounded: Bool, c_aligned: Bool, mi: Int
+        input_origin: ImmOrigin, bounded: Bool, c_aligned: Bool, mi: Int
     ](
         self,
         input_ptr: UnsafePointer[Scalar[Self.in_type], input_origin],
@@ -623,7 +623,7 @@ struct MmaOpApple[
 
     @always_inline
     def mma_im2col[
-        input_origin: ImmutOrigin, bounded: Bool = True, c_aligned: Bool = False
+        input_origin: ImmOrigin, bounded: Bool = True, c_aligned: Bool = False
     ](
         self,
         mut accum: Self.AccumType,

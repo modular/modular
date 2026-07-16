@@ -272,7 +272,7 @@ This version is still a work in progress.
   `patternProperties`) are now normalized to `"type": "object"` before grammar
   compilation, matching the behavior of xgrammar-based engines. A genuinely
   empty `{}` schema is still treated as "any value".
-- Retuned the Prometheus/OpenTelemetry histogram buckets for MAX Serve metrics.
+- Retuned the Prometheus/OpenTelemetry histogram buckets for MAX metrics.
   Previously every histogram shared one millisecond-latency bucket range, which
   was inaccurate for non-latency metrics. Each histogram now uses bucket
   boundaries matched to its actual range (percentages bucket 0–100, token and
@@ -324,6 +324,12 @@ This version is still a work in progress.
   dKV key for the same logical block — no change to the dkv wire
   format, stored block identity, or `DKVExternalBlockMetadata`
   orchestrator hint shape. Default behavior is unchanged.
+- MAX now refreshes an external KV cache tier's recency when a request's prefix
+  is served from the on-GPU cache. Such a hit sends no traffic to the external
+  tier, so a hot shared prefix could otherwise go cold there and be evicted
+  while still resident on device; a best-effort recency `touch` now keeps hot
+  shared prefixes warm in an external tier such as dKV. Set
+  `MODULAR_DKV_DISABLE_G0_TOUCH=1` to disable the refresh.
 
 ### `max` CLI
 
@@ -374,7 +380,7 @@ This version is still a work in progress.
   embed `InferenceSession` and fork (Python `multiprocessing` with the `fork`
   start method, pre-fork servers, or a bare `os.fork()`) — child processes
   start with the profiler disabled and can call `start()` again; the parent
-  retains its enabled state across the fork. (MAX Serve itself launches
+  retains its enabled state across the fork. (MAX itself launches
   workers with the `spawn` start method and is unaffected.)
 
 - Eager execution in `max.experimental` now routes every realization through
@@ -393,6 +399,30 @@ This version is still a work in progress.
   bounding compile cost to the targets a program uses instead of JIT-compiling
   the full kernel library at import. Set `MAX_EAGER_OP_PRECOMPILE=1` to
   precompile the full matrix at import instead.
+
+- The eager interpreter's binary-elementwise and comparison ops (`add`, `sub`,
+  `mul`, `div`, `mod`, `max`, `min`, `pow`, `and`, `or`, `xor`, and the
+  comparison predicates) now run through pre-compiled graph-compiler models
+  instead of hand-written Mojo bindings, matching the matmul and
+  unary-elementwise migrations. On CPU they run float32/float64; the
+  float16/bfloat16 CPU inputs the Mojo path accepted are no longer supported
+  and raise.
+
+- The eager interpreter's reduce-along-axis ops (`max`/`min`/`add`/`mul`/`mean`
+  reductions, `softmax`/`logsoftmax`, `argmax`/`argmin`, and `cumsum`) now run
+  through pre-compiled graph-compiler models instead of hand-written Mojo
+  bindings. On CPU the reduction/argmax family runs float32/float64: the
+  float16/bfloat16 CPU inputs the Mojo path accepted are no longer supported
+  and raise. On accelerators it narrows to 32/64-bit integers (CUDA's reduce
+  kernels don't compile 8/16-bit int reduction). An unsupported dtype raises
+  immediately instead of silently falling back.
+
+- The eager interpreter's shape-rearrange ops (`pad` constant/reflect/edge,
+  `tile`, `split`, `concat`, and `slice`) now run through pre-compiled
+  graph-compiler models instead of hand-written Mojo bindings, matching the
+  matmul, elementwise, and reduce migrations. Structural parameters (pad
+  widths, repeat counts, split/slice bounds) stay runtime operands, so one
+  compiled graph per `(op, device, dtype[, rank])` serves every shape.
 
 - Added a `max warm-interpreter-cache` command that batch-compiles the full
   eager interpreter model matrix into the on-disk cache for the current
@@ -485,6 +515,16 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- Removed the `MAX_SERVE_METRIC_LEVEL` and
+  `MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR` environment variables along with
+  the `BASIC`/`DETAILED` metric-level distinction. MAX Serve now always emits
+  its full set of metrics, so panels that previously required `DETAILED` (for
+  example batch execution time) are populated in every deployment rather than
+  only when detailed metrics were explicitly enabled. High-volume
+  per-iteration scheduler metrics are still coalesced into a single
+  cross-process flush, so there is no change in per-metric recording overhead.
+  To record no metrics at all (previously `MAX_SERVE_METRIC_LEVEL=NONE`), set
+  `MAX_SERVE_METRIC_RECORDING_METHOD=NOOP` or `MAX_SERVE_DISABLE_TELEMETRY=1`.
 - Removed `InferenceSession.use_old_top_k_kernel()` and the
   `USE_OLD_TOP_K_KERNEL` environment variable. The legacy top-k sampling
   kernel this fallback selected has been deleted; the current two-stage
@@ -496,6 +536,8 @@ This version is still a work in progress.
   `IOSpec.FusedInput`, `IOSpec.FusedOutput`) instead of module-level aliases.
   Update custom-op call sites to qualify these names under `IOSpec`, for
   example `Tensor[IOSpec.Input, spec]`.
+- The `compiler` Mojo package has been removed. It only re-exported 4 symbols
+  from `extensibility`, please use that directly instead.
 
 ## Fixes
 
@@ -536,7 +578,7 @@ This version is still a work in progress.
   fused residual, FP8-quantized, and distributed all-reduce variants is now
   carried as `float32` end to end — from the graph op through the graph
   compiler to the kernel. The Python `epsilon: float` argument is unchanged.
-- Fixed MAX Serve crashing the model worker on the first host KV-cache
+- Fixed MAX crashing the model worker on the first host KV-cache
   offload/reload when run with `--kv-connector dkv`. The dKV connector had
   drifted out of sync with its client and no longer passed the required
   attention group on the load/offload path; it now supplies it, so the
@@ -587,5 +629,15 @@ This version is still a work in progress.
   resolvable quantization config for its draft (BF16 NextN) weights, the draft
   config is now built with a bfloat16 dispatch dtype instead of constructing an
   invalid `EPConfig`.
+
+- Fixed over-provisioned KV cache offload configurations bringing the server
+  down mid-startup instead of failing fast. The `local` and `tiered`
+  connectors reserved their full host (pinned DRAM) and disk budgets eagerly,
+  so an impossible `host_kvcache_swap_space_gb` grew the pinned buffer until
+  the process was OOM-killed, and an impossible `disk_offload_max_gb` filled
+  the filesystem. They now run a startup preflight that checks the host budget
+  against available memory (including the process cgroup limit) and the disk
+  budget against filesystem free space, raising an actionable error before
+  allocating.
 
 ## Mojo language

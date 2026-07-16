@@ -1419,7 +1419,7 @@ def _flash_attention_kv_cache[
 
 # See the note on the ragged overload below: `k`/`v` alias the same `blocks`
 # buffer and are read-only here, so disable the nested-origin exclusivity check.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
@@ -1461,7 +1461,7 @@ def flash_attention_kv_cache[
 
 # See the note on the ragged overload below: `k`/`v` alias the same `blocks`
 # buffer and are read-only here, so disable the nested-origin exclusivity check.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
@@ -1509,7 +1509,7 @@ def flash_attention_kv_cache[
 # exclusivity checker can't prove that and rejects passing both. Disabling the
 # nested-origin exclusivity check is safe here (read-only) and lets direct
 # callers pass `get_key_cache()`/`get_value_cache()` without a copy-capture shim.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,

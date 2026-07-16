@@ -1175,7 +1175,7 @@ struct String(
         """
         StringSlice(self).write_repr_to(writer)
 
-    def join[T: Copyable & Writable](self, elems: Span[T, ...]) -> String:
+    def join[T: Copyable & Writable](self, elems: Span[T, _]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
         `buffer_size`, otherwise will allocate once to the heap and write
@@ -1367,8 +1367,8 @@ struct String(
     def split_at_grapheme(
         self, n: Int
     ) -> Tuple[
-        StringSlice[ImmutOrigin(origin_of(self))],
-        StringSlice[ImmutOrigin(origin_of(self))],
+        StringSlice[ImmOrigin(origin_of(self))],
+        StringSlice[ImmOrigin(origin_of(self))],
     ]:
         """Split this string at the `n`-th grapheme-cluster boundary.
 
@@ -1441,7 +1441,7 @@ struct String(
     @always_inline
     def as_c_string_slice(
         mut self,
-    ) -> CStringSlice[ImmutOrigin(origin_of(self))]:
+    ) -> CStringSlice[ImmOrigin(origin_of(self))]:
         """Return a `CStringSlice` to the underlying memory of the string.
 
         Returns:

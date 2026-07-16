@@ -19,7 +19,7 @@ This module registers operations for variable-length selective scan:
 
 from std.math import ceildiv
 
-import extensibility as compiler
+import extensibility
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 
@@ -45,7 +45,7 @@ comptime Strides4D = IndexList[4]
 # ============================================================================
 
 
-@compiler.register("varlen_selective_scan_fwd")
+@extensibility.register("varlen_selective_scan_fwd")
 struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
     """Variable-length selective scan forward pass.
 
@@ -426,7 +426,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
             raise Error("Unsupported target device")
 
 
-@compiler.register_shape_function("varlen_selective_scan_fwd")
+@extensibility.register_shape_function("varlen_selective_scan_fwd")
 def varlen_selective_scan_fwd_shape[
     dtype: DType,
 ](
@@ -449,7 +449,7 @@ def varlen_selective_scan_fwd_shape[
 # ============================================================================
 
 
-@compiler.register("varlen_selective_state_update")
+@extensibility.register("varlen_selective_state_update")
 struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
     """Varlen selective state update for autoregressive inference.
 
@@ -837,7 +837,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
             raise Error("Unsupported target device")
 
 
-@compiler.register_shape_function("varlen_selective_state_update")
+@extensibility.register_shape_function("varlen_selective_state_update")
 def varlen_selective_state_update_shape[
     dtype: DType,
 ](

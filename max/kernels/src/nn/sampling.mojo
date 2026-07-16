@@ -120,9 +120,9 @@ def apply_penalties_to_logits[
 def update_frequency_data_kernel[
     freq_data_origin: MutOrigin,
     FreqDataLayoutType: TensorLayout,
-    freq_offsets_origin: ImmutOrigin,
+    freq_offsets_origin: ImmOrigin,
     FreqOffsetsLayoutType: TensorLayout,
-    new_tokens_origin: ImmutOrigin,
+    new_tokens_origin: ImmOrigin,
     NewTokensLayoutType: TensorLayout,
     token_type: DType,
     block_size: Int,
@@ -234,9 +234,9 @@ def update_frequency_data[
         comptime kernel = update_frequency_data_kernel[
             freq_data_origin=compressed_frequency_data.origin,
             FreqDataLayoutType=compressed_frequency_data.LayoutType,
-            freq_offsets_origin=ImmutOrigin(frequency_offsets.origin),
+            freq_offsets_origin=ImmOrigin(frequency_offsets.origin),
             FreqOffsetsLayoutType=frequency_offsets.LayoutType,
-            new_tokens_origin=ImmutOrigin(new_tokens.origin),
+            new_tokens_origin=ImmOrigin(new_tokens.origin),
             NewTokensLayoutType=new_tokens.LayoutType,
             token_type=token_type,
             block_size=block_size,

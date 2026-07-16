@@ -20,7 +20,8 @@ from contextlib import asynccontextmanager
 
 import numpy as np
 import numpy.typing as npt
-from max.experimental.cascade import ChatMessages, Worker, worker_method
+from max.experimental.cascade.core import Worker, worker_method
+from max.experimental.cascade.interfaces.textgen import ChatMessages
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)

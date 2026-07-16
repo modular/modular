@@ -5527,7 +5527,6 @@ def _bmm0_bs[
         def accum_fn[
             width: Int
         ](offset: Int) {q, y, num_heads, depth, k_ptr, mut}:
-            comptime alignment = align_of[SIMD[k_type, width]]()
             var q_val = q.load[
                 width=width, alignment=align_of[SIMD[q_type, width]]()
             ](y * num_heads * depth + offset)

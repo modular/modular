@@ -10,7 +10,10 @@ modular_py_test(
     name = "tests",
     srcs = glob(
         ["*.py"],
-        exclude = ["test_hta_import.py"],
+        exclude = [
+            "test_hta_import.py",
+            "test_profiler_overhead_gpu.py",
+        ],
     ),
     env = {
         "MODULAR_ENABLE_PROFILING": "1",
@@ -36,6 +39,32 @@ modular_py_test(
 modular_py_test(
     name = "test_hta_import",
     srcs = ["test_hta_import.py"],
+    env = {
+        "MODULAR_ENABLE_PROFILING": "1",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:nvidia_gpu"],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+# Disabled-profiler hot-path perf-regression gate. Runs on the standard GPU
+# test surface like any other ``["gpu"]`` target — the whole test executes in
+# ~20s on a B200, dominated by session setup (tiny add-graph hot loop, no
+# model download), so there is no need to gate it behind ``manual`` or a
+# dedicated CI job. The threshold gates (25% disabled best-case drift, 25%
+# enabled-mode ceiling) catch order-of-magnitude regressions, not
+# sub-percent fluctuations; no test asserts on sub-percent per-call cost —
+# it is bounded by design to one relaxed atomic load (Range.h).
+modular_py_test(
+    name = "test_profiler_overhead_gpu",
+    srcs = ["test_profiler_overhead_gpu.py"],
     env = {
         "MODULAR_ENABLE_PROFILING": "1",
     },

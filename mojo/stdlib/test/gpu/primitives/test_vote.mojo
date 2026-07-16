@@ -22,9 +22,9 @@ reference, exercising all three backends: NVIDIA's `vote.ballot.sync`, AMD's
 from std.gpu import lane_id
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import GPUInfo, Vendor
+from std.gpu.host.info import GPUInfo
 from std.gpu.primitives.warp import vote
-from std.sys.info import _accelerator_arch
+from std.sys.info import Vendor, _accelerator_arch
 from std.testing import assert_equal, TestSuite
 
 # WARP_SIZE-appropriate mask type: NVIDIA/Apple SIMD-groups are 32 lanes

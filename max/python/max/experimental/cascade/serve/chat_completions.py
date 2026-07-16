@@ -19,7 +19,7 @@ from collections.abc import AsyncIterable, AsyncIterator, Mapping, Sequence
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from max.experimental.cascade.pipelines.textgen import (
+from max.experimental.cascade.interfaces.textgen import (
     ChatMessages,
     GenerateRequest,
     TextGenInterface,

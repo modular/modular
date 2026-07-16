@@ -25,7 +25,7 @@ import numpy as np
 import pytest
 import torch
 from max import _interpreter
-from max._interpreter_ops import adopted_from_manifest
+from max._interpreter_ops import GC_FAMILIES, adopted_from_manifest
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
@@ -91,7 +91,11 @@ def _require_warm_adoption() -> None:
                 " in max/tests/tests/BUILD.bazel."
             )
         return
-    unadopted = [f for f in ("matmul", "unary") if not adopted_from_manifest(f)]
+    # Derive from the registry, not a hand-maintained tuple, so this adoption
+    # gate can't drift from the families the warm actually covers (MXF-533).
+    unadopted = [
+        f.name for f in GC_FAMILIES if not adopted_from_manifest(f.name)
+    ]
     if unadopted:
         raise RuntimeError(
             f"eager-GC warm is wired but {unadopted} did not adopt from the"
@@ -679,6 +683,93 @@ class TestStaticBroadcastToGPU:
         result_torch = torch.from_dlpack(y)
         expected = torch.broadcast_to(x_torch, shape)
         torch.testing.assert_close(result_torch, expected)
+
+
+class TestShapeRearrangeGPU:
+    """Minimal GPU numeric coverage for the GPU-capable shape-rearrange ops.
+
+    ``concat``/``split``/``slice``/``pad`` (constant) are ``DeviceClass.ALL``;
+    ``tile`` and the reflect/repeat pads are CPU-only (see ``shape_rearrange_gc``),
+    so they need no GPU test. Inputs are placed on the accelerator via a CUDA
+    torch tensor; references use NumPy, matching the CPU tests.
+    """
+
+    def test_concat_gpu(self) -> None:
+        """F.concat along axis 0 on GPU."""
+        a_torch = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32, device="cuda"
+        )
+        b_torch = torch.tensor(
+            [[5.0, 6.0], [7.0, 8.0]], dtype=torch.float32, device="cuda"
+        )
+        a = Tensor.from_dlpack(a_torch)
+        b = Tensor.from_dlpack(b_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.concat([a, b], axis=0)
+        expected = np.concatenate(
+            [a_torch.cpu().numpy(), b_torch.cpu().numpy()], axis=0
+        )
+        np.testing.assert_array_equal(
+            torch.from_dlpack(result).cpu().numpy(), expected
+        )
+
+    def test_slice_gpu(self) -> None:
+        """F.slice_tensor across both dims on GPU."""
+        x_torch = torch.arange(12, dtype=torch.float32, device="cuda").reshape(
+            3, 4
+        )
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(0, 2), slice(1, 3)])
+        expected = x_torch.cpu().numpy()[0:2, 1:3]
+        np.testing.assert_array_equal(
+            torch.from_dlpack(result).cpu().numpy(), expected
+        )
+
+    def test_split_gpu(self) -> None:
+        """F.split into size-[1, 3] chunks on GPU."""
+        x_torch = torch.arange(12, dtype=torch.float32, device="cuda").reshape(
+            3, 4
+        )
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            parts = F.split(x, [1, 3], axis=1)
+        # np.split takes cut indices; sizes [1, 3] -> a single cut at index 1.
+        expected = np.split(x_torch.cpu().numpy(), [1], axis=1)
+        for got, exp in zip(parts, expected, strict=False):
+            np.testing.assert_array_equal(
+                torch.from_dlpack(got).cpu().numpy(), exp
+            )
+
+    def test_pad_constant_gpu(self) -> None:
+        """F.pad constant mode on GPU; paddings are flat [pre0, post0, ...]."""
+        x_torch = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32, device="cuda"
+        )
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [1, 1, 2, 0], value=7.0)
+        expected = np.pad(
+            x_torch.cpu().numpy(),
+            [(1, 1), (2, 0)],
+            mode="constant",
+            constant_values=7.0,
+        )
+        np.testing.assert_array_equal(
+            torch.from_dlpack(out).cpu().numpy(), expected
+        )
 
 
 class TestRangeGPU:

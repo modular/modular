@@ -987,7 +987,7 @@ def ep_fused_combine_kernel_api[
     recv_ptrs: TileTensor[DType.uint64, ...],
     recv_count_ptrs: TileTensor[DType.uint64, ...],
     context: DeviceContext,
-    topk_ids_p: Optional[UnsafePointer[Int32, ImmutUntrackedOrigin]] = None,
+    topk_ids_p: Optional[UnsafePointer[Int32, ImmUntrackedOrigin]] = None,
 ) raises:
     """Execute the fused Expert Parallelism combine kernel.
 

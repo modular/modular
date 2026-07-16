@@ -175,7 +175,7 @@ struct CPAsyncBarrierHandler(BarrierHandler):
 
 
 struct TileLoaderTMA[
-    tma_origin: ImmutOrigin,
+    tma_origin: ImmOrigin,
     dtype: DType,
     tma_rank: Int,
     tile_shape: IndexList[tma_rank],

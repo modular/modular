@@ -27,12 +27,16 @@ import pytest
 from max.driver import DeviceSpec
 from max.experimental.cascade import GenerateRequest, LocalRuntime
 from max.experimental.cascade.core.pipeline_method import _pipeline_method_scope
+from max.experimental.cascade.pipelines.all_pipelines import build_pipeline
+from max.experimental.cascade.pipelines.common_textgen import (
+    CommonTextGenPipeline,
+)
 from max.experimental.cascade.workers.max_model_worker import MAXModelWorker
+from max.experimental.cascade.workers.max_tokenizer import MAXTokenizer
 from max.pipelines.lib import PipelineConfig, generate_local_model_path
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-from transformers import AutoTokenizer
 
 REPO_ID = "modularai/SmolLM-135M-Instruct-FP32"
 REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
@@ -81,7 +85,7 @@ def model_path() -> str:
 async def test_decode_streams_requested_token_count(model_path: str) -> None:
     # A short prompt of valid, low token ids; content is irrelevant since
     # ``ignore_eos`` forces exactly ``num_tokens`` to be generated.
-    prompt = np.array([1, 2, 3, 4], dtype=np.int64)
+    prompt = np.array([1, 2, 3, 4], dtype=np.int32)
     worker = MAXModelWorker(_cpu_pipeline_config(model_path))
 
     async with LocalRuntime() as rt, _pipeline_method_scope():
@@ -102,7 +106,7 @@ async def test_decode_streams_requested_token_count(model_path: str) -> None:
 
 @pytest.mark.asyncio
 async def test_decode_stops_on_eos(model_path: str) -> None:
-    prompt = np.array([1, 2, 3, 4], dtype=np.int64)
+    prompt = np.array([1, 2, 3, 4], dtype=np.int32)
     worker = MAXModelWorker(_cpu_pipeline_config(model_path))
 
     async with LocalRuntime() as rt, _pipeline_method_scope():
@@ -119,30 +123,47 @@ async def test_decode_stops_on_eos(model_path: str) -> None:
 
 @pytest.mark.asyncio
 async def test_greedy_decode_answers_capital_of_france(model_path: str) -> None:
-    # A true end-to-end LLM check: tokenize a factual question with the chat
-    # template, greedily decode (temperature 0), and confirm the model answers
-    # "Paris".
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    # A true end-to-end LLM check that exercises the full cascade pipeline: a
+    # ``MAXTokenizer`` worker applies the chat template, the ``MAXModelWorker``
+    # greedily decodes (temperature 0), and the tokenizer worker decodes the
+    # generated ids back to text. Confirm the model answers "Paris".
     messages = [{"role": "user", "content": "What is the capital of France?"}]
-    prompt = np.asarray(
-        tokenizer.apply_chat_template(
-            messages,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_dict=True,
-        )["input_ids"],
-        dtype=np.int64,
-    )
-
-    worker = MAXModelWorker(_cpu_pipeline_config(model_path))
 
     async with LocalRuntime() as rt, _pipeline_method_scope():
-        proxy = await rt.deploy(worker)
-        req = GenerateRequest(num_tokens=20, temperature=0.0)
-        chunks = [chunk async for chunk in await proxy.decode(req, prompt)]
+        tokenizer = await rt.deploy(MAXTokenizer(model_path))
+        model = await rt.deploy(
+            MAXModelWorker(_cpu_pipeline_config(model_path))
+        )
 
-    generated = (
-        np.concatenate(chunks) if chunks else np.array([], dtype=np.int32)
-    )
-    answer = tokenizer.decode(generated, skip_special_tokens=True)
+        prompt = await (await tokenizer.encode(messages))
+        req = GenerateRequest(num_tokens=20, temperature=0.0)
+        chunks = [chunk async for chunk in await model.decode(req, prompt)]
+        generated = (
+            np.concatenate(chunks) if chunks else np.array([], dtype=np.int32)
+        )
+        answer = await (await tokenizer.decode(generated))
+
+    assert "paris" in answer.lower(), f"unexpected answer: {answer!r}"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_answers_capital_of_france(model_path: str) -> None:
+    # Same factual check, but routed through the cascade
+    # ``CommonTextGenPipeline`` that ``build_pipeline`` selects from the model
+    # path, so tokenization and detokenization run as pipeline workers rather
+    # than being driven by the test.
+    config = _cpu_pipeline_config(model_path)
+    pipeline = await build_pipeline(config)
+    messages = [{"role": "user", "content": "What is the capital of France?"}]
+
+    assert isinstance(pipeline, CommonTextGenPipeline)
+
+    async with LocalRuntime() as rt:
+        await pipeline.deploy(rt)
+
+        req = GenerateRequest(num_tokens=20, temperature=0.0)
+        answer = "".join(
+            [chunk async for chunk in pipeline.generate_text(req, messages)]
+        )
+
     assert "paris" in answer.lower(), f"unexpected answer: {answer!r}"

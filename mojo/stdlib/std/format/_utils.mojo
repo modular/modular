@@ -224,7 +224,7 @@ def write_to[T: AnyType](t: T, mut writer: Some[Writer]):
     t.write_to(writer)
 
 
-struct Repr[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
+struct Repr[T: Writable, o: ImmOrigin](ImplicitlyCopyable, Writable):
     """A wrapper type that writes the repr representation of a value.
 
     This struct wraps a reference to a `Writable` value and ensures that when
@@ -261,7 +261,7 @@ struct Repr[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
         self._value[].write_repr_to(writer)
 
 
-struct Named[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
+struct Named[T: Writable, o: ImmOrigin](ImplicitlyCopyable, Writable):
     """A wrapper type that writes a named field in the format `name=value`.
 
     This struct is useful for formatting struct fields or named parameters,
@@ -412,7 +412,7 @@ struct _WriteBufferHeap(Writable, Writer):
 
     def write_list[
         T: Copyable & Writable, //
-    ](mut self, values: List[T, ...], *, sep: StaticString = StaticString()):
+    ](mut self, values: List[T], *, sep: StaticString = StaticString()):
         var length = len(values)
         if length == 0:
             return
@@ -495,7 +495,7 @@ struct _WriteBufferStack[
 
     def write_list[
         T: Copyable & Writable, //
-    ](mut self, values: List[T, ...], *, sep: String = String()):
+    ](mut self, values: List[T], *, sep: String = String()):
         var length = len(values)
         if length == 0:
             return
@@ -542,10 +542,10 @@ struct _TotalWritableBytes(Writer):
     def __init__[
         T: Copyable & Writable,
         //,
-        origin: ImmutOrigin,
+        origin: ImmOrigin,
     ](
         out self,
-        values: Span[T, ...],
+        values: Span[T, _],
         sep: StringSlice[origin] = StringSlice[origin](),
     ):
         self.size = 0

@@ -1313,8 +1313,8 @@ struct ContinuousBatchingKVCache[
     dtype_: DType,
     kv_params_: KVCacheStaticParams,
     blocks_origin: MutOrigin,
-    cache_lengths_origin: ImmutOrigin,
-    lookup_table_origin: ImmutOrigin,
+    cache_lengths_origin: ImmOrigin,
+    lookup_table_origin: ImmOrigin,
 ](KVCacheT, TrivialRegisterPassable):
     """Wrapper for the ContinuousKVCache of a given layer in the transformer
     model.
@@ -1814,8 +1814,8 @@ struct PagedKVCache[
     kv_params_: KVCacheStaticParams,
     page_size: Int,
     blocks_origin: MutOrigin,
-    cache_lengths_origin: ImmutOrigin,
-    lookup_table_origin: ImmutOrigin,
+    cache_lengths_origin: ImmOrigin,
+    lookup_table_origin: ImmOrigin,
     scales_origin: MutOrigin,
     *,
     scale_dtype_: DType = DType.invalid,
@@ -2770,8 +2770,8 @@ struct ContinuousBatchingKVCacheCollection[
     dtype_: DType,
     kv_params_: KVCacheStaticParams,
     blocks_origin: MutOrigin,
-    cache_lengths_origin: ImmutOrigin,
-    lookup_table_origin: ImmutOrigin,
+    cache_lengths_origin: ImmOrigin,
+    lookup_table_origin: ImmOrigin,
 ](KVCollectionT):
     """This is a "view" of the cache for the given sequences
     in the batch.
@@ -2940,8 +2940,8 @@ struct PagedKVCacheCollection[
     kv_params_: KVCacheStaticParams,
     page_size: Int,
     blocks_origin: MutOrigin,
-    cache_lengths_origin: ImmutOrigin,
-    lookup_table_origin: ImmutOrigin,
+    cache_lengths_origin: ImmOrigin,
+    lookup_table_origin: ImmOrigin,
     scales_origin: MutOrigin,
     *,
     scale_dtype_: DType = DType.invalid,

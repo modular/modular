@@ -145,8 +145,8 @@ def test_paged_kv_cache_stride_is_unknown() raises:
         kv_params,
         16,
         MutUntrackedOrigin,
-        ImmutUntrackedOrigin,
-        ImmutUntrackedOrigin,
+        ImmUntrackedOrigin,
+        ImmUntrackedOrigin,
         MutUntrackedOrigin,
     ]
 
@@ -332,8 +332,8 @@ def test_paged_kv_cache_quantization() raises:
         kv_params,
         16,
         MutUntrackedOrigin,
-        ImmutUntrackedOrigin,
-        ImmutUntrackedOrigin,
+        ImmUntrackedOrigin,
+        ImmUntrackedOrigin,
         MutUntrackedOrigin,
         scale_dtype_=DType.float8_e4m3fn,
         quantization_granularity_=256,

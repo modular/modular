@@ -523,8 +523,9 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
 def cli_warm_interpreter_cache() -> None:
     """Compile the eager interpreter's graph-compiler models to prepare caches.
 
-    Batch-compiles the full matmul and unary-elementwise matrix for this
-    machine's devices into the on-disk cache, then drops a stamp. A later lazy
+    Batch-compiles the full matmul, unary-elementwise, binary-elementwise,
+    reduce-axis, and shape-rearrange matrix for this machine's devices into
+    the on-disk cache, then drops a stamp. A later lazy
     eager process on the same device set adopts the warm (one batched cache
     load) instead of compiling each target on first use. Run it as a
     provisioning step on the target hardware. Pure optimization: if skipped, or
@@ -532,17 +533,15 @@ def cli_warm_interpreter_cache() -> None:
     """
     import importlib
 
-    # Dynamic import: _interpreter_ops is an optional Mojo-backed package, kept
-    # out of this target's static deps (see its BUILD).
-    matmul_gc = importlib.import_module("max._interpreter_ops.matmul_gc")
-    unary_gc = importlib.import_module(
-        "max._interpreter_ops.unary_elementwise_gc"
-    )
+    # Dynamic import: a static ``from`` import fails mypy on Linux (Mojo-backed
+    # package with no stub) and pulls the package's heavy import into every CLI
+    # command. importlib keeps it lazy and invisible to static analysis.
+    # GC_FAMILIES is shared with the import-time precompile and build-time warm.
+    interpreter_ops = importlib.import_module("max._interpreter_ops")
     gc_compile = importlib.import_module("max._interpreter_ops.gc_compile")
 
     logger.info("Warming eager interpreter graph-compiler model cache...")
-    matmul_gc.compile_matmul_sweep()
-    unary_gc.compile_unary_sweep()
+    interpreter_ops.compile_all_families()
     if gc_compile.write_warm_stamp():
         logger.info("Done. Compiled models cached for this machine's devices.")
     else:

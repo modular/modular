@@ -39,8 +39,11 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
 from max.pipelines.kv_cache import PagedKVCacheManager
-from modular_graph_test import are_all_tensor_values, modular_graph_test
 from test_common.context_utils import create_text_context
+from test_common.modular_graph_test import (
+    are_all_tensor_values,
+    modular_graph_test,
+)
 
 MAX_SEQ_LEN = 2**14
 ACCURACY_RTOL = 1e-2
