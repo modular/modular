@@ -44,11 +44,17 @@ _b = to_block_hash_bytes
 
 
 class RecordingConnector:
-    """Connector stub that records the ``offload`` and ``touch`` calls it gets."""
+    """Connector stub that records ``offload``, ``touch`` and ``load`` calls."""
 
     def __init__(self) -> None:
         self.offloads: list[tuple[list[int], list[bytes], bytes | None]] = []
         self.touches: list[tuple[list[bytes], int]] = []
+        # Ordered log of ``load``/``touch`` call names, so a test can assert the
+        # load-path anchor touch fires AFTER the load (CLIN-1533).
+        self.calls: list[str] = []
+        # Blocks ``load`` reports as loaded from the host tier (0 == host miss);
+        # lets a test drive a cold-G0/warm-host hit without real device memory.
+        self.num_blocks_to_load = 0
         self._h2d_blocks_copied = 0
         self._d2h_blocks_copied = 0
 
@@ -74,6 +80,7 @@ class RecordingConnector:
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> None:
+        self.calls.append("touch")
         self.touches.append((list(block_hashes), replica_idx))
 
     def load(
@@ -82,7 +89,8 @@ class RecordingConnector:
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> int:
-        return 0
+        self.calls.append("load")
+        return min(len(block_hashes), self.num_blocks_to_load)
 
     def wait_for_loads(self) -> None: ...
     def wait_for_offloads(self) -> None: ...
@@ -304,8 +312,9 @@ def test_touch_fires_on_device_hit_with_full_root_anchored_hashes() -> None:
     for the root-omitting slice ``[333, 444]``. The touch payload must still be
     the full ``[111, 222, 333, 444]`` -- not that slice -- so the prefix root
     stays MRU under dKV's reverse full-attention LRU (the ordering correction,
-    CLIN-1533). Fires exactly once with the correct ``replica_idx``. Uses an
-    external-tier connector because the touch is gated on ``num_host_blocks``.
+    CLIN-1533). It fires exactly once and, the whole prefix being on device,
+    issues no ``load``. Uses an external-tier connector because the anchor is
+    gated on ``num_host_blocks``.
     """
     bm, connector = _make_block_manager(connector=_ExternalTierConnector())
     rid = RequestID("req-hit")
@@ -318,25 +327,28 @@ def test_touch_fires_on_device_hit_with_full_root_anchored_hashes() -> None:
     device_blocks = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
 
     assert len(device_blocks) == 2  # the two uncommitted device hits
+    assert connector.calls == ["touch"]  # fires once; no host load
     assert connector.touches == [([_b(111), _b(222), _b(333), _b(444)], 0)]
 
 
-def test_touch_not_fired_when_no_device_hit() -> None:
-    """No device hit (empty ``device_blocks``) means no touch.
+def test_touch_anchor_not_fired_on_fully_cold_request() -> None:
+    """Fully cold (no device hit AND no host hit) means no anchor touch.
 
-    The request has a cacheable prefix, but nothing is resident in the device
-    cache, so the device lookup returns empty and the ``if device_blocks``
-    guard suppresses the touch. Uses an external-tier connector so the
-    ``num_host_blocks`` gate is passed and the device-hit guard is what's
-    exercised.
+    Nothing is resident on device and the host tier loads nothing
+    (``num_blocks_to_load == 0``), so both ``device_blocks`` and ``host_blocks``
+    are empty and the ``if device_blocks or host_blocks`` gate suppresses the
+    anchor -- even though the load path ran (``load`` was called). Uses an
+    external-tier connector so the ``num_host_blocks`` gate is passed and the
+    empty-result gate is what's exercised.
     """
     bm, connector = _make_block_manager(connector=_ExternalTierConnector())
-    rid = RequestID("req-miss")
-    bm.req_to_hashes[rid] = [111, 222]  # nothing committed to the device cache
+    rid = RequestID("req-cold")
+    bm.req_to_hashes[rid] = [111, 222]  # nothing on device, nothing in host
 
-    device_blocks = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+    served = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
 
-    assert device_blocks == []
+    assert served == []  # nothing served
+    assert connector.calls == ["load"]  # load ran; gate suppressed the touch
     assert connector.touches == []
 
 
@@ -387,3 +399,49 @@ def test_touch_not_fired_without_external_tier() -> None:
 
     assert len(device_blocks) == 2
     assert connector.touches == []
+
+
+def test_touch_anchor_fires_after_load_on_host_only_hit() -> None:
+    """Cold-G0 / warm-external hit: the anchor fires AFTER the load, once.
+
+    Nothing is resident on device, so ``device_blocks`` is empty and the whole
+    prefix is pulled from the external tier by the load. The anchor is the SOLE
+    load-path recency signal, so it must fire AFTER that load -- as the only
+    load-path toucher it thereby reserves the last recency stamp and cannot be
+    inverted by the load's own touches (CLIN-1533). It fires exactly once, with
+    the root-anchored payload, even though there was no device hit.
+    """
+    connector = _ExternalTierConnector()
+    connector.num_blocks_to_load = 2  # both requested blocks load from host
+    bm, _ = _make_block_manager(connector=connector)
+    rid = RequestID("req-host")
+    bm.req_to_hashes[rid] = [111, 222]  # nothing committed, nothing on device
+
+    served = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+
+    assert len(served) == 2  # both served from the host tier (no device hit)
+    assert connector.calls == ["load", "touch"]  # touch after load, once
+    assert connector.touches == [([_b(111), _b(222)], 0)]
+
+
+def test_touch_anchor_payload_trims_uncached_tail() -> None:
+    """Anchor payload is root-anchored: committed prefix in, uncached tail out.
+
+    A 3-block request whose first block is already committed
+    (``num_committed_blocks == 1``) hits the device for block 2 only; block 3
+    is uncached (absent on device and in the host tier). The touch payload
+    must be ``[111, 222]``: it INCLUDES the committed root 111 (omitting it
+    re-creates a recency inversion) and EXCLUDES the uncached tail 333 (absent
+    server-side, so touching it is a wasted index lookup on a contended path).
+    """
+    bm, connector = _make_block_manager(connector=_ExternalTierConnector())
+    rid = RequestID("req-tail")
+    bm.req_to_hashes[rid] = [111, 222, 333]
+    # First block already committed => num_committed_blocks == 1.
+    bm.req_to_committed_idx[rid] = 1 * bm.block_size
+    _commit_device_block(bm.device_block_pool, 222)  # 333 stays uncached
+
+    served = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+
+    assert len(served) == 1  # only 222 hit; 333 is the uncached tail
+    assert connector.touches == [([_b(111), _b(222)], 0)]  # root in, tail out

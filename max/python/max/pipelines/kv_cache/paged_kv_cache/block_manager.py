@@ -650,24 +650,6 @@ class BlockManager:
         if self.connector.num_host_blocks == 0:
             return device_blocks
 
-        # Refresh external-tier recency for this request's cached prefix. A G0
-        # hit sends no external-tier traffic, so the (G0-resident) prefix ROOT's
-        # recency would freeze and dKV could evict it while it is still hot on
-        # device. Pass the FULL sequence from the true root, in order -- NOT a
-        # root-omitting slice -- so the prefix root stays MRU under dKV's
-        # reverse (full-attention) policy. dKV touches the resident subset and
-        # tolerates missing keys. Best-effort. The num_host_blocks early-return
-        # above gates on "has host blocks," NOT "has an external tier": it
-        # skips only a connector with no host blocks (NullConnector). The
-        # CPU/disk (local/tiered) connectors have host blocks too, so they pass
-        # the gate and build the payload + call their no-op touch -- a minor
-        # once-per-admission residual; only DKVConnector does real touch work.
-        if device_blocks:
-            self.connector.touch(
-                [to_block_hash_bytes(h) for h in req_hashes],
-                replica_idx=replica_idx,
-            )
-
         # remove the hashes that were found in the device prefix cache
         if len(device_blocks) > 0:
             uncommitted_hashes = uncommitted_hashes[len(device_blocks) :]
@@ -676,6 +658,42 @@ class BlockManager:
         host_blocks = self._get_full_blocks_from_host_prefix_cache(
             uncommitted_hashes, replica_idx
         )
+
+        # Sole load-path recency anchor for this request's cached prefix.
+        # Fires AFTER the load so that, as the only load-path toucher, it
+        # reserves the last (most-recent) recency stamp and cannot be
+        # inverted by the load's own touches. The read path and dKV's
+        # `touch_hits` no longer touch. Best-effort / fire-and-forget: a
+        # dropped touch degrades to neutral, never inverted. Pass the full
+        # cached prefix from the true root, in order -- NOT a root-omitting
+        # slice. The payload MUST include the already-committed prefix
+        # (`req_hashes[:num_committed_blocks]`); omitting the root re-creates
+        # a recency inversion (the root ages below the touched subset and
+        # evicts first). It trims the tail past the served prefix -- keys not
+        # served this step. Most are genuinely uncached (absent in dKV, so
+        # touching them only costs no-op index lookups on a contended path),
+        # but the host load is capped at this replica's device free capacity
+        # (`pool.num_free_blocks`), so a dKV-resident block can also fall in
+        # the trim when capacity binds. Not refreshing that capacity-truncated
+        # remainder is an accepted best-effort recency miss: it was not loaded
+        # this step and self-heals on a later step (or a peer request) that
+        # loads it. Refreshing it would require touching the full `req_hashes`
+        # on every admission -- the contended behavior this change removes.
+        # dKV touches the resident subset and tolerates
+        # missing keys. The num_host_blocks early-return above gates on "has
+        # host blocks," NOT "has an external tier": it skips only a connector
+        # with no host blocks (NullConnector); CPU/disk (local/tiered)
+        # connectors pass the gate and call their no-op touch -- only
+        # DKVConnector does real touch work.
+        if device_blocks or host_blocks:
+            cached_hashes = req_hashes[
+                : num_committed_blocks + len(device_blocks) + len(host_blocks)
+            ]
+            self.connector.touch(
+                [to_block_hash_bytes(h) for h in cached_hashes],
+                replica_idx=replica_idx,
+            )
+
         return device_blocks + host_blocks
 
     @traced

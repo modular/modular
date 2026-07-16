@@ -161,10 +161,18 @@ class KVConnector(Protocol):
         There is no companion barrier; a missed touch costs at most a later
         refetch, never correctness. No-op by default.
 
+        Contract: pass the complete set in sequence order from the true root --
+        the full sequence for a full-attention group, the full active window
+        for a sliding-window group. Never a root-omitting slice: a partial
+        touch reserves a later recency stamp and inverts eviction order (the
+        omitted root ages below the touched subset and evicts first). Missing
+        keys are tolerated, so it is always safe to pass the whole sequence.
+
         Args:
             block_hashes: Hashes of the device-served blocks, in canonical
                 bytes form (8 big-endian bytes for ahash64-family, 32 bytes
-                for SHA-256).
+                for SHA-256). Root-anchored and in sequence order (see the
+                contract above).
             replica_idx: DP replica that served the blocks. The external tier
                 is replica-agnostic (keyed by hash); this only selects the
                 client.
