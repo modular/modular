@@ -1044,14 +1044,16 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
 
   // Find a path in `includeDir` that is a mojo package for `moduleName`. This
   // is either a directory with an `__init__.mojo` file inside it, a
-  // `moduleName.mojo` file, or a precompiled `moduleName.mojoc` file. Make sure
-  // to ignore other `moduleName.*` files that are definitely not mojo packages.
+  // `moduleName.mojo` file, a precompiled `moduleName.mojoc` file, or a regular
+  // directory. Make sure to ignore other `moduleName.*` files that are
+  // definitely not mojo packages.
   std::error_code ec;
   auto iter = directory_iterator(includeDir.str(), ec);
   if (ec)
     return std::nullopt;
 
-  std::optional<path> sourcePkgPath, pkgPath, legacyPkgPath, sourceModulePath;
+  std::optional<path> sourcePkgPath, sourceDirPath, pkgPath, legacyPkgPath,
+      sourceModulePath;
 
   // Gets the name of the file or directory in a case sensitive way. On non-case
   // sensitive systems we cannot just do `path / moduleName` since the
@@ -1060,8 +1062,15 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
     if (entry.path().filename().stem().string() != moduleName)
       continue;
 
+    // Mojo source package
     if (Filesystem::isMojoSourcePackagePath(entry.path())) {
       sourcePkgPath = std::filesystem::absolute(entry.path());
+      continue;
+    }
+    // Source directory
+    std::error_code ec;
+    if (std::filesystem::is_directory(entry.path(), ec) && !ec) {
+      sourceDirPath = std::filesystem::absolute(entry.path());
       continue;
     }
     path ext = entry.path().filename().extension();
@@ -1090,6 +1099,8 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
     return sourceModulePath;
   if (legacyPkgPath)
     return legacyPkgPath;
+  if (sourceDirPath)
+    return sourceDirPath;
 
   return std::nullopt;
 }
@@ -1373,7 +1384,8 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
 
   // If the path was a directory, we're importing a source package. Record the
   // import location so the package's __init__ is opened "included from" here.
-  if (std::filesystem::is_directory(*modulePath)) {
+  std::error_code ec;
+  if (std::filesystem::is_directory(*modulePath, ec) && !ec) {
     auto fileLoc = createLocation(getPackageInitPath(*modulePath), /*line=*/1,
                                   /*column=*/1);
     return &createPackageState(declNameAttr, *modulePath, *parentState, fileLoc,
