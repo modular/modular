@@ -765,6 +765,74 @@ def test_ascii_fast_path_with_control_chars() raises:
 
 
 # ===----------------------------------------------------------------------=== #
+# Default iteration: __iter__ / __reversed__ yield grapheme clusters
+# ===----------------------------------------------------------------------=== #
+
+
+def check_default_iteration(result: List[String], *, forward: Bool) raises:
+    assert_equal(len(result), 4)
+    if forward:
+        assert_equal(result, ["a", "👨‍👩‍👧‍👦", "🇺🇸", "b"])
+    else:
+        assert_equal(result, ["b", "🇺🇸", "👨‍👩‍👧‍👦", "a"])
+
+
+def test_string_iter_default_yields_graphemes() raises:
+    var s = String("a👨‍👩‍👧‍👦🇺🇸b")
+    var result = List[String]()
+    for g in s:
+        result.append(String(g))
+    check_default_iteration(result, forward=True)
+
+
+def test_string_slice_iter_default_yields_graphemes() raises:
+    var s = StringSlice("a👨‍👩‍👧‍👦🇺🇸b")
+    var result = List[String]()
+    for g in s:
+        result.append(String(g))
+    check_default_iteration(result, forward=True)
+
+
+def test_string_literal_iter_default_yields_graphemes() raises:
+    var result = List[String]()
+    for g in "a👨‍👩‍👧‍👦🇺🇸b":
+        result.append(String(g))
+    check_default_iteration(result, forward=True)
+
+
+def test_string_reversed_default_yields_graphemes() raises:
+    var s = String("a👨‍👩‍👧‍👦🇺🇸b")
+    var result = List[String]()
+    for g in s.__reversed__():
+        result.append(String(g))
+    check_default_iteration(result, forward=False)
+
+
+def test_string_slice_reversed_default_yields_graphemes() raises:
+    var s = StringSlice("a👨‍👩‍👧‍👦🇺🇸b")
+    var result = List[String]()
+    for g in s.__reversed__():
+        result.append(String(g))
+    check_default_iteration(result, forward=False)
+
+
+def test_string_literal_reversed_default_yields_graphemes() raises:
+    var result = List[String]()
+    for g in "a👨‍👩‍👧‍👦🇺🇸b".__reversed__():
+        result.append(String(g))
+    check_default_iteration(result, forward=False)
+
+
+def test_string_and_string_slice_default_iteration_empty() raises:
+    var count = 0
+    for _g in String(""):
+        count += 1
+    for _g in StringSlice(""):
+        count += 1
+    assert_equal(count, 0)
+
+
+# ===----------------------------------------------------------------------=== #
 # Test runner
 # ===----------------------------------------------------------------------=== #
 

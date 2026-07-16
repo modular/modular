@@ -20,7 +20,7 @@ from std.utils._nicheable import UnsafeNicheable, NicheIndex
 
 @always_inline
 def _validate_bytes(slice: Span[Byte, _]) raises:
-    var length = Int(_unsafe_strlen(slice.unsafe_ptr(), UInt(len(slice))))
+    var length = Int(_unsafe_strlen(slice.unsafe_ptr(), Int(len(slice))))
     if length == len(slice) - 1:
         return
     elif length == 0 or length == len(slice):

@@ -309,7 +309,14 @@ def execute_kv_cache_ragged_flash_attention[
     )
 
     kv_collection_device = CollectionType(
-        kv_block_layout_tensor,
+        # `flash_attention`/`mha_gpu_naive` read both the `k` and `v` cache
+        # views, which are disjoint kv_idx halves of one `blocks` buffer
+        # sharing its (mutable) origin. The nested-origin exclusivity check
+        # therefore sees that mutable origin alias both the `k`/`v` operands
+        # and the mutable `output`, and rejects the call. Declare the blocks
+        # origin as UnsafeAnyOrigin to opt the collection out of exclusivity
+        # checking. Mirrors test_mha_sm100_1q_sink.mojo.
+        kv_block_layout_tensor.as_unsafe_any_origin(),
         cache_lengths_layout_tensor,
         paged_lut_layout_tensor,
         max_seq_length,
@@ -399,7 +406,7 @@ def execute_kv_cache_ragged_flash_attention[
                         not cross_attention
                     ), "sliding window mask does not support cross_attention"
                     flash_attention[ragged=True](
-                        output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                        output_device_tensor.to_layout_tensor(),
                         q_device_tensor.to_layout_tensor(),
                         k_cache_device,
                         v_cache_device,
@@ -417,7 +424,7 @@ def execute_kv_cache_ragged_flash_attention[
                     # `if kv_input_row_offsets:` branch.
                     comptime if sink and cross_attention:
                         flash_attention[ragged=True, sink=True](
-                            output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                            output_device_tensor.to_layout_tensor(),
                             q_device_tensor.to_layout_tensor(),
                             k_cache_device,
                             v_cache_device,
@@ -430,7 +437,7 @@ def execute_kv_cache_ragged_flash_attention[
                         )
                     elif sink:
                         flash_attention[ragged=True, sink=True](
-                            output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                            output_device_tensor.to_layout_tensor(),
                             q_device_tensor.to_layout_tensor(),
                             k_cache_device,
                             v_cache_device,
@@ -442,7 +449,7 @@ def execute_kv_cache_ragged_flash_attention[
                         )
                     elif cross_attention:
                         flash_attention[ragged=True](
-                            output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                            output_device_tensor.to_layout_tensor(),
                             q_device_tensor.to_layout_tensor(),
                             k_cache_device,
                             v_cache_device,
@@ -454,7 +461,7 @@ def execute_kv_cache_ragged_flash_attention[
                         )
                     else:
                         flash_attention[ragged=True](
-                            output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                            output_device_tensor.to_layout_tensor(),
                             q_device_tensor.to_layout_tensor(),
                             k_cache_device,
                             v_cache_device,
@@ -499,7 +506,7 @@ def execute_kv_cache_ragged_flash_attention[
         # we don't look at.
         comptime if local_window_size > 0:
             flash_attention[ragged=True](
-                output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                output_device_tensor.to_layout_tensor(),
                 q_device_tensor.to_layout_tensor(),
                 k_cache_device,
                 v_cache_device,
@@ -510,7 +517,7 @@ def execute_kv_cache_ragged_flash_attention[
             )
         else:
             flash_attention[ragged=True](
-                output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                output_device_tensor.to_layout_tensor(),
                 q_device_tensor.to_layout_tensor(),
                 k_cache_device,
                 v_cache_device,

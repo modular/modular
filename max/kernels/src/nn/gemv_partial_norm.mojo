@@ -151,7 +151,7 @@ def gemv_partial_norm_kernel[
     gamma: TileTensor[a_type, gamma_layout, ImmutAnyOrigin],
     finish_counter: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
     trace_buf: TraceBufT,
-    eps: Scalar[a_type],
+    eps: Float32,
     n: Int,
     k: Int,
     n_normed: Int,
@@ -470,7 +470,7 @@ def _gemv_partial_norm_fused[
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Scalar[a_type],
+    eps: Float32,
     finish_counter: UnsafePointer[mut=True, Scalar[DType.int32], _],
     trace_buf: TraceBufT,
     ctx: DeviceContext,
@@ -558,7 +558,7 @@ def _gemv_partial_norm_unfused_with_scratch[
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Scalar[a_type],
+    eps: Float32,
     y_scratch: UnsafePointer[mut=True, Scalar[c_type], _],
     ctx: DeviceContext,
 ) raises:
@@ -619,7 +619,7 @@ def _gemv_partial_norm_unfused_with_scratch[
     ](
         Coord(m, n_normed),
         gamma_c,
-        eps.cast[c_type](),
+        eps,
         Scalar[c_type](0.0),
         ctx,
     )
@@ -646,7 +646,7 @@ def gemv_and_partial_norm[
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Scalar[a_type],
+    eps: Float32,
     ctx: DeviceContext,
 ) raises:
     """Computes `y = act @ weight.T`, then partitions `y` into a normed
@@ -737,7 +737,7 @@ def gemv_and_partial_norm_unfused_with_scratch[
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Scalar[a_type],
+    eps: Float32,
     y_scratch: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
@@ -809,7 +809,7 @@ def gemv_and_partial_norm_with_scratch[
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Scalar[a_type],
+    eps: Float32,
     finish_counter: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
     ctx: DeviceContext,
     trace_buf: TraceBufT = NullTrace(),

@@ -66,7 +66,7 @@ class BlockPool:
         # between requests for prefix caching. The cached block may be used by
         # running requests or in the free_block_queue that could potentially
         # be evicted.
-        self.prefix_cache: dict[int, KVCacheBlock] = {}
+        self.prefix_cache: dict[int | bytes, KVCacheBlock] = {}
 
         # Placeholder block for dummy / padding requests. It will never be freed.
         self.null_block = KVCacheBlock(
@@ -76,7 +76,7 @@ class BlockPool:
     @traced
     def commit_into_prefix_cache(
         self,
-        block_hash: int,
+        block_hash: int | bytes,
         block: KVCacheBlock,
     ) -> None:
         """Commit a block into the prefix cache."""
@@ -92,7 +92,7 @@ class BlockPool:
 
     def get_or_commit_into_prefix_cache(
         self,
-        block_hash: int,
+        block_hash: int | bytes,
         block: KVCacheBlock,
     ) -> None | KVCacheBlock:
         """Get or commit a block into the prefix cache.
@@ -134,7 +134,7 @@ class BlockPool:
         block.block_hash = None
 
     @traced
-    def alloc_block(self) -> tuple[KVCacheBlock, int | None]:
+    def alloc_block(self) -> tuple[KVCacheBlock, int | bytes | None]:
         """Allocates a block from the free block queue."""
         # First allocate block
         curr_block = self.free_block_queue.popleft()

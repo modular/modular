@@ -181,7 +181,8 @@ stores another instance of itself, even when nested within an Optional:
 ```mojo
 struct Node:
     var value: String
-    var next: Optional[Node]  # Error because this is a recursive reference
+    var next: Optional[Node]  # Error about this being a recursive 
+                              # reference
 ```
 
 To build recursive data structures such as linked lists and trees, you must
@@ -276,15 +277,12 @@ struct Box[T: Copyable](
 def main():
     var box = Box(42)
     print(box.item)
-    # Error: 'box' abandoned without being explicitly
-    # destroyed: Unhandled explicit_destroy type Copyable
-    # Note: consider adding trait conformance to
-    # ImplicitlyDeletable
+    # Error about the 'box' being abandoned without being destroyed.
 ```
 
 ### Synthesized lifecycle methods
 
-If a struct conforms to `Movable` but doesn't define `__init__(take:)`, the
+If a struct conforms to `Movable` but doesn't define `__init__(move:)`, the
 compiler synthesizes one that moves each field. The same applies to
 `Copyable` and `__init__(copy:)`. Synthesis fails if any field can't
 support the operation:
@@ -314,8 +312,8 @@ trait B:
 struct S(A & B):
     pass
 
-# Error: trait method requirement 'foo' has conflicting default
-# implementations in TraitA and TraitB; you must implement it manually
+# Error about conflicting default implementations in two traits
+# reminding you to implement the implementation manually
 ```
 
 ### Conditional conformance
@@ -550,6 +548,8 @@ overrides the default. `__del__()` can't be overloaded.
 :::note
 Explicitly destroyed structs write their own cleanup logic, using a
 consuming method with `deinit self`.
+
+Opt out with `ImplicitlyDeletable where False`.
 :::
 
 ## `comptime` members

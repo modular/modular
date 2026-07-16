@@ -24,7 +24,10 @@ from .model_config import Gemma4AssistantConfig
 
 gemma4_assistant_arch = SupportedArchitecture(
     name="Gemma4AssistantForCausalLM",
-    example_repo_ids=["google/gemma-4-31B-it-assistant"],
+    example_repo_ids=[
+        "google/gemma-4-31B-it-assistant",
+        "google/gemma-4-26B-A4B-it-assistant",
+    ],
     default_encoding="bfloat16",
     supported_encodings={"bfloat16"},
     pipeline_model=Gemma3_MultiModalModel,
@@ -42,4 +45,8 @@ gemma4_assistant_arch = SupportedArchitecture(
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         0, always_signal_buffers=True
     ),
+    # Pin to llguidance (see UnifiedMTPGemma4ForCausalLM): the gemma4 tool
+    # parser emits llguidance-format grammars xgrammar cannot compile. Guards
+    # the case where this draft checkpoint is served as a standalone target.
+    default_structured_output_backend="llguidance",
 )
