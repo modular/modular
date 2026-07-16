@@ -47,6 +47,9 @@ Pass a comma-separated list of GPU IDs to ``--devices``:
       --devices=gpu:0,1,2,3 \
       --max-batch-size 16
 
+Use ``--devices=gpu:all`` to target every visible GPU. Omit ``--devices`` to
+use the model or config default.
+
 ``--devices`` is the first-class device selector for ``max serve``.
 Avoid combining it with the shell-level ``CUDA_VISIBLE_DEVICES``
 environment variable — the two are translated independently and
@@ -76,6 +79,6 @@ the form ``path/to/module:module_name``:
 
     :::
 
-.. click:: max.entrypoints.pipelines:cli_serve
+.. click:: max._entrypoints.pipelines:cli_serve
   :prog: max serve
   :hide-description:

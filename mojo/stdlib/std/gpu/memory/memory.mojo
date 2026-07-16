@@ -52,7 +52,7 @@ from std.sys.info import (
 from std.sys.intrinsics import _RegisterPackType
 
 from std.builtin.dtype import _uint_type_of_width
-from std.memory.pointer import AddressSpace, GPUAddressSpace
+from std.memory.pointer import AddressSpace
 from std.memory.unsafe import bitcast
 
 from std.utils import IndexList, StaticTuple
@@ -845,7 +845,7 @@ def external_memory[
     address_space: AddressSpace,
     alignment: Int,
     name: StaticString = "extern_ptr_syml",
-]() -> UnsafePointer[dtype, MutExternalOrigin, address_space=address_space]:
+]() -> UnsafePointer[dtype, MutUntrackedOrigin, address_space=address_space]:
     """Gets a pointer to dynamically allocated external memory.
 
     This function returns a pointer to external memory that can be used for dynamic
@@ -871,13 +871,13 @@ def external_memory[
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
     comptime PtrTy = UnsafePointer[
-        StaticTuple[dtype, 0], MutExternalOrigin, address_space=address_space
+        StaticTuple[dtype, 0], MutUntrackedOrigin, address_space=address_space
     ]
     var extern_ptr_symbol = PtrTy(
-        __mlir_op.`pop.extern_ptr_symbol`[
+        _mlir_value=__mlir_op.`pop.extern_ptr_symbol`[
             _type=PtrTy._mlir_type,
             name=_get_kgen_string[name](),
-            alignment=alignment._int_mlir_index(),
+            alignment=alignment.__mlir_index__(),
         ]()
     )
     return extern_ptr_symbol.bitcast[dtype]()
@@ -2463,6 +2463,211 @@ def cp_async_bulk_tensor_global_shared_cta[
 
 
 @always_inline
+def cp_async_bulk_tensor_global_shared_cta_elect[
+    src_type: AnyType,
+    rank: Int,
+    /,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+](
+    src_mem: UnsafePointer[src_type, _, address_space=AddressSpace.SHARED],
+    tma_descriptor: OpaquePointer[mut=False, _],
+    coords: IndexList[rank],
+    elect: Int32,
+):
+    """Elect-predicated variant of `cp_async_bulk_tensor_global_shared_cta`.
+
+    Behaves exactly like `cp_async_bulk_tensor_global_shared_cta` except that the
+    TMA store is guarded by a PTX predicate derived from `elect`: the instruction
+    is issued only when `elect != 0`. All lanes follow the same PTX control flow,
+    so there is no Mojo-level branch and no warp-divergent `if elect != 0:`
+    wrapper at the call site.
+
+    Parameters:
+        src_type: The data type of the source tensor elements.
+        rank: The dimensionality of the tensor (1, 2, 3, 4, or 5).
+        eviction_policy: Optional cache eviction policy. Defaults to
+            `EVICT_NORMAL`.
+
+    Args:
+        src_mem: Pointer to the source data in shared memory.
+        tma_descriptor: Pointer to the TMA descriptor.
+        coords: Coordinates specifying which tile to copy.
+        elect: `0` on non-elected lanes (skip the TMA), non-zero on the single
+            elected lane (issue the TMA). Typically the `Int32` returned by
+            `elect()` from `nn.attention.gpu.nvidia.common`.
+    """
+    comptime assert rank in (
+        1,
+        2,
+        3,
+        4,
+        5,
+    ), "Expecting rank-1, 2, 3, 4, or 5 tensors"
+
+    comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
+
+    # The store PTX uses the `.bulk_group` completion mechanism and, unlike the
+    # global->shared load, has NO `.tile` token (matches the NVPTX lowering of
+    # `llvm.nvvm.cp.async.bulk.tensor.s2g.tile.Nd` and CUTLASS `SM90_TMA_STORE`).
+    comptime tma_asm = String(
+        "cp.async.bulk.tensor.",
+        rank,
+        "d.global.shared::cta.bulk_group",
+        ".L2::cache_hint" if cache_hint else "",
+    )
+
+    # `elect` is appended as the last operand; compute its operand index
+    # (0-based) so the `setp` in the predicate prologue references it.
+    # Operands are [desc, coords..., src, (hint?), elect].
+    comptime elect_idx: Int = (rank + 3) if cache_hint else (rank + 2)
+    comptime pred_prefix = String(
+        "{ .reg .pred %p_el; setp.eq.s32 %p_el, $",
+        elect_idx,
+        ", 0; @!%p_el ",
+    )
+
+    comptime if cache_hint:
+        comptime if rank == 1:
+            inlined_assembly[
+                pred_prefix + tma_asm + " [$0, {$1}], [$2], $3; }",
+                NoneType,
+                constraints="l,r,r,l,r",
+            ](
+                tma_descriptor,
+                Int32(coords[0]),
+                Int32(Int(src_mem)),
+                Int64(eviction_policy._value),
+                elect,
+            )
+        elif rank == 2:
+            inlined_assembly[
+                pred_prefix + tma_asm + " [$0, {$1, $2}], [$3], $4; }",
+                NoneType,
+                constraints="l,r,r,r,l,r",
+            ](
+                tma_descriptor,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(Int(src_mem)),
+                Int64(eviction_policy._value),
+                elect,
+            )
+        elif rank == 3:
+            inlined_assembly[
+                pred_prefix + tma_asm + " [$0, {$1, $2, $3}], [$4], $5; }",
+                NoneType,
+                constraints="l,r,r,r,r,l,r",
+            ](
+                tma_descriptor,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(Int(src_mem)),
+                Int64(eviction_policy._value),
+                elect,
+            )
+        elif rank == 4:
+            inlined_assembly[
+                pred_prefix + tma_asm + " [$0, {$1, $2, $3, $4}], [$5], $6; }",
+                NoneType,
+                constraints="l,r,r,r,r,r,l,r",
+            ](
+                tma_descriptor,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                Int32(Int(src_mem)),
+                Int64(eviction_policy._value),
+                elect,
+            )
+        else:  # rank == 5
+            inlined_assembly[
+                pred_prefix
+                + tma_asm
+                + " [$0, {$1, $2, $3, $4, $5}], [$6], $7; }",
+                NoneType,
+                constraints="l,r,r,r,r,r,r,l,r",
+            ](
+                tma_descriptor,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                Int32(coords[4]),
+                Int32(Int(src_mem)),
+                Int64(eviction_policy._value),
+                elect,
+            )
+    else:
+        comptime if rank == 1:
+            inlined_assembly[
+                pred_prefix + tma_asm + " [$0, {$1}], [$2]; }",
+                NoneType,
+                constraints="l,r,r,r",
+            ](
+                tma_descriptor,
+                Int32(coords[0]),
+                Int32(Int(src_mem)),
+                elect,
+            )
+        elif rank == 2:
+            inlined_assembly[
+                pred_prefix + tma_asm + " [$0, {$1, $2}], [$3]; }",
+                NoneType,
+                constraints="l,r,r,r,r",
+            ](
+                tma_descriptor,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(Int(src_mem)),
+                elect,
+            )
+        elif rank == 3:
+            inlined_assembly[
+                pred_prefix + tma_asm + " [$0, {$1, $2, $3}], [$4]; }",
+                NoneType,
+                constraints="l,r,r,r,r,r",
+            ](
+                tma_descriptor,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(Int(src_mem)),
+                elect,
+            )
+        elif rank == 4:
+            inlined_assembly[
+                pred_prefix + tma_asm + " [$0, {$1, $2, $3, $4}], [$5]; }",
+                NoneType,
+                constraints="l,r,r,r,r,r,r",
+            ](
+                tma_descriptor,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                Int32(Int(src_mem)),
+                elect,
+            )
+        else:  # rank == 5
+            inlined_assembly[
+                pred_prefix + tma_asm + " [$0, {$1, $2, $3, $4, $5}], [$6]; }",
+                NoneType,
+                constraints="l,r,r,r,r,r,r,r",
+            ](
+                tma_descriptor,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                Int32(coords[4]),
+                Int32(Int(src_mem)),
+                elect,
+            )
+
+
+@always_inline
 def cp_async_bulk_tensor_reduce_global_shared_cta[
     src_type: AnyType,
     rank: Int,
@@ -2508,10 +2713,29 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
     - The TMA descriptor must be properly initialized before use.
     - The reduction operation is performed atomically to ensure correctness.
     """
-    comptime assert rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"
+    comptime assert rank in (
+        1,
+        2,
+        3,
+    ), "Expecting rank-1, rank-2, or rank-3 tensors"
     comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
 
-    comptime if rank == 2:
+    comptime if rank == 3:
+        llvm_intrinsic[
+            "llvm.nvvm.cp.async.bulk.tensor.reduce."
+            + reduction_kind.mnemonic()
+            + ".tile.3d",
+            NoneType,
+        ](
+            src_mem,
+            tma_descriptor,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            Int32(coords[2]),
+            UInt64(eviction_policy._value),
+            cache_hint,
+        )
+    elif rank == 2:
         llvm_intrinsic[
             "llvm.nvvm.cp.async.bulk.tensor.reduce."
             + reduction_kind.mnemonic()

@@ -31,7 +31,6 @@ Fragment layout differs by MMA size:
 from std.math.constants import log2e
 from std.math.uutils import umod
 from std.sys import _RegisterPackType
-from std.sys.intrinsics import _type_is_eq
 from std.sys._assembly import inlined_assembly
 from std.gpu import block_idx, lane_id
 from std.utils import IndexList
@@ -54,6 +53,22 @@ struct MaskTileOp[
     # MMA M extent (32 or 16 on gfx950) — selects lane + fragment geometry.
     mma_m: Int,
     use_exp2: Bool = False,
+    # Token-fold geometry. `num_heads_per_token` = H maps a folded row to its
+    # token/head (token = row // H, head = row % H); `valid_rows` = M = H*S live
+    # rows. Defaults (group, group) reproduce single-token decode (S=1).
+    num_heads_per_token: Int = group,
+    valid_rows: Int = group,
+    # The fold applies only to AMD MLA decode. The struct is shared with MHA/GQA
+    # prefill and MHA decode (`mha.mojo:2111/3734`); when False the fold
+    # arithmetic is comptime-dead (byte-identical legacy mask). Only the MLA
+    # `mask_apply` sets it True.
+    mla_mode: Bool = False,
+    # Warps splitting the MMA M dimension (= BM // WM). At 1 (legacy + all shared
+    # callers) the absolute query row equals intra-warp `lane_row`, so the cheap
+    # top-level `if lane_row >= valid_rows: return` is exact. At >1 (warp-local)
+    # warp 1's `lane_row` is 0..15 but its absolute rows are 16..31, so the
+    # dead-row guard must instead test the absolute row per-fragment (see below).
+    num_warps_m: Int = 1,
 ]:
     """Apply an `MHAMask` to the per-lane QK score registers in place."""
 
@@ -124,10 +139,33 @@ struct MaskTileOp[
         var lane_col = Int(lane_coord[1].value())
         var lane_col_off = lane_col * Self._lane_col_stride
 
-        # Decode: only `group` rows are valid (one token per head).
-        comptime if Self.token_gen:
-            if lane_row >= Self.group:
-                return
+        # Token fold: S = valid_rows / H (= 1 off the fold path, byte-identical).
+        comptime fold_seq_len = (
+            Self.valid_rows // Self.num_heads_per_token
+        ) if Self.mla_mode else 1
+
+        # Variable per-sequence query length: for S>1 the comptime `valid_rows =
+        # H * q_seq_len` is the ceiling, but a short sequence has fewer live rows.
+        # `seq_len` is its runtime query length, so the live-row count is
+        # `H * seq_len`. The `fold_seq_len > 1` dead-row guards and causal
+        # `score_row` use these runtime values; `fold_seq_len == 1` keeps the
+        # comptime path. Uniform batch: `valid_rows_rt == valid_rows`,
+        # `seq_len == fold_seq_len`.
+        var valid_rows_rt = UInt32(Self.num_heads_per_token) * seq_len
+
+        # Decode: skip dead query rows. At num_warps_m == 1 the absolute row ==
+        # `lane_row`, so the top-level early-out is exact (bound generalized from
+        # `group` to `valid_rows`, or the runtime `valid_rows_rt` on the S>1
+        # fold). At num_warps_m > 1 the intra-warp test can't filter warp 1's pad
+        # rows, so the guard moves into the loop as a per-fragment absolute-row
+        # check (below; padding keeps finite/zero scores, no top-level return).
+        comptime if Self.token_gen and Self.num_warps_m == 1:
+            comptime if fold_seq_len > 1:
+                if UInt32(lane_row) >= valid_rows_rt:
+                    return
+            else:
+                if lane_row >= Self.valid_rows:
+                    return
 
         comptime for m_mma in range(Self.num_m_mmas):
             comptime for n_mma in range(Self.num_n_mmas):
@@ -143,15 +181,51 @@ struct MaskTileOp[
                 )
                 mask_frag_row += UInt32(lane_row)
                 mask_frag_col += UInt32(lane_col_off)
-                # Prefill: score_row from Q tile position.
-                # Decode: always the last token (num_keys - 1).
-                var score_row = (
-                    num_keys - 1
-                ) if Self.token_gen else mask_block_row + mask_frag_row
+                # Dead-row guard for warp-local: a warp's 16 lanes may include
+                # pad rows >= valid_rows the top-level return can't filter (the
+                # warp also owns live rows). Guard the per-fragment store on the
+                # absolute row; dead rows keep their raw (~0, finite) QK score and
+                # are dropped by the valid_rows SRD clamp at store time. At
+                # num_warps_m==1 `_row_live` is comptime True (unconditional
+                # store, byte-identical).
+                comptime _row_live_static = (
+                    not Self.token_gen
+                ) or Self.num_warps_m == 1
+                # S>1 fold: bound is the runtime `valid_rows_rt` (drops
+                # short-sequence pad rows); `fold_seq_len == 1` keeps the
+                # comptime `valid_rows`. Neither is read when num_warps_m==1.
+                var _row_live: Bool
+                comptime if fold_seq_len > 1:
+                    _row_live = _row_live_static or (
+                        mask_frag_row < valid_rows_rt
+                    )
+                else:
+                    _row_live = _row_live_static or (
+                        Int(mask_frag_row) < Self.valid_rows
+                    )
+                # Per-token causal position (heads-inner fold): token = row // H,
+                # score_row = num_keys - S + token = mha_gpu_naive's
+                # `y + cur_cache_len - cur_query_len`. S==1 keeps the literal
+                # `num_keys - 1` (byte-identical); prefill uses the Q tile pos.
+                var score_row: UInt32
+                comptime if Self.token_gen:
+                    comptime if fold_seq_len == 1:
+                        score_row = num_keys - 1
+                    else:
+                        var _token = mask_frag_row // UInt32(
+                            Self.num_heads_per_token
+                        )
+                        # Use the runtime query length `seq_len` (not comptime
+                        # `fold_seq_len`): num_keys - seq_len + token ==
+                        # cache_len + token. Byte-equivalent for a uniform batch
+                        # (seq_len == fold_seq_len).
+                        score_row = num_keys - seq_len + _token
+                else:
+                    score_row = mask_block_row + mask_frag_row
                 var score_col = mask_frag_col
                 var score_col_with_cache_start_pos = score_col + cache_start_pos
                 var score_row_with_start_pos = score_row + start_pos
-                comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
+                comptime is_causal_mask = Self.mask_t == CausalMask
 
                 # Load the whole MMA fragment once, mutate lanes on a local
                 # SIMD (which `SIMD.__setitem__` supports), and store back
@@ -199,13 +273,21 @@ struct MaskTileOp[
                             frag[j + 1] = ret[1]
 
                     else:
-                        # Prefill: q_head_idx = block_idx.x.
-                        # Decode: q_head_idx = block_idx.y * group + lane_group.
+                        # Prefill: q_head_idx = block_idx.x. Decode: block_idx.y
+                        # * group + lane_group; fold (S>1): head = row % H. S==1
+                        # is split out (byte-identical). Only head-keyed masks
+                        # consume this; Causal/Null ignore it.
                         var q_head_idx = Int(block_idx.x)
                         comptime if Self.token_gen:
-                            q_head_idx = block_idx.y * Self.group + umod(
-                                lane_id(), Self.mma_shape[0]
-                            )
+                            comptime if fold_seq_len == 1:
+                                q_head_idx = block_idx.y * Self.group + umod(
+                                    lane_id(), Self.mma_shape[0]
+                                )
+                            else:
+                                q_head_idx = (
+                                    Int(block_idx.y) * Self.valid_rows
+                                    + Int(mask_frag_row)
+                                ) % Self.num_heads_per_token
                         comptime for j in range(0, output_frag_size, 1):
                             comptime fragment_col = Int(
                                 Self.FragmentLayoutT()(Idx[j])
@@ -252,4 +334,8 @@ struct MaskTileOp[
                             frag[j],
                         )
 
-                p_reg_vectorized[mma_id, 0] = frag
+                # Skip the store for warp-local pad rows (dropped at store time
+                # anyway). `_row_live` is comptime True at num_warps_m==1, so the
+                # store is unconditional (byte-identical).
+                if _row_live:
+                    p_reg_vectorized[mma_id, 0] = frag

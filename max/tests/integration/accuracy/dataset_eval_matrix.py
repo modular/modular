@@ -217,6 +217,13 @@ PIPELINES: list[PipelineEntry] = [
         timeout=390,  # 6.5 hours
     ),
     PipelineEntry(
+        pipeline="nvidia/Kimi-K2.6-NVFP4-ep-tp-eagle3-longbench-v2",
+        runner="modrunner-b200-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.b200.8",
+        timeout=390,  # 6.5 hours
+    ),
+    PipelineEntry(
         pipeline="amd/Kimi-K2.5-MXFP4-ep-tp-longbench-v2",
         runner="modrunner-mi355-4x",
         gpu_flag="--devices gpu:0,1,2,3",

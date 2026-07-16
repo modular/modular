@@ -96,8 +96,8 @@ def test_block_scales_interleave_fp4[
 
     block_scales_interleave_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
-        lt_to_tt(input_scales_tensor).as_any_origin(),
-        lt_to_tt(output_scales_tensor).as_any_origin(),
+        lt_to_tt(input_scales_tensor).as_unsafe_any_origin(),
+        lt_to_tt(output_scales_tensor).as_unsafe_any_origin(),
     )
 
     ctx.synchronize()
@@ -117,7 +117,7 @@ def test_block_scales_interleave_fp4[
                     var swizzled_sf = get_scale_factor[
                         SF_VECTOR_SIZE=SF_VECTOR_SIZE
                     ](
-                        output_host_tensor.as_any_origin(),
+                        output_host_tensor.as_unsafe_any_origin(),
                         row_idx,
                         col_idx * SF_VECTOR_SIZE,
                     )

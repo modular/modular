@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -25,6 +24,7 @@ modular_py_test(
         "//max/python/max/benchmark:benchmark_serving_lib",
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/profiler",
+        requirement("aiohttp"),
         requirement("msgspec"),
         requirement("numpy"),
         requirement("pillow"),

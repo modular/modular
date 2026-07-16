@@ -18,7 +18,7 @@ from std.gpu.host import DeviceContext
 from std.random import random_ui64
 
 
-def grid_exclusive_scan(bits: UnsafePointer[UInt32, MutAnyOrigin], N: Int):
+def grid_exclusive_scan(bits: UnsafePointer[mut=True, UInt32, _], N: Int):
     """CPU-based exclusive scan for simplicity.
 
     Args:
@@ -33,7 +33,7 @@ def grid_exclusive_scan(bits: UnsafePointer[UInt32, MutAnyOrigin], N: Int):
 
 
 def radix_sort_iter(
-    input: UnsafePointer[UInt32, MutAnyOrigin],
+    input: UnsafePointer[UInt32, ImmutAnyOrigin],
     output: UnsafePointer[UInt32, MutAnyOrigin],
     bits: UnsafePointer[UInt32, MutAnyOrigin],
     N: Int,
@@ -59,10 +59,10 @@ def radix_sort_iter(
 
 
 def radix_scatter(
-    input: UnsafePointer[UInt32, MutAnyOrigin],
+    input: UnsafePointer[UInt32, ImmutAnyOrigin],
     output: UnsafePointer[UInt32, MutAnyOrigin],
     bits: UnsafePointer[UInt32, MutAnyOrigin],
-    scanResult: UnsafePointer[UInt32, MutAnyOrigin],
+    scanResult: UnsafePointer[UInt32, ImmutAnyOrigin],
     N: Int,
     iter: Int,
     block_dim_x: Int,
@@ -92,7 +92,7 @@ def radix_scatter(
 
 
 def cpu_radix_sort(
-    data: UnsafePointer[UInt32, MutAnyOrigin], N: Int, num_bits: Int
+    data: UnsafePointer[mut=True, UInt32, _], N: Int, num_bits: Int
 ):
     """CPU radix sort for verification.
 

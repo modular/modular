@@ -15,7 +15,7 @@
 # Skip: nested struct error, field without type error, dynamic
 #        trait field error, fieldwise_init synthesis failure
 #        (Alpha/Color), Incomplete(Sized) missing method,
-#        Box without ImplicitlyDestructible abandoned error,
+#        Box without ImplicitlyDeletable abandoned error,
 #        Unsound(Copyable) with SomeMoveOnlyType, default
 #        method conflicts (struct S(A & B) constructed to fail),
 #        missing self error, __init__ without out self error,
@@ -83,7 +83,7 @@ def test_color_manual() raises:
 
 
 @fieldwise_init
-struct Sound[T: Writable & Copyable & ImplicitlyDestructible]:
+struct Sound[T: Writable & Copyable & ImplicitlyDeletable]:
     var item: Self.T
 
 
@@ -113,7 +113,7 @@ def test_color_fieldwise() raises:
 
 
 @fieldwise_init
-struct Pair_1[T: Copyable & ImplicitlyDestructible]:
+struct Pair_1[T: Copyable & ImplicitlyDeletable]:
     var first: Self.T
     var second: Self.T
 
@@ -128,7 +128,7 @@ def test_generic_pair() raises:
 
 
 struct SplatList[
-    T: ImplicitlyCopyable & ImplicitlyDestructible,
+    T: ImplicitlyCopyable & ImplicitlyDeletable,
     *,
     fill: T,
     length: Int = 5,
@@ -166,7 +166,7 @@ def test_trait_conformance() raises:
 
 
 @fieldwise_init
-struct Pair_2[T: Copyable & ImplicitlyDestructible](
+struct Pair_2[T: Copyable & ImplicitlyDeletable](
     Equatable where conforms_to(T, Equatable)
 ):
     var first: Self.T
@@ -185,7 +185,7 @@ def test_conformance_where() raises:
 
 
 @fieldwise_init
-struct Pair_Mixed[T: Copyable & ImplicitlyDestructible](
+struct Pair_Mixed[T: Copyable & ImplicitlyDeletable](
     Copyable,
     Equatable where conforms_to(T, Equatable),
     Writable where conforms_to(T, Writable),
@@ -204,11 +204,11 @@ def test_mixed_trait_list() raises:
     _ = pair4
 
 
-# --- Box with ImplicitlyDestructible ---
+# --- Box with ImplicitlyDeletable ---
 
 
 @fieldwise_init
-struct Box[T: Copyable & ImplicitlyDestructible](
+struct Box[T: Copyable & ImplicitlyDeletable](
     Equatable where conforms_to(T, Equatable)
 ):
     var item: Self.T

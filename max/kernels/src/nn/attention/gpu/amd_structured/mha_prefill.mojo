@@ -31,7 +31,7 @@ pre-filled from sink_weights); the kernel body needs no sink-specific code.
 """
 
 from std.sys import llvm_intrinsic, get_defined_bool
-from std.sys.intrinsics import _type_is_eq, readfirstlane
+from std.sys.intrinsics import readfirstlane
 from std.gpu import warp_id as get_warp_id
 from std.gpu.sync import s_waitcnt
 from layout.swizzle import Swizzle
@@ -137,7 +137,10 @@ __extension Attention:
             self.k,
             self.batch_idx,
             self.kv_head_idx(),
-            KBufT.SmemParentType(self.k_smem_ptr, KBufT._SmemParentLayout()),
+            KBufT.SmemParentType(
+                self.k_smem_ptr.as_unsafe_any_origin(),
+                KBufT._SmemParentLayout(),
+            ),
             self.num_keys,
             warp_id,
         )
@@ -145,7 +148,10 @@ __extension Attention:
             self.v,
             self.batch_idx,
             self.kv_head_idx(),
-            VBufT.SmemParentType(self.v_smem_ptr, VBufT._SmemParentLayout()),
+            VBufT.SmemParentType(
+                self.v_smem_ptr.as_unsafe_any_origin(),
+                VBufT._SmemParentLayout(),
+            ),
             self.num_keys,
             warp_id,
         )
@@ -231,9 +237,7 @@ __extension Attention:
         # guarantee no FULL_MASK tiles in the iteration range.  Non-causal
         # masks (e.g. ChunkedCausalMask) can have interior FULL_MASK tiles,
         # so we need a per-tile status check.
-        comptime has_interior_full_mask = not _type_is_eq[
-            Self.mask_t, CausalMask
-        ]()
+        comptime has_interior_full_mask = Self.mask_t != CausalMask
 
         # =============================================================
         # process_tile — one KV tile: wait K, mma_qk, prefetch next,

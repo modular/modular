@@ -40,6 +40,7 @@ from max.pipelines.speculative.config import (
     SpeculativeMethod,
 )
 
+from ..pipeline_args import PipelineArgs
 from .config import (
     PipelineConfig,
     PrometheusMetricsMode,
@@ -60,6 +61,7 @@ __all__ = [
     "LoRAConfig",
     "MAXModelConfig",
     "MAXModelConfigBase",
+    "PipelineArgs",
     "PipelineConfig",
     "PipelineRole",
     "ProfilingConfig",

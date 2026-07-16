@@ -23,7 +23,7 @@ from comm.allreduce_residual_rmsnorm import (
     allreduce_residual_rmsnorm,
     allreduce_rmsnorm,
 )
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout import (
     Coord,
@@ -101,8 +101,8 @@ def _assert_fp8_close[
 
 
 def _assert_scales_close(
-    ref_host: UnsafePointer[Scalar[DType.float32], _],
-    fused_host: UnsafePointer[Scalar[DType.float32], _],
+    ref_host: UnsafePointer[Float32, _],
+    fused_host: UnsafePointer[Float32, _],
     rows: Int,
     *,
     max_rel_diff: Float32 = 0.005,
@@ -236,8 +236,13 @@ def test_fused_allreduce_rmsnorm_fp8[
                 size_of[Signal]() + temp_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
     comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
     comptime InputTileType = TileTensor[
@@ -259,7 +264,7 @@ def test_fused_allreduce_rmsnorm_fp8[
 
     comptime shape = IndexList[2](rows, cols)
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
-    var epsilon = Scalar[in_dtype](1e-5)
+    var epsilon = Float32(1e-5)
     var weight_offset = Scalar[in_dtype](0.0)
     var scale_ub = max_finite[out_dtype]().cast[DType.float32]()
 
@@ -269,7 +274,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     # that a separate allreduce would introduce.
     var ref_sum_host = ctx.enqueue_create_host_buffer[in_dtype](length)
     for i in range(length):
-        var sum_f32 = Scalar[DType.float32](0)
+        var sum_f32 = Float32(0)
         for g in range(ngpus):
             sum_f32 += host_bufs[g][i].cast[DType.float32]()
         ref_sum_host[i] = sum_f32.cast[in_dtype]()
@@ -324,7 +329,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     # --- Fused kernel path ---
     # Reset signal buffers for the fused kernel run.
     for i in range(ngpus):
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -437,8 +442,13 @@ def test_fused_allreduce_rmsnorm_noquant[
                 size_of[Signal]() + temp_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
     comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
     comptime InputTileType = TileTensor[
@@ -459,22 +469,22 @@ def test_fused_allreduce_rmsnorm_noquant[
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
-    var epsilon = Scalar[dtype](1e-5)
+    var epsilon = Float32(1e-5)
     var weight_offset = Scalar[dtype](0.0)
 
     # --- Host reference: allreduce in f32, then RMSNorm in f32 ---
     var ref_sum_f32 = ctx.enqueue_create_host_buffer[DType.float32](length)
     for i in range(length):
-        var s = Scalar[DType.float32](0)
+        var s = Float32(0)
         for g in range(ngpus):
             s += host_bufs[g][i].cast[DType.float32]()
         ref_sum_f32[i] = s
 
     var ref_out_host = ctx.enqueue_create_host_buffer[dtype](length)
-    var eps_f32 = epsilon.cast[DType.float32]()
+    var eps_f32 = epsilon
     var woff_f32 = weight_offset.cast[DType.float32]()
     for r in range(rows):
-        var m2 = Scalar[DType.float32](0)
+        var m2 = Float32(0)
         for c in range(cols):
             var s = ref_sum_f32[r * cols + c]
             m2 += s * s
@@ -486,7 +496,7 @@ def test_fused_allreduce_rmsnorm_noquant[
 
     # --- Fused kernel path (out_dtype == in_dtype → no quantization) ---
     for i in range(ngpus):
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -590,8 +600,13 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
                 size_of[Signal]() + temp_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
     comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
     comptime InputTileType = TileTensor[
@@ -612,7 +627,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
-    var epsilon = Scalar[in_dtype](1e-5)
+    var epsilon = Float32(1e-5)
     var weight_offset = Scalar[in_dtype](0.0)
     var scale_ub = max_finite[out_dtype]().cast[DType.float32]()
 
@@ -631,7 +646,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     # to avoid the bf16 rounding that a separate allreduce would introduce.
     var ref_sum_host = ctx.enqueue_create_host_buffer[in_dtype](length)
     for i in range(length):
-        var sum_f32 = Scalar[DType.float32](0)
+        var sum_f32 = Float32(0)
         for g in range(ngpus):
             sum_f32 += host_bufs[g][i].cast[DType.float32]()
         sum_f32 += residual_host[i].cast[DType.float32]()
@@ -688,7 +703,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     # --- Fused kernel path ---
     # Reset signal buffers for the fused kernel run.
     for i in range(ngpus):
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -854,8 +869,13 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
                 size_of[Signal]() + temp_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
     comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
     comptime InputTileType = TileTensor[
@@ -876,7 +896,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
-    var epsilon = Scalar[dtype](1e-5)
+    var epsilon = Float32(1e-5)
     var weight_offset = Scalar[dtype](0.0)
 
     # --- Residual buffer: deterministic values ---
@@ -891,7 +911,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     var ref_sum_f32 = ctx.enqueue_create_host_buffer[DType.float32](length)
     var ref_sum_host = ctx.enqueue_create_host_buffer[dtype](length)
     for i in range(length):
-        var s = Scalar[DType.float32](0)
+        var s = Float32(0)
         for g in range(ngpus):
             s += host_bufs[g][i].cast[DType.float32]()
         s += residual_host[i].cast[DType.float32]()
@@ -900,10 +920,10 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
         ref_sum_host[i] = s.cast[dtype]()
 
     var ref_out_host = ctx.enqueue_create_host_buffer[dtype](length)
-    var eps_f32 = epsilon.cast[DType.float32]()
+    var eps_f32 = epsilon
     var woff_f32 = weight_offset.cast[DType.float32]()
     for r in range(rows):
-        var m2 = Scalar[DType.float32](0)
+        var m2 = Float32(0)
         for c in range(cols):
             var s = ref_sum_f32[r * cols + c]
             m2 += s * s
@@ -915,7 +935,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
 
     # --- Fused kernel path (out_dtype == in_dtype → no quantization) ---
     for i in range(ngpus):
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -1146,6 +1166,15 @@ def main() raises:
         ](list_of_ctx)
         test_fused_allreduce_residual_rmsnorm_noquant[
             num_gpus, DType.bfloat16, 8, 8192
+        ](list_of_ctx)
+        # Column-aware-threshold band: on B200 8-GPU the wide-column
+        # (cols >= 6144) residual crossover is ~100 KB per-rank, so this
+        # shape (rows=48, cols=8192 -> ceildiv(48,8)*8192*2 = 96 KB) now
+        # routes to the 1-stage kernel where a flat 80 KB threshold would
+        # have used 2-stage. Locks in correctness of the 1-stage path at the
+        # newly-selected band.
+        test_fused_allreduce_residual_rmsnorm_noquant[
+            num_gpus, DType.bfloat16, 48, 8192
         ](list_of_ctx)
         # 2-stage path (large per-rank payloads), including the persistent
         # row loop.

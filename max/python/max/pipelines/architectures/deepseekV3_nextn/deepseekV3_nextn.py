@@ -295,7 +295,14 @@ class DeepseekV3NextN(Module):
             [kv_collection.kv_blocks for kv_collection in kv_collections],
             [kv_collection.cache_lengths for kv_collection in kv_collections],
             [kv_collection.lookup_table for kv_collection in kv_collections],
-            [kv_collection.max_lengths for kv_collection in kv_collections],
+            [
+                kv_collection.max_prompt_length
+                for kv_collection in kv_collections
+            ],
+            [
+                kv_collection.max_cache_length
+                for kv_collection in kv_collections
+            ],
             kv_scales,
             freqs_cis=freqs_cis,
             mla_prefill_metadata_flat=mla_inputs,
@@ -372,7 +379,7 @@ class DeepseekV3NextN(Module):
             ]
         )
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
+        all_input_types.extend(kv_params.flattened_kv_inputs())
 
         # Add batch context lengths (one per device)
         batch_context_length_type = TensorType(

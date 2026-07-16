@@ -29,14 +29,14 @@ from std.ffi import external_call
 struct SpinWaiter(Defaultable):
     """A proxy for the C++ runtime's SpinWaiter type."""
 
-    var storage: OpaquePointer[MutExternalOrigin]
+    var storage: OpaquePointer[MutUntrackedOrigin]
     """Pointer to the underlying SpinWaiter instance."""
 
     def __init__(out self):
         """Initializes a SpinWaiter instance."""
         self.storage = external_call[
             "KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter",
-            OpaquePointer[MutExternalOrigin],
+            OpaquePointer[MutUntrackedOrigin],
         ]()
 
     def __del__(deinit self):

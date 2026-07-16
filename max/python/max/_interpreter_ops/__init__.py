@@ -25,6 +25,8 @@ from max._core.dialects import mo
 from max._core.driver import Buffer
 
 # Import op bindings from categorized Mojo modules
+# matmul / unary-elementwise handlers are backed by graph-compiler models
+# (compiled below), unlike the Mojo op bindings above.
 from . import (  # type: ignore[attr-defined]
     argmax_ops,
     argnonzero_ops,
@@ -37,8 +39,10 @@ from . import (  # type: ignore[attr-defined]
     elementwise_cast_ops,
     elementwise_comparison_ops,
     gather_scatter_ops,
+    gc_compile,
     group_norm_ops,
     layer_norm_ops,
+    matmul_gc,
     misc_ops,
     nms_ops,
     pad_ops,
@@ -51,12 +55,8 @@ from . import (  # type: ignore[attr-defined]
     split_ops,
     tile_ops,
     topk_ops,
+    unary_elementwise_gc,
 )
-
-# Some op handlers are backed by graph-compiler models compiled at import time
-# by these sweeps (invoked below, after the handlers import).
-from .matmul_gc import compile_matmul_sweep
-from .unary_elementwise_gc import compile_unary_sweep
 
 # Arithmetic binary ops: output dtype matches input dtype
 # Dtype dispatch is handled in Mojo
@@ -117,10 +117,22 @@ SOFTMAX: dict[
 
 # Import handlers after defining kernels to avoid circular import issues.
 # handlers.py uses the kernel dictionaries defined above.
+# Re-export the warm-adoption query (from gc_compile) so a consumer can assert
+# the ops were force-loaded from the manifest rather than cold-compiled.
+from .gc_compile import adopted_from_manifest
 from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
 
-compile_matmul_sweep()
-compile_unary_sweep()
+
+# Opt-in (MAX_EAGER_OP_PRECOMPILE=1) precompile of the full GC matrix; lazy
+# per-dispatch otherwise (MXF-508). Wrapped in a function to defer the
+# matmul_gc / unary_gc symbol access past their import cycle with this module.
+def _precompile_gc_models() -> None:
+    if gc_compile.should_precompile():
+        matmul_gc.compile_matmul_sweep()
+        unary_elementwise_gc.compile_unary_sweep()
+
+
+_precompile_gc_models()
 
 __all__ = [
     "BINARY_ELEMENTWISE",
@@ -129,6 +141,7 @@ __all__ = [
     "SOFTMAX",
     "UNARY_MIXED",
     "_MO_OP_HANDLERS",
+    "adopted_from_manifest",
     "lookup_handler",
     "register_op_handler",
 ]

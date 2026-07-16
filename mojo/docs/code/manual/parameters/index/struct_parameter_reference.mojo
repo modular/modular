@@ -14,12 +14,12 @@
 
 struct Circle[radius: Float64]:
     comptime pi = 3.14159265359
-    comptime circumference = 2 * Self.pi * Self.radius
+    comptime circumference = 2.0 * Self.pi * Self.radius
 
 
 # start-reference-parameter-on-type
 def on_type():
-    print(SIMD[DType.float32, 2].size)  # prints 2
+    print(Int(SIMD[DType.float32, 2].size))  # prints 2
     # end-reference-parameter-on-type
 
 

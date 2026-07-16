@@ -18,7 +18,7 @@ from .pwd import Passwd
 comptime uid_t = Int32
 comptime gid_t = Int32
 comptime time_t = Int
-comptime char = UnsafePointer[c_char, MutExternalOrigin]
+comptime char = UnsafePointer[c_char, MutUntrackedOrigin]
 
 
 struct _C_Passwd(TrivialRegisterPassable):
@@ -52,7 +52,7 @@ def _build_pw_struct(
 
 def _getpw_macos(uid: UInt32) raises -> Passwd:
     var passwd_ptr = external_call[
-        "getpwuid", _CPointer[_C_Passwd, ExternalOrigin[mut=True]]
+        "getpwuid", _CPointer[_C_Passwd, UntrackedOrigin[mut=True]]
     ](uid)
     try:
         return _build_pw_struct(passwd_ptr[])
@@ -62,7 +62,7 @@ def _getpw_macos(uid: UInt32) raises -> Passwd:
 
 def _getpw_macos(var name: String) raises -> Passwd:
     var passwd_ptr = external_call[
-        "getpwnam", _CPointer[_C_Passwd, ExternalOrigin[mut=True]]
+        "getpwnam", _CPointer[_C_Passwd, UntrackedOrigin[mut=True]]
     ](name.as_c_string_slice().unsafe_ptr())
     try:
         return _build_pw_struct(passwd_ptr[])

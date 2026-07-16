@@ -650,6 +650,7 @@ def constant_external(
     name: str,
     type: TensorType,
     device: Device | DeviceMapping | DeviceRef | None = None,
+    align: int | None = None,
 ) -> Tensor:
     """Creates a constant tensor from external (weight) data.
 
@@ -664,6 +665,8 @@ def constant_external(
         device: A single device or a
             :class:`~max.experimental.sharding.DeviceMapping` for
             distributed placement.
+        align: The alignment of the constant. If not provided,
+            the default alignment for the type's dtype will be used.
 
     Returns:
         A tensor on the requested placement initialized from the
@@ -671,7 +674,7 @@ def constant_external(
     """
     mapping = _normalized_device(device) if device is not None else None
     with ensure_context():
-        tv = ops.constant_external(name, type)
+        tv = ops.constant_external(name, type, align)
         t = Tensor.from_graph_value(tv)
     if mapping is not None:
         return transfer_to(t, mapping)

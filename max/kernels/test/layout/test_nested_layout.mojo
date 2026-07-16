@@ -371,8 +371,8 @@ def test_tile_tensor_tile_on_flat_parent() raises:
 # ===----------------------------------------------------------------------=== #
 # Group E — Production-shape geometry from MhaMmaOp.ATT_LAYOUT_NESTED.
 # These tests pin the SAME shape/strides that
-# `max/kernels/src/nn/attention/gpu/amd_structured/hk_mha_mma_op.mojo`'s
-# `ATT_LAYOUT_NESTED` alias produces for the default HK MHA config
+# `max/kernels/src/nn/attention/gpu/amd_structured/mha_mma_op.mojo`'s
+# `ATT_LAYOUT_NESTED` alias produces for the default MHA kernel config
 # (KV_BLOCK=128, Q_BLOCK_SIZE=32, MMA_M=MMA_N=32, MMA_K=16). We inline
 # the constants here (rather than importing `MhaMmaOp`) so the test stays
 # in the layout package and doesn't pull a cross-package dep on
@@ -383,11 +383,11 @@ def test_tile_tensor_tile_on_flat_parent() raises:
 
 def test_mha_mma_op_att_layout_nested_geometry() raises:
     """Pins shape/stride of MhaMmaOp.ATT_LAYOUT_NESTED for the default
-    HK MHA config — `((4, 16), (1, 1))` shape, `((16, 1), (1, 1))`
+    MHA kernel config — `((4, 16), (1, 1))` shape, `((16, 1), (1, 1))`
     strides, same per-lane 64-FP32 storage as the flat ATT_LAYOUT.
     """
     # ATT_LAYOUT_NESTED-equivalent geometry. Source of truth lives at
-    # max/kernels/src/nn/attention/gpu/amd_structured/hk_mha_mma_op.mojo:
+    # max/kernels/src/nn/attention/gpu/amd_structured/mha_mma_op.mojo:
     # ATT_LAYOUT_NESTED.
     comptime KV_BLOCK = 128
     comptime Q_BLOCK_SIZE = 32

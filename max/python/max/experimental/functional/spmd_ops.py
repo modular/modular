@@ -557,6 +557,34 @@ Returns:
     A tensor with the broadcast shape containing ``lhs / rhs`` element-wise.
 """
 
+floor_div = _binary_with_scalar_promotion(
+    functional(ops.floor_div, rule=binary_rule)
+)
+floor_div.__doc__ = """Divides two tensors element-wise using floor division.
+
+The result is rounded toward negative infinity, matching Python's ``//``.
+Either operand may be a Python ``int`` or ``float`` scalar, which is
+automatically promoted to a tensor. Integer operands stay in the integer
+domain (no ``float64`` promotion), unlike :func:`div`.
+
+.. code-block:: python
+
+    from max.experimental import Tensor
+    from max.experimental import functional as F
+
+    a = Tensor([7, 10, 18])
+    b = Tensor([2, 5, 6])
+    result = F.floor_div(a, b)
+    # result is [3, 2, 3]
+
+Args:
+    lhs: The numerator tensor or scalar.
+    rhs: The denominator tensor or scalar.
+
+Returns:
+    A tensor with the broadcast shape containing ``lhs // rhs`` element-wise.
+"""
+
 pow = _binary_with_scalar_promotion(functional(ops.pow, rule=binary_rule))
 pow.__doc__ = """Raises elements of one tensor to the power of another element-wise.
 
@@ -2606,23 +2634,28 @@ Returns:
 def _while_loop_graph(
     initial_values: Iterable[TensorValueLike] | TensorValueLike,
     predicate: Callable[..., Tensor],
-    body: Callable[..., Tensor | list[Tensor]],
+    body: Callable[..., Tensor | Iterable[Tensor]],
 ) -> list[TensorValue]:
-    """Wraps predicate/body so :class:`Tensor` returns are unwrapped to :class:`TensorValue`."""
+    """Wrap predicate/body so callbacks see :class:`Tensor`.
 
-    def _unwrap_list(
-        vals: list[Tensor] | tuple[Tensor, ...],
-    ) -> list[TensorValue]:
-        return [v.__tensorvalue__() for v in vals]
+    ``ops.while_loop`` passes :class:`TensorValue` into its predicate/body
+    and expects :class:`TensorValue` back. This wrapper wraps callback
+    args as :class:`Tensor` and coerces callback returns back to
+    :class:`TensorValue`. The outer ``functional()`` wrapper converts the
+    returned :class:`TensorValue` list back to :class:`Tensor` for the
+    public surface.
+    """
 
     def _pred(*args: TensorValue) -> TensorValue:
-        return predicate(*args).__tensorvalue__()
+        tensors = [Tensor.from_graph_value(a) for a in args]
+        return TensorValue(predicate(*tensors))
 
     def _body(*args: TensorValue) -> list[TensorValue]:
-        result = body(*args)
+        tensors = [Tensor.from_graph_value(a) for a in args]
+        result = body(*tensors)
         if isinstance(result, Tensor):
-            return [result.__tensorvalue__()]
-        return _unwrap_list(result)
+            return [TensorValue(result)]
+        return [TensorValue(t) for t in result]
 
     if isinstance(initial_values, Iterable):
         unwrapped = [TensorValue(v) for v in initial_values]
@@ -2634,10 +2667,11 @@ def _while_loop_graph(
 while_loop = functional(_while_loop_graph, rule=while_loop_rule)
 while_loop.__doc__ = """Repeatedly executes a body function while a predicate holds.
 
-Both ``predicate`` and ``body`` take the same number and types of
-arguments as the initial values. The predicate must return a single
-boolean scalar tensor that controls loop continuation; the body must
-return updated values matching the types of ``initial_values``.
+Both ``predicate`` and ``body`` receive and return :class:`Tensor`
+values. They take the same number and types of arguments as the initial
+values. The predicate must return a single boolean scalar tensor that
+controls loop continuation; the body must return updated values matching
+the types of ``initial_values``.
 
 .. code-block:: python
 

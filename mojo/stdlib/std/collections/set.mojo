@@ -32,7 +32,7 @@ from .dict import (
 
 
 struct Set[
-    T: KeyElement & ImplicitlyDestructible,
+    T: KeyElement & ImplicitlyDeletable,
     H: Hasher = default_hasher,
 ](
     Boolable,
@@ -79,7 +79,7 @@ struct Set[
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[
-        downcast[Self.T, KeyElement & Copyable & ImplicitlyDestructible],
+        downcast[Self.T, KeyElement & Copyable & ImplicitlyDeletable],
         NoneType,
         Self.H,
         iterable_origin,
@@ -92,9 +92,7 @@ struct Set[
     """
 
     comptime IteratorOwnedType: Iterator = _DictKeyIterOwned[
-        downcast[Self.T, KeyElement & Copyable & ImplicitlyDestructible],
-        NoneType,
-        Self.H,
+        Self.T, NoneType, Self.H
     ]
     """The owned iterator type for this set."""
 
@@ -419,16 +417,7 @@ struct Set[
         Returns:
             An iterator that owns the set's elements.
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
-        comptime assert conforms_to(
-            Self.T, Copyable
-        ), "Set iteration requires the element type to be `Copyable`."
-        comptime DictCopyable = Dict[
-            downcast[Self.T, KeyElement & Copyable & ImplicitlyDestructible],
-            NoneType,
-            Self.H,
-        ]
-        return {_DictEntryIterOwned(rebind_var[DictCopyable](self._data^), 0)}
+        return {_DictEntryIterOwned(self._data^, 0)}
 
     def __iter__(
         ref self,
@@ -443,7 +432,7 @@ struct Set[
             Self.T, Copyable
         ), "Set iteration requires the element type to be `Copyable`."
         comptime DictCopyable = Dict[
-            downcast[Self.T, KeyElement & Copyable & ImplicitlyDestructible],
+            downcast[Self.T, KeyElement & Copyable & ImplicitlyDeletable],
             NoneType,
             Self.H,
         ]

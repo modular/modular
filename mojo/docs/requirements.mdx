@@ -332,6 +332,11 @@ system `ptxas` binary compatible with your hardware and driver version.
       <td>RDNA2</td>
       <td><code>gfx1030</code></td>
     </tr>
+    <tr>
+      <td>Van Gogh (Steam Deck)</td>
+      <td>RDNA2</td>
+      <td><code>gfx1033</code></td>
+    </tr>
   </tbody>
 </table>
 
@@ -405,7 +410,7 @@ To check that your system's GPU is accessible at runtime, try a minimal GPU
 program:
 
 ```mojo title="check_gpu.mojo"
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 def main():
     var ctx = DeviceContext()

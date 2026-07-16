@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -14,12 +13,22 @@ modular_py_test(
     env = {
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
+    per_test_shard_count = {
+        # Each case compiles its own graph; shard so the per-test compiles run
+        # in parallel and the suite stays well under the per-target timeout.
+        "test_subgraph.py": 4,
+    },
     per_test_tags = {
         "rope/test_rope.py": ["skip-external-ci"],
         "rope/test_yarn.py": ["manual"],
         "test_module.py": ["skip-external-ci"],
         "test_module_gpt2.py": ["manual"],
         "test_module_typing.py": ["skip-external-ci"],
+        "test_print_hook.py": ["skip-external-ci"],
     },
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
@@ -27,11 +36,14 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn/hooks:print_hook",
+        requirement("numpy"),
         requirement("torch"),
         requirement("typing-extensions"),
     ],

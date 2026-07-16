@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import json
 import resource
 import time
 import urllib.error
@@ -99,6 +100,41 @@ def wait_for_server_ready(
         if time.monotonic() >= deadline:
             raise RuntimeError(f"Server at {url} not ready after {timeout_s}s")
         time.sleep(interval_s)
+
+
+def fetch_server_max_model_len(
+    base_url: str,
+    model_id: str,
+    *,
+    timeout_s: float = 5.0,
+) -> int | None:
+    """Fetch the served model's max context length from ``/v1/models``.
+
+    MAX, vLLM, and SGLang all report ``max_model_len`` on their model cards.
+    Returns the value for ``model_id`` (or the first listed model when no id
+    matches), or ``None`` when the server is unreachable or does not report
+    the field, so callers can fall back to the tokenizer's own limit.
+    """
+    url = f"{base_url}/v1/models"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout_s) as resp:
+            if resp.status != 200:
+                return None
+            models = json.load(resp).get("data") or []
+        card = next((m for m in models if m.get("id") == model_id), None)
+        if card is None and models:
+            card = models[0]
+        max_model_len = (card or {}).get("max_model_len")
+    except (
+        urllib.error.URLError,
+        ConnectionError,
+        OSError,
+        ValueError,
+        AttributeError,
+        TypeError,
+    ):
+        return None
+    return max_model_len if isinstance(max_model_len, int) else None
 
 
 def resolve_revision(pretrained_model_name_or_path: str) -> str | None:

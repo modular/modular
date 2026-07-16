@@ -73,9 +73,10 @@ with randomly initialized weights before loading weights
 
 .. code-block:: python
 
-    from max.experimental.nn import Linear
     from max.driver import CPU
     from max.dtype import DType
+    from max.experimental import functional as F
+    from max.experimental.nn import Linear
     from max.graph import TensorType
 
     with F.lazy():
@@ -126,8 +127,10 @@ from max.experimental.sharding.per_shard_dim import (
 )
 from max.experimental.support import contextvar_context, driver_tensor_type
 from max.graph import (
+    Dim,
     DimLike,
     ShapeLike,
+    StaticDim,
     TensorType,
     TensorValueLike,
     ops,
@@ -528,7 +531,7 @@ class Tensor(DLPackArray, HasTensorValue):
         z = Tensor(np.array([1, 2, 3], dtype=np.int16))
 
         # Use factory methods like ones, zeros, arange
-        zeros = Tensor.zeros((2, 3))
+        zeros = Tensor.zeros((2, 2))
 
         # Compute with Python operators or the functional API
         result = y + zeros
@@ -780,6 +783,79 @@ class Tensor(DLPackArray, HasTensorValue):
         return current_realization_context().create_unrealized((value,))
 
     @classmethod
+    def from_dim(cls, dim: DimLike) -> Tensor:
+        """Materializes a dimension as a rank-0 (scalar) tensor on CPU.
+
+        Converts a shape dimension — static, symbolic, or an algebraic
+        expression such as ``batch * seq`` — into a scalar tensor holding its
+        runtime value. This is the supported way to predicate runtime control
+        flow on a symbolic dimension: a symbolic :obj:`~max.graph.Dim` cannot be
+        compared to a Python ``int`` at trace time (``int(dim)`` and
+        ``dim <= 2`` both fail for dynamic dims), but the materialized tensor
+        can, and the comparison's result is exactly the scalar boolean predicate
+        that :func:`~max.experimental.functional.cond` expects.
+
+        .. code-block:: python
+
+            from max.driver import CPU
+            from max.dtype import DType
+            from max.experimental import functional as F
+            from max.experimental.nn import Module
+            from max.experimental.tensor import Tensor
+            from max.graph import DeviceRef, TensorType
+
+            class ScaleByBatch(Module):
+                def forward(self, x: Tensor) -> Tensor:
+                    out_type = TensorType(x.dtype, x.shape, device=x.device)
+                    pred = Tensor.from_dim(x.shape[0]) <= 2  # scalar bool tensor on CPU
+                    then_fn, else_fn = lambda: x * 2.0, lambda: x * 4.0
+                    (out,) = F.cond(pred, [out_type], then_fn, else_fn)
+                    return out
+
+            model = ScaleByBatch().compile(
+                TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
+            )
+            result = model(Tensor.ones([1, 4], dtype=DType.float32, device=CPU()))
+
+        .. invisible-code-block: python
+
+            import numpy as np
+
+            assert np.allclose(result.to_numpy(), 2.0)  # batch 1 (<= 2) -> x * 2
+
+        Args:
+            dim: The dimension to materialize. Accepts anything
+                :obj:`~max.graph.DimLike` (an ``int``, a dim name, a
+                :obj:`~max.graph.Dim`, or an algebraic dim expression).
+
+        Returns:
+            Tensor: A rank-0 ``int64`` tensor on CPU holding the dimension's
+            runtime value.
+
+        Raises:
+            ValueError: In eager mode (no active graph) for a symbolic or
+                algebraic dimension, which has no value outside a graph.
+        """
+        d = Dim(dim)
+        if isinstance(d, StaticDim):
+            # The value is known now, so emit a scalar constant. This needs no
+            # active graph, so it works in eager mode as well as while building
+            # a graph.
+            return F.constant(int(d), DType.int64, CPU())
+        # A symbolic/algebraic dim has no value until runtime, which requires a
+        # graph to defer to. In eager mode there is none, so fail with a clear
+        # message rather than the downstream "No graph found" lookup error.
+        try:
+            _ = graph.Graph.current
+        except LookupError:
+            raise ValueError(
+                f"Tensor.from_dim({d}): a symbolic dimension has no value in "
+                "eager mode. Use a static dimension, or call this while "
+                "building a graph (e.g. inside Module.compile or F.functional)."
+            ) from None
+        return cls.from_graph_value(ops.shape_to_tensor([d])).reshape([])
+
+    @classmethod
     def from_shard_values(
         cls,
         shard_values: Sequence[GraphValue],
@@ -912,7 +988,9 @@ class Tensor(DLPackArray, HasTensorValue):
         instance._mapping = PlacementMapping(mesh, placements)
         return instance
 
-    def _as_constant_external(self, name: str) -> Tensor:
+    def _as_constant_external(
+        self, name: str, align: int | None = None
+    ) -> Tensor:
         """Creates graph external constant(s) matching ``self``'s layout.
 
         For unsharded tensors, creates a single ``constant_external`` and
@@ -921,10 +999,19 @@ class Tensor(DLPackArray, HasTensorValue):
         Tensor preserving ``self``'s mesh, placements, and global shape.
 
         Shard constants are named ``name._shard.0``, ``name._shard.1``, etc.
+
+        Args:
+            name: The name of the constant.
+            align: The alignment of the constant. If not provided,
+                the default alignment for the tensor's dtype will be used.
+
+        Returns:
+            A tensor on the requested placement initialized from the
+            external data.
         """
         if not self.is_distributed:
             stype = TensorType(self.dtype, self.shape, CPU())
-            return F.constant_external(name, stype).to(self.device)
+            return F.constant_external(name, stype, align=align).to(self.device)
         assert self._mapping is not None
         _mesh = self._mapping.mesh
         values = []
@@ -932,7 +1019,7 @@ class Tensor(DLPackArray, HasTensorValue):
         for i in range(_mesh.num_devices):
             local = local_shape_at(shape, i)
             stype = TensorType(self.dtype, local, CPU())
-            t = F.constant_external(f"{name}._shard.{i}", stype)
+            t = F.constant_external(f"{name}._shard.{i}", stype, align=align)
             t = t.to(_mesh.devices[i])
             values.append(t._graph_value)
         return current_realization_context().create_unrealized(
@@ -1299,11 +1386,11 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.graph import TensorType
+            from max.graph import DeviceRef, TensorType
             from max.dtype import DType
 
             # Create a reference tensor type with shape (2, 4)
-            ref_type = TensorType(DType.int32, (2, 4))
+            ref_type = TensorType(DType.int32, (2, 4), device=DeviceRef.CPU())
 
             # Create range tensor matching the reference type
             x = tensor.Tensor.range_like(ref_type)

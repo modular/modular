@@ -17,9 +17,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
-import llguidance
 import numpy as np
 import numpy.typing as npt
 from max.pipelines.request import RequestID
@@ -30,8 +29,9 @@ from .log_probabilities import LogProbabilities
 from .outputs import GenerationOutput, TextGenerationOutput
 from .sampling_params import SamplingParams
 from .status import GenerationStatus
-from .tokens import ImageMetadata, TokenBuffer
+from .tokens import ImageMetadata, TokenBuffer, TokenHashOverride
 
+_CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
 
 _logger = logging.getLogger("max.pipelines")
@@ -102,9 +102,9 @@ class GrammarEnforcementSnapshot:
     draft tokens to compute downstream slot constraints and then
     restores this snapshot so committed-token processing on the next
     batch replays the same transitions from a clean state. Lives next
-    to :class:`TextGenerationContext` because the protocol exposes it
-    via :meth:`TextGenerationContext.snapshot_grammar_state` /
-    :meth:`TextGenerationContext.restore_grammar_state`; the concrete
+    to :class:`TextContext` because it exposes
+    :meth:`TextContext.snapshot_grammar_state` /
+    :meth:`TextContext.restore_grammar_state`; the concrete
     implementation in :class:`TextContext` constructs and consumes instances.
     """
 
@@ -189,409 +189,6 @@ specific type information through the type system.
 
 
 # ---------------------------------------------------------------------------
-# TextGenerationContext protocol and TypeVar
-# ---------------------------------------------------------------------------
-
-
-@runtime_checkable
-class TextGenerationContext(BaseContext, Protocol):
-    """Protocol defining the interface for text generation contexts in token generation.
-
-    A ``TextGenerationContext`` represents model inputs for text generation pipelines,
-    managing the state of tokens throughout the generation process. It handles token
-    arrays, generation status, sampling parameters, and various indices that track
-    different stages of token processing.
-    """
-
-    @property
-    def tokens(self) -> TokenBuffer:
-        """The token buffer for the context."""
-        ...
-
-    @property
-    def eos_tracker(self) -> EOSTracker:
-        """Holds EOS-related settings for this sequence and performs EOS/stop checks.
-
-        Returns:
-            The ``EOSTracker`` for this sequence.
-        """
-        ...
-
-    @property
-    def max_length(self) -> int | None:
-        """The maximum allowed length for this sequence.
-
-        When set, generation will stop when this length is reached, regardless
-        of other stopping criteria.
-
-        Returns:
-            The maximum sequence length limit, or ``None`` if no limit is set.
-        """
-        ...
-
-    def reset(self) -> None:
-        """Resets the context's state by combining all tokens into a new prompt.
-
-        This method is used when a request is evicted, meaning that the context
-        needed to be re-encoded in the following CE iteration.
-        """
-        ...
-
-    def compute_num_available_steps(
-        self,
-        max_seq_len: int,
-    ) -> int:
-        """Computes the maximum number of generation steps available.
-
-        Args:
-            max_seq_len: The maximum allowed sequence length for this context.
-
-        Returns:
-            The number of generation steps that can be executed before reaching
-            the sequence length limit.
-        """
-        ...
-
-    @property
-    def min_tokens(self) -> int:
-        """The minimum number of new tokens that must be generated.
-
-        Returns:
-            The minimum number of new tokens to generate.
-        """
-        ...
-
-    @property
-    def log_probabilities(self) -> int:
-        """The number of top tokens to return log probabilities for.
-
-        Returns:
-            The number of top tokens to include in log probability output.
-            Returns 0 if log probabilities are disabled.
-        """
-        ...
-
-    @property
-    def log_probabilities_echo(self) -> bool:
-        """Whether to include input tokens in the returned log probabilities.
-
-        Returns:
-            ``True`` if input tokens should be included in log probability output,
-            ``False`` otherwise.
-        """
-        ...
-
-    def get_min_token_logit_mask(
-        self, num_steps: int
-    ) -> list[npt.NDArray[np.int32]]:
-        """Returns the token indices that should be masked in the output logits.
-
-        Args:
-            num_steps: The number of generation steps to compute masks for.
-
-        Returns:
-            A list of NumPy arrays, where each array contains token indices
-            that should be masked for the corresponding generation step.
-        """
-        ...
-
-    def advance_token_buffer(
-        self,
-        new_token: int,
-        log_probabilities: LogProbabilities | None = None,
-    ) -> None:
-        """Advance the token buffer without touching FSM state.
-
-        Args:
-            new_token: The token to append to the buffer.
-            log_probabilities: Optional log probabilities for this token.
-        """
-        ...
-
-    def advance_fsm(self, token: int) -> bool:
-        """Advance the FSM matcher state by one token.
-
-        Args:
-            token: The token to consume in the FSM.
-
-        Returns:
-            True if the token was accepted by the matcher, False if no
-            matcher is present.
-        """
-        ...
-
-    def update(
-        self,
-        new_token: int,
-        log_probabilities: LogProbabilities | None = None,
-    ) -> None:
-        """Advance both token buffer and FSM state.
-
-        Args:
-            new_token: The token ID to add to the generation sequence.
-            log_probabilities: Optional log probability data for the new token
-                and alternatives.
-        """
-        ...
-
-    def update_with_future_token(self) -> None:
-        """Append a placeholder future token to the generated tokens.
-
-        This is primarily used for overlap scheduling.
-        """
-        ...
-
-    def realize_future_token(
-        self, new_token: int, log_probabilities: LogProbabilities | None = None
-    ) -> None:
-        """Overwrite the placeholder future token with the actual token.
-
-        This is primarily used for overlap scheduling.
-        """
-        ...
-
-    @property
-    def matcher(self) -> Any | None:
-        """The grammar matcher for structured output generation, if configured.
-
-        Returns:
-            The grammar matcher instance, or ``None`` if no structured generation
-            is configured for this context.
-        """
-        ...
-
-    @property
-    def json_schema(self) -> str | None:
-        """The JSON schema for constrained decoding, if configured.
-
-        Returns:
-            The JSON schema string, or ``None`` if no schema constraint is active.
-        """
-        ...
-
-    @property
-    def grammar(self) -> str | None:
-        """Grammar for constrained decoding, if configured."""
-        return None
-
-    def set_matcher(self, matcher: Any) -> None:
-        """Set a grammar matcher for constrained decoding.
-
-        Args:
-            matcher: The grammar matcher instance to use for constraining output.
-        """
-        ...
-
-    @property
-    def sampling_params(self) -> SamplingParams:
-        """The sampling parameters configured for this generation request.
-
-        Returns:
-            The :class:`SamplingParams` instance containing all sampling
-            configuration for this context.
-        """
-        ...
-
-    @property
-    def is_initial_prompt(self) -> bool:
-        """Whether this context contains only the initial prompt.
-
-        Returns:
-            ``True`` if no tokens have been generated yet, ``False`` if
-            generation has begun.
-        """
-        ...
-
-    def to_generation_output(self) -> TextGenerationOutput:
-        """Converts this context to a :class:`TextGenerationOutput` object.
-
-        Returns:
-            The output object containing the results of the text generation.
-        """
-        ...
-
-    @property
-    def spec_decoding_state(self) -> SpecDecodingState:
-        """Returns the speculative decoding state."""
-        ...
-
-    cached_prefix_length: int | None
-    """Prompt tokens served from the KV prefix cache on first admission."""
-
-    in_reasoning_phase: bool
-    """Whether the latest committed tokens are inside a ``<think>...</think>``
-    block."""
-
-    grammar_enforced: bool
-    """Whether grammar is currently being enforced via bitmask."""
-
-    tools_forced: bool
-    """Whether tool calling was forced (tool_choice=required or named function)."""
-
-    requires_structured_output_flag: bool
-    """Whether this request requires ``--enable-structured-output`` to be set."""
-
-    def set_tool_region(
-        self,
-        start_token_ids: list[int] | None,
-        end_token_ids: list[int] | None,
-    ) -> None:
-        """Set token sequences for conditional tool call enforcement.
-
-        Args:
-            start_token_ids: Token IDs marking tool call start.
-            end_token_ids: Token IDs marking tool call end.
-        """
-        ...
-
-    def set_thinking_region(
-        self,
-        start_token_ids: list[int] | None,
-        end_token_ids: list[int] | None,
-    ) -> None:
-        """Configure thinking region for conditional grammar enforcement.
-
-        Args:
-            start_token_ids: Token IDs marking thinking start.
-            end_token_ids: Token IDs marking thinking end (e.g., ``</think>``).
-        """
-        ...
-
-    def update_enforcement_state(self, token: int) -> bool:
-        """Advance the grammar-enforcement state machine by one token.
-
-        Args:
-            token: The newly committed token.
-
-        Returns:
-            True if the matcher should consume the token.
-        """
-        ...
-
-    def snapshot_grammar_state(self) -> GrammarEnforcementSnapshot:
-        """Capture enforcement state for a speculative rollback."""
-        ...
-
-    def restore_grammar_state(
-        self, snapshot: GrammarEnforcementSnapshot
-    ) -> None:
-        """Restore state captured by ``snapshot_grammar_state``."""
-        ...
-
-
-TextGenerationContextType = TypeVar(
-    "TextGenerationContextType", bound=TextGenerationContext
-)
-"""Type variable for text generation context types, constrained to TextGenerationContext."""
-
-
-# ---------------------------------------------------------------------------
-# VLM protocol and TypeVar
-# ---------------------------------------------------------------------------
-
-
-@runtime_checkable
-class VLMTextGenerationContext(TextGenerationContext, Protocol):
-    """Protocol defining the interface for VLM input contexts."""
-
-    @property
-    def image_idx(self) -> int:
-        """Index of the next unencoded image in the prompt."""
-        ...
-
-    @property
-    def images(self) -> list[ImageMetadata]:
-        """The images in the context."""
-        ...
-
-    @property
-    def next_images(self) -> list[ImageMetadata]:
-        """The images that are not yet encoded."""
-        ...
-
-    @property
-    def needs_vision_encoding(self) -> bool:
-        """Whether vision encoding is needed for this context."""
-        ...
-
-    @property
-    def image_token_indices(self) -> npt.NDArray[np.int32]:
-        """Positions of image-placeholder tokens within this context's token buffer."""
-        ...
-
-    def compute_image_aligned_idx(self, idx: int) -> int:
-        """Aligns an index downward to avoid splitting an image token span.
-
-        Args:
-            idx: The candidate index into the token sequence.
-
-        Returns:
-            The adjusted index, guaranteed not to split an image token span.
-        """
-        ...
-
-
-VLMContextType = TypeVar("VLMContextType", bound=VLMTextGenerationContext)
-"""Type variable for VLM context types, constrained to VLMTextGenerationContext."""
-
-
-# ---------------------------------------------------------------------------
-# Pixel generation protocol and TypeVar
-# ---------------------------------------------------------------------------
-
-
-@runtime_checkable
-class PixelGenerationContext(BaseContext, Protocol):
-    """Protocol defining the interface for pixel generation contexts.
-
-    A ``PixelGenerationContext`` represents model inputs for pixel generation
-    pipelines, managing the state and parameters needed for generating images
-    or videos.
-    """
-
-    @property
-    def tokens(self) -> TokenBuffer:
-        """The token buffer for the context."""
-        ...
-
-    @property
-    def latents(self) -> npt.NDArray[np.float32]:
-        """The latents for the context."""
-        ...
-
-    @property
-    def height(self) -> int:
-        """Height of generated output in pixels."""
-        ...
-
-    @property
-    def width(self) -> int:
-        """Width of generated output in pixels."""
-        ...
-
-    @property
-    def num_inference_steps(self) -> int:
-        """Number of denoising steps."""
-        ...
-
-    @property
-    def guidance_scale(self) -> float:
-        """Classifier-free guidance scale (1.0 to disable CFG)."""
-        ...
-
-    @property
-    def num_images_per_prompt(self) -> int:
-        """Number of images to generate."""
-        ...
-
-
-PixelGenerationContextType = TypeVar(
-    "PixelGenerationContextType", bound=PixelGenerationContext
-)
-"""Type variable for pixel generation context types, constrained to PixelGenerationContext."""
-
-
-# ---------------------------------------------------------------------------
 # Concrete helpers used by the context implementations below
 # ---------------------------------------------------------------------------
 
@@ -610,6 +207,40 @@ class StructuredOutputRegionDelimiters:
 
     end_token_ids: list[int] | None = None
     """Token ID sequence marking the end of a structured output region."""
+
+
+@runtime_checkable
+class GrammarMatcher(Protocol):
+    """Per-request grammar matcher stepped each decode step.
+
+    Backend-agnostic interface; method names mirror llguidance's ``LLMatcher``
+    so a context can hold any backend's matcher (llguidance, xgrammar) without
+    branching. The llguidance ``LLMatcher`` satisfies this protocol natively.
+    """
+
+    def try_consume_tokens(self, tokens: list[int]) -> int:
+        """Advance the matcher; returns the number of tokens consumed."""
+        ...
+
+    def is_accepting(self) -> bool:
+        """Whether the matcher is at an accepting (stoppable) state."""
+        ...
+
+    def is_stopped(self) -> bool:
+        """Whether the matcher has reached a terminal state."""
+        ...
+
+    def get_error(self) -> str | None:
+        """Error message for the last rejection, if any (diagnostics)."""
+        ...
+
+    def get_grammar_warnings(self) -> Any:
+        """Grammar compilation warnings, if any (diagnostics)."""
+        ...
+
+    def deep_copy(self) -> GrammarMatcher:
+        """Independent copy for speculative walks (never mutates the original)."""
+        ...
 
 
 @dataclass
@@ -825,6 +456,7 @@ class TextContext:
         _status: Current generation status (active, finished, etc)
         _log_probabilities_data: Token log probabilities data
         _is_initial_prompt: Whether this is the initial prompt encoding
+        _is_padding_ctx: Whether this context is a DP batch padding context
         _draft_offset: Offset for draft decoding
         _spec_decoding_state: Optional per-request speculative decoding state
         vocab_size: Optional vocabulary size for validating generated token IDs
@@ -860,6 +492,7 @@ class TextContext:
     )
 
     _is_initial_prompt: bool = field(default=True)
+    _is_padding_ctx: bool = field(default=False)
     _draft_offset: int = field(default=0)
     _spec_decoding_state: SpecDecodingState | None = field(default=None)
 
@@ -875,6 +508,16 @@ class TextContext:
 
     When set, the DKVConnector reads this during lookup() to determine
     which blocks are available in the external BlockStore system.
+    """
+    cache_salt: str | None = field(default=None)
+    """Optional per-request salt that isolates this prompt's prefix-cache
+    entries from other requests sharing the same tokens.
+
+    Combined with the cluster-level ``kv_cache_hash_seed`` via XOR inside
+    ``BlockManager.compute_hashes_for_request`` to derive the root parent
+    hash. Has effect only when ``kv_cache_hash_algo`` is ``sha256`` or
+    ``sha256_64``; under ``ahash64`` the salt is dropped with a one-time
+    warning. Capped at 512 chars at the OpenAI schema layer.
     """
 
     dkv_hint_instance_name: str = field(default="")
@@ -976,12 +619,12 @@ class TextContext:
 
         return ret_list
 
-    def set_matcher(self, matcher: llguidance.LLMatcher) -> None:
+    def set_matcher(self, matcher: GrammarMatcher) -> None:
         """Sets the grammar matcher for constrained decoding."""
         self._matcher = matcher
 
     @property
-    def matcher(self) -> llguidance.LLMatcher | None:
+    def matcher(self) -> GrammarMatcher | None:
         """The optional grammar matcher for constrained decoding."""
         return self._matcher
 
@@ -1219,22 +862,44 @@ class TextContext:
         # a clean terminal state rather than logging a spurious rejection.
         if token in self.eos_tracker.eos_token_ids:
             self.grammar_state.grammar_enforced = False
-        elif (
-            self.grammar_state.update_enforcement_state(token)
-            and self.matcher.try_consume_tokens([token]) != 1
-        ):
-            _logger.error(
-                "Matcher rejected token %d (request %s); disabling "
-                "enforcement for the rest of the request. "
-                "matcher_errors=%s matcher_warnings=%s",
-                token,
-                self.request_id,
-                self.matcher.get_error(),
-                self.matcher.get_grammar_warnings(),
-            )
-            self.grammar_state.grammar_enforced = False
+        else:
+            was_enforced = self.grammar_state.grammar_enforced
+            if self.grammar_state.update_enforcement_state(token):
+                tokens = self._tokens_for_consume(token, was_enforced)
+                if self.matcher.try_consume_tokens(tokens) != len(tokens):
+                    _logger.error(
+                        "Matcher rejected %d token(s) ending at %d "
+                        "(request %s); disabling enforcement for the rest "
+                        "of the request. matcher_errors=%s "
+                        "matcher_warnings=%s",
+                        len(tokens),
+                        token,
+                        self.request_id,
+                        self.matcher.get_error(),
+                        self.matcher.get_grammar_warnings(),
+                    )
+                    self.grammar_state.grammar_enforced = False
 
         return True
+
+    def _tokens_for_consume(self, token: int, was_enforced: bool) -> list[int]:
+        """Tokens to feed the matcher for a conditional-enforcement step.
+
+        On the enforcement flip-on (``was_enforced`` was False and
+        ``update_enforcement_state`` just turned it True at a tool-call
+        ``SECTION_BEGIN``), the matcher is fresh and must consume the
+        ENTIRE start marker, not just the token that completed it. For
+        multi-token / namespace-prefixed markers (e.g. MiniMax-M3's
+        ``NS<tool_call>``) the grammar's ``start`` rule expects the prefix
+        first; feeding only the completing token leaves the matcher
+        expecting that prefix, so it rejects and enforcement silently
+        falls open. Single-token markers have ``start_token_ids ==
+        [token]``, so this is a no-op for them.
+        """
+        region = self.grammar_state.tool_region
+        if not was_enforced and region and region.start_token_ids:
+            return list(region.start_token_ids)
+        return [token]
 
     def update(
         self,
@@ -1372,6 +1037,9 @@ class TextAndVisionContext(TextContext):
     images: list[ImageMetadata] = field(default_factory=list)
     """Metadata about each image in the prompt. """
 
+    token_hash_overrides: list[TokenHashOverride] = field(default_factory=list)
+    """Token-level content hashes to inject into prefix-cache block hashing."""
+
     extra_model_args: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
     """Extra model arguments for the vision model. These are model specific arguments."""
 
@@ -1384,7 +1052,11 @@ class TextAndVisionContext(TextContext):
             ):
                 if next_img.start_idx < prev_img.start_idx:
                     raise ValueError("Images must be sorted")
-                if next_img.start_idx <= prev_img.end_idx:
+                # Ranges are half-open [start_idx, end_idx), so adjacent
+                # images (next.start_idx == prev.end_idx) do not overlap.
+                # Chat templates that emit no separator token between
+                # consecutive images produce exactly such touching ranges.
+                if next_img.start_idx < prev_img.end_idx:
                     raise ValueError("Images must be non-overlapping")
 
         for img in self.images:
@@ -1402,6 +1074,18 @@ class TextAndVisionContext(TextContext):
                 raise ValueError(
                     f"Images must be filled with <vision_token_id> ({self.vision_token_ids})"
                 )
+
+        token_override_indices: set[int] = set()
+        for override in self.token_hash_overrides:
+            if len(self.tokens) <= override.token_idx:
+                raise ValueError(
+                    "Token hash overrides must be before the end of the token array"
+                )
+            if override.token_idx in token_override_indices:
+                raise ValueError(
+                    f"Multiple token hash overrides target index {override.token_idx}"
+                )
+            token_override_indices.add(override.token_idx)
 
         self._validate_state()
 
@@ -1598,6 +1282,10 @@ class PixelContext:
     """
     output_format: str = field(default="jpeg")
     """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
+    seed: int | None = field(default=None)
+    """Optional RNG seed from the request. Preserved here so executors that
+    sample noise inside the compiled graph can consume the scalar directly,
+    rather than relying on tokenizer-baked random latents."""
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property
@@ -1633,28 +1321,20 @@ class PixelContext:
         )
 
 
-if TYPE_CHECKING:
-    # Verify that concrete classes implement their respective protocols
-    def _verify_text_context_protocol() -> TextGenerationContext:
-        return TextContext(
-            request_id=RequestID(),
-            max_length=5,
-            tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-            eos_tracker=EOSTracker(),
-        )
+# ---------------------------------------------------------------------------
+# Context TypeVars (bound to concrete implementations)
+# ---------------------------------------------------------------------------
 
-    def _verify_vlm_context_protocol() -> VLMTextGenerationContext:
-        return TextAndVisionContext(
-            request_id=RequestID(),
-            max_length=5,
-            tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-            eos_tracker=EOSTracker(),
-            vision_token_ids=[],
-            images=[],
-        )
 
-    def _verify_pixel_context_protocol() -> PixelGenerationContext:
-        return PixelContext(
-            request_id=RequestID(),
-            tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-        )
+TextGenerationContextType = TypeVar(
+    "TextGenerationContextType", bound=TextContext
+)
+"""Type variable for text generation context types, constrained to TextContext."""
+
+VLMContextType = TypeVar("VLMContextType", bound=TextAndVisionContext)
+"""Type variable for VLM context types, constrained to TextAndVisionContext."""
+
+PixelGenerationContextType = TypeVar(
+    "PixelGenerationContextType", bound=PixelContext
+)
+"""Type variable for pixel generation context types, constrained to PixelContext."""

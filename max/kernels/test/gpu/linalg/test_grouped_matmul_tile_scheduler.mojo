@@ -53,8 +53,9 @@ def test(ctx: DeviceContext) raises:
     )
     comptime offset_layout = Layout(group_len + 1)
     var dev_group_offsets = LayoutTensor[
-        DType.uint32, offset_layout, MutAnyOrigin
-    ](dev_group_offsets_buffer.unsafe_ptr())
+        DType.uint32,
+        offset_layout,
+    ](dev_group_offsets_buffer)
 
     ctx.enqueue_copy(dev_group_offsets_buffer, host_group_offsets_ptr)
 

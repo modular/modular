@@ -16,14 +16,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import queue
-from collections.abc import AsyncGenerator, AsyncIterator, Generator
+import time
+from collections.abc import AsyncGenerator
 from typing import Any, Generic
 
-import zmq
 from max.pipelines.context import (
     BaseContextType,
-    TextGenerationContext,
+    TextContext,
 )
 from max.pipelines.modeling.types import (
     EmbeddingsContext,
@@ -31,17 +30,19 @@ from max.pipelines.modeling.types import (
     PipelineTask,
     RequestID,
 )
-from max.serve.queue import MAXPullQueue, MAXPushQueue
+from max.serve.queue import MAXAsyncPullQueue, MAXAsyncPushQueue
 from max.serve.scheduler_result import SchedulerResult
+from max.serve.telemetry.metrics import METRICS
 from max.serve.worker_interface import (
     ModelWorkerInterface,
     ModelWorkerProxy,
     WorkerQueues,
-    sleep_with_backoff,
 )
-from max.serve.worker_interface.zmq_queue import ZmqConfig
+from max.serve.worker_interface._zmq_queue import ZmqConfig
 
 logger = logging.getLogger("max.serve")
+
+_BACKLOG_SAMPLE_INTERVAL_S = 1.0
 
 
 class ZmqModelWorkerProxy(
@@ -50,86 +51,95 @@ class ZmqModelWorkerProxy(
 ):
     def __init__(
         self,
-        request_queue: MAXPushQueue[BaseContextType],
-        response_queue: MAXPullQueue[
+        request_queue: MAXAsyncPushQueue[BaseContextType],
+        response_queue: MAXAsyncPullQueue[
             dict[RequestID, SchedulerResult[PipelineOutputType]]
         ],
-        cancel_queue: MAXPushQueue[list[RequestID]],
+        cancel_queue: MAXAsyncPushQueue[list[RequestID]],
     ):
         self.request_queue = request_queue
         self.response_queue = response_queue
         self.cancel_queue = cancel_queue
 
+        # Each queued item is ``(enqueue_monotonic_s, result)`` so the
+        # streaming layer can measure how long the response waited in the
+        # output queue (the egress backlog). The timestamp is attached
+        # API-side here, not on ``SchedulerResult`` (which is a msgspec wire
+        # type serialized from the model worker).
         self.pending_out_queues: dict[
-            RequestID, asyncio.Queue[SchedulerResult[PipelineOutputType]]
+            RequestID,
+            asyncio.Queue[tuple[float, SchedulerResult[PipelineOutputType]]],
         ] = {}
 
-    @contextlib.contextmanager
-    def _open_channel(
-        self, req_id: RequestID, data: BaseContextType
-    ) -> Generator[
-        asyncio.Queue[SchedulerResult[PipelineOutputType]], None, None
-    ]:
-        """
-        Context manager to open a communication channel for a specific request.
-
-        This method registers a new asyncio.Queue for the given request ID, sends the request data
-        through the request push socket, and yields the queue for streaming results. Upon exiting
-        the context, the queue is cleaned up from the pending output queues.
-
-        Args:
-            req_id: The unique identifier for the request.
-            data: The input data associated with the request.
-
-        Yields:
-            asyncio.Queue: The queue to receive streamed results for the request.
-
-        Raises:
-            RuntimeError: If a queue for the given req_id already exists, indicating a duplicate request.
-        """
-        try:
-            if req_id in self.pending_out_queues:
-                raise RuntimeError(
-                    f"Detected multiple requests with `req_id` set to {req_id}. "
-                    "This WILL lead to unexpected behavior! "
-                    "Please ensure that the `req_id` is unique for each request."
-                )
-
-            out_queue: asyncio.Queue[SchedulerResult[PipelineOutputType]] = (
-                asyncio.Queue()
-            )
-            self.pending_out_queues[req_id] = out_queue
-
-            # put_nowait will fail if the request_push_socket is unavailable
-            # this will immediately trigger the finally block, resulting in
-            # the request being purged, and returned without result.
-            self.request_queue.put_nowait(data)
-            try:
-                yield out_queue
-            except:
-                # tell the model worker we're aborting for some reason
-                self.cancel(req_id)
-                raise
-        finally:
-            del self.pending_out_queues[req_id]
+    def egress_backlog(self) -> int:
+        """Total responses buffered across all pending output queues."""
+        return sum(q.qsize() for q in self.pending_out_queues.values())
 
     async def stream(
         self, req_id: RequestID, data: BaseContextType
-    ) -> AsyncIterator[list[PipelineOutputType]]:
-        """
-        Asynchronously streams results for a given request ID and input data.
+    ) -> AsyncGenerator[list[PipelineOutputType], None]:
+        """Submit a request to the model worker and return a response generator.
 
-        Opens a channel for the request, drains the queue to build output batches,
-        and closes the channel when the stream ends.
+        Awaiting this coroutine registers an output queue for ``req_id`` and
+        puts ``data`` on the request queue (the handoff to the model worker). A
+        failure during that put — for example a dead worker socket — raises
+        here, before any response is streamed, and the queue registration is
+        rolled back. The returned async generator drains responses until the
+        request completes.
 
         The yielded lists are guaranteed to be non-empty and ordered.
+
+        Raises:
+            RuntimeError: If a queue for the given ``req_id`` already exists,
+                indicating a duplicate request.
         """
-        with self._open_channel(req_id, data) as queue:
+        if req_id in self.pending_out_queues:
+            raise RuntimeError(
+                f"Detected multiple requests with `req_id` set to {req_id}. "
+                "This WILL lead to unexpected behavior! "
+                "Please ensure that the `req_id` is unique for each request."
+            )
+
+        out_queue: asyncio.Queue[
+            tuple[float, SchedulerResult[PipelineOutputType]]
+        ] = asyncio.Queue()
+        self.pending_out_queues[req_id] = out_queue
+        try:
+            await self.request_queue.put(data)
+        except BaseException:
+            # Submission failed before any response streamed; roll back the
+            # registration and cancel so the worker drops any partial state.
+            del self.pending_out_queues[req_id]
+            with contextlib.suppress(Exception):
+                self.cancel(req_id)
+            raise
+
+        return self._drain_responses(req_id, out_queue)
+
+    async def _drain_responses(
+        self,
+        req_id: RequestID,
+        queue: asyncio.Queue[tuple[float, SchedulerResult[PipelineOutputType]]],
+    ) -> AsyncGenerator[list[PipelineOutputType], None]:
+        """Drain the output queue for a submitted request until it completes.
+
+        Cleans up the pending output queue on exit and cancels the request with
+        the worker if the stream is abandoned before completing normally.
+        """
+        try:
             # queue.get() will wait until an item is available.
             # This will exit when no result is passed in the SchedulerResult.
             # or the SchedulerResult states that we should stop the stream.
             while True:
-                item = await queue.get()
+                enqueue_s, item = await queue.get()
+                # Record how long this head-of-line response waited in the
+                # output queue. Sampled once per consumer wake (not on the
+                # get_nowait drain below) to bound metric volume while still
+                # capturing egress congestion: the head item is the oldest
+                # waiter, so this is the per-wake worst-case wait.
+                METRICS.response_queue_time(
+                    (time.monotonic() - enqueue_s) * 1000
+                )
                 if item.result is None:
                     break
 
@@ -137,7 +147,7 @@ class ZmqModelWorkerProxy(
                 should_stop = item.is_done
                 while True:
                     try:
-                        item = queue.get_nowait()
+                        _, item = queue.get_nowait()
                     except asyncio.QueueEmpty:
                         break
 
@@ -154,73 +164,46 @@ class ZmqModelWorkerProxy(
 
                 if should_stop:
                     break
+        except BaseException:
+            # The consumer abandoned the stream (e.g. client disconnect) or an
+            # error occurred mid-stream; tell the worker to stop generating.
+            with contextlib.suppress(Exception):
+                self.cancel(req_id)
+            raise
+        finally:
+            del self.pending_out_queues[req_id]
 
     def cancel(self, req_id: RequestID) -> None:
         """
-        Cancel a specific request by its ID.
+        Cancel a specific request by its ID (non-blocking).
 
         This method sends a cancellation message to the worker for the given request ID.
 
         Args:
             req_id: The unique identifier of the request to cancel.
         """
-        # Send cancellation message to worker
         self.cancel_queue.put_nowait([req_id])
 
     async def response_worker(self) -> None:
-        """
-        Continuously processes responses from the remote worker process.
-
-        This method runs in a loop, pulling responses from the response socket and routing them
-        to the appropriate pending queues. It also handles distributed garbage collection by
-        detecting and cancelling requests that are no longer being waited for.
-
-        Cancellation Handling:
-        When a response is received for a request ID that doesn't have a pending queue,
-        it means the client has given up waiting (due to disconnect, timeout, exception, or
-        early termination). In this case, we send a cancellation message to the worker to:
-
-        1. **Resource Optimization**: Tell the worker to stop wasting CPU/memory on requests
-           nobody is waiting for
-        2. **Prevent Resource Leaks**: The worker might be holding onto resources (memory,
-           file handles, etc.) for cancelled requests
-        3. **Backpressure Management**: Remove cancelled requests from the worker's queue
-           to prevent them from blocking other work
-
-        Common scenarios that trigger cancellation:
-        - Client disconnects or times out while streaming
-        - Exception occurs during stream processing
-        - Async generator is closed early (stream.__aclose__())
-        - Client process terminates unexpectedly
-
-        This implements a distributed garbage collection pattern common in async systems
-        where network operations are asynchronous and either side can fail or disconnect.
-
-        Raises:
-            Exception: If the worker process becomes unhealthy and cannot be recovered.
-            asyncio.CancelledError: If the response worker task is cancelled.
-        """
-        count_no_progress = 0
+        """Awaits responses from the model worker and routes them to pending output queues."""
         while True:
-            try:
-                response_dict = self.response_queue.get_nowait()
-                cancelled = set()
-                for request_id, response in response_dict.items():
-                    if request_id in self.pending_out_queues:
-                        await self.pending_out_queues[request_id].put(response)
-                    else:
-                        cancelled.add(request_id)
+            response_dict = await self.response_queue.get()
+            for request_id, response in response_dict.items():
+                if request_id in self.pending_out_queues:
+                    await self.pending_out_queues[request_id].put(
+                        (time.monotonic(), response)
+                    )
 
-                if cancelled:
-                    self.cancel_queue.put_nowait(list(cancelled))
-
-                count_no_progress = 0
-            except queue.Empty:
-                await sleep_with_backoff(count_no_progress)
-                count_no_progress += 1
-            except zmq.error.Again:
-                # the model worker disconnected from zmq (died)
-                raise Exception("zmq detected a dead model worker") from None
+    async def _metrics_worker(self) -> None:
+        """Periodically samples backlog gauges and histograms."""
+        while True:
+            await asyncio.sleep(_BACKLOG_SAMPLE_INTERVAL_S)
+            backlog = self.egress_backlog()
+            METRICS.responses_buffered(backlog)
+            METRICS.responses_buffered_dist(backlog)
+            METRICS.requests_awaiting_admission_dist(
+                self._awaiting_admission_count
+            )
 
 
 def _response_type_for_task(
@@ -252,7 +235,7 @@ class ZmqModelWorkerInterface(
     def __init__(
         self,
         pipeline_task: PipelineTask,
-        context_type: type[TextGenerationContext] | type[EmbeddingsContext],
+        context_type: type[TextContext] | type[EmbeddingsContext],
     ) -> None:
         response_type = _response_type_for_task(pipeline_task)
 
@@ -279,12 +262,14 @@ class ZmqModelWorkerInterface(
         ZmqModelWorkerProxy[BaseContextType, PipelineOutputType]
     ]:
         proxy = ZmqModelWorkerProxy(
-            self.request_queue_config.push(),
-            self.response_queue_config.pull(),
-            self.cancel_queue_config.push(),
+            self.request_queue_config.async_push(),
+            self.response_queue_config.async_pull(),
+            self.cancel_queue_config.async_push(),
         )
         worker_task = asyncio.create_task(proxy.response_worker())
+        metrics_task = asyncio.create_task(proxy._metrics_worker())
         try:
             yield proxy
         finally:
             worker_task.cancel()
+            metrics_task.cancel()

@@ -63,8 +63,9 @@ struct AddOneCustom:
 
         foreach[add_one, target=target](output, ctx)
 
-    @staticmethod
-    def shape(
-        x: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+
+@compiler.register_shape_function("add_one_custom")
+def add_one_custom_shape(
+    x: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise "NotImplemented"

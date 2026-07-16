@@ -54,7 +54,7 @@ comptime MAX_PAD_SIZE = 2 * MAX_RANK
 
 
 @export
-def PyInit_pad_ops() -> PythonObject:
+def PyInit_pad_ops() abi("C") -> PythonObject:
     """Create a Python module with pad kernel function bindings."""
     try:
         var b = PythonModuleBuilder("pad_ops")
@@ -81,8 +81,8 @@ def PyInit_pad_ops() -> PythonObject:
 def pad_constant_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     constant: Scalar[dtype],
     paddings: InlineArray[Int, MAX_PAD_SIZE],
     out_shape: InlineArray[Int, MAX_RANK],
@@ -117,6 +117,11 @@ def pad_constant_op[
         ctx: Device context.
     """
 
+    # TODO: This body captures `InlineArray` shape/stride/padding args, which
+    # makes the closure memory-only, so it cannot satisfy the unified-closure
+    # `elementwise` overload's `RegisterPassable` bound. Keep using the
+    # deprecated parameter-closure overload until the array data is staged in
+    # device memory (or the unified overload accepts memory-only closures).
     @always_inline
     @parameter
     @__copy_capture(
@@ -167,8 +172,8 @@ def pad_constant_op[
 def pad_reflect_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     paddings: InlineArray[Int, MAX_PAD_SIZE],
     out_shape: InlineArray[Int, MAX_RANK],
     in_shape: InlineArray[Int, MAX_RANK],
@@ -201,6 +206,11 @@ def pad_reflect_op[
         ctx: Device context (CPU).
     """
 
+    # TODO: This body captures `InlineArray` shape/stride/padding args, which
+    # makes the closure memory-only, so it cannot satisfy the unified-closure
+    # `elementwise` overload's `RegisterPassable` bound. Keep using the
+    # deprecated parameter-closure overload until the array data is staged in
+    # device memory (or the unified overload accepts memory-only closures).
     @always_inline
     @parameter
     @__copy_capture(
@@ -241,8 +251,8 @@ def pad_reflect_op[
 def pad_repeat_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     paddings: InlineArray[Int, MAX_PAD_SIZE],
     out_shape: InlineArray[Int, MAX_RANK],
     in_shape: InlineArray[Int, MAX_RANK],
@@ -274,6 +284,11 @@ def pad_repeat_op[
         ctx: Device context (CPU).
     """
 
+    # TODO: This body captures `InlineArray` shape/stride/padding args, which
+    # makes the closure memory-only, so it cannot satisfy the unified-closure
+    # `elementwise` overload's `RegisterPassable` bound. Keep using the
+    # deprecated parameter-closure overload until the array data is staged in
+    # device memory (or the unified overload accepts memory-only closures).
     @always_inline
     @parameter
     @__copy_capture(

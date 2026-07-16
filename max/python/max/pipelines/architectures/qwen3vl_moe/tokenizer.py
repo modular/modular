@@ -513,11 +513,13 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                 assert new_request.messages
                 prompt = self.apply_chat_template(
                     new_request.messages,
+                    tools=request.tools,
                     **(request.chat_template_options or {}),
                 )
         elif request.messages:
             prompt = self.apply_chat_template(
                 request.messages,
+                tools=request.tools,
                 **(request.chat_template_options or {}),
             )
         else:
@@ -526,9 +528,10 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         # Step 2: Load and process images
         image_inputs = None
         if request.images:
+            # _load_image accepts both a PIL.Image and raw bytes.
             image_inputs = [
-                _load_image({"image": image_data})
-                for image_data in request.images
+                _load_image({"image": image})
+                for image in request.images_for_processing()
             ]
 
         # Check for BOS token BEFORE image expansion
@@ -700,17 +703,29 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             start_and_end_idxs = find_contiguous_ranges(
                 encoded_prompt, [self.image_token_id]
             )
+            # Key each image on its raw encoded bytes (+ the resolution size
+            # class), not on hash_image(pixel_values): the raw-byte key is
+            # byte-identical across torch/BLAS/device so a separate encoder can
+            # reproduce it for cache-aware routing, whereas the post-resize
+            # float hash cannot. smart_resize is deterministic from the encoded
+            # bytes + fixed config, so the process-wide max-pixels resolution
+            # bound is the size tier. request.images is 1:1 with
+            # pixel_values_list (one processed entry per input image).
+            image_size_tier = self.img_processor.max_pixels
             images = [
                 ImageMetadata(
                     start_idx=start_idx,
                     end_idx=end_idx,
                     pixel_values=pixel_values,
-                    image_hash=hash_image(pixel_values)
+                    image_hash=hash_image(raw_bytes, image_size_tier)
                     if self.enable_prefix_caching
                     else None,
                 )
-                for (start_idx, end_idx), pixel_values in zip(
-                    start_and_end_idxs, pixel_values_list, strict=True
+                for (start_idx, end_idx), pixel_values, raw_bytes in zip(
+                    start_and_end_idxs,
+                    pixel_values_list,
+                    request.images,
+                    strict=True,
                 )
             ]
         else:
@@ -747,6 +762,8 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
             images=images,

@@ -22,7 +22,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import (
@@ -64,7 +64,7 @@ def _make_padder(
     if pipeline is None:
         pipeline = MagicMock()
         pipeline.release = MagicMock()
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         num_layers=1,
         n_kv_heads=1,
@@ -105,7 +105,7 @@ def _claim_and_alloc(
     """Claims and allocates KV cache entries for *contexts* on a replica."""
     for ctx in contexts:
         kv_manager.claim(ctx.request_id, replica_idx=replica_idx)
-        kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
+        kv_manager.alloc(ctx, replica_idx=replica_idx)
 
 
 def _simulate_execute(contexts: list[TextContext]) -> None:
@@ -140,7 +140,7 @@ def _make_inputs(
     num_steps: int = 1,
     batch_type: BatchType = BatchType.CE,
 ) -> TextGenerationInputs[TextContext]:
-    inputs = TextGenerationInputs(batches=batches, num_steps=num_steps)
+    inputs = TextGenerationInputs(batches=batches)
     inputs.batch_type = batch_type
     return inputs
 

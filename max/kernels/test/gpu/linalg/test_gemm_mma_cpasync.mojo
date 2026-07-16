@@ -32,13 +32,18 @@ def run_gemm_mma_cpasync[
     b_type: DType,
     c_type: DType,
     tile_k: Int = 128,
+    swapAB: Bool = False,
 ](gemm_m: Int, gemm_k: Int, gemm_n: Int, *, ctx: DeviceContext,) raises:
-    """Run the non-swapAB GEMM TC kernel and compare against cuBLAS.
+    """Run the GEMM TC kernel and compare against cuBLAS.
 
     act:    (gemm_m, gemm_k).
     weight: (gemm_n, gemm_k).
-    output: (gemm_m, gemm_n).
+    output: (gemm_m, gemm_n), row-major.
     C[M, N] = act[M, K] * weight[N, K]^T.
+
+    `swapAB` only changes the kernel's internal tiling/epilogue; the caller-facing
+    shapes and the row-major `[M, N]` output are identical, so the same cuBLAS
+    reference applies either way.
     """
     print(
         "== gemm_tc  M=",
@@ -49,6 +54,8 @@ def run_gemm_mma_cpasync[
         gemm_n,
         " tile_k=",
         tile_k,
+        " swapAB=",
+        swapAB,
     )
     print("dtypes: act=", a_type, " weight=", b_type, " out=", c_type)
 
@@ -92,7 +99,7 @@ def run_gemm_mma_cpasync[
     var w_tensor = TileTensor(weight_dev, w_shape)
     var c_tensor = TileTensor(out_dev, c_shape)
 
-    gemm_mma_cpasync[tile_k=tile_k](
+    gemm_mma_cpasync[tile_k=tile_k, swapAB=swapAB](
         c_tensor,
         a_tensor,
         w_tensor,
@@ -142,8 +149,14 @@ def run_gemm_mma_cpasync_residual[
     b_type: DType,
     c_type: DType,
     tile_k: Int = 128,
+    swapAB: Bool = False,
 ](gemm_m: Int, gemm_k: Int, gemm_n: Int, *, ctx: DeviceContext) raises:
-    """Run GEMM TC kernel with residual epilogue: D = matmul(A,B) + residual."""
+    """Run GEMM TC kernel with residual epilogue: D = matmul(A,B) + residual.
+
+    Also exercises the elementwise-lambda epilogue under `swapAB`: the lambda
+    must receive the true row-major `[M, N]` index so the residual is added at
+    the correct location even when the kernel tiles the transposed problem.
+    """
     print(
         "== gemm_tc+residual  M=",
         gemm_m,
@@ -153,6 +166,8 @@ def run_gemm_mma_cpasync_residual[
         gemm_n,
         " tile_k=",
         tile_k,
+        " swapAB=",
+        swapAB,
     )
 
     var act_size = gemm_m * gemm_k
@@ -209,6 +224,7 @@ def run_gemm_mma_cpasync_residual[
     gemm_mma_cpasync[
         tile_k=tile_k,
         elementwise_lambda_fn=residual_epilogue,
+        swapAB=swapAB,
     ](
         c_tensor,
         a_tensor,
@@ -293,6 +309,44 @@ def main() raises:
             DType.bfloat16, DType.bfloat16, DType.bfloat16, tile_k=512
         ](16, 7168, 384, ctx=ctx)
 
+        # swapAB tests: C[M, N] = act @ weight^T must match the non-swap path
+        # exactly. Kimi decode shape (N=2112, K=7168) across small M.
+        run_gemm_mma_cpasync[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            tile_k=128,
+            swapAB=True,
+        ](1, 7168, 2112, ctx=ctx)
+        run_gemm_mma_cpasync[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            tile_k=256,
+            swapAB=True,
+        ](2, 7168, 2112, ctx=ctx)
+        run_gemm_mma_cpasync[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            tile_k=128,
+            swapAB=True,
+        ](4, 7168, 2112, ctx=ctx)
+        run_gemm_mma_cpasync[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            tile_k=256,
+            swapAB=True,
+        ](7, 7168, 2112, ctx=ctx)
+        run_gemm_mma_cpasync[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            tile_k=128,
+            swapAB=True,
+        ](16, 7168, 2112, ctx=ctx)
+
         # Residual epilogue tests: D = matmul(A,B) + residual.
         run_gemm_mma_cpasync_residual[
             DType.bfloat16, DType.bfloat16, DType.bfloat16, tile_k=128
@@ -303,3 +357,39 @@ def main() raises:
         run_gemm_mma_cpasync_residual[
             DType.bfloat16, DType.bfloat16, DType.bfloat16, tile_k=64
         ](16, 7168, 384, ctx=ctx)
+
+        run_gemm_mma_cpasync_residual[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            tile_k=128,
+            swapAB=True,
+        ](1, 7168, 2112, ctx=ctx)
+        run_gemm_mma_cpasync_residual[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            tile_k=256,
+            swapAB=True,
+        ](2, 7168, 2112, ctx=ctx)
+        run_gemm_mma_cpasync_residual[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            tile_k=128,
+            swapAB=True,
+        ](4, 7168, 2112, ctx=ctx)
+        run_gemm_mma_cpasync_residual[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            tile_k=256,
+            swapAB=True,
+        ](7, 7168, 2112, ctx=ctx)
+        run_gemm_mma_cpasync_residual[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            tile_k=128,
+            swapAB=True,
+        ](16, 7168, 2112, ctx=ctx)

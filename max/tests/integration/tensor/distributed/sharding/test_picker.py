@@ -92,12 +92,12 @@ class TestSolverDiscrimination:
         picked = GreedyReshard(allow_partial_to_sharded=True)(menu, (lay,))
         assert input_placements(picked) == (Sharded(0),)
 
-    def test_no_cost_takes_first_feasible(
+    def test_no_cost_refuses_partial_to_replicated_reshard(
         self, partial_input_menu: PartialInputMenu
     ) -> None:
         lay, menu = partial_input_menu
-        picked = NoReshard()(menu, (lay,))
-        assert input_placements(picked) == (Replicated(),)
+        with pytest.raises(ShardingError):
+            NoReshard()(menu, (lay,))
 
     def test_partial_resolve_takes_allreduce_only_path(
         self, partial_input_menu: PartialInputMenu
@@ -139,6 +139,24 @@ class TestPartialResolveRefusal:
         menu = build_action_set(rows, layouts=(lay,))
         with pytest.raises(ShardingError):
             PartialsOnly()(menu, (lay,))
+
+
+class TestNoReshardRefusal:
+    def test_raises_when_only_shard_reshard_available(self) -> None:
+        mesh = mesh_1d(4)
+        lay = layout(mesh, (16,), (Sharded(0),))
+        rows = [AxisAssignment((Replicated(),), Replicated())]
+        menu = build_action_set(rows, layouts=(lay,))
+        with pytest.raises(ShardingError):
+            NoReshard()(menu, (lay,))
+
+    def test_error_names_the_input_layouts(self) -> None:
+        mesh = mesh_1d(4)
+        lay = layout(mesh, (1024,), (Partial(),))
+        rows = [AxisAssignment((Replicated(),), Replicated())]
+        menu = build_action_set(rows, layouts=(lay,))
+        with pytest.raises(ShardingError, match="no zero-reshard action"):
+            NoReshard()(menu, (lay,))
 
 
 class TestEnumerateFeasibleActions:
@@ -215,8 +233,15 @@ class TestReportReshard:
             report_reshard(solver, "op_name", (lay,), menu, picked)
         assert caught == []
 
-    def test_no_reshard_solver_is_silent(self) -> None:
+    def test_no_reshard_solver_refuses_instead_of_reporting(self) -> None:
         lay, menu = self._picked_with_reshard()
+        with pytest.raises(ShardingError):
+            NoReshard()(menu, (lay,))
+
+    def test_no_reshard_solver_is_silent_on_passthrough(self) -> None:
+        mesh = mesh_1d(4)
+        lay = layout(mesh, (16,), (Replicated(),))
+        menu = build_action_set([], layouts=(lay,))
         solver = NoReshard()
         picked = solver(menu, (lay,))
         with warnings.catch_warnings(record=True) as caught:

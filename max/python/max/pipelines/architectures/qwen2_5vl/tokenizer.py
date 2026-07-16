@@ -28,6 +28,7 @@ from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     mrope_pos_ids_3d,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
+    MAX_PIXELS,
     fetch_image,
     process_vision_info,
 )
@@ -424,9 +425,10 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
     ]:
         image_inputs = None
         if request.images:
+            # fetch_image accepts both a PIL.Image and raw bytes.
             image_inputs = [
-                fetch_image({"image": image_data})
-                for image_data in request.images
+                fetch_image({"image": image})
+                for image in request.images_for_processing()
             ]
         elif request.messages:
             image_inputs, _, _ = process_vision_info(
@@ -590,6 +592,8 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             tokens=TokenBuffer(input_ids),
             max_length=max_length,
             json_schema=json_schema,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
             images=images,
@@ -689,17 +693,29 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             start_and_end_idxs = find_contiguous_ranges(
                 input_ids, [self.image_token_id]
             )
+            # Key each image on its raw encoded bytes (+ the resolution size
+            # class), not on hash_image(pixel_values): the raw-byte key is
+            # byte-identical across torch/BLAS/device so a separate encoder can
+            # reproduce it for cache-aware routing, whereas the post-resize
+            # float hash cannot. smart_resize is deterministic from the encoded
+            # bytes + fixed config, so the process-wide max-pixels resolution
+            # bound is the size tier. request.images is 1:1 with
+            # pixel_values_list (one processed entry per input image).
+            image_size_tier = MAX_PIXELS
             images = [
                 ImageMetadata(
                     start_idx=start_idx,
                     end_idx=end_idx,
                     pixel_values=pixel_values,
-                    image_hash=hash_image(pixel_values)
+                    image_hash=hash_image(raw_bytes, image_size_tier)
                     if self.enable_prefix_caching
                     else None,
                 )
-                for (start_idx, end_idx), pixel_values in zip(
-                    start_and_end_idxs, pixel_values_list, strict=True
+                for (start_idx, end_idx), pixel_values, raw_bytes in zip(
+                    start_and_end_idxs,
+                    pixel_values_list,
+                    request.images,
+                    strict=True,
                 )
             ]
         else:

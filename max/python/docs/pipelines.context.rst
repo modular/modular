@@ -52,9 +52,6 @@ Context protocols
    :template: autosummary/class.rst
 
    BaseContext
-   TextGenerationContext
-   VLMTextGenerationContext
-   PixelGenerationContext
 
 Type variables
 --------------
@@ -105,6 +102,7 @@ Token management
    TokenBuffer
    ImageMetadata
    Range
+   TokenHashOverride
 
 .. autosummary::
    :nosignatures:
@@ -123,6 +121,7 @@ Grammar and structured output
 
    GrammarEnforcementState
    GrammarEnforcementSnapshot
+   GrammarMatcher
    StructuredOutputRegionDelimiters
 
 Speculative decoding

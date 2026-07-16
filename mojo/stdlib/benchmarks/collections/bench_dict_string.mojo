@@ -27,7 +27,7 @@ from std.benchmark import (
     keep,
     run,
 )
-from std.memory import memcpy, memset_zero
+from std.memory import unsafe_memcpy, memset_zero
 from std.testing import assert_equal
 
 
@@ -81,9 +81,9 @@ from std.bit import bit_width, pop_count
 struct KeysContainer[KeyEndType: DType = DType.uint32](
     ImplicitlyCopyable, Sized
 ):
-    var keys: UnsafePointer[UInt8, MutExternalOrigin]
+    var keys: UnsafePointer[UInt8, MutUntrackedOrigin]
     var allocated_bytes: Int
-    var keys_end: UnsafePointer[Scalar[Self.KeyEndType], MutExternalOrigin]
+    var keys_end: UnsafePointer[Scalar[Self.KeyEndType], MutUntrackedOrigin]
     var count: Int
     var capacity: Int
 
@@ -105,9 +105,11 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         self.count = copy.count
         self.capacity = copy.capacity
         self.keys = alloc[UInt8](self.allocated_bytes)
-        memcpy(dest=self.keys, src=copy.keys, count=self.allocated_bytes)
+        unsafe_memcpy(dest=self.keys, src=copy.keys, count=self.allocated_bytes)
         self.keys_end = alloc[Scalar[Self.KeyEndType]](self.capacity)
-        memcpy(dest=self.keys_end, src=copy.keys_end, count=self.capacity)
+        unsafe_memcpy(
+            dest=self.keys_end, src=copy.keys_end, count=self.capacity
+        )
 
     def __del__(deinit self):
         self.keys.free()
@@ -126,11 +128,11 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
 
         if needs_realocation:
             var keys = alloc[UInt8](self.allocated_bytes)
-            memcpy(dest=keys, src=self.keys, count=Int(prev_end))
+            unsafe_memcpy(dest=keys, src=self.keys, count=Int(prev_end))
             self.keys.free()
             self.keys = keys
 
-        memcpy(
+        unsafe_memcpy(
             dest=self.keys + prev_end,
             src=UnsafePointer(key.unsafe_ptr()),
             count=key_length,
@@ -139,7 +141,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         if count >= self.capacity:
             var new_capacity = self.capacity + (self.capacity >> 1)
             var keys_end = alloc[Scalar[Self.KeyEndType]](new_capacity)
-            memcpy(dest=keys_end, src=self.keys_end, count=self.capacity)
+            unsafe_memcpy(dest=keys_end, src=self.keys_end, count=self.capacity)
             self.keys_end.free()
             self.keys_end = keys_end
             self.capacity = new_capacity
@@ -189,19 +191,19 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
 
 
 struct StringDict[
-    V: Copyable & ImplicitlyDestructible,
+    V: Copyable & ImplicitlyDeletable,
     KeyCountType: DType = DType.uint32,
     KeyOffsetType: DType = DType.uint32,
     destructive: Bool = True,
     caching_hashes: Bool = True,
 ](Sized):
     var keys: KeysContainer[Self.KeyOffsetType]
-    var key_hashes: UnsafePointer[Scalar[Self.KeyCountType], MutExternalOrigin]
+    var key_hashes: UnsafePointer[Scalar[Self.KeyCountType], MutUntrackedOrigin]
     var values: List[Self.V]
     var slot_to_index: UnsafePointer[
-        Scalar[Self.KeyCountType], MutExternalOrigin
+        Scalar[Self.KeyCountType], MutUntrackedOrigin
     ]
-    var deleted_mask: UnsafePointer[UInt8, MutExternalOrigin]
+    var deleted_mask: UnsafePointer[UInt8, MutUntrackedOrigin]
     var count: Int
     var capacity: Int
 
@@ -243,7 +245,7 @@ struct StringDict[
 
         comptime if Self.caching_hashes:
             self.key_hashes = alloc[Scalar[Self.KeyCountType]](self.capacity)
-            memcpy(
+            unsafe_memcpy(
                 dest=self.key_hashes,
                 src=copy.key_hashes,
                 count=self.capacity,
@@ -252,7 +254,7 @@ struct StringDict[
             self.key_hashes = alloc[Scalar[Self.KeyCountType]](0)
         self.values = copy.values.copy()
         self.slot_to_index = alloc[Scalar[Self.KeyCountType]](self.capacity)
-        memcpy(
+        unsafe_memcpy(
             dest=self.slot_to_index,
             src=copy.slot_to_index,
             count=self.capacity,
@@ -260,7 +262,7 @@ struct StringDict[
 
         comptime if Self.destructive:
             self.deleted_mask = alloc[UInt8](self.capacity >> 3)
-            memcpy(
+            unsafe_memcpy(
                 dest=self.deleted_mask,
                 src=copy.deleted_mask,
                 count=self.capacity >> 3,
@@ -367,7 +369,7 @@ struct StringDict[
         comptime if Self.destructive:
             var deleted_mask = alloc[UInt8](mask_capacity)
             memset_zero(deleted_mask, mask_capacity)
-            memcpy(
+            unsafe_memcpy(
                 dest=deleted_mask,
                 src=self.deleted_mask,
                 count=old_capacity >> 3,

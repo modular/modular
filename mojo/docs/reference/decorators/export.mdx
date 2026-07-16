@@ -6,23 +6,24 @@ codeTitle: true
 
 You can add the `@export` decorator on any function to make it publicly
 available as an exported symbol in the compiled artifact, allowing it to be
-called from external code, such as
-[Python](/docs/manual/python/mojo-from-python/#import-a-mojo-module-in-python).
+called from external code. An `@export` function must declare its calling
+convention with an explicit [`abi`](/docs/reference/function-declarations#abi-c)
+effect.
 
 ```mojo
-# This function is internal - not callable from Python
+# This function is internal - not an exported symbol
 def internal_helper():
     print("Internal")
 
-# This function can be called from Python as "my_exported_function"
+# This function is exported under its own name, "my_exported_function"
 @export
-def my_exported_function():
+def my_exported_function() abi("Mojo"):
     print("Exported!")
     internal_helper()
 
-# This function can be called from Python as "my_renamed_function"
+# This function is exported under the name "my_renamed_function"
 @export("my_renamed_function")
-def my_other_function():
+def my_other_function() abi("Mojo"):
     print("Another function.")
 ```
 
@@ -38,7 +39,10 @@ valid C identifier. For example:
 @export("my_func")
 def my_function(
     name: StaticString,
-    ptr: OpaquePointer[MutExternalOrigin],
+    ptr: OpaquePointer[MutUntrackedOrigin],
 ) abi("C") -> None:
     pass
 ```
+
+To call Mojo from Python, register functions with a module builder. See
+[Calling Mojo from Python](/docs/manual/python/mojo-from-python/) for details.

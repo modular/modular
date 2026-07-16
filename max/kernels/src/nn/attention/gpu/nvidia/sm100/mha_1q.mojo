@@ -1000,6 +1000,7 @@ struct SM100TensorAccumulatorSS[
         Self.num_softmax_threads,
     ]
 
+    @__allow_legacy_any_origin_fields
     var mbar: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
@@ -1239,6 +1240,7 @@ struct SM100TensorAccumulatorTS[
         transpose_b=Self.transpose_b,
     ]()
 
+    @__allow_legacy_any_origin_fields
     var mbar: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
@@ -1897,7 +1899,10 @@ def _mha_sm100_enqueue[
         partition,
     }
 
-    var block_x: UInt32 = partition.num_partitions()
+    # Launch the num_keys-independent upper bound so the grid shape is stable
+    # across num_keys (one CUDA graph per batch size). CTAs with partition
+    # index >= partition.num_partitions() early-return in the kernel.
+    var block_x: UInt32 = partition.max_num_partitions()
 
     comptime max_tmem_cols = 512
     comptime BN = config.block_n()
@@ -2125,6 +2130,22 @@ def _mha_sm100[
     comptime assert (
         accum_type.is_floating_point()
     ), "accum_type must be floating point"
+
+    # Fixed P scale of 256 (= 2^8) for FP8-QKV only. The
+    # un-normalized softmax probabilities P sit in the e4m3 subnormal floor;
+    # lifting them by 256 before the fp8 cast that feeds the P@V MMA reduces
+    # PV-GEMM quantization error. P is produced by the SHARED
+    # `_rowmax_online_softmax`/`_rowsum` helpers (also used by bf16/MLA), so
+    # rather than bias those we scale `p_reg_tile` by 256 in-place right after
+    # each rowmax-exp (fp8-guarded). `_rowsum` then reads the scaled P, and the
+    # sink_contribution is scaled to match, so numerator (stored P, P@V) and
+    # denominator (row_sum + sink) stay in the same 256x scale and cancel
+    # through the final 1/row_sum normalize. Overflow-safe: max P after
+    # row-max subtraction = exp2(0)*256 = 256 < 448 (e4m3 max). The scale is
+    # applied ONLY inside `comptime if kv_type.is_float8()` branches below, so
+    # the bf16 codegen is byte-identical (a `* 1.0` would otherwise survive as
+    # a real fmul).
+    comptime p_fp8_scale: Scalar[accum_type] = 256.0
     comptime max_tmem_cols = 512
     # When P can't fit alongside O in one TMEM bank, store P in SMEM
     # and use SS MMA for UMMA1 (P@V). S and O go in separate TMEM banks.
@@ -2345,10 +2366,10 @@ def _mha_sm100[
     produced_mbar_kv = (kv_smem + kv_smem_size).bitcast[SharedMemBarrier]()
     producer_mbar_kv = produced_mbar_kv + pipeline_stages  # 16
     mma_mbar = producer_mbar_kv + pipeline_stages  # 16
-    umma_0 = UMMA0Type(mma_mbar)  # needs num_s
+    umma_0 = UMMA0Type(mma_mbar.as_unsafe_any_origin())  # needs num_s
     # umma_1: TS for non-use_p_smem, SS for use_p_smem (both use same barrier layout)
-    umma_1_ts = UMMA1Type(mma_mbar + 2 * num_s)
-    umma_1_ss = UMMA1TypeSS(mma_mbar + 2 * num_s)
+    umma_1_ts = UMMA1Type((mma_mbar + 2 * num_s).as_unsafe_any_origin())
+    umma_1_ss = UMMA1TypeSS((mma_mbar + 2 * num_s).as_unsafe_any_origin())
     # P SMEM consumption barrier: warp 1 arrives after SS MMA finishes
     # reading P from SMEM, softmax waits before overwriting P SMEM.
     ptr_tmem_addr = (mma_mbar + 2 * num_s + 2).bitcast[UInt32]()  # 8
@@ -2365,15 +2386,18 @@ def _mha_sm100[
     comptime num_softmax_regs = 224
 
     # constructing calls barrier() if static
+    # Use the launched (max) partition count so block_idx decodes into
+    # [0, max_num_partitions()); CTAs with index >= num_partitions() are
+    # over-launched and early-return below.
     var tile_summary = MHATileSummary[ValidLengthType](
         batch_size,
         ceildiv(max_seq_len.as_uint32(), UInt32(BM))
-        * partition.num_partitions(),
+        * partition.max_num_partitions(),
         valid_length,
         max_seq_len.as_uint32(),
     )
     var state: MHATileState = scheduler.initial_state(
-        ptr_tmem_addr + 2, tile_summary
+        (ptr_tmem_addr + 2).as_unsafe_any_origin(), tile_summary
     )
 
     # The persistent kernels limit the grid size.
@@ -2444,6 +2468,19 @@ def _mha_sm100[
         wait_on_dependent_grids()
         launch_dependent_grids()
 
+    # The grid is launched with `max_num_partitions()` CTAs per (head, batch) so
+    # its shape is independent of num_keys (one CUDA graph per batch size). The
+    # tail CTAs with index >= `num_partitions()` carry no keys: exit now — after
+    # honoring the PDL contract above, and before any TMEM allocation or
+    # exp_sum/qk_max/output write (so buffers need only `num_partitions()` slots).
+    # `prompt_offset` is decoded from block_idx, hence uniform across the CTA, so
+    # the whole CTA returns together and no warp is left waiting on a later
+    # `named_barrier`. Partitions below this bound that are empty due to BN
+    # alignment still take the writeback path below so the reducer sees them.
+    comptime if PartitionType.do_partition:
+        if position.prompt_offset >= partition.num_partitions():
+            return
+
     # For intra-warp overlap, we initiate ummas as
     # Q @ K_0, Q @ K_1, P_0 @ V_0, Q @ K_2, P_1 @ V_1, ...
     # ..., Q @ K_{N-1}, P_{N-2} @ V_{N-2}, P_{N-1} @ V_{N-1}
@@ -2500,7 +2537,9 @@ def _mha_sm100[
                 comptime assert tmem_cols <= max_tmem_cols
             tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
 
-            qk_desc = UMMA0Type.mma_descriptors(q_smem, kv_smem)
+            qk_desc = UMMA0Type.mma_descriptors(
+                q_smem.as_unsafe_any_origin(), kv_smem.as_unsafe_any_origin()
+            )
 
             named_barrier[Int32(num_softmax_threads + 2 * WARP_SIZE)]()
             if tid != 0:
@@ -2609,7 +2648,10 @@ def _mha_sm100[
                         output_accumulator = UMMA1Type.c_t(o_tmem)
                         s_tmem = tmem_addr + UInt32(1 << 20)  # bank 1
                         # SS MMA: both P and V from SMEM
-                        pv_descs = UMMA1TypeSS.mma_descriptors(p_smem, kv_smem)
+                        pv_descs = UMMA1TypeSS.mma_descriptors(
+                            p_smem.as_unsafe_any_origin(),
+                            kv_smem.as_unsafe_any_origin(),
+                        )
                         p_desc_a = pv_descs.get_a()
                         v_desc = pv_descs.get_b()
                         v = v_desc + Int(UInt32(offset_bytes_per) * read_idx)
@@ -2632,7 +2674,9 @@ def _mha_sm100[
                             tmem_addr + UInt32(MMA_N0 * num_s) + UInt32(MMA_N1)
                         )
                         p_desc = UMMA1Type.a_mma_descriptor(p_tmem)
-                        v_desc = UMMA1Type.b_mma_descriptor(kv_smem)
+                        v_desc = UMMA1Type.b_mma_descriptor(
+                            kv_smem.as_unsafe_any_origin()
+                        )
                         v = v_desc + Int(UInt32(offset_bytes_per) * read_idx)
                         umma_1_ts.wait_for_tmem()
                         produced_mbar_kv[read_idx].wait(read_phase)
@@ -2776,6 +2820,20 @@ def _mha_sm100[
 
         @parameter
         @always_inline
+        def scale_p_for_fp8():
+            # Apply the cuDNN-style 256x P scale in-place on p_reg_tile (fp8
+            # only; comptime-dead for bf16 where p_fp8_scale == 1.0). Called
+            # right after `_rowmax_online_softmax` exponentiates P and BEFORE
+            # `_rowsum`, so the row-sum sees the same 256x as the stored P.
+            comptime if kv_type.is_float8():
+                var vp = vectorize_p_reg_tile()
+                var s = SIMD[accum_type, element_layout.size()](p_fp8_scale)
+                comptime for row in range(num_rows_per_warp):
+                    comptime for col in range(num_cols_p):
+                        vp[row, col] = vp[row, col] * s
+
+        @parameter
+        @always_inline
         def apply_mask(
             position: PositionType,
             mask_status: TileMaskStatus,
@@ -2856,7 +2914,6 @@ def _mha_sm100[
                 num_rows=WM // 2, row_size=BN, access_size=8
             ]()
             # Reuse a_smem for c tile in smem
-            comptime q_tile_size: UInt32 = q_smem_size // 2
             accum_smem_tile = LayoutTensor[
                 output_type,
                 Layout.row_major(BM, config.padded_depth),
@@ -2994,6 +3051,10 @@ def _mha_sm100[
 
         rowmax.copy_from(attention_rowmax)
 
+        # Lift P out of the e4m3 subnormal floor (fp8 only) before rowsum and
+        # the fp8 cast feeding P@V. See p_fp8_scale comment above.
+        scale_p_for_fp8()
+
         comptime assert p_vec_output_layout.size() > 0, "layout: " + String(
             p_vec_output_layout
         )
@@ -3012,7 +3073,16 @@ def _mha_sm100[
                 var sink_weight = (
                     sink_weights_ptr[head_idx].cast[accum_type]() * log2e
                 )
-                var sink_contribution = exp2(sink_weight - rowmax[i])
+                # Scale the sink mass to match the 256x-lifted P so it cancels
+                # through 1/row_sum. The `comptime if kv_type.is_float8()`
+                # keeps the bf16 sink expression byte-identical (no `* 1.0`).
+                var sink_contribution: type_of(exp2(sink_weight - rowmax[i]))
+                comptime if kv_type.is_float8():
+                    sink_contribution = (
+                        exp2(sink_weight - rowmax[i]) * p_fp8_scale
+                    )
+                else:
+                    sink_contribution = exp2(sink_weight - rowmax[i])
                 attention_rowsum[i] += sink_contribution[0]
 
         rowsum.copy_from(attention_rowsum)
@@ -3086,6 +3156,12 @@ def _mha_sm100[
             var current_rowmax = _rowmax_online_softmax[
                 1, mma_thread_layout, use_exp2=True
             ](vectorize_p_reg_tile(), rowmax, False)
+
+            # Lift this iteration's P by 256x (fp8 only) before its rowsum and
+            # the fp8 cast feeding P@V, matching the initial tile. The running
+            # `rowsum` accumulates these 256x-scaled per-tile sums, and the
+            # 256x P@V output is normalized by 1/rowsum -> exact cancel.
+            scale_p_for_fp8()
 
             score_frag_rowmax = current_rowmax
             score_frag_rowsum = rebind[type_of(rowsum)](

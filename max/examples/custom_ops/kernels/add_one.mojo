@@ -42,10 +42,11 @@ struct AddOne:
 
         foreach[elementwise_add_one, target=target](output, ctx)
 
-    # You only need to implement this if you do not manually annotate
-    # output shapes in the graph.
-    @staticmethod
-    def shape(
-        x: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise Error("NotImplemented")
+
+# You only need to implement this if you do not manually annotate
+# output shapes in the graph.
+@compiler.register_shape_function("add_one")
+def add_one_shape(
+    x: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise Error("NotImplemented")

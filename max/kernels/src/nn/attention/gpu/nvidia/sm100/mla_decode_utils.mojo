@@ -83,6 +83,9 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     ConsumerPipeline,
     MBarPipeline,
     sub_ftz,
+    bulk_mma_ws,
+    bulk_mma_ws_ts,
+    st_shared_v4_b32,
 )
 from nn.attention.gpu.nvidia.common import KVTMATile
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -195,6 +198,7 @@ struct MLA_Decode_Pack[
     var mask: Self.MaskType
     var valid_length: Self.ValidLengthType
     var lse_accum_split_ptr: Self.SplitAccumType
+    var num_partitions: Int
     comptime device_type: AnyType = Self
 
     def _to_device_type(
@@ -216,10 +220,12 @@ struct MLA_Decode_Pack[
         mask: Self.MaskType,
         valid_length: Self.ValidLengthType,
         lse_accum_split_ptr: Self.SplitAccumType,
+        num_partitions: Int,
     ):
         self.mask = mask
         self.valid_length = valid_length
         self.lse_accum_split_ptr = lse_accum_split_ptr
+        self.num_partitions = num_partitions
 
 
 # ------------------------------------------------------------------------------
@@ -905,7 +911,9 @@ struct KVLoad2CvtProducer[dtype: DType, config: MLA_SM100_Decode_Config](
     comptime fp8_stage_stride_elems = 2 * Self.bf16_stage_elems
 
     var pipe: Self.KVPipeType
+
     # IMPORTANT: this pointer must already point to the UPPER HALF (1:fp8) of stage0
+    @__allow_legacy_any_origin_fields
     var smem_upper_fp8: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
@@ -967,7 +975,9 @@ struct KVLoad2CvtConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
     comptime fp8_stage_stride_elems = 2 * Self.bf16_stage_elems
 
     var pipe: Self.PipeT
+
     # points to UPPER HALF (1:fp8) of stage0
+    @__allow_legacy_any_origin_fields
     var smem_upper_fp8: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
@@ -1008,6 +1018,8 @@ struct KVCvt2MmaProducer[dtype: DType, config: MLA_SM100_Decode_Config](
     comptime kv_stage_elems = Self.config.BN_QK * Self.config.q_depth
 
     var pipe: Self.PipeT
+
+    @__allow_legacy_any_origin_fields
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
@@ -1051,6 +1063,8 @@ struct KVCvt2MmaConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
     comptime kv_stage_elems = Self.config.BN_QK * Self.config.q_depth
 
     var pipe: Self.KVPipeType
+
+    @__allow_legacy_any_origin_fields
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
@@ -1105,6 +1119,8 @@ struct DecodeKVProducer[
     comptime kv_stage_bytes = Self.kv_stage_elems * size_of[Self.dtype]()
 
     var pipe: Self.KVPipeType
+
+    @__allow_legacy_any_origin_fields
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
@@ -1166,6 +1182,8 @@ struct DecodeKVConsumer[
     comptime kv_stage_elems = Self.config.BN_QK * Self.config.q_depth
 
     var pipe: Self.KVPipeType
+
+    @__allow_legacy_any_origin_fields
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
@@ -1225,6 +1243,7 @@ struct KVPipelineGeneric[
     comptime num_stages: Int = Self.num_kv_stages * Self.num_qk_stages
 
     # mbars are ordered in {producer, consumer} pairs
+    @__allow_legacy_any_origin_fields
     var mbar: MBarType
     var state: PipelineState[Self.num_kv_stages]
 
@@ -1288,6 +1307,7 @@ struct KVPipelineGeneric[
 struct DecodeSM100MiscMBars[
     num_stages: Int, num_producer: Int, num_consumer: Int
 ](TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var mbar_base: MBarType
 
     # Generic barrier pair (producer + consumer) with num_stages slots.
@@ -1621,6 +1641,7 @@ struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int](
     comptime num_stages: Int = Self.num_out_stages
 
     # mbars are ordered in {producer, consumer} pairs
+    @__allow_legacy_any_origin_fields
     var mbar: MBarType
     var state: PipelineState[Self.num_stages]
 
@@ -1697,6 +1718,8 @@ struct DecodeOutProducer[dtype: DType, config: MLA_SM100_Decode_Config](
     comptime out_stage_bytes = Self.out_stage_elems * size_of[Self.dtype]()
 
     var pipe: Self.OutPipeType
+
+    @__allow_legacy_any_origin_fields
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
@@ -1758,6 +1781,8 @@ struct DecodeOutConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
     comptime out_stage_elems = Self.config.BM * (Self.config.BN_PV // 4)
 
     var pipe: Self.OutPipeType
+
+    @__allow_legacy_any_origin_fields
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
@@ -1790,328 +1815,6 @@ struct DecodeOutConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
     def release(mut self, e: Int32):
         # Signal "stage consumed" to the producer via consumer mbar
         self.pipe.consumer_release(e)
-
-
-# ------------------------------------------------------------------------------
-# MLA decoding build_ss for ws
-# ------------------------------------------------------------------------------
-
-
-@always_inline
-def build_mma_ss_ws[
-    a_dtype: DType,
-    b_dtype: DType,
-    *,
-    a_BMN: Int,
-    a_BK: Int,
-    a_swizzle: TensorMapSwizzle,
-    a_is_k_major: Bool,
-    b_BMN: Int,
-    b_BK: Int,
-    b_swizzle: TensorMapSwizzle,
-    b_is_k_major: Bool,
-](
-    kind: String,
-    *,
-    operand_size: Int,
-    num_k_mmas: Int,
-    tcgen05_mma_type: String,
-    mma_k: Int = 16,
-) -> String:
-    # Compute tile layouts from parameters (avoids .to_layout() at callers).
-    # Note: these are `var` not `comptime` because Layout is not
-    # ImplicitlyCopyable, but the entire function is evaluated at comptime
-    # (callers use `comptime mma_string = build_mma_ss_ws[...](...)`).
-    layout_a = tile_layout_k_major[
-        a_dtype, a_BMN, a_BK, a_swizzle
-    ]() if a_is_k_major else tile_layout_mn_major[
-        a_dtype, a_BMN, a_BK, a_swizzle
-    ]()
-    layout_b = tile_layout_k_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
-    ]() if b_is_k_major else tile_layout_mn_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
-    ]()
-
-    # rda and rdb are the 64-bit smem descriptors.
-    # %pj: jump predicate (elect==0 -> skip)
-    # %ps: enable-input-d predicate (c_scale != 0).
-    # mma_k: the hardware MMA K dimension (16 for BF16/F16, 32 for FP8).
-    mma = """{
-.reg .b64 %rda;
-.reg .b64 %rdb;
-.reg .s32 %ra;
-.reg .s32 %rb;
-.reg .pred %pj;
-.reg .pred %ps;
-setp.eq.s32 %pj, $6, 0;
-"""
-    tcgen05_mma = tcgen05_mma_type + kind
-
-    for k in range(num_k_mmas):
-        if k == 0:
-            # rda/rdb from the base descriptors
-            mma += "mov.b64 %rda, {$7, $8};\n"
-            mma += "mov.b64 %rdb, {$4, $5};\n"
-            # %ps = (c_scale != 0)
-            mma += "setp.ne.b32 %ps, $3, 0;\n"
-        else:
-            # rda = a_desc + a_offset
-            var a_offset = (
-                layout_a(IntTuple(0, mma_k * k)) * operand_size
-            ) >> 4
-            mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
-            mma += "mov.b64 %rda, {%ra, $8};\n"
-
-            # rdb = b_desc + b_offset
-            var b_offset = (
-                layout_b(IntTuple(0, mma_k * k)) * operand_size
-            ) >> 4
-            mma += String("add.s32 %rb, $4, ", b_offset, ";\n")
-            mma += "mov.b64 %rdb, {%rb, $5};\n"
-
-            if k == 1:
-                # after the first K-slice we always accumulate: enable-input-d = true
-                mma += "setp.ne.b32 %ps, 1, 0;\n"
-
-        # tcgen05.mma.ws:
-        # [d-tmem], a-desc, b-desc, idesc, enable-input-d , {, zero-column-mask-desc};
-        mma += String("@%pj bra skip", k, ";")
-        mma += tcgen05_mma + " [$0], %rda, %rdb, $2, %ps;\n"
-
-        mma += String("skip", k, ":\n")
-    return mma + "}"
-
-
-@always_inline
-def bulk_mma_ws[
-    kind: UMMAKind,
-    a_dtype: DType,
-    b_dtype: DType,
-    *,
-    a_BMN: Int,
-    a_BK: Int,
-    a_swizzle: TensorMapSwizzle,
-    a_is_k_major: Bool,
-    b_BMN: Int,
-    b_BK: Int,
-    b_swizzle: TensorMapSwizzle,
-    b_is_k_major: Bool,
-    num_k_mmas: Int,
-    operand_size: Int,
-    tcgen05_mma_type: String,
-    mma_k: Int = 16,
-](
-    idesc: UMMAInsDescriptor[kind],
-    a: MMASmemDescriptorPair,
-    b: MMASmemDescriptorPair,
-    c_tmem: UInt32,
-    c_scale: UInt32,
-    elect: Int32,
-):
-    comptime mma_string = build_mma_ss_ws[
-        a_dtype,
-        b_dtype,
-        a_BMN=a_BMN,
-        a_BK=a_BK,
-        a_swizzle=a_swizzle,
-        a_is_k_major=a_is_k_major,
-        b_BMN=b_BMN,
-        b_BK=b_BK,
-        b_swizzle=b_swizzle,
-        b_is_k_major=b_is_k_major,
-    ](
-        String(kind),
-        operand_size=operand_size,
-        num_k_mmas=num_k_mmas,
-        tcgen05_mma_type=tcgen05_mma_type,
-        mma_k=mma_k,
-    )
-
-    inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi
-    )
-
-
-# ---- TS (TMEM-SMEM) .ws MMA building blocks ----
-
-
-def build_mma_ts_ws[
-    b_dtype: DType,
-    *,
-    b_BMN: Int,
-    b_BK: Int,
-    b_swizzle: TensorMapSwizzle,
-    b_is_k_major: Bool,
-](
-    kind: String,
-    *,
-    operand_size: Int,
-    num_k_mmas: Int,
-    tcgen05_mma_type: String,
-    mma_k: Int = 16,
-) -> String:
-    """Build PTX for TS (TMEM-A, SMEM-B) .ws MMA over multiple K-tiles.
-
-    Each K-tile requires a separate TMEM address operand for A passed via
-    inline assembly ($7, $8, ...).  B is an SMEM descriptor whose low-half
-    is bumped by the tile-layout offset for each K-tile.
-    """
-    layout_b = tile_layout_k_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
-    ]() if b_is_k_major else tile_layout_mn_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
-    ]()
-
-    # Registers:
-    #   %rdb  – 64-bit SMEM descriptor for B
-    #   %rb   – scratch for B low-half offset arithmetic
-    #   %pj   – jump predicate (elect==0 → skip)
-    #   %ps   – enable-input-d predicate (c_scale / accumulate)
-    mma = """{
-.reg .b64 %rdb;
-.reg .s32 %rb;
-.reg .pred %pj;
-.reg .pred %ps;
-setp.eq.s32 %pj, $6, 0;
-"""
-    tcgen05_mma = tcgen05_mma_type + kind
-
-    for k in range(num_k_mmas):
-        if k == 0:
-            mma += "mov.b64 %rdb, {$4, $5};\n"
-            # %ps = (c_scale != 0)
-            mma += "setp.ne.b32 %ps, $3, 0;\n"
-        else:
-            # rdb = b_desc + b_offset
-            var b_offset = (
-                layout_b(IntTuple(0, mma_k * k)) * operand_size
-            ) >> 4
-            mma += String("add.s32 %rb, $4, ", b_offset, ";\n")
-            mma += "mov.b64 %rdb, {%rb, $5};\n"
-
-            if k == 1:
-                # after the first K-slice we always accumulate
-                mma += "setp.ne.b32 %ps, 1, 0;\n"
-
-        # tcgen05.mma.ws:
-        # [d-tmem], [a-tmem], b-desc, idesc, enable-input-d
-        mma += String("@%pj bra skip", k, ";")
-        mma += String(
-            tcgen05_mma,
-            " [$0], [$",
-            7 + k,
-            "], %rdb, $2, %ps;\n",
-        )
-
-        mma += String("skip", k, ":\n")
-    return mma + "}"
-
-
-@always_inline
-def bulk_mma_ws_ts[
-    kind: UMMAKind,
-    b_dtype: DType,
-    *,
-    b_BMN: Int,
-    b_BK: Int,
-    b_swizzle: TensorMapSwizzle,
-    b_is_k_major: Bool,
-    num_k_mmas: Int,
-    operand_size: Int,
-    tcgen05_mma_type: String,
-    mma_k: Int = 16,
-](
-    idesc: UMMAInsDescriptor[kind],
-    a: UInt32,
-    b: MMASmemDescriptorPair,
-    c_tmem: UInt32,
-    c_scale: UInt32,
-    elect: Int32,
-):
-    comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
-    comptime mma_string = build_mma_ts_ws[
-        b_dtype,
-        b_BMN=b_BMN,
-        b_BK=b_BK,
-        b_swizzle=b_swizzle,
-        b_is_k_major=b_is_k_major,
-    ](
-        String(kind),
-        operand_size=operand_size,
-        num_k_mmas=num_k_mmas,
-        tcgen05_mma_type=tcgen05_mma_type,
-        mma_k=mma_k,
-    )
-
-    comptime constraints = "r,r,r,r,r,r,r" + ",r" * num_k_mmas
-    comptime x = UInt32(mma_k * operand_size // 4)
-    # fmt: off
-    comptime if num_k_mmas == 1:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a
-        )
-    elif num_k_mmas == 2:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x
-        )
-    elif num_k_mmas == 3:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x
-        )
-    elif num_k_mmas == 4:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x
-        )
-    elif num_k_mmas == 5:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x
-        )
-    elif num_k_mmas == 6:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x
-        )
-    elif num_k_mmas == 7:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x
-        )
-    elif num_k_mmas == 8:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x
-        )
-    elif num_k_mmas == 9:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x
-        )
-    elif num_k_mmas == 10:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x
-        )
-    elif num_k_mmas == 11:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x
-        )
-    elif num_k_mmas == 12:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x,a+11*x
-        )
-    elif num_k_mmas == 13:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x,a+11*x,a+12*x
-        )
-    elif num_k_mmas == 14:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x,a+11*x,a+12*x,a+13*x
-        )
-    elif num_k_mmas == 15:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x,a+11*x,a+12*x,a+13*x,a+14*x
-        )
-    else:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x,a+11*x,a+12*x,a+13*x,a+14*x,a+15*x
-        )
-    # fmt: on
 
 
 # ------------------------------------------------------------------------------
@@ -2195,6 +1898,41 @@ struct DecodeSM100QKTSS[
             num_k_mmas=Self.num_k_mmas,
             operand_size=Self.operand_size,
             tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
+        ](Self.UMMAInstDesc, a, b, c, c_scale, elect)
+
+    @staticmethod
+    @always_inline
+    def mma_block[
+        *, block_idx: Int, num_blocks: Int
+    ](
+        a: MMASmemDescriptorPair,
+        b: MMASmemDescriptorPair,
+        c: UInt32,
+        *,
+        c_scale: UInt32,
+        elect: Int32,
+    ):
+        # One K-block slice of `mma` (same descriptors, same layouts):
+        # absolute k-mmas so the emitted sequence over all blocks matches
+        # the bulk form. Block 0 applies c_scale; later blocks accumulate.
+        comptime assert Self.num_k_mmas % num_blocks == 0, "uneven K blocks"
+        comptime block_k_mmas = Self.num_k_mmas // num_blocks
+        bulk_mma_ws[
+            UMMAKind.KIND_F16,
+            Self.operand_type,
+            Self.operand_type,
+            a_BMN=Self.config.BM,
+            a_BK=Self.BK,
+            a_swizzle=Self.config.swizzle_mode,
+            a_is_k_major=True,
+            b_BMN=Self.config.BN_QK,
+            b_BK=Self.BK,
+            b_swizzle=Self.config.kv_mma_swizzle_mode,
+            b_is_k_major=True,
+            num_k_mmas=block_k_mmas,
+            operand_size=Self.operand_size,
+            tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
+            k_start=block_idx * block_k_mmas,
         ](Self.UMMAInstDesc, a, b, c, c_scale, elect)
 
 
@@ -2850,19 +2588,15 @@ def st_shared_v4_b32_at_fp8_elem_off[
     elem_off: Int,  # FP8 element offset
     packed: SIMD[DType.uint32, 4],
 ):
-    var dst_ptr = dst_fp8 + elem_off
-    _ = inlined_assembly[
-        "st.shared.v4.b32 [$0], {$1, $2, $3, $4};",
-        NoneType,
-        constraints="l,r,r,r,r",
-        has_side_effect=True,
-    ](dst_ptr, packed[0], packed[1], packed[2], packed[3])
+    # Delegates to the shared `st_shared_v4_b32` (moved to attention_utils);
+    # `elem_off` is in fp8 elements (the pointer is fp8-typed).
+    st_shared_v4_b32(dst_fp8, elem_off, packed)
 
 
 @always_inline
 def ld_shared_v4_u32(
     src_u8: UnsafePointer[
-        Scalar[DType.uint8], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[DType.uint8], _, address_space=AddressSpace.SHARED
     ],
     byte_off: Int,
 ) -> SIMD[DType.uint32, 4]:
@@ -2890,22 +2624,35 @@ def cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
 
 
 @always_inline
+def cvt_fp8x16_from_u32x4_to_bf16x16_packed_2xu32x4[
+    *,
+    fp8_dtype: DType,
+    out_dtype: DType,
+](w: SIMD[DType.uint32, 4]) -> StaticTuple[SIMD[DType.uint32, 4], 2]:
+    """Converts 16 FP8 bytes (one v4.b32 load) to 16 packed BF16 values."""
+    return StaticTuple[SIMD[DType.uint32, 4], 2](
+        cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
+            fp8_dtype=fp8_dtype, out_dtype=out_dtype
+        ](w[0], w[1]),
+        cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
+            fp8_dtype=fp8_dtype, out_dtype=out_dtype
+        ](w[2], w[3]),
+    )
+
+
+@always_inline
 def st_shared_v4_b32_at_bf16_elem_off[
     out_dtype: DType
 ](
     dst_bf16: UnsafePointer[
-        Scalar[out_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[out_dtype], _, address_space=AddressSpace.SHARED
     ],
     elem_off: Int,  # bf16 element offset
     packed: SIMD[DType.uint32, 4],
 ):
-    var dst_ptr = dst_bf16 + elem_off
-    _ = inlined_assembly[
-        "st.shared.v4.b32 [$0], {$1, $2, $3, $4};",
-        NoneType,
-        constraints="l,r,r,r,r",
-        has_side_effect=True,
-    ](dst_ptr, packed[0], packed[1], packed[2], packed[3])
+    # Delegates to the shared `st_shared_v4_b32` (moved to attention_utils);
+    # `elem_off` is in bf16 elements (the pointer is bf16-typed).
+    st_shared_v4_b32(dst_bf16, elem_off, packed)
 
 
 @always_inline
@@ -3110,7 +2857,6 @@ struct MLA_SM100_Decode_Common[
         var smem_tensor = TileTensor[
             Self.kv_type,
             type_of(kv_tt_layout),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](smem, kv_tt_layout)
         tma.async_copy_3d(smem_tensor, mbar[], (col_start, 0, row_start))
@@ -3134,7 +2880,6 @@ struct MLA_SM100_Decode_Common[
         var smem_tensor = TileTensor[
             Self.q_type,
             type_of(q_tt_layout),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](smem, q_tt_layout)
 
@@ -3363,7 +3108,6 @@ struct MLA_SM100_Decode_Common[
         var li_Smem_Tensor = TileTensor[
             Self.AccumType,
             type_of(smem_1d_layout),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](li_smem, smem_1d_layout)
 
@@ -3606,7 +3350,6 @@ struct MLA_SM100_Decode_Common[
             var max_buf = TileTensor[
                 Self.AccumType,
                 type_of(smem_1d_layout),
-                MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
             ](max_smem + buf_offset, smem_1d_layout)
             max_buf[lane_id] = current_max
@@ -4200,7 +3943,6 @@ struct MLA_SM100_Decode_Common[
                             var smem_tensor = TileTensor[
                                 Self.output_dtype,
                                 type_of(o_tt_layout),
-                                MutAnyOrigin,
                                 address_space=AddressSpace.SHARED,
                             ](q_stage_ptr, o_tt_layout)
                             if is_leader:
@@ -4218,7 +3960,6 @@ struct MLA_SM100_Decode_Common[
                         var smem_tensor = TileTensor[
                             Self.output_dtype,
                             type_of(o_tt_layout),
-                            MutAnyOrigin,
                             address_space=AddressSpace.SHARED,
                         ](stage_ptr, o_tt_layout)
                         if is_leader:

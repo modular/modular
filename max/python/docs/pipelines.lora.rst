@@ -20,6 +20,7 @@ Adapter management
    :template: autosummary/class.rst
 
    LoRAConfig
+   LoRAInputs
    LoRAManager
    LoRAModel
 
@@ -42,5 +43,6 @@ LoRA types
    :toctree: generated
    :template: autosummary/data.rst
 
+   ADAPTER_CONFIG_FILE
    LORA_REQUEST_ENDPOINT
    LORA_RESPONSE_ENDPOINT

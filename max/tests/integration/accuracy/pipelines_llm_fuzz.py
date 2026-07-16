@@ -129,7 +129,7 @@ def _resolve_pipelines_program() -> list[str]:
         if runfiles is not None:
             for rloc in (
                 "_main/max_private/max_private",
-                "_main/max/python/max/entrypoints/pipelines",
+                "_main/max/python/max/_entrypoints/pipelines",
             ):
                 loc = runfiles.Rlocation(rloc)
                 if loc is not None and Path(loc).exists():
@@ -139,7 +139,7 @@ def _resolve_pipelines_program() -> list[str]:
                 " invoke via //max_private:pipelines-llm-fuzz or"
                 " //max/tests/integration/accuracy:pipelines-llm-fuzz"
             )
-    return ["/opt/venv/bin/python", "-m", "max.entrypoints.pipelines"]
+    return ["/opt/venv/bin/python", "-m", "max._entrypoints.pipelines"]
 
 
 def _resolve_fuzz_program() -> str:

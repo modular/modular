@@ -42,6 +42,7 @@ from max.benchmark.benchmark_shared.request import (
     RequestDriver,
     RequestFuncInput,
     RequestFuncOutput,
+    mark_cancelled_if_past_deadline,
     progressbar_request_driver,
 )
 from max.benchmark.benchmark_shared.utils import (
@@ -199,12 +200,19 @@ async def chat_session_driver(
                         "Expected RequestFuncOutput in text-generation benchmark flow."
                     )
                 response = raw_response
+                mark_cancelled_if_past_deadline(
+                    response, benchmark_should_end_time
+                )
             except asyncio.TimeoutError:
                 response = RequestFuncOutput(
                     cancelled=True, request_submit_time=time.perf_counter()
                 )
 
         if not (ignore_first_turn_stats and content_idx == prefix_end_idx):
+            # Tag with session + turn order so per-turn cache retention can
+            # compare each measured turn against the previous one in-session.
+            response.session_id = str(chat_session.id)
+            response.turn_index = len(session_outputs)
             session_outputs.append(response)
 
         if not response.success:
@@ -433,13 +441,24 @@ async def run_multiturn_benchmark(
         await asyncio.gather(*tasks)
     )
 
-    if benchmark_should_end_time is not None and not deadline_passed(
-        benchmark_should_end_time
-    ):
-        logger.warning(
-            "All chat sessions completed before the time limit. "
-            "Consider increasing --num-chat-sessions for more stable load."
-        )
+    if benchmark_should_end_time is not None:
+        if deadline_passed(benchmark_should_end_time):
+            total_turns = sum(len(v) for v in outputs_by_session.values())
+            cancelled = sum(
+                1 for v in outputs_by_session.values() for o in v if o.cancelled
+            )
+            logger.info(
+                "Benchmark stopped by the duration limit"
+                " (--max-benchmark-duration-s):"
+                f" {total_turns} turns dispatched across"
+                f" {len(outputs_by_session)} sessions,"
+                f" {cancelled} cancelled in flight."
+            )
+        else:
+            logger.warning(
+                "All chat sessions completed before the time limit. "
+                "Consider increasing --num-chat-sessions for more stable load."
+            )
 
     return outputs_by_session
 
@@ -477,7 +496,7 @@ class ConcurrentTurnsRequestDriver(RequestDriver):
                 )
             remaining_s = deadline_remaining_s(self._benchmark_should_end_time)
             try:
-                return await asyncio.wait_for(
+                output = await asyncio.wait_for(
                     self._request_driver.request(request_func_input),
                     timeout=remaining_s,
                 )
@@ -485,6 +504,9 @@ class ConcurrentTurnsRequestDriver(RequestDriver):
                 return request_func_input.get_output_type()(
                     cancelled=True, request_submit_time=time.perf_counter()
                 )
+            return mark_cancelled_if_past_deadline(
+                output, self._benchmark_should_end_time
+            )
 
 
 async def run_kv_cache_stress_benchmark(
@@ -649,6 +671,20 @@ async def run_kv_cache_stress_benchmark(
     for worker_dict in worker_outputs:
         for sid, outs in worker_dict.items():
             outputs_by_session.setdefault(sid, []).extend(outs)
+
+    if deadline_passed(benchmark_should_end_time):
+        total_turns = sum(len(v) for v in outputs_by_session.values())
+        cancelled = sum(
+            1 for v in outputs_by_session.values() for o in v if o.cancelled
+        )
+        logger.info(
+            "Benchmark stopped by the duration limit"
+            " (--max-benchmark-duration-s):"
+            f" {total_turns} turns dispatched across"
+            f" {len(outputs_by_session)} sessions,"
+            f" {cancelled} cancelled in flight."
+        )
+
     return outputs_by_session
 
 
@@ -726,6 +762,9 @@ async def chat_judge_session_driver(
                         "Expected RequestFuncOutput in chat-judge benchmark flow."
                     )
                 response = raw_response
+                mark_cancelled_if_past_deadline(
+                    response, benchmark_should_end_time
+                )
             except asyncio.TimeoutError:
                 response = RequestFuncOutput(
                     cancelled=True, request_submit_time=time.perf_counter()
@@ -740,6 +779,12 @@ async def chat_judge_session_driver(
                     f"server error response: {response.error}"
                 )
             break
+
+        if next_delay_ms := message.delay_until_next_message:
+            sleep_s = next_delay_ms / 1000
+            if exceeds_deadline(sleep_s, benchmark_should_end_time):
+                return session_outputs
+            await asyncio.sleep(sleep_s)
 
     return session_outputs
 

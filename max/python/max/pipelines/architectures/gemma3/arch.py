@@ -14,10 +14,12 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import Gemma3BatchProcessor
 from .model import Gemma3Model
 from .model_config import Gemma3Config
 
@@ -36,6 +38,7 @@ gemma3_arch = SupportedArchitecture(
         "bfloat16",
     },
     pipeline_model=Gemma3Model,
+    batching=Gemma3BatchProcessor,
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextTokenizer,
     context_type=TextContext,
@@ -47,4 +50,9 @@ gemma3_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     config=Gemma3Config,
+    memory_planner=PagedMemoryPlanner.with_activation_reservation(
+        0, always_signal_buffers=True
+    ),
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

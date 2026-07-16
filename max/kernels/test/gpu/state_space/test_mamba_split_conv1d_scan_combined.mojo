@@ -295,7 +295,7 @@ def run_mamba_split_conv1d_scan_combined_gpu[
         row_major(batch, seqlen, out_dim if has_outproj else dim),
     )
 
-    var epsilon = Scalar[dtype](0.001)
+    var epsilon = Float32(0.001)
 
     # Run CPU kernel
     mamba_split_conv1d_scan_combined_cpu[
@@ -330,23 +330,23 @@ def run_mamba_split_conv1d_scan_combined_gpu[
         Int8(1) if norm_before_gate else Int8(0),
         Int8(1) if has_rmsnorm else Int8(0),
         Int8(1) if has_outproj else Int8(0),
-        zxbcdt_cpu_lt.as_any_origin(),
-        conv_weight_cpu_lt.as_any_origin(),
-        conv_bias_cpu_lt.as_any_origin(),
-        dt_bias_cpu_lt.as_any_origin(),
-        A_cpu_lt.as_any_origin(),
-        D_cpu_lt.as_any_origin(),
-        x_cpu_lt.as_any_origin(),
-        out_z_cpu_lt.as_any_origin(),
-        dt_cpu_lt.as_any_origin(),
-        B_cpu_lt.as_any_origin(),
-        C_cpu_lt.as_any_origin(),
-        z_cpu_lt.as_any_origin(),
-        rmsnorm_weight_cpu_lt.as_any_origin(),
-        outproj_weight_cpu_lt.as_any_origin(),
-        outproj_bias_cpu_lt.as_any_origin(),
-        output_cpu_cpu_lt.as_any_origin(),
-        epsilon,
+        zxbcdt_cpu_lt.as_unsafe_any_origin(),
+        conv_weight_cpu_lt.as_unsafe_any_origin(),
+        conv_bias_cpu_lt.as_unsafe_any_origin(),
+        dt_bias_cpu_lt.as_unsafe_any_origin(),
+        A_cpu_lt.as_unsafe_any_origin(),
+        D_cpu_lt.as_unsafe_any_origin(),
+        x_cpu_lt.as_unsafe_any_origin(),
+        out_z_cpu_lt.as_unsafe_any_origin(),
+        dt_cpu_lt.as_unsafe_any_origin(),
+        B_cpu_lt.as_unsafe_any_origin(),
+        C_cpu_lt.as_unsafe_any_origin(),
+        z_cpu_lt.as_unsafe_any_origin(),
+        rmsnorm_weight_cpu_lt.as_unsafe_any_origin(),
+        outproj_weight_cpu_lt.as_unsafe_any_origin(),
+        outproj_bias_cpu_lt.as_unsafe_any_origin(),
+        output_cpu_cpu_lt.as_unsafe_any_origin(),
+        epsilon.cast[dtype](),
     )
 
     # Run GPU kernel
@@ -408,7 +408,7 @@ def run_mamba_split_conv1d_scan_combined_gpu[
         outproj_weight_gpu_lt,
         outproj_bias_gpu_lt,
         output_gpu_gpu_lt,
-        epsilon,
+        epsilon.cast[dtype](),
         grid_dim=(num_blocks,),
         block_dim=(BLOCK_SIZE,),
     )

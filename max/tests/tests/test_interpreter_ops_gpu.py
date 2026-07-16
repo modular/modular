@@ -17,18 +17,24 @@ on GPU by comparing against PyTorch reference implementations.
 """
 
 import operator
-from collections.abc import Sequence
+import os
+from collections.abc import Generator, Sequence
 from typing import Any
 
 import numpy as np
 import pytest
 import torch
-from max._interpreter import MOInterpreter
+from max import _interpreter
+from max._interpreter_ops import adopted_from_manifest
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random as max_random
 from max.experimental import realization_context as rc
+from max.experimental.executor import (
+    InterpreterExecutor,
+    set_default_executor,
+)
 from max.experimental.functional import (
     allgather as all_gather,
 )
@@ -54,6 +60,44 @@ from max.graph import BufferType as GBufferType
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph import Type as GType
 from max.graph import ops as graph_ops
+
+
+@pytest.fixture(autouse=True)
+def _interpreter_only() -> Generator[None]:
+    """All tests in this module run on the interpreter -- it is the unit
+    under test.  Graphs it cannot execute raise UnsupportedGraphError."""
+    with set_default_executor(InterpreterExecutor()):
+        yield
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _require_warm_adoption() -> None:
+    """Fail loudly unless the build-warmed eager-GC cache actually took effect.
+
+    The numeric tests below pass whether the warm adopts or silently cold-
+    compiles, so this asserts adoption directly. ``XARCH_WARM_RLOCATION`` is set
+    only on a warmed lane; its absence with an accelerator present means a new
+    NVIDIA lane wasn't wired (checked at runtime, not in the BUILD select, since
+    the pydeps lint aspect evaluates that select on non-NVIDIA lanes too). When
+    wired, ``adopted_from_manifest`` must hold for each family, else adoption
+    fell through to a cold recompile.
+    """
+    if not os.environ.get("XARCH_WARM_RLOCATION"):
+        if accelerator_count() > 0:
+            raise RuntimeError(
+                "test_interpreter_ops_gpu ran on a GPU with no eager-GC warm"
+                " wired, add its SKU to _GPU_TARGET/_GPU_LANE_ONLY in"
+                " max/tests/integration/xarch_warm/BUILD.bazel and the selects"
+                " in max/tests/tests/BUILD.bazel."
+            )
+        return
+    unadopted = [f for f in ("matmul", "unary") if not adopted_from_manifest(f)]
+    if unadopted:
+        raise RuntimeError(
+            f"eager-GC warm is wired but {unadopted} did not adopt from the"
+            " manifest, a silent cold-compile fallback (arch/key drift)."
+        )
+
 
 # Mapping from MAX DType to torch dtype
 DTYPE_TO_TORCH = {
@@ -83,7 +127,7 @@ class TestBasicGPUExecution:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a + b
@@ -103,7 +147,7 @@ class TestBasicGPUExecution:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a + b
@@ -121,7 +165,7 @@ class TestBasicGPUExecution:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a + b
@@ -145,7 +189,7 @@ class TestPowGPU:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a**b
@@ -169,7 +213,7 @@ class TestPowGPU:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a**b
@@ -225,7 +269,7 @@ class TestBinaryComparisonOpsGPU:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = op(a, b)
@@ -258,7 +302,7 @@ class TestBooleanLogicOpsGPU:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = op(a, b)
@@ -275,7 +319,7 @@ class TestBooleanLogicOpsGPU:
 
         a = Tensor.from_dlpack(a_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = ~a
@@ -302,7 +346,7 @@ class TestElementwiseGPU:
 
         with pytest.raises(Exception):
             with (
-                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                rc.EagerRealizationContext() as ctx,
                 realization_context(ctx),
             ):
                 a + b
@@ -316,9 +360,11 @@ class TestElementwiseGPU:
 
         a = Tensor.from_dlpack(a_torch)
 
-        with pytest.raises(Exception, match="No pre-compiled unary model"):
+        with pytest.raises(
+            Exception, match="Unsupported unary op/device/dtype"
+        ):
             with (
-                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                rc.EagerRealizationContext() as ctx,
                 realization_context(ctx),
             ):
                 _ = F.atanh(a)  # atanh is lazy, needs a live reference
@@ -357,7 +403,7 @@ class TestElementwiseGPU:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = op(a, b)
@@ -413,7 +459,7 @@ class TestElementwiseGPU:
 
         a = Tensor.from_dlpack(a_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = op(a)
@@ -446,7 +492,7 @@ class TestMatmulGPU:
         lhs = Tensor.from_dlpack(lhs_torch)
         rhs = Tensor.from_dlpack(rhs_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = lhs @ rhs
@@ -467,7 +513,7 @@ class TestMatmulGPU:
 
         with pytest.raises(Exception):
             with (
-                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                rc.EagerRealizationContext() as ctx,
                 realization_context(ctx),
             ):
                 lhs @ rhs
@@ -495,7 +541,7 @@ class TestBatchMatmulGPU:
         lhs = Tensor.from_dlpack(lhs_torch)
         rhs = Tensor.from_dlpack(rhs_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = lhs @ rhs
@@ -512,7 +558,7 @@ class TestBatchMatmulGPU:
         lhs = Tensor.from_dlpack(lhs_torch)
         rhs = Tensor.from_dlpack(rhs_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = lhs @ rhs
@@ -531,7 +577,7 @@ class TestBatchMatmulGPU:
 
         with pytest.raises(Exception):
             with (
-                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                rc.EagerRealizationContext() as ctx,
                 realization_context(ctx),
             ):
                 lhs @ rhs
@@ -559,7 +605,7 @@ class TestStaticBroadcastToGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=target_shape)
@@ -587,7 +633,7 @@ class TestStaticBroadcastToGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=target_shape)
@@ -604,7 +650,7 @@ class TestStaticBroadcastToGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=target_shape)
@@ -625,7 +671,7 @@ class TestStaticBroadcastToGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=shape)
@@ -655,7 +701,7 @@ class TestRangeGPU:
         step_t = Tensor.from_dlpack(torch.tensor(1, dtype=torch_dtype))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             t = Tensor.arange(
@@ -679,7 +725,7 @@ class TestRangeGPU:
         step_t = Tensor.from_dlpack(torch.tensor(2, dtype=torch.float32))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             t = Tensor.arange(
@@ -711,7 +757,7 @@ class TestRangeGPU:
         step_t = Tensor.from_dlpack(torch.tensor(1, dtype=torch_dtype))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             t = Tensor.arange(
@@ -747,7 +793,7 @@ class TestReduceMaxGPU:
         x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=-1)
@@ -773,7 +819,7 @@ class TestReduceMaxGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=0)
@@ -799,7 +845,7 @@ class TestReduceMaxGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=1)
@@ -816,7 +862,7 @@ class TestReduceMaxGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=-1)
@@ -848,7 +894,7 @@ class TestBroadcastBinaryOpsGPU:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a + b
@@ -864,7 +910,7 @@ class TestBroadcastBinaryOpsGPU:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a * b
@@ -882,7 +928,7 @@ class TestBroadcastBinaryOpsGPU:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a - b
@@ -904,7 +950,7 @@ class TestBroadcastBinaryOpsGPU:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a + b
@@ -935,7 +981,7 @@ class TestReduceMinGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.min(axis=-1)
@@ -961,7 +1007,7 @@ class TestReduceMinGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.min(axis=0)
@@ -987,7 +1033,7 @@ class TestReduceMinGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.min(axis=1)
@@ -1004,7 +1050,7 @@ class TestReduceMinGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.min(axis=-1)
@@ -1034,7 +1080,7 @@ class TestReduceSumGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.sum(axis=-1)
@@ -1060,7 +1106,7 @@ class TestReduceSumGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.sum(axis=0)
@@ -1086,7 +1132,7 @@ class TestReduceSumGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.sum(axis=1)
@@ -1103,7 +1149,7 @@ class TestReduceSumGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.sum(axis=-1)
@@ -1133,7 +1179,7 @@ class TestMeanGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.mean(axis=-1)
@@ -1159,7 +1205,7 @@ class TestMeanGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.mean(axis=0)
@@ -1185,7 +1231,7 @@ class TestMeanGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.mean(axis=1)
@@ -1202,7 +1248,7 @@ class TestMeanGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.mean(axis=-1)
@@ -1233,7 +1279,7 @@ class TestReduceMulGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.prod(axis=-1)
@@ -1259,7 +1305,7 @@ class TestReduceMulGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.prod(axis=0)
@@ -1285,7 +1331,7 @@ class TestReduceMulGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.prod(axis=1)
@@ -1304,7 +1350,7 @@ class TestReduceMulGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.prod(axis=-1)
@@ -1346,7 +1392,7 @@ class TestUnaryMixedOpsGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(out_dtype)
@@ -1370,7 +1416,7 @@ class TestUnaryMixedOpsGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.is_nan(x)
@@ -1394,7 +1440,7 @@ class TestUnaryMixedOpsGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.is_inf(x)
@@ -1411,7 +1457,7 @@ class TestUnaryMixedOpsGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(DType.float32)
@@ -1427,7 +1473,7 @@ class TestUnaryMixedOpsGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(DType.int32)
@@ -1444,7 +1490,7 @@ class TestRandomNormalGPU:
         """Test random normal on GPU produces correct shape and device."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -1461,7 +1507,7 @@ class TestRandomNormalGPU:
         """Test random normal on GPU has approximately correct statistics."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(123)
@@ -1491,7 +1537,7 @@ class TestRandomNormalGPU:
         """Test that same seed produces identical results on GPU."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -1500,7 +1546,7 @@ class TestRandomNormalGPU:
             )
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -1520,7 +1566,7 @@ class TestRandomUniformGPU:
         """Test random uniform on GPU produces correct shape and device."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -1537,7 +1583,7 @@ class TestRandomUniformGPU:
         """Test random uniform on GPU has approximately correct statistics."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(123)
@@ -1562,7 +1608,7 @@ class TestRandomUniformGPU:
         """Test that same seed produces identical results on GPU."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -1571,7 +1617,7 @@ class TestRandomUniformGPU:
             )
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -1608,7 +1654,7 @@ class TestTransferOpsGPU:
         x = Tensor.from_dlpack(x_torch_cpu)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.to(gpu)
@@ -1637,7 +1683,7 @@ class TestTransferOpsGPU:
         x = Tensor.from_dlpack(x_torch_gpu)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.to(CPU())
@@ -1658,7 +1704,7 @@ class TestTransferOpsGPU:
         x = Tensor.from_dlpack(x_torch_cpu)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.to(gpu)
@@ -1677,7 +1723,7 @@ class TestTransferOpsGPU:
         x = Tensor.from_dlpack(x_torch_gpu)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.to(CPU())
@@ -1694,7 +1740,7 @@ class TestTransferOpsGPU:
         x = Tensor.from_dlpack(x_torch_cpu)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.to(gpu)
@@ -1715,7 +1761,7 @@ class TestTransferOpsGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y_gpu = x.to(gpu)
@@ -1748,8 +1794,7 @@ class TestTransferOpsGPU:
         )
         input_buf = Buffer.from_dlpack(x_torch)
 
-        interp = MOInterpreter()
-        outputs = interp.execute(g, [input_buf])
+        outputs = _interpreter.execute(g, [input_buf])
 
         out_buf = outputs[0]
         assert isinstance(out_buf, Buffer)
@@ -1782,8 +1827,7 @@ class TestTransferOpsGPU:
         )
         input_buf = Buffer.from_dlpack(x_torch)
 
-        interp = MOInterpreter()
-        outputs = interp.execute(g, [input_buf])
+        outputs = _interpreter.execute(g, [input_buf])
 
         out_buf = outputs[0]
         assert isinstance(out_buf, Buffer)
@@ -1809,7 +1853,7 @@ class TestReshapeOpsGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.squeeze(axis=1)
@@ -1832,7 +1876,7 @@ class TestReshapeOpsGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.unsqueeze(axis=1)
@@ -1855,7 +1899,7 @@ class TestReshapeOpsGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.reshape([3, 4, 3])
@@ -1878,7 +1922,7 @@ class TestReshapeOpsGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.reshape([6, 4])
@@ -1901,7 +1945,7 @@ class TestReshapeOpsGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.reshape([3, 1, 4])
@@ -1919,7 +1963,7 @@ class TestReshapeOpsGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             squeezed = x.squeeze(axis=1)
@@ -1943,7 +1987,7 @@ class TestSoftmaxGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.softmax(x, axis=-1)
@@ -1964,7 +2008,7 @@ class TestSoftmaxGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.logsoftmax(x, axis=-1)
@@ -2010,7 +2054,7 @@ class TestSelectGPU:
         x = Tensor.from_dlpack(x_torch)
         y = Tensor.from_dlpack(y_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.where(cond, x, y)
@@ -2042,7 +2086,7 @@ class TestSelectGPU:
         x = Tensor.from_dlpack(x_torch)
         y = Tensor.from_dlpack(y_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.where(cond, x, y)
@@ -2068,7 +2112,7 @@ class TestSelectGPU:
         x = Tensor.from_dlpack(x_torch)
         y = Tensor.from_dlpack(y_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.where(cond, x, y)
@@ -2097,7 +2141,7 @@ class TestConcatGPU:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b], axis=0)
@@ -2124,7 +2168,7 @@ class TestConcatGPU:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b], axis=1)
@@ -2144,7 +2188,7 @@ class TestConcatGPU:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b], axis=-1)
@@ -2167,7 +2211,7 @@ class TestConcatGPU:
         b = Tensor.from_dlpack(b_torch)
         c = Tensor.from_dlpack(c_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b, c], axis=0)
@@ -2187,7 +2231,7 @@ class TestConcatGPU:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b], axis=0)
@@ -2205,7 +2249,7 @@ class TestConcatGPU:
         a = Tensor.from_dlpack(a_torch)
         b = Tensor.from_dlpack(b_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b], axis=0)
@@ -2234,7 +2278,7 @@ class TestLayerNormGPU:
         beta = Tensor.from_dlpack(beta_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
@@ -2264,7 +2308,7 @@ class TestLayerNormGPU:
         beta = Tensor.from_dlpack(beta_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
@@ -2290,7 +2334,7 @@ class TestLayerNormGPU:
         beta = Tensor.from_dlpack(beta_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
@@ -2323,7 +2367,7 @@ class TestTransposeGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.transpose(0, 1)
@@ -2341,7 +2385,7 @@ class TestTransposeGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.transpose(0, 2)
@@ -2359,7 +2403,7 @@ class TestTransposeGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.transpose(1, 2)
@@ -2377,7 +2421,7 @@ class TestTransposeGPU:
         x = Tensor.from_dlpack(x_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.transpose(1, 3)
@@ -2404,7 +2448,7 @@ class TestSliceGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(1, 4)])
@@ -2425,7 +2469,7 @@ class TestSliceGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(0, 2), slice(1, 3)])
@@ -2439,7 +2483,7 @@ class TestSliceGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(0, 10, 2)])
@@ -2455,7 +2499,7 @@ class TestSliceGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(0, 2), slice(1, 3), slice(0, 2)])
@@ -2477,7 +2521,7 @@ class TestGatherGPU:
         x = Tensor.from_dlpack(x_torch)
         idx = Tensor.from_dlpack(idx_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=0)
@@ -2495,7 +2539,7 @@ class TestGatherGPU:
         x = Tensor.from_dlpack(x_torch)
         idx = Tensor.from_dlpack(idx_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=1)
@@ -2513,7 +2557,7 @@ class TestGatherGPU:
         x = Tensor.from_dlpack(x_torch)
         idx = Tensor.from_dlpack(idx_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=1)
@@ -2533,7 +2577,7 @@ class TestGatherGPU:
         x = Tensor.from_dlpack(x_torch)
         idx = Tensor.from_dlpack(idx_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=0)
@@ -2557,7 +2601,7 @@ class TestGatherNdGPU:
         x = Tensor.from_dlpack(x_torch)
         idx = Tensor.from_dlpack(idx_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx)
@@ -2579,7 +2623,7 @@ class TestGatherNdGPU:
         x = Tensor.from_dlpack(x_torch)
         idx = Tensor.from_dlpack(idx_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx)
@@ -2598,7 +2642,7 @@ class TestGatherNdGPU:
         x = Tensor.from_dlpack(x_torch)
         idx = Tensor.from_dlpack(idx_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx, batch_dims=1)
@@ -2626,7 +2670,7 @@ class TestArgMaxMinGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = f_op(x, axis=axis)
@@ -2648,7 +2692,7 @@ class TestArgMaxMinGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = f_op(x, axis=1)
@@ -2679,11 +2723,11 @@ class TestSplitGPU:
         x_torch = torch.arange(24, dtype=torch_dtype, device="cuda").reshape(
             6, 4
         )
-        split_sizes = [2, 4] if axis in (0,) else [1, 3]
+        split_sizes = [2, 4] if axis == 0 else [1, 3]
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, split_sizes, axis=axis)
@@ -2702,7 +2746,7 @@ class TestSplitGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, [1, 2, 1], axis=1)
@@ -2718,7 +2762,7 @@ class TestSplitGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, 2, axis=0)
@@ -2742,7 +2786,7 @@ class TestConv2dGPU:
         x = Tensor.from_dlpack(x_torch)
         f = Tensor.from_dlpack(f_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d(x, f)
@@ -2765,7 +2809,7 @@ class TestConv2dGPU:
         x = Tensor.from_dlpack(x_torch)
         f = Tensor.from_dlpack(f_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d(x, f, stride=(2, 2), padding=(1, 1, 1, 1))
@@ -2790,7 +2834,7 @@ class TestConv2dGPU:
         x = Tensor.from_dlpack(x_torch)
         f = Tensor.from_dlpack(f_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d(x, f, groups=2)
@@ -2819,7 +2863,7 @@ class TestConvTranspose2dGPU:
         x = Tensor.from_dlpack(x_torch)
         f = Tensor.from_dlpack(f_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d_transpose(x, f)
@@ -2844,7 +2888,7 @@ class TestConvTranspose2dGPU:
         x = Tensor.from_dlpack(x_torch)
         f = Tensor.from_dlpack(f_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d_transpose(x, f, stride=(2, 2))
@@ -2873,7 +2917,7 @@ class TestMaxPool2dGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(2, 2))
@@ -2893,7 +2937,7 @@ class TestMaxPool2dGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(3, 3), stride=2, padding=1)
@@ -2913,7 +2957,7 @@ class TestMaxPool2dGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(2, 2), stride=2, ceil_mode=True)
@@ -2957,7 +3001,7 @@ class TestBandPartGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=None, num_upper=0)
@@ -2977,7 +3021,7 @@ class TestBandPartGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=1, num_upper=1)
@@ -2997,7 +3041,7 @@ class TestBandPartGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=None, num_upper=0, exclude=True)
@@ -3022,7 +3066,7 @@ class TestAvgPool2dGPU:
 
         x = Tensor.from_dlpack(x_nhwc)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.avg_pool2d(x, kernel_size=(2, 2))
@@ -3044,7 +3088,7 @@ class TestAvgPool2dGPU:
 
         x = Tensor.from_dlpack(x_nhwc)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.avg_pool2d(
@@ -3076,7 +3120,7 @@ class TestAvgPool2dGPU:
 
         x = Tensor.from_dlpack(x_nhwc)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.avg_pool2d(x, kernel_size=(3, 3), stride=2, ceil_mode=True)
@@ -3106,7 +3150,7 @@ class TestTopKGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.top_k(x, k=2, axis=axis)
@@ -3130,7 +3174,7 @@ class TestTopKGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.top_k(x, k=3, axis=1)
@@ -3167,7 +3211,7 @@ class TestBottomKGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.bottom_k(x, k=2, axis=axis)
@@ -3191,7 +3235,7 @@ class TestBottomKGPU:
 
         x = Tensor.from_dlpack(x_torch)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.bottom_k(x, k=3, axis=1)
@@ -3259,7 +3303,7 @@ class TestScatterNdGPU:
         indices = Tensor.from_dlpack(indices_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd(x, updates, indices)
@@ -3288,7 +3332,7 @@ class TestScatterNdGPU:
         indices = Tensor.from_dlpack(indices_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd(x, updates, indices)
@@ -3320,7 +3364,7 @@ class TestScatterNdGPU:
         indices = Tensor.from_dlpack(indices_torch)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd(x, updates, indices)
@@ -3344,7 +3388,7 @@ class TestDistributedAllreduceSumHandler:
 
     @_NEED_2_GPUS
     def test_allreduce_sum_low_level(self) -> None:
-        """Directly build a graph with ops.allreduce.sum and run via MOInterpreter."""
+        """Directly build a graph with ops.allreduce.sum and run via the MO interpreter."""
         shape = [4, 4]
         gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
 
@@ -3385,9 +3429,8 @@ class TestDistributedAllreduceSumHandler:
             Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
         ]
 
-        interp = MOInterpreter()
-        assert interp.can_execute(graph)
-        outputs = interp.execute(graph, input_bufs)
+        assert _interpreter.can_execute(graph)
+        outputs = _interpreter.execute(graph, input_bufs)
 
         assert len(outputs) == 2
         for out in outputs:
@@ -3431,7 +3474,7 @@ class TestDistributedAllreduceSumHandler:
 
         try:
             with (
-                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                rc.EagerRealizationContext() as ctx,
                 realization_context(ctx),
             ):
                 result = all_reduce_sum(partial_t)
@@ -3471,7 +3514,7 @@ class TestDistributedAllgatherHandler:
         )
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = all_gather(sharded_t, tensor_axis=0)
@@ -3486,7 +3529,7 @@ class TestDistributedScatterHandler:
 
     @_NEED_2_GPUS
     def test_scatter_via_graph_ops(self) -> None:
-        """Build a graph using ops.distributed_scatter and run via MOInterpreter."""
+        """Build a graph using ops.distributed_scatter and run via the MO interpreter."""
         shape = [4]
         gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
 
@@ -3515,9 +3558,8 @@ class TestDistributedScatterHandler:
             Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
         ]
 
-        interp = MOInterpreter()
-        assert interp.can_execute(graph)
-        outputs = interp.execute(graph, input_bufs)
+        assert _interpreter.can_execute(graph)
+        outputs = _interpreter.execute(graph, input_bufs)
 
         assert len(outputs) == 2
         out0, out1 = outputs[0], outputs[1]
@@ -3541,7 +3583,7 @@ class TestDistributedScatterHandler:
         mapping = PlacementMapping(mesh, (Sharded(0),))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = df_shard(Tensor(data), mapping)
@@ -3557,7 +3599,7 @@ class TestDistributedBroadcastHandler:
 
     @_NEED_2_GPUS
     def test_broadcast_via_graph_ops(self) -> None:
-        """Build a graph using ops.distributed_broadcast and run via MOInterpreter."""
+        """Build a graph using ops.distributed_broadcast and run via the MO interpreter."""
         shape = [4]
         gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
 
@@ -3583,9 +3625,8 @@ class TestDistributedBroadcastHandler:
             Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
         ]
 
-        interp = MOInterpreter()
-        assert interp.can_execute(graph)
-        outputs = interp.execute(graph, input_bufs)
+        assert _interpreter.can_execute(graph)
+        outputs = _interpreter.execute(graph, input_bufs)
 
         assert len(outputs) == 2
         out0, out1 = outputs[0], outputs[1]
@@ -3609,7 +3650,7 @@ class TestDistributedBroadcastHandler:
         mapping = PlacementMapping(mesh, (Replicated(),))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = df_shard(t, mapping)
@@ -3624,7 +3665,7 @@ class TestDistributedReducescatterSumHandler:
 
     @_NEED_2_GPUS
     def test_reducescatter_sum_via_graph_ops(self) -> None:
-        """Build a graph with ops.reducescatter.sum and run via MOInterpreter."""
+        """Build a graph with ops.reducescatter.sum and run via the MO interpreter."""
         shape = [4, 4]
         gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
 
@@ -3668,9 +3709,8 @@ class TestDistributedReducescatterSumHandler:
             Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
         ]
 
-        interp = MOInterpreter()
-        assert interp.can_execute(graph)
-        outputs = interp.execute(graph, input_bufs)
+        assert _interpreter.can_execute(graph)
+        outputs = _interpreter.execute(graph, input_bufs)
 
         assert len(outputs) == 2
         out0, out1 = outputs[0], outputs[1]
@@ -3696,7 +3736,7 @@ class TestDistributedReducescatterSumHandler:
         data = np.ones((4, 4), dtype=np.float32)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             # Build a Partial tensor with one shard per device.
@@ -3733,7 +3773,7 @@ class TestMutableStoreOpsGPU:
         buf = Buffer.from_numpy(np.zeros(4, dtype=np.float32)).to(gpu)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             a = Tensor(storage=buf)
@@ -3752,7 +3792,7 @@ class TestMutableStoreOpsGPU:
         slice_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             a = Tensor(storage=buf)
@@ -3771,7 +3811,7 @@ class TestMutableStoreOpsGPU:
         slice_np = np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float32)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             a = Tensor(storage=buf)
@@ -3798,7 +3838,7 @@ class TestMutableStoreOpsGPU:
         src_buf = Buffer.from_numpy(src_u16).view(DType.bfloat16).to(gpu)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             a = Tensor(storage=buf)
@@ -3822,7 +3862,7 @@ class TestMutableStoreOpsGPU:
         src_buf = Buffer.from_numpy(src_bytes).view(DType.float8_e4m3fn).to(gpu)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             a = Tensor(storage=buf)

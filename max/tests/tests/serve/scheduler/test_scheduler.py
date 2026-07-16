@@ -178,7 +178,7 @@ def test_scheduler_handle_terminated_responses() -> None:
     }
 
     batch_constructor.advance_requests(
-        TextGenerationInputs(batches=[[mock_1, mock_2]], num_steps=1)
+        TextGenerationInputs(batches=[[mock_1, mock_2]])
     )
 
     # Release terminated requests
@@ -208,7 +208,7 @@ def test_scheduler_handle_chunked_requests() -> None:
     batch_constructor.enqueue_new_request(req_2)
 
     batch_constructor.advance_requests(
-        TextGenerationInputs(batches=[[req_1, req_2]], num_steps=1)
+        TextGenerationInputs(batches=[[req_1, req_2]])
     )
     assert req_2.request_id not in batch_responses
     assert batch_constructor.all_ce_reqs
@@ -239,7 +239,6 @@ def test_schedule_ce() -> None:
 
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[[mock_request]],
-        num_steps=1,
     )
 
     scheduler._schedule(inputs)
@@ -266,7 +265,6 @@ def test_schedule_ce_with_chunked_prefill() -> None:
 
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[batch_to_execute],
-        num_steps=1,
     )
 
     scheduler._schedule(inputs)
@@ -312,7 +310,6 @@ def test_schedule_tg() -> None:
     mock_request = create_mock_request()
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[[mock_request]],
-        num_steps=1,
     )
 
     scheduler._schedule(inputs)
@@ -351,7 +348,6 @@ def test_scheduler_dp(dp: int) -> None:
             assert len(inputs.batches[i]) == bs_low
 
     # Num steps is 1 since we are running CE
-    assert inputs.num_steps == 1
 
     # Generate new tokens for the requests.
     for batch in inputs.batches:
@@ -369,7 +365,6 @@ def test_scheduler_empty_batch() -> None:
     inputs = scheduler.batch_constructor.construct_batch()
     assert len(inputs.batches) == 100
     assert len(inputs.flat_batch) == 0
-    assert inputs.num_steps == 0
 
 
 def _create_lora_scheduler(adapter_name: str) -> TokenGenerationScheduler:

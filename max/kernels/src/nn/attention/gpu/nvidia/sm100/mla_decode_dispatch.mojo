@@ -19,9 +19,12 @@ from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
+    ComptimeInt,
     Coord,
+    Idx,
     Layout,
     LayoutTensor,
+    RowMajorLayout,
     TileTensor,
     row_major,
 )
@@ -517,7 +520,7 @@ def compute_mla_dispatch_scalars[
     Returns ``(batch_size, q_max_seq_len, num_partitions)``.
     These three values are baked into the size-3 GPU buffer.
     ``effective_split_len`` is computed directly inside the MoGG ops from
-    ``max_lengths`` (``max_cache_valid_length + q_max_seq_len`` when
+    ``max_cache_length`` (``max_cache_valid_length + q_max_seq_len`` when
     ``_is_cache_length_accurate=False``, else ``max_cache_valid_length``),
     and no longer needs to be returned here.
     """
@@ -695,6 +698,16 @@ struct MLADispatchScalarArgs[
             ),
         )
 
+    def gpu_tile_tensor(
+        self,
+    ) -> TileTensor[DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin]:
+        return TileTensor(
+            rebind[UnsafePointer[Scalar[DType.int64], MutAnyOrigin]](
+                self.gpu_buf.unsafe_ptr()
+            ),
+            row_major((Idx[3],)),
+        )
+
 
 # ------------------------------------------------------------------------------
 # MLA decoding implementation for SM100
@@ -813,22 +826,6 @@ def mla_decode_sm100_dispatch[
 
     if num_partitions_in:
         num_partitions = num_partitions_in.value()
-
-    # When sparse mode or sliding-window changes num_partitions, the GPU
-    # scalar_args_buf (which was pre-computed from cache_len by the caller)
-    # must be updated so the kernel reads the same value the host uses for
-    # grid/buffers.
-    comptime if sparse or (mask_t.get_type_name() == "SlidingWindowCausalMask"):
-        var corrected_args = InlineArray[Int64, 3](uninitialized=True)
-        corrected_args[0] = Int64(batch_size)
-        corrected_args[1] = Int64(q_max_seq_len)
-        corrected_args[2] = Int64(num_partitions)
-        var scalar_buf = DeviceBuffer[DType.int64](
-            ctx, scalar_args_buf.ptr, 3, owning=False
-        )
-        scalar_buf.enqueue_copy_from(
-            UnsafePointer(to=corrected_args).bitcast[Scalar[DType.int64]]()
-        )
 
     # =========================================================================
     # split_page_size routing: use finer split granularity for short cache
@@ -1023,7 +1020,10 @@ def _mla_decode_sm100_dispatch_impl[
             ),
         )
         var lse_accum_split_ptr: SplitAccumType = {
-            lse_accum_split.to_device_buffer(ctx).unsafe_ptr()
+            lse_accum_split.to_device_buffer(ctx)
+            .unsafe_ptr()
+            .as_immutable()
+            .as_unsafe_any_origin()
         }
 
         # Get input_row_offsets pointer for combine kernel's ragged output writes.
@@ -1516,7 +1516,9 @@ def mla_decode_sm100_sink_split_k[
                 ]() raises:
                     if ragged:
                         comptime ValidLengthType = NonNullPointer[DType.uint32]
-                        var valid_len: ValidLengthType = {valid_length.ptr}
+                        var valid_len: ValidLengthType = {
+                            valid_length.ptr.as_immutable().as_unsafe_any_origin()
+                        }
                         launch_mla_sm100_decode_sparse_kv_bf16[
                             q_type=q_type,
                             KVLUTType=k_t,
@@ -1633,7 +1635,9 @@ def mla_decode_sm100_sink_split_k[
             ]() raises:
                 if ragged:
                     comptime ValidLengthType = NonNullPointer[DType.uint32]
-                    var valid_len: ValidLengthType = {valid_length.ptr}
+                    var valid_len: ValidLengthType = {
+                        valid_length.ptr.as_immutable().as_unsafe_any_origin()
+                    }
                     launch_mla_sm100_decode_sparse_kv_fp8[
                         q_type=q_type,
                         KVLUTType=k_t,
@@ -1780,7 +1784,9 @@ def mla_decode_sm100_sink_split_k[
         ]() raises:
             if ragged:
                 comptime ValidLengthType = NonNullPointer[DType.uint32]
-                var valid_len: ValidLengthType = {valid_length.ptr}
+                var valid_len: ValidLengthType = {
+                    valid_length.ptr.as_immutable().as_unsafe_any_origin()
+                }
                 launch_mla_sm100_decode_sparse[
                     q_type=q_type,
                     KVLUTType=k_t,
@@ -1943,7 +1949,9 @@ def mla_decode_sm100_sink_split_k[
 
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
-            var valid_len: ValidLengthType = {valid_length.ptr}
+            var valid_len: ValidLengthType = {
+                valid_length.ptr.as_immutable().as_unsafe_any_origin()
+            }
             launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
                 q_type=q_type,
                 KVLUTType=k_t,
@@ -2057,7 +2065,9 @@ def mla_decode_sm100_sink_split_k[
 
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
-            var valid_len: ValidLengthType = {valid_length.ptr}
+            var valid_len: ValidLengthType = {
+                valid_length.ptr.as_immutable().as_unsafe_any_origin()
+            }
 
             @parameter
             @always_inline
@@ -2265,7 +2275,9 @@ def mla_decode_sm100_sink_split_k[
 
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
-            var valid_len: ValidLengthType = {valid_length.ptr}
+            var valid_len: ValidLengthType = {
+                valid_length.ptr.as_immutable().as_unsafe_any_origin()
+            }
             launch_mla_sm100_decode_enqueue_kernel[
                 q_type=q_type,
                 KVLUTType=k_t,
@@ -2374,7 +2386,7 @@ def launch_mla_sm100_decode_enqueue_kernel[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
         SplitAccumType=SplitAccumType,
-    ](mask, valid_len, lse_accum_split_ptr)
+    ](mask, valid_len, lse_accum_split_ptr, num_partitions)
 
     var block_x = ceildiv(config.num_q_heads, config.BM)
     var grid_dim = (block_x, q_max_seq_len, block_z)
@@ -2558,7 +2570,7 @@ def launch_mla_sm100_decode_native_fp8[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
         SplitAccumType=SplitAccumType,
-    ](mask, valid_len, lse_accum_split_ptr)
+    ](mask, valid_len, lse_accum_split_ptr, num_partitions)
     var block_x = ceildiv(config.num_q_heads, config.BM)
     # fold collapses grid.y to 1 since BM packs all q_tokens.
     var grid_y = 1 if fold_q else q_max_seq_len
@@ -2672,7 +2684,7 @@ def launch_mla_sm100_decode_native_fp8_layout_g[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
         SplitAccumType=SplitAccumType,
-    ](mask, valid_len, lse_accum_split_ptr)
+    ](mask, valid_len, lse_accum_split_ptr, num_partitions)
     var block_x = ceildiv(config_g.num_q_heads, config_g.BM)
     # fold collapses grid.y to 1 since BM packs all q_tokens.
     var grid_y = 1 if fold_q else q_max_seq_len
@@ -2788,7 +2800,7 @@ def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
         SplitAccumType=SplitAccumType,
-    ](mask, valid_len, lse_accum_split_ptr)
+    ](mask, valid_len, lse_accum_split_ptr, num_partitions)
     var block_x = ceildiv(config.num_q_heads, config.BM)
     var grid_dim = (block_x, q_max_seq_len, block_z)
     var block_dim = (config.num_threads, 1, 1)
@@ -2990,7 +3002,7 @@ def launch_mla_sm100_decode_sparse[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
         SplitAccumType=SplitAccumType,
-    ](mask, valid_len, lse_accum_split_ptr)
+    ](mask, valid_len, lse_accum_split_ptr, num_partitions)
     var block_x = ceildiv(config.num_q_heads, config.BM)
     var grid_dim = (block_x, q_max_seq_len, block_z)
     var block_dim = (config.num_threads, 1, 1)
@@ -3157,7 +3169,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
         SplitAccumType=SplitAccumType,
-    ](mask, valid_len, lse_accum_split_ptr)
+    ](mask, valid_len, lse_accum_split_ptr, num_partitions)
     var block_x = ceildiv(config.num_q_heads, config.BM)
     var grid_dim = (block_x, q_max_seq_len, block_z)
     var block_dim = (config.num_threads, 1, 1)
@@ -3181,11 +3193,17 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
         has_variable_topk=has_variable_topk,
     ].kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
-    # Same extra SMEM budget as the BF16-rope sparse kernel:
+    # Extra SMEM beyond the BF16-rope sparse kernel's budget:
     # - 4 idx_bars barriers (4 * mbar_size bytes)
+    # - per-block cvt→QK handoff bars: 9 blocks x num_kv_stages (144 bytes)
     # - ptr_tmem_addr (4 bytes, UInt32)
     # - idx_smem double-buffered (2 * BN_QK * sizeof(Int32) = 512 bytes)
-    comptime sparse_extra_smem = 4 * config.mbar_size + 4 + 2 * config.BN_QK * 4
+    comptime cvt_blk_bars_smem = (
+        config.padded_q_depth // config.BN_QK
+    ) * config.num_kv_stages * config.mbar_size
+    comptime sparse_extra_smem = (
+        4 * config.mbar_size + cvt_blk_bars_smem + 4 + 2 * config.BN_QK * 4
+    )
     comptime sparse_smem_used = config.smem_used + sparse_extra_smem
 
     ctx.enqueue_function[kernel](
@@ -3322,7 +3340,7 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
         SplitAccumType=SplitAccumType,
-    ](mask, valid_len, lse_accum_split_ptr)
+    ](mask, valid_len, lse_accum_split_ptr, num_partitions)
     var block_x = ceildiv(config.num_q_heads, config.BM)
     var grid_dim = (block_x, q_max_seq_len, block_z)
     var block_dim = (config.num_threads, 1, 1)

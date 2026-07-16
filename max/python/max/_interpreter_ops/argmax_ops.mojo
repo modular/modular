@@ -32,7 +32,7 @@ from op_utils import _get_dtype, _get_ctx, _make_ptr
 
 
 @export
-def PyInit_argmax_ops() -> PythonObject:
+def PyInit_argmax_ops() abi("C") -> PythonObject:
     """Create a Python module with argmax/argmin kernel function bindings."""
     try:
         var b = PythonModuleBuilder("argmax_ops")
@@ -56,8 +56,8 @@ def PyInit_argmax_ops() -> PythonObject:
 def argminmax_reduce_op[
     dtype: DType, //, is_max: Bool
 ](
-    out_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dim0: Int,
     dim1: Int,
     dim2: Int,
@@ -86,9 +86,7 @@ def argminmax_reduce_op[
     var in_stride0 = dim1 * dim2
 
     @always_inline
-    @parameter
-    @__copy_capture(out_ptr, in_ptr, dim1, dim2, in_stride0)
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var i = Int(idx[0].value())
         var i0, i2 = divmod(i, dim2)
         var base = i0 * in_stride0 + i2
@@ -111,11 +109,11 @@ def argminmax_reduce_op[
         out_ptr[i] = best_idx
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](Coord(IndexList[1](total)), ctx)
+        elementwise[simd_width=1](func, Coord(IndexList[1](total)), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](
-                Coord(IndexList[1](total)), ctx
+            elementwise[simd_width=1, target="gpu"](
+                func, Coord(IndexList[1](total)), ctx
             )
         else:
             raise Error("No GPU accelerator available")

@@ -79,12 +79,12 @@ def as_dynamic_row_major_1d[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ) -> LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]:
-    return LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin](
-        tensor.ptr,
+    return {
+        tensor.ptr.as_immutable().as_unsafe_any_origin(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             tensor.get_shape()
         ),
-    )
+    }
 
 
 struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
@@ -449,11 +449,11 @@ def _copy_frag_to_smem_nvidia[
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
     var p_smem_tile = LayoutTensor[
+        mut=False,
         p_smem_iter.dtype,
         Layout.row_major(BM, BN),
-        ImmutAnyOrigin,
         address_space=AddressSpace.SHARED,
-    ](p_smem_iter.ptr.as_immutable())
+    ](p_smem_iter.ptr)
     var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
     var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
 
@@ -543,11 +543,11 @@ def _copy_frag_to_smem_amd[
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
     var p_smem_tile = LayoutTensor[
+        mut=False,
         p_smem_iter.dtype,
         Layout.row_major(BM, BN),
-        ImmutAnyOrigin,
         address_space=AddressSpace.SHARED,
-    ](p_smem_iter.ptr.as_immutable())
+    ](p_smem_iter.ptr)
 
     var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
     var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
@@ -776,6 +776,15 @@ trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):
     def num_partitions(self) -> UInt32:
         ...
 
+    # The number of partition CTAs the decode grid is launched with. This is an
+    # upper bound on num_partitions() that is independent of num_keys, so the
+    # launched grid shape is stable across num_keys (one CUDA graph per batch
+    # size). CTAs with partition index >= num_partitions() early-return. Equal
+    # to num_partitions() when the scheme does not over-launch.
+    @always_inline
+    def max_num_partitions(self) -> UInt32:
+        ...
+
     @always_inline
     def get_exp_sum_qk_max_pointer(
         self,
@@ -798,6 +807,10 @@ struct NoPartition[dtype: DType](
         return 1
 
     @always_inline
+    def max_num_partitions(self) -> UInt32:
+        return 1
+
+    @always_inline
     def get_exp_sum_qk_max_pointer(
         self,
     ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
@@ -811,21 +824,30 @@ struct SplitKPartition[dtype: DType](
 ):
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
+
+    @__allow_legacy_any_origin_fields
     var ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]
     var num_partitions_value: UInt32
+    var max_num_partitions_value: UInt32
 
     @always_inline
     def __init__(
         out self,
         ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin],
         num_partitions_value: UInt32,
+        max_num_partitions_value: UInt32,
     ):
         self.ptr = ptr
         self.num_partitions_value = num_partitions_value
+        self.max_num_partitions_value = max_num_partitions_value
 
     @always_inline
     def num_partitions(self) -> UInt32:
         return self.num_partitions_value
+
+    @always_inline
+    def max_num_partitions(self) -> UInt32:
+        return self.max_num_partitions_value
 
     @always_inline
     def get_exp_sum_qk_max_pointer(

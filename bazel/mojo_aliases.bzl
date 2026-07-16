@@ -6,12 +6,21 @@ _PACKAGES = {
     "test_utils": "mojo/stdlib/test/test_utils",
 }
 
+_EXTRA_ALIASES = {
+    "__init__.mojo": "mojo/stdlib/std:__init__.mojo",
+    "std_srcs": "mojo/stdlib/std:std_srcs",
+}
+
 _MAX_PACKAGES = {
+    "machine": "driver/src/machine",
+    "_hal": "driver/src/_hal",
+    "_device_context_hal": "driver/src/_device_context_hal",
     "kv_cache": "kernels/src/kv_cache",
     "layout": "kernels/src/layout",
     "linalg": "kernels/src/linalg",
     "nn": "kernels/src/nn",
     "nvml": "kernels/src/nvml",
+    "profiling_range": "kernels/src/profiling_range",
     "shmem": "kernels/src/shmem",
     "quantization": "kernels/src/quantization",
     "extensibility": "kernels/src/graph_compiler/extensibility",
@@ -33,12 +42,24 @@ _MAX_PACKAGES = {
     "_miopen": "kernels/src/_miopen",
 }
 
+_INTERNAL_PACKAGES = [
+    "//Kernels/lib/matmul_rs",
+    "//Kernels/lib/msa",
+]
+
 # Packages that are marked testonly and cannot be used by production targets
 _TESTONLY_MAX_PACKAGES = ["testdata"]
 
 def _mojo_aliases_impl(rctx):
     alias_rules = []
     for name, target in _PACKAGES.items():
+        alias_rules.append("""
+alias(
+    name = "{name}",
+    actual = "@//{prefix}{target}",
+)""".format(name = name, target = target, prefix = "{prefix}"))
+
+    for name, target in _EXTRA_ALIASES.items():
         alias_rules.append("""
 alias(
     name = "{name}",
@@ -55,12 +76,14 @@ alias(
 ALL_MOJOPKGS = [
 {packages}
 {max_packages}
+{internal_packages}
 ]
 
 # PROD_MOJOPKGS excludes testonly packages and can be used by non-test targets
 PROD_MOJOPKGS = [
 {prod_packages}
 {prod_max_packages}
+{internal_packages}
 ]
 
 def max_aliases():
@@ -79,6 +102,10 @@ def max_aliases():
         max_packages = "\n".join([
             '    "//max:{}",'.format(name)
             for name in _MAX_PACKAGES.keys()
+        ]),
+        internal_packages = "\n".join([
+            '    "{}",'.format(name)
+            for name in _INTERNAL_PACKAGES
         ]),
         prod_packages = "\n".join([
             '    "@mojo//:{}",'.format(name)

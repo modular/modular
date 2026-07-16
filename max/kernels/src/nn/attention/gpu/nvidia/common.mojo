@@ -30,10 +30,11 @@ from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.compute.mma import st_matrix
 from layout import (
+    ComptimeInt,
+    Coord,
     IntTuple,
     Layout,
     LayoutTensor,
-    LTToTTLayout,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
@@ -110,7 +111,10 @@ comptime _SharedMemTT[dtype: DType, layout: InternalLayout] = TileTensor[
 
 # TileTensor type alias for 1D row-major tensors with dynamic size, used for
 # kv_input_row_offsets and sink_weights dispatch params.
-comptime _1d_row_major_tt_layout = LTToTTLayout[Layout.row_major(UNKNOWN_VALUE)]
+comptime _1d_row_major_tt_layout = InternalLayout[
+    shape_types=Coord[Int64].element_types,
+    stride_types=Coord[ComptimeInt[1]].element_types,
+]
 comptime ImmutTileTensor1D[dtype: DType] = TileTensor[
     dtype,
     _1d_row_major_tt_layout,
@@ -142,6 +146,7 @@ struct NonNullPointer[
         Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
     ]
 
+    @__allow_legacy_any_origin_fields
     var ptr: Self.PtrType
 
     @always_inline
@@ -345,7 +350,7 @@ struct MHAPosition[
         out gmem_block: LayoutTensor[
             dtype,
             Self.q_output_gmem_layout,
-            MutAnyOrigin,
+            type_of(ptr).origin,
             layout_int_type=DType.int32,
             linear_idx_type=DType.int32,
             masked=True,
@@ -490,6 +495,7 @@ def get_seq_info[
     num_heads: Int,
     flip_prompt_idx: Bool,
     pair_cta: Bool = False,
+    splitk_partitions: UInt32 = 1,
 ](
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,
@@ -503,11 +509,18 @@ def get_seq_info[
         valid_length,
         max_seq_len.as_uint32(),
     )
+    # `splitk_partitions` MUST match the launch scheduler's value (dispatch),
+    # so `cluster_size` (and thus the `block_idx.x // cluster_size -> tile`
+    # mapping + per-tile validity) agrees. Omitting it defaults to 1, which
+    # for num_q==1 split-K (pair_cta=False) wrongly yields cluster_size=1 and
+    # maps the partition CTAs (block_idx.x % P != 0) to nonexistent tiles, so
+    # they are marked invalid and skip all compute.
     scheduler = TransientScheduler[
         UInt32(BM),
         UInt32(num_heads),
         flip_prompt_idx=flip_prompt_idx,
         pair_cta=pair_cta,
+        splitk_partitions=splitk_partitions,
     ]()
     # SAFETY: Stored in MHATileState.sidx_ptr but never dereferenced.
     var state: MHATileState = scheduler.initial_state(

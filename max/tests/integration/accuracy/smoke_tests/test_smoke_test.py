@@ -138,7 +138,9 @@ def test_recipe_aliases_preserve_key_model_path_and_speculation() -> None:
     assert mtp_recipe.speculative.num_speculative_tokens == 3
 
     kimi_recipe = smoke_test._load_recipe(
-        MODEL_RECIPES["nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector"]
+        MODEL_RECIPES[
+            "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar"
+        ]
     )
     assert kimi_recipe.model.model_path == "nvidia/Kimi-K2.5-NVFP4"
     assert kimi_recipe.speculative is not None
@@ -182,19 +184,47 @@ def test_recipe_gpu_overrides_preserve_single_gpu_recipes() -> None:
     assert args == []
 
 
+def test_8x_recipe_auto_reduces_on_4_gpu_machine(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Regression: an 8-GPU recipe on a 4-GPU runner scales down to 4."""
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
+
+    # amd/MiniMax-M2.7-MXFP4 pins device_specs [0..7] and ep_size 8.
+    cmd, _ = smoke_test.get_server_cmd(
+        "max", "amd/MiniMax-M2.7-MXFP4", gpu_spec=("AMD MI355X", 4)
+    )
+
+    assert cmd[cmd.index("--devices") + 1] == "gpu:0,1,2,3"
+    assert cmd[cmd.index("--ep-size") + 1] == "4"
+
+
+def test_no_autoscale_devices_honors_recipe(monkeypatch: MonkeyPatch) -> None:
+    """With autoscale off, the recipe's device_specs are left untouched."""
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
+
+    cmd, _ = smoke_test.get_server_cmd(
+        "max",
+        "amd/MiniMax-M2.7-MXFP4",
+        autoscale_devices=False,
+        gpu_spec=("AMD MI355X", 4),
+    )
+
+    assert "--devices" not in cmd
+    assert "--ep-size" not in cmd
+
+
 def test_vllm_minimax_keeps_flashinfer_workaround(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        smoke_test,
-        "get_gpu_name_and_count",
-        lambda: ("NVIDIA B200", 8),
-    )
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
-    monkeypatch.delenv("VLLM_USE_FLASHINFER_MOE_FP8", raising=False)
 
-    cmd = smoke_test.get_server_cmd("vllm", "MiniMaxAI/MiniMax-M2.7")
+    cmd, env = smoke_test.get_server_cmd(
+        "vllm", "MiniMaxAI/MiniMax-M2.7", gpu_spec=("NVIDIA B200", 8)
+    )
 
     assert "--enable-expert-parallel" in cmd
     assert "--enable-chunked-prefill" in cmd
@@ -203,21 +233,20 @@ def test_vllm_minimax_keeps_flashinfer_workaround(
     assert "--data-parallel-size=8" in cmd
     assert "--attention-backend" in cmd
     assert "FLASH_ATTN" in cmd
-    assert smoke_test.os.environ["VLLM_USE_FLASHINFER_MOE_FP8"] == "0"
+    assert env["VLLM_USE_FLASHINFER_MOE_FP8"] == "0"
 
 
 def test_vllm_uses_tp_for_recipe_default_data_parallel_degree(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        smoke_test,
-        "get_gpu_name_and_count",
-        lambda: ("NVIDIA B200", 8),
-    )
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
-    cmd = smoke_test.get_server_cmd("vllm", "nvidia/DeepSeek-V3.1-NVFP4__tpep")
+    cmd, _ = smoke_test.get_server_cmd(
+        "vllm",
+        "nvidia/DeepSeek-V3.1-NVFP4__tpep",
+        gpu_spec=("NVIDIA B200", 8),
+    )
 
     assert "--enable-expert-parallel" in cmd
     assert "--tensor-parallel-size=8" in cmd
@@ -227,16 +256,13 @@ def test_vllm_uses_tp_for_recipe_default_data_parallel_degree(
 def test_sglang_uses_tp_for_recipe_with_tensor_parallel_attention(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        smoke_test,
-        "get_gpu_name_and_count",
-        lambda: ("NVIDIA B200", 8),
-    )
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
-    cmd = smoke_test.get_server_cmd(
-        "sglang", "nvidia/DeepSeek-V3.1-NVFP4__tpep"
+    cmd, _ = smoke_test.get_server_cmd(
+        "sglang",
+        "nvidia/DeepSeek-V3.1-NVFP4__tpep",
+        gpu_spec=("NVIDIA B200", 8),
     )
 
     assert "--tp-size=8" in cmd
@@ -251,16 +277,13 @@ def test_sglang_uses_tp_for_recipe_with_tensor_parallel_attention(
 def test_sglang_uses_data_parallel_attention_for_recipe_dp(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        smoke_test,
-        "get_gpu_name_and_count",
-        lambda: ("NVIDIA B200", 8),
-    )
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
-    cmd = smoke_test.get_server_cmd(
-        "sglang", "nvidia/DeepSeek-V3.1-NVFP4__fp8kv"
+    cmd, _ = smoke_test.get_server_cmd(
+        "sglang",
+        "nvidia/DeepSeek-V3.1-NVFP4__fp8kv",
+        gpu_spec=("NVIDIA B200", 8),
     )
 
     assert "--data-parallel-size=8" in cmd
@@ -273,16 +296,13 @@ def test_sglang_uses_data_parallel_attention_for_recipe_dp(
 
 
 def test_sglang_uses_recipe_memory_cap(monkeypatch: MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        smoke_test,
-        "get_gpu_name_and_count",
-        lambda: ("NVIDIA B200", 8),
-    )
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
-    cmd = smoke_test.get_server_cmd(
-        "sglang", "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector"
+    cmd, _ = smoke_test.get_server_cmd(
+        "sglang",
+        "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar",
+        gpu_spec=("NVIDIA B200", 8),
     )
 
     assert "--mem-fraction-static" in cmd
@@ -298,22 +318,19 @@ def test_max_get_server_cmd_recipe_alias_resolves_yaml(
     this path used to fail with ``ModuleNotFoundError: max`` when resolving
     ``MODEL_RECIPES`` aliases.
     """
-    monkeypatch.setattr(
-        smoke_test,
-        "get_gpu_name_and_count",
-        lambda: ("NVIDIA L40S", 1),
-    )
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
     alias = "microsoft/phi-4__modulev3"
     recipe_path = MODEL_RECIPES[alias]
-    cmd = smoke_test.get_server_cmd("max", alias)
+    cmd, _ = smoke_test.get_server_cmd(
+        "max", alias, gpu_spec=("NVIDIA L40S", 1)
+    )
 
     assert cmd[:5] == [
         ".venv-serve/bin/python",
         "-m",
-        "max.entrypoints.pipelines",
+        "max._entrypoints.pipelines",
         "serve",
         "--pretty-print-config",
     ]

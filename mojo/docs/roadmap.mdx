@@ -123,8 +123,8 @@ while avoiding rebinding.
 therefore support higher order functions like `map` that propagate the
 "raisability" of their closure argument.
 
-- 🚧 **Closure refinement**: Improve capture modeling and unify
-compile-time/runtime representations.
+- ✅ **Closure refinement**: Unified representation for compile-time/runtime
+  closures.
 
 - ✅ **`where` clauses**: Enable early constraint checking and better error
 messages for generics. See the
@@ -137,8 +137,8 @@ over parameters.
 refactoring. See the
 [struct extension proposal](https://github.com/modular/modular/blob/main/mojo/proposals/struct-extensions.md).
 
-- 🚧 **Linear types**: Support ownership patterns; blocked on conditional
-  conformance.
+- ✅ **Linear types/explicitly-destroyed types**: Create types that require
+an explicit call to deinitialize a value at end of its lifetime.
 
 - 🚧 **Stabilization markers**: Mechanism to tag standard library APIs with
 maturity levels.

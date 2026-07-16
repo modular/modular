@@ -130,7 +130,6 @@ class DPBatchPadder:
         padded_inputs: TextGenerationInputs[TextGenerationContextType] = (
             TextGenerationInputs(
                 batches=padded_batches,
-                num_steps=inputs.num_steps,
             )
         )
         # __post_init__ infers batch_type from contexts; override to
@@ -160,6 +159,7 @@ class DPBatchPadder:
                 max_length=self._max_length,
                 tokens=TokenBuffer(np.zeros(1, dtype=np.int64)),
                 model_name=self._model_name,
+                _is_padding_ctx=True,
             )
             ctx.update(0)
             self._kv_manager.alloc_dummy(

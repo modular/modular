@@ -28,6 +28,10 @@ import pytest
 import torch
 from max.driver import (
     CPU,
+    Accelerator,
+    accelerator_count,
+    get_virtual_cpu_target,
+    set_virtual_cpu_target,
     set_virtual_device_api,
     set_virtual_device_count,
     set_virtual_device_target_arch,
@@ -217,6 +221,35 @@ def virtual_device_mode() -> Iterator[None]:
         set_virtual_device_count(0)
 
 
+def test_accelerator_constructs_in_virtual_device_mode(
+    virtual_device_mode: None,
+) -> None:
+    """Virtual-device mode must apply to device creation, not just counting.
+
+    The virtual-device settings are process-wide state in the MLRT driver. If
+    any image in the process (the ``_core`` extension, libmax, the Mojo
+    bindings dylib) ends up with its own copy of that state, the
+    ``set_virtual_device_*`` setters and ``accelerator_count()`` see one copy
+    while ``Accelerator()`` construction sees another — so construction takes
+    the real-hardware path even though the count reports virtual devices.
+    That split broke CPU-only Linux runners ('No supported "gpu" device
+    available') when the extension statically linked the driver
+    implementation, and macOS for any device id beyond the physical GPU
+    (DRIV-209, Mach-O two-level namespace binding the two halves of the API
+    to different dylibs).
+
+    Requesting id 1 with a virtual count of 2 is the discriminating check:
+    no CI machine class is guaranteed two physical GPUs, so this only
+    succeeds if creation consults the same virtual-device state the setters
+    wrote.
+    """
+    set_virtual_device_count(2)
+    assert accelerator_count() == 2
+    # Must not raise, even on machines with zero or one physical GPU.
+    Accelerator(0)
+    Accelerator(1)
+
+
 def test_init_all_in_virtual_device_mode_returns_dict(
     virtual_device_mode: None,
 ) -> None:
@@ -248,3 +281,16 @@ def test_nested_collectors_both_observe_phases() -> None:
 
     assert outer.compile_seconds >= inner.compile_seconds
     assert outer.init_seconds >= inner.init_seconds
+
+
+def test_virtual_cpu_target_roundtrip() -> None:
+    """The virtual CPU target setter/getter round-trips and defaults empty."""
+    assert get_virtual_cpu_target() == ""
+    try:
+        set_virtual_cpu_target("x86-64-v3")
+        assert get_virtual_cpu_target() == "x86-64-v3"
+        set_virtual_cpu_target("generic")
+        assert get_virtual_cpu_target() == "generic"
+    finally:
+        set_virtual_cpu_target("")
+    assert get_virtual_cpu_target() == ""

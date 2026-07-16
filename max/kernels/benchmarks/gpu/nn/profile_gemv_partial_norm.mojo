@@ -66,7 +66,7 @@ def _host_reference[
     unnormed_ref: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     n: Int,
     n_normed: Int,
-    eps: Scalar[a_type],
+    eps: Float32,
 ):
     """Reference partial RMS norm on a [1, n] row, computed in f64."""
     var n_unnormed = n - n_normed
@@ -191,7 +191,7 @@ def main() raises:
         var a_iter0 = TileTensor(cb_a.offset_ptr(0), a_shape)
         var b_iter0 = TileTensor(cb_b.offset_ptr(0), b_shape)
 
-        var eps = Scalar[a_type](0.001)
+        var eps = Float32(0.001)
 
         # Kernel-internal scratch: reused across iters by design.
         var counter_buf = ctx.enqueue_create_buffer[DType.int32](1)
@@ -245,7 +245,9 @@ def main() raises:
                     b_tensor,
                     gamma_tensor,
                     eps,
-                    counter_buf.unsafe_ptr(),
+                    counter_buf.unsafe_ptr()
+                    .unsafe_mut_cast[True]()
+                    .as_unsafe_any_origin(),
                     ctx,
                 )
             else:
@@ -255,7 +257,7 @@ def main() raises:
                     b_tensor,
                     gamma_tensor,
                     eps,
-                    cb_y.offset_ptr(iteration),
+                    cb_y.offset_ptr(iteration).as_unsafe_any_origin(),
                     ctx,
                 )
 
@@ -302,10 +304,10 @@ def main() raises:
         ctx.synchronize()
 
         _host_reference[c_type, a_type](
-            y_ref_host_ptr.unsafe_ptr(),
-            gamma_host_ptr.unsafe_ptr(),
-            normed_ref_ptr.unsafe_ptr(),
-            unnormed_ref_ptr.unsafe_ptr(),
+            y_ref_host_ptr.unsafe_ptr().as_unsafe_any_origin(),
+            gamma_host_ptr.unsafe_ptr().as_unsafe_any_origin(),
+            normed_ref_ptr.unsafe_ptr().as_unsafe_any_origin(),
+            unnormed_ref_ptr.unsafe_ptr().as_unsafe_any_origin(),
             N,
             N_NORMED,
             eps,

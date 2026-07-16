@@ -21,37 +21,28 @@ from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
-    DeviceRef,
     TensorType,
     TensorValue,
     Value,
     ops,
 )
-from max.nn.comm import Signals
-from max.nn.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheParamInterface,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import AcceptanceSampler
+from max.pipelines.speculative.config import MAGIC_DRAFT_TOKEN_ID
 from max.pipelines.speculative.ragged_token_merger import (
     RaggedTokenMerger,
     _shape_to_scalar,
+    compute_host_merged_offsets,
+)
+from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeInputTypeSpec,
+    build_spec_decode_input_types,
 )
 
 from ..deepseekV3.deepseekV3 import DeepseekV3
 from ..dflash_kimi_k25 import DFlashKimiK25
-from ..unified_mtp_deepseekV3.unified_mtp_deepseekV3 import (
-    compute_host_merged_offsets,
-)
 from .model_config import UnifiedDflashKimiK25Config
-
-# Magic placeholder value used by graph capture for prefill / dummy-draft
-# steps; tokens equal to this in every position of a row mean "no real
-# draft prediction to verify".
-_MAGIC_DRAFT_TOKEN_ID = 42
 
 
 class UnifiedDflashKimiK25(Module):
@@ -158,7 +149,7 @@ class UnifiedDflashKimiK25(Module):
             ["batch_size"]
         )
         magic_token = ops.constant(
-            _MAGIC_DRAFT_TOKEN_ID, DType.int64, device=device0
+            MAGIC_DRAFT_TOKEN_ID, DType.int64, device=device0
         )
         num_magic_tokens = ops.squeeze(
             ops.sum(
@@ -361,109 +352,28 @@ class UnifiedDflashKimiK25(Module):
         return (num_accepted_out, next_tokens, next_draft_tokens)
 
     def input_types(
-        self,
-        kv_params: KVCacheParamInterface,
-        draft_kv_params: KVCacheParams,
+        self, kv_params: MultiKVCacheParams
     ) -> tuple[TensorType | BufferType, ...]:
         """Input types mirror :class:`Eagle3MHAKimiK25Unified.input_types`.
 
-        Order:
-            tokens, device_offsets, host_offsets, return_n_logits,
-            data_parallel_splits, signal_buffers, target_kv_cache (flat),
-            batch_context_lengths, target_ep_inputs, draft_tokens,
-            draft_kv_blocks (one per device), seed, temperature, top_k,
-            max_k, top_p, min_top_p.
+        ``kv_params`` is the unified ``{"target", "draft"}`` tree; the target
+        leaf is MLA and the draft leaf is MHA, each carrying its own blocks
+        and dispatch metadata. Distributed (DP + signals + EP) MHA-draft graph
+        (no vision, no in-thinking-phase, no structured output). See
+        :func:`build_spec_decode_input_types` for the canonical ordering.
         """
-        devices = self.config.target.devices
-        device_ref = devices[0]
-
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
+        spec = SpecDecodeInputTypeSpec(
+            distributed=True,
+            data_parallel_degree=self.config.target.data_parallel_degree,
         )
-        device_input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=device_ref,
+        ep_input_types = (
+            self.target.ep_manager.input_types()
+            if self.target.ep_manager is not None
+            else ()
         )
-        host_input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=DeviceRef.CPU(),
+        return build_spec_decode_input_types(
+            spec,
+            devices=self.config.target.devices,
+            kv_params=kv_params,
+            ep_input_types=ep_input_types,
         )
-        draft_tokens_type = TensorType(
-            DType.int64,
-            ["batch_size", "num_steps"],
-            device=device_ref,
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-        data_parallel_splits_type = TensorType(
-            DType.int64,
-            shape=[self.config.target.data_parallel_degree + 1],
-            device=DeviceRef.CPU(),
-        )
-
-        signals = Signals(devices=devices)
-        signal_buffer_types: list[BufferType] = signals.input_types()
-
-        all_input_types: list[TensorType | BufferType] = [
-            tokens_type,
-            device_input_row_offsets_type,
-            host_input_row_offsets_type,
-            return_n_logits_type,
-            data_parallel_splits_type,
-        ]
-        all_input_types.extend(signal_buffer_types)
-
-        assert isinstance(kv_params, KVCacheParams)
-        all_input_types.extend(
-            kv_params.get_symbolic_inputs(
-                draft_attention_group=draft_kv_params
-            ).flatten()
-        )
-
-        batch_context_length_type = TensorType(
-            DType.int32, shape=[1], device=DeviceRef.CPU()
-        )
-        all_input_types.extend(
-            [batch_context_length_type for _ in range(len(devices))]
-        )
-
-        if self.target.ep_manager is not None:
-            all_input_types.extend(self.target.ep_manager.input_types())
-
-        all_input_types.append(draft_tokens_type)
-
-        for sym in draft_kv_params.get_symbolic_inputs().inputs:
-            assert isinstance(sym, KVCacheInputsPerDevice)
-            all_input_types.append(sym.kv_blocks)
-
-        seed_type = TensorType(
-            DType.uint64, shape=["batch_size"], device=device_ref
-        )
-        temperature_type = TensorType(
-            DType.float32, shape=["batch_size"], device=device_ref
-        )
-        top_k_type = TensorType(
-            DType.int64, shape=["batch_size"], device=device_ref
-        )
-        max_k_type = TensorType(DType.int64, shape=[], device=DeviceRef.CPU())
-        top_p_type = TensorType(
-            DType.float32, shape=["batch_size"], device=device_ref
-        )
-        min_top_p_type = TensorType(
-            DType.float32, shape=[], device=DeviceRef.CPU()
-        )
-        all_input_types.extend(
-            [
-                seed_type,
-                temperature_type,
-                top_k_type,
-                max_k_type,
-                top_p_type,
-                min_top_p_type,
-            ]
-        )
-
-        return tuple(all_input_types)

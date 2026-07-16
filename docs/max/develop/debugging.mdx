@@ -9,6 +9,12 @@ during model development, such as numerical accuracy problems, correctness
 bugs, performance bottlenecks, and hard-to-trace runtime errors. This page
 explains how to configure debugging options.
 
+If you're bringing up a new model architecture and its output diverges from the
+original model, use the
+[`debug-model`](/max/develop/model-bringup-skills/#debug-output-divergences)
+skill to perform a per-layer comparison against the original model and localize
+the divergence.
+
 If you want to enable MAX's debugging defaults right away, you can set the
 [environment variable](/max/environment-variables/) `MODULAR_DEBUG=sensible`
 before running your model:

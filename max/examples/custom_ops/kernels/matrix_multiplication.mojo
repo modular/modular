@@ -942,9 +942,9 @@ struct MatrixMultiplication[algorithm: StaticString]:
         # At graph compilation time, we will know what device we are compiling
         # this operation for, so we can specialize it for the target hardware.
         comptime if target == "gpu":
-            var a_tt = a.to_tile_tensor().as_any_origin()
-            var b_tt = b.to_tile_tensor().as_any_origin()
-            var out_tt = output.to_tile_tensor().as_any_origin()
+            var a_tt = a.to_tile_tensor().as_unsafe_any_origin()
+            var b_tt = b.to_tile_tensor().as_unsafe_any_origin()
+            var out_tt = output.to_tile_tensor().as_unsafe_any_origin()
 
             M = Int(a_tt.dim[0]())
             N = Int(b_tt.dim[1]())

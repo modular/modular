@@ -29,7 +29,7 @@ from layout import (
     row_major,
 )
 from layout.tile_layout import Layout as TileLayout
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
@@ -86,7 +86,7 @@ def test_fused_qk_rope[
     kv_cache_block_buffer = List[Scalar[dtype]](
         length=block_shape.flattened_length(), fill=0
     )
-    kv_cache_block = LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+    kv_cache_block = LayoutTensor[dtype, Layout.row_major[6]()](
         kv_cache_block_buffer.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
@@ -96,7 +96,7 @@ def test_fused_qk_rope[
     max_cache_len_in_batch = 0
     start_positions_dyn = materialize[start_positions]()
     for batch_idx in range(batch_size):
-        memcpy(
+        unsafe_memcpy(
             dest=kv_cache_block.ptr
             + kv_cache_block._offset(
                 IndexList[6](
@@ -114,7 +114,7 @@ def test_fused_qk_rope[
     kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block,
         cache_lengths=LayoutTensor[
-            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
         ](
             start_positions_dyn.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
@@ -122,7 +122,7 @@ def test_fused_qk_rope[
             ),
         ),
         lookup_table=LayoutTensor[
-            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
         ](
             lookup_table.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
@@ -267,6 +267,8 @@ def test_fused_qk_rope[
     _ = q_buffer^
     _ = k_cache_input_buffer^
     _ = kv_cache_block_buffer^
+    _ = lookup_table^
+    _ = start_positions_dyn^
 
 
 def main() raises -> None:

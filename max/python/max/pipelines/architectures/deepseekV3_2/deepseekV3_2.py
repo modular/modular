@@ -30,9 +30,7 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.attention.multi_latent_attention import (
-    MLAPrefillMetadata,
-)
+from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
@@ -52,19 +50,18 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.transformer import ReturnLogits, forward_sequential_layers
+from max.nn.transformer import forward_sequential_layers
 from max.nn.transformer.distributed_transformer import (
-    extract_hs,
     forward_sharded_layers,
 )
 
-from .layers import (
-    DeepseekV3_2MLP,
-    DeepseekV3_2MoE,
-    DeepseekV3_2TopKRouter,
-)
+from ..deepseekV3.deepseekV3 import deepseek_logits_postprocess
+from .layers import DeepseekV3_2MLP, DeepseekV3_2MoE, DeepseekV3_2TopKRouter
 from .layers.sparse_mla import (
+    DataParallelSparseLatentAttentionWithRope,
     DataParallelSparseLatentAttentionWithRopeFp8,
+    TensorParallelSparseLatentAttentionWithRope,
+    TensorParallelSparseLatentAttentionWithRopeFp8,
 )
 from .model_config import DeepseekV3_2Config
 
@@ -72,18 +69,24 @@ from .model_config import DeepseekV3_2Config
 def _unpack_kv_collections(
     kv_collections: Sequence[PagedCacheValues],
 ) -> tuple[
-    list[BufferValue], list[TensorValue], list[TensorValue], list[TensorValue]
+    list[BufferValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[TensorValue],
 ]:
     """Unpack KV collections into component lists.
 
     Returns:
-        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths).
+        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_prompt_lengths,
+        max_cache_lengths).
     """
     return (
         [kv.kv_blocks for kv in kv_collections],
         [kv.cache_lengths for kv in kv_collections],
         [kv.lookup_table for kv in kv_collections],
-        [kv.max_lengths for kv in kv_collections],
+        [kv.max_prompt_length for kv in kv_collections],
+        [kv.max_cache_length for kv in kv_collections],
     )
 
 
@@ -94,12 +97,14 @@ def _unpack_kv_collections_with_scales(
     list[TensorValue],
     list[TensorValue],
     list[TensorValue],
+    list[TensorValue],
     list[BufferValue],
 ]:
     """Unpack KV collections into component lists.
 
     Returns:
-        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths, kv_scales).
+        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_prompt_lengths,
+        max_cache_lengths, kv_scales).
     """
     for kv in kv_collections:
         assert kv.kv_scales is not None
@@ -108,7 +113,8 @@ def _unpack_kv_collections_with_scales(
         [kv.kv_blocks for kv in kv_collections],
         [kv.cache_lengths for kv in kv_collections],
         [kv.lookup_table for kv in kv_collections],
-        [kv.max_lengths for kv in kv_collections],
+        [kv.max_prompt_length for kv in kv_collections],
+        [kv.max_cache_length for kv in kv_collections],
         kv_scales,
     )
 
@@ -135,6 +141,21 @@ def _validate_parallelism_config(config: DeepseekV3_2Config) -> None:
         )
 
 
+def _validate_indexer_types(config: DeepseekV3_2Config) -> None:
+    """Validate the cross-layer index-sharing schedule.
+
+    A ``"shared"`` layer reuses the top-k selection from the most recent
+    ``"full"`` layer, so the first layer must be ``"full"`` — otherwise there is
+    no prior selection to reuse. An empty schedule means every layer is full.
+    """
+    if config.indexer_types and config.indexer_types[0] != "full":
+        raise ValueError(
+            "indexer_types[0] must be 'full': the first layer cannot be "
+            "'shared' because no preceding full indexer layer exists to "
+            f"reuse a top-k selection from (got {config.indexer_types[0]!r})."
+        )
+
+
 class DeepseekV3_2DecoderLayer(Module):
     """Decoder layer for DeepseekV3.2."""
 
@@ -153,22 +174,21 @@ class DeepseekV3_2DecoderLayer(Module):
         self.mlp: DeepseekV3_2MLP | DeepseekV3_2MoE | MoE
         self.mlp_shards: list[DeepseekV3_2MLP | DeepseekV3_2MoE | Module]
 
-        nvfp4_enabled = (
-            config.quant_config is not None and config.quant_config.is_nvfp4
-        )
-        use_fp8_mla = config.quant_config is not None and not nvfp4_enabled
         if config.quant_config is None:
             raise ValueError(
                 "DeepSeekV3.2 sparse attention requires a quantization config."
             )
 
-        if not use_fp8_mla:
-            raise ValueError(
-                "DeepSeekV3.2 must be executed with fp8 (due to fp8 indexer)."
-            )
+        attn_quantized = layer_idx in config.quant_config.attn_quantized_layers
 
         assert isinstance(config.kv_params, MultiKVCacheParams)
-        mla_kv_params, _indexer_kv_params = config.kv_params.params
+        mla_kv_params = config.kv_params.children["mla"]
+        _indexer_kv_params = config.kv_params.children["indexer"]
+
+        skip_topk = (
+            bool(config.indexer_types)
+            and config.indexer_types[layer_idx] == "shared"
+        )
 
         sparse_attn_kwargs: dict[str, Any] = dict(
             rope=rope,
@@ -182,18 +202,51 @@ class DeepseekV3_2DecoderLayer(Module):
             qk_rope_head_dim=config.qk_rope_head_dim,
             v_head_dim=config.v_head_dim,
             devices=config.devices,
-            graph_mode="decode",
+            # No BF16 sparse op yet, so BF16-attention classes stay on decode.
+            graph_mode=config.graph_mode if attn_quantized else "decode",
             buffer_size=config.max_batch_context_length,
             index_n_heads=config.index_n_heads,
             index_head_dim=config.index_head_dim,
             index_topk=config.index_topk,
+            skip_topk=skip_topk,
         )
 
-        self.self_attn = DataParallelSparseLatentAttentionWithRopeFp8(
-            norm_dtype=config.norm_dtype,
-            quant_config=config.quant_config,
-            **sparse_attn_kwargs,
+        self.tp_attention = num_devices > 1 and config.data_parallel_degree == 1
+        self.self_attn: (
+            DataParallelSparseLatentAttentionWithRope
+            | DataParallelSparseLatentAttentionWithRopeFp8
+            | TensorParallelSparseLatentAttentionWithRope
+            | TensorParallelSparseLatentAttentionWithRopeFp8
         )
+        if self.tp_attention:
+            if attn_quantized:
+                self.self_attn = TensorParallelSparseLatentAttentionWithRopeFp8(
+                    skip_allreduce=True,
+                    norm_dtype=config.norm_dtype,
+                    quant_config=config.quant_config,
+                    **sparse_attn_kwargs,
+                )
+            else:
+                self.self_attn = TensorParallelSparseLatentAttentionWithRope(
+                    skip_allreduce=True,
+                    norm_dtype=config.norm_dtype,
+                    dtype=DType.bfloat16,
+                    indexer_quant_config=config.quant_config,
+                    **sparse_attn_kwargs,
+                )
+        elif attn_quantized:
+            self.self_attn = DataParallelSparseLatentAttentionWithRopeFp8(
+                norm_dtype=config.norm_dtype,
+                quant_config=config.quant_config,
+                **sparse_attn_kwargs,
+            )
+        else:
+            self.self_attn = DataParallelSparseLatentAttentionWithRope(
+                norm_dtype=config.norm_dtype,
+                dtype=DType.bfloat16,
+                indexer_quant_config=config.quant_config,
+                **sparse_attn_kwargs,
+            )
 
         # Create MLP or MoE layer
         self.mlp = self._get_mlp(config, layer_idx)
@@ -312,9 +365,14 @@ class DeepseekV3_2DecoderLayer(Module):
                 devices=config.devices,
                 quant_config=layer_quant_config,
             )
-            mlp.sharding_strategy = ShardingStrategy.replicate(
-                len(config.devices)
-            )
+            if config.ep_config is not None and config.ep_config.use_allreduce:
+                mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
+                    len(config.devices)
+                )
+            else:
+                mlp.sharding_strategy = ShardingStrategy.replicate(
+                    len(config.devices)
+                )
             return mlp
 
     def __call__(
@@ -325,19 +383,24 @@ class DeepseekV3_2DecoderLayer(Module):
         mla_kv_blocks: list[BufferValue],
         mla_kv_cache_lengths: list[TensorValue],
         mla_kv_lookup_table: list[TensorValue],
-        mla_kv_max_lengths: list[TensorValue],
+        mla_kv_max_prompt_lengths: list[TensorValue],
+        mla_kv_max_cache_lengths: list[TensorValue],
         mla_kv_cache_scales: list[BufferValue],
         indexer_kv_blocks: list[BufferValue],
         indexer_kv_cache_lengths: list[TensorValue],
         indexer_kv_lookup_table: list[TensorValue],
-        indexer_kv_max_lengths: list[TensorValue],
+        indexer_kv_max_prompt_lengths: list[TensorValue],
+        indexer_kv_max_cache_lengths: list[TensorValue],
         indexer_kv_cache_scales: list[BufferValue],
         freqs_cis: list[TensorValue],
         mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
+        prev_topk_indices: list[TensorValue],
         mla_decode_scalar_args: list[TensorValue] | None = None,
         mla_num_partitions_scalars: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
+        # Note: this is only used for MTP iterations after step 0.
+        reuse_prev_topk: bool = False,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
         # subgraphs have only max.graph.Values as arguments.
@@ -345,11 +408,14 @@ class DeepseekV3_2DecoderLayer(Module):
         num_devices = len(mla_kv_blocks)
         mla_kv_collections = [
             PagedCacheValues(
-                mla_kv_blocks[i],
-                mla_kv_cache_lengths[i],
-                mla_kv_lookup_table[i],
-                mla_kv_max_lengths[i],
-                mla_kv_cache_scales[i] if mla_kv_cache_scales else None,
+                kv_blocks=mla_kv_blocks[i],
+                cache_lengths=mla_kv_cache_lengths[i],
+                lookup_table=mla_kv_lookup_table[i],
+                max_prompt_length=mla_kv_max_prompt_lengths[i],
+                max_cache_length=mla_kv_max_cache_lengths[i],
+                kv_scales=mla_kv_cache_scales[i]
+                if mla_kv_cache_scales
+                else None,
                 attention_dispatch_metadata=mla_decode_scalar_args[i]
                 if mla_decode_scalar_args is not None
                 else None,
@@ -365,7 +431,8 @@ class DeepseekV3_2DecoderLayer(Module):
                 kv_blocks=indexer_kv_blocks[i],
                 cache_lengths=indexer_kv_cache_lengths[i],
                 lookup_table=indexer_kv_lookup_table[i],
-                max_lengths=indexer_kv_max_lengths[i],
+                max_prompt_length=indexer_kv_max_prompt_lengths[i],
+                max_cache_length=indexer_kv_max_cache_lengths[i],
                 kv_scales=indexer_kv_cache_scales[i]
                 if indexer_kv_cache_scales
                 else None,
@@ -388,7 +455,10 @@ class DeepseekV3_2DecoderLayer(Module):
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
-        attn_outs = self.self_attn(
+        # ``prev_topk_indices`` may arrive empty (first layer, before any full
+        # layer has produced a selection); ``full`` layers ignore it.
+        prev_topk = prev_topk_indices if prev_topk_indices is not None else None
+        attn_outs, topk_indices = self.self_attn(
             layer_idx,
             norm_xs,
             signal_buffers,
@@ -397,9 +467,11 @@ class DeepseekV3_2DecoderLayer(Module):
             freqs_cis=freqs_cis,
             input_row_offsets=input_row_offsets,
             mla_prefill_metadata=mla_prefill_metadata,
+            prev_topk_indices=prev_topk,
+            reuse_prev_topk=reuse_prev_topk,
         )
 
-        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
+        hs = self._post_attention(xs, attn_outs, signal_buffers)
 
         # Post-attention norm (per-device)
         norm_outs = forward_sharded_layers(
@@ -413,9 +485,54 @@ class DeepseekV3_2DecoderLayer(Module):
 
         mlp_outs = forward_moe_sharded_layers(self.mlp_shards, norm_outs)
 
-        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
+        hs = self._post_mlp(hs, mlp_outs, signal_buffers)
 
-        return hs
+        # In TP mode the reduce-scatter/all-gather round trip can lose the
+        # static shape; rebind to the original per-device input shape.
+        if self.tp_attention:
+            hs = [ops.rebind(h, x.shape) for h, x in zip(hs, xs, strict=True)]
+
+        # Subgraphs require the outputs to be a single list of TensorValue,
+        # which is why the returned lists are concatenated.
+        return hs + topk_indices
+
+    def _post_attention(
+        self,
+        xs: list[TensorValue],
+        attn_outs: list[TensorValue],
+        signal_buffers: list[BufferValue],
+    ) -> list[TensorValue]:
+        """Residual connection and collective after attention."""
+        if not self.tp_attention:
+            return [x + a for x, a in zip(xs, attn_outs, strict=True)]
+
+        assert self.config.ep_config is not None
+        if self.config.ep_config.use_allreduce:
+            attn_outs = ops.allreduce.sum(attn_outs, signal_buffers)
+            return [x + a for x, a in zip(xs, attn_outs, strict=True)]
+
+        # The residual is replicated across devices, so add it only on device 0
+        # to avoid counting it once per device after the reduce-scatter sum.
+        hs = [xs[0] + attn_outs[0], *attn_outs[1:]]
+        return ops.reducescatter.sum(hs, signal_buffers, axis=0)
+
+    def _post_mlp(
+        self,
+        hs: list[TensorValue],
+        mlp_outs: list[TensorValue],
+        signal_buffers: list[BufferValue],
+    ) -> list[TensorValue]:
+        """Residual connection and collective after the MoE/MLP."""
+        if not self.tp_attention:
+            return [h + m for h, m in zip(hs, mlp_outs, strict=True)]
+
+        assert self.config.ep_config is not None
+        if self.config.ep_config.use_allreduce:
+            mlp_outs = ops.allreduce.sum(mlp_outs, signal_buffers)
+            return [h + m for h, m in zip(hs, mlp_outs, strict=True)]
+
+        hs = [h + m for h, m in zip(hs, mlp_outs, strict=True)]
+        return ops.allgather(hs, signal_buffers, axis=0)
 
 
 class DeepseekV3_2(Module):
@@ -425,8 +542,6 @@ class DeepseekV3_2(Module):
     classes from the HuggingFace Transformers implementation.
 
     DeepseekV3.2 extends DeepseekV3 with sparse attention using an indexer mechanism.
-    TODO(MODELS-944): Integrate indexer layer once available.
-    TODO(MODELS-968): Replace standard MLA with sparse attention MLA.
     """
 
     def __init__(self, config: DeepseekV3_2Config) -> None:
@@ -436,6 +551,7 @@ class DeepseekV3_2(Module):
         devices = config.devices
 
         _validate_parallelism_config(config)
+        _validate_indexer_types(config)
 
         embedding_output_dtype = config.dtype
         if embedding_output_dtype == DType.uint8:
@@ -514,13 +630,24 @@ class DeepseekV3_2(Module):
         )
 
         if config.use_subgraphs:
+            # ``full`` and ``shared`` layers differ structurally (shared layers
+            # have no indexer weights), so they cannot share a subgraph. Split
+            # the MoE layers into one subgraph group per indexer type. An empty
+            # schedule (DeepSeek V3.2, GLM-5.1) collapses to a single full group.
+            moe_layers = range(
+                config.first_k_dense_replace, config.num_hidden_layers
+            )
+
+            def _is_shared(i: int) -> bool:
+                return (
+                    bool(config.indexer_types)
+                    and config.indexer_types[i] == "shared"
+                )
+
+            full_group = [i for i in moe_layers if not _is_shared(i)]
+            shared_group = [i for i in moe_layers if _is_shared(i)]
             self.subgraph_layer_groups = [
-                [
-                    i
-                    for i in range(
-                        config.first_k_dense_replace, config.num_hidden_layers
-                    )
-                ]
+                g for g in (full_group, shared_group) if g
             ]
         else:
             self.subgraph_layer_groups = []
@@ -598,7 +725,8 @@ class DeepseekV3_2(Module):
                 mla_kv_blocks,
                 mla_cache_lengths,
                 mla_lookup_tables,
-                mla_max_lengths,
+                mla_max_prompt_lengths,
+                mla_max_cache_lengths,
                 mla_kv_scales,
             ) = _unpack_kv_collections_with_scales(mla_kv_collections)
         else:
@@ -606,7 +734,8 @@ class DeepseekV3_2(Module):
                 mla_kv_blocks,
                 mla_cache_lengths,
                 mla_lookup_tables,
-                mla_max_lengths,
+                mla_max_prompt_lengths,
+                mla_max_cache_lengths,
             ) = _unpack_kv_collections(mla_kv_collections)
             mla_kv_scales = []
 
@@ -616,7 +745,8 @@ class DeepseekV3_2(Module):
                 indexer_kv_blocks,
                 indexer_cache_lengths,
                 indexer_lookup_tables,
-                indexer_max_lengths,
+                indexer_max_prompt_lengths,
+                indexer_max_cache_lengths,
                 indexer_kv_scales,
             ) = _unpack_kv_collections_with_scales(indexer_kv_collections)
         else:
@@ -624,7 +754,8 @@ class DeepseekV3_2(Module):
                 indexer_kv_blocks,
                 indexer_cache_lengths,
                 indexer_lookup_tables,
-                indexer_max_lengths,
+                indexer_max_prompt_lengths,
+                indexer_max_cache_lengths,
             ) = _unpack_kv_collections(indexer_kv_collections)
             indexer_kv_scales = []
 
@@ -645,26 +776,41 @@ class DeepseekV3_2(Module):
                 if kv.mla_num_partitions is not None
             ]
 
+        num_devices = len(devices)
+
         def inputs_for_layer(
             idx: int, h: list[TensorValue]
         ) -> list[Value[Any] | Sequence[Value[Any]]]:
+            # Each decoder layer returns ``hidden_states + topk_indices`` (both
+            # per-device lists), so ``h`` carries the previous layer's top-k
+            # selection after its first ``num_devices`` entries. The very first
+            # layer receives only hidden states (no prior selection yet).
+            if len(h) > num_devices:
+                hidden = h[:num_devices]
+                prev_topk: list[TensorValue] = h[num_devices:]
+            else:
+                hidden = h
+                prev_topk = []
             values: list[Value[Any] | Sequence[Value[Any]]] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
-                h,
+                hidden,
                 signal_buffers,
                 mla_kv_blocks,
                 mla_cache_lengths,
                 mla_lookup_tables,
-                mla_max_lengths,
+                mla_max_prompt_lengths,
+                mla_max_cache_lengths,
                 mla_kv_scales,
                 indexer_kv_blocks,
                 indexer_cache_lengths,
                 indexer_lookup_tables,
-                indexer_max_lengths,
+                indexer_max_prompt_lengths,
+                indexer_max_cache_lengths,
                 indexer_kv_scales,
                 freqs_cis,
                 mla_prefill_metadata_flat,
                 input_row_offsets_,
+                prev_topk,
             ]
             if mla_decode_scalar_args is not None:
                 values.append(mla_decode_scalar_args)
@@ -683,94 +829,23 @@ class DeepseekV3_2(Module):
             initial_hidden_states=h,
         )
 
-        if self.config.data_parallel_degree > 1:
-            last_token_per_dev: list[TensorValue] = []
-            for dev_idx in range(len(devices)):
-                h0 = h[dev_idx]
-                last_token_indices = input_row_offsets_[dev_idx][1:] - 1
-                last_token_h = ops.gather(h0, last_token_indices, axis=0)
-                last_token_per_dev.append(last_token_h)
-            last_token_distributed = ops.allgather(
-                last_token_per_dev, signal_buffers
-            )
-        else:
-            last_token_distributed = [
-                ops.gather(h_i, offsets_i[1:] - 1, axis=0)
-                for h_i, offsets_i in zip(h, input_row_offsets_, strict=True)
-            ]
+        # Strip the trailing top-k selection carried alongside hidden states.
+        h = h[:num_devices]
 
-        # Apply norm to each shard
-        norm_last_token = forward_sharded_layers(
-            self.norm_shards, last_token_distributed
-        )
-        last_logits = ops.cast(
-            self.lm_head(norm_last_token, signal_buffers)[0],
-            DType.float32,
-        )
-
-        logits = None
-        offsets = None
-
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_n_logits_range = ops.range(
-                start=return_n_logits[0],
-                stop=0,
-                step=-1,
-                out_dim="return_n_logits_range",
-                dtype=DType.int64,
-                device=devices[0],
-            )
-            offsets = (
-                ops.unsqueeze(input_row_offsets_[0][1:], -1)
-                - return_n_logits_range
-            )
-            last_indices = ops.reshape(offsets, shape=(-1,))
-            logits = ops.gather(
-                ops.cast(
-                    self.lm_head(
-                        forward_sharded_layers(self.norm_shards, h),
-                        signal_buffers,
-                    )[0],
-                    DType.float32,
-                ),
-                last_indices,
-                axis=0,
-            )
-            offsets = ops.range(
-                0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=devices[0],
-            )
-        elif self.return_logits == ReturnLogits.ALL:
-            logits = ops.cast(
-                self.lm_head(
-                    forward_sharded_layers(self.norm_shards, h),
-                    signal_buffers,
-                )[0],
-                DType.float32,
-            )
-            offsets = input_row_offsets_[0]
-
-        if self.logits_scaling != 1.0:
-            last_logits = last_logits / self.logits_scaling
-            if logits is not None:
-                logits = logits / self.logits_scaling
-
-        ret_val: tuple[TensorValue, ...] = (last_logits,)
-        if logits is not None and offsets is not None:
-            ret_val += (logits, offsets)
-
-        ret_val += extract_hs(
+        return deepseek_logits_postprocess(
+            h=h,
+            input_row_offsets=input_row_offsets_,
+            all_logits_input_row_offsets=None,
+            return_n_logits=return_n_logits,
+            norm_shards=self.norm_shards,
+            lm_head=self.lm_head,
+            signal_buffers=signal_buffers,
+            devices=devices,
+            is_data_parallel_attention=self.config.data_parallel_degree > 1,
+            return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
-            last_token_hs_distributed=last_token_distributed,
-            all_hs_distributed=h,
-            normalizer=self.norm_shards,
+            logits_scaling=self.logits_scaling,
         )
-
-        return ret_val
 
     def input_types(
         self, kv_params: KVCacheParamInterface
@@ -817,7 +892,7 @@ class DeepseekV3_2(Module):
             data_parallel_splits_type,
         ]
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
+        all_input_types.extend(kv_params.flattened_kv_inputs())
 
         # Add batch context lengths
         batch_context_length_type = TensorType(

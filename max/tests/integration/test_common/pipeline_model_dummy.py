@@ -24,7 +24,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsFormat
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
 )
@@ -38,11 +38,7 @@ from max.pipelines import (
     TextTokenizer,
     upper_bounded_default,
 )
-from max.pipelines.context import (
-    TextContext,
-    TextGenerationContext,
-    TokenBuffer,
-)
+from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.lib import PipelineModelWithKVCache
 from max.pipelines.lib.interfaces import (
     ArchConfig,
@@ -86,8 +82,8 @@ class DummyPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
 
     def prepare_initial_token_inputs(
         self,
-        replica_batches: Sequence[Sequence[TextGenerationContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        replica_batches: Sequence[Sequence[TextContext]],
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DummyModelInputs:
         """Prepares the initial inputs to be passed to `.execute()`.
@@ -186,7 +182,7 @@ class DummyPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
     ) -> Model:
         """Provided a PipelineConfig and InferenceSession, build and load the model graph."""
         assert hasattr(self, "kv_params")
-        kv_inputs = self.kv_params.get_symbolic_inputs().flatten()
+        kv_inputs = self.kv_params.flattened_kv_inputs()
         with Graph(
             "dummy",
             input_types=[
@@ -222,12 +218,18 @@ class DummyLlamaPipelineModel(DummyPipelineModel):
 
 
 class DummyTextTokenizer(TextTokenizer):
+    init_kwargs: dict[str, Any] = {}
+
     def __init__(
         self, model_path: str, pipeline_config: PipelineConfig, *args, **kwargs
     ) -> None:
+        type(self).init_kwargs = kwargs
         assert pipeline_config.model is not None
         self.max_length = pipeline_config.model.max_length or 100
-        self.delegate = DummyTextTokenizer.Delegate(max_length=self.max_length)
+        # Named _delegate: a public `delegate` attribute signals a HuggingFace
+        # tokenizer, which structured-output setup would hand to a grammar
+        # backend that only accepts real HF tokenizers.
+        self._delegate = DummyTextTokenizer.Delegate(max_length=self.max_length)
 
     @property
     def eos(self) -> int:
@@ -267,12 +269,12 @@ class DummyTextTokenizer(TextTokenizer):
     async def encode(
         self, prompt: str | Sequence[int], add_special_tokens: bool = True
     ) -> npt.NDArray[np.integer[Any]]:
-        return self.delegate.encode(prompt, add_special_tokens)
+        return self._delegate.encode(prompt, add_special_tokens)
 
     async def decode(
         self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
-        return self.delegate.decode(encoded, **kwargs)
+        return self._delegate.decode(encoded, **kwargs)
 
     class Delegate:
         def __init__(self, max_length: int) -> None:

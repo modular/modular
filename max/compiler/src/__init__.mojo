@@ -12,4 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Provides the MAX compiler public API."""
 
-from extensibility import StaticTensorSpec, register, view_kernel
+from extensibility import (
+    StaticTensorSpec,
+    register,
+    register_shape_function,
+    view_kernel,
+)

@@ -48,6 +48,7 @@ from .config import (
     LoRAConfig,
     MAXModelConfig,
     MAXModelConfigBase,
+    PipelineArgs,
     PipelineConfig,
     PipelineRole,
     ProfilingConfig,
@@ -65,11 +66,17 @@ from .config import (
 from .embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
 from .interfaces import (
     AlwaysSignalBuffersMixin,
+    BatchProcessor,
+    BatchProcessorRuntime,
     ModelInputs,
     ModelOutputs,
     PipelineModel,
     PipelineModelWithKVCache,
+    RaggedBatchProcessor,
     UnifiedEagleOutputs,
+    UnifiedSpecDecodeInputs,
+    process_ragged_kv_outputs,
+    ragged_kv_symbolic_inputs,
 )
 from .memory_estimation import MemoryEstimator
 from .model_manifest import ModelManifest
@@ -77,6 +84,7 @@ from .pipeline_runtime_config import PipelineRuntimeConfig
 from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
+    SupportsSSMStateWarmup,
 )
 from .pixel_tokenizer import PixelGenerationTokenizer
 from .registry import (
@@ -96,6 +104,8 @@ from .utils import CompilationTimer, upper_bounded_default
 __all__ = [
     "PIPELINE_REGISTRY",
     "AlwaysSignalBuffersMixin",
+    "BatchProcessor",
+    "BatchProcessorRuntime",
     "CompilationTimer",
     "DenoisingCacheConfig",
     "EmbeddingsPipeline",
@@ -114,6 +124,7 @@ __all__ = [
     "ModelManifest",
     "ModelOutputs",
     "OverlapTextGenerationPipeline",
+    "PipelineArgs",
     "PipelineConfig",
     "PipelineModel",
     "PipelineModelType",
@@ -123,16 +134,19 @@ __all__ = [
     "PixelGenerationPipeline",
     "PixelGenerationTokenizer",
     "ProfilingConfig",
+    "RaggedBatchProcessor",
     "RepoType",
     "RopeType",
     "SamplingConfig",
     "SpeculativeConfig",
     "SupportedArchitecture",
     "SupportedEncoding",
+    "SupportsSSMStateWarmup",
     "TextAndVisionTokenizer",
     "TextGenerationPipeline",
     "TextTokenizer",
     "UnifiedEagleOutputs",
+    "UnifiedSpecDecodeInputs",
     "WeightPathParser",
     "build_eos_tracker_for_request",
     "convert_max_config_value",
@@ -146,6 +160,8 @@ __all__ = [
     "max_tokens_to_generate",
     "parse_quant_config",
     "parse_supported_encoding_from_file_name",
+    "process_ragged_kv_outputs",
+    "ragged_kv_symbolic_inputs",
     "rejection_sampler",
     "rejection_sampler_with_residuals",
     "resolve_max_config_inheritance",

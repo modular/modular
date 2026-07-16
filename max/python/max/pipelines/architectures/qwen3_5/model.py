@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal
 
@@ -33,27 +32,20 @@ from max.graph import (
 from max.graph.buffer_utils import cast_tensors_to
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs
-from max.pipelines.architectures.qwen3vl_moe.context import (
-    Qwen3VLTextAndVisionContext,
-    VisionEncodingData,
-)
-from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    supported_encoding_dtype,
 )
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.lib.utils import parse_state_dict_from_weights
-from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from transformers import AutoConfig
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
+from .batch_processor import Qwen3_5BatchProcessor
 from .model_config import Qwen3_5Config
 from .qwen3_5 import Qwen3_5
 from .state_cache import GatedDeltaNetStateCache
@@ -151,6 +143,9 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     """
 
     model_config_cls: ClassVar[type[Any]] = Qwen3_5Config
+    batch_processor_cls: ClassVar[type[Qwen3_5BatchProcessor]] = (
+        Qwen3_5BatchProcessor
+    )
 
     model: Model
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
@@ -192,60 +187,13 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         text_config = Qwen3_5Config._get_text_config(huggingface_config)
         return Qwen3_5Config.calculate_max_seq_len(pipeline_config, text_config)
 
-    @classmethod
-    def estimate_activation_memory(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Reserve GPU memory for the GatedDeltaNet state pool.
-
-        The slot-indexed SSM kernels mutate the conv and recurrent pools in
-        place; there are no working buffers and no graph-output pool, so
-        peak footprint is a single ``max_batch x per_req`` allocation.
-
-        ``Qwen3_5Config.initialize_from_config`` pre-sets ``max_batch_size``
-        before this method runs, so it is always known here.
-        """
-        text_config = Qwen3_5Config._get_text_config(huggingface_config)
-        layer_types = Qwen3_5Config._get_layer_types(text_config)
-        num_linear = sum(1 for lt in layer_types if lt == "linear_attention")
-
-        nk = getattr(text_config, "linear_num_key_heads", 16)
-        nv = getattr(text_config, "linear_num_value_heads", 48)
-        kd = getattr(text_config, "linear_key_head_dim", 128)
-        vd = getattr(text_config, "linear_value_head_dim", 128)
-        kernel = getattr(text_config, "linear_conv_kernel_dim", 4)
-
-        conv_dim = 2 * kd * nk + vd * nv
-        # Determine state dtype bytes: states stored in model dtype (typically bfloat16).
-        encoding = pipeline_config.model.quantization_encoding
-        state_dtype = (
-            supported_encoding_dtype(encoding)
-            if encoding is not None
-            else DType.bfloat16
-        )
-        dtype_bytes = state_dtype.size_in_bytes
-        bytes_per_layer = (
-            conv_dim * (kernel - 1) * dtype_bytes + nv * kd * vd * dtype_bytes
-        )
-        per_req = num_linear * bytes_per_layer
-
-        max_batch = pipeline_config.runtime.max_batch_size
-        assert max_batch is not None, (
-            "Qwen3_5Config.initialize_from_config must set max_batch_size "
-            "before estimate_activation_memory runs"
-        )
-        # 1x: single in-place pool — kernels mutate it via slot_idx.
-        return max_batch * per_req if num_linear > 0 else 0
-
     @traced
     def load_model(self, session: InferenceSession) -> Model:
         self._session = session
 
         self._input_row_offsets_prealloc: Buffer | None = None
         self._slot_idx_prealloc: Buffer | None = None
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
+        max_batch_size = self.max_batch_size
         assert max_batch_size is not None, (
             "max_batch_size must be set in runtime config"
         )
@@ -307,6 +255,20 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             self._empty_lm_image_token_indices = Buffer.zeros(
                 shape=[0], dtype=DType.int32
             ).to(self.devices[0])
+
+        if (
+            self._batch_processor is not None
+            and self._state_cache is not None
+            and self._slot_idx_prealloc is not None
+        ):
+            bind = getattr(self._batch_processor, "bind_prepare_state", None)
+            if bind is not None:
+                bind(
+                    state_cache=self._state_cache,
+                    slot_idx_prealloc=self._slot_idx_prealloc,
+                    empty_lm_image_embeddings=self._empty_lm_image_embeddings,
+                    empty_lm_image_token_indices=self._empty_lm_image_token_indices,
+                )
 
         return model
 
@@ -654,155 +616,6 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         return ModelOutputs(
             logits=logits,
             next_token_logits=logits,
-        )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> Qwen3_5Inputs:
-        # Get base Llama3Inputs from parent
-        base_inputs = super().prepare_initial_token_inputs(
-            replica_batches, kv_cache_inputs, return_n_logits
-        )
-
-        all_contexts = [ctx for batch in replica_batches for ctx in batch]
-        request_ids = [ctx.request_id for ctx in all_contexts]
-
-        assert self._state_cache is not None, (
-            "Qwen3.5 always has linear-attention layers; state cache must "
-            "be initialised by load_model()"
-        )
-        assert self._slot_idx_prealloc is not None
-        # Per-request state management: claim a slot for each request
-        # (idempotent for chunked-prefill continuations, zeroes for new ones).
-        for rid in request_ids:
-            self._state_cache.claim(rid)
-        slot_idx = self._state_cache.slot_idx_for(
-            request_ids, self._slot_idx_prealloc
-        )
-        conv_pools = self._state_cache.conv_pools
-        recurrent_pools = self._state_cache.rec_pools
-
-        # Vision inputs (only populated for multimodal models with images)
-        pixel_values: Buffer | None = None
-        weights: Buffer | None = None
-        indices: Buffer | None = None
-        vision_position_ids: Buffer | None = None
-        max_grid_size: Buffer | None = None
-        grid_thw: Buffer | None = None
-        cu_seqlens: Buffer | None = None
-        max_seqlen: Buffer | None = None
-        image_token_indices: Buffer | None = None
-
-        if self.vision_model is not None:
-            # Collect vision contexts and gather data for contexts with images
-            vision_contexts = [
-                ctx
-                for ctx in all_contexts
-                if isinstance(ctx, Qwen3VLTextAndVisionContext)
-            ]
-            vision_datas: list[VisionEncodingData] = []
-            for ctx in vision_contexts:
-                if ctx.needs_vision_encoding:
-                    assert ctx.vision_data is not None, (
-                        "vision_data must be set when needs_vision_encoding is True"
-                    )
-                    vision_datas.append(ctx.vision_data)
-
-            # Compute scatter indices for merging image embeddings.
-            # Fall back to the pre-allocated empty placeholder when there are no
-            # vision contexts (e.g. text-only warmup inputs) so that buffers()
-            # always has a non-None image_token_indices alongside lm_image_embeddings.
-            if vision_contexts:
-                np_indices = compute_multimodal_merge_indices(vision_contexts)
-                image_token_indices = Buffer.from_numpy(np_indices).to(
-                    self.devices[0]
-                )
-            else:
-                image_token_indices = self._empty_lm_image_token_indices
-
-            if vision_datas:
-                pixel_values = Buffer.from_numpy(
-                    np.concatenate(
-                        [vd.concatenated_pixel_values for vd in vision_datas]
-                    ).astype(np.float32)
-                ).to(self.devices[0])
-
-                weights = Buffer.from_numpy(
-                    np.concatenate(
-                        [vd.weights for vd in vision_datas], axis=1
-                    ).astype(np.float32)
-                ).to(self.devices[0])
-
-                indices = Buffer.from_numpy(
-                    np.concatenate([vd.indices for vd in vision_datas], axis=1)
-                ).to(self.devices[0])
-
-                vision_position_ids = Buffer.from_numpy(
-                    np.concatenate(
-                        [vd.vision_position_ids for vd in vision_datas]
-                    ).astype(np.int32)
-                ).to(self.devices[0])
-
-                grid_thw = Buffer.from_numpy(
-                    np.concatenate(
-                        [vd.image_grid_thw for vd in vision_datas]
-                    ).astype(np.int64)
-                ).to(self.devices[0])
-
-                max_grid_size_value = max(
-                    vd.max_grid_size.item() for vd in vision_datas
-                )
-                max_grid_size = Buffer.from_numpy(
-                    np.array(max_grid_size_value, dtype=np.int32)
-                )
-
-                # cu_seqlens: concatenate with cumulative offset adjustments
-                cu_seqlens_list = []
-                offset = np.uint32(0)
-                for vd in vision_datas:
-                    seqlens = vd.cu_seqlens.copy()
-                    seqlens[1:] += offset
-                    cu_seqlens_list.append(seqlens[1:])
-                    offset = seqlens[-1]
-                cu_seqlens = Buffer.from_numpy(
-                    np.concatenate(
-                        [np.array([0], dtype=np.uint32), *cu_seqlens_list]
-                    ).astype(np.uint32)
-                ).to(self.devices[0])
-
-                max_seqlen_value = max(
-                    vd.max_seqlen.item() for vd in vision_datas
-                )
-                max_seqlen = Buffer.from_numpy(
-                    np.array([max_seqlen_value], dtype=np.uint32)
-                )
-
-        return Qwen3_5Inputs(
-            tokens=base_inputs.tokens,
-            input_row_offsets=base_inputs.input_row_offsets,
-            signal_buffers=base_inputs.signal_buffers,
-            kv_cache_inputs=base_inputs.kv_cache_inputs,
-            return_n_logits=base_inputs.return_n_logits,
-            slot_idx=slot_idx,
-            conv_pools=conv_pools,
-            recurrent_pools=recurrent_pools,
-            request_ids=request_ids,
-            # lm_image_embeddings is set in execute() after running the vision
-            # encoder.  Use the pre-allocated empty placeholder so that buffers()
-            # always returns the right input count; execute() will overwrite it.
-            lm_image_embeddings=self._empty_lm_image_embeddings,
-            image_token_indices=image_token_indices,
-            pixel_values=pixel_values,
-            vision_position_ids=vision_position_ids,
-            weights=weights,
-            indices=indices,
-            max_grid_size=max_grid_size,
-            grid_thw=grid_thw,
-            cu_seqlens=cu_seqlens,
-            max_seqlen=max_seqlen,
         )
 
     def release(self, request_id: RequestID) -> None:

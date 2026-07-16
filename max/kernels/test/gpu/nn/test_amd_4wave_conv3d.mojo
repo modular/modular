@@ -49,8 +49,8 @@ from nn.conv.gpu.amd.dispatch_3d import dispatch_amd_4wave_conv3d
 def _permute_qrscf_to_fcqrs_host[
     dtype: DType
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
+    dst_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     *,
     Q: Int,
     R: Int,

@@ -123,7 +123,7 @@ def test_matmul_sm100_fallback[
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor_lt.store[alignment=alignment](
+        c_tensor_lt.store[store_alignment=alignment](
             idx, rebind[SIMD[c_type, width]](val)
         )
 

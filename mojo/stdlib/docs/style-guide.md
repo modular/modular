@@ -136,7 +136,7 @@ struct MyStruct(Sized, Writable):
 
     def __init__(...)
     def __init__(out self, *, copy: Self)
-    def __init__(out self, *, deinit take: Self)
+    def __init__(out self, *, deinit move: Self)
 
     def __del__(...)
 

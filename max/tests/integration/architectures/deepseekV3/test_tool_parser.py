@@ -341,9 +341,9 @@ def test_parse_delta_accumulates() -> None:
     """Test that parse_delta accumulates tokens in buffer."""
     parser = DeepseekV3_1ToolParser()
 
-    # Before the section marker fully lands, result is None.
+    # parse_delta should accumulate tokens; return [] to indicate parser is actively buffering and raw tokens shouldn't be used yet.
     result1 = parser.parse_delta("<｜tool▁calls")
-    assert result1 is None
+    assert result1 == []
 
     # Once the marker completes, the parser returns [] (not None) so the
     # streaming path knows to suppress raw structural tokens even with

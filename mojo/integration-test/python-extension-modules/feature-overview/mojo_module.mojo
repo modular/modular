@@ -24,7 +24,7 @@ from std.python.bindings import (
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     # ----------------------------------
     # Create a Python module
     # ----------------------------------
@@ -87,7 +87,10 @@ def case_raise_string_error() -> PythonObject:
     var error_type = cpython.get_error_global("PyExc_ValueError")
 
     cpython.PyErr_SetString(
-        error_type, "sample value error".as_c_string_slice().unsafe_ptr()
+        error_type,
+        "sample value error".as_c_string_slice()
+        .unsafe_ptr()
+        .as_unsafe_any_origin(),
     )
 
     return PythonObject(from_owned=PyObjectPtr())

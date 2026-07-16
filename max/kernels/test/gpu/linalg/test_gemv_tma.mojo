@@ -90,7 +90,7 @@ def gemv_tma_kernel[
         UnsafePointer[
             Scalar[dtype],
             address_space=AddressSpace.SHARED,
-            ExternalOrigin[mut=True],
+            UntrackedOrigin[mut=True],
         ]
     ](
         external_memory[
@@ -112,24 +112,22 @@ def gemv_tma_kernel[
     var a_smem = LayoutTensorIter[
         dtype,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
-        a_smem_base,
+        a_smem_base.as_unsafe_any_origin(),
         a_size * NUM_PIPELINE_STAGES,
     )
 
     var b_smem = LayoutTensorIter[
         dtype,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
-        b_smem_base,
+        b_smem_base.as_unsafe_any_origin(),
         b_size * NUM_PIPELINE_STAGES,
     )
 
@@ -340,9 +338,9 @@ def test_gemv_tma[
     var c_device = ctx.enqueue_create_buffer[dtype](c_size)
     var c_device_ref = ctx.enqueue_create_buffer[dtype](c_size)
 
-    var a_tt = TileTensor(a_device, row_major(a_shape)).as_any_origin()
-    var b_tt = TileTensor(b_device, row_major(b_shape)).as_any_origin()
-    var c_tt = TileTensor(c_device, row_major(c_shape)).as_any_origin()
+    var a_tt = TileTensor(a_device, row_major(a_shape)).as_unsafe_any_origin()
+    var b_tt = TileTensor(b_device, row_major(b_shape)).as_unsafe_any_origin()
+    var c_tt = TileTensor(c_device, row_major(c_shape)).as_unsafe_any_origin()
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)

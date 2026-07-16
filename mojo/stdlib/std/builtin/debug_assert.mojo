@@ -197,12 +197,11 @@ def debug_assert[
         comptime for i in range(messages.__len__()):
             messages[i].write_to(message)
 
-        _ = message.nul_terminate()
-
-        var slice = message.as_string_slice()
+        var cstr = message.nul_terminate()
+        var bytes_with_nul = cstr.as_bytes_with_nul()
         _debug_assert_msg(
-            slice.unsafe_ptr(),
-            slice.byte_length(),
+            bytes_with_nul.unsafe_ptr(),
+            len(bytes_with_nul),
             location.value() if location else call_location(),
         )
 
@@ -321,13 +320,12 @@ def debug_assert[
         comptime for i in range(messages.__len__()):
             messages[i].write_to(message)
 
-        _ = message.nul_terminate()
-
-        var slice = message.as_string_slice()
+        var cstr = message.nul_terminate()
+        var bytes_with_nul = cstr.as_bytes_with_nul()
 
         _debug_assert_msg(
-            slice.unsafe_ptr(),
-            slice.byte_length(),
+            bytes_with_nul.unsafe_ptr(),
+            len(bytes_with_nul),
             location.value() if location else call_location(),
         )
 

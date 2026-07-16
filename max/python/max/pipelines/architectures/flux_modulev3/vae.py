@@ -38,8 +38,8 @@ from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
-from max.graph.weights import WeightData
 from max.pipelines.lib import SupportedEncoding
+from max.pipelines.lib.weight_loader import WeightLoader, rename
 
 from .components import Decoder, Encoder
 from .model_config import AutoencoderKLFlux2Config
@@ -68,10 +68,12 @@ class Vae(Module[..., Tensor]):
     on the parent Module.
 
     Weight loading is decoupled from construction.  The static
-    :meth:`adapt_state_dict` translates HuggingFace VAE keys to this
-    Module's parameter namespace and is the union of the legacy
-    encoder + decoder adapters; the shared BN buffers absorb the
-    ``bn.running_mean`` / ``bn.running_var`` keys.
+    :meth:`adapt_loader` wraps a source
+    :class:`~max.pipelines.lib.weight_loader.WeightLoader` so the
+    Module's parameter queries resolve against the HuggingFace VAE
+    checkpoint namespace, unioning the legacy encoder + decoder
+    adapters; the shared BN buffers absorb the ``bn.running_mean`` /
+    ``bn.running_var`` keys.
     """
 
     def __init__(
@@ -130,7 +132,7 @@ class Vae(Module[..., Tensor]):
         # Shared per-channel batch-norm statistics used by both
         # :meth:`encode` and :meth:`decode`.  Loaded from
         # ``bn.running_mean`` / ``bn.running_var`` in the HF VAE
-        # checkpoint (see :meth:`adapt_state_dict`).
+        # checkpoint (see :meth:`adapt_loader`).
         self.bn_mean = Tensor.zeros(
             [self._num_channels], dtype=vae_config.dtype
         )
@@ -310,42 +312,39 @@ class Vae(Module[..., Tensor]):
         )
 
     @staticmethod
-    def adapt_state_dict(
-        state_dict: dict[str, WeightData],
-    ) -> dict[str, WeightData]:
-        """Translate HF VAE checkpoint keys to this Module's parameter paths.
+    def adapt_loader(loader: WeightLoader) -> WeightLoader:
+        """Resolve this Module's parameter queries to HF VAE keys.
 
-        Key mapping (union of the legacy encoder + decoder adapters,
-        because both halves now live on a single Module):
+        Inverse of the legacy key mapping, unioning the encoder and
+        decoder adapters because both halves live on a single Module:
 
+        * ``encoder.quant_conv.*`` -> ``quant_conv.*``
         * ``encoder.*`` -> ``encoder.*``
-        * ``quant_conv.*`` -> ``encoder.quant_conv.*``
+        * ``decoder.post_quant_conv.*`` -> ``post_quant_conv.*``
         * ``decoder.*`` -> ``decoder.*``
-        * ``post_quant_conv.*`` -> ``decoder.post_quant_conv.*``
-        * ``bn.running_mean`` -> ``bn_mean``
-        * ``bn.running_var`` -> ``bn_var``
+        * ``bn_mean`` -> ``bn.running_mean``
+        * ``bn_var`` -> ``bn.running_var``
 
-        Non-matching keys are dropped.  Pure key translation -- no
-        value transformation.  Float32 BN statistics from the HF
-        checkpoint are cast to the Module's parameter dtype by the
-        loader's ``auto_cast`` mode (MAX pipelines opt in by default
-        via ``MODULAR_AUTO_CAST_WEIGHTS=true``; see
+        Pure per-key query translation: the Module only queries the
+        parameters it declares, so checkpoint-only keys are never
+        resolved.  Float32 BN statistics from the HF checkpoint are cast
+        to the Module's parameter dtype by the loader's ``auto_cast``
+        mode (MAX pipelines opt in by default via
+        ``MODULAR_AUTO_CAST_WEIGHTS=true``; see
         :func:`max.pipelines.modeling.weights.weight_loading.auto_cast_weights_from_env`).
         Without ``auto_cast`` the loader is strict and dtype mismatch
         raises.
         """
-        adapted: dict[str, WeightData] = {}
-        for key, value in state_dict.items():
-            if key.startswith("encoder."):
-                adapted[key] = value
-            elif key.startswith("quant_conv."):
-                adapted[f"encoder.{key}"] = value
-            elif key.startswith("decoder."):
-                adapted[key] = value
-            elif key.startswith("post_quant_conv."):
-                adapted[f"decoder.{key}"] = value
-            elif key == "bn.running_mean":
-                adapted["bn_mean"] = value
-            elif key == "bn.running_var":
-                adapted["bn_var"] = value
-        return adapted
+
+        def to_source(name: str) -> str:
+            if name == "bn_mean":
+                return "bn.running_mean"
+            if name == "bn_var":
+                return "bn.running_var"
+            if name.startswith("encoder.quant_conv."):
+                return name.removeprefix("encoder.")
+            if name.startswith("decoder.post_quant_conv."):
+                return name.removeprefix("decoder.")
+            return name
+
+        return rename(loader, to_source)

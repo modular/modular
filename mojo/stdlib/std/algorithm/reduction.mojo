@@ -52,10 +52,10 @@ comptime _ReduceGeneratorPluginHookFnType = (
         input_0_fn: def[dtype: DType, width: Int, rank: Int](
             IndexList[rank]
         ) capturing[_] -> SIMD[dtype, width],
-        output_0_fn: def[dtype: DType, width: Int, rank: Int](
+        output_0_fn: def[dtype: DType, width: SIMDSize, rank: Int](
             IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
         ) capturing[_] -> None,
-        reduce_function: def[ty: DType, width: Int, reduction_idx: Int](
+        reduce_function: def[ty: DType, width: SIMDSize, reduction_idx: Int](
             SIMD[ty, width], SIMD[ty, width]
         ) capturing[_] -> SIMD[ty, width],
     ](
@@ -245,10 +245,10 @@ def _reduce_generator[
             reduce_function,
             reduce_dim=reduce_dim,
         ](shape, init)
-    elif CurrentPlugin.reduce_generator_fn[target]:
+    elif CurrentPlugin.reduce_generator_fn:
         # The plugin hook takes `reduce_dim` as a runtime argument; feed it the
         # compile-time value.
-        return comptime (CurrentPlugin.reduce_generator_fn[target].value())[
+        return comptime (CurrentPlugin.reduce_generator_fn.value())[
             num_reductions,
             init_type,
             input_0_fn,

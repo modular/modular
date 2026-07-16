@@ -43,7 +43,7 @@ from op_utils import (
 
 
 @export
-def PyInit_topk_ops() -> PythonObject:
+def PyInit_topk_ops() abi("C") -> PythonObject:
     """Create a Python module with top_k kernel function bindings."""
     try:
         var b = PythonModuleBuilder("topk_ops")
@@ -62,9 +62,9 @@ def PyInit_topk_ops() -> PythonObject:
 def topk_op[
     dtype: DType, //
 ](
-    out_val_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    out_idx_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_val_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    out_idx_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dim0: Int,
     dim1: Int,
     dim2: Int,
@@ -94,9 +94,7 @@ def topk_op[
     var total = dim0 * dim2
 
     @always_inline
-    @parameter
-    @__copy_capture(out_val_ptr, out_idx_ptr, in_ptr, dim1, dim2, k)
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var pair = Int(idx[0].value())
         var i0, i2 = divmod(pair, dim2)
         var in_base = i0 * dim1 * dim2 + i2
@@ -127,10 +125,10 @@ def topk_op[
             out_idx_ptr[out_base + ki * dim2] = best_idx
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](Coord(total), ctx)
+        elementwise[simd_width=1](func, Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
+            elementwise[simd_width=1, target="gpu"](func, Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 

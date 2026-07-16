@@ -16,7 +16,6 @@ import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import grid_dim
 from std.gpu.host import DeviceContext, FuncAttribute
 from internal_utils import assert_almost_equal
-from layout import LTToTTLayout, lt_to_tt
 from layout.layout import *
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import MatmulKernels
@@ -77,28 +76,24 @@ def test_fp8_multistage_gemm[
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    var c_tensor = c_device_nd.to_layout_tensor()
-    var a_tensor = a_device_nd.to_layout_tensor()
-    var b_tensor = b_device_nd.to_layout_tensor()
-
-    var c_tt = lt_to_tt(c_tensor)
-    var a_tt = lt_to_tt(a_tensor).as_immut()
-    var b_tt = lt_to_tt(b_tensor).as_immut()
+    var c_tt = c_device_nd
+    var a_tt = a_device_nd.as_immut()
+    var b_tt = b_device_nd.as_immut()
 
     comptime kernels = MatmulKernels[dtype, dtype, DType.float32, transpose_b]()
     comptime config = kernels.hopper_128x128_4
 
     comptime kernel = multistage_gemm_kernel[
         DType.float32,  # c_type
-        LTToTTLayout[c_tensor.layout],
+        c_tt.LayoutType,
         dtype,  # a_type
-        LTToTTLayout[a_tensor.layout],
+        a_tt.LayoutType,
         dtype,  # b_type
-        LTToTTLayout[b_tensor.layout],
+        b_tt.LayoutType,
         transpose_b,
-        c_linear_idx_type=c_tensor.linear_idx_type,
-        a_linear_idx_type=a_tensor.linear_idx_type,
-        b_linear_idx_type=b_tensor.linear_idx_type,
+        c_linear_idx_type=c_tt.linear_idx_type,
+        a_linear_idx_type=a_tt.linear_idx_type,
+        b_linear_idx_type=b_tt.linear_idx_type,
         config=config,
     ]
 

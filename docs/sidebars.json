@@ -33,7 +33,6 @@
         "max/inference/embeddings",
         "max/serve/function-calling",
         "max/serve/structured-output",
-        "max/serve/offline-inference",
         "max/develop/max-pipeline-bring-your-own-model",
         "max/models"
       ]
@@ -44,7 +43,6 @@
       "type": "category",
       "collapsed": false,
       "items": [
-        "max/deploy/cloud",
         {
           "type": "doc",
           "id": "max/deploy/local-to-cloud",
@@ -71,13 +69,16 @@
           "id": "max/develop/index",
           "label": "Overview"
         },
+        "max/develop/model-bringup-skills",
+        "max/develop/serve-custom-model-architectures",
         {
           "label": "Graphs",
           "type": "category",
           "collapsed": true,
           "items": [
             "max/develop/graph",
-            "max/develop/modules"
+            "max/develop/modules",
+            "max/develop/layers"
           ]
         },
         {
@@ -86,8 +87,10 @@
           "collapsed": true,
           "items": [
             "max/develop/model-bringup-workflow",
+            "max/develop/read-model-config",
+            "max/develop/weight-adapters",
             "max/develop/pipelines",
-            "max/develop/serve-custom-model-architectures",
+            "max/develop/logit-comparison",
             "max/graph/quantize"
           ]
         },
@@ -226,17 +229,6 @@
         },
         {
           "type": "category",
-          "label": "max.entrypoints",
-          "link": {
-            "type": "doc",
-            "id": "max/api/python/entrypoints"
-          },
-          "items": [
-            "__AUTOGEN:max.entrypoints__"
-          ]
-        },
-        {
-          "type": "category",
           "label": "max.experimental",
           "collapsed": true,
           "link": {
@@ -276,17 +268,6 @@
               },
               "items": [
                 "__AUTOGEN:max.experimental.nn.rope__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "random",
-              "link": {
-                "type": "doc",
-                "id": "max/api/python/experimental.random"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.random__"
               ]
             },
             {
@@ -410,57 +391,47 @@
               "items": [
                 "max/api/python/pipelines.architectures.bert",
                 "max/api/python/pipelines.architectures.deepseekV2",
-                "max/api/python/pipelines.architectures.deepseekV2_modulev3",
                 "max/api/python/pipelines.architectures.deepseekV3",
                 "max/api/python/pipelines.architectures.deepseekV3_2",
-                "max/api/python/pipelines.architectures.deepseekV3_modulev3",
                 "max/api/python/pipelines.architectures.deepseekV3_nextn",
                 "max/api/python/pipelines.architectures.dflash_llama3",
+                "max/api/python/pipelines.architectures.diffusion_gemma",
                 "max/api/python/pipelines.architectures.eagle3_deepseekV3",
                 "max/api/python/pipelines.architectures.eagle_llama3",
                 "max/api/python/pipelines.architectures.exaone",
-                "max/api/python/pipelines.architectures.exaone_modulev3",
                 "max/api/python/pipelines.architectures.flux2",
                 "max/api/python/pipelines.architectures.gemma3",
-                "max/api/python/pipelines.architectures.gemma3_modulev3",
                 "max/api/python/pipelines.architectures.gemma3multimodal",
-                "max/api/python/pipelines.architectures.gemma3multimodal_modulev3",
                 "max/api/python/pipelines.architectures.gemma4",
                 "max/api/python/pipelines.architectures.gemma4_assistant",
                 "max/api/python/pipelines.architectures.glm5_1",
                 "max/api/python/pipelines.architectures.gpt_oss",
-                "max/api/python/pipelines.architectures.gpt_oss_modulev3",
                 "max/api/python/pipelines.architectures.granite",
-                "max/api/python/pipelines.architectures.granite_modulev3",
                 "max/api/python/pipelines.architectures.hy_v3",
                 "max/api/python/pipelines.architectures.idefics3",
-                "max/api/python/pipelines.architectures.idefics3_modulev3",
+                "max/api/python/pipelines.architectures.ideogram4",
                 "max/api/python/pipelines.architectures.internvl",
                 "max/api/python/pipelines.architectures.kimik2_5",
+                "max/api/python/pipelines.architectures.laguna",
                 "max/api/python/pipelines.architectures.lfm2",
                 "max/api/python/pipelines.architectures.llama3",
-                "max/api/python/pipelines.architectures.llama3_modulev3",
+                "max/api/python/pipelines.architectures.llama4",
                 "max/api/python/pipelines.architectures.mamba",
                 "max/api/python/pipelines.architectures.minimax_m2",
                 "max/api/python/pipelines.architectures.mistral",
                 "max/api/python/pipelines.architectures.mistral3",
                 "max/api/python/pipelines.architectures.mpnet",
-                "max/api/python/pipelines.architectures.mpnet_modulev3",
+                "max/api/python/pipelines.architectures.nemotron_h",
                 "max/api/python/pipelines.architectures.olmo",
                 "max/api/python/pipelines.architectures.olmo2",
-                "max/api/python/pipelines.architectures.olmo2_modulev3",
                 "max/api/python/pipelines.architectures.olmo3",
-                "max/api/python/pipelines.architectures.olmo_modulev3",
                 "max/api/python/pipelines.architectures.phi3",
-                "max/api/python/pipelines.architectures.phi3_modulev3",
                 "max/api/python/pipelines.architectures.pixtral",
-                "max/api/python/pipelines.architectures.pixtral_modulev3",
                 "max/api/python/pipelines.architectures.qwen2",
                 "max/api/python/pipelines.architectures.qwen2_5vl",
                 "max/api/python/pipelines.architectures.qwen3",
                 "max/api/python/pipelines.architectures.qwen3_5",
                 "max/api/python/pipelines.architectures.qwen3_embedding",
-                "max/api/python/pipelines.architectures.qwen3_embedding_modulev3",
                 "max/api/python/pipelines.architectures.qwen3vl_moe",
                 "max/api/python/pipelines.architectures.qwen_image",
                 "max/api/python/pipelines.architectures.qwen_image_edit",
@@ -470,8 +441,8 @@
                 "max/api/python/pipelines.architectures.unified_eagle_llama3",
                 "max/api/python/pipelines.architectures.unified_mtp_deepseekV3",
                 "max/api/python/pipelines.architectures.unified_mtp_gemma4",
-                "max/api/python/pipelines.architectures.wan",
-                "max/api/python/pipelines.architectures.z_image_modulev3"
+                "max/api/python/pipelines.architectures.unified_mtp_glm5_2",
+                "max/api/python/pipelines.architectures.wan"
               ]
             },
             {
@@ -516,6 +487,17 @@
               },
               "items": [
                 "__AUTOGEN:max.pipelines.kv_cache__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "logging_utils",
+              "link": {
+                "type": "doc",
+                "id": "max/api/python/pipelines.logging_utils"
+              },
+              "items": [
+                "__AUTOGEN:max.pipelines.logging_utils__"
               ]
             },
             {
@@ -713,6 +695,17 @@
             },
             "__AUTOGEN:max.profiler__"
           ]
+        },
+        {
+          "type": "category",
+          "label": "max.support.image",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/support.image"
+          },
+          "items": [
+            "__AUTOGEN:max.support.image__"
+          ]
         }
       ]
     },
@@ -749,11 +742,6 @@
       "label": "Create embeddings",
       "type": "link",
       "href": "/max/rest-api/#POST/v1/embeddings"
-    },
-    {
-      "label": "Create batch",
-      "type": "link",
-      "href": "/max/rest-api/#POST/v1/batches"
     },
     {
       "label": "List models",
