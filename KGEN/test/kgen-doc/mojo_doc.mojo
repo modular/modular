@@ -769,7 +769,7 @@ struct HMyUnsafePointer[
     T: AnyType,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](TrivialRegisterPassable):
-    # CHECK: "signature": "def __getitem__(self) -> ref[MutAnyOrigin, address_space] T",
+    # CHECK: "signature": "def __getitem__(self) -> ref[MutUnsafeAnyOrigin, address_space] T",
     def __getitem__(
         self,
     ) -> ref[MutAnyOrigin, Self.address_space] Self.T:

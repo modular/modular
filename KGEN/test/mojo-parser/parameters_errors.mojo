@@ -612,6 +612,7 @@ struct TestAutoParamsAndSugar[f1: HasSize]:
 def test_differ_origins(a: Optional[UnsafePointer[Int, UntrackedOrigin[mut=True]]]):
     # expected-error @below {{cannot implicitly convert}}
     # expected-note @below {{.T.origin of the first value is 'MutUntrackedOrigin' but the second value is 'MutAnyOrigin'}}
+    # expected-note @below {{'MutAnyOrigin' is aka 'MutUnsafeAnyOrigin'}}
     var b : Optional[UnsafePointer[Int, MutAnyOrigin]] = a
 
 

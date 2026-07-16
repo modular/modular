@@ -160,7 +160,7 @@ void OriginPrinter::print(raw_ostream &os, TypedAttr param,
       if (originUnion.getType().isMutableKnown(true))
         os << "MutUntrackedOrigin";
       else if (originUnion.getType().isMutableKnown(false))
-        os << "ImmutUntrackedOrigin";
+        os << "ImmUntrackedOrigin";
       else {
         os << "UntrackedOrigin[";
         printParam(os, originUnion.getType().getIsMutable());
@@ -200,11 +200,11 @@ void OriginPrinter::print(raw_ostream &os, TypedAttr param,
 
   if (auto anyOrig = dyn_cast<AnyOriginAttr>(param)) {
     if (anyOrig.getType().isMutableKnown(true))
-      os << "MutAnyOrigin";
+      os << "MutUnsafeAnyOrigin";
     else if (anyOrig.getType().isMutableKnown(false))
-      os << "ImmutAnyOrigin";
+      os << "ImmUnsafeAnyOrigin";
     else
-      os << "SomeAnyOrigin";
+      os << "SomeUnsafeAnyOrigin";
     return;
   }
 

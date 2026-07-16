@@ -1325,7 +1325,7 @@ def bar[n: Int]() abi("Mojo"):
     pass
 
 @export
-def exported_with_origin_param[a: ImmutOrigin](ref [a] x: Int) abi("Mojo"):
+def exported_with_origin_param[a: ImmOrigin](ref [a] x: Int) abi("Mojo"):
   pass
 
 

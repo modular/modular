@@ -22,7 +22,7 @@ def test_ffi_functype_thin_abi_is_stable():
         "    var result = String(capacity=256)\n"
         "    var curl_version = lib.get_function[\n"
         '        def() thin abi("C") -> UnsafePointer[\n'
-        "            c_char, ImmutOrigin(origin_of(result))\n"
+        "            c_char, ImmOrigin(origin_of(result))\n"
         "        ]\n"
         '    ]("curl_version")\n'
         "    _ = curl_version\n"
@@ -46,7 +46,7 @@ def test_long_functype_splits_return_type_not_named_effect():
         "    var result_version_string_buffer = String(capacity=256)\n"
         "    var curl_version = lib.get_function[\n"
         '        def() thin abi("C") -> UnsafePointer[c_char,'
-        " ImmutOrigin(origin_of(result_version_string_buffer))]\n"
+        " ImmOrigin(origin_of(result_version_string_buffer))]\n"
         '    ]("curl_version")\n'
         "    _ = curl_version\n"
         "    _ = lib\n"
@@ -60,7 +60,7 @@ def test_long_functype_splits_return_type_not_named_effect():
         "    var result_version_string_buffer = String(capacity=256)\n"
         "    var curl_version = lib.get_function[\n"
         '        def() thin abi("C") -> UnsafePointer[\n'
-        "            c_char, ImmutOrigin(origin_of(result_version_string_buffer))\n"
+        "            c_char, ImmOrigin(origin_of(result_version_string_buffer))\n"
         "        ]\n"
         '    ]("curl_version")\n'
         "    _ = curl_version\n"
@@ -80,7 +80,7 @@ def test_async_ffi_functype_is_stable():
         "    var result_version_string_buffer = String(capacity=256)\n"
         "    var curl_version = lib.get_function[\n"
         '        async def() thin abi("C") -> UnsafePointer[\n'
-        "            c_char, ImmutOrigin(origin_of(result_version_string_buffer))\n"
+        "            c_char, ImmOrigin(origin_of(result_version_string_buffer))\n"
         "        ]\n"
         '    ]("curl_version")\n'
         "    _ = curl_version\n"
