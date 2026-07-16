@@ -114,12 +114,12 @@ struct Fp8WeightLoader[
         w_layout: Layout of the FP8 weight `[N, K]` view.
     """
 
-    # Held with `ImmutUntrackedOrigin`: struct fields cannot expose `AnyOrigin`
+    # Held with `ImmUntrackedOrigin`: struct fields cannot expose `AnyOrigin`
     # (same field-origin rule as `Fp4WeightLoader` / `DenseALoader`). The kernel
     # arg this view derives from outlives the K-loop. Built via
     # `Fp8WeightLoader.from_kernel_args`.
     var weight: TileTensor[
-        DType.float8_e4m3fn, Self.w_layout, ImmutUntrackedOrigin
+        DType.float8_e4m3fn, Self.w_layout, ImmUntrackedOrigin
     ]
 
     @always_inline
@@ -129,12 +129,12 @@ struct Fp8WeightLoader[
     ) -> Self:
         """Build the loader from the kernel's `AnyOrigin` weight arg.
 
-        Rebases the view onto `ImmutUntrackedOrigin` (the field-origin rule; the
+        Rebases the view onto `ImmUntrackedOrigin` (the field-origin rule; the
         arg outlives the K-loop), preserving layout/shape/stride.
         """
         return Self(
             TileTensor(
-                weight.ptr.unsafe_origin_cast[ImmutUntrackedOrigin](),
+                weight.ptr.unsafe_origin_cast[ImmUntrackedOrigin](),
                 weight.layout,
             )
         )

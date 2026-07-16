@@ -199,11 +199,11 @@ struct Matmul2dFp8[
         # `(K, N)` (stride (1, K)) -> the K axis is the contiguous fast axis of the
         # B-fragment load (coalesced), and hw_transpose_b = True feeds it as the
         # right operand. This simdgroup's `(K, SG_N)` col slab.
-        var a_ptr = a.ptr.unsafe_origin_cast[ImmutUntrackedOrigin]()
+        var a_ptr = a.ptr.unsafe_origin_cast[ImmUntrackedOrigin]()
         var a_mat = TileTensor(a_ptr, Layout(Coord(M, K), Coord(K, Idx[1])))
         var a_slab = a_mat.tile(Coord(Idx[SG_M], K), Coord(Int(sg_row_idx), 0))
 
-        var w_ptr = weight.ptr.unsafe_origin_cast[ImmutUntrackedOrigin]()
+        var w_ptr = weight.ptr.unsafe_origin_cast[ImmUntrackedOrigin]()
         var b_mat = TileTensor(w_ptr, Layout(Coord(K, N), Coord(Idx[1], K)))
         var b_slab = b_mat.tile(Coord(K, Idx[SG_N]), Coord(0, Int(sg_col_idx)))
 
