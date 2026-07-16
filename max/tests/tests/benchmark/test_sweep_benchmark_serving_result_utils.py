@@ -179,6 +179,9 @@ def test_llm_from_metrics_basic() -> None:
     m = _make_llm_metrics()
     assert m.text_data is not None
     t = m.text_data
+    assert t.ttft_ms is not None
+    assert t.itl_ms is not None
+    assert t.latency_ms is not None
     r = LLMBenchmarkResult.from_metrics(m, [50])
     assert r.duration == 12.0
     assert r.throughput == 3.5
@@ -195,6 +198,9 @@ def test_llm_from_metrics_multiple_percentiles() -> None:
     m = _make_llm_metrics()
     assert m.text_data is not None
     t = m.text_data
+    assert t.ttft_ms is not None
+    assert t.itl_ms is not None
+    assert t.latency_ms is not None
     r = LLMBenchmarkResult.from_metrics(m, [50, 90, 99])
     assert r.ttft_percentiles[50] == t.ttft_ms.p50
     assert r.ttft_percentiles[90] == t.ttft_ms.p90
@@ -254,6 +260,7 @@ def test_t2i_from_metrics() -> None:
     m = _make_t2i_metrics()
     assert m.pixel_data is not None
     p = m.pixel_data
+    assert p.latency_ms is not None
     r = TextToImageBenchmarkResult.from_metrics(m, [50, 90])
     assert r.duration == 20.0
     assert r.throughput == 0.8
