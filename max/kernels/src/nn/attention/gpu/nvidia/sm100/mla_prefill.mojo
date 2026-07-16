@@ -181,7 +181,13 @@ def mla_sm100_prefill_sparse[
             mscale^2``; for DSv3.2 with mscale=1, ``1 / sqrt(192)``).
         ctx: GPU device context.
     """
-    comptime config = MLASparseConfig[q_type](
+    # head128 uses 2SM (cta_group=2, B_TOPK=128); head64 uses single-CTA WS
+    # (cta_group=1, B_TOPK=64), which fits SMEM where a 2SM split would not.
+    comptime cta_group = 2 if num_q_heads == 128 else 1
+    comptime b_topk = 128 if num_q_heads == 128 else 64
+    comptime config = MLASparseConfig[
+        q_type, b_topk_=b_topk, cta_group_=cta_group
+    ](
         num_q_heads=num_q_heads,
         num_kv_heads=1,
         qk_depth=qk_depth,
@@ -263,7 +269,11 @@ def mla_sm100_prefill_sparse_fp8[
         scale: Softmax scale.
         ctx: GPU device context.
     """
-    comptime config = MLASparseConfig[q_type](
+    comptime cta_group = 2 if num_q_heads == 128 else 1
+    comptime b_topk = 128 if num_q_heads == 128 else 64
+    comptime config = MLASparseConfig[
+        q_type, b_topk_=b_topk, cta_group_=cta_group
+    ](
         num_q_heads=num_q_heads,
         num_kv_heads=1,
         qk_depth=qk_depth,

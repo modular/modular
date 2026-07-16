@@ -222,6 +222,7 @@ def run_test_prefill_sparse[
     ctx: DeviceContext,
     *,
     valid_topk: Int = topk,
+    atol: Float64 = 0.18,
 ) raises:
     """Test the sparse MLA prefill kernel with a paged KV cache, per-query
     indices, and the absorbed DSv3.2 dims (qk_depth=576, v_depth=512).
@@ -538,7 +539,14 @@ def run_test_prefill_sparse[
     # -----------------------------------------------------------------------
     print("  Launching mla_prefill_sparse...")
 
-    comptime config = MLASparseConfig[q_type](
+    # Mirror the dispatch policy in mla_prefill.mojo: head128 → 2SM
+    # (cta_group=2, B_TOPK=128); head64 → single-CTA WS (cta_group=1,
+    # B_TOPK=64).
+    comptime cta_group = 2 if num_heads == 128 else 1
+    comptime b_topk = 128 if num_heads == 128 else 64
+    comptime config = MLASparseConfig[
+        q_type, b_topk_=b_topk, cta_group_=cta_group
+    ](
         num_q_heads=num_heads,
         num_kv_heads=1,
         qk_depth=QK_DEPTH,
@@ -585,7 +593,10 @@ def run_test_prefill_sparse[
     # valid ones — so the BF16/fp64 drift isn't fully self-cancelling).
     # 0.18 gives a small margin without masking a real precision
     # regression.  Tighten if/when the kernel gets closer to fp32.
-    var atol = Float64(0.18)
+    # atol defaults to the head128 BF16 noise floor (0.18).  head64 cases
+    # with small B_TOPK=64 concentrate softmax over fewer keys, lifting the
+    # BF16 rounding noise floor (~0.20 at topk=64, single row) — the same
+    # effect the padded head128 cases note above; callers pass a matched atol.
     var max_err = Float64(0)
     var max_err_low_d = Float64(0)
     var max_err_high_d = Float64(0)
@@ -662,6 +673,8 @@ def run_test_prefill_sparse[
     )
     print("  Sample out vs ref for seq=0:")
     for h in [0, 32, 64, 96]:
+        if h >= num_heads:
+            continue
         var base = h * V_DEPTH
         for d in [0, 64, 128, 192]:
             var idx = base + d
@@ -737,6 +750,7 @@ def run_test_prefill_sparse_fp8[
     ctx: DeviceContext,
     *,
     valid_topk: Int = topk,
+    atol: Float64 = 0.45,
 ) raises:
     """FP8 KV-cache variant of run_test_prefill_sparse.
 
@@ -1095,7 +1109,11 @@ def run_test_prefill_sparse_fp8[
     # -----------------------------------------------------------------------
     print("  Launching mla_prefill_sparse_fp8...")
 
-    comptime config = MLASparseConfig[DType.bfloat16](
+    comptime cta_group = 2 if num_heads == 128 else 1
+    comptime b_topk = 128 if num_heads == 128 else 64
+    comptime config = MLASparseConfig[
+        DType.bfloat16, b_topk_=b_topk, cta_group_=cta_group
+    ](
         num_q_heads=num_heads,
         num_kv_heads=1,
         qk_depth=QK_DEPTH,
@@ -1133,7 +1151,8 @@ def run_test_prefill_sparse_fp8[
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
-    var atol = Float64(0.45)
+    # atol from caller (default 0.45 = head128 FP8 floor).  head64 sharp
+    # softmax (B_TOPK=64) lifts the magnitude-scaled BF16+FP8 noise floor.
     var max_err = Float64(0)
     var max_actual = Float64(0)
     var num_nonzero = 0
@@ -1311,6 +1330,120 @@ def main() raises:
                 valid_topk=192,
             )
 
+            # ---------------------------------------------------------------
+            # head64 path (GLM): cta_group=1, B_TOPK=64, single-CTA
+            # warp-specialized packed-TMEM MMA.  `topk` must be a multiple
+            # of B_TOPK=64.  Matrix: {exact 1-block, exact 2-block, ragged
+            # < 64, large 16+ blocks} x num_q_rows {1, small, large}.
+            # ---------------------------------------------------------------
+
+            # Exact 1 k-block, num_q_rows=1 (smallest grid).
+            run_test_prefill_sparse[DType.bfloat16, 64, 64](
+                "b1_s1_h64_kv256_topk64",
+                1,
+                1,
+                256,
+                ctx,
+                atol=0.45,
+            )
+
+            # Exact 1 k-block, small num_q_rows.
+            run_test_prefill_sparse[DType.bfloat16, 64, 64](
+                "b1_s32_h64_kv256_topk64",
+                1,
+                32,
+                256,
+                ctx,
+                atol=0.45,
+            )
+
+            # Multi-batch, exact 1 k-block (num_q_rows = 4*16 = 64).
+            run_test_prefill_sparse[DType.bfloat16, 64, 64](
+                "b4_s16_h64_kv256_topk64",
+                4,
+                16,
+                256,
+                ctx,
+                atol=0.45,
+            )
+
+            # Exact 2 k-blocks (cross-block online-softmax state).
+            run_test_prefill_sparse[DType.bfloat16, 64, 128](
+                "b1_s32_h64_kv512_topk128",
+                1,
+                32,
+                512,
+                ctx,
+                atol=0.32,
+            )
+
+            # Ragged tail < B_TOPK: topk=64, valid_topk=40 — k-valid mask
+            # poisons positions [40..64) inside the single block.
+            run_test_prefill_sparse[DType.bfloat16, 64, 64](
+                "b1_s32_h64_kv256_topk64_valid40",
+                1,
+                32,
+                256,
+                ctx,
+                valid_topk=40,
+                atol=0.45,
+            )
+
+            # Multi-block ragged: 2 blocks, valid_topk=96 fires mid second
+            # block.
+            run_test_prefill_sparse[DType.bfloat16, 64, 128](
+                "b1_s32_h64_kv512_topk128_valid96",
+                1,
+                32,
+                512,
+                ctx,
+                valid_topk=96,
+                atol=0.32,
+            )
+
+            # Prime valid_topk (37) in a single block: the mask boundary
+            # lands at a non-aligned offset inside [0, 64).
+            run_test_prefill_sparse[DType.bfloat16, 64, 64](
+                "b1_s32_h64_kv256_topk64_valid37",
+                1,
+                32,
+                256,
+                ctx,
+                valid_topk=37,
+                atol=0.45,
+            )
+
+            # Prime valid_topk (97) across 2 blocks: full first block plus a
+            # non-aligned 33-key tail in the second.
+            run_test_prefill_sparse[DType.bfloat16, 64, 128](
+                "b1_s32_h64_kv512_topk128_valid97",
+                1,
+                32,
+                512,
+                ctx,
+                valid_topk=97,
+                atol=0.32,
+            )
+
+            # Prime num_q_rows (13): exercises a partial query tile.
+            run_test_prefill_sparse[DType.bfloat16, 64, 64](
+                "b1_s13_h64_kv256_topk64",
+                1,
+                13,
+                256,
+                ctx,
+                atol=0.45,
+            )
+
+            # Large: 16 k-blocks (topk=1024) exercises the deep k loop.
+            run_test_prefill_sparse[DType.bfloat16, 64, 1024](
+                "b1_s8_h64_kv1024_topk1024",
+                1,
+                8,
+                1024,
+                ctx,
+            )
+
             run_test_prefill_sparse_fp8[128, 128, QK_DEPTH](
                 "b1_s32_h128_kv512_topk128_fp8_tensorwise",
                 1,
@@ -1375,6 +1508,69 @@ def main() raises:
                 512,
                 ctx,
                 valid_topk=192,
+            )
+
+            # ---------------------------------------------------------------
+            # FP8 head64 path (GLM): cta_group=1, B_TOPK=64.  convert_v is
+            # parametrized on B_TOPK (ROWS_PER_KH), so V dequant stays inside
+            # the 32-row key-half.  atol tracks the BF16 head64 regimes
+            # (0.45/0.32) plus the extra FP8 tensorwise quant noise: the
+            # sharp-softmax small-B_TOPK cases sit at 0.55, the more diffuse
+            # multi-block cases at 0.45.
+            # ---------------------------------------------------------------
+
+            # Exact 1 k-block (topk == B_TOPK == 64).
+            run_test_prefill_sparse_fp8[64, 64, QK_DEPTH](
+                "b1_s32_h64_kv256_topk64_fp8_tensorwise",
+                1,
+                32,
+                256,
+                ctx,
+                atol=0.55,
+            )
+
+            # Exact 2 k-blocks (cross-block online-softmax state in FP8).
+            run_test_prefill_sparse_fp8[64, 128, QK_DEPTH](
+                "b1_s32_h64_kv512_topk128_fp8_tensorwise",
+                1,
+                32,
+                512,
+                ctx,
+                atol=0.45,
+            )
+
+            # Ragged tail < B_TOPK: topk=64, valid_topk=40 poisons
+            # positions [40..64) inside the single block.
+            run_test_prefill_sparse_fp8[64, 64, QK_DEPTH](
+                "b1_s32_h64_kv256_topk64_valid40_fp8_tensorwise",
+                1,
+                32,
+                256,
+                ctx,
+                valid_topk=40,
+                atol=0.55,
+            )
+
+            # Prime valid_topk (37): non-aligned mask boundary, FP8 path.
+            run_test_prefill_sparse_fp8[64, 64, QK_DEPTH](
+                "b1_s32_h64_kv256_topk64_valid37_fp8_tensorwise",
+                1,
+                32,
+                256,
+                ctx,
+                valid_topk=37,
+                atol=0.55,
+            )
+
+            # Large: 16 k-blocks (topk=1024) exercises the deep k loop with
+            # the FP8 K/V dequant on every block.
+            run_test_prefill_sparse_fp8[64, 1024, QK_DEPTH](
+                "b1_s8_h64_kv1024_topk1024_fp8_tensorwise",
+                1,
+                8,
+                1024,
+                ctx,
+                atol=0.45,
             )
         else:
             pass
