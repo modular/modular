@@ -19,10 +19,26 @@ by comparing against numpy reference implementations.
 from collections.abc import Generator, Sequence
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-from max.driver import CPU
+from max._core.dialects import mo, rmo
+from max._interpreter_ops import (
+    elementwise_binary_gc,
+    gc_compile,
+    matmul_gc,
+    shape_rearrange_gc,
+    unary_elementwise_gc,
+)
+from max._interpreter_ops.handlers import (
+    _handle_buffer_create,
+    _handle_buffer_transfer,
+    _handle_gather_sum,
+    _handle_index_to_tensor,
+    _handle_shape_from_tensor,
+)
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random as max_random
@@ -42,11 +58,13 @@ from max.experimental.functional import (
 from max.experimental.realization_context import set_seed
 from max.experimental.sharding import (
     DeviceMesh,
+    Partial,
     PlacementMapping,
     Replicated,
     Sharded,
 )
 from max.experimental.tensor import Tensor, realization_context
+from max.graph import BufferType, DeviceRef, Module
 
 
 @pytest.fixture(autouse=True)
@@ -4327,11 +4345,6 @@ class TestGatherSumOp:
 
     def test_gather_sum_basic(self) -> None:
         """Gather rows then sum over the multi-hot dimension."""
-        from unittest.mock import MagicMock
-
-        from max._interpreter_ops.handlers import _handle_gather_sum
-        from max.driver import Buffer
-
         input_np = np.arange(12, dtype=np.float32).reshape(4, 3)
         indices_np = np.array([[0, 2], [1, 3]], dtype=np.int32)
 
@@ -4339,8 +4352,6 @@ class TestGatherSumOp:
         mock_result = MagicMock()
         mock_result.type = MagicMock()
         mock_result.type.device_ref = MagicMock()
-
-        from max.graph import DeviceRef
 
         mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
         mock_op.results = [mock_result]
@@ -4360,18 +4371,11 @@ class TestGatherSumOp:
 
     def test_gather_sum_single_index(self) -> None:
         """Single index per row — sum is a no-op."""
-        from unittest.mock import MagicMock
-
-        from max._interpreter_ops.handlers import _handle_gather_sum
-        from max.driver import Buffer
-
         input_np = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
         indices_np = np.array([[2], [0]], dtype=np.int32)
 
         mock_op = MagicMock()
         mock_result = MagicMock()
-
-        from max.graph import DeviceRef
 
         mock_result.type = MagicMock()
         mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
@@ -4389,18 +4393,11 @@ class TestGatherSumOp:
 
     def test_gather_sum_int_data(self) -> None:
         """Integer input dtype."""
-        from unittest.mock import MagicMock
-
-        from max._interpreter_ops.handlers import _handle_gather_sum
-        from max.driver import Buffer
-
         input_np = np.arange(8, dtype=np.int64).reshape(4, 2)
         indices_np = np.array([[0, 1], [2, 3]], dtype=np.int32)
 
         mock_op = MagicMock()
         mock_result = MagicMock()
-
-        from max.graph import DeviceRef
 
         mock_result.type = MagicMock()
         mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
@@ -7820,11 +7817,6 @@ class TestShapeIndexOps:
 
     def test_index_to_tensor(self) -> None:
         """IndexToTensorOp wraps a scalar int64 into a rank-0 tensor."""
-        from unittest.mock import MagicMock
-
-        from max._interpreter_ops.handlers import _handle_index_to_tensor
-        from max.driver import Buffer
-
         input_np = np.array([42], dtype=np.int64)
         input_buf = Buffer.from_numpy(input_np)
 
@@ -7840,11 +7832,6 @@ class TestShapeIndexOps:
 
     def test_index_to_tensor_negative(self) -> None:
         """IndexToTensorOp handles negative integers."""
-        from unittest.mock import MagicMock
-
-        from max._interpreter_ops.handlers import _handle_index_to_tensor
-        from max.driver import Buffer
-
         input_np = np.array([-7], dtype=np.int64)
         input_buf = Buffer.from_numpy(input_np)
 
@@ -7858,11 +7845,6 @@ class TestShapeIndexOps:
 
     def test_index_to_tensor_zero(self) -> None:
         """IndexToTensorOp handles zero."""
-        from unittest.mock import MagicMock
-
-        from max._interpreter_ops.handlers import _handle_index_to_tensor
-        from max.driver import Buffer
-
         input_np = np.array([0], dtype=np.int64)
         input_buf = Buffer.from_numpy(input_np)
 
@@ -7877,11 +7859,6 @@ class TestShapeIndexOps:
 
     def test_shape_from_tensor_passthrough(self) -> None:
         """ShapeFromTensorOp passes through the input buffer."""
-        from unittest.mock import MagicMock
-
-        from max._interpreter_ops.handlers import _handle_shape_from_tensor
-        from max.driver import Buffer
-
         shape_np = np.array([2, 3, 4], dtype=np.int64)
         shape_buf = Buffer.from_numpy(shape_np)
 
@@ -7895,11 +7872,6 @@ class TestShapeIndexOps:
 
     def test_shape_from_tensor_single_dim(self) -> None:
         """ShapeFromTensorOp handles single-dimension shapes."""
-        from unittest.mock import MagicMock
-
-        from max._interpreter_ops.handlers import _handle_shape_from_tensor
-        from max.driver import Buffer
-
         shape_np = np.array([10], dtype=np.int64)
         shape_buf = Buffer.from_numpy(shape_np)
 
@@ -7924,15 +7896,8 @@ class TestBufferOps:
 
     def test_buffer_create_shape_and_dtype(self) -> None:
         """BufferCreateOp allocates a buffer with the requested shape/dtype."""
-        from unittest.mock import MagicMock
-
-        from max._interpreter_ops.handlers import _handle_buffer_create
-        from max.driver import Buffer
-
         mock_op = MagicMock()
         mock_result = MagicMock()
-
-        from max.graph import BufferType, DeviceRef
 
         buf_type = BufferType(DType.float32, [2, 3], DeviceRef.CPU())
         mock_result.type = buf_type.to_mlir()
@@ -7948,15 +7913,8 @@ class TestBufferOps:
 
     def test_buffer_create_scalar(self) -> None:
         """BufferCreateOp handles rank-0 (scalar) buffers."""
-        from unittest.mock import MagicMock
-
-        from max._interpreter_ops.handlers import _handle_buffer_create
-        from max.driver import Buffer
-
         mock_op = MagicMock()
         mock_result = MagicMock()
-
-        from max.graph import BufferType, DeviceRef
 
         buf_type = BufferType(DType.int32, [], DeviceRef.CPU())
         mock_result.type = buf_type.to_mlir()
@@ -7972,11 +7930,6 @@ class TestBufferOps:
 
     def test_buffer_transfer_copies_data(self) -> None:
         """BufferTransferOp copies src contents into dst."""
-        from unittest.mock import MagicMock
-
-        from max._interpreter_ops.handlers import _handle_buffer_transfer
-        from max.driver import Buffer
-
         src_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
         src = Buffer.from_numpy(src_np)
         dst = Buffer(dtype=DType.float32, shape=[2, 2])
@@ -7989,11 +7942,6 @@ class TestBufferOps:
 
     def test_buffer_transfer_independent(self) -> None:
         """After transfer, modifying src does not affect dst."""
-        from unittest.mock import MagicMock
-
-        from max._interpreter_ops.handlers import _handle_buffer_transfer
-        from max.driver import Buffer
-
         src_np = np.array([10.0, 20.0, 30.0], dtype=np.float32)
         src = Buffer.from_numpy(src_np)
         dst = Buffer(dtype=DType.float32, shape=[3])
@@ -8022,8 +7970,6 @@ class TestMutableStoreOps:
 
     def test_buffer_store(self) -> None:
         """F.buffer_store writes a full tensor into the buffer."""
-        from max.driver import Buffer
-
         buf = Buffer.zeros([4], DType.float32, CPU())
         with (
             rc.EagerRealizationContext() as ctx,
@@ -8039,8 +7985,6 @@ class TestMutableStoreOps:
 
     def test_buffer_store_slice_unit_steps(self) -> None:
         """F.buffer_store_slice writes a contiguous 2D sub-region."""
-        from max.driver import Buffer
-
         buf = Buffer.zeros([4, 4], DType.float32, CPU())
         slice_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
 
@@ -8058,8 +8002,6 @@ class TestMutableStoreOps:
 
     def test_buffer_store_slice_stepped(self) -> None:
         """F.buffer_store_slice honors non-unit steps."""
-        from max.driver import Buffer
-
         buf = Buffer.zeros([8], DType.float32, CPU())
         slice_np = np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float32)
 
@@ -8077,8 +8019,6 @@ class TestMutableStoreOps:
 
     def test_buffer_store_slice_heterogeneous_steps(self) -> None:
         """F.buffer_store_slice handles different steps per axis."""
-        from max.driver import Buffer
-
         buf = Buffer.zeros([6, 6], DType.float32, CPU())
         slice_np = np.arange(6, dtype=np.float32).reshape(3, 2) + 1.0
 
@@ -8096,8 +8036,6 @@ class TestMutableStoreOps:
 
     def test_buffer_store_slice_negative_indices(self) -> None:
         """F.buffer_store_slice supports negative start/stop."""
-        from max.driver import Buffer
-
         buf = Buffer.from_numpy(np.arange(10, dtype=np.float32))
         slice_np = np.array([100.0, 200.0, 300.0], dtype=np.float32)
 
@@ -8115,8 +8053,6 @@ class TestMutableStoreOps:
 
     def test_buffer_store_slice_bfloat16_cpu(self) -> None:
         """F.buffer_store_slice works end-to-end on a bf16 CPU buffer."""
-        from max.driver import Buffer
-
         # bf16 is 2 bytes/element. Build source/dest via uint16 bytes then
         # view as bf16 to avoid DLPack entirely.
         dst_u16 = np.zeros((4, 4), dtype=np.uint16)
@@ -8144,8 +8080,6 @@ class TestMutableStoreOps:
 
     def test_buffer_store_slice_float8_e4m3fn_cpu(self) -> None:
         """F.buffer_store_slice works end-to-end on a float8_e4m3fn CPU buffer."""
-        from max.driver import Buffer
-
         # fp8 is 1 byte per element; build source/dest via uint8 bytes then
         # view as fp8 to avoid DLPack entirely.
         dst_bytes = np.zeros((4, 4), dtype=np.uint8)
@@ -8171,8 +8105,6 @@ class TestMutableStoreOps:
 
     def test_buffer_store_slice_float8_e5m2_cpu(self) -> None:
         """F.buffer_store_slice works end-to-end on a float8_e5m2 CPU buffer."""
-        from max.driver import Buffer
-
         dst_bytes = np.zeros((4, 4), dtype=np.uint8)
         src_bytes = np.array([[0x55, 0x66], [0x77, 0x88]], dtype=np.uint8)
 
@@ -8195,8 +8127,6 @@ class TestMutableStoreOps:
 
     def test_buffer_store_slice_float4_e2m1fn_raises(self) -> None:
         """Slice writes on float4_e2m1fn still raise (packed 4-bit unsupported)."""
-        from max.driver import Buffer
-
         buf = Buffer.zeros([4, 4], DType.float4_e2m1fn, CPU())
         src = Buffer.zeros([2, 2], DType.float4_e2m1fn, CPU())
 
@@ -8824,12 +8754,6 @@ class TestDistributedScatterSimulated:
 
     def test_scatter_simulated_fallback(self) -> None:
         """Simulated mesh: distributed_scatter falls back to transfer_to."""
-        from max.experimental.sharding import (
-            DeviceMesh,
-            PlacementMapping,
-            Sharded,
-        )
-
         cpu = CPU()
         mesh = DeviceMesh(
             devices=(cpu, cpu), mesh_shape=(2,), axis_names=("dp",)
@@ -8882,8 +8806,6 @@ class TestDistributedReducescatterSumSimulated:
 
     def test_reducescatter_sum_simulated_fallback(self) -> None:
         """Simulated mesh: reduce-scatter falls back to add + split."""
-        from max.experimental.sharding import Partial
-
         cpu = CPU()
         mesh = DeviceMesh(
             devices=(cpu, cpu), mesh_shape=(2,), axis_names=("tp",)
@@ -8940,8 +8862,6 @@ class TestLazyGCModelCompilation:
 
     def test_matmul_model_compiles_once_and_reuses(self) -> None:
         """A second call for the same (device, dtype) returns the cached model."""
-        from max._interpreter_ops import matmul_gc
-
         cpu = CPU()
         first = matmul_gc.matmul_model(cpu, DType.float32)
         second = matmul_gc.matmul_model(cpu, DType.float32)
@@ -8949,9 +8869,6 @@ class TestLazyGCModelCompilation:
 
     def test_unary_model_compiles_once_and_reuses(self) -> None:
         """A second call for the same unary target returns the cached model."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import unary_elementwise_gc
-
         cpu = CPU()
         first = unary_elementwise_gc.unary_model(mo.ExpOp, cpu, DType.float32)
         second = unary_elementwise_gc.unary_model(mo.ExpOp, cpu, DType.float32)
@@ -8959,9 +8876,6 @@ class TestLazyGCModelCompilation:
 
     def test_unary_model_unsupported_dtype_raises(self) -> None:
         """A transcendental op on an int dtype is outside the supported set."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import unary_elementwise_gc
-
         # Exp only sweeps float dtypes; int32 is unsupported and must not be
         # handed to load_all as an uncompilable graph.
         with pytest.raises(KeyError, match="Unsupported unary op/device/dtype"):
@@ -8974,11 +8888,9 @@ class TestLazyGCModelCompilation:
         entry as ``mo.ExpOp``; without it a supported op misses and raises
         KeyError (see gc_compile.canonical_op_name).
         """
-        from max._core.dialects import mo, rmo
-        from max._interpreter_ops import unary_elementwise_gc as u
-
         rmo_exp = rmo.MoExpOp
         cpu = CPU()
+        u = unary_elementwise_gc
         assert u._graph_name(rmo_exp, cpu, DType.float32) == u._graph_name(
             mo.ExpOp, cpu, DType.float32
         )
@@ -8992,8 +8904,6 @@ class TestLazyGCModelCompilation:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """With MAX_EAGER_OP_PRECOMPILE=1, a cache miss is a hard error."""
-        from max._interpreter_ops import gc_compile, matmul_gc
-
         # Opt into precompile mode and simulate a target the sweep did not cover.
         monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
         monkeypatch.setattr(matmul_gc._FAMILY, "cache", {})
@@ -9004,8 +8914,6 @@ class TestLazyGCModelCompilation:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """By default (env var unset) a miss compiles the target lazily."""
-        from max._interpreter_ops import gc_compile, matmul_gc
-
         monkeypatch.delenv(
             gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
         )
@@ -9017,9 +8925,6 @@ class TestLazyGCModelCompilation:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """With =1, a supported-but-unswept target is a hard error."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import gc_compile, unary_elementwise_gc
-
         monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
         monkeypatch.setattr(unary_elementwise_gc._FAMILY, "cache", {})
         # float32 Exp is supported (passes the _is_supported guard), so the miss
@@ -9031,9 +8936,6 @@ class TestLazyGCModelCompilation:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """By default (env var unset) a supported miss compiles lazily."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import gc_compile, unary_elementwise_gc
-
         monkeypatch.delenv(
             gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
         )
@@ -9045,8 +8947,6 @@ class TestLazyGCModelCompilation:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         """write_warm_stamp then warm_stamp_matches for the same context."""
-        from max._interpreter_ops import gc_compile
-
         monkeypatch.setattr(gc_compile, "_cache_dir", lambda: tmp_path)
         assert not gc_compile.warm_stamp_matches()
         gc_compile.write_warm_stamp()
@@ -9056,9 +8956,6 @@ class TestLazyGCModelCompilation:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """ensure_swept force-loads an adoptable manifest, skipping the stamp sweep."""
-        from max._interpreter_ops import gc_compile
-        from max.graph import Module
-
         family = gc_compile.GCOpFamily(
             name="test",
             build_module=lambda: Module(),
@@ -9085,9 +8982,6 @@ class TestLazyGCModelCompilation:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """With no manifest but a matching warm stamp, ensure_swept batch-sweeps."""
-        from max._interpreter_ops import gc_compile
-        from max.graph import Module
-
         family = gc_compile.GCOpFamily(
             name="test",
             build_module=lambda: Module(),
@@ -9108,8 +9002,6 @@ class TestLazyGCModelCompilation:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         """The stamp dir is MODULAR_DERIVED_PATH/cache/.max_cache, else None."""
-        from max._interpreter_ops import gc_compile
-
         monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
         assert gc_compile._cache_dir() == tmp_path / "cache" / ".max_cache"
 
@@ -9122,8 +9014,6 @@ class TestLazyGCModelCompilation:
         Also a regression guard: it must not raise on a CPU-only host
         (accelerator_architecture_name raises for a CPU device).
         """
-        from max._interpreter_ops import gc_compile
-
         sig = gc_compile._context_signature()
         assert sig == gc_compile._context_signature()
         assert "accelerators=" in sig and "cpu=" in sig
@@ -9131,8 +9021,6 @@ class TestLazyGCModelCompilation:
     def test_manifest_roundtrip_and_adoptable(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        from max._interpreter_ops import gc_compile
-
         monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
         monkeypatch.setenv("MODULAR_EAGER_WARM_ADOPT_ASSERTED", "1")
         monkeypatch.setattr(gc_compile, "accelerator_count", lambda: 2)
@@ -9171,8 +9059,6 @@ class TestLazyGCModelCompilation:
     def test_manifest_not_adoptable_without_optin(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        from max._interpreter_ops import gc_compile
-
         monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
         monkeypatch.delenv("MODULAR_EAGER_WARM_ADOPT_ASSERTED", raising=False)
         monkeypatch.setattr(gc_compile, "accelerator_count", lambda: 2)
@@ -9197,8 +9083,6 @@ class TestLazyGCModelCompilation:
         """Per-slot MEFs make device_count a ceiling, not an equality: a warm
         adopts iff it has at least as many slots as this box needs (which
         force-loads slots 0..k-1); fewer means missing slots, so it can't."""
-        from max._interpreter_ops import gc_compile
-
         monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
         monkeypatch.setenv("MODULAR_EAGER_WARM_ADOPT_ASSERTED", "1")
         monkeypatch.setattr(gc_compile, "accelerator_count", lambda: 4)
@@ -9228,8 +9112,6 @@ class TestLazyGCModelCompilation:
     def test_manifest_not_adoptable_on_host_arch_mismatch(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        from max._interpreter_ops import gc_compile
-
         monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
         monkeypatch.setenv("MODULAR_EAGER_WARM_ADOPT_ASSERTED", "1")
         monkeypatch.setattr(gc_compile, "accelerator_count", lambda: 2)
@@ -9257,8 +9139,6 @@ class TestLazyGCModelCompilation:
     ) -> None:
         """A CPU-only manifest (no ``gpu`` key) adopts on a box with no
         accelerator, there is no GPU slot to mismatch."""
-        from max._interpreter_ops import gc_compile
-
         monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
         monkeypatch.setenv("MODULAR_EAGER_WARM_ADOPT_ASSERTED", "1")
         monkeypatch.setattr(gc_compile, "accelerator_count", lambda: 0)
@@ -9279,8 +9159,6 @@ class TestLazyGCModelCompilation:
     ) -> None:
         """A CPU-only manifest is rejected on a box that has an accelerator: its
         GPU slots were never warmed, so a GPU box must not adopt it."""
-        from max._interpreter_ops import gc_compile
-
         monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
         monkeypatch.setenv("MODULAR_EAGER_WARM_ADOPT_ASSERTED", "1")
         monkeypatch.setattr(gc_compile, "accelerator_count", lambda: 2)
@@ -9305,16 +9183,11 @@ class TestLazyGCModelCompilation:
     def test_read_manifest_absent_is_none(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        from max._interpreter_ops import gc_compile
-
         monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
         assert gc_compile.read_manifest() is None
 
     def test_binary_model_compiles_once_and_reuses(self) -> None:
         """A second call for the same binary target returns the cached model."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import elementwise_binary_gc
-
         cpu = CPU()
         first = elementwise_binary_gc.binary_model(mo.AddOp, cpu, DType.float32)
         second = elementwise_binary_gc.binary_model(
@@ -9324,9 +9197,6 @@ class TestLazyGCModelCompilation:
 
     def test_binary_comparison_model_compiles(self) -> None:
         """A comparison op (bool output) compiles like an arithmetic one."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import elementwise_binary_gc
-
         model = elementwise_binary_gc.binary_model(
             mo.GreaterOp, CPU(), DType.float32
         )
@@ -9334,9 +9204,6 @@ class TestLazyGCModelCompilation:
 
     def test_binary_model_unsupported_dtype_raises(self) -> None:
         """Div sweeps floats only; an int dtype is outside the supported set."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import elementwise_binary_gc
-
         with pytest.raises(
             KeyError, match="Unsupported binary op/device/dtype"
         ):
@@ -9344,9 +9211,6 @@ class TestLazyGCModelCompilation:
 
     def test_binary_model_pow_integer_supported(self) -> None:
         """Pow sweeps NUMERIC, so an int Pow compiles (not the Div case)."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import elementwise_binary_gc
-
         model = elementwise_binary_gc.binary_model(mo.PowOp, CPU(), DType.int32)
         assert model is not None
 
@@ -9354,9 +9218,6 @@ class TestLazyGCModelCompilation:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """With =1, a supported-but-unswept target is a hard error."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import elementwise_binary_gc, gc_compile
-
         monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
         monkeypatch.setattr(elementwise_binary_gc._FAMILY, "cache", {})
         # float32 Add is supported (passes the _is_supported guard), so the miss
@@ -9368,9 +9229,6 @@ class TestLazyGCModelCompilation:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """By default (env var unset) a supported miss compiles lazily."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import elementwise_binary_gc, gc_compile
-
         monkeypatch.delenv(
             gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
         )
@@ -9384,9 +9242,6 @@ class TestLazyGCModelCompilation:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """With =1, a supported-but-unswept rearrange target is a hard error."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import gc_compile, shape_rearrange_gc
-
         monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
         monkeypatch.setattr(shape_rearrange_gc._FAMILY, "cache", {})
         # uint32 concat passes the _is_supported guard, so the miss falls
@@ -9398,8 +9253,6 @@ class TestLazyGCModelCompilation:
 
     def test_uint_view_dtype_rejects_sub_byte(self) -> None:
         """Byte-aligned dtypes bit-cast to a same-width uint; sub-byte raises."""
-        from max._interpreter_ops import shape_rearrange_gc
-
         assert shape_rearrange_gc.uint_view_dtype(DType.float16) == DType.uint16
         assert shape_rearrange_gc.uint_view_dtype(DType.float64) == DType.uint64
         assert shape_rearrange_gc.uint_view_dtype(DType.bool) == DType.uint8
@@ -9415,9 +9268,6 @@ class TestLazyGCModelCompilation:
 
         Uses the same KeyError "Unsupported" signal as an unsupported dtype.
         """
-        from max._core.dialects import mo
-        from max._interpreter_ops import shape_rearrange_gc
-
         # tile's GC kernel supports up to rank 4; rank 5 must be rejected here.
         with pytest.raises(
             KeyError, match="Unsupported shape-rearrange rank 5"
