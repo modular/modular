@@ -16,9 +16,12 @@ decisions and verifying the final inference results.
 
 You can use `import-model` to assist in bringing up a model from an existing
 architecture, and `debug-model` to track down output divergences when the new
-model produces incorrect results. Once the model runs correctly, the
-[`profile-model`](/max/gpu-system-profiling) skill helps you find where it
-spends time and whether the GPU is saturated.
+model produces incorrect results. When the model serves correctly, the
+[`eval-model`](https://github.com/modular/skills/blob/main/eval-model/SKILL.md)
+skill measures its task accuracy on standard benchmarks such as GSM8K and MMLU,
+so you can compare it against the original model's published scores. Once the
+model runs correctly, the [`profile-model`](/max/gpu-system-profiling) skill
+helps you find where it spends time and whether the GPU is saturated.
 
 ## Install the MAX skills
 
@@ -60,7 +63,7 @@ configuration directory. For Claude Code, copy the directories into
 `~/.claude/skills/`:
 
 ```bash
-cp -r skills/import-model skills/debug-model ~/.claude/skills/
+cp -r skills/import-model skills/debug-model skills/eval-model ~/.claude/skills/
 ```
 
 Consult your specific agent's documentation to find its configuration and skills
@@ -158,6 +161,11 @@ continuously improving, it doesn't guarantee correctness out of the box. If you
 see gibberish or incoherent text, the `debug-model` skill takes the model from
 here to isolate and resolve the divergence.
 
+Greedy token comparison confirms the model matches the reference on a handful of
+prompts. To confirm accuracy holds across a full benchmark, the `eval-model`
+skill runs standard datasets against the served model and compares the scores
+against the original model's model card.
+
 ## Next steps
 
 Once the agent has created and verified your new model architecture, you can
@@ -166,6 +174,9 @@ serve and deploy it:
 - [Serve custom model architectures](/max/develop/serve-custom-model-architectures/):
   Learn how to package and run your new custom model architecture using
   `max serve`.
+- [Evaluate model accuracy](https://github.com/modular/skills/blob/main/eval-model/SKILL.md):
+  Use the `eval-model` skill to benchmark your served model on standard datasets
+  and compare the scores against the original model.
 - [Model bring-up workflow](/max/develop/model-bringup-workflow/): Read the
   detailed manual bring-up steps to better understand graph compilation, memory
   sizing, and weight remapping.
