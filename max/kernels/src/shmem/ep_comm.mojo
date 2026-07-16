@@ -1895,13 +1895,26 @@ struct EPDispatchKernel[
                 )
 
                 # Wait until all the tokens for the expert have been sent.
-                while (
-                    _counter_atomic.load[ordering=Ordering.ACQUIRE](
-                        expert_finished_counter + counter_offset
-                    )
-                    != expert_count
-                ):
-                    pass
+                comptime if is_amd_gpu():
+                    # TODO(KERN-3184): Investigate why AMD GPUs are slow if the below
+                    # ACQUIRE atomic load is used instead of this volatile load.
+                    while (
+                        expert_finished_counter.load[volatile=True](
+                            counter_offset
+                        )
+                        != expert_count
+                    ):
+                        pass
+                    # Acquire the flag's release; the volatile poll is unordered.
+                    fence[ordering=Ordering.ACQUIRE, scope=DEVICE_SCOPE]()
+                else:
+                    while (
+                        _counter_atomic.load[ordering=Ordering.ACQUIRE](
+                            expert_finished_counter + counter_offset
+                        )
+                        != expert_count
+                    ):
+                        pass
 
                 ep_signal_completion[
                     Self.use_shmem,
