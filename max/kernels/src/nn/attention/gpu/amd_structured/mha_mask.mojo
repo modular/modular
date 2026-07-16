@@ -34,7 +34,7 @@ Per-element row-within-tile mapping comes from the
 `MhaMmaOp.ACC_ROW_OFFSETS_32x32`.
 """
 
-from std.sys.intrinsics import _type_is_eq, unlikely
+from std.sys.intrinsics import unlikely
 from std.utils.index import IndexList
 
 from layout import TensorLayout
@@ -328,7 +328,7 @@ struct MaskApplier[
                 kbound; `-1` (the default) disables it — MLA callers
                 whose masks don't need the bound omit it.
         """
-        comptime if _type_is_eq[Self.mask_t, NullMask]():
+        comptime if Self.mask_t == NullMask:
             # #87603: exclude any tile whose K range extends past
             # `num_keys` — a partial last tile (`num_keys % KV_BLOCK !=
             # 0`) AND the phantom even-parity padding tile (see the main
@@ -344,7 +344,7 @@ struct MaskApplier[
                     Int32(num_keys),
                     Int32(lane),
                 )
-        elif _type_is_eq[Self.mask_t, CausalMask]():
+        elif Self.mask_t == CausalMask:
             var q_start_pos = q_tile_idx * Self.Q_BLOCK_SIZE + start_pos
             var kv_end_pos = (k_tile_idx + 1) * Self.KV_BLOCK_SIZE
             if unlikely(q_start_pos < kv_end_pos):

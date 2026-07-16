@@ -194,14 +194,13 @@ def copy_to_slice[
     var buffer_slice_view = slice_as_view(buffer, start, end, step)
 
     @always_inline
-    @__copy_capture(in_slice, buffer_slice_view)
-    @parameter
-    def copy[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def copy[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         buffer_slice_view.store[width=simd_width](
             idx, in_slice.load[width=simd_width](idx)
         )
 
-    elementwise[copy, 1, target=target, _trace_description="slice_copy"](
+    elementwise[1, target=target, _trace_description="slice_copy"](
+        copy,
         buffer_slice_view.layout.shape_coord(),
         context,
     )
@@ -230,13 +229,11 @@ def slice_as_copy[
 
     # Copy lambda sliced view into output buffer.
     @always_inline
-    @__copy_capture(sliced)
-    @parameter
-    def copy[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def copy[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         output.store[width=simd_width](idx, sliced.load[width=simd_width](idx))
 
     # Invoke copy.
-    elementwise[copy, 1](output.layout.shape_coord(), ctx)
+    elementwise[1](copy, output.layout.shape_coord(), ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -332,9 +329,7 @@ def sliced_add[
 
     var batch_end_idx = Int(lora_end_idx[0])
 
-    @parameter
-    @__copy_capture(batch_end_idx, c, a, b)
-    def _sliced_add[width: Int, alignment: Int = 1](idx: Coord):
+    def _sliced_add[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var out_val: SIMD[dtype, width]
 
         if Int(idx[0].value()) >= batch_end_idx:
@@ -351,11 +346,11 @@ def sliced_add[
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[
-            _sliced_add,
             simd_width,
             target=target,
             _trace_description="slice_add",
         ](
+            _sliced_add,
             c.layout.shape_coord(),
             ctx,
         )
@@ -363,6 +358,6 @@ def sliced_add[
         comptime compile_target = _current_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-        elementwise[_sliced_add, simd_width, target=target](
-            c.layout.shape_coord(), ctx
+        elementwise[simd_width, target=target](
+            _sliced_add, c.layout.shape_coord(), ctx
         )

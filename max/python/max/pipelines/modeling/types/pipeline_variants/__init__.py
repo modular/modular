@@ -22,6 +22,7 @@ from .pixel_generation import (
 )
 from .text_generation import (
     BatchType,
+    CompletedBatchStats,
     ImageContentPart,
     MessageContent,
     TextContentPart,
@@ -35,6 +36,7 @@ from .text_generation import (
 
 __all__ = [
     "BatchType",
+    "CompletedBatchStats",
     "EmbeddingsContext",
     "EmbeddingsGenerationContextType",
     "EmbeddingsGenerationInputs",

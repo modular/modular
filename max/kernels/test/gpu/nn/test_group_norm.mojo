@@ -26,7 +26,7 @@ from std.utils.index import Index, IndexList
 
 def compute_group_stats[
     t: DType
-](vec: TileTensor[t, ...], size: Int, eps: Scalar[t]) raises -> Tuple[
+](vec: TileTensor[t, ...], size: Int, eps: Float32) raises -> Tuple[
     Float64,
     Float64,
 ]:
@@ -82,7 +82,7 @@ def run_group_norm_gpu[
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
-    var epsilon = Scalar[dtype](1e-5)
+    var epsilon = Float32(1e-5)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)

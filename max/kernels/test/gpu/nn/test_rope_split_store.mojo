@@ -19,7 +19,7 @@ Q output and KV cache contents against the unfused reference path.
 
 from internal_utils.fp8_utils import cast_saturating
 from std.collections import Set
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from std.math import ceildiv
 from std.random import random_ui64, seed
 
@@ -331,7 +331,7 @@ def execute_test[
     var q_contig_size = total_length * num_q_heads * head_dim
     var q_contig_host_ptr = alloc[Scalar[dtype]](q_contig_size)
     for t in range(total_length):
-        memcpy(
+        unsafe_memcpy(
             dest=q_contig_host_ptr + t * q_dim_val,
             src=qkv_host_ptr + t * combined_dim,
             count=q_dim_val,
@@ -751,7 +751,7 @@ def execute_test_with_position_ids[
     var q_contig_size = total_length * num_q_heads * head_dim
     var q_contig_host_ptr = alloc[Scalar[dtype]](q_contig_size)
     for t in range(total_length):
-        memcpy(
+        unsafe_memcpy(
             dest=q_contig_host_ptr + t * q_dim_val,
             src=qkv_host_ptr + t * combined_dim,
             count=q_dim_val,

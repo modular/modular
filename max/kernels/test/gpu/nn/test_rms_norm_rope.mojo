@@ -32,7 +32,7 @@ def compute_rms_norm_rope_ref[
     output_ref: UnsafePointer[mut=True, Scalar[output_dtype], _],
     rows: Int,
     cols: Int,
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
 ) raises:
     """CPU reference: RMS norm followed by RoPE rotation.
@@ -107,7 +107,7 @@ def run_rms_norm_rope_gpu[
     for i in range(cols):
         gamma_h[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
 
-    var epsilon = Scalar[dtype](0.001)
+    var epsilon = Float32(0.001)
     var weight_offset = Scalar[dtype](0.0)
 
     # Compute CPU reference.

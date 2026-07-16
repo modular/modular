@@ -31,7 +31,7 @@ Mojo has two ways to declare a variable:
 
 - Explicitly-declared variables are created with the `var` keyword.
 
-  ```mojo {doctest="foo"}
+  ```mojo
   var a = 5
   var b: Float64 = 3.14
   var c: String
@@ -57,23 +57,6 @@ changes. So you can't assign a variable a value of a different type:
 count = 8 # count is type Int
 count = "Nine?" # Error: can't implicitly convert 'StringLiteral' to 'Int'
 ```
-
-Some types support [*implicit conversions*](#implicit-type-conversion) from
-other types. For example, an integer value can implicitly convert to a
-floating-point value:
-
-```mojo
-var temperature: Float64 = 99
-print(temperature)
-```
-
-```output
-99.0
-```
-
-In this example, the `temperature` variable is explicitly typed as `Float64`,
-but assigned an integer value, so the value is implicitly converted to a
-`Float64`.
 
 ## Implicitly-declared variables
 
@@ -139,25 +122,37 @@ To specify the type for a variable, add a colon followed by the type name:
 
 ```mojo
 var name: String = get_name()
-# Or
-name: String = get_name()
 ```
 
 This makes it clear that `name` is type `String`, without knowing what the
-`get_name()` function returns. The `get_name()` function may return a `String`,
-or a value that's implicitly convertible to a `String`.
+`get_name()` function returns.
 
-If a type has a constructor with just one argument, you can initialize it in
-two ways:
+### Implicit type conversion
+
+While a variable can only hold one type of value, Mojo does
+allow for certain, limited *implicit conversions* between types:
 
 ```mojo
-var name1: String = "Sam"
-var name2 = String("Sam")
-var name3 = "Sam"
+var temperature: Float64 = 99.0
+print(temperature)
 ```
 
-All of these lines invoke the same constructor to create a `String` from a
-`StringLiteral`.
+```output
+99.0
+```
+
+In this example, the `temperature` variable is explicitly typed as `Float64`.
+The value `99.0` is a float literal value, but Mojo implicitly converts it into
+a `Float64` value before assigning it to `temperature`. Mojo can also implicitly
+convert values being passed into or returned from a function.
+
+Implicit conversion isn't intended as an escape hatch from type safety. It's
+intended to streamline code where the conversion is safe, inexpensive, and
+semantically unambiguous.
+
+For more details on implicit conversion, see
+[Constructors and implicit
+conversion](/docs/manual/lifecycle/life/#constructors-and-implicit-conversion).
 
 ### Late initialization
 
@@ -173,6 +168,7 @@ def my_function(x: Int):
     else:
         z = foo()
     print(z)
+
 
 def foo() -> Float32:
     return 3.14
@@ -192,67 +188,6 @@ Late initialization works only if the variable is declared with a
 type.
 
 :::
-
-### Implicit type conversion
-
-Some types include built-in type conversion (type casting) from one type into
-its own type. For example, if you assign an integer to a variable that has a
-floating-point type, it converts the value instead of giving a compiler error:
-
-```mojo
-var number: Float64 = Int(1)
-print(number)
-```
-
-```output
-1.0
-```
-
-As shown above, value assignment can be converted into a constructor call if the
-target type has a constructor that meets the following criteria:
-
-- It's decorated with the `@implicit` decorator.
-
-- It takes a single required argument that matches the value being assigned.
-
-So, this code uses the `Float64` constructor that takes an
-integer: `__init__(out self, value: Int)`.
-
-In general, implicit conversions should only be supported where the conversion
-is lossless.
-
-Implicit conversion follows the logic of [overloaded
-functions](/docs/manual/functions#overloaded-functions). If the destination
-type has a viable implicit conversion constructor for the source
-type, it can be invoked for implicit conversion.
-
-So assigning an integer to a `Float64` variable is exactly the same as this:
-
-```mojo
-var number = Float64(1)
-```
-
-Similarly, if you call a function that requires an argument of a certain type
-(such as `Float64`), you can pass in any value as long as that value type can
-implicitly convert to the required type (using one of the type's overloaded
-constructors).
-
-For example, you can pass an `Int` to a function that expects a `Float64`,
-because `Float64` includes an implicit conversion constructor that takes an
-`Int`:
-
-```mojo
-def take_float(value: Float64):
-    print(value)
-
-def pass_integer():
-    var value: Int = 1
-    take_float(value)
-```
-
-For more details on implicit conversion, see
-[Constructors and implicit
-conversion](/docs/manual/lifecycle/life/#constructors-and-implicit-conversion).
 
 ## Variable scopes
 

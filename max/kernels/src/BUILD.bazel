@@ -2,6 +2,14 @@ load("//bazel:api.bzl", "pkg_filegroup", "pkg_files")
 
 package(default_visibility = ["//max:consumers"])
 
+# Scan-root sentinel for the LSP parse-smoke test: its parent dir (this
+# package) is walked for `*.mojo` once the per-package `:srcs` filegroups
+# land their files here in runfiles.
+exports_files(
+    ["index.md"],
+    visibility = ["//KGEN/test/mojo-lsp-server/parse-tree:__pkg__"],
+)
+
 # Auto-discover all kernel library sub-packages, excluding private (underscore-
 # prefixed) libraries.
 _KERNEL_LIBS = [

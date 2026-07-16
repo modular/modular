@@ -107,13 +107,27 @@ cc_import(
     target_compatible_with = ["@platforms//os:linux"],
 )
 
+# libmax dynamically links libnixl.so, which ships in the wheel on
+# linux_x86_64 only (NIXL is not built for aarch64 or macOS). Declared as a
+# cc_import dep of max_lib (like the other indirect deps) so it is co-located
+# with libmax in the solib tree and resolved at runtime.
+cc_import(
+    name = "nixl_lib",
+    shared_library = "modular/lib/libnixl.so",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
 cc_import(
     name = "max_lib",
     shared_library = glob(["modular/lib/libmax.*"])[0],
     visibility = ["//visibility:public"],
     data = ["modular/lib/*.so"],
     deps = [":" + dep + "_lib" for dep in INDIRECT_DEPENDENCIES] + select({
-        "@platforms//os:linux": [":NVPTX_lib"],
+        "@//:linux_x86_64": [":NVPTX_lib", ":nixl_lib"],
+        "@//:linux_aarch64": [":NVPTX_lib"],
         "//conditions:default": [],
     })
 )
@@ -121,6 +135,12 @@ cc_import(
 mojo_import(
     name = "msa_lib",
     mojodeps = ["modular/lib/mojo/msa.mojoc"],
+    visibility = ["//visibility:public"],
+)
+
+mojo_import(
+    name = "matmul_rs_lib",
+    mojodeps = ["modular/lib/mojo/matmul_rs.mojoc"],
     visibility = ["//visibility:public"],
 )
 """,
@@ -187,6 +207,16 @@ alias(
         "@//:linux_aarch64": "@module_platlib_linux_aarch64//:msa_lib",
         "@//:linux_x86_64": "@module_platlib_linux_x86_64//:msa_lib",
         "@platforms//os:macos": "@module_platlib_macos_arm64//:msa_lib",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "matmul_rs_lib",
+    actual = select({
+        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:matmul_rs_lib",
+        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:matmul_rs_lib",
+        "@platforms//os:macos": "@module_platlib_macos_arm64//:matmul_rs_lib",
     }),
     visibility = ["//visibility:public"],
 )

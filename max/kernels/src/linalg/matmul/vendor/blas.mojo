@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import has_amd_gpu_accelerator, size_of
+from std.math import ceildiv
 from std.ffi import _get_global_or_null, external_call
 
 import _rocblas
@@ -99,10 +100,11 @@ from layout import (
     row_major,
 )
 from layout.tile_tensor import NullableTileTensor
+from std.memory.alloc import Layout as AllocLayout
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils import IndexList
 from std.utils.variant import Variant
-from std.gpu.host.info import B200, _is_sm10x_gpu
+from std.gpu.host.info import B200, _is_sm10x_gpu, _is_sm12x_gpu
 from std.collections import OptionalReg
 from linalg.fp4_utils import (
     SF_ATOM_M,
@@ -345,8 +347,8 @@ def _get_global_handle[
         return ptr[]
 
     # Otherwise, we have not initialized the handle yet.
-    var handle_ptr = alloc[Handle[backend]](1)
-    handle_ptr.init_pointee_move(Handle[backend]())
+    var handle_ptr = alloc(AllocLayout[Handle[backend]].single()).unsafe_leak()
+    handle_ptr.unsafe_write(Handle[backend]())
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(HANDLE_NAME),
         handle_ptr.bitcast[NoneType](),
@@ -1075,7 +1077,10 @@ def _cublasLt_matmul[
         msg="failed to set cublasLtMatmulDescAttribute for transb",
     )
 
-    comptime if _is_sm10x_gpu(ctx.default_device_info):
+    comptime if (
+        _is_sm10x_gpu(ctx.default_device_info)
+        or _is_sm12x_gpu(ctx.default_device_info)
+    ):
         if a_scales or b_scales:
             if not (a_scales and b_scales):
                 raise Error("a_scales and b_scales must be provided together")
@@ -1335,7 +1340,7 @@ def _cublasLt_matmul[
                 .as_unsafe_any_origin(),
                 _ffi_void_ptr(b.ptr),
                 _adesc,  # _adesc
-                _ffi_void_ptr(a.ptr),  # _b
+                _ffi_void_ptr(a.ptr).as_immutable(),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta)
                 .bitcast[NoneType]()
@@ -1367,7 +1372,7 @@ def _cublasLt_matmul[
                 .as_unsafe_any_origin(),  # alpha
                 _ffi_void_ptr(a.ptr),  # _a
                 _adesc,  # _adesc
-                _ffi_void_ptr(b.ptr),  # _b
+                _ffi_void_ptr(b.ptr).as_immutable(),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta)
                 .bitcast[NoneType]()

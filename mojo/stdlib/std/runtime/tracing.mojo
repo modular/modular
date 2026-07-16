@@ -32,7 +32,7 @@ from std.gpu.host._tracing import _start_range as _start_gpu_range
 from std.utils import IndexList, Variant
 from std.os import abort
 
-comptime log = logger.Logger[logger.Level.INFO](fd=sys.stderr, prefix="[OP] ")
+comptime log = logger.Logger[logger.Level.INFO](fd=stderr, prefix="[OP] ")
 """Logger instance for operation tracing with INFO level and [OP] prefix."""
 
 
