@@ -61,7 +61,7 @@ def bench_vec_add(
     @always_inline
     @parameter
     def run_func() raises:
-        context.enqueue_function_experimental[vec_func](
+        context.enqueue_function[vec_func](
             in0_device,
             in1_device,
             out_device,

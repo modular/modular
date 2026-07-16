@@ -39,7 +39,7 @@ from .conv2d_kernel import conv2d_kernel_rdna
 # =========================================================================
 
 
-@__name(t"rdna_im2col_nhwc_{dtype}", mangle=True)
+@__name(t"rdna_im2col_nhwc_{dtype}")
 def _im2col_nhwc_kernel[
     dtype: DType,
 ](
@@ -90,7 +90,7 @@ def _im2col_nhwc_kernel[
     output_ptr.store(tid, val)
 
 
-@__name(t"rdna_transpose_rscf_to_nk_{dtype}", mangle=True)
+@__name(t"rdna_transpose_rscf_to_nk_{dtype}")
 def _transpose_rscf_to_nk[
     dtype: DType,
 ](
@@ -113,7 +113,7 @@ def _transpose_rscf_to_nk[
     dst_ptr.store(tid, src_ptr.load(k * F + f))
 
 
-@__name(t"rdna_transpose_fcrs_to_nk_{dtype}", mangle=True)
+@__name(t"rdna_transpose_fcrs_to_nk_{dtype}")
 def _transpose_fcrs_to_nk[
     dtype: DType,
 ](
@@ -150,6 +150,7 @@ def dispatch_rdna_conv2d[
     output_type: DType,
     filter_is_fcrs: Bool,
     maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
+    has_residual: Bool = False,
 ](
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
@@ -159,6 +160,10 @@ def dispatch_rdna_conv2d[
     symmetric_padding: IndexList[2],
     num_groups: Int,
     ctx: DeviceContext,
+    source_ptr: UnsafePointer[
+        Scalar[output_type], MutAnyOrigin
+    ] = UnsafePointer[Scalar[output_type], MutAnyOrigin].unsafe_dangling(),
+    beta: Float32 = 0.0,
 ) raises -> Bool:
     """Try to dispatch Conv2D on RDNA via implicit GEMM (im2col fused into WMMA).
 
@@ -167,6 +172,11 @@ def dispatch_rdna_conv2d[
 
     Uses the implicit GEMM kernel when C_in is aligned to BLOCK_K (covers all
     FLUX VAE shapes), falling back to explicit im2col + matmul otherwise.
+
+    When `has_residual=True`, folds `output = conv + beta * source` into the
+    conv epilogue (the RDNA implicit-GEMM/im2col kernels have no native
+    residual path). `source_ptr` is NHWC-contiguous, same shape as output —
+    e.g. ResNet skip connections that the graph compiler fuses into the conv.
     """
 
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
@@ -218,10 +228,7 @@ def dispatch_rdna_conv2d[
         var transpose_grid = ceildiv(filter_size, transpose_block)
 
         comptime if filter_is_fcrs:
-            ctx.enqueue_function[
-                _transpose_fcrs_to_nk[filter_type],
-                _transpose_fcrs_to_nk[filter_type],
-            ](
+            ctx.enqueue_function[_transpose_fcrs_to_nk[filter_type]](
                 filter.ptr,
                 filter_nk_ptr,
                 Int(filter.dim[0]()),
@@ -232,10 +239,7 @@ def dispatch_rdna_conv2d[
                 block_dim=transpose_block,
             )
         else:
-            ctx.enqueue_function[
-                _transpose_rscf_to_nk[filter_type],
-                _transpose_rscf_to_nk[filter_type],
-            ](
+            ctx.enqueue_function[_transpose_rscf_to_nk[filter_type]](
                 filter.ptr,
                 filter_nk_ptr,
                 Int(filter.dim[0]()),
@@ -259,12 +263,8 @@ def dispatch_rdna_conv2d[
             comptime BLOCK_M = 128
             comptime BLOCK_N = 128
 
-            var filter_nk_tt = TileTensor(
-                filter_nk_ptr, row_major(Coord(Idx(N), Idx(K)))
-            )
-            var out_tt = TileTensor(
-                output.ptr, row_major(Coord(Idx(M), Idx(N)))
-            )
+            var filter_nk_tt = TileTensor(filter_nk_ptr, row_major(Coord(N, K)))
+            var out_tt = TileTensor(output.ptr, row_major(Coord(M, N)))
 
             comptime conv_kernel = conv2d_kernel_rdna[
                 output_type,
@@ -276,7 +276,7 @@ def dispatch_rdna_conv2d[
                 BLOCK_K=BLOCK_K,
             ]
 
-            ctx.enqueue_function[conv_kernel, conv_kernel](
+            ctx.enqueue_function[conv_kernel](
                 out_tt,
                 input.ptr,
                 filter_nk_tt,
@@ -308,10 +308,7 @@ def dispatch_rdna_conv2d[
 
             comptime im2col_block = 256
             var im2col_grid = ceildiv(im2col_size, im2col_block)
-            ctx.enqueue_function[
-                _im2col_nhwc_kernel[input_type],
-                _im2col_nhwc_kernel[input_type],
-            ](
+            ctx.enqueue_function[_im2col_nhwc_kernel[input_type]](
                 im2col_ptr,
                 input.ptr,
                 batch,
@@ -328,11 +325,9 @@ def dispatch_rdna_conv2d[
                 block_dim=(im2col_block,),
             )
 
-            var a_tt = TileTensor(im2col_ptr, row_major(Coord(Idx(M), Idx(K))))
-            var b_tt = TileTensor(
-                filter_nk_ptr, row_major(Coord(Idx(N), Idx(K)))
-            )
-            var c_tt = TileTensor(output.ptr, row_major(Coord(Idx(M), Idx(N))))
+            var a_tt = TileTensor(im2col_ptr, row_major(Coord(M, K)))
+            var b_tt = TileTensor(filter_nk_ptr, row_major(Coord(N, K)))
+            var c_tt = TileTensor(output.ptr, row_major(Coord(M, N)))
 
             _matmul_gpu[
                 use_tensor_core=True,
@@ -347,13 +342,18 @@ def dispatch_rdna_conv2d[
             _ = im2col_buf^
 
         # --- Select implicit vs explicit im2col ---
-        comptime if maybe_epilogue_func:
-            comptime epilogue_4d = maybe_epilogue_func.value()
+        # The GEMM output `C[m, n]` is the NHWC tensor `[batch, out_h, out_w,
+        # N]` flattened to `[M, N]`, so `m` already encodes `(batch, h, w)` and
+        # the contiguous output (and same-shape `source`) index is `m*N + n`.
+        comptime if maybe_epilogue_func or has_residual:
             var hw = out_h * out_w
+            var resid_src = source_ptr
+            var resid_beta = beta
+            var out_ptr = output.ptr
 
             @parameter
             @always_inline
-            @__copy_capture(hw, out_w)
+            @__copy_capture(hw, out_w, N, resid_src, resid_beta, out_ptr)
             def _gemm_epilogue[
                 _dtype: DType,
                 _width: SIMDSize,
@@ -362,16 +362,34 @@ def dispatch_rdna_conv2d[
             ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):
                 var m_idx = coords_2d[0]
                 var n_idx = coords_2d[1]
-                var batch_idx: Int
-                var rem_idx: Int
-                var h_idx: Int
-                var w_idx: Int
-                batch_idx, rem_idx = divmod(m_idx, hw)
-                h_idx, w_idx = divmod(rem_idx, out_w)
-                epilogue_4d(
-                    IndexList[4](batch_idx, h_idx, w_idx, n_idx),
-                    rebind[SIMD[output_type, _width]](val),
-                )
+                var out_val = val
+
+                # Fold the fused skip connection: out = conv + beta*source.
+                comptime if has_residual:
+                    var s = (
+                        (resid_src + (m_idx * N + n_idx))
+                        .load[width=_width]()
+                        .cast[_dtype]()
+                    )
+                    out_val = out_val + s * resid_beta.cast[_dtype]()
+
+                comptime if maybe_epilogue_func:
+                    comptime epilogue_4d = maybe_epilogue_func.value()
+                    var batch_idx: Int
+                    var rem_idx: Int
+                    var h_idx: Int
+                    var w_idx: Int
+                    batch_idx, rem_idx = divmod(m_idx, hw)
+                    h_idx, w_idx = divmod(rem_idx, out_w)
+                    epilogue_4d(
+                        IndexList[4](batch_idx, h_idx, w_idx, n_idx),
+                        rebind[SIMD[output_type, _width]](out_val),
+                    )
+                else:
+                    # has_residual with no user epilogue: store directly.
+                    (out_ptr + (m_idx * N + n_idx)).store(
+                        rebind[SIMD[output_type, _width]](out_val)
+                    )
 
             if K % BLOCK_K == 0 and in_c % BLOCK_K == 0:
                 _launch_implicit_gemm[

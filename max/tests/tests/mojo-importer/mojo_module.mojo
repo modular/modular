@@ -21,7 +21,7 @@ from std.sys.info import num_physical_cores
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     try:
         var m = PythonModuleBuilder("mojo_module")
         m.def_function[plus_one]("plus_one")

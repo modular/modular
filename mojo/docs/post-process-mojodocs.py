@@ -20,9 +20,16 @@ import sys
 
 def replace_relative_paths(docs_path: str, file_path: str) -> None:
     path = docs_path + file_path
+    if not os.path.isdir(path):
+        raise FileNotFoundError(
+            f"post-process-mojodocs: expected tree at {path!r} (missing or not a directory)"
+        )
+
+    md_count = 0
     for root, _, files in os.walk(path):
         for file in files:
             if file.endswith(".md"):
+                md_count += 1
                 file_path_joined = os.path.join(root, file)
                 with open(file_path_joined) as f:
                     content = f.read()
@@ -31,6 +38,11 @@ def replace_relative_paths(docs_path: str, file_path: str) -> None:
                 new_content = re.sub(r"\]\(\./", f"]({new_path}/", content)
                 with open(file_path_joined, "w") as f:
                     f.write(new_content)
+
+    if md_count == 0:
+        raise RuntimeError(
+            f"post-process-mojodocs: no .md files under {path!r} (nothing to do)"
+        )
 
 
 if __name__ == "__main__":

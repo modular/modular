@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the string strategy for generating random `String` values in property tests."""
 
+from . import Strategy
 from std.testing.prop.random import Rng
 
 

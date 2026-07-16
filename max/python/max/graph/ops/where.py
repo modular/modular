@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for where."""
 
+from max._core.dialects import rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
@@ -46,4 +46,6 @@ def where(
 
     x, y = dtype_promotion._promote_weak_dtypes(x, y)
     assert_same_device(condition=condition, x=x, y=y)
-    return Graph.current._add_op(rmo.select, condition, x, y)[0].tensor
+    return Graph.current._add_op_generated(
+        rmo.SelectOp, cond=condition, input_x=x, input_y=y
+    )[0].tensor

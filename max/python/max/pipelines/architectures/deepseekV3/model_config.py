@@ -24,10 +24,10 @@ from max.nn.kv_cache import KVCacheParamInterface, KVCacheQuantizationConfig
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -86,6 +86,8 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     correction_bias_dtype: DType | None = None
     max_batch_context_length: int = 131072
     quant_config: QuantConfig | None = None
+    dense_mlp_layers_without_quant: frozenset[int] = frozenset()
+    """Dense prefix layers (indices ``< first_k_dense_replace``) that skip MLP quant."""
     ep_config: EPConfig | None = None
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
 
@@ -97,6 +99,11 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     eagle_aux_hidden_state_layer_ids: list[int] | None = None
     """Optional explicit hidden-state capture layer ids for EAGLE3."""
+
+    eplb_profile_enabled: bool = False
+    """When True, the language graph emits per-layer ep_counter_buffers
+    mutated in-place by scatter_nd_add. Set from
+    pipeline_config.runtime.eplb_profile at config build time."""
 
     def __post_init__(self) -> None:
         if self.hidden_act != "silu":
@@ -165,7 +172,10 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             is_mla=True,
             num_q_heads=huggingface_config.num_attention_heads,
             kvcache_quant_config=kvcache_quant_config,
-            num_eagle_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
+            speculative_method=pipeline_config.speculative.speculative_method
+            if pipeline_config.speculative
+            else None,
+            num_draft_tokens=pipeline_config.speculative.num_speculative_tokens
             if pipeline_config.speculative
             else 0,
         )

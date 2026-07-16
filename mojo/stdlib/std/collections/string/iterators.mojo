@@ -25,6 +25,7 @@ from std.collections.string._grapheme_break import (
     _reset_grapheme_state_to_other,
     GBP_PREPEND,
 )
+from std.memory.span import _SpanIter
 
 
 struct CodepointSliceIter[
@@ -166,7 +167,9 @@ struct CodepointSliceIter[
             #   to contain valid UTF-8.
             var curr_ptr = self._slice.unsafe_ptr()
             var byte_len = _utf8_first_byte_sequence_length(curr_ptr[])
-            return StringSlice[Self.origin](ptr=curr_ptr, length=byte_len)
+            return StringSlice[Self.origin](
+                unsafe_from_utf8=Span(ptr=curr_ptr, length=byte_len)
+            )
         else:
             return None
 
@@ -218,7 +221,9 @@ struct CodepointSliceIter[
                 byte_len += 1
                 back_ptr -= 1
 
-            return StringSlice[Self.origin](ptr=back_ptr, length=byte_len)
+            return StringSlice[Self.origin](
+                unsafe_from_utf8=Span(ptr=back_ptr, length=byte_len)
+            )
         else:
             return None
 
@@ -465,7 +470,7 @@ struct GraphemeSliceIter[
     Example:
 
     ```mojo
-    %# from testing import assert_equal
+    from std.testing import assert_equal
     var text = String("cafe\\u{0301}")  # "café" with combining accent
     var count = 0
     for grapheme in text.graphemes():
@@ -670,7 +675,9 @@ struct GraphemeSliceIter[
         self._slice._slice._len -= consumed
         self._back_safe_known = False
 
-        return StringSlice[Self.origin](ptr=start_ptr, length=consumed)
+        return StringSlice[Self.origin](
+            unsafe_from_utf8=Span(ptr=start_ptr, length=consumed)
+        )
 
     def peek_back(mut self) -> Optional[StringSlice[Self.origin]]:
         """Return the last grapheme cluster without advancing the iterator.
@@ -689,8 +696,10 @@ struct GraphemeSliceIter[
             return None
         var grapheme_start = self._grapheme_start_of_last_cluster(total)
         return StringSlice[Self.origin](
-            ptr=self._slice.unsafe_ptr() + grapheme_start,
-            length=total - grapheme_start,
+            unsafe_from_utf8=Span(
+                ptr=self._slice.unsafe_ptr() + grapheme_start,
+                length=total - grapheme_start,
+            )
         )
 
     def next_back(mut self) -> Optional[StringSlice[Self.origin]]:
@@ -722,8 +731,10 @@ struct GraphemeSliceIter[
             return None
         var grapheme_start = self._grapheme_start_of_last_cluster(total)
         var result = StringSlice[Self.origin](
-            ptr=self._slice.unsafe_ptr() + grapheme_start,
-            length=total - grapheme_start,
+            unsafe_from_utf8=Span(
+                ptr=self._slice.unsafe_ptr() + grapheme_start,
+                length=total - grapheme_start,
+            )
         )
         # Shrink the range from the end. Data pointer is unchanged, so the
         # cached `_back_safe_start` (if set) remains valid for future calls
@@ -784,7 +795,7 @@ struct GraphemeIndicesIter[mut: Bool, //, origin: Origin[mut=mut]](
     Example:
 
     ```mojo
-    %# from testing import assert_equal
+    from std.testing import assert_equal
     var s = StringSlice("abc")
     var pairs = List[Tuple[Int, String]]()
     for off, g in s.grapheme_indices():
@@ -848,3 +859,83 @@ struct GraphemeIndicesIter[mut: Bool, //, origin: Origin[mut=mut]](
         var offset = self._byte_offset
         self._byte_offset += g.unsafe_value().byte_length()
         return (offset, g.unsafe_value())
+
+
+struct BytesIter[mut: Bool, //, origin: Origin[mut=mut]](
+    ImplicitlyCopyable, Iterable, Iterator, Sized
+):
+    """Iterator over the raw UTF-8 bytes of a string slice, constructed by
+    `StringSlice.bytes()`.
+
+    Each call to `__next__()` yields the next `Byte` value from the underlying
+    UTF-8 encoded data. Unlike `CodepointsIter` and `GraphemeSliceIter`, this
+    iterator operates at the byte level and does not interpret multi-byte
+    UTF-8 sequences as codepoints or grapheme clusters.
+
+    Parameters:
+        mut: Whether the underlying string data is mutable.
+        origin: The origin of the underlying string data.
+    """
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+    """The iterator type for this bytes iterator.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
+
+    comptime Element = Byte
+    """The element type yielded by iteration."""
+
+    var _iter: _SpanIter[Byte, Self.origin]
+    """The underlying span iterator over the string's bytes."""
+
+    @doc_hidden
+    def __init__(out self, *, _slice: StringSlice[Self.origin]):
+        self._iter = iter(_slice.as_bytes())
+
+    # ===-------------------------------------------------------------------===#
+    # Trait implementations
+    # ===-------------------------------------------------------------------===#
+
+    @always_inline
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        """Iterator over the underlying string's bytes.
+
+        Returns:
+            This iterator.
+        """
+        return self
+
+    @always_inline
+    def __next__(mut self) raises StopIteration -> Byte:
+        """Get the next byte in the underlying string slice.
+
+        Returns:
+            The next byte in the string.
+
+        Raises:
+            `StopIteration` if the iterator has been exhausted.
+        """
+        return next(self._iter)
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        """Returns bounds `[lower, upper]` for the remaining iterator length.
+
+        Returns:
+            The lower and upper bound of this iterator.
+        """
+        return self._iter.bounds()
+
+    @always_inline
+    def __len__(self) -> Int:
+        """Returns the remaining length of this iterator in bytes.
+
+        Returns:
+            Number of bytes remaining in this iterator.
+        """
+        return len(self._iter)

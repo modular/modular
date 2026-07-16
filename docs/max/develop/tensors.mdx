@@ -14,20 +14,30 @@ If you're coming from NumPy, think of a MAX
 NumPy
 [`ndarray`](https://numpy.org/devdocs/reference/arrays.ndarray.html#arrays-ndarray).
 
-A tensor is a multi-dimensional array of numbers. You can think of tensors as:
+## Tensor basics
 
-- Rank 0 (scalar): a single number (like `72.5`)
-- Rank 1 (vector): a 1-D tensor or list of numbers (like `[1, 2, 3, 4]`)
-- Rank 2 (matrix): a 2-D tensor or table of numbers (like a spreadsheet with
-  rows and columns)
-- Rank 3+ (higher-dimensional arrays): a 3-or-more dimensional tensor (stacks of
-  matrices or more complex structures)
+A tensor is a multi-dimensional array of numbers. The *rank* of a tensor is the
+number of dimensions it has:
+
+| Rank | Description                                                                     | Example                                |
+|------|---------------------------------------------------------------------------------|----------------------------------------|
+| 0    | A single number, called a scalar                                                | `72`                                   |
+| 1    | A 1-D list of numbers, called a vector                                          | `[1, 2, 3, 4]`                         |
+| 2    | A 2-D grid of numbers like a spreadsheet with rows and columns, called a matrix | `[[1, 2, 3], [4, 5, 6]]`               |
+| 3+   | A 3-or-more dimensional array, such as a stack of matrices                      | `[[[1, 2], [3, 4]], [[5, 6], [7, 8]]]` |
+
+While the examples above show tensors as nested lists, tensors are stored as a
+single flat sequence of numbers. A tensor's *shape* records how many values sit
+along each dimension, which is what tells MAX how to group that flat data back
+into rows, columns, and higher dimensions.
 
 :::tip Coming from PyTorch or NumPy?
 
 There are some key differences between tensors in MAX and tensors in PyTorch or
 NumPy. For example, many math operations use the functional API (`F.sqrt()`
 instead of `.sqrt()`), and reduction operations keep dimensions by default.
+Check the [MAX Python API](/max/api/python/) reference to see the exact behavior
+of MAX tensors.
 
 :::
 

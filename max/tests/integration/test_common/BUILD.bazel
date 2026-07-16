@@ -8,7 +8,6 @@ load(
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -40,7 +39,9 @@ modular_py_library(
     srcs = ["test_data.py"],
     imports = [".."],
     deps = [
-        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
         "//max/python/max/support",
     ],
 )
@@ -83,9 +84,10 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/support",
     ],
 )
@@ -96,8 +98,25 @@ modular_py_library(
     srcs = ["evaluate_embeddings.py"],
     imports = [".."],
     deps = [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/modeling",
+    ],
+)
+
+modular_py_library(
+    name = "text_encoder_evaluate",
+    testonly = True,
+    srcs = ["text_encoder_evaluate.py"],
+    imports = [".."],
+    deps = [
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("transformers"),
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/flux2",
     ],
 )
 
@@ -127,8 +146,8 @@ modular_py_library(
     imports = [".."],
     deps = [
         requirement("numpy"),
-        "//max/python/max/interfaces",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/modeling",
     ],
 )
 
@@ -137,6 +156,15 @@ modular_py_library(
     testonly = True,
     srcs = ["registry.py"],
     imports = [".."],
+    # Extends the package default with //max/internal so the kernel-model-map
+    # graph tooling can reuse this test fixture.
+    visibility = [
+        "//:__pkg__",
+        "//SDK/integration-test:__subpackages__",
+        "//max/internal:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         requirement("pytest"),
         requirement("typing-extensions"),
@@ -150,15 +178,25 @@ modular_py_library(
     testonly = True,
     srcs = ["pipeline_model_dummy.py"],
     imports = [".."],
+    # Extends the package default with //max/internal so the kernel-model-map
+    # graph tooling can reuse this test fixture.
+    visibility = [
+        "//:__pkg__",
+        "//SDK/integration-test:__subpackages__",
+        "//max/internal:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/nn",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         requirement("numpy"),
         requirement("transformers"),
     ],
@@ -194,6 +232,7 @@ modular_py_library(
     # installed. They are loaded lazily inside functions and are not available
     # in the default //conditions:default build configuration.
     ignore_unresolved_imports = [
+        "flashinfer_cubin",
         "huggingface_hub",
         "huggingface_hub.hf_hub_download",
         "test_common.vllm_hook_core",
@@ -245,10 +284,10 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         requirement("numpy"),
         requirement("typing-extensions"),

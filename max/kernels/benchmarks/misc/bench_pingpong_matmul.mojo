@@ -34,7 +34,7 @@ from layout import CoordLike, Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
 from linalg.matmul.gpu.amd.amd_ping_pong_matmul import (
-    structured_ping_pong_matmul as ping_pong_matmul,
+    amd_ping_pong_matmul as ping_pong_matmul,
 )
 from std.utils import IndexList
 
@@ -136,13 +136,26 @@ def bench_matmul[
             @__copy_capture(tensor_c)
             def test_lambda_add_coords_prod[
                 _dtype: DType,
-                width: Int,
+                width: SIMDSize,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
                 _dtype, width
             ]:
-                comptime assert tensor_c.flat_rank >= 2
+                # FIXME(mojo-compiler): restore the comptime-assert below
+                # once the Mojo `Int.__ge__` comptime-cycle bug is fixed.
+                # The assert is always true here (tensor_c is the 2D output
+                # TileTensor, so flat_rank == 2 by construction) but triggers
+                # a stdlib parse-order cycle: resolving Int.__ge__ from a
+                # comptime context inside this parametric capturing closure
+                # transitively requires the EqualityComparable.__eq__ default
+                # body, whose `comptime for i in range(...)` re-resolves
+                # Int.__ge__ via the range iterator's `nth`. Manifests as
+                # "attempt to resolve a recursive reference to declaration
+                # 'Int.__ge__'". `> 1` / `== 2` substitutions don't trigger;
+                # only `>=` in this comptime + parametric-capturing-closure
+                # combination does. See commit e65f549ada3 for the audit.
+                # comptime assert tensor_c.flat_rank >= 2
                 var x = tensor_c.load[width=width](Coord(idx)).cast[_dtype]()
                 var y = val * x
                 return y
@@ -231,8 +244,8 @@ def create_matmul_bench[
     init_type: InitializationType,
 ) raises:
     var b_shape = Coord(
-        Idx[NType.static_value if transpose_b else KType.static_value](),
-        Idx[KType.static_value if transpose_b else NType.static_value](),
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
 
     bench_matmul[
@@ -276,9 +289,9 @@ def main() raises:
         ](
             ctx,
             m,
-            Idx(M),
-            Idx[N](),
-            Idx[K](),
+            M,
+            Idx[N],
+            Idx[K],
             init_type,
         )
 
