@@ -9,4 +9,5 @@ max.pipelines.architectures.unified_eagle_llama3
 
 .. automodule:: max.pipelines.architectures.unified_eagle_llama3
    :members:
+   :imported-members:
    :show-inheritance:

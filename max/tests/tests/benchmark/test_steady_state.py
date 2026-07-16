@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import random
 
-from max.benchmark.benchmark_serving import _steady_state_metric_values
 from max.benchmark.benchmark_shared.request import RequestFuncOutput
 from max.benchmark.benchmark_shared.steady_state import (
     _rolling_mad_over_median,
     detect_steady_state,
+    reject_metric_outliers,
 )
 
 
@@ -138,6 +138,112 @@ def test_steady_state_with_warmup_and_cooldown() -> None:
     assert result.end_index <= 290
 
 
+def test_steady_state_ttft_only_fallback_for_prefill_only_workload() -> None:
+    """Prefill-only workloads produce ≤1 output token per request so TPOT
+    is always empty. The full filter drops everything, but the TTFT-only
+    fallback should still detect steady state using TTFT alone."""
+    random.seed(7)
+    n = 200
+    outputs: list[RequestFuncOutput] = []
+
+    # Warmup: noisy TTFT.
+    for i in range(40):
+        outputs.append(
+            _make_output(
+                submit_time=float(i),
+                ttft=random.uniform(0.1, 1.5),
+                tpot=[],  # Prefill-only: no inter-token latencies.
+                latency=random.uniform(0.1, 1.5),
+            )
+        )
+    # Steady: stable TTFT.
+    for i in range(40, n):
+        outputs.append(
+            _make_output(
+                submit_time=float(i),
+                ttft=0.05 + random.uniform(-0.005, 0.005),
+                tpot=[],
+                latency=0.05,
+            )
+        )
+
+    result = detect_steady_state(outputs, window_size=20, ttft_threshold=0.15)
+
+    assert result.detected is True
+    assert result.mode == "ttft_only"
+    assert result.warning is None
+    assert result.start_index is not None and result.end_index is not None
+    # Ramp-up should fall within the noisy prefix; window extends to end.
+    assert result.start_index >= 20
+    assert result.end_index == n
+
+
+def test_steady_state_ttft_only_fallback_requires_enough_data() -> None:
+    """If even the TTFT-only filter yields too few requests, detection
+    should still return a "too few" warning rather than crashing. In
+    ttft_only mode TPOT wasn't filtered, so the warning should say the
+    run has too few valid requests and name TTFT-only mode (not blame
+    TPOT filtering, which only applies in full mode)."""
+    outputs = [
+        _make_output(submit_time=float(i), ttft=0.05, tpot=[])
+        for i in range(10)
+    ]
+
+    result = detect_steady_state(outputs, window_size=20)
+
+    assert result.detected is False
+    assert result.mode == "ttft_only"
+    assert result.warning is not None
+    assert "Too few" in result.warning
+    assert "TTFT-only" in result.warning
+
+
+def test_steady_state_full_mode_preferred_over_fallback() -> None:
+    """With full (TPOT-populated) data, the full-mode path should run and
+    the result should carry mode="full". The fallback is only for the
+    TPOT-empty case."""
+    random.seed(11)
+    n = 200
+    outputs = [
+        _make_output(
+            submit_time=float(i),
+            ttft=0.05 + random.uniform(-0.002, 0.002),
+            tpot=[0.02 + random.uniform(-0.001, 0.001) for _ in range(3)],
+        )
+        for i in range(n)
+    ]
+
+    result = detect_steady_state(outputs, window_size=20)
+
+    assert result.detected is True
+    assert result.mode == "full"
+
+
+def test_steady_state_concurrency_one_short_circuits() -> None:
+    """At max_concurrency=1 there's no queueing to produce a ramp, so
+    detection should skip silently (no warning, no detected window)."""
+    # Provide a plausible stable run that would otherwise detect fine,
+    # to prove the short-circuit is driven by concurrency and not data.
+    n = 200
+    outputs = [
+        _make_output(submit_time=float(i), ttft=0.05, tpot=[0.02, 0.02, 0.02])
+        for i in range(n)
+    ]
+
+    result = detect_steady_state(outputs, window_size=20, max_concurrency=1)
+
+    assert result.detected is False
+    assert result.warning is None
+    assert result.start_index is None
+    assert result.end_index is None
+    assert result.steady_state_count == 0
+    # mode stays at default "full" since no detection ran.
+    assert result.mode == "full"
+    # total_requests should reflect the input size; the filter didn't
+    # run, so 0 would be misleading to downstream telemetry.
+    assert result.total_requests == n
+
+
 def test_steady_state_too_few_requests() -> None:
     """Too few requests should fail with a warning."""
     outputs = [
@@ -150,6 +256,10 @@ def test_steady_state_too_few_requests() -> None:
     assert result.detected is False
     assert result.warning is not None
     assert "Too few" in result.warning
+    # Warning should name the TPOT filter / prefill-only workloads so
+    # users know why detection skipped.
+    assert "TPOT" in result.warning
+    assert "prefill" in result.warning.lower()
 
 
 def test_steady_state_never_stabilizes() -> None:
@@ -256,37 +366,68 @@ def test_steady_state_indices_map_to_original_order() -> None:
         assert out.success
 
 
-def test_steady_state_metric_suffixes_match_full_run_keys() -> None:
-    """Every steady-state suffix should correspond to a full-run result key.
+def test_reject_metric_outliers_keep_all_for_small_input() -> None:
+    """With fewer than 2 values every element is kept."""
+    assert reject_metric_outliers([]) == []
+    assert reject_metric_outliers([0.5]) == [True]
 
-    Guards against adding a full-run metric without a steady-state counterpart
-    (or vice versa).
+
+def test_reject_metric_outliers_keep_all_when_mad_zero() -> None:
+    """When all values are identical MAD==0 and nothing is rejected."""
+    values = [0.05] * 20
+    keep = reject_metric_outliers(values)
+    assert all(keep)
+    assert len(keep) == 20
+
+
+def test_reject_metric_outliers_drops_extremes() -> None:
+    """Clear outliers (modified z-score >> 3.5) are rejected.
+
+    The MAD is only non-zero when the center of the distribution has spread.
+    Use a mix of values with two different levels so the MAD is positive,
+    then inject extreme outliers.
     """
-    from unittest.mock import MagicMock
+    # Build a stable set with some natural spread (so MAD > 0).
+    # Values alternate between 0.04 and 0.06 → median≈0.05, MAD≈0.01.
+    center = [0.04, 0.06] * 9  # 18 values; median 0.05, MAD 0.01
+    outliers = [100.0, -100.0]  # |mz| ≈ 0.6745 * 99.95 / 0.01 ≈ 6740 >> 3.5
+    values = center + outliers
+    keep = reject_metric_outliers(values)
+    assert len(keep) == len(values)
+    # The last two (outliers) must be rejected
+    assert keep[-1] is False
+    assert keep[-2] is False
+    # All stable values must be kept (|mz| ≤ 0.6745)
+    assert all(keep[:18])
 
-    from max.benchmark.benchmark_shared.metrics import (
-        StandardPercentileMetrics,
-    )
 
-    mock = MagicMock()
-    mock.request_throughput = 10.0
-    mock.ttft_ms = StandardPercentileMetrics([0.05], scale_factor=1000.0)
-    mock.tpot_ms = StandardPercentileMetrics([0.02], scale_factor=1000.0)
-    mock.itl_ms = StandardPercentileMetrics([0.02], scale_factor=1000.0)
-    mock.latency_ms = StandardPercentileMetrics([0.5], scale_factor=1000.0)
+def test_reject_metric_outliers_constant_0645_factor() -> None:
+    """Modified z-score uses the 0.6745 Iglewicz-Hoaglin constant.
 
-    suffixes = {s for s, _ in _steady_state_metric_values(mock)}
+    With a known dataset the threshold at k=3.5 maps to a specific
+    absolute deviation from the median. Verify the constant is correct by
+    checking that a value just at the boundary is kept and one beyond is
+    dropped.
+    """
+    import numpy as np
 
-    # Full-run keys that must have steady-state counterparts
-    expected = {
-        "request_throughput",
-        "mean_ttft_ms",
-        "p99_ttft_ms",
-        "mean_tpot_ms",
-        "p99_tpot_ms",
-        "mean_itl_ms",
-        "p99_itl_ms",
-        "mean_latency_ms",
-        "p99_latency_ms",
-    }
-    assert suffixes == expected
+    # Build 10 values with median=0 and MAD=1.
+    # Boundary: |mz| = 0.6745 * |x| / 1 = 3.5  =>  |x| = 3.5/0.6745 ≈ 5.189
+    base = [-1.0, -1.0, -1.0, -1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]
+    # median = 0; MAD = median(|x|) = 1.0
+    assert float(np.median(np.abs(np.array(base) - np.median(base)))) == 1.0
+
+    threshold_val = 3.5 / 0.6745  # ≈ 5.189
+    below = base + [threshold_val - 0.01]  # |mz| < 3.5 → keep
+    above = base + [threshold_val + 0.01]  # |mz| > 3.5 → drop
+
+    assert reject_metric_outliers(below)[-1] is True
+    assert reject_metric_outliers(above)[-1] is False
+
+
+def test_reject_metric_outliers_symmetric() -> None:
+    """Rejection is symmetric around the median."""
+    values = [0.0] * 10 + [10.0, -10.0]
+    keep = reject_metric_outliers(values)
+    # Both extremes should be rejected (or both kept; they're symmetric)
+    assert keep[-1] == keep[-2]

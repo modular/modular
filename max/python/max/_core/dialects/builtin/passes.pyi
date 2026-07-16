@@ -84,6 +84,8 @@ def CanonicalizerPass(
     max_iterations: int = 10,
     max_num_rewrites: int = -1,
     test_convergence: bool = False,
+    cse_between_iterations: bool = False,
+    filter_dialects: Sequence[str] = [],
     disabled_patterns: Sequence[str] = [],
     enabled_patterns: Sequence[str] = [],
 ) -> max._core.Pass:
@@ -445,6 +447,24 @@ def TopologicalSortPass() -> max._core.Pass:
     This sort is stable. If the block is already topologically sorted, the IR
     is not changed. Operations that form a cycle are moved to the end of the
     regions in a stable order.
+    """
+
+def TrivialDeadCodeEliminationPass(
+    recursive: bool = True, remove_blocks: bool = True
+) -> max._core.Pass:
+    """
+    This pass eliminates only trivially dead operations; that is,
+    side-effect-free operations with no users. By default, it also removes
+    trivially dead blocks; that is, blocks that are unreachable from their
+    region entry block. The `remove-blocks` option can be disabled to preserve
+    unreachable blocks.
+
+    This pass does not run a liveness analysis and does not remove dead
+    use-def cycles.
+
+    By default, this pass recursively visits nested regions. The `recursive`
+    option can be disabled to restrict the pass to only the immediate regions
+    nested under the current operation.
     """
 
 def ViewOpGraphPass(

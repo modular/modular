@@ -61,15 +61,15 @@ etc.
 ## List literals
 
 In order to support list literal syntax, a type implements an initializer that
-takes a `__list_literal__: ()` argument - an argument of empty-tuple type. The
-empty tuple ensures that this overload won't be picked accidentally, because
-some types may need to support multiple literals (e.g. `PythonObject` needs to
-support set literals and list literals, and the initializers do different
-things. For example, `List` has this initializer:
+takes a `__list_literal__: NoneType` argument. The `NoneType` marker ensures
+that this overload won't be picked accidentally, because some types may need to
+support multiple literals (e.g. `PythonObject` needs to support set literals
+and list literals, and the initializers do different things). For example,
+`List` has this initializer:
 
 ```mojo
 struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](...):
-     fn __init__(out self, owned *values: T, __list_literal__: () = ()):
+     fn __init__(out self, owned *values: T, __list_literal__: NoneType = None):
         """Constructs a list from the given values.
         ...
 ```
@@ -84,8 +84,8 @@ required:
 ```mojo
 # A type that allows initializers with 2 or 3 integers only.
 struct TwoAndThreeList:
-   fn __init__(out self, a: Int, b: Int, __list_literal__: ()): pass
-   fn __init__(out self, a: Int, b: Int, c: Int, __list_literal__: ()): pass
+   fn __init__(out self, a: Int, b: Int, __list_literal__: NoneType): pass
+   fn __init__(out self, a: Int, b: Int, c: Int, __list_literal__: NoneType): pass
 
 fn test():
   # These are ok.
@@ -100,7 +100,7 @@ Similarly, you can also define things that take heterogenous types:
 
 ```mojo
 struct StringIntListLiteral:
-   fn __init__(out self, a: String, b: Int, __list_literal__: ()): pass
+   fn __init__(out self, a: String, b: Int, __list_literal__: NoneType): pass
 
 fn test():
   # Weird but accepted.
@@ -127,7 +127,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](...):
         out self,
         owned keys: List[K],
         owned values: List[V],
-        __dict_literal__: (),
+        __dict_literal__: NoneType,
     ): ...
 ```
 
@@ -165,7 +165,7 @@ otherwise require complicated uses of `type_of(x)`.
 ## Ambiguity resolution between Set Literals and Initializer Lists
 
 The above approach has an ambiguity: does `{a, b}` create a set of two elements
-with `T.__init__(a, b, __set_literal__=())` or does it invoke an initializer
+with `T.__init__(a, b, __set_literal__=None)` or does it invoke an initializer
 with just `T.__init__(a, b)`?
 
 The approach used by the Mojo compiler is as follows based on whether it has

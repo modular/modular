@@ -226,16 +226,20 @@ def test_assert_equal_stringslice() raises:
 
     def _build(value: StaticString, start: Int, end: Int) -> StaticString:
         return StaticString(
-            ptr=value.unsafe_ptr() + start,
-            length=end - start,
+            unsafe_from_utf8=Span(
+                ptr=value.unsafe_ptr() + start,
+                length=end - start,
+            )
         )
 
     def _build(
         read value: String, start: Int, end: Int
     ) -> StringSlice[origin_of(value)]:
         return StringSlice[origin_of(value)](
-            ptr=value.unsafe_ptr() + start,
-            length=end - start,
+            unsafe_from_utf8=Span(
+                ptr=value.unsafe_ptr() + start,
+                length=end - start,
+            )
         )
 
     l1 = [_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12)]

@@ -27,6 +27,8 @@ filegroup(
             "sys/info.mojo",
             "sys/__init__.mojo",
             "math/math.mojo",
+            "_plugin/__init__.mojo",
+            "_plugin/_impl.mojo",
         ],
     ),
     tags = ["maybe-unused"],  # Consumed by external plugin repos.
@@ -38,6 +40,9 @@ mojo_library(
     srcs = [
         ":std_srcs",
     ],
+    docs_hosted_on_mojolang = True,
+    docs_title = "Mojo standard library",
+    use_production_compiler_for_asan = True,
     validate_missing_docs = True,
 )
 

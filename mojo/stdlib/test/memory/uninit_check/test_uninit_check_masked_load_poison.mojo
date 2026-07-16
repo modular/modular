@@ -16,7 +16,7 @@ from std.memory import UnsafePointer, alloc
 from std.sys.intrinsics import masked_load
 
 
-# CHECK: use of uninitialized memory
+# CHECK: UNINIT_READ at {{.*}}: dtype={{.*}}: load matched debug allocator poison sentinel
 def main():
     var ptr = alloc[Float32](4)
 
@@ -26,8 +26,9 @@ def main():
     ptr.store(2, Float32(3.0))
     ptr.store(3, Float32(4.0))
 
-    # Poison element at index 1 (which will be unmasked = True = loaded).
-    (ptr + 1).bitcast[UInt32]().store(UInt32(0xFFFFFFFF))
+    # Poison element at index 1 (which will be unmasked = True = loaded)
+    # with the debug allocator poison pattern (FLT_MAX bits = 0x7F7FFFFF).
+    (ptr + 1).bitcast[UInt32]().store(UInt32(0x7F7FFFFF))
 
     # mask=True means "load from memory" — lane 1 is unmasked and poisoned.
     var mask = SIMD[DType.bool, 4](True, True, False, False)

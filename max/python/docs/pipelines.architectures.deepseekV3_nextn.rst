@@ -9,4 +9,5 @@ max.pipelines.architectures.deepseekV3_nextn
 
 .. automodule:: max.pipelines.architectures.deepseekV3_nextn
    :members:
+   :imported-members:
    :show-inheritance:

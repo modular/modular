@@ -81,6 +81,7 @@ def test_data_layout_llvm() raises:
 
 
 def test_data_layout_asm() raises:
+    @parameter
     def my_func(src: UnsafePointer[Int32, ImmutAnyOrigin]):
         var a = stack_allocation[20, Int32, address_space=AddressSpace.SHARED]()
         a[thread_idx.x] = src[0]
@@ -104,13 +105,14 @@ def test_cross_compile() raises:
 
     comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 
+    @parameter
     def test_kernel():
         comptime assert (
             _cdna_4_or_newer()
         ), "test_kernel is only supported on CDNA4+"
 
     var asm = compile_info[test_kernel, target=MI355X_TARGET]()
-    assert_true("amdgcn-amd-amdhsa--gfx950" in asm)
+    assert_true("amdgcn-amd-amdhsa-unknown-gfx950" in asm)
 
 
 def main() raises:

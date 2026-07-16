@@ -14,7 +14,10 @@
 from __future__ import annotations
 
 import atexit
-from collections.abc import Callable
+import contextlib
+import functools
+import inspect
+from collections.abc import Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import ParamSpec, TypeVar
 
@@ -46,6 +49,41 @@ def call_with_default_mlir_context(
         with _DEFAULT_MLIR_CONTEXT:
             return fn(*args, **kwargs)
     return fn(*args, **kwargs)
+
+
+@contextlib.contextmanager
+def ensure_default_mlir_context() -> Generator[None]:
+    """Ensure the default MLIR context is entered for the current thread.
+
+    Sister to :func:`call_with_default_mlir_context` for use as a context
+    manager. ``mlir.Context.current`` is thread-local; background threads
+    do not automatically have the default context entered. This enters it
+    only if no context is already active.
+    """
+    if mlir.Context.current is None:
+        with _DEFAULT_MLIR_CONTEXT:
+            yield
+    else:
+        yield
+
+
+def in_default_mlir_context(fn: Callable[P, R]) -> Callable[P, R]:
+    """Decorator equivalent of ``with ensure_default_mlir_context():``. Sync + async."""
+    if inspect.iscoroutinefunction(fn):
+
+        @functools.wraps(fn)
+        async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            with ensure_default_mlir_context():
+                return await fn(*args, **kwargs)
+
+        return async_wrapper  # type: ignore[return-value]
+
+    @functools.wraps(fn)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        with ensure_default_mlir_context():
+            return fn(*args, **kwargs)
+
+    return wrapper
 
 
 class MLIRThreadPoolExecutor(ThreadPoolExecutor):

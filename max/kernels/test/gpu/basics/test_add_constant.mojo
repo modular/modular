@@ -42,7 +42,7 @@ def run_add_constant(ctx: DeviceContext) raises:
     comptime constant = Float32(33)
 
     comptime kernel = add_constant_fn
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         out_device,
         in_device,
         constant,

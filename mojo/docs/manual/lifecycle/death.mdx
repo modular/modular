@@ -68,8 +68,9 @@ anything. Most structs don't require a custom destructor, and Mojo automatically
 adds a no-op destructor if you don't define one.
 
 The `__del__()` method takes its argument using the `deinit`
-[argument convention](/mojo/manual/values/ownership#argument-conventions), which
-indicates that the value is being deinitialized.
+[argument
+convention](/docs/manual/values/ownership/#argument-conventions),
+which indicates that the value is being deinitialized.
 
 ## Default destruction behavior
 
@@ -84,7 +85,7 @@ no longer used, and it is also immediately destroyed.
 
 The `String` value is a little more complicated. Mojo strings are mutable. The
 `String` object has an internal buffer—a
-[`List`](/mojo/std/collections/list/List) field,
+[`List`](/docs/std/collections/list/List/) field,
 which holds the characters that make up the string. A `List` stores
 its contents in dynamically allocated memory on the heap, so the string can
 grow or shrink. The string itself doesn't have any special destructor logic,
@@ -123,20 +124,19 @@ shadow variables to keep track of the state of your values to provide safety.
 These are often optimized away, but the Mojo approach eliminates this overhead
 entirely, making the generated code faster and avoiding ambiguity.
 
-## Destructors {#destructor}
+## Implicit destructors {#destructor}
 
-Mojo calls a value's destructor (`__del__()` method) when the value's lifetime
-ends (typically the point at which the value is last used). As we mentioned
-earlier, Mojo provides a default, no-op destructor for all types, so in most
-cases you don't need to define the `__del__()` method.
+Mojo calls a value's destructor after the value's last use unless a type
+opts out of `ImplicitlyDeletable` destruction. The deletable trait provides
+a default no-op destructor (`__del__()`), which you can override.
 
-You should define the `__del__()` method to perform any kind of cleanup the
-type requires. Usually, that includes freeing memory for any fields where you
-dynamically allocated memory (for example, via `UnsafePointer`) and
-closing any long-lived resources such as file handles.
+Create a custom `__del__()` implementation to perform any required cleanup.
+This might include freeing dynamically allocated memory (for example,
+through `UnsafePointer`) or releasing long-lived resources such as file
+handles.
 
-However, any struct that is just a simple collection of other types does not
-need to implement the destructor.
+Types that are simple collections of other types usually don't need to
+override `__del__()`.
 
 For example, consider this simple struct:
 
@@ -153,18 +153,18 @@ dynamically allocate memory.
 
 Whereas, the following struct must define the `__del__()` method to free the
 memory allocated by its
-[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer):
+[`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer/):
 
 ```mojo
 struct HeapArray(Writable):
-    var data: UnsafePointer[Int, MutExternalOrigin]
+    var data: UnsafePointer[Int, MutUntrackedOrigin]
     var size: Int
 
     def __init__(out self, *values: Int):
         self.size = len(values)
         self.data = alloc[Int](self.size)
         for i in range(self.size):
-            (self.data + i).init_pointee_copy(values[i])
+            (self.data + i).unsafe_write(values[i])
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write("[")
@@ -177,7 +177,7 @@ struct HeapArray(Writable):
     def __del__(deinit self):
         print("Destroying", self.size, "elements")
         for i in range(self.size):
-            (self.data + i).destroy_pointee()
+            (self.data + i).unsafe_deinit_pointee()
         self.data.free()
 
 
@@ -192,17 +192,17 @@ Destroying 4 elements
 ```
 
 The destructor takes its `self` argument using the `deinit` [argument
-convention](/mojo/manual/values/ownership#argument-conventions), which
+convention](/docs/manual/values/ownership#argument-conventions), which
 grants exclusive ownership of the value and marks it as destroyed at the
 end of the function. (For more information on the `deinit` convention, see
-[Instance initialization](/mojo/manual/lifecycle/initialization/)).
+[Instance initialization](/docs/manual/lifecycle/initialization/)).
 
 Note that a pointer doesn't *own* any values in the memory it points to, so
 when a pointer is destroyed, Mojo doesn't call the destructors on those values.
 
 So in the `HeapArray` example above, calling `free()` on the pointer releases
 the memory, but doesn't call the destructors on the stored values. To invoke
-the destructors, use the `destroy_pointee()` method provided by the
+the destructors, use the `unsafe_deinit_pointee()` method provided by the
 `UnsafePointer` type.
 
 :::note
@@ -216,7 +216,7 @@ destructor is called at a specific point, use the discard pattern described in
 It's important to notice that the `__del__()` method is an "extra" cleanup
 event, and your implementation does not override any default destruction
 behaviors. For example, Mojo still destroys all the fields in `Balloons` even
-if you add a `__del__()` method that to do nothing:
+if you add a `__del__()` method that does nothing:
 
 ```mojo
 @fieldwise_init
@@ -261,6 +261,8 @@ requires you to consume the value. Failing to do so results in a compiler error.
 
 ### Using `@explicit_destroy`
 
+<!-- TODO(DOCS-2253): Reflect changes to `@explicit_destroy` -->
+
 Most types use implicit destruction. When a value's lifetime ends, Mojo
 automatically calls `__del__()` to clean up. This works for most cases: memory
 is freed and simple resources are released automatically.
@@ -289,7 +291,7 @@ cleanup path, such as invoking a secondary destructor.
 
 ```mojo
 @explicit_destroy("Must call save_and_close() or discard()")
-struct FileBuffer:
+struct FileBuffer(ImplicitlyDeletable where False):
     var path: String
     var data: String
 
@@ -368,8 +370,8 @@ struct BatchProcessor:
 
 ### Explicit destruction in generic code
 
-Generic code parameterized over `AnyType` can accept both implicitly and
-explicitly destructible values. However, it cannot automatically destroy
+Generic code parameterized over `AnyType` can accept both implicitly deletable
+and explicitly destructible values. However, it cannot automatically destroy
 values that require explicit destruction.
 
 Because explicit destructors are type-specific, generic code has no way
@@ -381,7 +383,7 @@ def generic_function_1[T: AnyType](var value: T):
     #        Unhandled explicitly destroyed type AnyType
     pass  # value abandoned here
 
-def generic_function_2[T: ImplicitlyDestructible](var value: T):
+def generic_function_2[T: ImplicitlyDeletable](var value: T):
     # OK: T can be implicitly destroyed
     pass  # value.__del__() called automatically
 ```
@@ -394,12 +396,12 @@ Choose one of the following approaches:
 - Accept the value by mutable or immutable reference instead of by ownership,
   so the function does not consume it.
 - Return the value or transfer ownership instead of consuming it.
-- Require implicit destruction with the ImplicitlyDestructible trait, which
+- Require implicit destruction with the ImplicitlyDeletable trait, which
   guarantees that a `__del__()` destructor is available and can be called
   automatically:
 
   ```mojo
-  def generic_function_3[T: ImplicitlyDestructible](var value: T):
+  def generic_function_3[T: ImplicitlyDeletable](var value: T):
       pass  # value.__del__() called automatically
   ```
 
@@ -516,7 +518,7 @@ function body, Mojo's ASAP policy still applies to fields: each field is
 destroyed immediately after its last use.
 
 To read more about the `deinit` convention, see
-[Instance initialization](/mojo/manual/lifecycle/initialization/).
+[Instance initialization](/docs/manual/lifecycle/initialization/).
 
 ## Explicit lifetime extension
 
@@ -531,7 +533,7 @@ You might do this:
   warnings or dead-code elimination).
 
 - When writing unsafe/advanced code (for example, code that manipulates a
-  value's [origin](/mojo/manual/values/lifetimes)).
+  value's [origin](/docs/manual/values/lifetimes/)).
 
 - When you need deterministic destructor timing relative to specific side
   effects (such as logging or profiling).
@@ -560,6 +562,6 @@ Previous versions of Mojo required the transfer sigil (`^`) when discarding a
 move-only type. This is no longer required, since the compiler doesn't actually
 move the discarded value. For more information on the transfer sigil, see the
 section on
-[ownership transfer](/mojo/manual/values/ownership#transfer-arguments-var-and-).
+[ownership transfer](/docs/manual/values/ownership/#transfer-arguments-var-and-).
 
 :::

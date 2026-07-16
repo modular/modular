@@ -9,7 +9,7 @@ The `benchmark_serving.py` script is adapted from
 [vLLM](https://github.com/vllm-project/vllm/blob/main/benchmarks),
 licensed under Apache 2.0. We forked this script to ensure consistency with
 vLLM's measurement methodology and extended it with features we found helpful,
-such as client-side GPU metric collection via `max.diagnostics`.
+such as client-side GPU metric collection via `max.profiler`.
 
 `benchmark_serving.py` supports:
 
@@ -37,6 +37,18 @@ temp directory and reuses it for each request in the run.
 
 For `benchmark_serving.py` usage instructions, see [Benchmarking a MAX
 endpoint](/max/docs/max-benchmarking.md).
+
+To inject arbitrary top-level request-body fields that lack a dedicated flag
+(for example `stop`, `include_stop_str_in_output`, or `chat_template_kwargs`),
+use `--extra-body` with an inline JSON string or a path to a YAML/JSON file:
+
+```bash
+--extra-body '{"stop": ["}"], "chat_template_kwargs": {"reasoning_effort": "low"}}'
+```
+
+Fields are merged onto every text-generation request (last-writer-wins, so a key
+that collides with a dedicated flag overrides it). See the [benchmark
+configuration guide](benchmark_config.md) for the config-file form and details.
 
 > [!NOTE]
 > This benchmarking script is also available with the `max benchmark` command,

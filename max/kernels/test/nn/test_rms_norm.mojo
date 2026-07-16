@@ -24,7 +24,7 @@ from std.utils.index import Index, IndexList
 
 def compute_rms[
     dtype: DType
-](data: TileTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[
+](data: TileTensor[dtype, ...], size: Int, eps: Float32) -> Scalar[
     DType.float32
 ]:
     comptime assert data.rank == 1, "data.rank must be 1"
@@ -32,10 +32,7 @@ def compute_rms[
     for i in range(size):
         var d = data.raw_load(i).cast[DType.float32]()
         sum_of_squares += d * d
-    return sqrt(
-        (sum_of_squares / Float32(data.num_elements()))
-        + eps.cast[DType.float32]()
-    )
+    return sqrt((sum_of_squares / Float32(data.num_elements())) + eps)
 
 
 def run_rms_norm_cpu[
@@ -44,9 +41,9 @@ def run_rms_norm_cpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var input_ptr = alloc[Scalar[dtype]](rows * cols)
-    var output_ptr = alloc[Scalar[dtype]](rows * cols)
-    var gamma_ptr = alloc[Scalar[dtype]](cols)
+    var input_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var output_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_ptr = List(length=cols, fill=Scalar[dtype](0))
 
     for i in range(rows * cols):
         input_ptr[i] = Scalar[dtype](i)
@@ -62,7 +59,7 @@ def run_rms_norm_cpu[
         gamma_ptr,
         row_major(Coord(param_shape)),
     )
-    var epsilon = Scalar[dtype](0.0001)
+    var epsilon = Float32(0.0001)
     var weight_offset = Scalar[dtype](0.0)
 
     @__copy_capture(input_buf)
@@ -78,7 +75,7 @@ def run_rms_norm_cpu[
     @__copy_capture(output_buf)
     @parameter
     def identity_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = output_buf.layout(Coord(coords))
         output_buf.raw_store[width=width, alignment=alignment](idx, val)
@@ -92,8 +89,8 @@ def run_rms_norm_cpu[
 
     for r, c in product(range(rows), range(cols)):
         var vec = TileTensor(
-            input_ptr + r * cols,
-            row_major(Idx(cols)),
+            input_ptr.unsafe_ptr() + r * cols,
+            row_major(cols),
         )
         var rms_ref = compute_rms(vec, cols, epsilon)
         var idx = r * cols + c
@@ -103,10 +100,6 @@ def run_rms_norm_cpu[
             dtype
         ]() * (gamma_ptr[c] + weight_offset)
         assert_almost_equal(val, output_ptr[idx], rtol=rtol)
-
-    input_ptr.free()
-    output_ptr.free()
-    gamma_ptr.free()
 
 
 def run_rms_norm_tests[dtype: DType](rtol: Float64 = 0.001) raises:

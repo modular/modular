@@ -64,7 +64,7 @@ def kernel_lds[
 
 # Assembly test kernels for different cache policies
 def cache_policy_kernel_always():
-    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin]()
+    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[DType.float32, 4, cache_policy=CacheOperation.ALWAYS](
@@ -76,7 +76,7 @@ def cache_policy_kernel_always():
 
 
 def cache_policy_kernel_streaming():
-    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin]()
+    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[
@@ -88,7 +88,7 @@ def cache_policy_kernel_streaming():
 
 
 def cache_policy_kernel_global():
-    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin]()
+    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[DType.float32, 4, cache_policy=CacheOperation.GLOBAL](
@@ -100,7 +100,7 @@ def cache_policy_kernel_global():
 
 
 def cache_policy_kernel_volatile():
-    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin]()
+    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[DType.float32, 4, cache_policy=CacheOperation.VOLATILE](
@@ -197,9 +197,7 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device_buf, a_host_buf)
 
     comptime kernel_func = kernel[dtype, width]
-    ctx.enqueue_function_experimental[kernel_func](
-        a_device_buf, grid_dim=1, block_dim=1
-    )
+    ctx.enqueue_function[kernel_func](a_device_buf, grid_dim=1, block_dim=1)
     ctx.enqueue_copy(a_host_buf, a_device_buf)
 
     ctx.synchronize()
@@ -221,9 +219,7 @@ def test_buffer_lds[dtype: DType, width: Int](ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device_buf, a_host_buf)
 
     comptime kernel_lds_func = kernel_lds[dtype, width]
-    ctx.enqueue_function_experimental[kernel_lds_func](
-        a_device_buf, grid_dim=1, block_dim=1
-    )
+    ctx.enqueue_function[kernel_lds_func](a_device_buf, grid_dim=1, block_dim=1)
     ctx.enqueue_copy(a_host_buf, a_device_buf)
 
     ctx.synchronize()

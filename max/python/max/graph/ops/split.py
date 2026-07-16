@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from max._core.dialects import builtin, kgen, mo
 from max.dtype import DType
-from max.mlir.dialects import mo
 
 from ..dim import Dim, DimLike
 from ..graph import Graph
@@ -73,11 +73,12 @@ def split(
 
     result_types = [split_type(size) for size in sizes]
 
-    outputs = Graph.current._add_op(
-        mo.split,
-        result_types,
-        x,
-        constant(sizes, DType.int64, DeviceRef.CPU()),
-        constant(axis, DType.int64, DeviceRef.CPU()),
+    outputs = Graph.current._add_op_generated(
+        mo.SplitOp,
+        results=result_types,
+        input=x,
+        split_sizes=constant(sizes, DType.int64, DeviceRef.CPU()),
+        axis=builtin.IntegerAttr(builtin.IndexType(), axis),
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )
     return [out.tensor for out in outputs]

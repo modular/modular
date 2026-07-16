@@ -12,13 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
-from kv_cache.types import KVCacheT, swizzle_granularity, padded_depth
+from kv_cache.types import (
+    KVCacheT,
+    PagedRowIndices,
+    _populate_via_row_idx,
+    kv_num_sub_tiles,
+    kv_sub_tile_rows,
+    kv_tma_fold_chunks,
+    padded_depth,
+    swizzle_granularity,
+)
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout.tile_layout import (
+    Layout as MixedLayout,
+    RowMajorLayout,
+    TensorLayout,
+)
 from layout.tma_async import (
     SplitLastDimTMATensorTile,
+    SharedMemBarrier,
     _gather4_box_width,
     create_split_tma,
-    RaggedTMA3DTile,
     TMATensorTile,
     create_tensor_tile,
     create_tma_tile_gather4,
@@ -30,7 +44,7 @@ from std.math import ceildiv
 
 from std.utils import Index, IndexList
 
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 trait MHAOperand(DevicePassable, TrivialRegisterPassable):
@@ -54,6 +68,27 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         head_dim_idx: UInt32 = 0,
     ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         ...
+
+    @always_inline
+    def block_paged_tile[
+        layout_t: TensorLayout,
+        //,
+        tile_size: Int,
+    ](
+        self,
+        batch_idx: UInt32,
+        start_tok_idx: UInt32,
+        head_idx: UInt32,
+        layout_val: layout_t,
+        head_dim_idx: UInt32 = 0,
+    ) -> TileTensor[Self.dtype, layout_t, ImmutAnyOrigin]:
+        """Wraps block_paged_ptr in a TileTensor with the caller's layout."""
+        return TileTensor[Self.dtype, layout_t, ImmutAnyOrigin](
+            ptr=self.block_paged_ptr[tile_size](
+                batch_idx, start_tok_idx, head_idx, head_dim_idx
+            ),
+            layout=layout_val,
+        )
 
     @always_inline
     def scales_block_paged_ptr(
@@ -102,6 +137,43 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         ...
 
     @always_inline
+    def populate[
+        BN: Int,
+        base_alignment: Int,
+        pair_cta: Bool = False,
+        is_leader: Bool = True,
+    ](self, batch_idx: UInt32, base_kv_row: UInt32) -> PagedRowIndices[
+        BN, Self.page_size, pair_cta, is_leader
+    ]:
+        """Populate a full `PagedRowIndices[BN, ...]` for a BN-row tile.
+
+        Returns the precomputed physical row indices for the `num_pages`
+        sub-tile pages covering the BN-row range starting at
+        `base_kv_row` for `batch_idx`. Both K's TMA (which may cover only
+        a subset in `pair_cta` mode) and V's TMA (which covers the full
+        range) can then consume the result without any lazy LUT lookup.
+
+        `base_alignment` is a comptime promise that
+        `base_kv_row % base_alignment == 0` at runtime — typically
+        `mask.start_column_alignment[...]()`. The `PagedKVCache`
+        override uses it to pick the largest legal SIMD chunk for its
+        LUT vector load and to skip the intra-page divmod when
+        `base_alignment % page_size == 0`.
+
+        Default implementation: scalar loop over `num_pages` calls to
+        `row_idx`. Overrides (e.g. `PagedKVCache`) replace this with a
+        single SIMD load from the underlying lookup table.
+        """
+
+        @parameter
+        def _row(batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
+            return self.row_idx(batch_idx, start_tok_idx)
+
+        return _populate_via_row_idx[
+            BN, Self.page_size, pair_cta, is_leader, _row
+        ](batch_idx, base_kv_row)
+
+    @always_inline
     def get_tma_row(self, encoded_index: Int32) -> Int32:
         """Convert an encoded sparse index to a physical TMA row.
 
@@ -119,6 +191,8 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         BN: Int,
         depth: Int,
         BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
         IndexList[3](BN, 1, BK),
@@ -126,7 +200,18 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     ]:
         """Creates a TMA tile for efficient GPU memory transfers.
         This is useful for `k-major` MMA operations where we don't
-        need to mask any extra rows."""
+        need to mask any extra rows.
+
+        When `fold_chunks >= 2` the contiguous depth chunks are folded into one
+        rank-4 TMA descriptor (SM100 K-only optimization). The caller must pass the
+        value from `kv_tma_fold_chunks` and use the same value at the `tma_copy_k`
+        issue site. `1` (default) is the original per-chunk behavior.
+
+        When `row_major` is `True` (and `fold_chunks >= 2`) the fold uses the
+        rank-5 chunk-inner (page-dense) box instead of the rank-4 chunk-outer
+        box, so a tile can span multiple pages with one TMA per page. The same
+        value must be used at the `tma_copy_k`/`tma_copy_v` issue site and the
+        P@V MMA consumer descriptor."""
         ...
 
     @always_inline
@@ -141,25 +226,6 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         """Creates a TMA tile for efficient GPU memory transfers.
         This is useful for `m-major` MMA operations where we don't
         need to mask any extra rows."""
-        ...
-
-    @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        depth: Int,
-        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
-    ](self, ctx: DeviceContext) raises -> RaggedTMA3DTile[
-        Self.dtype,
-        swizzle_mode,
-        BM=BN,
-        BN=BK,
-    ]:
-        """Creates a TMA tile for efficient GPU memory transfers.
-        This is useful for `mn-major` MMA operations where we need
-        to mask extra rows to avoid adding `NaN` to the output
-        through the MMA reduction."""
         ...
 
     @always_inline
@@ -304,8 +370,10 @@ struct KVCacheMHAOperand[
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -373,6 +441,26 @@ struct KVCacheMHAOperand[
         return self.cache.row_idx(batch_idx, start_tok_idx)
 
     @always_inline
+    def populate[
+        BN: Int,
+        base_alignment: Int,
+        pair_cta: Bool = False,
+        is_leader: Bool = True,
+    ](self, batch_idx: UInt32, base_kv_row: UInt32) -> PagedRowIndices[
+        BN, Self.page_size, pair_cta, is_leader
+    ]:
+        """Delegate to the underlying cache's `populate`.
+
+        `PagedKVCache.populate` overrides with a SIMD lookup-table read;
+        other cache types fall through to the scalar default on
+        `KVCacheT.populate`. `base_alignment` is the comptime alignment
+        of `base_kv_row` (typically `mask.start_column_alignment[...]()`).
+        """
+        return self.cache.populate[BN, base_alignment, pair_cta, is_leader](
+            batch_idx, base_kv_row
+        )
+
+    @always_inline
     def get_tma_row(self, encoded_index: Int32) -> Int32:
         """Convert an encoded sparse index to a physical TMA row."""
         return self.cache.get_tma_row(encoded_index)
@@ -384,6 +472,8 @@ struct KVCacheMHAOperand[
         BN: Int,
         depth: Int,
         BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](
         self,
         ctx: DeviceContext,
@@ -400,7 +490,13 @@ struct KVCacheMHAOperand[
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()
         ) == 0
         tma = rebind[type_of(tma)](
-            self.cache.create_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
+            self.cache.create_tma_tile[
+                swizzle_mode,
+                BN=BN,
+                BK=BK,
+                fold_chunks=fold_chunks,
+                row_major=row_major,
+            ](ctx)
         )
 
     @always_inline
@@ -420,34 +516,6 @@ struct KVCacheMHAOperand[
         This is useful for `m-major` MMA operations where we don't
         need to mask any extra rows."""
         comptime assert False, "create_scale_tma_tile is not implemented"
-
-    @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        depth: Int,
-        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
-    ](
-        self,
-        ctx: DeviceContext,
-        out tma: RaggedTMA3DTile[
-            Self.dtype,
-            swizzle_mode,
-            BM=BN,
-            BN=BK,
-        ],
-    ) raises:
-        # Forward to the underlying cache's implementation
-        comptime assert (
-            depth == Self.cache_t.kv_params.head_size
-        ), "depth must match kv_params.head_size"
-        comptime assert (
-            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
-        ) == 0, "BK must be a multiple of swizzle granularity"
-        tma = rebind[type_of(tma)](
-            self.cache.create_ragged_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
-        )
 
     @always_inline
     def create_rope_tma_tile[
@@ -571,8 +639,10 @@ struct KVCacheScalesMHAOperand[
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -652,6 +722,8 @@ struct KVCacheScalesMHAOperand[
         BN: Int,
         depth: Int,
         BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](
         self,
         ctx: DeviceContext,
@@ -678,26 +750,6 @@ struct KVCacheScalesMHAOperand[
         ],
     ) raises:
         comptime assert False, "create_scale_tma_tile is not implemented"
-
-    @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        depth: Int,
-        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
-    ](
-        self,
-        ctx: DeviceContext,
-        out tma: RaggedTMA3DTile[
-            Self.dtype,
-            swizzle_mode,
-            BM=BN,
-            BN=BK,
-        ],
-    ) raises:
-        """TMA not supported for KVCacheScalesMHAOperand."""
-        comptime assert False, "TMA not supported for KVCacheScalesMHAOperand"
 
     @always_inline
     def create_rope_tma_tile[
@@ -792,39 +844,75 @@ struct KVCacheScalesMHAOperand[
         ].unsafe_dangling()
 
 
+@always_inline
+def _null_scale_tile_tensor[
+    scale_dtype: DType,
+    scale_layout: TensorLayout,
+]() -> TileTensor[scale_dtype, scale_layout, ImmutAnyOrigin]:
+    """Builds a null (dangling) scale `TileTensor` for the no-scale path.
+
+    `scale_layout` is trait-typed, so re-materialize the concrete `Layout` to
+    construct the value, then implicitly convert to the trait-typed slot. Used
+    as the default `scale_buffer` argument so `scale_origin` binds to
+    `ImmutAnyOrigin` (matching the legacy default-arg behavior).
+    """
+    comptime NullScaleLayout = MixedLayout[
+        shape_types=scale_layout._shape_types,
+        stride_types=scale_layout._stride_types,
+    ]
+    return rebind[TileTensor[scale_dtype, scale_layout, ImmutAnyOrigin]](
+        TileTensor[scale_dtype, NullScaleLayout, ImmutAnyOrigin](
+            ptr=UnsafePointer[
+                Scalar[scale_dtype], ImmutAnyOrigin
+            ].unsafe_dangling(),
+            layout=NullScaleLayout(),
+        )
+    )
+
+
 struct LayoutTensorMHAOperand[
     origin: Origin[mut=False],
     scale_origin: Origin[mut=False],
     //,
     dtype_: DType,
-    layout: Layout,
+    buffer_layout: TensorLayout,
     scale_dtype_: DType = DType.float32,
-    scale_layout: Layout = Layout(),
+    scale_buffer_layout: TensorLayout = MixedLayout[
+        shape_types=Coord[].element_types,
+        stride_types=Coord[].element_types,
+    ],
 ](MHAOperand, TrivialRegisterPassable):
-    """An implementation for LayoutTensor arguments to MHA kernels."""
+    """An implementation for contiguous tensor arguments to MHA kernels."""
 
     comptime dtype = Self.dtype_
     comptime scale_dtype = Self.scale_dtype_
     comptime page_size = 0
-    comptime layout_rank = Self.layout.rank()
-    comptime scale_rank = Self.scale_layout.rank()
-    comptime layout_dim: Int = Self.layout.shape[Self.layout_rank - 1].value()
-    comptime scale_dim: Int = Self.scale_layout.shape[
+    comptime layout_rank = Self.buffer_layout.rank
+    comptime scale_rank = Self.scale_buffer_layout.rank
+    comptime layout_dim: Int = Self.buffer_layout._shape_types[
+        Self.layout_rank - 1
+    ].static_value
+    # `scale_dim` is only meaningful (and only read) when quantization is
+    # enabled. For the no-scale path (`scale_rank == 0`) fall back to 1 so the
+    # `ceildiv` below stays well-formed without indexing an empty shape list.
+    comptime scale_dim: Int = Self.scale_buffer_layout._shape_types[
         Self.scale_rank - 1
-    ].value()
+    ].static_value if Self.scale_rank != 0 else 1
     comptime quantization_granularity: Int = ceildiv(
         Self.layout_dim, Self.scale_dim
     )
-    comptime quantization_enabled: Bool = Self.scale_layout.rank() != 0
+    comptime quantization_enabled: Bool = Self.scale_buffer_layout.rank != 0
 
-    var buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin]
-    var scale_buffer: LayoutTensor[
-        Self.scale_dtype, Self.scale_layout, Self.scale_origin
+    var buffer: TileTensor[Self.dtype, Self.buffer_layout, Self.origin]
+    var scale_buffer: TileTensor[
+        Self.scale_dtype, Self.scale_buffer_layout, Self.scale_origin
     ]
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -832,12 +920,12 @@ struct LayoutTensorMHAOperand[
 
     def __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin],
-        scale_buffer: LayoutTensor[
-            Self.scale_dtype, Self.scale_layout, Self.scale_origin
-        ] = LayoutTensor[Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin](
-            None
-        ),
+        buffer: TileTensor[Self.dtype, Self.buffer_layout, Self.origin],
+        scale_buffer: TileTensor[
+            Self.scale_dtype, Self.scale_buffer_layout, Self.scale_origin
+        ] = _null_scale_tile_tensor[
+            Self.scale_dtype, Self.scale_buffer_layout
+        ](),
     ):
         self.buffer = buffer
         self.scale_buffer = scale_buffer
@@ -852,15 +940,17 @@ struct LayoutTensorMHAOperand[
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
     ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
-        var ret_ptr = self.buffer.ptr + self.buffer._offset(
-            IndexList[self.layout.rank()](
+        var ret_ptr = self.buffer.ptr + self.buffer.layout[
+            linear_idx_type=type_of(self.buffer).linear_idx_type
+        ](
+            Coord(
                 Int(batch_idx),
                 Int(start_tok_idx),
                 Int(head_idx),
                 Int(head_dim_idx),
             )
         )
-        return ret_ptr
+        return ret_ptr.as_immutable().as_unsafe_any_origin()
 
     @always_inline
     def scales_block_paged_ptr(
@@ -870,15 +960,17 @@ struct LayoutTensorMHAOperand[
         head_idx: Int,
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
-        var ret_ptr = self.scale_buffer.ptr + self.scale_buffer._offset(
-            IndexList[self.scale_layout.rank()](
+        var ret_ptr = self.scale_buffer.ptr + self.scale_buffer.layout[
+            linear_idx_type=type_of(self.scale_buffer).linear_idx_type
+        ](
+            Coord(
                 Int(batch_idx),
                 Int(start_tok_idx),
                 Int(head_idx),
                 Int(head_dim_idx // Self.quantization_granularity),
             )
         )
-        return ret_ptr
+        return ret_ptr.as_immutable().as_unsafe_any_origin()
 
     @always_inline
     def load_scale[
@@ -891,7 +983,7 @@ struct LayoutTensorMHAOperand[
         head_dim_idx: Int,
     ) -> SIMD[Self.scale_dtype, width]:
         return self.scale_buffer.load[width=width](
-            Index(
+            Coord(
                 Int(batch_idx),
                 Int(start_tok_idx),
                 Int(head_idx),
@@ -901,23 +993,23 @@ struct LayoutTensorMHAOperand[
 
     @always_inline
     def cache_length(self, batch_idx: Int) -> Int:
-        # LayoutTensor path assumes BSHD layout and all cache entries have
+        # Contiguous tensor path assumes BSHD layout and all cache entries have
         # the same length.
-        return self.buffer.dim[1]()
+        return Int(self.buffer.dim[1]())
 
     @always_inline
     def max_context_length(self) -> UInt32:
-        return UInt32(self.buffer.dim[1]())
+        return UInt32(Int(self.buffer.dim[1]()))
 
     @always_inline
     def num_kv_rows(self) -> Int:
         """Returns the total number of virtual rows (batch * seq_len)."""
-        return self.buffer.dim[0]() * self.buffer.dim[1]()
+        return Int(self.buffer.dim[0]()) * Int(self.buffer.dim[1]())
 
     @always_inline
     def row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
         """Returns the row idx when viewing the memory as a matrix."""
-        return batch_idx * UInt32(self.buffer.dim[1]()) + start_tok_idx
+        return batch_idx * UInt32(Int(self.buffer.dim[1]())) + start_tok_idx
 
     @always_inline
     def get_tma_row(self, encoded_index: Int32) -> Int32:
@@ -934,6 +1026,8 @@ struct LayoutTensorMHAOperand[
         BN: Int,
         depth: Int,
         BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](
         self,
         ctx: DeviceContext,
@@ -948,7 +1042,7 @@ struct LayoutTensorMHAOperand[
         comptime assert (
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()
         ) == 0, String("BN = ", BN, "\ndepth = ", depth, "\nBK = ", BK)
-        var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
+        var rows = Int(self.buffer.dim[0]()) * Int(self.buffer.dim[1]())
         comptime smem_shape = IndexList[3](BN, 1, BK)
         comptime gmem_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, depth)
 
@@ -956,7 +1050,14 @@ struct LayoutTensorMHAOperand[
             smem_shape,
             gmem_shape,
             swizzle_mode=swizzle_mode,
-        ](ctx, self.buffer.ptr, rows, self.buffer.dim[2]())
+            fold_chunks=fold_chunks,
+            row_major=row_major,
+        ](
+            ctx,
+            self.buffer.ptr.as_immutable().as_unsafe_any_origin(),
+            rows,
+            Int(self.buffer.dim[2]()),
+        )
 
     @always_inline
     def create_scale_tma_tile[
@@ -971,7 +1072,7 @@ struct LayoutTensorMHAOperand[
             Index(1, BMN),
         ],
     ) raises:
-        var total_elements = self.scale_buffer.size()
+        var total_elements = self.scale_buffer.num_elements()
         debug_assert(
             total_elements % 4 == 0,
             (
@@ -981,39 +1082,13 @@ struct LayoutTensorMHAOperand[
         )
         var scale_tensor = TileTensor(
             self.scale_buffer.ptr,
-            row_major(Coord(Idx[1](), Idx(total_elements))),
+            row_major(Coord(Idx[1], total_elements)),
         )
         return create_tensor_tile[
             Index(1, BMN),
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
             __desc_shape=Index(1, BMN),
         ](ctx, scale_tensor)
-
-    @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        depth: Int,
-        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
-    ](
-        self,
-        ctx: DeviceContext,
-        out tma: RaggedTMA3DTile[
-            Self.dtype,
-            swizzle_mode,
-            BM=BN,
-            BN=BK,
-        ],
-    ) raises:
-        comptime assert (
-            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
-        ) == 0
-        var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
-        var num_heads = self.buffer.dim[2]()
-        tma = type_of(tma).create[depth=depth](
-            ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
-        )
 
     @always_inline
     def create_rope_tma_tile[
@@ -1060,9 +1135,9 @@ struct LayoutTensorMHAOperand[
             ),
         ],
     ) raises:
-        """Creates a 2D TMA gather4 descriptor for this LayoutTensor operand."""
+        """Creates a 2D TMA gather4 descriptor for this contiguous operand."""
         # View the 4D buffer as a 2D matrix [batch*seq, tile_width]
-        var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
+        var rows = Int(self.buffer.dim[0]()) * Int(self.buffer.dim[1]())
         tma = create_tma_tile_gather4[
             tma_dtype,
             tile_height=tile_height,
@@ -1105,7 +1180,7 @@ struct LayoutTensorMHAOperand[
     def scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
-        """Returns a dangling pointer. LayoutTensor operands do not support
+        """Returns a dangling pointer. Contiguous operands do not support
         quantization."""
         # SAFETY: LayoutTensor operands are never quantized; callers only
         # dereference behind comptime quantization guards.
@@ -1119,29 +1194,36 @@ struct RaggedMHAOperand[
     cache_origin: Origin[mut=False],
     //,
     dtype_: DType,
-    layout: Layout,
-    cache_layout: Layout,
+    layout: TensorLayout,
+    cache_layout: TensorLayout,
     scale_dtype_: DType = DType.invalid,
-    scale_layout: Layout = Layout(),
+    scale_layout: TensorLayout = RowMajorLayout[
+        *Coord[Int64, Int64].element_types
+    ],
 ](MHAOperand, TrivialRegisterPassable):
-    """An implementation for ragged LayoutTensor arguments to MHA kernels."""
+    """An implementation for ragged contiguous tensor arguments to MHA kernels.
+    """
 
     comptime dtype = Self.dtype_
     comptime scale_dtype = Self.scale_dtype_
     comptime page_size = 0
     comptime quantization_granularity = 0
-    var buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin]
-    var scale_buffer: LayoutTensor[
+    var buffer: TileTensor[Self.dtype, Self.layout, Self.origin]
+
+    @__allow_legacy_any_origin_fields
+    var scale_buffer: TileTensor[
         Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
     ]
-    var cache_row_offsets: LayoutTensor[
+    var cache_row_offsets: TileTensor[
         DType.uint32, Self.cache_layout, Self.cache_origin
     ]
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -1149,8 +1231,8 @@ struct RaggedMHAOperand[
 
     def __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin],
-        cache_row_offsets: LayoutTensor[
+        buffer: TileTensor[Self.dtype, Self.layout, Self.origin],
+        cache_row_offsets: TileTensor[
             DType.uint32, Self.cache_layout, Self.cache_origin
         ],
     ):
@@ -1161,27 +1243,37 @@ struct RaggedMHAOperand[
             cache_row_offsets.rank == 1
         ), "only support rank 1 inputs for cache offsets."
         self.buffer = buffer
-        self.cache_row_offsets = rebind[type_of(self.cache_row_offsets)](
-            cache_row_offsets
+        self.cache_row_offsets = cache_row_offsets
+        # No-scale operand: build a null scale buffer. `scale_layout` is
+        # trait-typed, so re-materialize the concrete `Layout` and rebind it
+        # to the field's exact type.
+        comptime NullScaleLayout = MixedLayout[
+            shape_types=Self.scale_layout._shape_types,
+            stride_types=Self.scale_layout._stride_types,
+        ]
+        self.scale_buffer = rebind[
+            TileTensor[Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin]
+        ](
+            TileTensor[Self.scale_dtype, NullScaleLayout, ImmutAnyOrigin](
+                ptr=UnsafePointer[
+                    Scalar[Self.scale_dtype], ImmutAnyOrigin
+                ].unsafe_dangling(),
+                layout=NullScaleLayout(),
+            )
         )
-        self.scale_buffer = LayoutTensor[
-            Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
-        ](None)
 
     def __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin],
-        scale_buffer: LayoutTensor[
+        buffer: TileTensor[Self.dtype, Self.layout, Self.origin],
+        scale_buffer: TileTensor[
             Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
         ],
-        cache_row_offsets: LayoutTensor[
+        cache_row_offsets: TileTensor[
             DType.uint32, Self.cache_layout, Self.cache_origin
         ],
     ):
         self.buffer = buffer
-        self.cache_row_offsets = rebind[type_of(self.cache_row_offsets)](
-            cache_row_offsets
-        )
+        self.cache_row_offsets = cache_row_offsets
         self.scale_buffer = scale_buffer
 
     @always_inline
@@ -1197,14 +1289,16 @@ struct RaggedMHAOperand[
         global_token_idx = Int(
             self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
         )
-        var ret_ptr = self.buffer.ptr + self.buffer._offset(
-            IndexList[self.layout.rank()](
+        var ret_ptr = self.buffer.ptr + self.buffer.layout[
+            linear_idx_type=type_of(self.buffer).linear_idx_type
+        ](
+            Coord(
                 global_token_idx,
                 Int(head_idx),
                 Int(head_dim_idx),
             )
         )
-        return ret_ptr
+        return ret_ptr.as_immutable().as_unsafe_any_origin()
 
     @always_inline
     def scales_block_paged_ptr(
@@ -1248,7 +1342,7 @@ struct RaggedMHAOperand[
     @always_inline
     def num_kv_rows(self) -> Int:
         """Returns the total number of tokens in the ragged buffer."""
-        return self.buffer.dim[0]()
+        return Int(self.buffer.dim[0]())
 
     @always_inline
     def row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
@@ -1270,6 +1364,8 @@ struct RaggedMHAOperand[
         BN: Int,
         depth: Int,
         BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](
         self,
         ctx: DeviceContext,
@@ -1284,7 +1380,7 @@ struct RaggedMHAOperand[
         comptime assert (
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()
         ) == 0
-        var rows = self.buffer.dim[0]()  # total tokens
+        var rows = Int(self.buffer.dim[0]())  # total tokens
         comptime smem_shape = IndexList[3](BN, 1, BK)
         comptime gmem_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, depth)
 
@@ -1292,7 +1388,14 @@ struct RaggedMHAOperand[
             smem_shape,
             gmem_shape,
             swizzle_mode=swizzle_mode,
-        ](ctx, self.buffer.ptr, rows, self.buffer.dim[1]())
+            fold_chunks=fold_chunks,
+            row_major=row_major,
+        ](
+            ctx,
+            self.buffer.ptr.as_immutable().as_unsafe_any_origin(),
+            rows,
+            Int(self.buffer.dim[1]()),
+        )
 
     @always_inline
     def create_scale_tma_tile[
@@ -1308,8 +1411,8 @@ struct RaggedMHAOperand[
         ],
     ) raises:
         # if per token scale, treat as 1D tensor
-        comptime if Self.scale_layout.rank() == 2:
-            var total_elements = self.scale_buffer.size()
+        comptime if Self.scale_layout.rank == 2:
+            var total_elements = self.scale_buffer.num_elements()
             debug_assert(
                 total_elements % 4 == 0,
                 (
@@ -1319,7 +1422,7 @@ struct RaggedMHAOperand[
             )
             var scale_tensor = TileTensor(
                 self.scale_buffer.ptr,
-                row_major(Coord(Idx[1](), Idx(total_elements))),
+                row_major(Coord(Idx[1], total_elements)),
             )
             return create_tensor_tile[
                 Index(1, BMN),
@@ -1328,13 +1431,13 @@ struct RaggedMHAOperand[
             ](ctx, scale_tensor)
 
         # if per token per head scale, treat as 2D tensor with shape [num_heads, total_seq_len]
-        elif Self.scale_layout.rank() == 3:
-            comptime num_heads = Self.scale_layout.shape[0].value()
-            var total_seq_len = self.buffer.dim[1]()
+        elif Self.scale_layout.rank == 3:
+            comptime num_heads = Self.scale_layout.static_shape[0]
+            var total_seq_len = Int(self.buffer.dim[1]())
 
             var scale_tensor = TileTensor(
                 self.scale_buffer.ptr,
-                row_major(Coord(Idx[num_heads](), Idx(total_seq_len))),
+                row_major(Coord(Idx[num_heads], total_seq_len)),
             )
 
             return create_tensor_tile[
@@ -1348,32 +1451,6 @@ struct RaggedMHAOperand[
                 "scale_layout must be 2D(per token) or 3D(per token per head)"
                 " tensor."
             )
-
-    @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        depth: Int,
-        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
-    ](
-        self,
-        ctx: DeviceContext,
-        out tma: RaggedTMA3DTile[
-            Self.dtype,
-            swizzle_mode,
-            BM=BN,
-            BN=BK,
-        ],
-    ) raises:
-        comptime assert (
-            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
-        ) == 0
-        var rows = self.buffer.dim[0]()  # total tokens
-        var num_heads = self.buffer.dim[1]()
-        tma = type_of(tma).create[depth=depth](
-            ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
-        )
 
     @always_inline
     def create_rope_tma_tile[
@@ -1422,7 +1499,7 @@ struct RaggedMHAOperand[
     ) raises:
         """Creates a 2D TMA gather4 descriptor for this ragged operand."""
         # View the ragged buffer as a 2D matrix [total_tokens, tile_width]
-        var rows = self.buffer.dim[0]()
+        var rows = Int(self.buffer.dim[0]())
         tma = create_tma_tile_gather4[
             tma_dtype,
             tile_height=tile_height,

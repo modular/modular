@@ -41,14 +41,18 @@ def test_index_fp8[
     var ks_size = batch_size * num_keys
     var o_size = batch_size * seq_len * num_keys
 
-    var q_ptr = alloc[Scalar[DType.float8_e4m3fn]](q_size)
-    var qs_ptr = alloc[Scalar[DType.float32]](qs_size)
-    var k_ptr = alloc[Scalar[DType.float8_e4m3fn]](k_size)
-    var ks_ptr = alloc[Scalar[DType.float32]](ks_size)
-    var o_ptr = alloc[Scalar[DType.float32]](o_size)
-    var o_ref_ptr = alloc[Scalar[DType.float32]](o_size)
-    var input_row_offsets = alloc[UInt32](batch_size + 1)
-    var cache_row_offsets = alloc[UInt32](batch_size + 1)
+    var q_ptr = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](q_size)
+    var qs_ptr = ctx.enqueue_create_host_buffer[DType.float32](qs_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](k_size)
+    var ks_ptr = ctx.enqueue_create_host_buffer[DType.float32](ks_size)
+    var o_ptr = ctx.enqueue_create_host_buffer[DType.float32](o_size)
+    var o_ref_ptr = ctx.enqueue_create_host_buffer[DType.float32](o_size)
+    var input_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
+    var cache_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
 
     var q_device_ptr = ctx.enqueue_create_buffer[DType.float8_e4m3fn](q_size)
     var qs_device_ptr = ctx.enqueue_create_buffer[DType.float32](qs_size)
@@ -63,10 +67,10 @@ def test_index_fp8[
     var o_device_ptr = ctx.enqueue_create_buffer[DType.float32](o_size)
     var o_device_ref_ptr = ctx.enqueue_create_buffer[DType.float32](o_size)
 
-    rand(q_ptr, q_size)
-    rand(qs_ptr, qs_size)
-    rand(k_ptr, k_size)
-    rand(ks_ptr, ks_size)
+    rand(q_ptr.as_span())
+    rand(qs_ptr.as_span())
+    rand(k_ptr.as_span())
+    rand(ks_ptr.as_span())
 
     # input row offsets and cache row offsets
     for i in range(batch_size):
@@ -85,42 +89,42 @@ def test_index_fp8[
     # Ragged Q tensor: [total_seq_len, num_heads, depth]
     var q_device = TileTensor(
         q_device_ptr,
-        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[depth])),
     )
 
     var qs_device = TileTensor(
         qs_device_ptr,
-        row_major((Idx(batch_size * seq_len), Idx[num_heads]())),
+        row_major((batch_size * seq_len, Idx[num_heads])),
     )
 
     var k_device = TileTensor(
         k_device_ptr,
-        row_major((Idx(batch_size * num_keys), Idx[1](), Idx[depth]())),
+        row_major((batch_size * num_keys, Idx[1], Idx[depth])),
     )
 
     var ks_device = TileTensor(
         ks_device_ptr,
-        row_major(Idx(batch_size * num_keys)),
+        row_major(batch_size * num_keys),
     )
 
     var o_device = TileTensor(
         o_device_ptr,
-        row_major((Idx(batch_size * seq_len), Idx(num_keys))),
+        row_major((batch_size * seq_len, num_keys)),
     )
 
     var o_ref_device = TileTensor(
         o_device_ref_ptr,
-        row_major((Idx(batch_size * seq_len), Idx(num_keys))),
+        row_major((batch_size * seq_len, num_keys)),
     )
 
     var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     var cache_row_offsets_device = TileTensor[mut=False](
         cache_row_offsets_device_ptr,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     fp8_index[num_heads, depth](
@@ -154,6 +158,7 @@ def test_index_fp8[
     )
     ctx.synchronize()
     ctx.enqueue_copy(o_ref_ptr, o_device_ref_ptr)
+    ctx.synchronize()
 
     for b in range(batch_size):
         for s in range(seq_len):
@@ -175,14 +180,6 @@ def test_index_fp8[
     _ = cache_row_offsets_device_ptr
     _ = o_device_ptr
     _ = o_device_ref_ptr
-
-    q_ptr.free()
-    qs_ptr.free()
-    k_ptr.free()
-    ks_ptr.free()
-    input_row_offsets.free()
-    cache_row_offsets.free()
-    o_ptr.free()
 
 
 def main() raises:

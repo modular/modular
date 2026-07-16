@@ -15,7 +15,7 @@
 Inputs: [0.0, 1.0, 0.0, 2.0] / [0.0, 1.0, 0.0, 1.0]
 Expected output: [NaN, 1.0, NaN, 2.0]
 
-With MODULAR_MAX_NAN_CHECK=1, this should abort with a NaN diagnostic.
+With max-debug.nan-check enabled, this should abort with a NaN diagnostic.
 
 Set NAN_CHECK_TEST_DEVICE=gpu to run on GPU instead of CPU.
 """

@@ -27,32 +27,54 @@ from typing import Generic
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
-from max.interfaces.pipeline_variants.text_generation import (
+from max.pipelines.context import (
+    TextAndVisionContext,
     VLMContextType,
-    VLMTextGenerationContext,
 )
-from max.interfaces.request import RequestID
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
+from max.pipelines.request import RequestID
 from max.profiler import traced
 
 
-def _concat_buffers(bufs: list[Buffer]) -> Buffer:
-    """Concatenate Buffers along dim 0 on device.
+def concat_device_buffers(bufs: list[Buffer]) -> Buffer:
+    """Concatenate 2D Buffers along dim 0 on device.
 
-    Allocates a single output buffer on the same device as the inputs
-    and copies each input slice into it via inplace_copy_from.
+    Each buffer must have shape ``[n_rows_i, hidden]`` on the same device
+    and with the same dtype. Allocates a single output buffer
+    ``[sum(n_rows_i), hidden]`` and copies each input slice into it via
+    ``inplace_copy_from``.
+
+    Used both internally by the vision encoder cache (per-image splits
+    re-assembled into a batch-shaped output) and by VLM model code that
+    runs the vision encoder in multiple chunks and needs to concat the
+    per-chunk outputs back into a single per-device tensor before handing
+    off to ``prepare_vision_outputs``.
     """
-    assert len(bufs) > 0
-    total_rows = sum(b.shape[0] for b in bufs)
-    hidden = bufs[0].shape[1]
+    assert len(bufs) > 0, "concat_device_buffers requires at least one buffer"
+    first = bufs[0]
+    hidden = int(first.shape[1])
+    dtype = first.dtype
+    device = first.device
+    for b in bufs[1:]:
+        assert b.dtype == dtype, (
+            f"concat_device_buffers: dtype mismatch ({b.dtype} vs {dtype})"
+        )
+        assert b.device == device, (
+            f"concat_device_buffers: device mismatch ({b.device} vs {device})"
+        )
+        assert int(b.shape[1]) == hidden, (
+            f"concat_device_buffers: dim-1 mismatch "
+            f"({int(b.shape[1])} vs {hidden})"
+        )
+    total_rows = sum(int(b.shape[0]) for b in bufs)
     out = Buffer(
         shape=[total_rows, hidden],
-        dtype=bufs[0].dtype,
-        device=bufs[0].device,
+        dtype=dtype,
+        device=device,
     )
     offset = 0
     for b in bufs:
-        n = b.shape[0]
+        n = int(b.shape[0])
         out[offset : offset + n, :].inplace_copy_from(b)
         offset += n
     return out
@@ -70,6 +92,39 @@ class VisionEncoderCacheEntry:
 
     ref_count: int = 0
     """Number of active requests referencing this entry."""
+
+
+@dataclass
+class VisionEncoderMetrics:
+    """Per-iteration vision encoder statistics for one batch.
+
+    Populated by :class:`VisionEncoderCache` during batch preparation and
+    surfaced by the scheduler in its per-iteration log so that vision
+    encoder cost is attributed separately from the language model forward
+    pass.
+    """
+
+    num_images_total: int = 0
+    """Images referenced by vision requests in this batch (hits + misses)."""
+
+    num_images_encoded: int = 0
+    """Images the vision encoder actually ran on this batch (cache misses)."""
+
+    num_images_cached: int = 0
+    """Images served from the vision encoder cache this batch (cache hits)."""
+
+    num_patches_encoded: int = 0
+    """Input image patches fed to the vision encoder this batch."""
+
+    num_tokens_encoded: int = 0
+    """Merged vision tokens produced by the encoder this batch."""
+
+    @property
+    def cache_hit_rate(self) -> float:
+        """Fraction of images served from cache (0.0 when no images)."""
+        if self.num_images_total == 0:
+            return 0.0
+        return self.num_images_cached / self.num_images_total
 
 
 class VisionEncoderCache(Generic[VLMContextType]):
@@ -99,9 +154,22 @@ class VisionEncoderCache(Generic[VLMContextType]):
         self._max_entries = max_entries
         self._request_refs: defaultdict[RequestID, set[int]] = defaultdict(set)
 
+        # Per-batch vision encoder metrics, populated during batch
+        # preparation and drained by the scheduler once per iteration via
+        # ``pop_metrics``. ``None`` when the most recent batch did no vision
+        # work (e.g. a text-only or decode step).
+        self._batch_metrics: VisionEncoderMetrics | None = None
+
     @traced
     def lookup(self, image_hash: int) -> VisionEncoderCacheEntry | None:
-        """Look up a cached entry by image hash, refreshing LRU order."""
+        """Look up a cached entry by image hash, refreshing LRU order.
+
+        A falsy hash (``0``, the sentinel for an image/video with no
+        content hash) is treated as a miss, so callers don't need to guard
+        the call themselves.
+        """
+        if not image_hash:
+            return None
         entry = self._cache.get(image_hash)
         if entry is not None:
             self._cache.move_to_end(image_hash)
@@ -168,7 +236,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
     @staticmethod
     def _ensure_image_hashes(
-        ctx: VLMTextGenerationContext,
+        ctx: TextAndVisionContext,
     ) -> None:
         """Assert that all images have pre-computed hashes.
 
@@ -201,12 +269,16 @@ class VisionEncoderCache(Generic[VLMContextType]):
         """
         uncached_contexts: list[VLMContextType] = []
 
+        metrics = VisionEncoderMetrics()
+
         for ctx in context_batch:
             if not getattr(ctx, "needs_vision_encoding", False):
                 continue
 
             if not self.enabled:
                 uncached_contexts.append(ctx)
+                for img in ctx.images:
+                    self._record_encoded_image(metrics, img)
                 continue
 
             self._ensure_image_hashes(ctx)
@@ -216,10 +288,13 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
             for img in ctx.images:
                 assert img.image_hash is not None
+                metrics.num_images_total += 1
                 if self.lookup(img.image_hash) is not None:
                     cached_in_ctx.append(img.image_hash)
+                    metrics.num_images_cached += 1
                 else:
                     has_uncached = True
+                    self._record_encoded_image(metrics, img, count_total=False)
 
             if not has_uncached:
                 for h in cached_in_ctx:
@@ -229,7 +304,42 @@ class VisionEncoderCache(Generic[VLMContextType]):
                     self.acquire(ctx.request_id, h)
                 uncached_contexts.append(ctx)
 
+        self._batch_metrics = metrics if metrics.num_images_total > 0 else None
         return uncached_contexts
+
+    @staticmethod
+    def _record_encoded_image(
+        metrics: VisionEncoderMetrics,
+        img: object,
+        count_total: bool = True,
+    ) -> None:
+        """Tally one cache-miss image (encoder runs on it) into ``metrics``.
+
+        ``count_total`` is False when the caller already incremented
+        ``num_images_total`` (the enabled-cache path counts every image up
+        front to distinguish hits from misses).
+        """
+        if count_total:
+            metrics.num_images_total += 1
+        metrics.num_images_encoded += 1
+        pixel_values = getattr(img, "pixel_values", None)
+        if pixel_values is not None and getattr(pixel_values, "shape", None):
+            metrics.num_patches_encoded += int(pixel_values.shape[0])
+        start_idx = getattr(img, "start_idx", None)
+        end_idx = getattr(img, "end_idx", None)
+        if start_idx is not None and end_idx is not None:
+            metrics.num_tokens_encoded += int(end_idx) - int(start_idx)
+
+    def pop_metrics(self) -> VisionEncoderMetrics | None:
+        """Return the metrics for the most recent batch and reset them.
+
+        Returns ``None`` when the most recent batch preparation did no
+        vision encoding (text-only or decode step). Intended to be called
+        once per scheduler iteration.
+        """
+        metrics = self._batch_metrics
+        self._batch_metrics = None
+        return metrics
 
     @traced
     def _cache_and_split(
@@ -251,14 +361,33 @@ class VisionEncoderCache(Generic[VLMContextType]):
         for count, img_hash, req_id in zip(
             per_image_token_counts, image_hashes, request_ids, strict=True
         ):
-            per_device = [
-                dev_tensor[offset : offset + count, :]
-                for dev_tensor in vision_outputs
-            ]
+            start = offset
             offset += count
-            if img_hash is not None:
-                self.insert(img_hash, per_device, count)
-                self.acquire(req_id, img_hash)
+            # 0 is the no-content-hash sentinel (build_video_inputs appends it
+            # for a range with no hash). lookup() treats a falsy hash as a
+            # miss, so an entry cached under 0 is never retrievable -- it would
+            # just waste memory and hold a slot + ref. Skip alloc/insert/
+            # acquire for it, but still advance past its tokens in the encoder
+            # output (this method only populates the cache for future reuse;
+            # the current forward uses the encoder output directly, so skipping
+            # is output-neutral).
+            if not img_hash:
+                continue
+            # Allocate owned copies rather than views so the cache entry does
+            # not pin the (variable-size) vision-encoder output buffer.  This
+            # prevents GPU allocator fragmentation caused by mismatched holes
+            # left behind when the output buffer is freed.
+            per_device = []
+            for dev_tensor in vision_outputs:
+                slot = Buffer.zeros(
+                    shape=[count, int(dev_tensor.shape[1])],
+                    dtype=dev_tensor.dtype,
+                    device=dev_tensor.device,
+                )
+                slot.inplace_copy_from(dev_tensor[start : start + count, :])
+                per_device.append(slot)
+            self.insert(img_hash, per_device, count)
+            self.acquire(req_id, img_hash)
 
     @traced
     def prepare_vision_outputs(
@@ -383,4 +512,4 @@ class VisionEncoderCache(Generic[VLMContextType]):
             return [dl[0] for dl in all_device_bufs]
 
         # allocate on device and copy slices in.
-        return [_concat_buffers(dl) for dl in all_device_bufs]
+        return [concat_device_buffers(dl) for dl in all_device_bufs]

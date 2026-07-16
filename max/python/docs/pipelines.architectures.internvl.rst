@@ -9,4 +9,5 @@ max.pipelines.architectures.internvl
 
 .. automodule:: max.pipelines.architectures.internvl
    :members:
+   :imported-members:
    :show-inheritance:

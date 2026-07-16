@@ -26,7 +26,7 @@ def main():
     l.append(1)
     l.append(2)
     l.append(3)
-    # CHECK: test_negative_index_linked_list.mojo:30:10: Assert Error: index -1 is out of bounds, valid range is 0 to 2
-    _ = l[-1]
+    # CHECK: test_negative_index_linked_list.mojo:30:18: Assert Error: index -1 is out of bounds, valid range is 0 to 2
+    _ = l.get_nth(-1)
     # CHECK-NOT: is never reached
     print("is never reached")

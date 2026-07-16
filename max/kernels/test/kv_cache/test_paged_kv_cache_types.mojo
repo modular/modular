@@ -22,11 +22,12 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
     UNKNOWN_VALUE,
-    coord,
+    Coord,
 )
 from std.memory import alloc
 from std.testing import assert_true
 
+from std.utils.coord import dyn_coord
 from std.utils.index import IndexList
 from std.collections import OptionalReg
 
@@ -47,24 +48,26 @@ def do_test[
         kv_params.head_size,
     )
 
-    var blocks_ptr = alloc[Float32](shape.flattened_length())
+    var blocks_ptr = List(length=shape.flattened_length(), fill=Float32(0))
     var blocks = LayoutTensor[DType.float32, Layout.row_major[6]()](
         blocks_ptr, RuntimeLayout[Layout.row_major[6]()].row_major(shape)
-    ).fill(0)
+    )
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    var cache_lengths_ptr = alloc[UInt32](batch_size)
+    var cache_lengths_ptr = List(length=batch_size, fill=UInt32(0))
     var cache_lengths = LayoutTensor[DType.uint32, layout_1d](
         cache_lengths_ptr,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
-    ).fill(0)
+    )
     comptime layout_2d = Layout.row_major[2]()
-    var lookup_table_ptr = alloc[UInt32](batch_size * max_num_blocks)
+    var lookup_table_ptr = List(
+        length=batch_size * max_num_blocks, fill=UInt32(0)
+    )
     var lookup_table = LayoutTensor[DType.uint32, layout_2d](
         lookup_table_ptr,
         RuntimeLayout[layout_2d].row_major(
             IndexList[2](batch_size, max_num_blocks)
         ),
-    ).fill(0)
+    )
     for i in range(batch_size):
         cache_lengths[i] = UInt32(i)
         for j in range(max_num_blocks):
@@ -74,39 +77,38 @@ def do_test[
     var max_cache_length = UInt32(2048)
 
     var scales: OptionalReg[
-        LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin]
+        LayoutTensor[scale_dtype, Layout.row_major[6](), MutUntrackedOrigin]
     ] = None
 
     comptime if scale_dtype == DType.float8_e4m3fn:
         # Use the same shape as the blocks
         var scales_ptr = alloc[Scalar[scale_dtype]](shape.flattened_length())
-        scales = LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin](
-            scales_ptr, RuntimeLayout[Layout.row_major[6]()].row_major(shape)
+        scales = LayoutTensor[scale_dtype, Layout.row_major[6]()](
+            scales_ptr,
+            RuntimeLayout[Layout.row_major[6]()].row_major(shape),
         ).fill(0)
 
     var collection = PagedKVCacheCollection[
         DType.float32,
         kv_params,
         page_size,
-        scale_dtype,
+        scale_dtype_=scale_dtype,
     ](
-        LayoutTensor[blocks.dtype, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[blocks.dtype, Layout.row_major[6]()](
             blocks.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks.runtime_layout.shape.value,
                 blocks.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[
-            cache_lengths.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            cache_lengths.ptr,
+        LayoutTensor[mut=False, cache_lengths.dtype, Layout(UNKNOWN_VALUE)](
+            cache_lengths.ptr.as_immutable().as_unsafe_any_origin(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths.runtime_layout.shape.value,
                 cache_lengths.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[lookup_table.dtype, Layout.row_major[2](), ImmutAnyOrigin](
+        LayoutTensor[mut=False, lookup_table.dtype, Layout.row_major[2]()](
             lookup_table.ptr,
             RuntimeLayout[Layout.row_major[2]()](
                 lookup_table.runtime_layout.shape.value,
@@ -126,11 +128,6 @@ def do_test[
     var cache = collection.get_key_cache(1)
     _ = cache.block_paged_ptr[layout_block_size](1, layout_block_size, 0)
 
-    # Clean up heap allocations
-    blocks_ptr.free()
-    cache_lengths_ptr.free()
-    lookup_table_ptr.free()
-
 
 def test_paged_kv_cache_stride_is_unknown() raises:
     """Test that PagedKVCache has UNKNOWN stride[0] for view tensor correctness.
@@ -143,7 +140,15 @@ def test_paged_kv_cache_stride_is_unknown() raises:
     This is a regression test - previously Layout.row_major() computed stride[0]
     from just the 4D shape, which was incorrect for view tensors.
     """
-    comptime CacheType = PagedKVCache[DType.float32, kv_params, 16]
+    comptime CacheType = PagedKVCache[
+        DType.float32,
+        kv_params,
+        16,
+        MutUntrackedOrigin,
+        ImmutUntrackedOrigin,
+        ImmutUntrackedOrigin,
+        MutUntrackedOrigin,
+    ]
 
     # Verify stride[0] is UNKNOWN_VALUE
     comptime stride_0 = CacheType.blocks_layout.stride[0].value()
@@ -217,7 +222,7 @@ def test_paged_kv_cache_offset_correctness() raises:
     comptime total_elems = shape_6d.flattened_length()
 
     # Allocate and fill with unique values (value = flattened index)
-    var blocks_ptr = alloc[Float32](total_elems)
+    var blocks_ptr = List(length=total_elems, fill=Float32(0))
     for i in range(total_elems):
         blocks_ptr[i] = Float32(i)
 
@@ -227,8 +232,7 @@ def test_paged_kv_cache_offset_correctness() raises:
 
     # Create minimal supporting tensors
     comptime batch_size = 1
-    var cache_lengths_ptr = alloc[UInt32](batch_size)
-    cache_lengths_ptr[0] = 0
+    var cache_lengths_ptr = List(length=batch_size, fill=UInt32(0))
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     var cache_lengths = LayoutTensor[DType.uint32, layout_1d](
         cache_lengths_ptr,
@@ -236,7 +240,7 @@ def test_paged_kv_cache_offset_correctness() raises:
     )
 
     comptime layout_2d = Layout.row_major[2]()
-    var lookup_table_ptr = alloc[UInt32](batch_size * num_blocks)
+    var lookup_table_ptr = List(length=batch_size * num_blocks, fill=UInt32(0))
     for i in range(num_blocks):
         lookup_table_ptr[i] = UInt32(i)  # Identity mapping
     var lookup_table = LayoutTensor[DType.uint32, layout_2d](
@@ -250,21 +254,21 @@ def test_paged_kv_cache_offset_correctness() raises:
     var collection = PagedKVCacheCollection[
         DType.float32, kv_params_small, page_size
     ](
-        LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[DType.float32, Layout.row_major[6]()](
             blocks.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks.runtime_layout.shape.value,
                 blocks.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, Layout(UNKNOWN_VALUE)](
             cache_lengths.ptr,
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths.runtime_layout.shape.value,
                 cache_lengths.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, Layout.row_major[2]()](
             lookup_table.ptr,
             RuntimeLayout[Layout.row_major[2]()](
                 lookup_table.runtime_layout.shape.value,
@@ -306,7 +310,7 @@ def test_paged_kv_cache_offset_correctness() raises:
     # we'd compute wrong offset: 1*16 + 0*8 + 1*4 + 2 = 22 (wrong!)
 
     # Access via the blocks TileTensor - this tests the layout offset computation
-    var idx = coord[DType.int64](Tuple(1, 0, 1, 2))
+    var idx = dyn_coord[DType.int64]((1, 0, 1, 2))
     var value = key_cache.blocks.raw_load[width=1](key_cache.blocks.layout(idx))
     var expected_value = Float32(expected_6d_offset)
 
@@ -321,15 +325,18 @@ def test_paged_kv_cache_offset_correctness() raises:
         + "). This indicates stride[0] is using incorrect compile-time value.",
     )
 
-    # Clean up
-    blocks_ptr.free()
-    cache_lengths_ptr.free()
-    lookup_table_ptr.free()
-
 
 def test_paged_kv_cache_quantization() raises:
     comptime CacheType = PagedKVCache[
-        DType.float32, kv_params, 16, DType.float8_e4m3fn, 256
+        DType.float32,
+        kv_params,
+        16,
+        MutUntrackedOrigin,
+        ImmutUntrackedOrigin,
+        ImmutUntrackedOrigin,
+        MutUntrackedOrigin,
+        scale_dtype_=DType.float8_e4m3fn,
+        quantization_granularity_=256,
     ]
     assert_true(CacheType.quantization_enabled, "Quantization not enabled")
     assert_true(

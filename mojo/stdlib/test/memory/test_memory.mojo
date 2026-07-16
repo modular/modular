@@ -12,16 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import simd_width_of, size_of
+from std.os import abort
 
 from std.memory import (
     destroy_n,
     memcmp,
-    memcpy,
+    unsafe_memcpy,
     memmove,
     memset,
     memset_zero,
     uninit_copy_n,
     uninit_move_n,
+    forget_deinit,
 )
 from std.testing import TestSuite
 from std.testing import (
@@ -31,6 +33,7 @@ from std.testing import (
     assert_true,
 )
 from test_utils import (
+    AbortOnDel,
     CopyCounter,
     DelCounter,
     MoveCounter,
@@ -40,7 +43,7 @@ from test_utils import (
 from std.utils.numerics import nan
 
 comptime void = __mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
-comptime int8_pop = __mlir_type.`!pop.scalar<si8>`
+comptime int8_pop = __mlir_type.`!kgen.scalar<si8>`
 
 
 @fieldwise_init
@@ -59,7 +62,7 @@ def test_memcpy() raises:
     # UnsafePointer test
     pair2.lo = 0
     pair2.hi = 0
-    memcpy(dest=dest, src=src, count=1)
+    unsafe_memcpy(dest=dest, src=src, count=1)
 
     assert_equal(pair2.lo, 1)
     assert_equal(pair2.hi, 2)
@@ -74,7 +77,7 @@ def test_memcpy() raises:
             buf[i] = src[i] = 2
             dst[i] = 0
 
-        memcpy(dest=dst, src=src, count=size)
+        unsafe_memcpy(dest=dst, src=src, count=size)
         var err = memcmp(dst, buf, size)
 
         assert_equal(err, 0)
@@ -106,7 +109,7 @@ def test_memcpy_dtype() raises:
     assert_equal(b[2], -1)
     assert_equal(b[3], -1)
 
-    memcpy(dest=b, src=a, count=4)
+    unsafe_memcpy(dest=b, src=a, count=4)
 
     assert_equal(b[0], 0)
     assert_equal(b[1], 1)
@@ -601,9 +604,6 @@ def test_memset() raises:
 
 
 def test_pointer_string() raises:
-    var nullptr = UnsafePointer[Int, MutAnyOrigin](_unsafe_null=())
-    assert_equal(String(nullptr), "0x0")
-
     var ptr = alloc[Int](1)
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
@@ -611,9 +611,6 @@ def test_pointer_string() raises:
 
 
 def test_dtypepointer_string() raises:
-    var nullptr = UnsafePointer[Float32, MutAnyOrigin](_unsafe_null=())
-    assert_equal(String(nullptr), "0x0")
-
     var ptr = alloc[Float32](1)
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
@@ -638,7 +635,7 @@ def test_pointer_refitem() raises:
 def test_pointer_refitem_string() raises:
     comptime payload = "$Modular!Mojo!HelloWorld^"
     var ptr = alloc[String](1)
-    __get_address_as_uninit_lvalue(ptr.address) = String()
+    __get_address_as_uninit_lvalue(ptr._get_kgen_pointer()) = String()
     ptr[] = payload
     assert_equal(ptr[], payload)
     ptr.free()
@@ -799,7 +796,10 @@ def test_memmove_overlapping_regions() raises:
     var list = [1, 2, 3, 4, 5, 6, 7]
     # shift all values down by 1
     memmove(
-        dest=list.unsafe_ptr(), src=list.unsafe_ptr() + 1, count=len(list) - 1
+        # NOTE: need `as_unsafe_any_origin` to avoid exclusivity violations
+        dest=list.unsafe_ptr().as_unsafe_any_origin(),
+        src=list.unsafe_ptr().as_unsafe_any_origin() + 1,
+        count=len(list) - 1,
     )
     assert_equal(list, [2, 3, 4, 5, 6, 7, 7])
 
@@ -814,12 +814,13 @@ def test_memmove_non_overlapping_regions() raises:
 
 
 def test_uninit_move_n_trivial() raises:
-    # Test with trivial move type - should use memcpy, not call move constructor
+    # Test with trivial move type - should use unsafe_memcpy, not call move
+    # constructor
     comptime Counter = MoveCounter[Int, trivial_move=True]
     var src = alloc[Counter](3)
-    (src + 0).init_pointee_move(Counter(10))
-    (src + 1).init_pointee_move(Counter(20))
-    (src + 2).init_pointee_move(Counter(30))
+    (src + 0).unsafe_write(Counter(10))
+    (src + 1).unsafe_write(Counter(20))
+    (src + 2).unsafe_write(Counter(30))
 
     var dest = alloc[Counter](3)
 
@@ -844,9 +845,9 @@ def test_uninit_move_n_trivial() raises:
 def test_uninit_move_n_nontrivial() raises:
     # Test with non-trivial type that tracks moves
     var src = alloc[MoveCounter[String]](3)
-    (src + 0).init_pointee_move(MoveCounter("foo"))
-    (src + 1).init_pointee_move(MoveCounter("bar"))
-    (src + 2).init_pointee_move(MoveCounter("baz"))
+    (src + 0).unsafe_write(MoveCounter("foo"))
+    (src + 1).unsafe_write(MoveCounter("bar"))
+    (src + 2).unsafe_write(MoveCounter("baz"))
 
     var dest = alloc[MoveCounter[String]](3)
 
@@ -871,12 +872,12 @@ def test_uninit_move_n_nontrivial() raises:
 
 
 def test_uninit_copy_n_trivial() raises:
-    # Test with trivial copy type - should use memcpy, not call copy ctor
+    # Test with trivial copy type - should use unsafe_memcpy, not call copy ctor
     comptime Counter = CopyCounter[Int, trivial_copy=True]
     var src = alloc[Counter](3)
-    src.init_pointee_move(Counter(0))
-    (src + 1).init_pointee_move(Counter(1))
-    (src + 2).init_pointee_move(Counter(2))
+    src.unsafe_write(Counter(0))
+    (src + 1).unsafe_write(Counter(1))
+    (src + 2).unsafe_write(Counter(2))
 
     var dest = alloc[Counter](3)
 
@@ -890,7 +891,7 @@ def test_uninit_copy_n_trivial() raises:
     assert_equal(dest[1].value, 1)
     assert_equal(dest[2].value, 2)
 
-    # Verify copy constructor was NOT called (trivial copy uses memcpy)
+    # Verify copy constructor was NOT called (trivial copy uses unsafe_memcpy)
     assert_equal(dest[0].copy_count, 0)
     assert_equal(dest[1].copy_count, 0)
     assert_equal(dest[2].copy_count, 0)
@@ -902,9 +903,9 @@ def test_uninit_copy_n_trivial() raises:
 def test_uninit_copy_n_nontrivial() raises:
     # Test with non-trivial type that tracks copies
     var src = alloc[CopyCounter[String]](3)
-    src.init_pointee_move(CopyCounter("alpha"))
-    (src + 1).init_pointee_move(CopyCounter("beta"))
-    (src + 2).init_pointee_move(CopyCounter("gamma"))
+    src.unsafe_write(CopyCounter("alpha"))
+    (src + 1).unsafe_write(CopyCounter("beta"))
+    (src + 2).unsafe_write(CopyCounter("gamma"))
 
     var dest = alloc[CopyCounter[String]](3)
 
@@ -941,9 +942,9 @@ def test_destroy_n_trivial() raises:
     comptime Counter = DelCounter[origin_of(del_count), trivial_del=True]
 
     var ptr = alloc[Counter](3)
-    (ptr + 0).init_pointee_move(Counter(counter_ptr))
-    (ptr + 1).init_pointee_move(Counter(counter_ptr))
-    (ptr + 2).init_pointee_move(Counter(counter_ptr))
+    (ptr + 0).unsafe_write(Counter(counter_ptr))
+    (ptr + 1).unsafe_write(Counter(counter_ptr))
+    (ptr + 2).unsafe_write(Counter(counter_ptr))
 
     # This should compile to nothing for trivial destructors
     destroy_n(ptr, count=3)
@@ -960,9 +961,9 @@ def test_destroy_n_nontrivial() raises:
     comptime Counter = DelCounter[origin_of(del_count)]
 
     var ptr = alloc[Counter](3)
-    (ptr + 0).init_pointee_move(Counter(counter_ptr))
-    (ptr + 1).init_pointee_move(Counter(counter_ptr))
-    (ptr + 2).init_pointee_move(Counter(counter_ptr))
+    (ptr + 0).unsafe_write(Counter(counter_ptr))
+    (ptr + 1).unsafe_write(Counter(counter_ptr))
+    (ptr + 2).unsafe_write(Counter(counter_ptr))
 
     destroy_n(ptr, count=3)
     # Verify destructor was called for all 3 elements
@@ -974,9 +975,9 @@ def test_destroy_n_nontrivial() raises:
 def test_uninit_move_n_zero_count() raises:
     # Test with zero count - should be no-op
     var src = alloc[MoveCounter[String]](1)
-    # Use memcpy to initialize without calling move constructor
+    # Use unsafe_memcpy to initialize without calling move constructor
     var tmp = MoveCounter("test")
-    memcpy(dest=src, src=UnsafePointer(to=tmp), count=1)
+    unsafe_memcpy(dest=src, src=UnsafePointer(to=tmp), count=1)
 
     var dest = alloc[MoveCounter[String]](1)
 
@@ -994,7 +995,7 @@ def test_uninit_move_n_zero_count() raises:
 def test_uninit_copy_n_zero_count() raises:
     # Test with zero count - should be no-op
     var src = alloc[CopyCounter[String]](1)
-    src.init_pointee_move(CopyCounter("test"))
+    src.unsafe_write(CopyCounter("test"))
 
     var dest = alloc[CopyCounter[String]](1)
 
@@ -1016,7 +1017,7 @@ def test_destroy_n_zero_count() raises:
     comptime Counter = DelCounter[origin_of(del_count), trivial_del=True]
 
     var ptr = alloc[Counter](1)
-    ptr.init_pointee_move(Counter(counter_ptr))
+    ptr.unsafe_write(Counter(counter_ptr))
 
     destroy_n(ptr, count=0)
     # Destructor should NOT have been called - del_count should still be 0
@@ -1025,6 +1026,30 @@ def test_destroy_n_zero_count() raises:
     # Cleanup/free the memory
     destroy_n(ptr, count=1)
     ptr.free()
+
+
+@fieldwise_init
+struct Parent:
+    var child: Child
+
+    def __del__(deinit self):
+        abort("@ Parent.__del__ should not have run")
+
+
+@fieldwise_init
+struct Child(Movable):
+    def __del__(deinit self):
+        abort("@ Child.__del__ should not have run")
+
+
+def test_forget_deinit() raises:
+    # Test that simple case skips destructors
+    var abort_on_del = AbortOnDel(0)
+    forget_deinit(abort_on_del^)
+
+    # Test that field destructors are skipped as well
+    var parent = Parent(Child())
+    forget_deinit(parent^)
 
 
 def main() raises:

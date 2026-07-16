@@ -29,10 +29,10 @@ def main() raises:
     }
 
     for var state in capitals:
-        print(capitals[state] + ", " + state)
+        print(t"{capitals[state]}, {state}")
 
     for item in capitals.items():
-        print(item.value + ", " + item.key)
+        print(t"{item.value}, {item.key}")
 
     for i in range(5):
         print(i, end=", ")

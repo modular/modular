@@ -15,4 +15,7 @@
 from .arch import phi3_modulev3_arch
 from .model import Phi3Model
 
-__all__ = ["Phi3Model", "phi3_modulev3_arch"]
+__all__ = [
+    "Phi3Model",
+    "phi3_modulev3_arch",
+]

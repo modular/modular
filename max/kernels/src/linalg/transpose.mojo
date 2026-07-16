@@ -16,10 +16,15 @@ from std.math import ceildiv
 from std.sys.info import simd_width_of, size_of
 from std.sys.intrinsics import strided_load, strided_store
 
-from std.algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
+from std.algorithm import (
+    sync_parallelize,
+    tile,
+    unsafe_parallel_memcpy,
+    vectorize,
+)
 from std.gpu.host import DeviceContext
 from layout import TileTensor
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from std.runtime.asyncrt import parallelism_level
 
 from std.utils.index import IndexList, StaticTuple
@@ -379,7 +384,10 @@ def _permute_data[
 
 def _fill_strides[
     dtype: DType,
-](buf: TileTensor[dtype, ...], strides: TileTensor[mut=True, DType.int, ...],):
+](
+    buf: TileTensor[mut=False, dtype, ...],
+    strides: TileTensor[mut=True, DType.int, ...],
+):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
     `buf` contains contiguous buf.
@@ -657,7 +665,7 @@ def _transpose_2d_parallel_tiled[
 
     var work = ceildiv(n_tiles, rows_per_worker)
 
-    var num_threads = parallelism_level()
+    var num_threads = parallelism_level(ctx)
 
     var num_tasks = min(work, num_threads)
 
@@ -764,14 +772,14 @@ def _transpose_4d_swap_middle_helper[
                     #   output[l, n, m, k] = input[l, m, n, k]
                     var in_off = l * M * N * K + m * N * K + n * K
                     var out_off = l * M * N * K + n * M * K + m * K
-                    memcpy(
+                    unsafe_memcpy(
                         dest=dst_ptr + out_off,
                         src=src_ptr + in_off,
                         count=K,
                     )
         return
     else:
-        var num_threads = parallelism_level()
+        var num_threads = parallelism_level(ctx)
 
         var num_tasks = min(work, num_threads)
 
@@ -789,7 +797,7 @@ def _transpose_4d_swap_middle_helper[
 
                 var in_off = l * M * N * K + m * N * K + n * K
                 var out_off = l * M * N * K + n * M * K + m * K
-                memcpy(
+                unsafe_memcpy(
                     dest=dst_ptr + out_off,
                     src=src_ptr + in_off,
                     count=K,
@@ -897,6 +905,7 @@ def transpose_trivial_memcpy[
     input: TileTensor[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
+    ctx: Optional[DeviceContext] = None,
 ):
     var src_ptr = input.ptr
     var dst_ptr = output.ptr
@@ -908,14 +917,14 @@ def transpose_trivial_memcpy[
     var total_size = Int(output.num_elements())
 
     if total_size <= min_work_for_parallel:
-        memcpy(dest=dst_ptr, src=src_ptr, count=total_size)
+        unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=total_size)
 
     else:
         var work_units = ceildiv(total_size, min_work_per_task)
-        var num_tasks = min(work_units, parallelism_level())
+        var num_tasks = min(work_units, parallelism_level(ctx))
         var work_block_size = ceildiv(work_units, num_tasks)
 
-        parallel_memcpy(
+        unsafe_parallel_memcpy(
             dest=dst_ptr,
             src=src_ptr,
             count=total_size,
@@ -968,13 +977,13 @@ def _copy_with_strides[
         var src_ptr = input_ptr + input_offset
         var dst_ptr = output_ptr + output_offset
         if input_axis_stride == 1 and output_axis_stride == 1:
-            memcpy(dest=dst_ptr, src=src_ptr, count=axis_dim)
+            unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=axis_dim)
         else:
 
             @always_inline
             def _copy[
                 simd_width: Int
-            ](offset: Int) unified {
+            ](offset: Int) {
                 var input_axis_stride,
                 var output_axis_stride,
                 mut dst_ptr,
@@ -1020,7 +1029,7 @@ def _copy_with_strides[
             next_output_offset += output_axis_stride
 
     else:
-        var num_threads = parallelism_level()
+        var num_threads = parallelism_level(ctx)
         var num_tasks = min(
             ceildiv(output_bytecount, min_work_per_task), num_threads
         )
@@ -1209,8 +1218,8 @@ def transpose[
     )
 
     if simplified_rank == 1:
-        # memcpy
-        return transpose_trivial_memcpy(output, input)
+        # unsafe_memcpy
+        return transpose_trivial_memcpy(output, input, ctx)
     # TODO: Re-enable once #15947 is fixed.
     # elif simplified_rank == 2:
     #     # tiled transpose

@@ -24,8 +24,10 @@ The module includes:
 from std.itertools import product
 from std.random import random_float64
 from std.sys import is_nvidia_gpu
+from layout.coord import Coord
 
-from .coord import Coord
+from .layout import Layout
+from .layout_tensor import LayoutTensor
 from .tile_layout import TensorLayout
 from .tile_tensor import TileTensor
 
@@ -315,8 +317,8 @@ def arange[
     else:
         # Provide evidence that flat_rank == 2 for the constraint system
         comptime assert tensor.flat_rank == 2
-        var rows = tensor.layout.shape[0]().value()
-        var cols = tensor.layout.shape[1]().value()
+        var rows = Int(tensor.layout.shape[0]().value())
+        var cols = Int(tensor.layout.shape[1]().value())
         for m, n in product(range(rows), range(cols)):
             tensor[m, n] = (Scalar[dtype](m * cols + n) * step + start) % end
 

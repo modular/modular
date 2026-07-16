@@ -48,7 +48,6 @@ comptime ALLOCS_PER_ITER = 2048
 @parameter
 def bench_heap_alloc_parallel(mut b: Bencher) raises:
     @always_inline
-    @parameter
     def call_fn():
         var num_tasks = num_physical_cores()
         if num_tasks < 1:
@@ -60,7 +59,7 @@ def bench_heap_alloc_parallel(mut b: Bencher) raises:
         @always_inline
         def task_body(
             task_id: Int,
-        ) unified {mut checksum, read per_task,}:
+        ) {mut checksum, read per_task,}:
             var acc = Scalar[DType.int64](0)
             var j = 0
             while j < per_task:
@@ -91,7 +90,7 @@ def bench_heap_alloc_parallel(mut b: Bencher) raises:
         parallelize(task_body, num_tasks)
         keep(checksum.load())
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 def main() raises:

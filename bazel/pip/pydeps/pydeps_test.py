@@ -116,12 +116,6 @@ def main() -> int:
             print(f"  {_rerender_label(dep)}")
         result = 1
 
-    if result == 1:
-        print(
-            "\nThis test can also be completely disabled by adding a `no-pydeps` tag to the target, "
-            "but prefer to fix the issues above if possible."
-        )
-
     return result
 
 

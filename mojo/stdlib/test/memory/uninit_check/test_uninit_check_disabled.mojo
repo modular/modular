@@ -12,27 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 # Tests that the poison check is disabled by default
 # (without -D MOJO_STDLIB_SIMD_UNINIT_CHECK).
-# Loading poison values should NOT crash when the check is disabled.
+# Loading the poison pattern should NOT crash when the check is disabled.
 
 from std.memory import UnsafePointer
 
 
 def test_poison_ignored_when_disabled():
-    """With MOJO_STDLIB_SIMD_UNINIT_CHECK not set, loading poison should
-    not abort."""
-    var value = UInt32(0xFFFFFFFF)
-    var ptr = UnsafePointer(to=value).bitcast[Float32]()
-    _ = ptr.load()
-
-
-def test_device_poison_ignored_when_disabled():
-    """With MOJO_STDLIB_SIMD_UNINIT_CHECK not set, loading device poison
-    should not abort."""
-    var value = UInt32(0x7FC00000)
+    """With MOJO_STDLIB_SIMD_UNINIT_CHECK not set, loading the poison
+    pattern should not abort."""
+    var value = UInt32(0x7F7FFFFF)
     var ptr = UnsafePointer(to=value).bitcast[Float32]()
     _ = ptr.load()
 
 
 def main():
     test_poison_ignored_when_disabled()
-    test_device_poison_ignored_when_disabled()

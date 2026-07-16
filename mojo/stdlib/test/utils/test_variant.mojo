@@ -12,7 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.ffi import _Global
-from std.memory import UnsafeMaybeUninit
+from std.memory import (
+    UnsafeMaybeUninit,
+    is_trivially_copyable,
+    is_trivially_deletable,
+    is_trivially_movable,
+)
 from std.os import abort
 from std.sys import size_of
 
@@ -41,7 +46,7 @@ def _initialize_poison() -> Bool:
     return False
 
 
-def _poison_ptr() -> UnsafePointer[Bool, MutExternalOrigin]:
+def _poison_ptr() -> UnsafePointer[Bool, MutUntrackedOrigin]:
     try:
         return TEST_VARIANT_POISON.get_or_create_ptr()
     except:
@@ -57,13 +62,13 @@ struct Poison(ImplicitlyCopyable):
         pass
 
     def __init__(out self, *, copy: Self):
-        _poison_ptr().init_pointee_move(True)
+        _poison_ptr().unsafe_write(True)
 
-    def __init__(out self, *, deinit take: Self):
-        _poison_ptr().init_pointee_move(True)
+    def __init__(out self, *, deinit move: Self):
+        _poison_ptr().unsafe_write(True)
 
     def __del__(deinit self):
-        _poison_ptr().init_pointee_move(True)
+        _poison_ptr().unsafe_write(True)
 
 
 comptime TestVariant = Variant[MoveCopyCounter, Poison]
@@ -214,45 +219,61 @@ def test_variant_linear_type_take() raises:
     assert_equal(data, 5)
 
 
-def test_variant_linear_type_destroy_with() raises:
+def test_variant_linear_type_deinit_with() raises:
     # Test destroying a linear variant element in-place
     var v1 = Variant[ExplicitDelOnly, String](ExplicitDelOnly(5))
-    v1^.destroy_with(ExplicitDelOnly.destroy)
+    v1^.deinit_with[ExplicitDelOnly](ExplicitDelOnly.destroy)
 
     # Test destroying a non-linear variant element in-place
     var v2 = Variant[ExplicitDelOnly, String]("notlinear")
-    v2^.destroy_with(String.__del__)
+    v2^.deinit_with[String](String.__del__)
 
 
 def test_variant_linear_type_move() raises:
     var v1 = Variant[ExplicitDelOnly, String](ExplicitDelOnly(5))
     var v2 = v1^
 
-    v2^.destroy_with(ExplicitDelOnly.destroy)
+    v2^.deinit_with[ExplicitDelOnly](ExplicitDelOnly.destroy)
+
+
+def test_variant_deinit_with_stateful_closure() raises:
+    # Verify a closure capturing local state can be passed as
+    # `deinit_func` (not just a thin function reference).
+    var counter = 0
+
+    def increment_counter(var _value: Int) {mut counter}:
+        counter += 1
+
+    var v = Variant[Int, String](42)
+    v^.deinit_with[Int](increment_counter)
+    assert_equal(counter, 1)
 
 
 def test_variant_trivial_del() raises:
     comptime yes = ConfigureTrivial[del_is_trivial=True]
     comptime no = ConfigureTrivial[del_is_trivial=False]
 
-    assert_true(Variant[yes].__del__is_trivial)
-    assert_false(Variant[no].__del__is_trivial)
-    assert_false(Variant[yes, no].__del__is_trivial)
+    assert_true(is_trivially_deletable[Variant[yes]]())
+    assert_false(is_trivially_deletable[Variant[no]]())
+    assert_false(is_trivially_deletable[Variant[yes, no]]())
 
     # TODO (MOCO-3016):
     # check variant of linear type
-    # assert_false(Variant[LinearType].__del__is_trivial)
+    # assert_false(is_trivially_deletable[Variant[LinearType]]())
 
 
 def test_variant_trivial_copyinit() raises:
     comptime yes = ConfigureTrivial[copyinit_is_trivial=True]
     comptime no = ConfigureTrivial[copyinit_is_trivial=False]
 
-    assert_true(Variant[yes].__copy_ctor_is_trivial)
-    assert_false(Variant[no].__copy_ctor_is_trivial)
-    assert_false(Variant[yes, no].__copy_ctor_is_trivial)
+    assert_true(is_trivially_copyable[Variant[yes]]())
+    assert_false(is_trivially_copyable[Variant[no]]())
+    assert_false(is_trivially_copyable[Variant[yes, no]]())
 
-    # check variant of move-only type
+    # check variant of move-only type. `Variant[MoveOnly[Int]]` does not
+    # conform to `Copyable`, so we read the trivial-flag field directly
+    # rather than calling `is_trivially_copyable`, which constrains its
+    # type parameter to `Copyable`.
     assert_false(Variant[MoveOnly[Int]].__copy_ctor_is_trivial)
 
 
@@ -260,13 +281,13 @@ def test_variant_trivial_moveinit() raises:
     comptime yes = ConfigureTrivial[moveinit_is_trivial=True]
     comptime no = ConfigureTrivial[moveinit_is_trivial=False]
 
-    assert_true(Variant[yes].__move_ctor_is_trivial)
-    assert_false(Variant[no].__move_ctor_is_trivial)
-    assert_false(Variant[yes, no].__move_ctor_is_trivial)
+    assert_true(is_trivially_movable[Variant[yes]]())
+    assert_false(is_trivially_movable[Variant[no]]())
+    assert_false(is_trivially_movable[Variant[yes, no]]())
 
     # check variant of non-movable type
     # # TODO(MOCO-3383): Compiler issue with folding non-struct types
-    # assert_false(Variant[NonMovable].__move_ctor_is_trivial)
+    # assert_false(is_trivially_movable[Variant[NonMovable]]())
 
 
 def test_variant_write_to() raises:
@@ -278,9 +299,13 @@ def test_variant_write_to() raises:
 
 def test_variant_write_repr_to() raises:
     var v = Variant[Int, String](42)
-    check_write_to(v, expected="Variant[Int, String](Int(42))", is_repr=True)
+    check_write_to(
+        v, expected="Variant[SIMD[DType.int, 1], String](Int(42))", is_repr=True
+    )
     v = "hello"
-    check_write_to(v, expected="Variant[Int, String]('hello')", is_repr=True)
+    check_write_to(
+        v, expected="Variant[SIMD[DType.int, 1], String]('hello')", is_repr=True
+    )
 
 
 @fieldwise_init
@@ -390,6 +415,15 @@ def test_variant_hash() raises:
     assert_true(hash(V1(42)) != hash(V1(99)))
 
 
+@fieldwise_init
+struct _Bare(Movable):
+    """A `Movable & ImplicitlyDeletable` type that conforms to nothing
+    else — used to exercise the negative case of `Variant`'s conditional
+    conformances."""
+
+    var n: Int
+
+
 def test_variant_conditional_conformances() raises:
     assert_true(conforms_to(Variant[Int, String], Equatable))
     assert_true(conforms_to(Variant[Int], Equatable))
@@ -398,9 +432,9 @@ def test_variant_conditional_conformances() raises:
     assert_true(conforms_to(Variant[Int, String], Writable))
     assert_true(conforms_to(Variant[Int], Writable))
 
-    assert_false(conforms_to(Variant[MoveOnly[Int]], Equatable))
-    assert_false(conforms_to(Variant[MoveOnly[Int]], Hashable))
-    assert_false(conforms_to(Variant[MoveOnly[Int]], Writable))
+    assert_false(conforms_to(Variant[_Bare], Equatable))
+    assert_false(conforms_to(Variant[_Bare], Hashable))
+    assert_false(conforms_to(Variant[_Bare], Writable))
 
     # Copyable: all types Copyable
     assert_true(conforms_to(Variant[Int, String], Copyable))

@@ -27,9 +27,15 @@ example, with Pixi), and run tests. Start here if you're new to contributing.
   governance structure**: Who leads the stdlib, how reviews and proposals work,
   and how the structure may evolve.
 
+- [adding-gpu-targets.md](adding-gpu-targets.md)—**Adding a new GPU target**:
+  Contributor guide for extending `std/gpu/host/info.mojo` with a new GPU
+  architecture, covering the MLIR target configuration and the `data_layout`
+  string format.
+
 ## Other docs
 
-- [`/mojo/docs`](/mojo/docs): Source docs for docs.modular.com/mojo.
+- [`oss/modular/mojo/docs`](https://www.mojolang.org/docs): Mojo user
+  documentation (published at www.mojolang.org).
 - [`/max/docs`](/max/docs): Docs for developers working in the MAX framework.
 - [`/max/docs/design-docs`](/max/docs/design-docs): Engineering docs that
   describe how core Modular technologies work.

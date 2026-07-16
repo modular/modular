@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """End-to-end test for uninitialized memory read detection via the Python API.
 
-Verifies that MODULAR_MAX_UNINITIALIZED_READ_CHECK=true enables the full
-pipeline: debug allocator poison + Mojo MOJO_STDLIB_SIMD_UNINIT_CHECK define.
+Verifies that MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK=true enables the
+full pipeline: debug allocator poison + Mojo MOJO_STDLIB_SIMD_UNINIT_CHECK
+define.
 
 Each test spawns a subprocess so the env var is read fresh by
 InferenceSession.__init__.
@@ -40,7 +41,10 @@ def test_uninit_check_no_false_positives_e2e() -> None:
         text=True,
         errors="replace",
         timeout=120,
-        env={**os.environ, "MODULAR_MAX_UNINITIALIZED_READ_CHECK": "true"},
+        env={
+            **os.environ,
+            "MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK": "true",
+        },
     )
     assert result.returncode == 0, (
         f"Model execution failed (exit code {result.returncode}).\n"
@@ -55,7 +59,7 @@ def test_uninit_check_disabled_by_default_e2e() -> None:
     env = {
         k: v
         for k, v in os.environ.items()
-        if k != "MODULAR_MAX_UNINITIALIZED_READ_CHECK"
+        if k != "MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK"
     }
     result = subprocess.run(
         [sys.executable, str(_SCRIPTS_DIR / "well_behaved_model.py")],
@@ -81,7 +85,10 @@ def test_uninit_check_env_var_sets_allocator_and_define() -> None:
         text=True,
         errors="replace",
         timeout=120,
-        env={**os.environ, "MODULAR_MAX_UNINITIALIZED_READ_CHECK": "true"},
+        env={
+            **os.environ,
+            "MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK": "true",
+        },
     )
     assert result.returncode == 0, (
         f"Plumbing check failed (exit code {result.returncode}).\n"
@@ -107,7 +114,7 @@ def test_uninit_check_detects_uninitialized_read_e2e() -> None:
         timeout=120,
         env={
             **os.environ,
-            "MODULAR_MAX_UNINITIALIZED_READ_CHECK": "true",
+            "MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK": "true",
             "UNINIT_OPS_PATH": os.environ["UNINIT_OPS_PATH"],
         },
     )

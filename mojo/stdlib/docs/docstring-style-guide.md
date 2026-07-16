@@ -17,7 +17,12 @@ style guide.
 
 ## Basics
 
-- Docstrings support Markdown formatting.
+- Docstrings support Markdown formatting, but do not use Markdown headings
+  (`#`, `##`, `###`) inside docstrings. Use only the standard Google-style
+  section labels (`Parameters:`, `Args:`, `Returns:`, `Raises:`,
+  `Constraints:`) and freeform section labels like `Examples:` and `Notes:`.
+  For other labeled subsections (for example, safety notes), use bold text
+  (`**Safety:**`) instead of a heading.
 
 - End all sentences with a period (including sentence fragments).
 
@@ -56,7 +61,7 @@ argument/parameter names, etc.).
 
 - Every package/module should have a one-sentence description at the top that
   concisely summarizes the contents (for examples, see the
-  [std package summaries](https://docs.modular.com/mojo/std/)).
+  [std package summaries](https://www.mojolang.org/docs/std/)).
 
   Keep the first line of the package description to 100 characters or fewer
   so it won't be truncated on the index page.
@@ -137,7 +142,7 @@ Raises:
 ### Constraints
 
 Mojo functions can have compile-time *constraints,* defined using the
-[`constrained()`](https://docs.modular.com/mojo/std/builtin/constrained#constrained)
+[`constrained()`](https://www.mojolang.org/docs/std/builtin/constrained#constrained)
 function. If the constraint isn’t met, compilation fails. Constraints can be
 based on anything known at compile time, like a parameter value. You can't
 create a constraint on an *argument*, because argument values are only known at

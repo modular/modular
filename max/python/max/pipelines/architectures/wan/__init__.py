@@ -13,17 +13,14 @@
 """Wan diffusion architecture for video generation."""
 
 from .arch import WanArchConfig, wan_arch, wan_i2v_arch
-from .context import WanContext
-from .model import WanTransformerModel
-from .tokenizer import WanTokenizer
-from .wan_executor import WanExecutor
+from .model import BlockLevelModel
+from .model_config import WanConfig, WanConfigBase
 
 __all__ = [
+    "BlockLevelModel",
     "WanArchConfig",
-    "WanContext",
-    "WanExecutor",
-    "WanTokenizer",
-    "WanTransformerModel",
+    "WanConfig",
+    "WanConfigBase",
     "wan_arch",
     "wan_i2v_arch",
 ]

@@ -23,7 +23,15 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from layout import TileTensor, TensorLayout, Idx, row_major, stack_allocation
+from layout import (
+    Coord,
+    TileTensor,
+    TensorLayout,
+    TensorStorage,
+    Idx,
+    row_major,
+    stack_allocation,
+)
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -64,6 +72,9 @@ def sgemm_warp_tiling_kernel[
     ALayoutType: TensorLayout,
     b_type: DType,
     BLayoutType: TensorLayout,
+    c_storage: TensorStorage,
+    a_storage: TensorStorage,
+    b_storage: TensorStorage,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -76,9 +87,9 @@ def sgemm_warp_tiling_kernel[
     NUM_THREADS: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    mat_c: TileTensor[c_type, CLayoutType, MutAnyOrigin],
-    mat_a: TileTensor[a_type, ALayoutType, MutAnyOrigin],
-    mat_b: TileTensor[b_type, BLayoutType, MutAnyOrigin],
+    mat_c: TileTensor[c_type, CLayoutType, MutAnyOrigin, Storage=c_storage],
+    mat_a: TileTensor[a_type, ALayoutType, MutAnyOrigin, Storage=a_storage],
+    mat_b: TileTensor[b_type, BLayoutType, MutAnyOrigin, Storage=b_storage],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
 ) where (a_type.is_numeric() and b_type.is_numeric()):
@@ -162,7 +173,7 @@ def sgemm_warp_tiling_kernel[
                 bb_ptr + (inner_row_b + offset) * N + inner_co_ib * 4
             )
             b_sram.store[alignment=16](
-                (Idx((inner_row_b + offset) * BN + inner_co_ib * 4),),
+                ((inner_row_b + offset) * BN + inner_co_ib * 4,),
                 tmp,
             )
 
@@ -173,31 +184,27 @@ def sgemm_warp_tiling_kernel[
             comptime for w_sub_row_idx in range(WMITER):
                 comptime for i in range(0, TM, 4):
                     var vec = a_sram.load[width=4, alignment=16](
-                        (
-                            Idx(
-                                (dot_idx * BM_padded)
-                                + warp_row * WM
-                                + w_sub_row_idx * w_sub_m
-                                + thread_row_in_warp * TM
-                                + i
-                            ),
+                        Coord(
+                            (dot_idx * BM_padded)
+                            + warp_row * WM
+                            + w_sub_row_idx * w_sub_m
+                            + thread_row_in_warp * TM
+                            + i
                         )
                     )
-                    reg_m.store((Idx(w_sub_row_idx), Idx(i)), vec)
+                    reg_m.store((w_sub_row_idx, i), vec)
 
             comptime for w_sub_col_idx in range(WNITER):
                 comptime for i in range(0, TN, 4):
                     var vec = b_sram.load[width=4, alignment=16](
-                        (
-                            Idx(
-                                (dot_idx * BN)
-                                + warp_col * WN
-                                + w_sub_col_idx * w_sub_n
-                                + thread_col_in_warp * TN
-                            ),
+                        Coord(
+                            (dot_idx * BN)
+                            + warp_col * WN
+                            + w_sub_col_idx * w_sub_n
+                            + thread_col_in_warp * TN
                         )
                     )
-                    reg_n.store((Idx(w_sub_col_idx), Idx(i)), vec)
+                    reg_n.store((w_sub_col_idx, i), vec)
 
             # Execute warptile matmul.
             comptime for w_sub_row_idx in range(WMITER):
@@ -233,10 +240,10 @@ def sgemm_warp_tiling_kernel[
                     var c_idx = M_offset_val * N + N_offset_val
                     var result_vec = thread_results.load[width=4](
                         (
-                            Idx(w_sub_row_idx),
-                            Idx(w_sub_col_idx),
-                            Idx(res_idx_m),
-                            Idx(res_idx_n),
+                            w_sub_row_idx,
+                            w_sub_col_idx,
+                            res_idx_m,
+                            res_idx_n,
                         )
                     )
 
@@ -393,6 +400,9 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         type_of(a_layout),
         DType.float32,
         type_of(b_layout),
+        c_storage=type_of(c_buffer).Storage,
+        a_storage=type_of(a_buffer).Storage,
+        b_storage=type_of(b_buffer).Storage,
         BM=K10_BM,
         BN=K10_BN,
         BK=K10_BK,
@@ -411,7 +421,7 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         @parameter
         @always_inline
         def run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function[sgemm_type, sgemm_type](
+            ctx.enqueue_function[sgemm_type](
                 c_buffer,
                 a_buffer,
                 b_buffer,
@@ -442,7 +452,7 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         @parameter
         @always_inline
         def run_func_naive(ctx: DeviceContext) raises:
-            ctx.enqueue_function[matmul_naive, matmul_naive](
+            ctx.enqueue_function[matmul_naive](
                 a_device,
                 b_device,
                 c_device,

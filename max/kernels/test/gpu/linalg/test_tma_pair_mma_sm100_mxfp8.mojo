@@ -201,7 +201,7 @@ def blockscaled_pair_cta_mxfp8[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](a_smem)
+    ](a_smem.as_unsafe_any_origin())
 
     var b_smem_tile = LayoutTensor[
         b_type,
@@ -209,7 +209,7 @@ def blockscaled_pair_cta_mxfp8[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](b_smem)
+    ](b_smem.as_unsafe_any_origin())
 
     var a_scales_smem_tile = LayoutTensor[
         a_scales_type,
@@ -217,7 +217,7 @@ def blockscaled_pair_cta_mxfp8[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](a_scales_smem)
+    ](a_scales_smem.as_unsafe_any_origin())
 
     var b_scales_smem_tile = LayoutTensor[
         b_scales_type,
@@ -225,7 +225,7 @@ def blockscaled_pair_cta_mxfp8[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](b_scales_smem)
+    ](b_scales_smem.as_unsafe_any_origin())
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -651,7 +651,8 @@ def sm100_blockscaled_mxfp8_cta_pair[
     comptime b_scales_4d_layout = scales_4d_layout[b_scales_layout]
 
     var a_scales_4d = LayoutTensor[
-        a_scales_type, a_scales_4d_layout, MutAnyOrigin
+        a_scales_type,
+        a_scales_4d_layout,
     ](
         a_scales.ptr,
         RuntimeLayout[a_scales_4d_layout].row_major(
@@ -664,7 +665,8 @@ def sm100_blockscaled_mxfp8_cta_pair[
         ),
     )
     var b_scales_4d = LayoutTensor[
-        b_scales_type, b_scales_4d_layout, MutAnyOrigin
+        b_scales_type,
+        b_scales_4d_layout,
     ](
         b_scales.ptr,
         RuntimeLayout[b_scales_4d_layout].row_major(
@@ -735,7 +737,7 @@ def sm100_blockscaled_mxfp8_cta_pair[
         cta_group=cta_group,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         a_scales_tma_op,
@@ -774,8 +776,8 @@ def test_blockscaled_pair_cta_mxfp8[
 ](ctx: DeviceContext, m: MType, n: NType) raises:
     comptime assert transpose_b, "transpose_b must be true"
 
-    var M = m.value()
-    var N = n.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
     var K = k
 
     comptime BM = block_tile_shape[0]
@@ -791,10 +793,10 @@ def test_blockscaled_pair_cta_mxfp8[
     # Initialize reference scales
     comptime REF_BLOCK_SCALE = 128
 
-    var ref_a_scales_shape = Coord(Idx[ceildiv(k, REF_BLOCK_SCALE)](), m)
+    var ref_a_scales_shape = Coord(Idx[ceildiv(k, REF_BLOCK_SCALE)], m)
     var ref_b_scales_shape = Coord(
-        Idx(ceildiv(N, REF_BLOCK_SCALE)),
-        Idx[ceildiv(k, REF_BLOCK_SCALE)](),
+        ceildiv(N, REF_BLOCK_SCALE),
+        Idx[ceildiv(k, REF_BLOCK_SCALE)],
     )
 
     var ref_a_scales_size = ceildiv(k, REF_BLOCK_SCALE) * M
@@ -802,13 +804,13 @@ def test_blockscaled_pair_cta_mxfp8[
         k, REF_BLOCK_SCALE
     )
 
-    var a_scales_host_ref_ptr = alloc[Scalar[ref_scales_type]](
+    var a_scales_host_ref_ptr = ctx.enqueue_create_host_buffer[ref_scales_type](
         ref_a_scales_size
     )
     var a_scales_host_ref = TileTensor(
         a_scales_host_ref_ptr, row_major(ref_a_scales_shape)
     )
-    var b_scales_host_ref_ptr = alloc[Scalar[ref_scales_type]](
+    var b_scales_host_ref_ptr = ctx.enqueue_create_host_buffer[ref_scales_type](
         ref_b_scales_size
     )
     var b_scales_host_ref = TileTensor(
@@ -837,9 +839,9 @@ def test_blockscaled_pair_cta_mxfp8[
 
     for i in range(ceildiv(N, REF_BLOCK_SCALE)):
         for j in range(ceildiv(K, REF_BLOCK_SCALE)):
-            b_scales_host_ref[Coord(Idx(i), Idx(j))] = (
-                1 << random_ui64(0, 3)
-            ).cast[ref_scales_type]()
+            b_scales_host_ref[Coord(i, j)] = (1 << random_ui64(0, 3)).cast[
+                ref_scales_type
+            ]()
 
     ctx.enqueue_copy(a_scales_device_ref, a_scales_host_ref_ptr)
     ctx.enqueue_copy(b_scales_device_ref, b_scales_host_ref_ptr)
@@ -866,8 +868,8 @@ def test_blockscaled_pair_cta_mxfp8[
         + String(cta_group)
     )
 
-    var a_shape = Coord(m, Idx[k]())
-    var b_shape = Coord(n, Idx[k]())
+    var a_shape = Coord(m, Idx[k])
+    var b_shape = Coord(n, Idx[k])
     var c_shape = Coord(m, n)
 
     comptime SF_VECTOR_SIZE = 32
@@ -876,18 +878,18 @@ def test_blockscaled_pair_cta_mxfp8[
     comptime sf_k = ceildiv(k, SF_VECTOR_SIZE)
 
     var a_scales_shape = Coord(
-        Idx(ceildiv(M, SF_ATOM_M[0] * SF_ATOM_M[1])),
-        Idx[ceildiv(sf_k, SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        ceildiv(M, SF_ATOM_M[0] * SF_ATOM_M[1]),
+        Idx[ceildiv(sf_k, SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = Coord(
-        Idx(ceildiv(N, SF_ATOM_M[0] * SF_ATOM_M[1])),
-        Idx[ceildiv(sf_k, SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        ceildiv(N, SF_ATOM_M[0] * SF_ATOM_M[1]),
+        Idx[ceildiv(sf_k, SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_total = (
@@ -905,9 +907,13 @@ def test_blockscaled_pair_cta_mxfp8[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_total)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        a_scales_total
+    )
     var a_scales_host = TileTensor(a_scales_host_ptr, row_major(a_scales_shape))
-    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_total)
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        b_scales_total
+    )
     var b_scales_host = TileTensor(b_scales_host_ptr, row_major(b_scales_shape))
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_total)
@@ -917,10 +923,10 @@ def test_blockscaled_pair_cta_mxfp8[
     var b_size = N * k
     var c_size = M * N
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -932,7 +938,7 @@ def test_blockscaled_pair_cta_mxfp8[
     ](
         m,
         n,
-        Idx[k](),
+        Idx[k],
         a_scales_host_ref.to_layout_tensor(),
         b_scales_host_ref.to_layout_tensor(),
         a_scales_host.to_layout_tensor(),
@@ -952,8 +958,8 @@ def test_blockscaled_pair_cta_mxfp8[
             for k in range(K):
                 b_host_tt[n, k] = Float32(1 if n == k else 0).cast[b_type]()
     else:
-        rand(a_host_ptr, a_size)
-        rand(b_host_ptr, b_size)
+        rand(a_host_ptr.unsafe_ptr(), a_size)
+        rand(b_host_ptr.unsafe_ptr(), b_size)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -1001,22 +1007,12 @@ def test_blockscaled_pair_cta_mxfp8[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host_ptr,
-        c_host_ref_ptr,
+        c_host_ptr.unsafe_ptr(),
+        c_host_ref_ptr.unsafe_ptr(),
         c_size,
         atol=1e-3,
         rtol=1e-4,
     )
-
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
-    a_scales_host_ref_ptr.free()
-    b_scales_host_ref_ptr.free()
 
 
 def main() raises:
@@ -1037,7 +1033,7 @@ def main() raises:
             b_swizzle=swizzle,
             cta_group=2,
             k=3 * BK,
-        ](ctx, Idx(256), Idx[128]())
+        ](ctx, Idx[256], Idx[128])
 
         test_blockscaled_pair_cta_mxfp8[
             dtype,
@@ -1050,7 +1046,7 @@ def main() raises:
             b_swizzle=swizzle,
             cta_group=2,
             k=2 * BK,
-        ](ctx, Idx(256), Idx[256]())
+        ](ctx, Idx[256], Idx[256])
 
         test_blockscaled_pair_cta_mxfp8[
             dtype,
@@ -1063,4 +1059,4 @@ def main() raises:
             b_swizzle=swizzle,
             cta_group=2,
             k=2 * BK,
-        ](ctx, Idx(512), Idx[512]())
+        ](ctx, Idx[512], Idx[512])

@@ -23,7 +23,7 @@ import numpy as np
 import pytest
 from max.driver import CPU, Device
 from max.driver.buffer import Buffer
-from max.kv_cache import (
+from max.pipelines.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     TransferReqData,

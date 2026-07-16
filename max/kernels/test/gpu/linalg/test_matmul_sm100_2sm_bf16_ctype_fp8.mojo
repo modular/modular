@@ -67,31 +67,35 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem"
-        t" shape=({m.value()}, {n.value()}, {k.value()})"
+        t" shape=({Int(m.value())}, {Int(n.value())}, {Int(k.value())})"
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
         t" {cluster_shape[1]}, {cluster_shape[2]})"
         t" swapAB={swapAB} k_group_size={k_group_size}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
-    var c_size = m.value() * n.value()
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = (
+        Int(n.value())
+        * Int(k.value()) if transpose_b else Int(k.value())
+        * Int(n.value())
+    )
+    var c_size = Int(m.value()) * Int(n.value())
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[accum_dtype]](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[accum_dtype](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -105,17 +109,13 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
     # Initialize matmul operands
     if simple_init():
-        for m_idx in range(m.value()):
-            for k_idx in range(k.value()):
-                comptime assert a_host.flat_rank >= 2
-                a_host[(Idx(m_idx), Idx(k_idx))] = Float32(m_idx + k_idx).cast[
-                    a_type
-                ]()
-        for n_idx in range(n.value()):
-            for k_idx in range(k.value()):
-                b_host[(Idx(n_idx), Idx(k_idx))] = Float32(n_idx + k_idx).cast[
-                    b_type
-                ]()
+        for m_idx in range(Int(m.value())):
+            for k_idx in range(Int(k.value())):
+                comptime assert a_host.flat_rank == 2
+                a_host[m_idx, k_idx] = Float32(m_idx + k_idx).cast[a_type]()
+        for n_idx in range(Int(n.value())):
+            for k_idx in range(Int(k.value())):
+                b_host[n_idx, k_idx] = Float32(n_idx + k_idx).cast[b_type]()
     else:
         rand(a_host.ptr, a_host.num_elements(), min=-1.0, max=1.0)
         rand(b_host.ptr, b_host.num_elements(), min=-1.0, max=1.0)
@@ -175,24 +175,18 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
     for i in range(c_host_ref.dim[0]()):
         for j in range(c_host_ref.dim[1]()):
-            comptime assert i.dtype.is_integral()
-            comptime assert j.dtype.is_integral()
-            comptime assert c_host.flat_rank >= 2
+            comptime assert type_of(i).dtype.is_integral()
+            comptime assert type_of(j).dtype.is_integral()
+            comptime assert c_host.flat_rank == 2
             assert_equal(
-                c_host[(Idx(i), Idx(j))].cast[DType.float64](),
-                c_host_ref[(Idx(i), Idx(j))]
-                .cast[c_type]()
-                .cast[DType.float64](),
+                c_host[i, j].cast[DType.float64](),
+                c_host_ref[i, j].cast[c_type]().cast[DType.float64](),
                 msg="At [" + String(i) + ", " + String(j) + "]",
             )
 
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -237,9 +231,9 @@ def main() raises:
                             swapAB=swapAB,
                         ](
                             ctx,
-                            Idx(Int(64)),
-                            Idx(64),
-                            Idx[1024 + 16](),
+                            Int(64),
+                            Idx[64],
+                            Idx[1024 + 16],
                         )
 
                         test_blackwell_matmul_tma_umma_warp_specialized[
@@ -256,9 +250,9 @@ def main() raises:
                             swapAB=swapAB,
                         ](
                             ctx,
-                            Idx(Int(512)),
-                            Idx(4096),
-                            Idx[1024 + 16](),
+                            Int(512),
+                            Idx[4096],
+                            Idx[1024 + 16],
                         )
 
                         test_blackwell_matmul_tma_umma_warp_specialized[
@@ -276,9 +270,9 @@ def main() raises:
                             swapAB=swapAB,
                         ](
                             ctx,
-                            Idx(Int(500)),
-                            Idx(2048),
-                            Idx(4096),
+                            Int(500),
+                            Idx[2048],
+                            Idx[4096],
                         )
 
                         test_blackwell_matmul_tma_umma_warp_specialized[
@@ -295,9 +289,9 @@ def main() raises:
                             swapAB=swapAB,
                         ](
                             ctx,
-                            Idx(Int(999)),
-                            Idx(256),
-                            Idx(128),
+                            Int(999),
+                            Idx[256],
+                            Idx[128],
                         )
 
                         test_blackwell_matmul_tma_umma_warp_specialized[
@@ -314,7 +308,7 @@ def main() raises:
                             swapAB=swapAB,
                         ](
                             ctx,
-                            Idx(Int(777)),
-                            Idx(2560),
-                            Idx(8192),
+                            Int(777),
+                            Idx[2560],
+                            Idx[8192],
                         )

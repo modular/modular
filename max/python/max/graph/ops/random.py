@@ -29,7 +29,11 @@ from ..value import TensorValue, TensorValueLike
 from .elementwise import _accum_type
 
 SEEDS: MutableMapping[Graph, TensorValue] = weakref.WeakKeyDictionary()
-SeedType = TensorType(DType.int64, [], device=DeviceRef.CPU())
+
+
+def SeedType(device: DeviceRef) -> TensorType:
+    """Graph-input tensor type for an RNG seed: rank-1 ``[1]`` ``uint64`` on ``device``."""
+    return TensorType(DType.uint64, [1], device=device)
 
 
 def _rotate_seed(seed: TensorValue):  # noqa: ANN202
@@ -44,13 +48,6 @@ def assert_scalar(value: TensorValueLike) -> None:
         raise ValueError("Expected a scalar value")
 
 
-def _next_seed():  # noqa: ANN202
-    graph = Graph.current
-    seed = _peek_seed()
-    SEEDS[graph] = _rotate_seed(seed)
-    return seed
-
-
 def _peek_seed():  # noqa: ANN202
     graph = Graph.current
     try:
@@ -59,39 +56,45 @@ def _peek_seed():  # noqa: ANN202
         raise RuntimeError("No seed set! Set with `ops.random.set_seed`.")  # noqa: B904
 
 
+def _next_seed_for(device: DeviceRef) -> TensorValue:
+    graph = Graph.current
+    seed = _peek_seed()
+    SEEDS[graph] = _rotate_seed(seed)
+    if seed.device != device:
+        seed = seed.to(device)
+    return seed
+
+
+def _normalize_seed(seed: TensorValueLike | int) -> TensorValue:
+    if isinstance(seed, int):
+        seed = dtype_promotion._promote_to_strong(
+            seed, DType.uint64, DeviceRef.CPU()
+        )
+    seed_tv = TensorValue(seed)
+    if seed_tv.dtype != DType.uint64:
+        seed_tv = seed_tv.cast(DType.uint64)
+    if seed_tv.rank == 0:
+        seed_tv = seed_tv.reshape([1])
+    if seed_tv.shape != [1]:
+        raise ValueError(
+            "Seed must be a scalar or rank-1 tensor with shape [1],"
+            f" got shape {seed_tv.shape}."
+        )
+    return seed_tv
+
+
 def set_seed(seed: TensorValueLike | int = 0) -> None:
     """Sets the seed for random numbers generated in the graph.
 
-    Call this once per graph. Subsequent random ops (:func:`gaussian`,
-    :func:`uniform`) automatically rotate from this seed, so you never need
-    to call :func:`set_seed` again within the same graph.
-
-    A static integer makes output deterministic across every execution of
-    the compiled graph. To vary the seed per execution (for example, one
-    seed per user request), declare a ``SeedType`` graph input and pass it
-    to :func:`set_seed` at build time:
-
-    .. code-block:: python
-
-        with Graph("my_graph", input_types=[ops.random.SeedType]) as g:
-            ops.random.set_seed(g.inputs[0].tensor)
-            result = ops.random.gaussian(tensor_type)
-
-    The graph is then compiled once and executed many times, binding a
-    different seed value to that input on each execution (no recompilation
-    needed).
+    Call this once per graph. Subsequent random ops rotate from this seed.
+    For per-execution seeds, pass a :func:`SeedType` graph input.
 
     Args:
-        seed: The seed value. Accepts a Python int or a scalar int64
-            :class:`~max.graph.TensorValue` (for dynamic graph inputs).
+        seed: A Python int, a rank-0 ``uint64`` scalar
+            :class:`~max.graph.TensorValue`, or a rank-1 ``[1]`` ``uint64``
+            :class:`~max.graph.TensorValue`.
     """
-    assert_scalar(seed)
-    seed = dtype_promotion._promote_to_strong(
-        seed, DType.int64, DeviceRef.CPU()
-    )
-    if seed.dtype != DType.int64:
-        raise TypeError("Seed value must be int64")
-    SEEDS[Graph.current] = seed
+    SEEDS[Graph.current] = _normalize_seed(seed)
 
 
 def gaussian(
@@ -123,7 +126,7 @@ def gaussian(
     assert_scalar(mean)
     assert_scalar(std)
     # Check whether we have a seed before we add other constants to the graph.
-    seed = _next_seed()
+    seed = _next_seed_for(like.device)
     accum_type = _accum_type(like) if like.dtype.is_float() else DType.float32
     random_accum = Graph.current._add_op_generated(
         rmo.MoRandomNormalOp,
@@ -176,7 +179,7 @@ def uniform(
     assert_scalar(lower)
     assert_scalar(upper)
     # Check whether we have a seed before we add other constants to the graph.
-    seed = _next_seed()
+    seed = _next_seed_for(like.device)
     return Graph.current._add_op_generated(
         rmo.MoRandomUniformOp,
         result=like,
