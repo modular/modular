@@ -19,18 +19,19 @@ import time
 from dataclasses import dataclass, field
 
 from max.driver import Buffer
-from max.interfaces import (
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.lib.vision_encoder_cache import VisionEncoderMetrics
+from max.pipelines.modeling.types import (
     BatchType,
-    MAXPullQueue,
+    CompletedBatchStats,
     RequestID,
     TextGenerationInputs,
 )
-from max.interfaces.queue import drain_queue
-from max.kv_cache import PagedKVCacheManager
-from max.pipelines.core import TextContext
-from max.pipelines.lib.speculative_decoding.utils import (
-    SpeculativeDecodingMetrics,
+from max.pipelines.speculative.utils import (
+    _SpeculativeDecodingMetrics,
 )
+from max.serve.queue import MAXPullQueue, drain_queue
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
@@ -50,7 +51,6 @@ class BatchMetrics:
     batch_type: BatchType
     batch_size: int
     max_batch_size: int
-    num_steps: int
     terminated_reqs: int
     num_pending_reqs: int
     num_input_tokens: int
@@ -73,8 +73,12 @@ class BatchMetrics:
     total_host_kv_blocks: int
     h2d_blocks_copied: int
     d2h_blocks_copied: int
-    disk_blocks_written: int
     disk_blocks_read: int
+    disk_blocks_written: int
+    inflight_disk_ops: int
+
+    used_disk_kv_pct: float
+    total_disk_kv_blocks: int
 
     draft_tokens_generated: int
     draft_tokens_accepted: int
@@ -93,6 +97,13 @@ class BatchMetrics:
     # previous batch (i.e. the overlap scheduler is active).
     batch_execution_time_is_previous: bool = False
 
+    # Data-parallel balance of this batch's active-token load: mean/max of
+    # per-rank active-token sums as a percentage (100 = perfectly balanced;
+    # the floor is 100/DP-degree). ``None`` when data_parallel_degree == 1 or
+    # the batch is empty. DP padding dummies are excluded so this reflects the
+    # batch constructor's placement decisions, not the padded shapes.
+    dp_active_token_occupancy_pct: float | None = None
+
     # Per-request KV cache hit rates for requests admitted in this batch
     # (cached_prefix_length / prompt_length). Empty for non-CE batches and
     # for CE batches that admit no new requests (e.g. follow-up prefill
@@ -105,6 +116,12 @@ class BatchMetrics:
     # hit/miss counters are gated on this being non-zero.
     num_new_admissions: int = 0
 
+    # Per-iteration vision encoder statistics for multimodal models. None
+    # when the batch did no vision encoding (text-only model, or a batch /
+    # decode step with no images). The vision log clause and vision metrics
+    # are gated on this being non-None.
+    vision_metrics: VisionEncoderMetrics | None = None
+
     @classmethod
     def create(
         cls,
@@ -116,15 +133,22 @@ class BatchMetrics:
         num_pending_reqs: int,
         num_terminated_reqs: int,
         total_preemption_count: int,
-        speculative_decoding_metrics: SpeculativeDecodingMetrics | None = None,
+        batch_spec_decode_metrics: _SpeculativeDecodingMetrics | None = None,
+        batch_vision_metrics: VisionEncoderMetrics | None = None,
         batch_execution_time_is_previous: bool = False,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
         batch_size = len(inputs.flat_batch)
         prompt_throughput = num_input_tokens / batch_execution_time_s
-        generation_throughput = (
-            batch_size * inputs.num_steps / batch_execution_time_s
-        )
+        if (
+            batch_spec_decode_metrics is not None
+            and inputs.batch_type == BatchType.TG
+        ):
+            generation_throughput = (
+                batch_spec_decode_metrics.output_tokens / batch_execution_time_s
+            )
+        else:
+            generation_throughput = batch_size / batch_execution_time_s
 
         total_kv_blocks = 0
         used_kv_pct = 0.0
@@ -132,8 +156,11 @@ class BatchMetrics:
         total_host_kv_blocks = 0
         h2d_blocks_copied = 0
         d2h_blocks_copied = 0
-        disk_blocks_written = 0
         disk_blocks_read = 0
+        disk_blocks_written = 0
+        inflight_disk_ops = 0
+        used_disk_kv_pct = 0.0
+        total_disk_kv_blocks = 0
         nixl_read_latency_avg_ms = 0.0
         nixl_write_latency_avg_ms = 0.0
         rpc_acquire_latency_avg_ms = 0.0
@@ -141,6 +168,31 @@ class BatchMetrics:
         nixl_read_gib_per_s = 0.0
         nixl_write_gib_per_s = 0.0
         num_replicas = sch_config.data_parallel_degree
+
+        # Data-parallel balance: ranks step together, so the heaviest rank
+        # sets the step cost; mean/max is the fraction of that synchronized
+        # capacity doing useful work. Padding dummies are excluded (measure
+        # the constructor's placement, not the padded shapes); replicas
+        # missing from ``batches`` scheduled zero tokens.
+        dp_active_token_occupancy_pct: float | None = None
+        if num_replicas > 1:
+            per_rank_active = [
+                sum(
+                    ctx.tokens.active_length
+                    for ctx in replica_batch
+                    if not ctx._is_padding_ctx
+                )
+                for replica_batch in inputs.batches
+            ]
+            per_rank_active.extend([0] * (num_replicas - len(per_rank_active)))
+            max_rank_tokens = max(per_rank_active, default=0)
+            if max_rank_tokens > 0:
+                dp_active_token_occupancy_pct = (
+                    100.0
+                    * sum(per_rank_active)
+                    / (num_replicas * max_rank_tokens)
+                )
+
         if kv_cache is not None:
             # TODO SERVOPT-939: Add some sugar
             total_kv_blocks = sum(
@@ -158,43 +210,40 @@ class BatchMetrics:
                 kv_cache.get_num_host_pages(replica_idx)
                 for replica_idx in range(num_replicas)
             )
+
+            metrics_agg = kv_cache.get_metrics_aggregated()
+
             if total_host_kv_blocks > 0:
                 used_host_kv_blocks = sum(
                     kv_cache.get_num_used_host_pages(replica_idx)
                     for replica_idx in range(num_replicas)
                 )
                 used_host_kv_pct = used_host_kv_blocks / total_host_kv_blocks
-                h2d_blocks_copied = sum(
-                    kv_cache.get_metrics(replica_idx).h2d_blocks_copied
+
+            h2d_blocks_copied = metrics_agg.h2d_blocks_copied
+            d2h_blocks_copied = metrics_agg.d2h_blocks_copied
+            disk_blocks_written = metrics_agg.disk_blocks_written
+            disk_blocks_read = metrics_agg.disk_blocks_read
+            inflight_disk_ops = metrics_agg.inflight_disk_ops
+
+            total_disk_kv_blocks = sum(
+                kv_cache.get_num_disk_pages(replica_idx)
+                for replica_idx in range(num_replicas)
+            )
+            if total_disk_kv_blocks > 0:
+                used_disk_kv_blocks = sum(
+                    kv_cache.get_num_used_disk_pages(replica_idx)
                     for replica_idx in range(num_replicas)
                 )
-                d2h_blocks_copied = sum(
-                    kv_cache.get_metrics(replica_idx).d2h_blocks_copied
-                    for replica_idx in range(num_replicas)
-                )
-                disk_blocks_written = sum(
-                    kv_cache.get_metrics(replica_idx).disk_blocks_written
-                    for replica_idx in range(num_replicas)
-                )
-                disk_blocks_read = sum(
-                    kv_cache.get_metrics(replica_idx).disk_blocks_read
-                    for replica_idx in range(num_replicas)
-                )
+                used_disk_kv_pct = used_disk_kv_blocks / total_disk_kv_blocks
 
             # dKV latency metrics: sum across replicas then average.
-            agg = sum(
-                (
-                    kv_cache.get_metrics(replica_idx)
-                    for replica_idx in range(num_replicas)
-                ),
-                kv_cache.get_metrics(0).__class__(),
-            )
-            nixl_read_latency_avg_ms = agg.nixl_read_latency_avg_ms
-            nixl_write_latency_avg_ms = agg.nixl_write_latency_avg_ms
-            rpc_acquire_latency_avg_ms = agg.rpc_acquire_latency_avg_ms
-            rpc_read_latency_avg_ms = agg.rpc_read_latency_avg_ms
-            nixl_read_gib_per_s = agg.nixl_read_gib_per_s
-            nixl_write_gib_per_s = agg.nixl_write_gib_per_s
+            nixl_read_latency_avg_ms = metrics_agg.nixl_read_latency_avg_ms
+            nixl_write_latency_avg_ms = metrics_agg.nixl_write_latency_avg_ms
+            rpc_acquire_latency_avg_ms = metrics_agg.rpc_acquire_latency_avg_ms
+            rpc_read_latency_avg_ms = metrics_agg.rpc_read_latency_avg_ms
+            nixl_read_gib_per_s = metrics_agg.nixl_read_gib_per_s
+            nixl_write_gib_per_s = metrics_agg.nixl_write_gib_per_s
 
             kv_cache.reset_metrics()
 
@@ -211,10 +260,13 @@ class BatchMetrics:
         admission_prompt_tokens = 0
         if inputs.batch_type == BatchType.CE:
             for ctx in inputs.flat_batch:
-                cached = ctx.cached_prefix_length
-                if cached is None:
+                if (
+                    ctx._cache_metrics_emitted
+                    or ctx.cached_prefix_length is None
+                ):
                     continue
-                ctx.cached_prefix_length = None
+                ctx._cache_metrics_emitted = True
+                cached = ctx.cached_prefix_length
                 prompt_length = ctx.tokens.prompt_length
                 if prompt_length > 0:
                     per_request_hit_rates.append(cached / prompt_length)
@@ -234,28 +286,33 @@ class BatchMetrics:
         avg_acceptance_length = 0.0
         max_acceptance_length = 0
         acceptance_rate_per_position: list[float] = []
-        if speculative_decoding_metrics is not None:
+        # Acceptance metrics describe the decode/verify step. Under the overlap
+        # pipeline a CE iteration observes the previous TG batch's metrics, so
+        # gate on batch type to avoid mis-attributing them to CE batches.
+        if (
+            batch_spec_decode_metrics is not None
+            and inputs.batch_type == BatchType.TG
+        ):
             draft_tokens_generated = (
-                speculative_decoding_metrics.draft_tokens_generated
+                batch_spec_decode_metrics.draft_tokens_generated
             )
             draft_tokens_accepted = (
-                speculative_decoding_metrics.draft_tokens_accepted
+                batch_spec_decode_metrics.draft_tokens_accepted
             )
             avg_acceptance_length = (
-                speculative_decoding_metrics.avg_acceptance_length
+                batch_spec_decode_metrics.avg_acceptance_length
             )
             max_acceptance_length = (
-                speculative_decoding_metrics.num_speculative_tokens
+                batch_spec_decode_metrics.num_speculative_tokens
             )
             acceptance_rate_per_position = (
-                speculative_decoding_metrics.acceptance_rate_per_position
+                batch_spec_decode_metrics.acceptance_rate_per_position
             )
 
         return cls(
             batch_type=inputs.batch_type,
             batch_size=batch_size,
             max_batch_size=sch_config.max_batch_size,
-            num_steps=inputs.num_steps,
             terminated_reqs=num_terminated_reqs,
             num_pending_reqs=num_pending_reqs,
             num_input_tokens=num_input_tokens,
@@ -276,8 +333,11 @@ class BatchMetrics:
             total_host_kv_blocks=total_host_kv_blocks,
             h2d_blocks_copied=h2d_blocks_copied,
             d2h_blocks_copied=d2h_blocks_copied,
-            disk_blocks_written=disk_blocks_written,
             disk_blocks_read=disk_blocks_read,
+            disk_blocks_written=disk_blocks_written,
+            used_disk_kv_pct=used_disk_kv_pct,
+            total_disk_kv_blocks=total_disk_kv_blocks,
+            inflight_disk_ops=inflight_disk_ops,
             draft_tokens_generated=draft_tokens_generated,
             draft_tokens_accepted=draft_tokens_accepted,
             avg_acceptance_length=avg_acceptance_length,
@@ -290,8 +350,10 @@ class BatchMetrics:
             nixl_read_gib_per_s=nixl_read_gib_per_s,
             nixl_write_gib_per_s=nixl_write_gib_per_s,
             batch_execution_time_is_previous=batch_execution_time_is_previous,
+            dp_active_token_occupancy_pct=dp_active_token_occupancy_pct,
             per_request_hit_rates=per_request_hit_rates,
             num_new_admissions=len(per_request_hit_rates),
+            vision_metrics=batch_vision_metrics,
         )
 
     def pretty_format(self) -> str:
@@ -318,14 +380,22 @@ class BatchMetrics:
         host_kv_str = ""
         if self.total_host_kv_blocks != 0:
             disk_str = ""
-            if self.disk_blocks_written > 0 or self.disk_blocks_read > 0:
+            if self.disk_blocks_read > 0 or self.disk_blocks_written > 0:
                 disk_str = (
-                    f", Disk: {self.disk_blocks_written} written, "
-                    f"{self.disk_blocks_read} read"
+                    f", Disk: {self.disk_blocks_read} read, "
+                    f"{self.disk_blocks_written} written"
                 )
             host_kv_str = (
                 f"Host KVCache Usage: {self.used_host_kv_pct:.1%} of {self.total_host_kv_blocks} blocks, "
                 f"Blocks copied: {self.h2d_blocks_copied} H2D, {self.d2h_blocks_copied} D2H{disk_str} | "
+            )
+
+        disk_kv_str = ""
+        if self.total_disk_kv_blocks != 0:
+            disk_kv_str = (
+                f"Disk KVCache Usage: {self.used_disk_kv_pct:.1%} of "
+                f"{self.total_disk_kv_blocks} blocks, "
+                f"Inflight Disk Ops: {self.inflight_disk_ops} | "
             )
 
         if self.draft_tokens_generated > 0:
@@ -362,11 +432,28 @@ class BatchMetrics:
                 f"pin {self.rpc_read_latency_avg_ms:.1f}ms | "
             )
 
+        vision_str = ""
+        vm = self.vision_metrics
+        if vm is not None and vm.num_images_total > 0:
+            vision_str = (
+                f"Vision Encoder: {vm.num_images_encoded} imgs, "
+                f"{vm.num_patches_encoded} patches, "
+                f"{vm.num_tokens_encoded} toks encoded, "
+                f"cache hit rate {vm.cache_hit_rate:.1%} "
+                f"({vm.num_images_cached} hit, {vm.num_images_encoded} miss) | "
+            )
+
         exec_label = (
             "Previous Execution"
             if self.batch_execution_time_is_previous
             else "Execution"
         )
+
+        dp_str = ""
+        if self.dp_active_token_occupancy_pct is not None:
+            dp_str = (
+                f"DP Occupancy: {self.dp_active_token_occupancy_pct:.1f}% | "
+            )
 
         return (
             f"Executed {self.batch_type.value} batch with {self.batch_size} reqs | "
@@ -378,38 +465,182 @@ class BatchMetrics:
             f"Generation Tput: {_to_human_readable_throughput(self.generation_throughput)} | "
             f"Batch creation: {to_human_readable_latency(self.batch_creation_time_s)}, "
             f"{exec_label}: {to_human_readable_latency(self.batch_execution_time_s)} | "
+            f"{dp_str}"
             f"{kv_str}"
             f"{host_kv_str}"
+            f"{disk_kv_str}"
             f"{dkv_str}"
             f"{spec_decode_str}"
+            f"{vision_str}"
             f"All Preemptions: {self.total_preemption_count} reqs"
         )
 
-    def publish_metrics(self) -> None:
-        METRICS.batch_size(self.batch_size)
-        METRICS.batch_execution_time(
-            self.batch_execution_time_s * 1000,  # Convert to ms
-            batch_type=self.batch_type.value,  # "CE" (prefill) or "TG" (decode)
+    def to_log_extra(self) -> dict[str, object]:
+        """Curated flat-scalar dict for ``logger.info(..., extra=...)``.
+
+        ``configure_logging``'s ``JsonFormatter`` merges these keys into the
+        JSON payload when ``MODULAR_STRUCTURED_LOGGING=True``; the plaintext
+        formatter ignores them. Conditional clauses mirror :meth:`pretty_format`
+        so it doesn't emit zeros from subsystems that didn't run.
+        """
+        extra: dict[str, object] = {
+            "event": "batch_metrics",
+            "batch_type": self.batch_type.value,
+            "batch_size": self.batch_size,
+            "max_batch_size": self.max_batch_size,
+            "terminated_reqs": self.terminated_reqs,
+            "num_pending_reqs": self.num_pending_reqs,
+            "num_input_tokens": self.num_input_tokens,
+            "num_context_tokens": self.num_context_tokens,
+            "prompt_throughput": self.prompt_throughput,
+            "generation_throughput": self.generation_throughput,
+            "batch_creation_time_ms": self.batch_creation_time_s * 1000,
+            "batch_execution_time_ms": self.batch_execution_time_s * 1000,
+            "batch_execution_time_is_previous": self.batch_execution_time_is_previous,
+            "total_preemption_count": self.total_preemption_count,
+        }
+
+        if self.dp_active_token_occupancy_pct is not None:
+            extra["dp_active_token_occupancy_pct"] = (
+                self.dp_active_token_occupancy_pct
+            )
+
+        if self.total_kv_blocks != 0:
+            extra["used_kv_pct"] = self.used_kv_pct
+            extra["total_kv_blocks"] = self.total_kv_blocks
+
+        if self.num_new_admissions > 0:
+            extra["num_new_admissions"] = self.num_new_admissions
+            extra["cache_hit_rate"] = self.cache_hit_rate
+            extra["cache_hit_tokens"] = self.cache_hit_tokens
+            extra["cache_miss_tokens"] = self.cache_miss_tokens
+
+        if self.total_host_kv_blocks != 0:
+            extra["total_host_kv_blocks"] = self.total_host_kv_blocks
+            extra["used_host_kv_pct"] = self.used_host_kv_pct
+            extra["h2d_blocks_copied"] = self.h2d_blocks_copied
+            extra["d2h_blocks_copied"] = self.d2h_blocks_copied
+
+        if self.total_disk_kv_blocks != 0:
+            extra["total_disk_kv_blocks"] = self.total_disk_kv_blocks
+            extra["used_disk_kv_pct"] = self.used_disk_kv_pct
+            extra["disk_blocks_read"] = self.disk_blocks_read
+            extra["disk_blocks_written"] = self.disk_blocks_written
+
+        if self.draft_tokens_generated > 0:
+            extra["draft_tokens_generated"] = self.draft_tokens_generated
+            extra["draft_tokens_accepted"] = self.draft_tokens_accepted
+            extra["avg_acceptance_length"] = self.avg_acceptance_length
+
+        vm = self.vision_metrics
+        if vm is not None and vm.num_images_total > 0:
+            extra["vision_images_total"] = vm.num_images_total
+            extra["vision_images_encoded"] = vm.num_images_encoded
+            extra["vision_images_cached"] = vm.num_images_cached
+            extra["vision_patches_encoded"] = vm.num_patches_encoded
+            extra["vision_tokens_encoded"] = vm.num_tokens_encoded
+            extra["vision_cache_hit_rate"] = vm.cache_hit_rate
+
+        if (
+            self.nixl_read_latency_avg_ms > 0
+            or self.nixl_write_latency_avg_ms > 0
+            or self.rpc_acquire_latency_avg_ms > 0
+            or self.rpc_read_latency_avg_ms > 0
+        ):
+            extra["nixl_read_latency_avg_ms"] = self.nixl_read_latency_avg_ms
+            extra["nixl_write_latency_avg_ms"] = self.nixl_write_latency_avg_ms
+            extra["nixl_read_gib_per_s"] = self.nixl_read_gib_per_s
+            extra["nixl_write_gib_per_s"] = self.nixl_write_gib_per_s
+            extra["rpc_acquire_latency_avg_ms"] = (
+                self.rpc_acquire_latency_avg_ms
+            )
+            extra["rpc_read_latency_avg_ms"] = self.rpc_read_latency_avg_ms
+
+        return extra
+
+    def publish_metrics(self, *, defer_execution_metrics: bool = False) -> None:
+        """Publishes batch-level telemetry.
+
+        Args:
+            defer_execution_metrics: When True (overlap scheduling), skip the
+                execution-time and throughput metrics: the wall-clock time
+                measured this iteration describes the previous batch, so those
+                metrics are instead published from the pipeline's
+                ``CompletedBatchStats`` via
+                :func:`publish_completed_batch_metrics`, labeled with the
+                completed batch's type.
+        """
+        bt = self.batch_type.value  # "CE" (prefill) or "TG" (decode)
+        METRICS.batch_size(self.batch_size, batch_type=bt)
+        METRICS.batch_input_tokens(self.num_input_tokens, batch_type=bt)
+        METRICS.batch_context_tokens(self.num_context_tokens, batch_type=bt)
+
+        METRICS.batch_terminated_reqs(self.terminated_reqs, batch_type=bt)
+        METRICS.batch_pending_reqs(self.num_pending_reqs, batch_type=bt)
+        # Publish the current scheduler queue depth as a synchronous gauge
+        # (mirrors the "Pending: N reqs" value emitted in scheduler logs).
+        METRICS.reqs_queued(self.num_pending_reqs)
+
+        if not defer_execution_metrics:
+            METRICS.batch_prompt_throughput(
+                self.prompt_throughput, batch_type=bt
+            )
+            METRICS.batch_generation_throughput(
+                self.generation_throughput, batch_type=bt
+            )
+            METRICS.batch_execution_time(
+                self.batch_execution_time_s * 1000, batch_type=bt
+            )
+
+        METRICS.batch_creation_time(
+            self.batch_creation_time_s * 1000, batch_type=bt
         )
+
+        # DP balance describes the enqueued batch's composition, so it is
+        # published every iteration regardless of overlap deferral.
+        if self.dp_active_token_occupancy_pct is not None:
+            METRICS.dp_active_token_occupancy(
+                self.dp_active_token_occupancy_pct, batch_type=bt
+            )
 
         METRICS.cache_num_used_blocks(
             int(self.total_kv_blocks * self.used_kv_pct)
         )
         METRICS.cache_num_total_blocks(self.total_kv_blocks)
+        if self.total_kv_blocks != 0:
+            METRICS.cache_used_kv_pct(self.used_kv_pct * 100)
+
         if self.batch_type == BatchType.CE and self.num_new_admissions > 0:
             METRICS.cache_hits(self.cache_hit_tokens)
             METRICS.cache_misses(self.cache_miss_tokens)
             for hit_rate in self.per_request_hit_rates:
                 METRICS.cache_hit_rate(hit_rate)
 
+        if self.total_host_kv_blocks != 0:
+            METRICS.cache_used_host_kv_pct(self.used_host_kv_pct * 100)
+            METRICS.cache_h2d_blocks_copied(self.h2d_blocks_copied)
+            METRICS.cache_d2h_blocks_copied(self.d2h_blocks_copied)
+
+        if self.total_disk_kv_blocks != 0:
+            METRICS.cache_used_disk_kv_pct(self.used_disk_kv_pct * 100)
+            METRICS.cache_disk_blocks_read(self.disk_blocks_read)
+            METRICS.cache_disk_blocks_written(self.disk_blocks_written)
+
         if self.nixl_read_latency_avg_ms > 0:
             METRICS.dkv_nixl_read_latency(self.nixl_read_latency_avg_ms)
+            METRICS.dkv_nixl_read_gib_per_s(self.nixl_read_gib_per_s)
         if self.nixl_write_latency_avg_ms > 0:
             METRICS.dkv_nixl_write_latency(self.nixl_write_latency_avg_ms)
+            METRICS.dkv_nixl_write_gib_per_s(self.nixl_write_gib_per_s)
         if self.rpc_acquire_latency_avg_ms > 0:
             METRICS.dkv_rpc_acquire_latency(self.rpc_acquire_latency_avg_ms)
         if self.rpc_read_latency_avg_ms > 0:
             METRICS.dkv_rpc_read_latency(self.rpc_read_latency_avg_ms)
+
+        if self.draft_tokens_generated > 0:
+            METRICS.spec_decode_avg_acceptance_length(
+                self.avg_acceptance_length
+            )
 
         # Emit per-position acceptance rate metrics for speculative decoding
         for position, rate in enumerate(self.acceptance_rate_per_position):
@@ -417,6 +648,35 @@ class BatchMetrics:
                 position=position,
                 acceptance_rate=rate * 100,  # Convert to percentage
             )
+
+        vm = self.vision_metrics
+        if vm is not None and vm.num_images_total > 0:
+            METRICS.vision_images_encoded(vm.num_images_encoded)
+            METRICS.vision_images_cached(vm.num_images_cached)
+            METRICS.vision_patches_encoded(vm.num_patches_encoded)
+            METRICS.vision_tokens_encoded(vm.num_tokens_encoded)
+            METRICS.vision_cache_hit_rate(vm.cache_hit_rate * 100)
+
+
+def publish_completed_batch_metrics(stats: CompletedBatchStats) -> None:
+    """Publishes execution-time and throughput telemetry for a completed batch.
+
+    Used with the overlap pipeline, where a batch's completion is observed one
+    scheduler iteration after it was enqueued: these metrics must be labeled
+    with the completed batch's type and computed from that same batch's token
+    counts, not the current iteration's.
+    """
+    if stats.execution_time_s <= 0.0:
+        return
+    bt = stats.batch_type.value
+    prompt_throughput = stats.num_input_tokens / stats.execution_time_s
+    if stats.num_output_tokens is not None and stats.batch_type == BatchType.TG:
+        generation_throughput = stats.num_output_tokens / stats.execution_time_s
+    else:
+        generation_throughput = stats.batch_size / stats.execution_time_s
+    METRICS.batch_prompt_throughput(prompt_throughput, batch_type=bt)
+    METRICS.batch_generation_throughput(generation_throughput, batch_type=bt)
+    METRICS.batch_execution_time(stats.execution_time_s * 1000, batch_type=bt)
 
 
 class SchedulerLogger:
@@ -454,8 +714,10 @@ class SchedulerLogger:
         num_pending_reqs: int,
         num_terminated_reqs: int,
         total_preemption_count: int,
-        speculative_decoding_metrics: SpeculativeDecodingMetrics | None = None,
+        batch_spec_decode_metrics: _SpeculativeDecodingMetrics | None = None,
+        batch_vision_metrics: VisionEncoderMetrics | None = None,
         batch_execution_time_is_previous: bool = False,
+        completed_batch_stats: CompletedBatchStats | None = None,
     ) -> None:
         """Periodically logs batch-level metrics to console.
 
@@ -467,11 +729,21 @@ class SchedulerLogger:
             batch_execution_time_s: The time it took to execute the batch.
             num_pending_reqs: The number of pending requests.
             total_preemption_count: The total number of preemptions.
-            speculative_decoding_metrics: The speculative decoding metrics, if any.
+            batch_spec_decode_metrics: Per-batch speculative decoding metrics
+                for the most recent batch.
+            batch_vision_metrics: Per-batch vision encoder metrics for the
+                most recent batch, or None when no vision encoding ran.
             batch_execution_time_is_previous: When True, ``batch_execution_time_s``
                 is the execution time of the previous batch (the overlap
                 scheduler is active); the log line will read
-                ``Previous Execution:`` instead of ``Execution:``.
+                ``Previous Execution:`` instead of ``Execution:``, and the
+                execution-time and throughput telemetry for ``inputs`` is
+                suppressed in favor of ``completed_batch_stats``.
+            completed_batch_stats: Stats for the batch whose outputs were
+                synchronized this iteration (overlap scheduling), used to
+                publish execution-time and throughput telemetry attributed to
+                the correct batch. ``None`` when no batch completed this
+                iteration or overlap is inactive.
 
         Returns:
             None
@@ -486,12 +758,21 @@ class SchedulerLogger:
             num_pending_reqs=num_pending_reqs,
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=total_preemption_count,
-            speculative_decoding_metrics=speculative_decoding_metrics,
+            batch_spec_decode_metrics=batch_spec_decode_metrics,
+            batch_vision_metrics=batch_vision_metrics,
             batch_execution_time_is_previous=batch_execution_time_is_previous,
         )
 
-        # Always publish metrics.
-        metrics.publish_metrics()
+        # Always publish metrics. Under overlap scheduling the wall-clock
+        # execution time measured this iteration belongs to the previously
+        # enqueued batch, so the execution-time and throughput metrics are
+        # published from ``completed_batch_stats`` (labeled with the completed
+        # batch's type) instead of from ``inputs``.
+        metrics.publish_metrics(
+            defer_execution_metrics=batch_execution_time_is_previous
+        )
+        if completed_batch_stats is not None:
+            publish_completed_batch_metrics(completed_batch_stats)
 
         # Only periodically log batch info to the console to avoid log spam.
         now = time.monotonic()
@@ -499,7 +780,7 @@ class SchedulerLogger:
         if self.log_interval_s < time_since_last_log:
             # Reset the time of the last log.
             self.time_of_last_log = now
-            logger.info(metrics.pretty_format())
+            logger.info(metrics.pretty_format(), extra=metrics.to_log_extra())
 
 
 def get_cancelled_reqs(

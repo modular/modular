@@ -530,8 +530,8 @@ def test_pad_reflect_4d_big_input() raises:
     comptime out_size = 2 * 3 * 1024 * 1024
 
     # create a big input matrix and fill it with ones
-    var input_ptr = alloc[Scalar[DType.int]](in_size)
-    var input = TileTensor(input_ptr, row_major[1, 1, 512, 512]()).fill(1)
+    var input_ptr = List(length=in_size, fill=Scalar[DType.int](1))
+    var input = TileTensor(input_ptr, row_major[1, 1, 512, 512]())
 
     # create a padding array of the form
     # [1, 0, 1, 1, 256, 256, 256, 256]
@@ -548,16 +548,15 @@ def test_pad_reflect_4d_big_input() raises:
     var paddings = TileTensor(paddings_stack, row_major[8]())
 
     # create an even bigger output matrix and fill it with zeros
-    var output_ptr = alloc[Scalar[DType.int]](out_size)
-    var output = TileTensor(output_ptr, row_major[2, 3, 1024, 1024]()).fill(0)
+    var output_ptr = List(length=out_size, fill=Scalar[DType.int](0))
+    var output = TileTensor(output_ptr, row_major[2, 3, 1024, 1024]())
 
     # pad
     pad_reflect(output, input, paddings.ptr)
 
     assert_equal(output[0, 0, 0, 0], 1)
-
-    input_ptr.free()
-    output_ptr.free()
+    _ = output_ptr^
+    _ = input_ptr^
 
 
 # CHECK-LABEL: test_pad_repeat_3d

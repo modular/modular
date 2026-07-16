@@ -2,40 +2,31 @@ load("//bazel:api.bzl", "mojo_library")
 
 package(default_visibility = ["//max:consumers"])
 
-# amd_rdna/ has not been ported to the amd_structured/ expert-object
-# architecture and currently imports from the (deleted) amd/ path, so
-# the files can't build. Keep them in-tree as reference for a future
-# port, referenced via this filegroup to satisfy the unreferenced-files
-# lint without attempting to compile them. When someone picks up the
-# port, move the sources into the `nn` library's glob and delete this
-# target.
+# Raw sources for the LSP parse-smoke test.
 filegroup(
-    name = "amd_rdna_unported",
-    srcs = glob(["attention/gpu/amd_rdna/**/*.mojo"]),
-    tags = ["maybe-unused"],
+    name = "srcs",
+    srcs = glob(["**/*.mojo"]),
+    visibility = ["//KGEN/test/mojo-lsp-server/parse-tree:__pkg__"],
 )
 
 mojo_library(
     name = "nn",
-    srcs = glob(
-        ["**/*.mojo"],
-        exclude = ["attention/gpu/amd_rdna/**/*.mojo"],
-    ),
+    srcs = glob(["**/*.mojo"]),
     docs_base_path = "kernels",
+    use_production_compiler_for_asan = True,
     validate_missing_docs = False,
     deps = [
         "//max:_cudnn",
         "//max:_cufft",
         "//max:_miopen",
         "//max:comm",
+        "//max:extensibility",
         "//max:kv_cache",
         "//max:layout",
         "//max:linalg",
         "//max:quantization",
-        "//max:register",
         "//max:shmem",
         "//max:structured_kernels",
-        "//max:tensor",
         "@mojo//:std",
     ],
 )

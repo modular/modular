@@ -1,0 +1,10 @@
+# Runtime output
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Virtual environment
+.venv/

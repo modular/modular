@@ -14,8 +14,8 @@
 
 This module provides string formatting functionality similar to Python's
 `str.format()` method. The `format()` method (available on the
-[`String`](/mojo/std/collections/string/string/String#format) and
-[`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice#format)
+[`String`](/docs/std/collections/string/string/String/#format) and
+[`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/#format)
 types) takes the current string as a template (or "format string"), which can
 contain literal text and/or replacement fields delimited by curly braces (`{}`).
 The replacement fields are replaced with the values of the arguments.
@@ -64,15 +64,14 @@ var s4 = "{!r}".format("test")  # "'test'"
 ```
 
 This module has no public API; its functionality is available through the
-[`String.format()`](/mojo/std/collections/string/string/String#format) and
-[`StringSlice.format()`](/mojo/std/collections/string/string_slice/StringSlice#format)
+[`String.format()`](/docs/std/collections/string/string/String/#format) and
+[`StringSlice.format()`](/docs/std/collections/string/string_slice/StringSlice/#format)
 methods.
 """
 
 
 from std.builtin.globals import global_constant
 from std.collections.string.string_slice import get_static_string
-from std.compile import get_type_name
 from std.utils import Variant
 
 # ===-----------------------------------------------------------------------===#
@@ -131,16 +130,17 @@ struct _PrecompiledEntriesRuntime[
 
 @always_inline
 def _comptime_list_to_span[
-    T: ImplicitlyDestructible & Copyable, //, list: List[T]
+    T: ImplicitlyDeletable & Copyable, //, list: List[T]
 ]() -> Span[T, StaticConstantOrigin]:
     """Convert a comptime list to a runtime span of static constant origin."""
 
-    @parameter
     def list_to_array[list: List[T]]() -> InlineArray[T, len(list)]:
         var array = InlineArray[T, len(list)](uninitialized=True)
 
         comptime for i in range(len(list)):
-            UnsafePointer(to=array[i]).init_pointee_copy(materialize[list]()[i])
+            UnsafePointer(to=array[i]).unsafe_write(
+                materialize[list[i].copy()]()
+            )
         return array^
 
     comptime array = list_to_array[list]()
@@ -168,7 +168,9 @@ struct _FormatUtils:
         def _build_slice(
             p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
-            return StringSlice(ptr=p + start, length=end - start)
+            return StringSlice(
+                unsafe_from_utf8=Span(ptr=p + start, length=end - start)
+            )
 
         var auto_arg_index = 0
         for e in compiled.entries:
@@ -529,7 +531,9 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         def _build_slice(
             p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
-            return StringSlice(ptr=p + start, length=end - start)
+            return StringSlice(
+                unsafe_from_utf8=Span(ptr=p + start, length=end - start)
+            )
 
         var field = _build_slice(fmt_src.unsafe_ptr(), start_value + 1, i)
         var field_ptr = field.unsafe_ptr()
@@ -609,7 +613,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
                     var flag = self.conversion_flag
                     var empty = flag == 0
 
-                    ref arg = trait_downcast[Writable](args[i])
+                    ref arg = args[i]
                     if empty or flag == s_value:
                         arg.write_to(writer)
                     elif flag == r_value:

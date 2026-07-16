@@ -29,18 +29,24 @@ from max.graph import (
     ops,
 )
 from max.nn import ReturnHiddenStates, ReturnLogits
-
-# TODO: rename the kernel at the source
-from max.nn.kernels import eagle_prefill_shift_tokens
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
     _reshape_target_logits,
 )
-from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
+from max.pipelines.speculative.ragged_token_merger import (
     RaggedTokenMerger,
-    shape_to_scalar,
+    _shape_to_scalar,
+)
+from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeInputTypeSpec,
+    build_spec_decode_input_types,
+)
+from max.pipelines.speculative.unified_graph_ops import (
+    accept_and_pick_next_tokens,
+    apply_overlap_bitmask,
+    shift_corrected_tokens,
 )
 
 from ..eagle_llama3.eagle_llama3 import EagleLlama3
@@ -55,13 +61,34 @@ class UnifiedEagleLlama3Values:
     draft_tokens: TensorValue
     return_n_logits: TensorValue
     kv_collection: PagedCacheValues
-    draft_kv_blocks: BufferValue
+    draft_kv_collection: PagedCacheValues
     seed: TensorValue
     temperature: TensorValue
     top_k: TensorValue
     max_k: TensorValue
     top_p: TensorValue
     min_top_p: TensorValue
+    pinned_bitmask: TensorValue | None = None
+    """Pinned-host bitmask for constrained decoding.
+
+    Shape: ``[batch_size, num_speculative_tokens + 1, vocab_size]``.
+    Position i contains the valid-token mask given the FSM state after
+    consuming draft[0:i-1]; position ``num_speculative_tokens`` is for
+    the bonus token. Read by an in-graph H2D into
+    :attr:`device_bitmask_scratch` after the ``mo.wait_host_value_with_dep``
+    op observes the host callback's release-store of the completion
+    flag. ``None`` when structured output is disabled (graph compiled
+    without the bitmask triple).
+    """
+
+    wait_payload: BufferValue | None = None
+    """CPU ``int64[2]`` payload consumed by
+    ``mo.wait_host_value_with_dep`` (``[CompletionFlag._unsafe_ptr,
+    1]``). Owned by :class:`StructuredOutputOverlapState`."""
+
+    device_bitmask_scratch: BufferValue | None = None
+    """Device scratch buffer that receives the in-graph H2D from
+    :attr:`pinned_bitmask`; the acceptance sampler reads from it."""
 
 
 class UnifiedEagleLlama3(Module):
@@ -91,39 +118,45 @@ class UnifiedEagleLlama3(Module):
         self,
         inputs: Sequence[Value[Any]],
     ) -> UnifiedEagleLlama3Values:
-        (
-            tokens,
-            input_row_offsets,
-            return_n_logits,
-            # target model kvcache inputs
-            target_kv_blocks,
-            cache_lengths,
-            lookup_table,
-            max_lengths,
-            dispatch_metadata,
-            draft_dispatch_metadata,
-            # draft model inputs
-            draft_tokens,
-            # draft kvcache
-            draft_kv_blocks,
-            # stochastic acceptance seed (scalar int64 on CPU)
-            seed,
-            # sampling params for stochastic acceptance
-            temperature,
-            top_k,
-            max_k,
-            top_p,
-            min_top_p,
-        ) = inputs
+        # Use an iterator to consume inputs sequentially, avoiding a hardcoded
+        # count that would break if the kv cache structure changes.
+        it = iter(inputs)
 
-        target_kv_collection = PagedCacheValues(
-            kv_blocks=target_kv_blocks.buffer,
-            cache_lengths=cache_lengths.tensor,
-            lookup_table=lookup_table.tensor,
-            max_lengths=max_lengths.tensor,
-            attention_dispatch_metadata=dispatch_metadata.tensor,
-            draft_attention_dispatch_metadata=draft_dispatch_metadata.tensor,
+        tokens = next(it)
+        input_row_offsets = next(it)
+        return_n_logits = next(it)
+        kv_params = MultiKVCacheParams.from_params(
+            {
+                "target": self.config.target.kv_params,
+                "draft": self.config.draft.kv_params,
+            }
         )
+        target_kv_collections, draft_kv_collections = (
+            kv_params.unflatten_basic_kv_tree(it)
+        )
+        target_kv_collection = target_kv_collections[0]
+        draft_kv_collection = draft_kv_collections[0]
+        # draft model inputs
+        draft_tokens = next(it)
+        # stochastic acceptance seed (uint64 [batch_size] on the primary device)
+        seed = next(it)
+        # sampling params for stochastic acceptance
+        temperature = next(it)
+        top_k = next(it)
+        max_k = next(it)
+        top_p = next(it)
+        min_top_p = next(it)
+        # Optional constrained-decoding bitmask triple (appended when
+        # structured output is enabled). The triple is bound by the
+        # OverlapTextGenerationPipeline from
+        # :class:`StructuredOutputOverlapState`.
+        pinned_bitmask_in: TensorValue | None = None
+        wait_payload_in: BufferValue | None = None
+        device_bitmask_scratch_in: BufferValue | None = None
+        if self.config.enable_structured_output:
+            pinned_bitmask_in = next(it).tensor
+            wait_payload_in = next(it).buffer
+            device_bitmask_scratch_in = next(it).buffer
 
         return UnifiedEagleLlama3Values(
             tokens=tokens.tensor,
@@ -131,72 +164,37 @@ class UnifiedEagleLlama3(Module):
             draft_tokens=draft_tokens.tensor,
             return_n_logits=return_n_logits.tensor,
             kv_collection=target_kv_collection,
-            draft_kv_blocks=draft_kv_blocks.buffer,
+            draft_kv_collection=draft_kv_collection,
             seed=seed.tensor,
             temperature=temperature.tensor,
             top_k=top_k.tensor,
             max_k=max_k.tensor,
             top_p=top_p.tensor,
             min_top_p=min_top_p.tensor,
+            pinned_bitmask=pinned_bitmask_in,
+            wait_payload=wait_payload_in,
+            device_bitmask_scratch=device_bitmask_scratch_in,
         )
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
         """Input types for the unified graph.
 
-        Order: tokens, input_row_offsets, return_n_logits, target_kv_cache,
-               draft_tokens, draft_kv_blocks, seed, temperature, top_k,
-               max_k, top_p, min_top_p.
+        Single-device eagle graph that appends the structured-output bitmask
+        triple when ``config.enable_structured_output`` is set. See
+        :func:`build_spec_decode_input_types` for the canonical ordering.
         """
-        device_ref = self.config.target.devices[0]
-
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-        draft_tokens_type = TensorType(
-            DType.int64, ["batch_size", "num_steps"], device=device_ref
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        target_kv_inputs = self.config.target.kv_params.get_symbolic_inputs()
-        assert len(target_kv_inputs.inputs) == 1
-        target_kv_flat = list(target_kv_inputs.inputs[0].flatten())
-
-        draft_kv_inputs = self.config.draft.kv_params.get_symbolic_inputs()
-        assert len(draft_kv_inputs.inputs) == 1
-        draft_kv_blocks = draft_kv_inputs.inputs[0].kv_blocks
-
-        temperature_type = TensorType(
-            DType.float32, shape=["batch_size"], device=device_ref
-        )
-        top_k_type = TensorType(
-            DType.int64, shape=["batch_size"], device=device_ref
-        )
-        max_k_type = TensorType(DType.int64, shape=[], device=DeviceRef.CPU())
-        top_p_type = TensorType(
-            DType.float32, shape=["batch_size"], device=device_ref
-        )
-        min_top_p_type = TensorType(
-            DType.float32, shape=[], device=DeviceRef.CPU()
-        )
-
-        return (
-            tokens_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-            *target_kv_flat,
-            draft_tokens_type,
-            draft_kv_blocks,
-            ops.random.SeedType,
-            temperature_type,
-            top_k_type,
-            max_k_type,
-            top_p_type,
-            min_top_p_type,
+        return build_spec_decode_input_types(
+            SpecDecodeInputTypeSpec(
+                distributed=False,
+                enable_structured_output=self.config.enable_structured_output,
+            ),
+            devices=self.config.target.devices,
+            kv_params=MultiKVCacheParams.from_params(
+                {
+                    "target": self.config.target.kv_params,
+                    "draft": self.config.draft.kv_params,
+                }
+            ),
         )
 
     def __call__(
@@ -219,7 +217,7 @@ class UnifiedEagleLlama3(Module):
         draft_tokens = inputs.draft_tokens
         return_n_logits = inputs.return_n_logits
         kv_collection = inputs.kv_collection
-        draft_kv_blocks = inputs.draft_kv_blocks
+        draft_kv_collection = inputs.draft_kv_collection
 
         device = tokens.device
 
@@ -249,55 +247,37 @@ class UnifiedEagleLlama3(Module):
 
         hidden_dim = hidden_states.shape[1]
 
+        effective_bitmasks = apply_overlap_bitmask(
+            inputs.pinned_bitmask,
+            inputs.wait_payload,
+            inputs.device_bitmask_scratch,
+            num_steps=draft_tokens.shape[1],
+            device=device,
+        )
+
         # num_accepted_draft_tokens: [B]     (index of first rejected step, 0..K)
         # recovered                : [B, K]  (target argmax at each draft position)
         # bonus                    : [B, 1]  (target argmax at the +1 position)
-        num_accepted_draft_tokens, recovered, bonus = self.acceptance_sampler(
-            draft_tokens,
-            logits,
-            seed=inputs.seed,
-            temperature=inputs.temperature,
-            top_k=inputs.top_k,
-            max_k=inputs.max_k,
-            top_p=inputs.top_p,
-            min_top_p=inputs.min_top_p,
+        seed_scalar = inputs.seed[0]
+        num_accepted_draft_tokens, recovered, bonus, next_tokens = (
+            accept_and_pick_next_tokens(
+                self.acceptance_sampler,
+                draft_tokens,
+                logits,
+                seed=seed_scalar,
+                temperature=inputs.temperature,
+                top_k=inputs.top_k,
+                max_k=inputs.max_k,
+                top_p=inputs.top_p,
+                min_top_p=inputs.min_top_p,
+                token_bitmasks=effective_bitmasks,
+            )
         )
 
-        # target_tokens: [B, K+1]
-        target_tokens = ops.concat([recovered, bonus], axis=1)
-        next_tokens = ops.gather_nd(
-            target_tokens,
-            ops.unsqueeze(num_accepted_draft_tokens, axis=-1),
-            batch_dims=1,
-        )
+        num_draft_sentinel_gpu = _shape_to_scalar(draft_tokens.shape[1], device)
 
-        num_draft_sentinel_gpu = shape_to_scalar(draft_tokens.shape[1], device)
-
-        # Build corrected merged tokens: replace draft tokens with target
-        # argmax (recovered). For accepted positions draft == target argmax,
-        # so only rejected positions actually change.
-        corrected_merged, corrected_offsets = self.merger(
-            tokens, input_row_offsets, recovered
-        )
-        corrected_merged = corrected_merged.rebind(["merged_seq_len"])
-        corrected_offsets = corrected_offsets.rebind(["input_row_offsets_len"])
-
-        # shifted_corrected: [S+B*K]
-        shifted_corrected = eagle_prefill_shift_tokens(
-            corrected_merged,
-            corrected_offsets,
-            bonus.reshape((-1,)),
-        )
-
-        # draft_kv_collection is same as the target's kv_collection other than
-        # the kv_blocks.
-        draft_kv_collection = PagedCacheValues(
-            kv_blocks=draft_kv_blocks,
-            cache_lengths=kv_collection.cache_lengths,
-            lookup_table=kv_collection.lookup_table,
-            max_lengths=kv_collection.max_lengths,
-            attention_dispatch_metadata=kv_collection.attention_dispatch_metadata,
-            draft_attention_dispatch_metadata=kv_collection.draft_attention_dispatch_metadata,
+        shifted_corrected = shift_corrected_tokens(
+            self.merger, tokens, input_row_offsets, recovered, bonus
         )
 
         # --- Draft step 0 ---
@@ -365,11 +345,7 @@ class UnifiedEagleLlama3(Module):
         # Assume that all tokens are accepted in this calculation.
         # Confusingly max_cache_length != max(cache_lengths). Instead max_cache_length
         # is more like max_total_seq_len including cached and input tokens.
-        orig_max_cache_length = (
-            draft_kv_collection.max_lengths[0, 1]
-            .cast(DType.uint32)
-            .broadcast_to([1])
-        )
+        orig_max_cache_length = draft_kv_collection.max_cache_length
         max_cache_length = orig_max_cache_length + 1
 
         # draft_return_n_logits: [1] (CPU)
@@ -377,14 +353,10 @@ class UnifiedEagleLlama3(Module):
             1, DType.int64, DeviceRef.CPU()
         ).broadcast_to([1])
 
-        max_lengths = ops.concat(
-            [one, draft_kv_collection.max_lengths[0, 1].broadcast_to([1])],
-            axis=-1,
-        ).reshape([1, 2])
-
         draft_kv_collection = replace(
             draft_kv_collection,
-            max_lengths=max_lengths,
+            max_prompt_length=one,
+            max_cache_length=orig_max_cache_length,
             attention_dispatch_metadata=draft_kv_collection.draft_attention_dispatch_metadata,
         )
 

@@ -13,11 +13,12 @@
 
 """Correctness test for the Gemma 4 global decode attention shape on AMD.
 
-Regression test for KERN-2826.
+Regression test for KERN-2826 and CENG-418.
 
 Gemma 4's global layers use 32 query heads, 4 KV heads, and head_dim=512.
-This compares the gfx950 flash attention decode kernel against the existing
-naive GPU reference for a numerically stressful two-tile causal decode shape.
+Compares the gfx950 flash attention decode kernel against the naive reference
+at a short context and a long context, with the attended keys placed in the
+last split-K partition.
 """
 
 from std.math import isclose
@@ -38,12 +39,14 @@ from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
 
 
-def test_gemma4_global_decode(ctx: DeviceContext) raises:
-    print("gemma4 global decode")
+def test_gemma4_global_decode(
+    ctx: DeviceContext, num_keys: Int, hot_start: Int, hot_end: Int
+) raises:
+    # [hot_start, hot_end) is the key range that dominates the softmax.
+    print("gemma4 global decode, num_keys =", num_keys)
 
     comptime batch_size = 1
     comptime seq_len = 1
-    comptime num_keys = 512
     comptime num_heads = 32
     comptime kv_num_heads = 4
     comptime group = num_heads // kv_num_heads
@@ -57,20 +60,21 @@ def test_gemma4_global_decode(ctx: DeviceContext) raises:
     var output_size = q_size
     var mask_size = batch_size * num_heads * seq_len * num_keys
 
-    var q_ptr = alloc[Scalar[dtype]](q_size)
-    var k_ptr = alloc[Scalar[dtype]](kv_size)
-    var v_ptr = alloc[Scalar[dtype]](kv_size)
-    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
-    var actual_ptr = alloc[Scalar[dtype]](output_size)
-    var expect_ptr = alloc[Scalar[dtype]](output_size)
+    var q_ptr = ctx.enqueue_create_host_buffer[dtype](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[dtype](kv_size)
+    var v_ptr = ctx.enqueue_create_host_buffer[dtype](kv_size)
+    var mask_ptr = ctx.enqueue_create_host_buffer[mask_type](mask_size)
+    var actual_ptr = ctx.enqueue_create_host_buffer[dtype](output_size)
+    var expect_ptr = ctx.enqueue_create_host_buffer[dtype](output_size)
 
     for i in range(seq_len):
         for h in range(num_heads):
             for d in range(depth):
                 q_ptr[(i * num_heads + h) * depth + d] = Scalar[dtype](5.0)
     for i in range(num_keys):
-        var k_val = Scalar[dtype](100.0) if i < 128 else Scalar[dtype](1.0)
-        var v_val = Scalar[dtype](1.0) if i < 128 else Scalar[dtype](-1.0)
+        var is_hot = i >= hot_start and i < hot_end
+        var k_val = Scalar[dtype](100.0) if is_hot else Scalar[dtype](1.0)
+        var v_val = Scalar[dtype](1.0) if is_hot else Scalar[dtype](-1.0)
         for h in range(kv_num_heads):
             for d in range(depth):
                 k_ptr[(i * kv_num_heads + h) * depth + d] = k_val
@@ -106,39 +110,27 @@ def test_gemma4_global_decode(ctx: DeviceContext) raises:
 
     var q_device = TileTensor(
         q_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var mask_device = TileTensor(
         mask_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(num_keys))
-        ),
+        row_major((batch_size, num_heads, seq_len, num_keys)),
     )
     var actual_device = TileTensor(
         actual_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var expect_device = TileTensor(
         expect_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     flash_attention(
@@ -175,8 +167,8 @@ def test_gemma4_global_decode(ctx: DeviceContext) raises:
     for h in range(num_heads):
         for d in range(depth):
             var idx = d + depth * h
-            var actual = actual_ptr.load(idx).cast[DType.float64]()
-            var expect = expect_ptr.load(idx).cast[DType.float64]()
+            var actual = actual_ptr[idx].cast[DType.float64]()
+            var expect = expect_ptr[idx].cast[DType.float64]()
             if not isclose(actual, expect, atol=1e-5, rtol=3e-2):
                 print("MISMATCH:", h, d, actual, expect)
             assert_almost_equal(actual, expect, atol=1e-5, rtol=3e-2)
@@ -188,14 +180,12 @@ def test_gemma4_global_decode(ctx: DeviceContext) raises:
     _ = actual_device_ptr
     _ = expect_device_ptr
 
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    mask_ptr.free()
-    actual_ptr.free()
-    expect_ptr.free()
-
 
 def main() raises:
     with DeviceContext() as ctx:
-        test_gemma4_global_decode(ctx)
+        # KERN-2826: short context.
+        test_gemma4_global_decode(ctx, num_keys=512, hot_start=0, hot_end=128)
+        # CENG-418: long context, attended keys in the last partition.
+        test_gemma4_global_decode(
+            ctx, num_keys=32768, hot_start=32768 - 256, hot_end=32768
+        )

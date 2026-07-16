@@ -12,14 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
 )
+from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import DeepseekV3NextNBatchProcessor
+from .memory_planner import DeepseekV3NextNMemoryPlanner
 from .model import DeepseekV3NextNModel
 from .model_config import DeepseekV3NextNConfig
 
@@ -43,7 +45,9 @@ deepseekV3_nextn_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    batching=DeepseekV3NextNBatchProcessor,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=DeepseekV3NextNConfig,
+    memory_planner=DeepseekV3NextNMemoryPlanner,
 )

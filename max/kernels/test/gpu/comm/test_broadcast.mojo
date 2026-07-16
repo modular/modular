@@ -24,7 +24,7 @@ from std.testing import assert_true
 
 from comm import Signal, MAX_GPUS
 from comm.broadcast import broadcast
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 
 
 @always_inline
@@ -90,7 +90,7 @@ def broadcast_test[
     var root_ctx = list_of_ctxs[root]
 
     # Create input buffer on root GPU
-    var host_input_ptr = alloc[Scalar[dtype]](length)
+    var host_input_ptr = root_ctx.enqueue_create_host_buffer[dtype](length)
     for j in range(length):
         host_input_ptr[j] = _input_value[dtype](root, j)
     var input_dev = root_ctx.enqueue_create_buffer[dtype](length)
@@ -100,9 +100,9 @@ def broadcast_test[
     var out_dev_list = List[DeviceBuffer[dtype]](capacity=ngpus)
 
     # Create TileTensor types for input and output
-    var in_tile = TileTensor(input_dev, row_major(Idx(length))).as_immut()
+    var in_tile = TileTensor(input_dev, row_major(length)).as_immut()
     comptime OutputTileType = TileTensor[
-        dtype, type_of(row_major(Idx(length))), MutAnyOrigin
+        dtype, type_of(row_major(length)), MutAnyOrigin
     ]
     var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
 
@@ -116,14 +116,14 @@ def broadcast_test[
         if root_self_copy and i == root:
             # Special case: root does an in-place copy
             out_dev_list.append(input_dev)
-            out_tiles[i] = OutputTileType(input_dev, row_major(Idx(length)))
+            out_tiles[i] = OutputTileType(input_dev, row_major(length))
             continue
 
         var ctx = list_of_ctxs[i]
         var out_ptr = ctx.enqueue_create_buffer[dtype](length)
         out_dev_list.append(out_ptr)
         out_tiles[i] = OutputTileType(
-            out_ptr.unsafe_ptr(), row_major(Idx(length))
+            out_ptr.unsafe_ptr().as_unsafe_any_origin(), row_major(length)
         )
 
     # Signal buffers need payload space for 2-stage broadcast
@@ -136,8 +136,13 @@ def broadcast_test[
         signal_buffers.append(
             list_of_ctxs[i].create_buffer_sync[DType.uint8](signal_buf_size)
         )
-        list_of_ctxs[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        init_signal_buffer(signal_buffers[i], list_of_ctxs[i])
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
     for i in range(ngpus):
         list_of_ctxs[i].synchronize()
@@ -160,7 +165,7 @@ def broadcast_test[
         list_of_ctxs[i].synchronize()
 
     # Copy results back to host and verify
-    var host_output = alloc[Scalar[dtype]](length)
+    var host_output = List(length=length, fill=Scalar[dtype](0))
     for i in range(ngpus):
         list_of_ctxs[i].enqueue_copy(host_output, out_dev_list[i])
         list_of_ctxs[i].synchronize()
@@ -179,10 +184,6 @@ def broadcast_test[
                     "expected:",
                     expected,
                 )
-
-    # Cleanup
-    host_input_ptr.free()
-    host_output.free()
 
 
 @parameter

@@ -24,7 +24,7 @@ from std.testing import assert_equal
 
 def native_stream_ptr(
     stream: DeviceStream,
-) raises -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
+) raises -> _CPointer[NoneType, UntrackedOrigin[mut=True]]:
     comptime if has_nvidia_gpu_accelerator():
         return unsafe_cast[Type=NoneType](CUDA(stream))
     else:
@@ -70,7 +70,7 @@ def main() raises:
         # Run a kernel on this new stream
         # Note: DeviceStream currently only runs pre-compiled kernels, so the
         # compilation step here is needed.
-        var func = ctx.compile_function[scale_kernel, scale_kernel]()
+        var func = ctx.compile_function[scale_kernel]()
         stream.enqueue_function(
             func,
             dev_in,

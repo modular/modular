@@ -79,7 +79,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         var global_k = global_offset.K + kl
 
         var b_ptr = b_packed.ptr_at_offset(
-            Coord(Idx(n_outer_idx), Idx(kl // 4), Idx(0))
+            Coord(n_outer_idx, kl // 4, Idx[0])
         ).bitcast[Scalar[c_type]]()
 
         comptime if not is_tail:
@@ -112,7 +112,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
             # exclusivity checking, but it is safe in the sense that
             # `a` will be guaranteed to remain alive because
             # it is an argument to the function.
-        ) else a_base_ptr.unsafe_mut_cast[True]().as_any_origin()
+        ) else a_base_ptr.unsafe_mut_cast[True]().as_unsafe_any_origin()
         var a_ptr_stride = 4 if (
             is_tail and not CompilationTarget.has_avx512f()
         ) else K
@@ -152,8 +152,8 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                     var a_val2 = SIMD[c_type, simd_size](a_val)
                     c_val = _neon_dotprod(
                         c_val,
-                        bitcast[a.dtype, simd_size * 4](a_val2),
-                        bitcast[b_packed.dtype, simd_size * 4](b_val),
+                        bitcast[a.dtype, SIMDSize(simd_size) * 4](a_val2),
+                        bitcast[b_packed.dtype, SIMDSize(simd_size) * 4](b_val),
                     )
                 elif Self.saturated_vnni:
                     c_val = dot_i8_to_i32_saturated_x86[simd_size](

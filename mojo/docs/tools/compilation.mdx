@@ -124,14 +124,14 @@ Available CPUs for target aarch64-apple-macosx:
 
 ### Supported accelerators
 
-List the GPU and accelerator architectures the compiler can target.
+List the accelerator architectures the compiler can target.
 
 ```sh
 mojo build --print-supported-accelerators
 ```
 
 ```output
-Supported GPU and Accelerator Architectures:
+Supported Accelerator Architectures:
 
 NVIDIA (CUDA):
   sm_52       - Maxwell (GTX 970)
@@ -165,7 +165,7 @@ about the hardware it targets:
 - The **feature set** controls individual hardware capabilities that
   can be enabled or disabled, such as AVX-512 or Neon.
 
-For GPU and accelerator targets, one more detail applies:
+For accelerator targets, one more detail applies:
 
 - The **accelerator architecture** identifies the GPU or other
   accelerator to generate device code for.
@@ -323,7 +323,7 @@ Two flags work with both families:
 - `--target-accelerator` is always valid and is used to target GPUs
   with either family.
 
-## GPU and accelerator targets
+## Accelerator targets
 
 Mojo supports _heterogeneous builds_ that generate host code for the
 CPU and device code for a GPU in a single build. Use

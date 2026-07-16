@@ -60,20 +60,20 @@ def test_naive_blockwise_fp8_matmul[
 
     var a_shape = Coord(m, k)
     var b_shape = Coord(
-        Idx[NType.static_value if transpose_b else KType.static_value](),
-        Idx[KType.static_value if transpose_b else NType.static_value](),
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
     var c_shape = Coord(m, n)
 
     var a_scale_shape = Coord(
-        Idx(ceildiv(K, BLOCK_SCALE_K)), Idx(ceildiv(M, BLOCK_SCALE_M))
+        ceildiv(K, BLOCK_SCALE_K), ceildiv(M, BLOCK_SCALE_M)
     )
     var b_scale_shape = Coord(
-        Idx(ceildiv(N, BLOCK_SCALE_N)),
-        Idx(ceildiv(K, BLOCK_SCALE_K)),
+        ceildiv(N, BLOCK_SCALE_N),
+        ceildiv(K, BLOCK_SCALE_K),
     ) if transpose_b else Coord(
-        Idx(ceildiv(K, BLOCK_SCALE_K)),
-        Idx(ceildiv(N, BLOCK_SCALE_N)),
+        ceildiv(K, BLOCK_SCALE_K),
+        ceildiv(N, BLOCK_SCALE_N),
     )
 
     var a_size = M * K
@@ -82,23 +82,27 @@ def test_naive_blockwise_fp8_matmul[
     var a_scale_size = ceildiv(K, BLOCK_SCALE_K) * ceildiv(M, BLOCK_SCALE_M)
     var b_scale_size = ceildiv(N, BLOCK_SCALE_N) * ceildiv(K, BLOCK_SCALE_K)
 
-    var a_host_ptr = alloc[Scalar[input_type]](a_size)
-    var b_host_ptr = alloc[Scalar[input_type]](b_size)
-    var c_host_ptr = alloc[Scalar[DType.float32]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[input_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[input_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[DType.float32](c_size)
 
-    rand(a_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
+    rand(a_host_ptr.unsafe_ptr(), a_size)
+    rand(b_host_ptr.unsafe_ptr(), b_size)
 
     for i in range(c_size):
         c_host_ptr[i] = 0
         c_host_ref_ptr[i] = 0
 
-    var a_scale_host_ptr = alloc[Scalar[DType.float32]](a_scale_size)
-    var b_scale_host_ptr = alloc[Scalar[DType.float32]](b_scale_size)
+    var a_scale_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+        a_scale_size
+    )
+    var b_scale_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+        b_scale_size
+    )
 
-    rand(a_scale_host_ptr, a_scale_size)
-    rand(b_scale_host_ptr, b_scale_size)
+    rand(a_scale_host_ptr.unsafe_ptr(), a_scale_size)
+    rand(b_scale_host_ptr.unsafe_ptr(), b_scale_size)
 
     var a_host = TileTensor(a_host_ptr, row_major(a_shape))
     var b_host = TileTensor(b_host_ptr, row_major(b_shape))
@@ -114,16 +118,16 @@ def test_naive_blockwise_fp8_matmul[
             var res: Float32 = 0.0
             for _k in range(K):
                 var a_scale = a_scale_host[
-                    Coord(Idx(_k // BLOCK_SCALE_K), Idx(_m // BLOCK_SCALE_M))
+                    Coord(_k // BLOCK_SCALE_K, _m // BLOCK_SCALE_M)
                 ]
                 var b_scale = b_scale_host[
-                    Coord(Idx(_n // BLOCK_SCALE_N), Idx(_k // BLOCK_SCALE_K))
+                    Coord(_n // BLOCK_SCALE_N, _k // BLOCK_SCALE_K)
                 ] if transpose_b else b_scale_host[
-                    Coord(Idx(_k // BLOCK_SCALE_K), Idx(_n // BLOCK_SCALE_N))
+                    Coord(_k // BLOCK_SCALE_K, _n // BLOCK_SCALE_N)
                 ]
-                var b_elem = b_host[
-                    Coord(Idx(_n), Idx(_k))
-                ] if transpose_b else b_host[Coord(Idx(_k), Idx(_n))]
+                var b_elem = b_host[Coord(_n, _k)] if transpose_b else b_host[
+                    Coord(_k, _n)
+                ]
                 res += (
                     a_host[_m, _k].cast[DType.float32]()
                     * b_elem.cast[DType.float32]()
@@ -188,19 +192,12 @@ def test_naive_blockwise_fp8_matmul[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host_ptr,
-        c_host_ref_ptr,
+        c_host_ptr.unsafe_ptr(),
+        c_host_ref_ptr.unsafe_ptr(),
         c_size,
         atol=0.0001,
         rtol=0.0001,
     )
-
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scale_host_ptr.free()
-    b_scale_host_ptr.free()
 
 
 def main() raises:
@@ -210,34 +207,34 @@ def main() raises:
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),
                 transpose_b=Bool(transpose_b),
-            ](ctx, Idx(128), Idx[128](), Idx[128]())
+            ](ctx, Idx[128], Idx[128], Idx[128])
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 64, 128),
                 transpose_b=Bool(transpose_b),
-            ](ctx, Idx(128), Idx[256](), Idx[128]())
+            ](ctx, Idx[128], Idx[256], Idx[128])
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 64, 16),
                 transpose_b=Bool(transpose_b),
-            ](ctx, Idx(128), Idx[128](), Idx[128]())
+            ](ctx, Idx[128], Idx[128], Idx[128])
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),
                 transpose_b=Bool(transpose_b),
-            ](ctx, Idx(120), Idx[128](), Idx[128]())
+            ](ctx, Idx[120], Idx[128], Idx[128])
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),
                 transpose_b=Bool(transpose_b),
-            ](ctx, Idx(120), Idx[129](), Idx[128]())
+            ](ctx, Idx[120], Idx[129], Idx[128])
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(32, 128, 64),
                 transpose_b=Bool(transpose_b),
-            ](ctx, Idx(120), Idx[129](), Idx[129]())
+            ](ctx, Idx[120], Idx[129], Idx[129])

@@ -113,6 +113,7 @@ struct BlockwiseFP8Accumulator[
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cluster_size: Int,
+    n_scale_granularity: Int = 128,
 ]:
     """Register-based accumulator for blockwise FP8 matmul.
 
@@ -127,6 +128,9 @@ struct BlockwiseFP8Accumulator[
         block_tile_shape: Block tile dimensions (BM, BN, BK).
         mma_shape: MMA operation dimensions (MMA_M, MMA_N, MMA_K).
         cluster_size: Number of CTAs in the cluster.
+        n_scale_granularity: B-scale N-direction block size (defaults to
+            BK; set smaller when the matmul's N-tile spans multiple
+            finer-grained scale blocks).
     """
 
     # Derived tile dimensions
@@ -144,7 +148,7 @@ struct BlockwiseFP8Accumulator[
     comptime RegTileType = TileTensor[
         Self.accum_type,
         Self.AccumLayout,
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.GENERIC,
     ]
 
@@ -243,39 +247,41 @@ struct BlockwiseFP8Accumulator[
         var b_scale_0: Scalar[Self.accum_type]
         var b_scale_1: Scalar[Self.accum_type]
 
-        comptime if Self.MMA_N != Self.BK:
-            comptime assert Self.stageN <= gcd(Self.MMA_N, Self.BK) and (
-                gcd(Self.MMA_N, Self.BK) % Self.stageN == 0
-            ), "gcd(MMA_N, BK) must be divisible by stageN"
+        # B-scale N-direction block size is independent of the kernel's
+        # K-tile size; defaults to BK but can be smaller when the matmul
+        # spans multiple finer-grained scale blocks per MMA tile.
+        comptime NScaleBlock = Self.n_scale_granularity
+        comptime if Self.MMA_N != NScaleBlock:
+            comptime assert Self.stageN <= gcd(Self.MMA_N, NScaleBlock) and (
+                gcd(Self.MMA_N, NScaleBlock) % Self.stageN == 0
+            ), "gcd(MMA_N, n_scale_granularity) must be divisible by stageN"
 
             var global_bn_start = bn * Self.MMA_N
             var begin_n = min(
-                Int32(Self.BK) - Int32(umod(global_bn_start, Self.BK)),
+                Int32(NScaleBlock) - Int32(umod(global_bn_start, NScaleBlock)),
                 Int32(Self.MMA_N),
             )
             var end_n = min(N - Int32(global_bn_start), Int32(Self.MMA_N))
 
-            b_scale_idx0 = ufloordiv(global_bn_start, Self.BK)
+            b_scale_idx0 = ufloordiv(global_bn_start, NScaleBlock)
             b_scale_next_n = Int(begin_n) if begin_n < end_n else Self.MMA_N
 
             b_scale_0 = rebind[Scalar[Self.accum_type]](
-                b_scales.load(Coord(Idx(b_scale_idx0), Idx(k_iter))).cast[
+                b_scales.load(Coord(b_scale_idx0, k_iter)).cast[
                     Self.accum_type
                 ]()
             )
             if b_scale_next_n < Self.MMA_N:
                 b_scale_1 = rebind[Scalar[Self.accum_type]](
-                    b_scales.load(
-                        Coord(Idx(b_scale_idx0 + 1), Idx(k_iter))
-                    ).cast[Self.accum_type]()
+                    b_scales.load(Coord(b_scale_idx0 + 1, k_iter)).cast[
+                        Self.accum_type
+                    ]()
                 )
             else:
                 b_scale_1 = 0.0
         else:
             b_scale_0 = rebind[Scalar[Self.accum_type]](
-                b_scales.load(Coord(Idx(bn), Idx(k_iter))).cast[
-                    Self.accum_type
-                ]()
+                b_scales.load(Coord(bn, k_iter)).cast[Self.accum_type]()
             )
             b_scale_1 = 0.0
 
@@ -328,16 +334,12 @@ struct BlockwiseFP8Accumulator[
         var lower_sfa1_smem = Scalar[Self.accum_type]()
 
         comptime if Self.is_lower_required:
-            lower_sfa0_smem = rebind[Scalar[Self.accum_type]](
-                a_scales_smem[0, staged_c_row + top_frag_lower_coord[0]].cast[
-                    Self.accum_type
-                ]()
-            )
-            lower_sfa1_smem = rebind[Scalar[Self.accum_type]](
-                a_scales_smem[
-                    0, staged_c_row + bottom_frag_lower_coord[0]
-                ].cast[Self.accum_type]()
-            )
+            lower_sfa0_smem = a_scales_smem[
+                0, staged_c_row + top_frag_lower_coord[0]
+            ].cast[Self.accum_type]()
+            lower_sfa1_smem = a_scales_smem[
+                0, staged_c_row + bottom_frag_lower_coord[0]
+            ].cast[Self.accum_type]()
 
         # Signal input pipeline before TMEM loop
         syncwarp()
@@ -354,7 +356,7 @@ struct BlockwiseFP8Accumulator[
 
             var b_scale: Scalar[Self.accum_type]
 
-            comptime if Self.MMA_N != Self.BK:
+            comptime if Self.MMA_N != Self.n_scale_granularity:
                 b_scale = (
                     b_scale_0 if (stage * Self.stageN + staged_c_col)
                     < b_scale_next_n else b_scale_1
@@ -376,31 +378,17 @@ struct BlockwiseFP8Accumulator[
                     var upper_scale = upper_a_scale * b_scale
                     var lower_scale = lower_a_scale * b_scale
 
-                    self.upper[stage, offset] += rebind[
-                        Scalar[Self.accum_type]
-                    ](frags.upper[offset]) * rebind[Scalar[Self.accum_type]](
-                        upper_scale
+                    self.upper[stage, offset] += (
+                        frags.upper[offset] * upper_scale
                     )
-                    self.upper[stage, offset + 1] += rebind[
-                        Scalar[Self.accum_type]
-                    ](frags.upper[offset + 1]) * rebind[
-                        Scalar[Self.accum_type]
-                    ](
-                        upper_scale
+                    self.upper[stage, offset + 1] += (
+                        frags.upper[offset + 1] * upper_scale
                     )
 
                     comptime if Self.is_lower_required:
-                        self.lower[stage, offset] += rebind[
-                            Scalar[Self.accum_type]
-                        ](frags.lower[offset]) * rebind[
-                            Scalar[Self.accum_type]
-                        ](
-                            lower_scale
+                        self.lower[stage, offset] += (
+                            frags.lower[offset] * lower_scale
                         )
-                        self.lower[stage, offset + 1] += rebind[
-                            Scalar[Self.accum_type]
-                        ](frags.lower[offset + 1]) * rebind[
-                            Scalar[Self.accum_type]
-                        ](
-                            lower_scale
+                        self.lower[stage, offset + 1] += (
+                            frags.lower[offset + 1] * lower_scale
                         )

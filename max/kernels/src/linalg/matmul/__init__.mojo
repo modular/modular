@@ -23,16 +23,17 @@ from std.gpu.host.info import is_cpu, is_valid_target
 from layout import (
     Layout,
     LayoutTensor,
+    RowMajorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
 )
-from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
 
-import .cpu
+from . import cpu
 from ..gemv import gemv
 from ..utils import (
     GemmShape,
@@ -54,47 +55,21 @@ def matmul[
     saturated_vnni: Bool = False,
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
+    # Kept last so existing positional-parameter callers (e.g. the mo.matmul
+    # op) are unaffected; set it by keyword.
+    use_tf32: Bool = True,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[address_space=AddressSpace.GENERIC, ...],
     b: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    ctx: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """TileTensor overload of `matmul` with DeviceContextPtr."""
-    var device_ctx = ctx.get_optional_device_context()
-
-    return matmul[
-        transpose_a=transpose_a,
-        transpose_b=transpose_b,
-        b_packed=b_packed,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        saturated_vnni=saturated_vnni,
-        _trace_description=_trace_description,
-        target=target,
-    ](c, a, b, device_ctx)
-
-
-@always_inline
-def matmul[
-    transpose_a: Bool = False,
-    transpose_b: Bool = False,
-    b_packed: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    saturated_vnni: Bool = False,
-    _trace_description: StaticString = "",
-    target: StaticString = "cpu",
-](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    ctx: Optional[DeviceContext],
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     """Primary TileTensor matmul implementation. Routes GPU directly, delegates
-    CPU path to cpu.matmul."""
+    CPU path to cpu.matmul.
+
+    `use_tf32=False` (GPU only) requires IEEE-fp32 multiplies for fp32
+    inputs instead of TF32 tensor-core truncation; see `_matmul_gpu`. The
+    CPU path is always IEEE fp32."""
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"
     comptime assert b.rank == 2, "b must be rank 2"
@@ -139,6 +114,7 @@ def matmul[
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=transpose_b,
+                use_tf32=use_tf32,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             ](c, a, b, ctx.value())

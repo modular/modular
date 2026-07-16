@@ -199,10 +199,24 @@ def _simulate_bf16_to_fp4_roundtrip(val: torch.Tensor) -> torch.Tensor:
     return qdq_val.view(float_type)
 
 
+def _mxfp4_even_scale(abs_max: torch.Tensor) -> torch.Tensor:
+    """Computes MXFP4 E8M0 scales with OCP even-mode scale selection."""
+    assert abs_max.dtype == torch.float32
+    scale_bits = torch.clamp(
+        ((abs_max.view(torch.int32) + (1 << 21)) >> 23) - 2,
+        min=0,
+        max=254,
+    ).to(torch.uint8)
+    return scale_bits.view(torch.float8_e8m0fnu).to(torch.float32)
+
+
 def simulate_fp4_blockwise_quantize(
-    x: torch.Tensor, *, block_size: int
+    x: torch.Tensor,
+    *,
+    block_size: int,
+    scale_dtype: torch.dtype = torch.float8_e4m3fn,
 ) -> torch.Tensor:
-    """Simulate NVFP4 blockwise quantization on a BF16 tensor."""
+    """Simulate blockwise FP4 quantization on a BF16 tensor."""
     assert x.dtype == torch.bfloat16
     orig_shape = x.shape
     *batch, last = orig_shape
@@ -213,8 +227,10 @@ def simulate_fp4_blockwise_quantize(
     abs_max = x_blocks.float().abs().amax(dim=-1, keepdim=True).clamp(min=1e-12)
     scale_f32 = abs_max / _FP4_MAX
 
-    scale_fp8 = scale_f32.to(torch.float8_e4m3fn)
-    scale_restored = scale_fp8.to(torch.float32)
+    if scale_dtype == torch.float8_e8m0fnu:
+        scale_restored = _mxfp4_even_scale(abs_max)
+    else:
+        scale_restored = scale_f32.to(scale_dtype).to(torch.float32)
 
     x_scaled = (x_blocks.float() / scale_restored).to(torch.bfloat16)
     x_fp4_rt = _simulate_bf16_to_fp4_roundtrip(x_scaled)
@@ -230,12 +246,13 @@ def torch_moe(
     topk_scores: torch.Tensor,
     *,
     block_size: int,
+    scale_dtype: torch.dtype,
 ) -> torch.Tensor:
     """Single-token MoE reference with FP4 quantization simulation."""
     assert input_token.shape[0] == 1
 
     input_token = simulate_fp4_blockwise_quantize(
-        input_token, block_size=block_size
+        input_token, block_size=block_size, scale_dtype=scale_dtype
     )
 
     top_k = topk_indices.shape[1]
@@ -253,6 +270,7 @@ def torch_moe(
         down_input = simulate_fp4_blockwise_quantize(
             torch.nn.functional.silu(expert_gate) * expert_up,
             block_size=block_size,
+            scale_dtype=scale_dtype,
         )
         expert_output = down_input @ down_weight.T
 
@@ -266,6 +284,7 @@ def torch_moe(
     shared_down_input = simulate_fp4_blockwise_quantize(
         torch.nn.functional.silu(shared_expert_gate) * shared_expert_up,
         block_size=block_size,
+        scale_dtype=scale_dtype,
     )
     shared_expert_output = shared_down_input @ shared_down_weight.T
     result += shared_expert_output
@@ -491,6 +510,7 @@ def test_ep_moe_nvfp4(
             all_topk_idxs[tok_idx : tok_idx + 1],
             all_topk_weights[tok_idx : tok_idx + 1],
             block_size=16,
+            scale_dtype=torch.float8_e4m3fn,
         )
         cos_sim = torch.nn.functional.cosine_similarity(
             all_outputs[tok_idx : tok_idx + 1].float(),
@@ -502,6 +522,31 @@ def test_ep_moe_nvfp4(
         )
 
 
+def _shuffle_b_5d(src: torch.Tensor) -> torch.Tensor:
+    """Lay a row-major MXFP4 B weight ``[N, K_bytes]`` out in the AMD CDNA4
+    ``preb`` 5D layout. Byte-identical to the Mojo ``b_5d_grouped_layout`` in
+    ``max/kernels/src/linalg/matmul/gpu/amd/mxfp4_preshuffle_layouts.mojo``.
+    """
+    N, K_BYTES = src.shape
+    src_v = src.reshape(N // 16, 16, K_BYTES // 64, 4, 16).permute(
+        0, 2, 3, 1, 4
+    )
+    return src_v.contiguous().reshape(N, K_BYTES)
+
+
+def _shuffle_scale_4d(src: torch.Tensor) -> torch.Tensor:
+    """Lay a row-major MXFP4 E8M0 weight scale ``[MN, K_scales]`` out in the
+    ``preb`` 4D-cell layout addressed by ``Shuffler.scale_4d_byte_off`` (same
+    Mojo source). This is the static weight-scale permutation, distinct from
+    the runtime activation-scale slot packing.
+    """
+    MN, K_SCALES = src.shape
+    src_v = src.reshape(MN // 32, 2, 16, K_SCALES // 8, 2, 4).permute(
+        0, 3, 5, 2, 4, 1
+    )
+    return src_v.contiguous().reshape(MN, K_SCALES)
+
+
 @pytest.mark.skipif(
     accelerator_api() != "hip", reason="FP4 kernel only supports AMD GPUs"
 )
@@ -510,6 +555,14 @@ def test_ep_moe_mxfp4(
     n_devices: int,
     moe_weights_mxfp4: dict[str, torch.Tensor],
 ) -> None:
+    # Exercises the MXFP4 EP A-scale preshuffle fold (KS224 up-proj
+    # via ep_wait, KS64 down-proj via fused_silu) end-to-end against the torch
+    # reference. fused_shared_expert=False (below) routes the forward through
+    # the production `ep.dispatch_wait.mxfp4` path that carries the fold; the
+    # routed experts go through the preshuffled-B (preb) grouped matmul. The
+    # fold is numerically identical to the standalone preshuffle (proven
+    # byte-exact by the shmem kernel tests), so it has no fold-on/off numeric
+    # A/B; this gate validates the fold-fed preb grouped matmul output.
     assert n_devices <= accelerator_count(), (
         "Devices are not enough to run EP test"
     )
@@ -537,6 +590,29 @@ def test_ep_moe_mxfp4(
         else:
             wrapped_moe_weights_fp4[key] = value
 
+    # Lay the loaded routed-expert B weights + E8M0 B-scales out in
+    # the AMD CDNA4 `preb` layout (mxfp4_preshuffled_b=True below routes the
+    # grouped matmul to the preb kernel). Applied only to the CPU copy fed to
+    # load_state_dict; the GPU copy the torch reference dequantizes is left
+    # untouched. The permutations are byte-exact to the Mojo source of truth
+    # max/kernels/src/linalg/matmul/gpu/amd/mxfp4_preshuffle_layouts.mojo.
+    for _k in list(wrapped_moe_weights_fp4):
+        _v = wrapped_moe_weights_fp4[_k]
+        # The shared expert (fused_shared_expert=False) is computed by a
+        # separate dense MLP, not the grouped preb kernel, so its weights must
+        # stay row-major. Only the routed experts.* go through the preb matmul.
+        if (
+            not isinstance(_v, torch.Tensor)
+            or _k == "gate.gate_score.weight"
+            or _k.startswith("shared_experts.")
+        ):
+            continue
+        if _k.endswith(".weight") and _v.dtype == torch.uint8:
+            wrapped_moe_weights_fp4[_k] = _shuffle_b_5d(_v.contiguous())
+        elif _k.endswith(".weight_scale") and _v.dtype == torch.float8_e8m0fnu:
+            _scale = _shuffle_scale_4d(_v.contiguous().view(torch.uint8))
+            wrapped_moe_weights_fp4[_k] = _scale.view(torch.float8_e8m0fnu)
+
     # Initialize devices
     devices = [Accelerator(id) for id in range(n_devices)]
     devices_ref = [DeviceRef(d.label, d.id) for d in devices]
@@ -561,6 +637,7 @@ def test_ep_moe_mxfp4(
         attn_quantized_layers=set(),
         embedding_output_dtype=None,
         format=QuantFormat.MXFP4,
+        mxfp4_preshuffled_b=True,
     )
 
     # Create EP configuration
@@ -574,7 +651,11 @@ def test_ep_moe_mxfp4(
         n_gpus_per_node=n_devices,
         n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
         dispatch_quant_config=fp4_config,
-        fused_shared_expert=True,
+        # fused_shared_expert=False routes through the production
+        # `ep.dispatch_wait.mxfp4` path that carries the KS224/KS64 A-scale
+        # fold; the shared expert is computed separately (dense MLP) and added
+        # in _ep_forward, matching the torch reference.
+        fused_shared_expert=False,
     )
 
     # Initialize EP communication
@@ -697,6 +778,13 @@ def test_ep_moe_mxfp4(
         for k in moe_weights_fp4
         if k.endswith(".weight") and moe_weights_fp4[k].dtype == torch.uint8
     ]
+    # Confirm the A-scale fold actually activated during the forward
+    # trace (configure_ep_scale_fusion sets this flag); guards against the gate
+    # silently degrading to a no-op if a default or gate condition changes.
+    assert ep_batch_manager.config.mxfp4_a_scales_preshuffled, (
+        "MXFP4 EP A-scale fold did not activate; the numeric gate would be moot"
+    )
+
     for key in weight_keys:
         weight = moe_weights_fp4.pop(key)
         scale = moe_weights_fp4.pop(f"{key}_scale")
@@ -714,12 +802,13 @@ def test_ep_moe_mxfp4(
             all_topk_idxs[tok_idx : tok_idx + 1],
             all_topk_weights[tok_idx : tok_idx + 1],
             block_size=32,
+            scale_dtype=torch.float8_e8m0fnu,
         )
         cos_sim = torch.nn.functional.cosine_similarity(
             all_outputs[tok_idx : tok_idx + 1].float(),
             torch_output.float(),
             dim=-1,
         )
-        assert cos_sim.min() > 0.94, (
-            f"token {tok_idx}: cosine similarity {cos_sim.min().item():.6f} < 0.94"
+        assert cos_sim.min() > 0.99, (
+            f"token {tok_idx}: cosine similarity {cos_sim.min().item():.6f} < 0.99"
         )

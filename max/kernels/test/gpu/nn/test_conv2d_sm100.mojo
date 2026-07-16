@@ -132,31 +132,30 @@ def test_conv2d_implicit_im2col[
     var out_size = batch * out_h * out_w * out_c
 
     # Host allocations
-    var act_host_ptr = alloc[Scalar[act_type]](act_size)
-    var filter_host_ptr = alloc[Scalar[filter_type]](filter_size)
-    var out_host_ptr = alloc[Scalar[out_type]](out_size)
-    var out_host_ref_ptr = alloc[Scalar[out_type]](out_size)
+    var act_host_ptr = ctx.enqueue_create_host_buffer[act_type](act_size)
+    var filter_host_ptr = ctx.enqueue_create_host_buffer[filter_type](
+        filter_size
+    )
+    var out_host_ptr = ctx.enqueue_create_host_buffer[out_type](out_size)
+    var out_host_ref_ptr = ctx.enqueue_create_host_buffer[out_type](out_size)
 
     # TileTensor shapes with dynamic dimensions
     var act_shape = row_major(
-        Coord(Idx(Int(batch)), Idx(Int(in_h)), Idx(Int(in_w)), Idx(Int(in_c)))
+        Coord(Int(batch), Int(in_h), Int(in_w), Int(in_c))
     )
     var filter_shape = row_major(
         Coord(
-            Idx(Int(out_c)),
-            Idx(Int(filter_h)),
-            Idx(Int(filter_w)),
-            Idx(Int(in_c)),
+            Int(out_c),
+            Int(filter_h),
+            Int(filter_w),
+            Int(in_c),
         )
     )
     var out_shape = row_major(
-        Coord(
-            Idx(Int(batch)), Idx(Int(out_h)), Idx(Int(out_w)), Idx(Int(out_c))
-        )
+        Coord(Int(batch), Int(out_h), Int(out_w), Int(out_c))
     )
 
     var act_host = TileTensor(act_host_ptr, act_shape)
-    var filter_host = TileTensor(filter_host_ptr, filter_shape)
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[act_type](act_size)
@@ -170,8 +169,8 @@ def test_conv2d_implicit_im2col[
     var out_device_ref = ctx.enqueue_create_buffer[out_type](out_size)
 
     # Initialize with random data
-    rand(act_host.ptr, act_size)
-    rand(filter_host.ptr, filter_size)
+    rand(act_host_ptr.as_span())
+    rand(filter_host_ptr.as_span())
 
     # Copy to device
     ctx.enqueue_copy(act_device, act_host_ptr)
@@ -192,18 +191,16 @@ def test_conv2d_implicit_im2col[
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
     # Perform im2col on host
-    var im2col_host_ptr = alloc[Scalar[act_type]](im2col_size)
+    var im2col_host_ptr = ctx.enqueue_create_host_buffer[act_type](im2col_size)
     var im2col_host = TileTensor(
-        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
+        im2col_host_ptr, row_major(Coord(Int(M), Int(K)))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
-    var im2col_device_nd = TileTensor(im2col_device, row_major(Idx(M), Idx(K)))
-    var filter_2d_device_nd = TileTensor(
-        filter_device, row_major(Idx(N), Idx(K))
-    )
-    var out_2d_ref_nd = TileTensor(out_device_ref, row_major(Idx(M), Idx(N)))
+    var im2col_device_nd = TileTensor(im2col_device, row_major(M, K))
+    var filter_2d_device_nd = TileTensor(filter_device, row_major(N, K))
+    var out_2d_ref_nd = TileTensor(out_device_ref, row_major(M, N))
 
     # Reference: cuBLAS GEMM (transpose_b=True for NK layout)
     vendor_blas.matmul(
@@ -225,20 +222,13 @@ def test_conv2d_implicit_im2col[
     # Validate results
     comptime rtol = 1e-2
     assert_almost_equal(
-        out_host_ptr,
-        out_host_ref_ptr,
+        out_host_ptr.unsafe_ptr(),
+        out_host_ref_ptr.unsafe_ptr(),
         out_size,
         atol=0.0001,
         rtol=rtol,
     )
     print("  PASSED\n")
-
-    # Clean up
-    act_host_ptr.free()
-    filter_host_ptr.free()
-    out_host_ptr.free()
-    out_host_ref_ptr.free()
-    im2col_host_ptr.free()
 
 
 def test_conv2d_1sm[
@@ -336,31 +326,30 @@ def test_conv2d_1sm[
     var out_size = batch * out_h * out_w * out_c
 
     # Host allocations
-    var act_host_ptr = alloc[Scalar[act_type]](act_size)
-    var filter_host_ptr = alloc[Scalar[filter_type]](filter_size)
-    var out_host_ptr = alloc[Scalar[out_type]](out_size)
-    var out_host_ref_ptr = alloc[Scalar[out_type]](out_size)
+    var act_host_ptr = ctx.enqueue_create_host_buffer[act_type](act_size)
+    var filter_host_ptr = ctx.enqueue_create_host_buffer[filter_type](
+        filter_size
+    )
+    var out_host_ptr = ctx.enqueue_create_host_buffer[out_type](out_size)
+    var out_host_ref_ptr = ctx.enqueue_create_host_buffer[out_type](out_size)
 
     # TileTensor shapes with dynamic dimensions
     var act_shape = row_major(
-        Coord(Idx(Int(batch)), Idx(Int(in_h)), Idx(Int(in_w)), Idx(Int(in_c)))
+        Coord(Int(batch), Int(in_h), Int(in_w), Int(in_c))
     )
     var filter_shape = row_major(
         Coord(
-            Idx(Int(out_c)),
-            Idx(Int(filter_h)),
-            Idx(Int(filter_w)),
-            Idx(Int(in_c)),
+            Int(out_c),
+            Int(filter_h),
+            Int(filter_w),
+            Int(in_c),
         )
     )
     var out_shape = row_major(
-        Coord(
-            Idx(Int(batch)), Idx(Int(out_h)), Idx(Int(out_w)), Idx(Int(out_c))
-        )
+        Coord(Int(batch), Int(out_h), Int(out_w), Int(out_c))
     )
 
     var act_host = TileTensor(act_host_ptr, act_shape)
-    var filter_host = TileTensor(filter_host_ptr, filter_shape)
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[act_type](act_size)
@@ -374,8 +363,8 @@ def test_conv2d_1sm[
     var out_device_ref = ctx.enqueue_create_buffer[out_type](out_size)
 
     # Initialize with random data
-    rand(act_host.ptr, act_size)
-    rand(filter_host.ptr, filter_size)
+    rand(act_host_ptr.as_span())
+    rand(filter_host_ptr.as_span())
 
     # Copy to device
     ctx.enqueue_copy(act_device, act_host_ptr)
@@ -394,9 +383,9 @@ def test_conv2d_1sm[
     var im2col_size = M * K
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
-    var im2col_host_ptr = alloc[Scalar[act_type]](im2col_size)
+    var im2col_host_ptr = ctx.enqueue_create_host_buffer[act_type](im2col_size)
     var im2col_host = TileTensor(
-        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
+        im2col_host_ptr, row_major(Coord(Int(M), Int(K)))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
@@ -404,11 +393,9 @@ def test_conv2d_1sm[
     var _dynamic_a_ref_shape = IndexList[2](M, K)
     var _dynamic_b_ref_shape = IndexList[2](N, K)
     var _dynamic_c_ref_shape = IndexList[2](M, N)
-    var im2col_device_nd = TileTensor(im2col_device, row_major(Idx(M), Idx(K)))
-    var filter_2d_device_nd = TileTensor(
-        filter_device, row_major(Idx(N), Idx(K))
-    )
-    var out_2d_ref_nd = TileTensor(out_device_ref, row_major(Idx(M), Idx(N)))
+    var im2col_device_nd = TileTensor(im2col_device, row_major(M, K))
+    var filter_2d_device_nd = TileTensor(filter_device, row_major(N, K))
+    var out_2d_ref_nd = TileTensor(out_device_ref, row_major(M, N))
 
     # Reference: cuBLAS GEMM
     vendor_blas.matmul(
@@ -430,20 +417,13 @@ def test_conv2d_1sm[
     # Validate results
     comptime rtol = 1e-2
     assert_almost_equal(
-        out_host_ptr,
-        out_host_ref_ptr,
+        out_host_ptr.unsafe_ptr(),
+        out_host_ref_ptr.unsafe_ptr(),
         out_size,
         atol=0.0001,
         rtol=rtol,
     )
     print("  PASSED\n")
-
-    # Clean up
-    act_host_ptr.free()
-    filter_host_ptr.free()
-    out_host_ptr.free()
-    out_host_ref_ptr.free()
-    im2col_host_ptr.free()
 
 
 def test_conv2d_epilogue_lambda[
@@ -523,32 +503,31 @@ def test_conv2d_epilogue_lambda[
     var bias_size = out_c
 
     # Host allocations
-    var act_host_ptr = alloc[Scalar[act_type]](act_size)
-    var filter_host_ptr = alloc[Scalar[filter_type]](filter_size)
-    var out_host_ptr = alloc[Scalar[out_type]](out_size)
-    var out_host_ref_ptr = alloc[Scalar[out_type]](out_size)
-    var bias_host_ptr = alloc[Scalar[out_type]](bias_size)
+    var act_host_ptr = ctx.enqueue_create_host_buffer[act_type](act_size)
+    var filter_host_ptr = ctx.enqueue_create_host_buffer[filter_type](
+        filter_size
+    )
+    var out_host_ptr = ctx.enqueue_create_host_buffer[out_type](out_size)
+    var out_host_ref_ptr = ctx.enqueue_create_host_buffer[out_type](out_size)
+    var bias_host_ptr = ctx.enqueue_create_host_buffer[out_type](bias_size)
 
     # TileTensor shapes with dynamic dimensions
     var act_shape = row_major(
-        Coord(Idx(Int(batch)), Idx(Int(in_h)), Idx(Int(in_w)), Idx(Int(in_c)))
+        Coord(Int(batch), Int(in_h), Int(in_w), Int(in_c))
     )
     var filter_shape = row_major(
         Coord(
-            Idx(Int(out_c)),
-            Idx(Int(filter_h)),
-            Idx(Int(filter_w)),
-            Idx(Int(in_c)),
+            Int(out_c),
+            Int(filter_h),
+            Int(filter_w),
+            Int(in_c),
         )
     )
     var out_shape = row_major(
-        Coord(
-            Idx(Int(batch)), Idx(Int(out_h)), Idx(Int(out_w)), Idx(Int(out_c))
-        )
+        Coord(Int(batch), Int(out_h), Int(out_w), Int(out_c))
     )
 
     var act_host = TileTensor(act_host_ptr, act_shape)
-    var filter_host = TileTensor(filter_host_ptr, filter_shape)
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[act_type](act_size)
@@ -563,9 +542,9 @@ def test_conv2d_epilogue_lambda[
     var out_device_ref = ctx.enqueue_create_buffer[out_type](out_size)
 
     # Initialize with random data
-    rand(act_host.ptr, act_size)
-    rand(filter_host.ptr, filter_size)
-    rand(bias_host_ptr, bias_size)
+    rand(act_host_ptr.as_span())
+    rand(filter_host_ptr.as_span())
+    rand(bias_host_ptr.as_span())
 
     # Copy to device
     ctx.enqueue_copy(act_device, act_host_ptr)
@@ -574,7 +553,7 @@ def test_conv2d_epilogue_lambda[
 
     # Create bias tensor view for epilogue lambda
     # Bias is 1D [out_c], needs to be broadcast over [M, N] output
-    var bias_tensor = TileTensor(bias_device, row_major(Idx(out_c)))
+    var bias_tensor = TileTensor(bias_device, row_major(out_c))
 
     # Define epilogue lambda that adds bias (broadcast over M dimension)
     # Output shape is [M, N] where N = out_channels
@@ -584,7 +563,7 @@ def test_conv2d_epilogue_lambda[
     @__copy_capture(bias_tensor)
     def epilogue_add_bias[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -593,9 +572,7 @@ def test_conv2d_epilogue_lambda[
         # Load bias value for this channel and broadcast to SIMD width
         # Note: For width > 1, consecutive columns may have different biases
         # so we need to load a vector of biases
-        var bias_val = bias_tensor.load[width=width]((Idx(idx[1]),)).cast[
-            _dtype
-        ]()
+        var bias_val = bias_tensor.load[width=width]((idx[1],)).cast[_dtype]()
         return val + bias_val
 
     # Create optional lambda
@@ -619,18 +596,16 @@ def test_conv2d_epilogue_lambda[
     var im2col_size = M * K
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
-    var im2col_host_ptr = alloc[Scalar[act_type]](im2col_size)
+    var im2col_host_ptr = ctx.enqueue_create_host_buffer[act_type](im2col_size)
     var im2col_host = TileTensor(
-        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
+        im2col_host_ptr, row_major(Coord(Int(M), Int(K)))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
-    var im2col_device_nd = TileTensor(im2col_device, row_major(Idx(M), Idx(K)))
-    var filter_2d_device_nd = TileTensor(
-        filter_device, row_major(Idx(N), Idx(K))
-    )
-    var out_2d_ref_nd = TileTensor(out_device_ref, row_major(Idx(M), Idx(N)))
+    var im2col_device_nd = TileTensor(im2col_device, row_major(M, K))
+    var filter_2d_device_nd = TileTensor(filter_device, row_major(N, K))
+    var out_2d_ref_nd = TileTensor(out_device_ref, row_major(M, N))
 
     # Reference: cuBLAS GEMM
     vendor_blas.matmul(
@@ -659,21 +634,13 @@ def test_conv2d_epilogue_lambda[
     # Validate results
     comptime rtol = 1e-2
     assert_almost_equal(
-        out_host_ptr,
-        out_host_ref_ptr,
+        out_host_ptr.unsafe_ptr(),
+        out_host_ref_ptr.unsafe_ptr(),
         out_size,
         atol=0.0001,
         rtol=rtol,
     )
     print("  PASSED\n")
-
-    # Clean up
-    act_host_ptr.free()
-    filter_host_ptr.free()
-    out_host_ptr.free()
-    out_host_ref_ptr.free()
-    bias_host_ptr.free()
-    im2col_host_ptr.free()
 
 
 def test_conv2d_bias_fusion[
@@ -746,15 +713,15 @@ def test_conv2d_bias_fusion[
     var filter_size = out_c * filter_h * filter_w * in_c
     var out_size = batch * out_h * out_w * out_c
 
-    var act_host = alloc[Scalar[dtype]](act_size)
-    var filter_host = alloc[Scalar[dtype]](filter_size)
-    var bias_host = alloc[Scalar[dtype]](out_c)
-    var out_host = alloc[Scalar[dtype]](out_size)
-    var out_ref_host = alloc[Scalar[dtype]](out_size)
+    var act_host = ctx.enqueue_create_host_buffer[dtype](act_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var bias_host = ctx.enqueue_create_host_buffer[dtype](out_c)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_ref_host = ctx.enqueue_create_host_buffer[dtype](out_size)
 
-    rand(act_host, act_size)
-    rand(filter_host, filter_size)
-    rand(bias_host, out_c)
+    rand(act_host.as_span())
+    rand(filter_host.as_span())
+    rand(bias_host.as_span())
 
     var act_dev = ctx.enqueue_create_buffer[dtype](act_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -769,27 +736,25 @@ def test_conv2d_bias_fusion[
 
     # Create TileTensors
     var act_shape = row_major(
-        Coord(Idx(Int(batch)), Idx(Int(in_h)), Idx(Int(in_w)), Idx(Int(in_c)))
+        Coord(Int(batch), Int(in_h), Int(in_w), Int(in_c))
     )
     var filter_shape = row_major(
         Coord(
-            Idx(Int(out_c)),
-            Idx(Int(filter_h)),
-            Idx(Int(filter_w)),
-            Idx(Int(in_c)),
+            Int(out_c),
+            Int(filter_h),
+            Int(filter_w),
+            Int(in_c),
         )
     )
     var out_shape = row_major(
-        Coord(
-            Idx(Int(batch)), Idx(Int(out_h)), Idx(Int(out_w)), Idx(Int(out_c))
-        )
+        Coord(Int(batch), Int(out_h), Int(out_w), Int(out_c))
     )
     var act_nd = TileTensor(act_dev, act_shape)
     var filter_nd = TileTensor(filter_dev, filter_shape)
     var out_nd = TileTensor(out_dev, out_shape)
 
     # Create bias tensor for capture
-    var bias_tensor = TileTensor(bias_dev, row_major(Idx(out_c)))
+    var bias_tensor = TileTensor(bias_dev, row_major(out_c))
 
     # Epilogue lambda: add bias (idx[1] = channel index in [M, N] output)
     @parameter
@@ -797,15 +762,13 @@ def test_conv2d_bias_fusion[
     @__copy_capture(bias_tensor)
     def add_bias[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
         _dtype, width
     ]:
-        return (
-            val + bias_tensor.load[width=width]((Idx(idx[1]),)).cast[_dtype]()
-        )
+        return val + bias_tensor.load[width=width]((idx[1],)).cast[_dtype]()
 
     comptime bias_lambda = Optional[elementwise_compute_lambda_type](add_bias)
 
@@ -835,16 +798,16 @@ def test_conv2d_bias_fusion[
 
     # Reference: im2col + GEMM + bias (CPU bias add)
     var act_host_nd = TileTensor(act_host, act_shape)
-    var im2col_host = alloc[Scalar[dtype]](M * K)
+    var im2col_host = ctx.enqueue_create_host_buffer[dtype](M * K)
     var im2col_host_nd = TileTensor(
-        im2col_host, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
+        im2col_host, row_major(Coord(Int(M), Int(K)))
     )
     im2col(im2col_host_nd, act_host_nd, problem)
     ctx.enqueue_copy(im2col_dev, im2col_host)
 
-    var im2col_nd = TileTensor(im2col_dev, row_major(Idx(M), Idx(K)))
-    var filter_2d_nd = TileTensor(filter_dev, row_major(Idx(N), Idx(K)))
-    var out_ref_nd = TileTensor(out_ref_dev, row_major(Idx(M), Idx(N)))
+    var im2col_nd = TileTensor(im2col_dev, row_major(M, K))
+    var filter_2d_nd = TileTensor(filter_dev, row_major(N, K))
+    var out_ref_nd = TileTensor(out_ref_dev, row_major(M, N))
 
     vendor_blas.matmul(
         ctx,
@@ -868,17 +831,13 @@ def test_conv2d_bias_fusion[
 
     # Validate
     assert_almost_equal(
-        out_host, out_ref_host, out_size, atol=0.0001, rtol=1e-2
+        out_host.unsafe_ptr(),
+        out_ref_host.unsafe_ptr(),
+        out_size,
+        atol=0.0001,
+        rtol=1e-2,
     )
     print("    PASSED")
-
-    # Cleanup
-    act_host.free()
-    filter_host.free()
-    bias_host.free()
-    out_host.free()
-    out_ref_host.free()
-    im2col_host.free()
     _ = act_dev^
     _ = filter_dev^
     _ = bias_dev^
@@ -961,28 +920,26 @@ def test_conv2d_residual_api[
     var out_size = batch * out_h * out_w * out_c
 
     # Host allocations
-    var act_host_ptr = alloc[Scalar[dtype]](act_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var out_host_ptr = alloc[Scalar[dtype]](out_size)
-    var out_host_ref_ptr = alloc[Scalar[dtype]](out_size)
-    var source_host_ptr = alloc[Scalar[dtype]](out_size)
+    var act_host_ptr = ctx.enqueue_create_host_buffer[dtype](act_size)
+    var filter_host_ptr = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var out_host_ptr = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var source_host_ptr = ctx.enqueue_create_host_buffer[dtype](out_size)
 
     # TileTensor shapes with dynamic dimensions
     var act_shape = row_major(
-        Coord(Idx(Int(batch)), Idx(Int(in_h)), Idx(Int(in_w)), Idx(Int(in_c)))
+        Coord(Int(batch), Int(in_h), Int(in_w), Int(in_c))
     )
     var filter_shape = row_major(
         Coord(
-            Idx(Int(out_c)),
-            Idx(Int(filter_h)),
-            Idx(Int(filter_w)),
-            Idx(Int(in_c)),
+            Int(out_c),
+            Int(filter_h),
+            Int(filter_w),
+            Int(in_c),
         )
     )
     var out_shape = row_major(
-        Coord(
-            Idx(Int(batch)), Idx(Int(out_h)), Idx(Int(out_w)), Idx(Int(out_c))
-        )
+        Coord(Int(batch), Int(out_h), Int(out_w), Int(out_c))
     )
 
     var act_host = TileTensor(act_host_ptr, act_shape)
@@ -1001,9 +958,9 @@ def test_conv2d_residual_api[
     var out_device_ref = ctx.enqueue_create_buffer[dtype](out_size)
 
     # Initialize with random data
-    rand(act_host.ptr, act_size)
-    rand(filter_host_ptr, filter_size)
-    rand(source_host_ptr, out_size)
+    rand(act_host_ptr.as_span())
+    rand(filter_host_ptr.as_span())
+    rand(source_host_ptr.as_span())
 
     # Copy to device
     ctx.enqueue_copy(act_device, act_host_ptr)
@@ -1052,18 +1009,16 @@ def test_conv2d_residual_api[
     var im2col_size = M * K
     var im2col_device = ctx.enqueue_create_buffer[dtype](im2col_size)
 
-    var im2col_host_ptr = alloc[Scalar[dtype]](im2col_size)
+    var im2col_host_ptr = ctx.enqueue_create_host_buffer[dtype](im2col_size)
     var im2col_host = TileTensor(
-        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
+        im2col_host_ptr, row_major(Coord(Int(M), Int(K)))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
-    var im2col_device_nd = TileTensor(im2col_device, row_major(Idx(M), Idx(K)))
-    var filter_2d_device_nd = TileTensor(
-        filter_device, row_major(Idx(N), Idx(K))
-    )
-    var out_2d_ref_nd = TileTensor(out_device_ref, row_major(Idx(M), Idx(N)))
+    var im2col_device_nd = TileTensor(im2col_device, row_major(M, K))
+    var filter_2d_device_nd = TileTensor(filter_device, row_major(N, K))
+    var out_2d_ref_nd = TileTensor(out_device_ref, row_major(M, N))
 
     # Reference: cuBLAS GEMM (conv2d only)
     vendor_blas.matmul(
@@ -1092,21 +1047,13 @@ def test_conv2d_residual_api[
     # Validate: D = Conv(A,B) + beta*C
     comptime rtol = 1e-2
     assert_almost_equal(
-        out_host_ptr,
-        out_host_ref_ptr,
+        out_host_ptr.unsafe_ptr(),
+        out_host_ref_ptr.unsafe_ptr(),
         out_size,
         atol=0.0001,
         rtol=rtol,
     )
     print("  PASSED\n")
-
-    # Clean up
-    act_host_ptr.free()
-    filter_host_ptr.free()
-    out_host_ptr.free()
-    out_host_ref_ptr.free()
-    source_host_ptr.free()
-    im2col_host_ptr.free()
 
 
 def test_conv2d_problem_shape():
@@ -1219,13 +1166,13 @@ def test_conv_gpu_scale_epilogue[
 
     print("  ", name, sep="")
 
-    var input_host = alloc[Scalar[dtype]](in_size)
-    var filter_host = alloc[Scalar[dtype]](filter_size)
-    var out_epilogue_host = alloc[Scalar[dtype]](out_size)
-    var out_ref_host = alloc[Scalar[dtype]](out_size)
+    var input_host = ctx.enqueue_create_host_buffer[dtype](in_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var out_epilogue_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_ref_host = ctx.enqueue_create_host_buffer[dtype](out_size)
 
-    rand(input_host, in_size)
-    rand(filter_host, filter_size)
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
 
     var input_dev = ctx.enqueue_create_buffer[dtype](in_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -1246,13 +1193,13 @@ def test_conv_gpu_scale_epilogue[
     @always_inline
     @__copy_capture(out_epilogue_tt)
     def scale_epilogue[
-        _dtype: DType, _rank: Int, _width: Int
+        _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
-        out_epilogue_tt.store[width=_width](
-            Coord(
-                Idx(coords[0]), Idx(coords[1]), Idx(coords[2]), Idx(coords[3])
-            ),
+        out_epilogue_tt.store[
+            width=_width, alignment=align_of[dtype]() * _alignment
+        ](
+            Coord(coords[0], coords[1], coords[2], coords[3]),
             scaled,
         )
 
@@ -1313,10 +1260,6 @@ def test_conv_gpu_scale_epilogue[
         print("    PASSED (max_diff=", max_diff, ")")
     assert_false(errors > 0, "conv_gpu scale epilogue mismatch")
 
-    input_host.free()
-    filter_host.free()
-    out_epilogue_host.free()
-    out_ref_host.free()
     _ = input_dev^
     _ = filter_dev^
     _ = out_epilogue_dev^
@@ -1344,16 +1287,16 @@ def test_conv_gpu_additive_epilogue[
 
     print("  ", name, sep="")
 
-    var input_host = alloc[Scalar[dtype]](in_size)
-    var filter_host = alloc[Scalar[dtype]](filter_size)
-    var out_epilogue_host = alloc[Scalar[dtype]](out_size)
-    var out_ref_host = alloc[Scalar[dtype]](out_size)
-    var bias_host = alloc[Scalar[dtype]](out_size)
-
-    rand(input_host, in_size)
-    rand(filter_host, filter_size)
+    var input_host = ctx.enqueue_create_host_buffer[dtype](in_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var out_epilogue_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_ref_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var bias_host = ctx.enqueue_create_host_buffer[dtype](out_size)
     for i in range(out_size):
         bias_host[i] = Scalar[dtype](1.0)
+
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
 
     var input_dev = ctx.enqueue_create_buffer[dtype](in_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -1375,16 +1318,18 @@ def test_conv_gpu_additive_epilogue[
     @always_inline
     @__copy_capture(out_epilogue_tt)
     def add_bias_epilogue[
-        _dtype: DType, _rank: Int, _width: Int
+        _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-        var coord = Coord(
-            Idx(coords[0]), Idx(coords[1]), Idx(coords[2]), Idx(coords[3])
-        )
-        var existing = out_epilogue_tt.load[width=_width](coord)
+        var coord = Coord(coords[0], coords[1], coords[2], coords[3])
+        var existing = out_epilogue_tt.load[
+            width=_width, alignment=align_of[_dtype]() * _alignment
+        ](coord)
         var result = (
             val.cast[DType.float32]() + existing.cast[DType.float32]()
         ).cast[dtype]()
-        out_epilogue_tt.store[width=_width](coord, result)
+        out_epilogue_tt.store[
+            width=_width, alignment=align_of[_dtype]() * _alignment
+        ](coord, result)
 
     conv_gpu[
         dtype,
@@ -1445,11 +1390,6 @@ def test_conv_gpu_additive_epilogue[
         print("    PASSED (max_diff=", max_diff, ")")
     assert_false(errors > 0, "conv_gpu additive epilogue mismatch")
 
-    input_host.free()
-    filter_host.free()
-    out_epilogue_host.free()
-    out_ref_host.free()
-    bias_host.free()
     _ = input_dev^
     _ = filter_dev^
     _ = out_epilogue_dev^
@@ -1477,15 +1417,15 @@ def test_conv_gpu_residual[
 
     print("  ", name, sep="")
 
-    var input_host = alloc[Scalar[dtype]](in_size)
-    var filter_host = alloc[Scalar[dtype]](filter_size)
-    var source_host = alloc[Scalar[dtype]](out_size)
-    var out_residual_host = alloc[Scalar[dtype]](out_size)
-    var out_ref_host = alloc[Scalar[dtype]](out_size)
+    var input_host = ctx.enqueue_create_host_buffer[dtype](in_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var source_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_residual_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_ref_host = ctx.enqueue_create_host_buffer[dtype](out_size)
 
-    rand(input_host, in_size)
-    rand(filter_host, filter_size)
-    rand(source_host, out_size)
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
+    rand(source_host.as_span())
 
     var input_dev = ctx.enqueue_create_buffer[dtype](in_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -1518,7 +1458,7 @@ def test_conv_gpu_residual[
         IndexList[4](pad, pad, pad, pad),
         1,
         ctx,
-        source_dev.unsafe_ptr(),
+        source_dev.unsafe_ptr().as_unsafe_any_origin(),
         Float32(1.0),
     )
 
@@ -1564,16 +1504,306 @@ def test_conv_gpu_residual[
         print("    PASSED (max_diff=", max_diff, ")")
     assert_false(errors > 0, "conv_gpu residual output mismatch")
 
-    input_host.free()
-    filter_host.free()
-    source_host.free()
-    out_residual_host.free()
-    out_ref_host.free()
     _ = input_dev^
     _ = filter_dev^
     _ = source_dev^
     _ = out_residual_dev^
     _ = out_ref_dev^
+
+
+def test_conv_gpu_residual_diag_no_lambda[
+    N: Int,
+    H: Int,
+    W: Int,
+    C_in: Int,
+    R: Int,
+    S: Int,
+    C_out: Int,
+    pad: Int,
+    name: StringLiteral,
+](ctx: DeviceContext) raises:
+    """Residual-only diagnostic: zero input/filter, position-encoded source.
+
+    Bypasses the elementwise_lambda_fn branch — calls conv_gpu with
+    `has_residual=True` and no epilogue lambda. Expected output = source
+    (since Conv = 0). Any wrong-source read shows up directly as a
+    per-element mismatch — random-input tests mask this via magnitude.
+    """
+    comptime Hout = H + 2 * pad - R + 1
+    comptime Wout = W + 2 * pad - S + 1
+    comptime dtype = DType.bfloat16
+    comptime in_size = N * H * W * C_in
+    comptime filter_size = R * S * C_in * C_out
+    comptime out_size = N * Hout * Wout * C_out
+
+    print("  ", name, sep="")
+
+    var input_host = ctx.enqueue_create_host_buffer[dtype](in_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var source_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+
+    for i in range(in_size):
+        input_host[i] = Scalar[dtype](0.0)
+    for i in range(filter_size):
+        filter_host[i] = Scalar[dtype](0.0)
+    for b in range(N):
+        for h in range(Hout):
+            for w in range(Wout):
+                for c in range(C_out):
+                    var idx = ((b * Hout + h) * Wout + w) * C_out + c
+                    source_host[idx] = Scalar[dtype](Float32(c) * 0.01)
+
+    var input_dev = ctx.enqueue_create_buffer[dtype](in_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
+    var source_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    var out_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    ctx.enqueue_copy(input_dev, input_host)
+    ctx.enqueue_copy(filter_dev, filter_host)
+    ctx.enqueue_copy(source_dev, source_host)
+
+    comptime input_tt_layout = row_major[N, H, W, C_in]()
+    comptime filter_tt_layout = row_major[R, S, C_in, C_out]()
+    comptime output_tt_layout = row_major[N, Hout, Wout, C_out]()
+    var input_tt = TileTensor(input_dev, input_tt_layout)
+    var filter_tt = TileTensor(filter_dev, filter_tt_layout)
+    var out_tt = TileTensor(out_dev, output_tt_layout)
+
+    conv_gpu[
+        dtype,
+        dtype,
+        dtype,
+        has_residual=True,
+    ](
+        input_tt,
+        filter_tt,
+        out_tt,
+        IndexList[2](1, 1),
+        IndexList[2](1, 1),
+        IndexList[4](pad, pad, pad, pad),
+        1,
+        ctx,
+        source_dev.unsafe_ptr().as_unsafe_any_origin(),
+        Float32(1.0),
+    )
+
+    ctx.synchronize()
+    ctx.enqueue_copy(out_host, out_dev)
+    ctx.synchronize()
+
+    var max_diff: Float32 = 0.0
+    var errors = 0
+    var first_err_coords = IndexList[4](-1, -1, -1, -1)
+    var first_err_got: Float32 = 0.0
+    var first_err_expected: Float32 = 0.0
+    for b in range(N):
+        for h in range(Hout):
+            for w in range(Wout):
+                for c in range(C_out):
+                    var idx = ((b * Hout + h) * Wout + w) * C_out + c
+                    var got = out_host[idx].cast[DType.float32]()
+                    var expected = (
+                        (Float32(c) * 0.01)
+                        .cast[DType.bfloat16]()
+                        .cast[DType.float32]()
+                    )
+                    var diff = abs(got - expected)
+                    if diff > max_diff:
+                        max_diff = diff
+                    if diff > 0.05:
+                        if errors == 0:
+                            first_err_coords = IndexList[4](b, h, w, c)
+                            first_err_got = got
+                            first_err_expected = expected
+                        errors += 1
+
+    if errors > 0:
+        print(
+            "    FAILED: ",
+            errors,
+            "/",
+            out_size,
+            " errors, max_diff=",
+            max_diff,
+            " (first @ ",
+            first_err_coords,
+            ": got=",
+            first_err_got,
+            " want=",
+            first_err_expected,
+            ")",
+            sep="",
+        )
+    else:
+        print("    PASSED (max_diff=", max_diff, ")")
+    assert_false(errors > 0, "conv_gpu residual no-lambda mismatch")
+
+    _ = input_dev^
+    _ = filter_dev^
+    _ = source_dev^
+    _ = out_dev^
+
+
+def test_conv_gpu_residual_with_bias[
+    N: Int,
+    H: Int,
+    W: Int,
+    C_in: Int,
+    R: Int,
+    S: Int,
+    C_out: Int,
+    pad: Int,
+    name: StringLiteral,
+](ctx: DeviceContext) raises:
+    """Test conv_gpu with residual add AND a void elementwise bias lambda.
+
+    Validates the FLUX VAE pattern `D = Conv(A,B) + bias + beta*C` end-to-end.
+    Source values are position-encoded against zero-input/filter so the
+    expected output reduces to `bias + source` element-wise; any read of
+    the wrong source position (the MODELS-1484 source-loading bug) is
+    immediately visible per element.
+    """
+    comptime Hout = H + 2 * pad - R + 1
+    comptime Wout = W + 2 * pad - S + 1
+    comptime dtype = DType.bfloat16
+    comptime in_size = N * H * W * C_in
+    comptime filter_size = R * S * C_in * C_out
+    comptime out_size = N * Hout * Wout * C_out
+
+    print("  ", name, sep="")
+
+    var input_host = ctx.enqueue_create_host_buffer[dtype](in_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var source_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var bias_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+
+    # Zero input + filter so Conv = 0; expected = bias + source.
+    for i in range(in_size):
+        input_host[i] = Scalar[dtype](0.0)
+    for i in range(filter_size):
+        filter_host[i] = Scalar[dtype](0.0)
+
+    # Position-encoded source: source[b,h,w,c] = c * 0.01. Reading the
+    # wrong channel gives a visibly different value.
+    for b in range(N):
+        for h in range(Hout):
+            for w in range(Wout):
+                for c in range(C_out):
+                    var idx = ((b * Hout + h) * Wout + w) * C_out + c
+                    source_host[idx] = Scalar[dtype](Float32(c) * 0.01)
+
+    for i in range(out_size):
+        bias_host[i] = Scalar[dtype](1.0)
+
+    var input_dev = ctx.enqueue_create_buffer[dtype](in_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
+    var source_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    var out_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    ctx.enqueue_copy(input_dev, input_host)
+    ctx.enqueue_copy(filter_dev, filter_host)
+    ctx.enqueue_copy(source_dev, source_host)
+    # Pre-load output with bias; the void lambda reads it back and adds val.
+    ctx.enqueue_copy(out_dev, bias_host)
+
+    comptime input_tt_layout = row_major[N, H, W, C_in]()
+    comptime filter_tt_layout = row_major[R, S, C_in, C_out]()
+    comptime output_tt_layout = row_major[N, Hout, Wout, C_out]()
+    var input_tt = TileTensor(input_dev, input_tt_layout)
+    var filter_tt = TileTensor(filter_dev, filter_tt_layout)
+    var out_tt = TileTensor(out_dev, output_tt_layout)
+
+    @parameter
+    @always_inline
+    @__copy_capture(out_tt)
+    def add_bias_epilogue[
+        _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
+    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+        var coord = Coord(coords[0], coords[1], coords[2], coords[3])
+        var existing = out_tt.load[
+            width=_width, alignment=align_of[_dtype]() * _alignment
+        ](coord)
+        var result = (
+            val.cast[DType.float32]() + existing.cast[DType.float32]()
+        ).cast[dtype]()
+        out_tt.store[width=_width, alignment=align_of[_dtype]() * _alignment](
+            coord, result
+        )
+
+    conv_gpu[
+        dtype,
+        dtype,
+        dtype,
+        Optional[elementwise_simd_epilogue_type](add_bias_epilogue),
+        has_residual=True,
+    ](
+        input_tt,
+        filter_tt,
+        out_tt,
+        IndexList[2](1, 1),
+        IndexList[2](1, 1),
+        IndexList[4](pad, pad, pad, pad),
+        1,
+        ctx,
+        source_dev.unsafe_ptr().as_unsafe_any_origin(),
+        Float32(1.0),
+    )
+
+    ctx.synchronize()
+    ctx.enqueue_copy(out_host, out_dev)
+    ctx.synchronize()
+
+    var max_diff: Float32 = 0.0
+    var errors = 0
+    var first_err_coords = IndexList[4](-1, -1, -1, -1)
+    var first_err_got: Float32 = 0.0
+    var first_err_expected: Float32 = 0.0
+    for b in range(N):
+        for h in range(Hout):
+            for w in range(Wout):
+                for c in range(C_out):
+                    var idx = ((b * Hout + h) * Wout + w) * C_out + c
+                    var got = out_host[idx].cast[DType.float32]()
+                    var expected = (
+                        (Float32(1.0) + Float32(c) * 0.01)
+                        .cast[DType.bfloat16]()
+                        .cast[DType.float32]()
+                    )
+                    var diff = abs(got - expected)
+                    if diff > max_diff:
+                        max_diff = diff
+                    if diff > 0.05:
+                        if errors == 0:
+                            first_err_coords = IndexList[4](b, h, w, c)
+                            first_err_got = got
+                            first_err_expected = expected
+                        errors += 1
+
+    if errors > 0:
+        print(
+            "    FAILED: ",
+            errors,
+            "/",
+            out_size,
+            " errors, max_diff=",
+            max_diff,
+            " (first @ ",
+            first_err_coords,
+            ": got=",
+            first_err_got,
+            " want=",
+            first_err_expected,
+            ")",
+            sep="",
+        )
+    else:
+        print("    PASSED (max_diff=", max_diff, ")")
+    assert_false(errors > 0, "conv_gpu residual+bias output mismatch")
+
+    _ = input_dev^
+    _ = filter_dev^
+    _ = source_dev^
+    _ = out_dev^
 
 
 def main() raises:
@@ -2002,6 +2232,47 @@ def main() raises:
         ](ctx)
         test_conv_gpu_residual[
             1, 64, 64, 256, 3, 3, 128, 1, "3x3_256to128_res"
+        ](ctx)
+
+        # ============================================================
+        # Tests 19+: Residual add + void bias lambda — the FLUX VAE
+        # `conv2d_residual_add` pattern (MODELS-1484). These tests use
+        # zero-input/filter so any wrong-source read is visible per
+        # element; they would have caught the source-loading bug that
+        # only manifests under matching conv/source magnitudes.
+        # ============================================================
+        # Diagnostic without the elementwise lambda — isolates source loading.
+        print(
+            "\n--- Residual No-Lambda Diag (zero-conv + position-encoded"
+            " src) ---"
+        )
+        test_conv_gpu_residual_diag_no_lambda[
+            1, 16, 16, 128, 3, 3, 128, 1, "3x3_128_no_lambda"
+        ](ctx)
+
+        print(
+            "\n--- Residual + Bias Lambda (zero-conv + position-encoded"
+            " src) ---"
+        )
+        # Small / coverage shapes.
+        test_conv_gpu_residual_with_bias[
+            1, 16, 16, 128, 3, 3, 128, 1, "3x3_128_diag"
+        ](ctx)
+        test_conv_gpu_residual_with_bias[
+            1, 16, 16, 512, 3, 3, 512, 1, "3x3_512_diag"
+        ](ctx)
+        # FLUX2 VAE decoder shapes (block_out_channels = [128, 256, 512, 512];
+        # decoder spatial dims 128 -> 256 -> 512 -> 1024 for a 1024px output).
+        # We test at reduced spatial dims to keep runtime manageable while
+        # still exercising every (in_c == out_c) channel count used by FLUX2.
+        test_conv_gpu_residual_with_bias[
+            1, 32, 32, 512, 3, 3, 512, 1, "flux_mid_512"
+        ](ctx)
+        test_conv_gpu_residual_with_bias[
+            1, 32, 32, 256, 3, 3, 256, 1, "flux_up2_256"
+        ](ctx)
+        test_conv_gpu_residual_with_bias[
+            1, 32, 32, 128, 3, 3, 128, 1, "flux_up3_128"
         ](ctx)
 
     print("=" * 60)

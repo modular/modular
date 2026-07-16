@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from std.math import ceildiv
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
+from std.gpu.primitives.grid_controls import PDLLevel
+from layout import Coord, Idx, Layout, TileTensor, row_major
 from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 from linalg.fp4_utils import (
@@ -92,6 +94,9 @@ def heuristic_and_outliers_dispatch[
         or scaling_kind == UMMAKind.KIND_MXF4
     )
 
+    comptime MMA_K = 32
+    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+    comptime num_k_iters = ceildiv(a.static_shape[1], BK)
     comptime static_N = c.static_shape[1]
     comptime static_K = a.static_shape[1] * 2 if is_fp4 else a.static_shape[1]
 
@@ -129,9 +134,6 @@ def heuristic_and_outliers_dispatch[
         a_scales.static_shape[4] == b_scales.static_shape[4] == SF_ATOM_K
     ), ""
 
-    comptime MMA_K = 32
-    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
-
     comptime outliers = Table(
         _get_tuning_list_sm100_nvfp4(), "nvfp4_heuristic_outliers"
     ) if scaling_kind == UMMAKind.KIND_MXF4NVF4 else Table(
@@ -140,12 +142,11 @@ def heuristic_and_outliers_dispatch[
         _get_tuning_list_sm100_mxfp8(), "mxfp8_heuristic_outliers"
     )
 
-    @parameter
     @always_inline
-    def rule(x: TuningConfigSM100) -> Bool:
+    def rule(x: TuningConfigSM100) {} -> Bool:
         return x.K == static_K and x.N == static_N
 
-    comptime outlier_configs = outliers.find[rule]()
+    comptime outlier_configs = outliers.find(rule=rule)
 
     comptime for tuning_config in outlier_configs:
         if m >= tuning_config.M and m < tuning_config.M_end:
@@ -194,7 +195,7 @@ def heuristic_and_outliers_dispatch[
             cluster_shape=Index(1, 1, 1),
             block_swizzle_size=8,
             num_accum_pipeline_stages=1,
-            k_group_size=2,
+            k_group_size=2 if num_k_iters % 2 == 0 else 1,
             num_clc_pipeline_stages=0,
             AB_swapped=True,
             is_small_bn=True,
@@ -314,16 +315,15 @@ def _block_scaled_matmul_with_epilogue[
         # The epilogue lambda takes IndexList[2]. We load from c's raw pointer
         # using row-major offset since TileTensor.load's Coord constraint
         # can't be proved when c's layout type is fully inferred.
-        @parameter
-        @__copy_capture(c, n)
         def epilogue_wrapper[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            var c_coord = Index(idx[0], idx[1])
+            simd_width: Int, alignment: Int = 1
+        ](idx: Coord) {var}:
             var c_val = rebind[SIMD[c_type, simd_width]](
-                c.load[width=simd_width](Coord(c_coord))
+                c.load[width=simd_width](idx)
             )
-            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
+            epilogue[c_type, simd_width, alignment=alignment](
+                Index(idx[0].value(), idx[1].value()), c_val
+            )
 
         blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
@@ -340,7 +340,7 @@ def _block_scaled_matmul_with_epilogue[
             ctx,
             alpha=tensor_sf,
         )
-        elementwise[epilogue_wrapper, simd_size, target="gpu"](Index(m, n), ctx)
+        elementwise[simd_size, target="gpu"](epilogue_wrapper, (m, n), ctx)
 
 
 def _vendor_blas_block_scaled_matmul_with_epilogue[
@@ -422,17 +422,14 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
         if c.ptr:
             var c_tt = c.value()
 
-            @parameter
-            @__copy_capture(c_tt)
             def epilogue_wrapper[
-                simd_width: Int, rank: Int, alignment: Int = 1
-            ](idx: IndexList[rank]):
-                var c_coord = Index(idx[0], idx[1])
+                simd_width: Int, alignment: Int = 1
+            ](idx: Coord) {var}:
                 var c_val = rebind[SIMD[c_type, simd_width]](
-                    c_tt.load[width=simd_width](Coord(c_coord))
+                    c_tt.load[width=simd_width](idx)
                 )
                 epilogue[c_type, simd_width, alignment=alignment](
-                    c_coord, c_val
+                    Index(idx[0].value(), idx[1].value()), c_val
                 )
 
             matmul(
@@ -446,9 +443,7 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
                 transpose_b=True,
                 c_row_major=True,
             )
-            elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
-            )
+            elementwise[simd_size, target="gpu"](epilogue_wrapper, (m, n), ctx)
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.

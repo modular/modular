@@ -570,3 +570,7 @@ class InternVLTokenizer(TextAndVisionTokenizer):
 
         # Initialize default EOS token IDs (required by parent class new_context method)
         self._default_eos_token_ids = set([self.eos])
+
+        self._reasoning_parser_name: str | None = (
+            pipeline_config.runtime.reasoning_parser
+        )

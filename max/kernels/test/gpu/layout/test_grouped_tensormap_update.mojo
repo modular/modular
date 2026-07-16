@@ -374,7 +374,7 @@ def test_grouped_tensormap_update[
         tile_layout,  # thread_layout for copy
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         dst_a.device_tensor(),
         dst_b.device_tensor(),
         a_ptrs.device_tensor(),

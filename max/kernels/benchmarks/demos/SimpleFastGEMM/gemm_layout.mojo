@@ -131,19 +131,19 @@ def gemm[
 
 
 # kgen --emit=asm max/kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
-@export(ABI="C")
+@export
 def gemm_export_dynamic(
     a_ptr: UnsafePointer[Scalar[dtype], _],
     b_packed_ptr: UnsafePointer[Scalar[dtype], _],
     c_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     M: Int,
-):
+) abi("C"):
     comptime N = 1024
     comptime K = 1024
-    var a = TileTensor(a_ptr, row_major(Idx(M), Idx[N]()))
+    var a = TileTensor(a_ptr, row_major(M, Idx[N]))
     var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(b_packed_ptr)
     var c = TileTensor(
-        c_ptr.bitcast[Scalar[dtype], mut=True](), row_major(Idx(M), Idx[N]())
+        c_ptr.bitcast[Scalar[dtype], mut=True](), row_major(M, Idx[N])
     )
     gemm[N, K](c, a, b_packed)
 
@@ -209,12 +209,11 @@ def main():
     print(M * N, end="")
     print(" errors")
 
-    @parameter
-    def bench_gemm():
+    def bench_gemm() {var}:
         gemm[N, K](c2, a, b_packed)
 
     var num_warmup: Int = 1
-    var time = std.benchmark.run[func3=bench_gemm](num_warmup).mean()
+    var time = std.benchmark.run(bench_gemm, num_warmup).mean()
     var flops = 2.0 * M * N * K / time / 1e9
     print(time, end="")
     print(" seconds")

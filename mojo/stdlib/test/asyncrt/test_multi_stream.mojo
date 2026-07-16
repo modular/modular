@@ -80,7 +80,7 @@ def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         print(out_host3[i])
 
     # Pre-compile and pre-register the device function
-    var dev_func = ctx1.compile_function_experimental[vec_func]()
+    var dev_func = ctx1.compile_function[vec_func]()
 
     # Make sure both queues are ready to run at this point.
     ctx1.synchronize()
@@ -88,7 +88,7 @@ def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
 
     var block_dim = 1
 
-    ctx1.enqueue_function_experimental(
+    ctx1.enqueue_function(
         dev_func,
         in0_dev1,
         in1_dev1,
@@ -99,7 +99,7 @@ def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     )
     out_dev1.reassign_ownership_to(ctx2)
     out_dev1.enqueue_copy_to(out_host1)
-    ctx1.enqueue_function_experimental(
+    ctx1.enqueue_function(
         dev_func,
         in0_dev2,
         in1_dev2,
@@ -110,7 +110,7 @@ def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     )
     out_dev2.reassign_ownership_to(ctx2)
     out_dev2.enqueue_copy_to(out_host2)
-    ctx1.enqueue_function_experimental(
+    ctx1.enqueue_function(
         dev_func,
         in0_dev3,
         in1_dev3,
@@ -204,8 +204,8 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     out_host.enqueue_fill(0.5)
 
     # Pre-compile and pre-register the device function
-    var dev_func1 = ctx1.compile_function_experimental[vec_func]()
-    var dev_func2 = ctx2.compile_function_experimental[vec_func]()
+    var dev_func1 = ctx1.compile_function[vec_func]()
+    var dev_func2 = ctx2.compile_function[vec_func]()
 
     # Ensure the setup has completed.
     ctx1.synchronize()
@@ -213,7 +213,7 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
 
     var block_dim = 1
 
-    ctx1.enqueue_function_experimental(
+    ctx1.enqueue_function(
         dev_func1,
         in_dev1,  # in0 - last use
         in_dev4,  # in1 - last use
@@ -232,7 +232,7 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     out_dev2.reassign_ownership_to(ctx2)  # output of `dev_func2` kernel
 
     # The following two kernels can execute in parallel.
-    ctx2.enqueue_function_experimental(
+    ctx2.enqueue_function(
         dev_func2,
         in_dev2,  # in0 - last use
         out_dev1,  # in1 - last use
@@ -241,7 +241,7 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
-    ctx1.enqueue_function_experimental(
+    ctx1.enqueue_function(
         dev_func1,
         in_dev3,  # in0 - last use
         in_dev5,  # in1 - last use
@@ -256,7 +256,7 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
 
     out_dev4.reassign_ownership_to(ctx2)  # output of `dev_func2` kernel
 
-    ctx2.enqueue_function_experimental(
+    ctx2.enqueue_function(
         dev_func2,
         out_dev2,  # in0 - last use
         out_dev3,  # in1 - last use

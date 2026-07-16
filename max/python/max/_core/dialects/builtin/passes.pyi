@@ -449,6 +449,24 @@ def TopologicalSortPass() -> max._core.Pass:
     regions in a stable order.
     """
 
+def TrivialDeadCodeEliminationPass(
+    recursive: bool = True, remove_blocks: bool = True
+) -> max._core.Pass:
+    """
+    This pass eliminates only trivially dead operations; that is,
+    side-effect-free operations with no users. By default, it also removes
+    trivially dead blocks; that is, blocks that are unreachable from their
+    region entry block. The `remove-blocks` option can be disabled to preserve
+    unreachable blocks.
+
+    This pass does not run a liveness analysis and does not remove dead
+    use-def cycles.
+
+    By default, this pass recursively visits nested regions. The `recursive`
+    option can be disabled to restrict the pass to only the immediate regions
+    nested under the current operation.
+    """
+
 def ViewOpGraphPass(
     max_label_len: int = 20,
     print_attrs: bool = True,

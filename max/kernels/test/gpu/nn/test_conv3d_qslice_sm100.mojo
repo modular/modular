@@ -24,11 +24,13 @@ time_conv 3x1x1, and the C_out F-padding paths (64/192/320).
 """
 
 from std.random import rand
+from std.sys import align_of
 
 from layout import (
+    LTToTTLayout,
     Layout,
     LayoutTensor,
-    lt_to_tt,
+    TileTensor,
 )
 from std.gpu.host import DeviceContext
 from nn.conv.conv import Naive2dConvolution
@@ -91,20 +93,22 @@ def test_conv3d_qslice_direct[
     comptime output_layout_ = Layout.row_major(N, D_out, H_out, W_out, F)
     comptime output_size = output_layout_.size()
 
-    var input_host = alloc[Scalar[dtype]](input_size)
-    var filter_host = alloc[Scalar[dtype]](filter_size)
-    var output_gpu_host = alloc[Scalar[dtype]](output_size)
-    var output_ref_host = alloc[Scalar[dtype]](output_size)
+    var input_host = ctx.enqueue_create_host_buffer[dtype](input_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var output_gpu_host = ctx.enqueue_create_host_buffer[dtype](output_size)
+    var output_ref_host = ctx.enqueue_create_host_buffer[dtype](output_size)
 
-    rand[dtype](input_host, input_size)
-    rand[dtype](filter_host, filter_size)
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
 
     comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
-    var output_ref_accum_host = alloc[Scalar[accum_dtype]](output_size)
+    var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
+        output_size
+    )
     Naive2dConvolution[accum_dtype, dtype, dtype].run(
-        output_ref_accum_host,
-        input_host,
-        filter_host,
+        output_ref_accum_host.unsafe_ptr(),
+        input_host.unsafe_ptr(),
+        filter_host.unsafe_ptr(),
         Index(N, D_out, H_out, W_out, F),
         Index(N, D, H, W, C),
         Index(Q, R, S, C, F),
@@ -120,7 +124,6 @@ def test_conv3d_qslice_direct[
     ](1.0)
     for i in range(output_size):
         output_ref_host[i] = (output_ref_accum_host[i] * scale).cast[dtype]()
-    output_ref_accum_host.free()
 
     var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -129,12 +132,16 @@ def test_conv3d_qslice_direct[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
-    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
     var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
-    var input_tt = lt_to_tt(input_lt)
-    var filter_tt = lt_to_tt(filter_lt)
-    var output_tt = lt_to_tt(output_lt)
+    var input_tt = TileTensor(
+        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
+    )
+    var filter_tt = TileTensor(
+        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
+    )
+    var output_tt = TileTensor(
+        output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
+    )
 
     comptime if with_epilogue:
 
@@ -142,19 +149,17 @@ def test_conv3d_qslice_direct[
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: Int
+            _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
-            output_lt.store[width=_width](
+            output_lt.store[
+                width=_width, store_alignment=align_of[dtype]() * _alignment
+            ](
                 rebind[IndexList[5]](coords),
                 rebind[SIMD[dtype, _width]](scaled),
             )
 
         var handled = dispatch_qslice_conv3d_sm100[
-            dtype,
-            dtype,
-            dtype,
-            filter_is_fcrs=False,
             maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
                 scale_epilogue
             ),
@@ -170,21 +175,12 @@ def test_conv3d_qslice_direct[
         )
         if not handled:
             print("SKIP: qslice dispatcher declined this shape")
-            input_host.free()
-            filter_host.free()
-            output_gpu_host.free()
-            output_ref_host.free()
             _ = input_dev^
             _ = filter_dev^
             _ = output_dev^
             return
     else:
-        var handled = dispatch_qslice_conv3d_sm100[
-            dtype,
-            dtype,
-            dtype,
-            filter_is_fcrs=False,
-        ](
+        var handled = dispatch_qslice_conv3d_sm100(
             input_tt,
             filter_tt,
             output_tt,
@@ -196,10 +192,6 @@ def test_conv3d_qslice_direct[
         )
         if not handled:
             print("SKIP: qslice dispatcher declined this shape")
-            input_host.free()
-            filter_host.free()
-            output_gpu_host.free()
-            output_ref_host.free()
             _ = input_dev^
             _ = filter_dev^
             _ = output_dev^
@@ -219,10 +211,6 @@ def test_conv3d_qslice_direct[
         print("RESULT: FAIL - ", String(e))
         raise e^
     finally:
-        input_host.free()
-        filter_host.free()
-        output_gpu_host.free()
-        output_ref_host.free()
         _ = input_dev^
         _ = filter_dev^
         _ = output_dev^

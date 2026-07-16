@@ -1,0 +1,96 @@
+---
+title: Tensor realization
+description: Understand how MAX realizes tensors so you can reason about eager performance and write code the graph compiler can optimize.
+---
+
+In MAX, you can read the value of any
+[`Tensor`](/max/api/python/generated/max.experimental.tensor.Tensor/) at any
+point in your code. This page explains the realization mechanics that make that
+possible.
+
+:::note
+
+This page provides optional background information that you don't necessarily
+need while writing models in MAX.
+
+:::
+
+## How MAX stores tensors
+
+A `Tensor` doesn't always carry a value, even though it appears to do so. Every
+`Tensor` is in one of two states:
+
+- **Realized**: the `Tensor` is backed by a buffer in memory.
+- **Unrealized**: the `Tensor` is backed by a symbolic graph value.
+
+*Realization* is the moment a tensor transitions from unrealized to realized,
+meaning some computation executes and produces a concrete buffer with
+values. Understanding when realization happens helps you reason about
+performance and write code the graph compiler can optimize.
+
+## How MAX realizes tensors
+
+When you call an op on a `Tensor`, MAX runs it inside a realization context,
+which is an object that constructs a graph that it can compile and run. If no
+context is active, MAX creates one for the duration of the call. By default,
+MAX runs the graph and turns its unrealized tensors into real ones when
+the context's scope exits.
+
+A bare op call like `y = F.relu(x)` runs in a one-op context
+that exits at the end of the statement, so `y` realizes immediately. Some
+functions widen this scope so multiple ops share one context and realize
+together at the function boundary. The next section covers how that works.
+
+:::note Lazy execution mode
+
+MAX previously used a fully lazy execution model where tensors were only
+realized when their values were read. You can still use this model with the
+[`lazy()`](/max/api/python/experimental.functional/#max.experimental.functional.lazy)
+context manager, but we recommend you use the default eager pattern.
+
+:::
+
+## Define a fusion region with `F.functional`
+
+A *fusion region* is a function whose ops all share one realization context, so
+they execute as a single graph that the graph compiler can fuse and optimize as
+a unit.
+
+You can manually define a fusion region with
+[`F.functional()`](/max/api/python/experimental.functional). Apply it as a
+decorator on a method or call it directly to wrap a graph op. This example
+shows how to use the decorator form on a module's `forward()` method:
+
+```python
+from max.experimental import functional as F
+from max.experimental.nn import Module, module_dataclass
+from max.experimental.tensor import Tensor
+
+@module_dataclass
+class MyLayer(Module):
+    weight: Tensor
+    bias: Tensor
+
+    @F.functional
+    def forward(self, x: Tensor) -> Tensor:
+        return x @ self.weight.T + self.bias
+```
+
+Built-in layers like
+[`Linear`](/max/api/python/generated/max.experimental.nn.Linear/) and
+[`RotaryEmbedding`](/max/api/python/generated/max.experimental.nn.RotaryEmbedding/)
+already apply `F.functional` to their `forward()` methods, which is why they
+perform well. Because of this, you don't typically need to use `F.functional`
+yourself.
+
+## Next steps
+
+You just learned how MAX supports eager execution under the hood. For more
+advanced topics, see:
+
+- [Graph overview](/max/develop/graph): Drop down to the explicit graph API
+  and build models without the realization context layer.
+- [Build custom ops](/max/develop/build-custom-ops): Extend MAX with your own
+  ops.
+- [Trace execution](/max/develop/debugging-tracing): Inspect when
+  realization happens at runtime.

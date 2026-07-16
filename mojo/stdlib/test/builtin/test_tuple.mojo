@@ -166,6 +166,7 @@ def test_tuple_comparison() raises:
     assert_false((1, 2, 3) > (1, 2, 4))
     assert_true((1, 2, 3) <= (1, 2, 4))
     assert_true((1, 2, 3) >= (1, 2, 2))
+    assert_true(Tuple() <= Tuple())
 
 
 def test_tuple_comparison_different_types() raises:
@@ -267,11 +268,17 @@ def test_tuple_write_to() raises:
 def test_tuple_write_repr_to() raises:
     var s = String()
     (1, 2, 3).write_repr_to(s)
-    assert_equal(s, "Tuple[Int, Int, Int](Int(1), Int(2), Int(3))")
+    assert_equal(
+        s,
+        (
+            "Tuple[SIMD[DType.int, 1], SIMD[DType.int, 1], SIMD[DType.int,"
+            " 1]](Int(1), Int(2), Int(3))"
+        ),
+    )
 
     s = String()
     (1,).write_repr_to(s)
-    assert_equal(s, "Tuple[Int](Int(1),)")
+    assert_equal(s, "Tuple[SIMD[DType.int, 1]](Int(1),)")
 
     s = String()
     ().write_repr_to(s)
@@ -280,11 +287,13 @@ def test_tuple_write_repr_to() raises:
     # write_repr_to uses write_repr_to on elements, so strings are quoted.
     s = String()
     (1, "hello").write_repr_to(s)
-    assert_equal(s, "Tuple[Int, String](Int(1), 'hello')")
+    assert_equal(s, "Tuple[SIMD[DType.int, 1], String](Int(1), 'hello')")
 
     s = String()
     (True, 42, "hi").write_repr_to(s)
-    assert_equal(s, "Tuple[Bool, Int, String](True, Int(42), 'hi')")
+    assert_equal(
+        s, "Tuple[Bool, SIMD[DType.int, 1], String](True, Int(42), 'hi')"
+    )
 
 
 def test_tuple_assert_equal() raises:
@@ -303,6 +312,8 @@ def test_tuple_assert_not_equal() raises:
 
 def test_tuple_conditional_conformances() raises:
     # Copyable conformance is conditional on all element types being Copyable.
+    assert_true(conforms_to(Tuple[], Comparable))
+    assert_true(conforms_to(Tuple[Int], Comparable))
     assert_true(conforms_to(Tuple[], Copyable))
     assert_true(conforms_to(Tuple[Int], Copyable))
     assert_true(conforms_to(Tuple[Int, String], Copyable))
@@ -340,7 +351,6 @@ def test_tuple_conditional_conformances() raises:
     assert_false(conforms_to(Tuple[MoveOnly[Int]], Copyable))
     assert_false(conforms_to(Tuple[MoveOnly[Int]], Defaultable))
     assert_false(conforms_to(Tuple[MoveOnly[Int]], ImplicitlyCopyable))
-    assert_false(conforms_to(Tuple[MoveOnly[Int]], Writable))
 
 
 def test_tuple_hash() raises:

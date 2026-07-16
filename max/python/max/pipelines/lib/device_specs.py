@@ -22,7 +22,7 @@ from max.driver import DeviceSpec, scan_available_devices
 
 logger = logging.getLogger("max.pipelines")
 
-DeviceHandleStr = Literal["cpu", "gpu", "default"]
+DeviceHandleStr = Literal["cpu", "gpu", "gpu:all"]
 DeviceHandleList = list[int]
 DeviceHandle = DeviceHandleStr | DeviceHandleList
 
@@ -34,7 +34,8 @@ def normalize_device_specs_input(value: str | list[int]) -> DeviceHandle:
         value: The value provided as a string (e.g., "cpu", "gpu", "gpu:0,1,2")
 
     Returns:
-        Either "cpu", "gpu", "default", or a non-empty list of GPU IDs as integers.
+        ``"cpu"``, ``"gpu"``, ``"gpu:all"`` (every visible GPU), or a non-empty
+        list of GPU IDs as integers.
 
     Raises:
         ValueError: If the format is invalid
@@ -47,15 +48,18 @@ def normalize_device_specs_input(value: str | list[int]) -> DeviceHandle:
         return value
 
     lowered = value.lower()
-    if lowered in {"cpu", "gpu", "default"}:
+    if lowered in {"cpu", "gpu"}:
         return cast(DeviceHandleStr, lowered)
     # By this point, we should only be left with a list of GPU IDs in a
-    # gpu:<id1>,<id2> format.
-    if not value.startswith("gpu:"):
+    # gpu:<id1>,<id2> format (prefix is matched case-insensitively).
+    if not lowered.startswith("gpu:"):
         raise ValueError(f"Expected 'gpu:<id1>,<id2>' format, got '{value}'")
+    suffix = lowered.removeprefix("gpu:")
+    if suffix == "all":
+        return cast(DeviceHandleStr, "gpu:all")
     # Remove the "gpu:" prefix and split the string by commas to get a list of GPU IDs.
     try:
-        gpu_ids = value.removeprefix("gpu:").split(",")
+        gpu_ids = suffix.split(",")
         return [int(part) for part in gpu_ids]
     except ValueError:
         raise ValueError(  # noqa: B904
@@ -67,13 +71,21 @@ def get_requested_gpu_ids(devices: DeviceHandle) -> list[int]:
     """Helper function to get requested GPU IDs from devices input.
 
     Args:
-        devices: The devices input, either "gpu" or a list of GPU IDs
+        devices: The devices input: ``"gpu"``, ``"gpu:all"``, or a list of GPU
+            IDs.
 
     Returns:
         List of requested GPU IDs
     """
-    if devices == "gpu" or devices == "default":
+    if devices == "gpu":
         return [0]
+    if devices == "gpu:all":
+        available_devices = scan_available_devices()
+        return [
+            device.id
+            for device in available_devices
+            if device.device_type == "gpu"
+        ]
     if isinstance(devices, list):
         return devices
     return []
@@ -113,17 +125,24 @@ def device_specs_from_normalized_device_handle(
     ]
     if devices == "cpu":
         return [DeviceSpec.cpu()]
-    if devices == "default" and len(available_gpu_ids) == 0:
-        logger.info("No GPUs available, falling back to CPU")
-        return [DeviceSpec.cpu()]
 
     requested_gpu_ids = get_requested_gpu_ids(devices=devices)
+    if devices == "gpu:all" and len(requested_gpu_ids) == 0:
+        raise ValueError(
+            "'gpu:all' was requested but no GPUs are available. "
+            "Use '--devices=cpu' or attach visible GPU devices."
+        )
     validate_gpu_ids(
         gpu_ids=requested_gpu_ids,
         available_gpu_ids=available_gpu_ids,
     )
 
     return [DeviceSpec.accelerator(id=gpu_id) for gpu_id in requested_gpu_ids]
+
+
+def _default_device_specs() -> list[DeviceSpec]:
+    """Return the first visible device, or no explicit device if none exist."""
+    return scan_available_devices()[:1]
 
 
 def _coerce_str(value: str) -> list[DeviceSpec]:
@@ -133,8 +152,8 @@ def _coerce_str(value: str) -> list[DeviceSpec]:
         return [DeviceSpec.cpu()]
     if normalized == "gpu":
         return [DeviceSpec.accelerator(0)]
-    if normalized == "default":
-        return scan_available_devices()
+    if normalized == "gpu:all":
+        return device_specs_from_normalized_device_handle("gpu:all")
     if isinstance(normalized, list):
         return [DeviceSpec.accelerator(id=gpu_id) for gpu_id in normalized]
     raise ValueError(f"Invalid device specs input: {value}")

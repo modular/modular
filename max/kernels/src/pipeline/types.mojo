@@ -29,16 +29,21 @@ from std.collections import List
 struct ResourceKind(Equatable, ImplicitlyCopyable, Movable, Writable):
     """Hardware resource that an operation occupies.
 
-    From the modulo scheduling framework (GAG96), each operation is assigned to
-    a resource unit with a finite capacity. Two operations on the same resource
-    at the same time slot violate C4 (resource contention). The resource also
-    determines which wait counter tracks the operation:
+    Each operation is assigned to a resource unit with a finite capacity.
+    Two operations on the same resource at the same time slot contend.
+    The resource also determines which wait counter tracks the operation:
 
       GLOBAL_MEM → vmcnt    (buffer_load instructions)
       LDS        → lgkmcnt  (ds_read / LDS instructions)
       MMA_UNIT   → MFMA     (matrix fused multiply-add)
+      VALU       → VALU     (vector ALU: softmax, exp2, reductions)
       SCALAR     → SALU     (barriers, priority hints, fences)
       NONE       → sentinel (no-op / not applicable)
+
+    On CDNA architectures, MMA_UNIT and VALU are independent execution
+    units that can issue simultaneously. The scheduler models this by
+    tracking separate free times for each, allowing MMA and VALU ops
+    to overlap.
     """
 
     var _value: Int
@@ -47,6 +52,8 @@ struct ResourceKind(Equatable, ImplicitlyCopyable, Movable, Writable):
     comptime LDS = Self(1)  # LDS→register loads (tracked by lgkmcnt)
     comptime MMA_UNIT = Self(2)  # MFMA execution unit
     comptime SCALAR = Self(3)  # SALU: barriers, setprio, schedule_barrier
+    comptime VALU = Self(4)  # Vector ALU (parallel with MMA on CDNA)
+    """Vector ALU: parallel with MMA on CDNA architectures."""
     comptime NONE = Self(255)  # No-op sentinel
 
     @always_inline
@@ -57,6 +64,8 @@ struct ResourceKind(Equatable, ImplicitlyCopyable, Movable, Writable):
             writer.write("LDS")
         elif self == Self.MMA_UNIT:
             writer.write("MMA_UNIT")
+        elif self == Self.VALU:
+            writer.write("VALU")
         elif self == Self.SCALAR:
             writer.write("SCALAR")
         else:
@@ -97,12 +106,19 @@ trait ScheduleOps(Equatable):
         ...
 
     comptime BARRIER = Self(128)
+    """Workgroup-wide barrier (e.g. `s_barrier` on AMD)."""
     comptime WAIT_VM = Self(129)
+    """Wait on outstanding global-memory loads (e.g. `s_waitcnt vmcnt`)."""
     comptime WAIT_LGKM = Self(130)
+    """Wait on outstanding LDS / scalar-memory ops (e.g. `s_waitcnt lgkmcnt`)."""
     comptime SET_PRIO = Self(131)
+    """Wave priority hint (e.g. `s_setprio`)."""
     comptime SCHEDULE_BARRIER = Self(132)
+    """LLVM scheduling-barrier hint (`schedule_barrier`)."""
     comptime SCHED_GROUP_BARRIER = Self(133)
+    """LLVM scheduling-group barrier hint (`s_sched_group_barrier`)."""
     comptime NONE = Self(255)
+    """Sentinel value for an absent or unspecified op."""
 
 
 @fieldwise_init
@@ -179,6 +195,8 @@ struct OpRole(Equatable, ImplicitlyCopyable, Movable):
     comptime COMPUTE = Self(3)  # MMA compute
     comptime SYNC = Self(4)  # barrier
     comptime FENCE = Self(5)  # schedule barrier (compiler hint)
+    comptime VALU_COMPUTE = Self(6)  # VALU compute (softmax, exp2, reductions)
+    """Vector ALU compute (softmax, exp2, reductions)."""
     comptime NONE = Self(255)  # sentinel
 
 
@@ -187,17 +205,49 @@ struct OpRole(Equatable, ImplicitlyCopyable, Movable):
 # =============================================================================
 
 
-@fieldwise_init
 struct OpCost(ImplicitlyCopyable, Movable):
     """Hardware cost annotation for a single operation kind.
 
     Maps an operation tag to the hardware resource it occupies, its latency
-    in cycles, and its data-flow role. Provided by a TargetCostModel.
+    in cycles, its data-flow role, and (optionally) the VGPR liveness it
+    induces. Provided by a TargetCostModel.
     """
 
     var resource: ResourceKind
+    """Hardware execution unit."""
     var latency: Int
+    """Latency in cycles."""
     var role: OpRole
+    """Pipeline data-flow role."""
+    var vgpr_def: Int
+    """VGPRs this op brings into scope (new live register values)."""
+    var vgpr_kill: Int
+    """VGPRs this op releases (last use of some register buffer)."""
+
+    @always_inline
+    def __init__(
+        out self,
+        resource: ResourceKind,
+        latency: Int,
+        role: OpRole,
+        *,
+        vgpr_def: Int = 0,
+        vgpr_kill: Int = 0,
+    ):
+        """Constructs an `OpCost`.
+
+        Args:
+            resource: Hardware execution unit.
+            latency: Latency in cycles.
+            role: Pipeline data-flow role.
+            vgpr_def: VGPRs the op brings into scope.
+            vgpr_kill: VGPRs the op releases.
+        """
+        self.resource = resource
+        self.latency = latency
+        self.role = role
+        self.vgpr_def = vgpr_def
+        self.vgpr_kill = vgpr_kill
 
     @staticmethod
     def none() -> OpCost:
@@ -218,9 +268,12 @@ struct TargetCostModel(ImplicitlyCopyable, Movable):
     in the cost model — they carry their own annotations.
 
     Usage:
-        var model = TargetCostModel()
-        model.set_cost(0, OpCost(ResourceKind.GLOBAL_MEM, 200, OpRole.GLOBAL_LOAD))
-        var annotated = annotate_ops(logical_ops, model)
+
+    ```mojo
+    var model = TargetCostModel()
+    model.set_cost(0, OpCost(ResourceKind.GLOBAL_MEM, 200, OpRole.GLOBAL_LOAD))
+    var annotated = annotate_ops(logical_ops, model)
+    ```
     """
 
     var _costs: InlineArray[OpCost, 128]
@@ -245,34 +298,35 @@ struct TargetCostModel(ImplicitlyCopyable, Movable):
 
 
 struct OpDesc(ImplicitlyCopyable, Movable):
-    """Describes a single operation in the pipeline schedule.
-
-    Fields:
-        tag: The type of operation (kernel-specific, used by _emit dispatch).
-        stage: Buffer stage index (0 or 1 for double-buffering).
-        subtile: Subtile index within the stage (0 or 1).
-        k_offset: How to compute the K dimension offset for loads.
-        vm_cost: Number of vmcnt (global load) ops this produces.
-        lgkm_cost: Number of lgkmcnt (LDS) ops this produces.
-        wait_value: For WAIT_VM/WAIT_LGKM ops, the count to wait for.
-        resource: Hardware execution unit (GLOBAL_MEM, LDS, MMA_UNIT, SCALAR).
-        latency: Estimated execution latency in cycles.
-        role: Pipeline data-flow role (GLOBAL_LOAD, FRAGMENT_LOAD, etc.).
-        channel: Data path identifier for edge derivation. Ops on the same
-            channel share a buffer (e.g., 0=A matrix, 1=B matrix). -1 = none.
-    """
+    """Describes a single operation in the pipeline schedule."""
 
     var tag: Int
+    """The type of operation (kernel-specific, used by _emit dispatch)."""
     var stage: Int
+    """Buffer stage index (0 or 1 for double-buffering)."""
     var subtile: Int
+    """Subtile index within the stage (0 or 1)."""
     var k_offset: KOffsetKind
+    """How to compute the K dimension offset for loads."""
     var vm_cost: Int
+    """Number of vmcnt (global load) ops this produces."""
     var lgkm_cost: Int
+    """Number of lgkmcnt (LDS) ops this produces."""
     var wait_value: Int
+    """For WAIT_VM/WAIT_LGKM ops, the count to wait for."""
     var resource: ResourceKind
+    """Hardware execution unit (GLOBAL_MEM, LDS, MMA_UNIT, SCALAR)."""
     var latency: Int
+    """Estimated execution latency in cycles."""
     var role: OpRole
+    """Pipeline data-flow role (GLOBAL_LOAD, FRAGMENT_LOAD, etc.)."""
     var channel: Int
+    """Data path identifier for edge derivation. Ops on the same channel
+    share a buffer (e.g., 0=A matrix, 1=B matrix). -1 = none."""
+    var vgpr_def: Int
+    """VGPRs this op brings into scope (new live register values)."""
+    var vgpr_kill: Int
+    """VGPRs this op releases (last use of some register buffer)."""
 
     @always_inline
     def __init__(
@@ -289,6 +343,8 @@ struct OpDesc(ImplicitlyCopyable, Movable):
         latency: Int = 0,
         role: OpRole = OpRole.NONE,
         channel: Int = -1,
+        vgpr_def: Int = 0,
+        vgpr_kill: Int = 0,
     ):
         self.tag = tag
         self.stage = stage
@@ -301,6 +357,8 @@ struct OpDesc(ImplicitlyCopyable, Movable):
         self.latency = latency
         self.role = role
         self.channel = channel
+        self.vgpr_def = vgpr_def
+        self.vgpr_kill = vgpr_kill
 
     @always_inline
     def is_present(self) -> Bool:
@@ -324,6 +382,8 @@ struct OpDesc(ImplicitlyCopyable, Movable):
         vm_cost: Int = 0,
         lgkm_cost: Int = 0,
         wait_value: Int = 0,
+        vgpr_def: Int = 0,
+        vgpr_kill: Int = 0,
     ) -> OpDesc:
         """Construct an OpDesc with all metadata inline.
 
@@ -343,6 +403,8 @@ struct OpDesc(ImplicitlyCopyable, Movable):
             latency=latency,
             role=role,
             channel=channel,
+            vgpr_def=vgpr_def,
+            vgpr_kill=vgpr_kill,
         )
 
     # --- Logical op factory (for use with TargetCostModel) ---
@@ -478,6 +540,8 @@ def annotate_ops(
             op.resource = cost.resource
             op.latency = cost.latency
             op.role = cost.role
+            op.vgpr_def = cost.vgpr_def
+            op.vgpr_kill = cost.vgpr_kill
         result.append(op)
     return result^
 
@@ -510,24 +574,26 @@ struct DepEdge(ImplicitlyCopyable, Movable):
       - d>=1: loop-carried dependency (consumer reads data from `d` iters ago)
 
     The C2 constraint with loop distance is:
-      τ(consumer) - τ(producer) >= latency(producer) - T * d
+
+    ```text
+    τ(consumer) - τ(producer) >= latency(producer) - T * d
+    ```
 
     For d=0 (same iteration), this simplifies to the existing check:
-      time_slot(consumer) > time_slot(producer)
 
-    Fields:
-        producer_idx: Index of the producing entry in its phase's entry list.
-        consumer_idx: Index of the consuming entry in its phase's entry list.
-        dep_kind: Type of dependency (FLOW, ANTI, OUTPUT).
-        loop_distance: Number of loop iterations between producer and consumer.
-            0 means same iteration, 1 means consumer uses data from previous
-            iteration (e.g., WAR anti-dependency on double-buffered storage).
+    ```text
+    time_slot(consumer) > time_slot(producer)
+    ```
     """
 
     var producer_idx: Int
+    """Index of the producing entry in its phase's entry list."""
     var consumer_idx: Int
+    """Index of the consuming entry in its phase's entry list."""
     var dep_kind: DepKind
+    """Type of dependency (`FLOW`, `ANTI`, or `OUTPUT`)."""
     var loop_distance: Int
+    """Loop iterations between producer and consumer (`0` = same iteration)."""
 
     @always_inline
     def __init__(
@@ -561,12 +627,12 @@ struct EdgeRule(ImplicitlyCopyable, Movable):
     """Declarative edge derivation rule.
 
     Each rule describes a class of dependency edges: for every (producer,
-    consumer) pair whose OpDesc fields satisfy the predicates, emit a DepEdge
-    with the given kind and loop distance.
+    consumer) pair whose `OpDesc` fields satisfy the predicates, emit a
+    `DepEdge` with the given kind and loop distance.
 
     The evaluator (`apply_edge_rules`) pre-classifies ops by role, then for
     each rule scans only relevant (producer_role, consumer_role) pairs and
-    checks the predicate fields.  This replaces the hand-coded 4-phase
+    checks the predicate fields. This replaces the hand-coded 4-phase
     double-buffer logic and 8-rule single-buffer logic in
     `derive_edges_from_ops` with inspectable data.
 
@@ -594,34 +660,59 @@ struct EdgeRule(ImplicitlyCopyable, Movable):
 
     # --- Core ---
     var producer_role: OpRole
+    """Producer op role for this rule."""
     var consumer_role: OpRole
+    """Consumer op role for this rule."""
     var dep_kind: DepKind
-    var loop_distance: Int  # 0, 1, or -1 (derived from k_offset)
+    """Dependency kind (`FLOW`, `ANTI`, or `OUTPUT`)."""
+    var loop_distance: Int
+    """Loop iterations between producer and consumer (`0`, `1`, or `-1`).
+    `-1` derives from `producer.k_offset`: `K_PREV` → `d=0`
+    (current-iteration load), otherwise `d=1` (prefetch)."""
 
     # --- Field matching predicates ---
-    var match_channel: Bool  # require same channel
-    var match_stage: Bool  # require same stage
-    var match_subtile: Bool  # require same subtile
-    var use_config_match: Bool  # use compute_match_key() (Phase 1)
+    var match_channel: Bool
+    """Require the producer and consumer to share the same channel."""
+    var match_stage: Bool
+    """Require the producer and consumer to share the same stage."""
+    var match_subtile: Bool
+    """Require the producer and consumer to share the same subtile."""
+    var use_config_match: Bool
+    """Use `PipelineConfig.compute_match_key()` (Phase 1 register-FLOW)."""
 
     # --- Positional predicates (double-buffer halves) ---
-    var same_half: Bool  # both ops in same half
-    var cross_half: Bool  # ops in different halves
-    var producer_half: Int  # -1=any, 0=first half, 1=second half
+    var same_half: Bool
+    """Require both ops to live in the same half."""
+    var cross_half: Bool
+    """Require the ops to live in different halves."""
+    var producer_half: Int
+    """Producer half filter (`-1` = any, `0` = first half, `1` = second half)."""
 
     # --- K-offset filter ---
-    var k_offset_filter: Int  # 0=any, 1=K_PREV only, 2=non-K_PREV only
+    var k_offset_filter: Int
+    """K-offset filter (`0` = any, `1` = `K_PREV` only, `2` = non-`K_PREV`
+    only). Applied to the consumer for LDS-ANTI rules and to the producer
+    for LDS-FLOW distance derivation."""
 
     # --- Loop-carried filter (single-buffer) ---
-    var lc_producer: Int  # -1=any, 0=non-lc, 1=lc
-    var lc_consumer: Int  # -1=any, 0=non-lc, 1=lc
+    var lc_producer: Int
+    """Loop-carried filter for the producer (`-1` = any, `0` = non-lc,
+    `1` = lc)."""
+    var lc_consumer: Int
+    """Loop-carried filter for the consumer (`-1` = any, `0` = non-lc,
+    `1` = lc)."""
 
     # --- Ordinal filter (single-buffer sync ordering) ---
-    var producer_ordinal: Int  # -1=any, N=Nth occurrence of producer_role
-    var consumer_ordinal: Int  # -1=any, N=Nth occurrence of consumer_role
+    var producer_ordinal: Int
+    """Producer ordinal filter (`-1` = any, `N` = Nth occurrence of
+    `producer_role`)."""
+    var consumer_ordinal: Int
+    """Consumer ordinal filter (`-1` = any, `N` = Nth occurrence of
+    `consumer_role`)."""
 
     # --- Matching behavior ---
-    var first_match_only: Bool  # break after first consumer match per producer
+    var first_match_only: Bool
+    """Break after the first consumer match per producer."""
 
 
 # =============================================================================

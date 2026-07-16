@@ -1440,7 +1440,9 @@ def test_target_profile_mi355x() raises:
 
     # Pipeline config: double-buffer, 2 halves, 2x2 MMA grid.
     assert_equal(target.pipeline.depth, 2, "depth should be 2")
-    assert_equal(target.pipeline.num_halves, 2, "num_halves should be 2")
+    assert_equal(
+        target.pipeline.num_partitions, 2, "num_partitions should be 2"
+    )
     assert_equal(target.pipeline.m_mmas, 2, "m_mmas should be 2")
     assert_equal(target.pipeline.n_mmas, 2, "n_mmas should be 2")
     assert_equal(target.pipeline.mma_latency, 16, "mma_latency should be 16")
@@ -1919,8 +1921,8 @@ def test_verify_schedule_passes_valid() raises:
 
     # Derive wait counts (same as build_kernel_program path).
     var waits = derive_waits_from_blocks(program, config, 8, 8)
-    var bph = config.blocks_per_half()
-    for half in range(config.num_halves):
+    var bph = config.blocks_per_partition()
+    for half in range(config.num_partitions):
         var b0 = half * bph
         var bN = b0 + bph - 1
         if waits[0] < 255:
@@ -1950,7 +1952,7 @@ def test_drain_mask_selective() raises:
     var result = _build_bf16_program(sched)
     var program = result.program.copy()
     var config = result.config
-    var num_blocks = config.blocks_per_half() * config.num_halves
+    var num_blocks = config.blocks_per_partition() * config.num_partitions
 
     # Check which blocks have drain_lgkm_before_loads set.
     var drain_count = 0
@@ -1959,7 +1961,7 @@ def test_drain_mask_selective() raises:
         if b.drain_lgkm_before_loads:
             drain_count += 1
             # Verify the drain is in expected blocks.
-            var pos_in_half = i % config.blocks_per_half()
+            var pos_in_half = i % config.blocks_per_partition()
             # Block 1 (per half) should NOT have drain with mask 0b1101.
             assert_true(
                 pos_in_half != 1,
@@ -1984,7 +1986,7 @@ def test_drain_mask_backward_compat() raises:
     var result = _build_bf16_program(sched)
     var program = result.program.copy()
     var config = result.config
-    var num_blocks = config.blocks_per_half() * config.num_halves
+    var num_blocks = config.blocks_per_partition() * config.num_partitions
 
     var drain_count = 0
     for i in range(num_blocks):
@@ -2017,7 +2019,7 @@ def test_auto_drain_derivation() raises:
     var config = result.config
 
     var mask = derive_drain_mask(program, config)
-    var num_blocks = config.blocks_per_half() * config.num_halves
+    var num_blocks = config.blocks_per_partition() * config.num_partitions
 
     # Verify: bits are set only where frag channel != global channel.
     for i in range(num_blocks):
@@ -2068,9 +2070,9 @@ def test_distribution_preserved_after_csp() raises:
     var result = _build_bf16_program(sched)
     var program = result.program.copy()
     var config = result.config
-    var bph = config.blocks_per_half()
+    var bph = config.blocks_per_partition()
 
-    for half in range(config.num_halves):
+    for half in range(config.num_partitions):
         for b in range(bph):
             var block = program.blocks[half * bph + b]
             var count = (1 if block.global_load.is_present() else 0) + (
@@ -2107,7 +2109,7 @@ def test_wait_counts_match_block_structure() raises:
 
     # wait_lgkm_first = lgkm from block 0's globals.
     # With max_globals=1, block 0 has exactly 1 global load.
-    var bph = config.blocks_per_half()
+    var bph = config.blocks_per_partition()
     var b0 = program.blocks[0]
     var expected_lgkm = 0
     if b0.global_load.is_present():
@@ -2392,7 +2394,7 @@ def test_stage_based_completion_symmetric() raises:
     )
 
     # Both halves should have completion loads (stage != half).
-    var bph = sched.config().blocks_per_half()
+    var bph = sched.config().blocks_per_partition()
     for half in range(2):
         var half_start = half * bph
         var completion_count = 0
@@ -2628,8 +2630,8 @@ def test_warp_stagger_safety_bf16() raises:
 
     # Derive wait counts and populate pre_sync.
     var waits = derive_waits_from_blocks(program, config, 8, 8)
-    var bph = config.blocks_per_half()
-    for half in range(config.num_halves):
+    var bph = config.blocks_per_partition()
+    for half in range(config.num_partitions):
         var b0 = half * bph
         var bN = b0 + bph - 1
         if waits[0] < 255:
@@ -2659,8 +2661,8 @@ def test_warp_stagger_safety_fp8_bunched() raises:
 
     # Derive wait counts.
     var waits = derive_waits_from_blocks(program, config, 4, 4)
-    var bph = config.blocks_per_half()
-    for half in range(config.num_halves):
+    var bph = config.blocks_per_partition()
+    for half in range(config.num_partitions):
         var b0 = half * bph
         var bN = b0 + bph - 1
         if waits[0] < 255:

@@ -25,8 +25,8 @@ trait Sized:
     string or array).
 
     Any type that conforms to `Sized` or
-    [`SizedRaising`](/mojo/std/builtin/len/SizedRaising) works with the
-    built-in [`len()`](/mojo/std/builtin/len/len) function.
+    [`SizedRaising`](/docs/std/builtin/len/SizedRaising/) works with the
+    built-in [`len()`](/docs/std/builtin/len/len/) function.
 
     The `Sized` trait requires a type to implement the `__len__()`
     method. For example:
@@ -60,7 +60,7 @@ trait Sized:
     ```
 
     **Note:** If the `__len__()` method can raise an error, use the
-    [`SizedRaising`](/mojo/std/builtin/len/SizedRaising) trait instead.
+    [`SizedRaising`](/docs/std/builtin/len/SizedRaising/) trait instead.
 
     """
 
@@ -77,9 +77,9 @@ trait SizedRaising:
     """The `SizedRaising` trait describes a type that has an integer length,
     which might raise an error if the length can't be determined.
 
-    Any type that conforms to [`Sized`](/mojo/std/builtin/len/Sized) or
+    Any type that conforms to [`Sized`](/docs/std/builtin/len/Sized/) or
     `SizedRaising` works with the built-in
-    [`len()`](/mojo/std/builtin/len/len) function.
+    [`len()`](/docs/std/builtin/len/len/) function.
 
     The `SizedRaising` trait requires a type to implement the `__len__()`
     method, which can raise an error. For example:
@@ -135,21 +135,17 @@ trait SizedRaising:
 # ===----------------------------------------------------------------------=== #
 
 
-@deprecated(
-    "Using String.__len__() is discouraged, prefer .byte_length() or"
-    " .count_codepoints()"
+@doc_hidden
+@unavailable(
+    "`len(String/StringSlice)` is not supported because Mojo strings are UTF-8"
+    " encoded, so a single length is ambiguous: it could mean the number of"
+    " UTF-8 bytes, the number of Unicode code points, or the number of"
+    " user-visible characters (grapheme clusters). Use `s.byte_length()` or"
+    " `len(s.bytes())` for the number of UTF-8 bytes, `len(s.codepoints())` for"
+    " Unicode code points, or `len(s.graphemes())` for grapheme clusters."
 )
-@always_inline("nodebug")
-def len(value: StringSlice[mut=False, _]) -> Int:
-    """Get the string length.
-
-    Args:
-        value: The object to get the length of.
-
-    Returns:
-        The length of this value.
-    """
-    return value.byte_length()
+def len(value: StringSlice) -> Int:
+    ...
 
 
 @always_inline

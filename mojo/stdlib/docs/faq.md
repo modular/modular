@@ -1,7 +1,7 @@
 # Frequently asked questions
 
 A lot of questions about Mojo as a whole are answered in the
-[FAQ on our website](https://docs.modular.com/mojo/faq).
+[FAQ on our website](https://www.mojolang.org/docs/faq).
 This FAQ is specifically focused on the standard library with contributors
 in mind.
 
