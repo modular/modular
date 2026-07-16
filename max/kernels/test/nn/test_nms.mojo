@@ -98,18 +98,22 @@ def test_case[
 ):
     # Create boxes tensor
     var boxes_shape = IndexList[3](batch_size, num_boxes, 4)
-    var boxes_storage = alloc[Scalar[dtype]](boxes_shape.flattened_length())
+    var boxes_storage = List(
+        length=boxes_shape.flattened_length(), fill=Scalar[dtype](0)
+    )
     var boxes = TileTensor(
-        boxes_storage.as_any_origin(),
+        boxes_storage,
         row_major(Coord(boxes_shape)),
     )
     fill_boxes[dtype](batch_size, box_list, boxes)
 
     # Create scores tensor
     var scores_shape = IndexList[3](batch_size, num_classes, num_boxes)
-    var scores_storage = alloc[Scalar[dtype]](scores_shape.flattened_length())
+    var scores_storage = List(
+        length=scores_shape.flattened_length(), fill=Scalar[dtype](0)
+    )
     var scores = TileTensor(
-        scores_storage.as_any_origin(),
+        scores_storage,
         row_major(Coord(scores_shape)),
     )
     fill_scores[dtype](batch_size, num_classes, scores_list, scores)
@@ -122,7 +126,7 @@ def test_case[
         score_threshold,
     )
     var idxs_shape = IndexList[2](shape[0], shape[1])
-    var idxs_storage = alloc[Int64](idxs_shape.flattened_length())
+    var idxs_storage = List(length=idxs_shape.flattened_length(), fill=Int64(0))
     var selected_idxs = TileTensor(
         idxs_storage,
         row_major(Coord(idxs_shape)),
@@ -144,10 +148,6 @@ def test_case[
         print(selected_idxs[i, 2], end="")
         print(",", end="")
         print("")
-
-    boxes.ptr.free()
-    scores.ptr.free()
-    selected_idxs.ptr.free()
 
 
 def main():

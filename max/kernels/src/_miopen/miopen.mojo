@@ -27,6 +27,7 @@ from .types import (
     FindOptions,
     ProblemDirection,
     TensorArgumentId,
+    ConvAlgoPerf,
 )
 from .utils import _get_dylib_function
 
@@ -82,13 +83,34 @@ def miopenSetTensorDescriptor(
     desc: TensorDescriptor,
     dtype: DataType,
     num_dims: Int32,
-    dims: OpaquePointer,
-    strides: OpaquePointer,
+    dims: UnsafePointer[Int32, ImmutAnyOrigin],
+    strides: UnsafePointer[Int32, ImmutAnyOrigin],
 ) raises -> Status:
     """Set an N-D tensor descriptor with explicit dimensions and strides.
     Dims are always in NCHW order; strides describe the physical layout."""
     return _get_dylib_function[
         "miopenSetTensorDescriptor",
+        def(
+            TensorDescriptor,
+            DataType,
+            Int32,
+            type_of(dims),
+            type_of(strides),
+        ) thin -> Status,
+    ]()(desc, dtype, num_dims, dims, strides)
+
+
+def miopenSetTensorDescriptorV2(
+    desc: TensorDescriptor,
+    dtype: DataType,
+    num_dims: Int32,
+    dims: UnsafePointer[UInt64, ImmutAnyOrigin],
+    strides: UnsafePointer[UInt64, ImmutAnyOrigin],
+) raises -> Status:
+    """Set an N-D tensor descriptor with explicit dimensions and strides.
+    Dims are always in NCHW order; strides describe the physical layout."""
+    return _get_dylib_function[
+        "miopenSetTensorDescriptorV2",
         def(
             TensorDescriptor,
             DataType,
@@ -174,9 +196,9 @@ def miopenDestroyConvolutionDescriptor(
 def miopenInitConvolutionNdDescriptor(
     desc: ConvolutionDescriptor,
     spatial_dim: Int32,
-    pad: OpaquePointer,
-    stride: OpaquePointer,
-    dilation: OpaquePointer,
+    pad: UnsafePointer[Int32, ImmutAnyOrigin],
+    stride: UnsafePointer[Int32, ImmutAnyOrigin],
+    dilation: UnsafePointer[Int32, ImmutAnyOrigin],
     mode: ConvolutionMode,
 ) raises -> Status:
     return _get_dylib_function[
@@ -213,7 +235,7 @@ def miopenConvolutionForwardGetWorkSpaceSize(
     x_desc: TensorDescriptor,
     conv_desc: ConvolutionDescriptor,
     y_desc: TensorDescriptor,
-    workspace_size: OpaquePointer,
+    workspace_size: UnsafePointer[UInt64, MutAnyOrigin],
 ) raises -> Status:
     return _get_dylib_function[
         "miopenConvolutionForwardGetWorkSpaceSize",
@@ -238,8 +260,8 @@ def miopenFindConvolutionForwardAlgorithm(
     y_desc: TensorDescriptor,
     y: OpaquePointer,
     requested_algo_count: Int32,
-    returned_algo_count: OpaquePointer,
-    perf_results: OpaquePointer,
+    returned_algo_count: UnsafePointer[Int32, MutAnyOrigin],
+    perf_results: UnsafePointer[ConvAlgoPerf, MutAnyOrigin],
     workspace: OpaquePointer,
     workspace_size: UInt64,
     exhaustive_search: Bool,
@@ -282,14 +304,14 @@ def miopenFindConvolutionForwardAlgorithm(
 
 def miopenConvolutionForward(
     handle: Handle,
-    alpha: OpaquePointer,
+    alpha: UnsafePointer[Float32, ImmutAnyOrigin],
     x_desc: TensorDescriptor,
     x: OpaquePointer,
     w_desc: TensorDescriptor,
     w: OpaquePointer,
     conv_desc: ConvolutionDescriptor,
     algo: ConvFwdAlgorithm,
-    beta: OpaquePointer,
+    beta: UnsafePointer[Float32, ImmutAnyOrigin],
     y_desc: TensorDescriptor,
     y: OpaquePointer,
     workspace: OpaquePointer,

@@ -52,6 +52,7 @@ cc_args(
     }),
     format = {"generate_interface_library": "@rules_cc//cc/toolchains/variables:generate_interface_library"},
     requires_any_of = [":supports_interface_shared_libraries"],
+    requires_not_none = "@rules_cc//cc/toolchains/variables:generate_interface_library",
 )
 
 cc_args(

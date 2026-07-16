@@ -43,7 +43,7 @@ to the next node:
 
 ```mojo
 struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
-    comptime NodePointer = UnsafePointer[Self, MutExternalOrigin]
+    comptime NodePointer = UnsafePointer[Self, MutUntrackedOrigin]
 
 
     var value: Optional[Self.ElementType] # The `Node`'s value
@@ -58,9 +58,9 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
 ```
 
 The code defines a type-specific `NodePointer` type alias built on
-[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer/).
+[`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer/).
 
-[`MutExternalOrigin`](/mojo/manual/values/lifetimes/)
+[`MutUntrackedOrigin`](/docs/manual/values/lifetimes/)
 lets the pointer represent dynamically-allocated memory that
 won't be tracked by the lifetime checker. You'll need to both allocate
 and deallocate memory as needed.
@@ -69,7 +69,7 @@ The `next` field is an `Optional[Self.NodePointer]` because a node may or may
 not link to another node. `UnsafePointer` is non-nullable, so `Optional`
 provides the null state. `Optional[UnsafePointer]` has the same memory layout as
 a raw pointer, so there's no overhead. For more on this pattern, see
-[Working with nullability](/mojo/manual/pointers/unsafe-pointers#working-with-nullability).
+[Working with nullability](/docs/manual/pointers/unsafe-pointers/#working-with-nullability).
 
 The optional `value` lets you create "empty" nodes, enabling you to move
 new `Node` memory allocations into place.
@@ -89,7 +89,7 @@ And here's an example of that pattern:
 @staticmethod
 def make_node(value: Self.ElementType) -> Self.NodePointer:
     var node_ptr = alloc[Self](1)
-    node_ptr.init_pointee_move(Self(value))
+    node_ptr.unsafe_write(Self(value))
     return node_ptr
 ```
 
@@ -109,7 +109,7 @@ def append(mut self, value: Self.ElementType):
     if self.next:
         var next_ptr = self.next.value()
         next_ptr[].free_chain()
-        next_ptr.destroy_pointee()
+        next_ptr.unsafe_deinit_pointee()
         next_ptr.free()
 
     self.next = Self.make_node(value)
@@ -160,7 +160,7 @@ def free_chain(self):
     while current:
         var current_ptr = current.value()
         next_node = current_ptr[].next
-        current_ptr.destroy_pointee()
+        current_ptr.unsafe_deinit_pointee()
         current_ptr.free()
         current = next_node
 ```
@@ -169,7 +169,7 @@ The "head" node stays allocated unless you explicitly free it yourself:
 
 ```mojo
 list_head[].free_chain()
-list_head.destroy_pointee()
+list_head.unsafe_deinit_pointee()
 list_head.free()
 ```
 
@@ -179,7 +179,7 @@ When you build real Mojo data structures, you usually want a safe API that
 hides raw pointers from users. In a complete linked-list type (rather than
 a small demo of linkable nodes) the parent list handles node allocation and
 freeing. Because it owns the nodes, it also performs cleanup in its
-[destructor](/mojo/manual/lifecycle/death/).
+[destructor](/docs/manual/lifecycle/death/).
 
 Here's a small example that shows how to deinitialize `self`:
 
@@ -200,12 +200,10 @@ struct LinkedList[T]:
         var curr = self._head
         while curr:
             var next = curr.value()[].next
-            curr.value().destroy_pointee()
+            curr.value().unsafe_deinit_pointee()
             curr.value().free()
             curr = next
 ```
-
-<!-- markdownlint-disable MD033 -->
 
 :::info Putting it together
 
@@ -219,7 +217,7 @@ comptime Element = String # Adapt for your type
 comptime ListNode = Node[Element] # Constructing a LinkedList
 
 struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
-    comptime NodePointer = UnsafePointer[Self, MutExternalOrigin]
+    comptime NodePointer = UnsafePointer[Self, MutUntrackedOrigin]
 
     var value: Optional[Self.ElementType] # The `Node`'s value
     var next: Optional[Self.NodePointer] # Pointer to the next `Node`
@@ -235,7 +233,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
     @staticmethod
     def make_node(value: Self.ElementType) -> Self.NodePointer:
         var node_ptr = alloc[Self](1)
-        node_ptr.init_pointee_move(Self(value))
+        node_ptr.unsafe_write(Self(value))
         return node_ptr
 
     # Constructs a `Node` with allocated memory, assigns a value, appends
@@ -245,7 +243,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
         if self.next:
             var next_ptr = self.next.value()
             next_ptr[].free_chain()
-            next_ptr.destroy_pointee()
+            next_ptr.unsafe_deinit_pointee()
             next_ptr.free()
 
         self.next = Self.make_node(value)
@@ -274,7 +272,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
         while current:
             var current_ptr = current.value()
             next_node = current_ptr[].next
-            current_ptr.destroy_pointee()
+            current_ptr.unsafe_deinit_pointee()
             current_ptr.free()
             current = next_node
 
@@ -292,7 +290,7 @@ def main():
     # Demonstrates cleanup. In short-lived programs, the OS reclaims memory
     # at exit
     list_head[].free_chain()
-    list_head.destroy_pointee()
+    list_head.unsafe_deinit_pointee()
     list_head.free()
 ```
 
@@ -305,15 +303,13 @@ one one two three five eight
 </details>
 :::
 
-<!-- markdownlint-enable MD033 -->
-
 ## What next?
 
 - Learn more about **pointers and memory safety** in Mojo's
-  [UnsafePointer](/mojo/std/memory/unsafe_pointer/UnsafePointer/)
-  and [lifetime and origin rules](/mojo/manual/values/lifetimes/) guides.
+  [UnsafePointer](/docs/std/memory/unsafe_pointer/UnsafePointer/)
+  and [lifetime and origin rules](/docs/manual/values/lifetimes/) guides.
 - Learn more about how to **manage cleanup** in the Mojo
-  [destructor](/mojo/manual/lifecycle/death/) documentation.
+  [destructor](/docs/manual/lifecycle/death/) documentation.
 - Learn more about
-  [generic structures with traits](/mojo/manual/traits/#generic-structs-with-traits)
+  [generic structures with traits](/docs/manual/traits/#generic-structs-with-traits)
   and how they let you build **reusable node and list types**.

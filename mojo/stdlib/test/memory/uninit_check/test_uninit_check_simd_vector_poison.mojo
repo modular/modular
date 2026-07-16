@@ -16,7 +16,7 @@
 from std.memory import UnsafePointer, alloc
 
 
-# CHECK: use of uninitialized memory
+# CHECK: UNINIT_READ at {{.*}}: dtype={{.*}}: load matched debug allocator poison sentinel
 def main():
     var ptr = alloc[Float32](4)
 
@@ -26,8 +26,9 @@ def main():
     ptr.store(2, Float32(3.0))
     ptr.store(3, Float32(4.0))
 
-    # Poison just one element (index 2) with host poison (0xFF fill).
-    (ptr + 2).bitcast[UInt32]().store(UInt32(0xFFFFFFFF))
+    # Poison just one element (index 2) with the debug allocator poison
+    # pattern (FLT_MAX bits = 0x7F7FFFFF).
+    (ptr + 2).bitcast[UInt32]().store(UInt32(0x7F7FFFFF))
 
     # Loading a 4-wide SIMD vector should detect the poisoned element.
     _ = ptr.load[width=4]()

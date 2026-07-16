@@ -109,7 +109,7 @@ def main() raises:
         h_flag[0] = 0
         ctx.enqueue_copy(d_new_vertex_visited, h_flag)
 
-        ctx.enqueue_function_experimental[bfs_kernel](
+        ctx.enqueue_function[bfs_kernel](
             d_dst_ptrs,
             d_src,
             NUM_VERTICES,

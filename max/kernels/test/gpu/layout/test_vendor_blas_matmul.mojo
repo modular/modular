@@ -16,7 +16,7 @@ from std.os import abort
 from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from std.gpu.host import DeviceContext
-from std.memory import UnsafePointer, memset_zero
+from std.memory import UnsafePointer
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import Coord, Idx, TileTensor, row_major
@@ -29,15 +29,13 @@ def test_matmul[
 ](ctx: DeviceContext) raises:
     print("== test_vendor_blas", input_type, "x", M, "x", N, "x", K)
 
-    var a_host_ptr = alloc[Scalar[input_type]](M * K)
-    var b_host_ptr = alloc[Scalar[input_type]](N * K)
-    var c_host_ptr = alloc[Scalar[DType.float32]](M * N)
-    var c_host_ref_ptr = alloc[Scalar[DType.float32]](M * N)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[input_type](M * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[input_type](N * K)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[DType.float32](M * N)
 
-    rand(a_host_ptr, M * K)
-    rand(b_host_ptr, N * K)
-    memset_zero(c_host_ptr, M * N)
-    memset_zero(c_host_ref_ptr, M * N)
+    rand(a_host_ptr.unsafe_ptr(), M * K)
+    rand(b_host_ptr.unsafe_ptr(), N * K)
 
     var a_device = ctx.enqueue_create_buffer[input_type](M * K)
     var b_device = ctx.enqueue_create_buffer[input_type](N * K)
@@ -49,15 +47,15 @@ def test_matmul[
 
     var a_tt = TileTensor(
         a_device,
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         b_device,
-        row_major(Coord(Idx(N), Idx(K))),
+        row_major(Coord(N, K)),
     )
     var c_tt = TileTensor(
         c_device,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
 
     matmul(
@@ -74,19 +72,19 @@ def test_matmul[
     # Create immutable TileTensors for the naive kernel reference.
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_immut_tt = TileTensor(
         UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_immut_tt = TileTensor(
         UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(N), Idx(K))),
+        row_major(Coord(N, K)),
     )
 
     # Run naive matmul.
@@ -101,7 +99,7 @@ def test_matmul[
         BLOCK_DIM,
         transpose_b=True,
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_ref_tt,
         a_immut_tt,
         b_immut_tt,
@@ -117,18 +115,13 @@ def test_matmul[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host_ptr,
-        c_host_ref_ptr,
+        c_host_ptr.unsafe_ptr(),
+        c_host_ref_ptr.unsafe_ptr(),
         M * N,
         atol=0.01,
         rtol=0.01,
     )
 
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^

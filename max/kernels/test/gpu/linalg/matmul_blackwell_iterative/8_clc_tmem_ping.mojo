@@ -338,10 +338,8 @@ def stsm_helper[
 
         comptime for k in range(stsmx4_lane_size // 2):
             var pair = SIMD[vec_dtype, 2](
-                rebind[Scalar[vec_dtype]](vec[i * stsmx4_lane_size + 2 * k]),
-                rebind[Scalar[vec_dtype]](
-                    vec[i * stsmx4_lane_size + 2 * k + 1]
-                ),
+                vec[i * stsmx4_lane_size + 2 * k],
+                vec[i * stsmx4_lane_size + 2 * k + 1],
             )
             var casted = pair.cast[dst.dtype]()
             v[2 * k] = casted[0]
@@ -610,32 +608,29 @@ def kernel_8[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](
-        a_smem_base,
+        a_smem_base.as_unsafe_any_origin(),
         a_smem_size,
     )
 
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](
-        b_smem_base,
+        b_smem_base.as_unsafe_any_origin(),
         b_smem_size,
     )
 
     var c_smem_iter = LayoutTensorIter[
         c_type,
         Layout.row_major(output_tile_shape[0], output_tile_shape[1]),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](c_smem_base, c_smem_size)
+    ](c_smem_base.as_unsafe_any_origin(), c_smem_size)
 
     var smem_pool = (c_smem_base + c_smem_size).bitcast[Int64]()
 
@@ -985,9 +980,9 @@ def blackwell_kernel_8[
     cta_group: Int = 1,
     num_clc_pipeline_stages: Int = 2,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, _],
+    a: LayoutTensor[a_type, a_layout, _],
+    b: LayoutTensor[b_type, b_layout, _],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()
@@ -1126,7 +1121,7 @@ def blackwell_kernel_8[
         1,
     )
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -1171,9 +1166,9 @@ def test_blackwell_kernel_8[
     comptime c_layout = Layout.row_major(M, N)
 
     # Host memory allocation
-    var a_host_ptr = alloc[Scalar[a_type]](M * K)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
-    var b_host_ptr = alloc[Scalar[b_type]](N * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
     var c_host_managed = ManagedLayoutTensor[c_type, c_layout](ctx)
     var c_host = c_host_managed.tensor[update=False]()
@@ -1295,9 +1290,6 @@ def test_blackwell_kernel_8[
             rtol=rtol,
         )
         print("\n=== TEST PASSED ===\n")
-
-    a_host_ptr.free()
-    b_host_ptr.free()
 
 
 def get_dic_of_shapes(

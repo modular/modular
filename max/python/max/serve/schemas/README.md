@@ -1,25 +1,33 @@
-
 # MAX Serve Schemas
 
-Various schema files used to generate their corresponding Pydantic model
-classes.
+Pydantic models that describe MAX Serve's HTTP request/response payloads.
 
-## Regenerating
+## OpenAI
 
-Supported protocols:
+`openai.py` defines the schemas used by the `/v1/...` OpenAI-compatible
+routes. Response models come straight from the
+[`openai`](https://pypi.org/project/openai/) Python SDK so MAX Serve outputs
+match the OpenAI wire format. Request models are defined locally because the
+SDK only ships request shapes as `TypedDict` "params" types, which are
+inconvenient to use as FastAPI request bodies. The local request models
+mirror those shapes and add MAX-specific extensions (e.g. `target_endpoint`,
+`dkv_cache_hint`, `top_k`, `min_tokens`).
 
-- `openai`:
-  [OpenAPI YAML](https://github.com/openai/openai-openapi/blob/master/openapi.yaml)
-- `kserve`:
-  [OpenAPI YAML](https://github.com/kserve/kserve/blob/master/docs/predict-api/v2/rest_predict_v2.yaml)
+To accept new OpenAI fields, just bump the pinned `openai` SDK version: the
+new attributes flow through automatically. To add a MAX extension to a
+request, edit the relevant Pydantic class in `openai.py` directly.
 
-Run the following from the repo root directory.
+## KServe
+
+`kserve.py` is generated from `kserve.yaml` by `datamodel-codegen` because
+the KServe API is much smaller and stable enough that codegen is still the
+simpler option.
 
 ```shell
 datamodel-codegen \
---input-file-type openapi \
---enum-field-as-literal all \
---output-model-type pydantic_v2.BaseModel \
---input SDK/lib/ServeAPI/python/max/serve/schemas/<protocol>.yaml \
---output SDK/lib/ServeAPI/python/max/serve/schemas/<protocol>.py
+  --input-file-type openapi \
+  --enum-field-as-literal all \
+  --output-model-type pydantic_v2.BaseModel \
+  --input max/python/max/serve/schemas/kserve.yaml \
+  --output max/python/max/serve/schemas/kserve.py
 ```

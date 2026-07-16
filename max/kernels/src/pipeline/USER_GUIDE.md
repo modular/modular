@@ -335,7 +335,7 @@ struct PingPongOps(ScheduleOps):
 
 ### Logical body
 
-The algorithm has two halves (for two LDS stages). Each half declares its
+The algorithm has two partitions (for two LDS stages). Each half declares its
 ops with explicit stage and K-offset metadata:
 
 ```mojo
@@ -358,7 +358,7 @@ def _logical_half[h: Int]() -> List[OpDesc]:
         return b.done()
 ```
 
-The full body combines both halves: 24 ops total (12 per half).
+The full body combines both partitions: 24 ops total (12 per partition).
 
 ### Three-step build_body
 
@@ -849,7 +849,7 @@ struct FA3InnerSchedule(PipelineSchedule):
             depth=1,          # single iteration in flight
             m_mmas=1,         # 1 "MMA block" per iteration
             n_mmas=1,
-            num_halves=1,
+            num_partitions=1,
             mma_serial=True,  # WGMMA groups serialize
             mma_latency=20,
             # ...
@@ -1057,23 +1057,23 @@ target-independent, the dispatch is target-specific.
 
 Key fields that every schedule must provide:
 
-| Field           | Type   | Description                                        |
-|-----------------|--------|----------------------------------------------------|
-| `depth`         | `Int`  | Buffer depth. 1 = single-buffer, 2 = double-buffer |
-| `prefetch`      | `Int`  | How many iterations to prefetch ahead              |
-| `drain_passes`  | `Int`  | Number of epilogue drain iterations                |
-| `prologue_fill` | `Int`  | Number of prologue fill iterations                 |
-| `m_mmas`        | `Int`  | MMA grid rows (M-dimension tiles)                  |
-| `n_mmas`        | `Int`  | MMA grid columns (N-dimension tiles)               |
-| `num_halves`    | `Int`  | 1 = single-sided, 2 = ping-pong (two LDS stages)   |
-| `mma_serial`    | `Bool` | True if MMA unit is serial (capacity 1)            |
-| `mma_latency`   | `Int`  | Cycles per MMA (for scheduling heuristics)         |
-| `vm_per_load_a` | `Int`  | `vmcnt` ticks consumed per A-channel global load   |
-| `vm_per_load_b` | `Int`  | `vmcnt` ticks consumed per B-channel global load   |
+| Field            | Type   | Description                                        |
+|------------------|--------|----------------------------------------------------|
+| `depth`          | `Int`  | Buffer depth. 1 = single-buffer, 2 = double-buffer |
+| `prefetch`       | `Int`  | How many iterations to prefetch ahead              |
+| `drain_passes`   | `Int`  | Number of epilogue drain iterations                |
+| `prologue_fill`  | `Int`  | Number of prologue fill iterations                 |
+| `m_mmas`         | `Int`  | MMA grid rows (M-dimension tiles)                  |
+| `n_mmas`         | `Int`  | MMA grid columns (N-dimension tiles)               |
+| `num_partitions` | `Int`  | 1 = single-sided, 2 = ping-pong (two LDS stages)   |
+| `mma_serial`     | `Bool` | True if MMA unit is serial (capacity 1)            |
+| `mma_latency`    | `Int`  | Cycles per MMA (for scheduling heuristics)         |
+| `vm_per_load_a`  | `Int`  | `vmcnt` ticks consumed per A-channel global load   |
+| `vm_per_load_b`  | `Int`  | `vmcnt` ticks consumed per B-channel global load   |
 
-Single-buffer pipelines set `depth=1`, `num_halves=1`, and rely on barriers
+Single-buffer pipelines set `depth=1`, `num_partitions=1`, and rely on barriers
 to gate read/write phases. Double-buffer pipelines set `depth=2`,
-`num_halves=2`, and interleave operations across two LDS stages.
+`num_partitions=2`, and interleave operations across two LDS stages.
 
 ## ScheduleConfig reference
 

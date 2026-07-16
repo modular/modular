@@ -6,8 +6,8 @@ modular_py_library(
     name = "graph",
     srcs = glob(["**/*.py"]),
     data = [
-        "//max:MOGGKernelAPI",
-        "//max:MOGGPrimitives",
+        "//max:builtin_kernels",
+        "//max:builtin_primitives",
     ],
     ignore_unresolved_imports = [
         # `buffer_utils` imports `max.engine.InferenceSession` but `engine` depends

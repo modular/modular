@@ -5,22 +5,177 @@ sidebar_position: 1
 hide_table_of_contents: true
 ---
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
+import ListingCard from '@site/src/components/Listing/ListingCard';
+import ListingCards from '@site/src/components/Listing/ListingCards';
 
 Explanations for some terms and concepts you'll encounter in the Modular docs.
 
 ## GPU terms
 
-export const gpuTerms = [
-        'gpu/*.mdx'
-    ]
+<ListingCards>
+  <ListingCard
+    title="Block index"
+    url="/glossary/gpu/block-index"
+    description="What is a GPU block index?"
+  />
 
-<MDXListing mdxList={gpuTerms} />
+  <ListingCard
+    title="Grid"
+    url="/glossary/gpu/grid"
+    description="What is a GPU grid?"
+  />
+
+  <ListingCard
+    title="Kernel"
+    url="/glossary/gpu/kernel"
+    description="What is a GPU kernel?"
+  />
+
+  <ListingCard
+    title="GPU memory"
+    url="/glossary/gpu/memory"
+    description="What is GPU memory?"
+  />
+
+  <ListingCard
+    title="Occupancy"
+    url="/glossary/gpu/occupancy"
+    description="What is GPU occupancy?"
+  />
+
+  <ListingCard
+    title="Register"
+    url="/glossary/gpu/register"
+    description="What is a GPU register?"
+  />
+
+  <ListingCard
+    title="Streaming multiprocessor"
+    url="/glossary/gpu/streaming-multiprocessor"
+    description="What is a streaming multiprocessor (SM)?"
+  />
+
+  <ListingCard
+    title="Thread"
+    url="/glossary/gpu/thread"
+    description="What is a GPU thread?"
+  />
+
+  <ListingCard
+    title="Thread block"
+    url="/glossary/gpu/thread-block"
+    description="What is a GPU thread block?"
+  />
+
+  <ListingCard
+    title="Thread index"
+    url="/glossary/gpu/thread-index"
+    description="What is a GPU thread index?"
+  />
+
+  <ListingCard
+    title="Warp"
+    url="/glossary/gpu/warp"
+    description="What is a GPU warp?"
+  />
+</ListingCards>
 
 ## AI terms
 
-export const aiTerms = [
-        'ai/*.mdx'
-    ]
+<ListingCards>
+  <ListingCard
+    title="Attention"
+    url="/glossary/ai/attention"
+    description="What is attention?"
+  />
 
-<MDXListing mdxList={aiTerms} />
+  <ListingCard
+    title="Attention mask"
+    url="/glossary/ai/attention-mask"
+    description="What is an attention mask?"
+  />
+
+  <ListingCard
+    title="Autoregression"
+    url="/glossary/ai/autoregression"
+    description="What is autoregression?"
+  />
+
+  <ListingCard
+    title="Batching"
+    url="/glossary/ai/batching"
+    description="What is batching?"
+  />
+
+  <ListingCard
+    title="Context encoding"
+    url="/glossary/ai/context-encoding"
+    description="What is context encoding?"
+  />
+
+  <ListingCard
+    title="Continuous batching"
+    url="/glossary/ai/continuous-batching"
+    description="What is continuous batching?"
+  />
+
+  <ListingCard
+    title="Disaggregated inference"
+    url="/glossary/ai/disaggregated-inference"
+    description="What is disaggregated inference?"
+  />
+
+  <ListingCard
+    title="Embedding"
+    url="/glossary/ai/embedding"
+    description="What is an embedding?"
+  />
+
+  <ListingCard
+    title="Flash attention"
+    url="/glossary/ai/flash-attention"
+    description="What is flash attention?"
+  />
+
+  <ListingCard
+    title="Inference routing"
+    url="/glossary/ai/inference-routing"
+    description="What is inference routing?"
+  />
+
+  <ListingCard
+    title="KV cache"
+    url="/glossary/ai/kv-cache"
+    description="What is KV cache?"
+  />
+
+  <ListingCard
+    title="Padding tokens"
+    url="/glossary/ai/padding-tokens"
+    description="What are padding tokens?"
+  />
+
+  <ListingCard
+    title="PagedAttention"
+    url="/glossary/ai/paged-attention"
+    description="What is PagedAttention?"
+  />
+
+  <ListingCard
+    title="Ragged tensors"
+    url="/glossary/ai/ragged-tensors"
+    description="What are ragged tensors?"
+  />
+
+  <ListingCard
+    title="Tokenization"
+    url="/glossary/ai/tokenization"
+    description="What is tokenization?"
+  />
+
+  <ListingCard
+    title="Transformer"
+    url="/glossary/ai/transformer"
+    description="What is a transformer model?"
+  />
+</ListingCards>

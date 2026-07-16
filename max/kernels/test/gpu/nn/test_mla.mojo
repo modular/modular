@@ -27,7 +27,6 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
@@ -93,18 +92,27 @@ def test[
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
     comptime kv_num_heads = num_heads // group
+    # MLA: output's last dim is depth_v (= depth - rope_dim = depth - 64).
+    # The reference path (mha_gpu_naive) writes the full `depth` columns
+    # because it's a generic MHA reference, but only the first depth_v
+    # columns are compared.
+    comptime depth_v = depth - 64
 
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
     var k_size = batch_size * kv_num_heads * num_keys * depth
     # var v_size = k_size
-    var o_size = q_size
+    var o_size = batch_size * num_heads * seq_len * depth_v
+    var o_size_ref = batch_size * num_heads * seq_len * depth
 
     # Allocate memory for all variables.
-    var q_ptr = alloc[Scalar[qkv_type]](q_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var output_ptr = alloc[Scalar[output_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[output_type]](o_size)
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size_ref)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size)
+
+    for i in range(o_size_ref):
+        output_ptr[i] = Scalar[output_type](0)
 
     # Q, K, V are randomly initialized.
     if use_index_input:
@@ -123,8 +131,8 @@ def test[
                     ](i * depth + j).cast[qkv_type]()
 
     else:
-        randn[qkv_type](q_ptr, q_size)
-        randn[qkv_type](k_ptr, k_size)
+        randn(q_ptr.as_span())
+        randn(k_ptr.as_span())
 
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
@@ -138,26 +146,22 @@ def test[
     # Construct device TileTensors.
     var q_device = TileTensor(
         q_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[kv_num_heads](),
-                Idx[depth](),
+                batch_size,
+                num_keys,
+                Idx[kv_num_heads],
+                Idx[depth],
             )
         ),
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth_v])),
     )
 
     comptime q_tile_num_rows = 32
@@ -167,7 +171,7 @@ def test[
         num_heads=num_heads,
         _is_cache_length_accurate=True,
     ](batch_size, num_keys, seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     @parameter
     @always_inline
@@ -175,20 +179,20 @@ def test[
         q_device,
         k_device,
         output_device,
-        scalar_args_buf_lt,
+        scalar_args_buf_tt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_decoding[
             config=MHAConfig[qkv_type](num_heads, depth),
             decoding_warp_split_k=decoding_warp_split_k,
         ](
-            output_device.as_any_origin(),
+            output_device.as_unsafe_any_origin(),
             q_device,
             k_device,
             CausalMask(),
             scale,
             ctx,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_buf_tt,
             num_partitions=num_partitions,
         )
 
@@ -213,22 +217,24 @@ def test[
 
     comptime if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[output_type](
-            o_size
+            o_size_ref
         )
         var output_ref_device = TileTensor(
             output_ref_device_ptr,
             row_major(
                 (
-                    Idx(batch_size),
-                    Idx(seq_len),
-                    Idx[num_heads](),
-                    Idx[depth](),
+                    batch_size,
+                    seq_len,
+                    Idx[num_heads],
+                    Idx[depth],
                 )
             ),
         )
         ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-        var k_operand = LayoutTensorMHAOperand(k_device.to_layout_tensor())
+        var k_operand = LayoutTensorMHAOperand(
+            k_device.as_immut().as_unsafe_any_origin()
+        )
         var null_valid_length = LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ](
@@ -256,6 +262,8 @@ def test[
         ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
+    ctx.synchronize()
+
     if o_size == 0:
         return
 
@@ -267,16 +275,16 @@ def test[
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(depth - 64):
-                    var expect = output_ptr.load(
+                    var expect = output_ptr[
                         d
                         + depth * (h + s * num_heads)
                         + b * depth * num_heads * seq_len
-                    ).cast[DType.float64]()
-                    var actual = flash_output_ptr.load(
+                    ].cast[DType.float64]()
+                    var actual = flash_output_ptr[
                         d
                         + (depth - 64) * (h + s * num_heads)
                         + b * (depth - 64) * num_heads * seq_len
-                    ).cast[DType.float64]()
+                    ].cast[DType.float64]()
                     # if not isclose(actual, expect, atol=1e-3, rtol=rtol):
                     #     var rerr = abs((actual - expect) / expect)
                     #     print(h, s, d, actual, expect, rerr)
@@ -288,11 +296,6 @@ def test[
     _ = q_device_ptr
     _ = k_device_ptr
     _ = output_device_ptr
-
-    q_ptr.free()
-    k_ptr.free()
-    output_ptr.free()
-    flash_output_ptr.free()
 
 
 def test_prefill[
@@ -339,21 +342,25 @@ def test_prefill[
     var o_size = batch_size * seq_len * num_heads * kv_depth
     var cache_size = batch_size * num_keys * cache_num_heads * cache_depth
 
-    var q_ptr = alloc[Scalar[qkv_type]](q_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var cache_ptr = alloc[Scalar[k_rope_type]](cache_size)
-    var output_ptr = alloc[Scalar[output_type]](o_size)
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    var cache_ptr = ctx.enqueue_create_host_buffer[k_rope_type](cache_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size)
 
     # Q, K, V, cache are randomly initialized.
-    randn[qkv_type](q_ptr, q_size)
-    randn[qkv_type](k_ptr, k_size)
-    randn[qkv_type](v_ptr, v_size)
-    randn[k_rope_type](cache_ptr, cache_size)
+    randn(q_ptr.as_span())
+    randn(k_ptr.as_span())
+    randn(v_ptr.as_span())
+    randn(cache_ptr.as_span())
 
     # input row offsets and cache row offsets
-    var input_row_offsets = alloc[UInt32](batch_size + 1)
-    var cache_row_offsets = alloc[UInt32](batch_size + 1)
+    var input_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
+    var cache_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
     for i in range(batch_size):
         input_row_offsets[i] = UInt32(i * seq_len)
         cache_row_offsets[i] = UInt32(i * num_keys)
@@ -363,36 +370,30 @@ def test_prefill[
     # ragged inputs
     var q = TileTensor(
         q_ptr,
-        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[depth])),
     )
     var k = TileTensor(
         k_ptr,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var v = TileTensor(
         v_ptr,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var cache = TileTensor(
         cache_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[cache_num_heads](),
-                Idx[cache_depth](),
+                batch_size,
+                num_keys,
+                Idx[cache_num_heads],
+                Idx[cache_depth],
             )
         ),
     )
     var output = TileTensor(
         output_ptr,
-        row_major(
-            (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
     )
 
     # device pointers
@@ -419,44 +420,38 @@ def test_prefill[
     # construct device TileTensors
     var q_device = TileTensor(
         q_device_ptr,
-        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_ptr,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var cache_device = TileTensor(
         cache_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[cache_num_heads](),
-                Idx[cache_depth](),
+                batch_size,
+                num_keys,
+                Idx[cache_num_heads],
+                Idx[cache_depth],
             )
         ),
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
     )
     var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
     var cache_row_offsets_device = TileTensor(
         cache_row_offsets_device_ptr,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     @parameter
@@ -516,34 +511,28 @@ def test_prefill[
 
     # create reference K and V
     # unlike flare_mla_prefill, K_ref and V_ref each head is of size depth (not kv_depth)
-    var k_ref_ptr = alloc[Scalar[qkv_type]](
+    var k_ref_ptr = ctx.enqueue_create_host_buffer[qkv_type](
         batch_size * num_keys * num_heads * depth
     )
-    var v_ref_ptr = alloc[Scalar[qkv_type]](
+    var v_ref_ptr = ctx.enqueue_create_host_buffer[qkv_type](
         batch_size * num_keys * num_heads * depth
     )
-    var output_ref_ptr = alloc[Scalar[output_type]](
+    var output_ref_ptr = ctx.enqueue_create_host_buffer[output_type](
         batch_size * seq_len * num_heads * depth
     )
 
     # create reference K and V
     var k_ref = TileTensor(
         k_ref_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
     var v_ref = TileTensor(
         v_ref_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
     var output_ref = TileTensor(
         output_ref_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     # the first kv_depth elements of each head in K_ref and V_ref are the same as K and V
@@ -568,9 +557,7 @@ def test_prefill[
     # view q_device as a rank 4 buffer
     var q_device_rank4 = TileTensor(
         q_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     # create device pointers for K_ref and V_ref
@@ -586,21 +573,15 @@ def test_prefill[
     # create device TileTensors for K_ref and V_ref
     var k_ref_device = TileTensor(
         k_ref_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
     var v_ref_device = TileTensor(
         v_ref_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
     var output_ref_device = TileTensor(
         output_ref_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     # copy from host to device
@@ -614,8 +595,12 @@ def test_prefill[
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(k_ref_device.to_layout_tensor())
-    var v_ref_operand = LayoutTensorMHAOperand(v_ref_device.to_layout_tensor())
+    var k_ref_operand = LayoutTensorMHAOperand(
+        k_ref_device.as_immut().as_unsafe_any_origin()
+    )
+    var v_ref_operand = LayoutTensorMHAOperand(
+        v_ref_device.as_immut().as_unsafe_any_origin()
+    )
 
     # create reference output
     mha_gpu_naive[_is_cache_length_accurate=True](
@@ -643,10 +628,10 @@ def test_prefill[
         output_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
-                Idx[num_heads](),
-                Idx[kv_depth](),
+                batch_size,
+                seq_len,
+                Idx[num_heads],
+                Idx[kv_depth],
             )
         ),
     )
@@ -678,15 +663,6 @@ def test_prefill[
     _ = k_ref_device_ptr
     _ = v_ref_device_ptr
     _ = output_ref_device_ptr
-
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    cache_ptr.free()
-    output_ptr.free()
-    k_ref_ptr.free()
-    v_ref_ptr.free()
-    output_ref_ptr.free()
 
 
 def test_decoding[
@@ -991,6 +967,64 @@ def test_mla_prefill[
         batch_size=batch_size,
         output_type=output_type,
     ](120, 240, ctx)
+    # In-kernel 2Q->1Q switch: num_heads=128 makes the 2Q grid large
+    # enough that the dispatch heuristic keeps the launch at 2Q (BM=256),
+    # so the per-tile switch — not the dispatch-time one — handles short
+    # tails. seq_len=300 tiles as [0,256) (full) + [256,300) whose
+    # remaining 44 rows (<= 128) route to the 1Q body; the would-be empty
+    # 2Q second half is exactly that tile, validating `output_nonempty`.
+    # seq_len=428 tiles as [0,256) (full) + [256,428) whose 172 remaining
+    # rows (> 128) stay on the 2Q body with both output halves non-empty
+    # (WG1 covers 44 valid rows), the complementary `output_nonempty` case.
+    test_prefill[
+        qkv_type,
+        k_rope_type,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+        output_type=output_type,
+    ](300, 300, ctx)
+    test_prefill[
+        qkv_type,
+        k_rope_type,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+        output_type=output_type,
+    ](428, 428, ctx)
+    # Short query chunk over a long cache history: routes to the 1Q
+    # (num_qo=1) kernel via the dispatch heuristic (prompt_len <= 128)
+    # while iterating many KV tiles. 800 keys = 7 BN=128 tiles (odd T:
+    # exercises the 1Q tail path); 768 keys = 6 tiles (even T: 1Q
+    # main-loop only).
+    test_prefill[
+        qkv_type,
+        k_rope_type,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+        output_type=output_type,
+    ](100, 800, ctx)
+    test_prefill[
+        qkv_type,
+        k_rope_type,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+        output_type=output_type,
+    ](64, 768, ctx)
 
 
 def main() raises:
@@ -1000,10 +1034,19 @@ def main() raises:
         test_decoding[128, 1, False](ctx, False)
         test_decoding[0, 1, False](ctx, False)
 
-        # FP8 Q/K/V with BF16 output. AMD MLA FP8 decode uses 32x32x64 MMA
-        # with BM=32, BK=64 (depth=576 is not a multiple of 128, so the
-        # 16x16x128 path is not usable).
         comptime if has_amd_gpu_accelerator():
+            test_decoding[1, 4, False](ctx, False)
+            test_decoding[27, 2, False](ctx, False)
+            # Default (None) — exercise the AMD heuristic.
+            test_decoding[1, None, False](ctx, False)
+            test_decoding[
+                1,
+                4,
+                False,
+                qkv_type=DType.float8_e4m3fn,
+                output_type=DType.bfloat16,
+            ](ctx, False)
+
             test_decoding[
                 1,
                 1,

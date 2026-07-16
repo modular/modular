@@ -151,16 +151,16 @@ def test_conv_transposed[
     var C_per_group = C // num_groups
 
     var input_size = N * conv_shape.input_image_flat_size() * C
-    var input_ptr = alloc[Scalar[dtype]](input_size)
-    rand(input_ptr, input_size)
+    var input_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    rand(input_ptr)
 
     var filter_size = conv_shape.filter_window_flat_size() * C_per_group * F
-    var filter_ptr = alloc[Scalar[dtype]](filter_size)
-    rand(filter_ptr, filter_size)
+    var filter_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    rand(filter_ptr)
 
     var output_size = N * conv_shape.output_image_flat_size() * F
-    var output_ptr = alloc[Scalar[dtype]](output_size)
-    var output_ref_ptr = alloc[Scalar[dtype]](output_size)
+    var output_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    var output_ref_ptr = List(length=output_size, fill=Scalar[dtype](0))
 
     # Find the tile size used in packing.
     comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
@@ -187,8 +187,8 @@ def test_conv_transposed[
     )
 
     var packed_filter_shape = pack_filter_shape(filter, num_groups)
-    var packed_filter_ptr = alloc[Scalar[dtype]](
-        packed_filter_shape.flattened_length()
+    var packed_filter_ptr = List(
+        length=packed_filter_shape.flattened_length(), fill=Scalar[dtype](0)
     )
     var packed_filter = TileTensor(
         packed_filter_ptr,
@@ -202,7 +202,8 @@ def test_conv_transposed[
         row_major(Coord(extend_shape_5d(output_dims, N, F))),
     )
 
-    # Bias for epilogue
+    # Bias for epilogue. Kept as raw alloc because it's captured by
+    # `@__copy_capture` closures, which require ImplicitlyCopyable.
     var bias_ptr = alloc[Scalar[dtype]](F)
     rand(bias_ptr, F)
 
@@ -284,11 +285,6 @@ def test_conv_transposed[
         rebind[ConvShape[rank]](conv_shape),
     )
 
-    input_ptr.free()
-    filter_ptr.free()
-    packed_filter_ptr.free()
-    bias_ptr.free()
-
     # Check results, return on the first failed comparison.
     for i in range(output_size):
         if not all(
@@ -305,15 +301,17 @@ def test_conv_transposed[
             print("flat output index:", i)
             print("Golden value: ", output_ref.raw_load[width=1](i))
             print("Actual value: ", output.raw_load[width=1](i))
-            output_ptr.free()
-            output_ref_ptr.free()
+            bias_ptr.free()
             return
-
-    output_ptr.free()
-    output_ref_ptr.free()
 
     # CHECK: Succeed
     print("Succeed")
+    bias_ptr.free()
+    _ = output_ref_ptr^
+    _ = output_ptr^
+    _ = packed_filter_ptr^
+    _ = filter_ptr^
+    _ = input_ptr^
 
 
 def test_conv_transpose_shape_basic() raises:
@@ -321,21 +319,12 @@ def test_conv_transpose_shape_basic() raises:
     # Test 4D: Basic 2D conv transpose (N=1, H=3, W=3, C=1) x (R=3, S=3, F=2, C=1)
     # With stride=1, dilation=1, no padding
     # Expected output: (1, 5, 5, 2)
-    var input_ptr = alloc[Scalar[DType.float32]](9)
-    var kernel_ptr = alloc[Scalar[DType.float32]](18)
-    var strides_ptr = alloc[Scalar[DType.int32]](2)
-    var dilations_ptr = alloc[Scalar[DType.int32]](2)
-    var pads_ptr = alloc[Scalar[DType.int32]](4)
-    var output_pads_ptr = alloc[Scalar[DType.int32]](2)
-
-    strides_ptr[0] = 1
-    strides_ptr[1] = 1
-    dilations_ptr[0] = 1
-    dilations_ptr[1] = 1
-    for i in range(4):
-        pads_ptr[i] = 0
-    output_pads_ptr[0] = 0
-    output_pads_ptr[1] = 0
+    var input_ptr = List(length=9, fill=Float32(0))
+    var kernel_ptr = List(length=18, fill=Float32(0))
+    var strides_ptr = List(length=2, fill=Int32(1))
+    var dilations_ptr = List(length=2, fill=Int32(1))
+    var pads_ptr = List(length=4, fill=Int32(0))
+    var output_pads_ptr = List(length=2, fill=Int32(0))
 
     var input = TileTensor(input_ptr, row_major(Coord(Index(1, 3, 3, 1))))
     var kernel = TileTensor(kernel_ptr, row_major(Coord(Index(3, 3, 2, 1))))
@@ -352,13 +341,12 @@ def test_conv_transpose_shape_basic() raises:
     assert_equal(shape[1], 5)
     assert_equal(shape[2], 5)
     assert_equal(shape[3], 2)
-
-    input_ptr.free()
-    kernel_ptr.free()
-    strides_ptr.free()
-    dilations_ptr.free()
-    pads_ptr.free()
-    output_pads_ptr.free()
+    _ = output_pads_ptr^
+    _ = pads_ptr^
+    _ = dilations_ptr^
+    _ = strides_ptr^
+    _ = kernel_ptr^
+    _ = input_ptr^
 
 
 def test_2d_stride_3_2_pad_1_1_2_2() raises:

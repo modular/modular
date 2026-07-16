@@ -51,29 +51,28 @@ from typing import Any, cast
 import numpy as np
 import torch
 from max.driver import DeviceSpec
-from max.interfaces import (
+from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
+from max.pipelines.architectures.wan.context import WanContext
+from max.pipelines.architectures.wan.tokenizer import WanTokenizer
+from max.pipelines.diffusion.interface import DiffusionPipeline
+from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
+from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.modeling.types import (
     PipelineTask,
     PixelGenerationInputs,
     RequestID,
 )
-from max.interfaces.provider_options import (
+from max.pipelines.request import OpenResponsesRequest
+from max.pipelines.request.open_responses import (
+    OpenResponsesRequestBody,
+    OutputImageContent,
+    OutputVideoContent,
+)
+from max.pipelines.request.provider_options import (
     ImageProviderOptions,
     ProviderOptions,
     VideoProviderOptions,
-)
-from max.interfaces.request import OpenResponsesRequest
-from max.interfaces.request.open_responses import (
-    OpenResponsesRequestBody,
-    OutputImageContent,
-)
-from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
-from max.pipelines.architectures.wan.context import WanContext
-from max.pipelines.architectures.wan.tokenizer import WanTokenizer
-from max.pipelines.lib.interfaces import DiffusionPipeline
-from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-from max.pipelines.lib.pipeline_variants.pixel_generation import (
-    PixelGenerationPipeline,
 )
 from PIL import Image
 
@@ -1098,6 +1097,8 @@ def _load_max_pipeline(
         models=manifest,
         runtime=PipelineRuntimeConfig(),
     )
+    # Resolve the manifest (encodings + weight paths) before use.
+    config.models.resolve()
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         config.models.main_architecture_name,
         task=PipelineTask.PIXEL_GENERATION,
@@ -1262,16 +1263,19 @@ def run_max(
                 output = asyncio.run(tokenizer.postprocess(output))
                 if output.output:
                     frames = []
-                    for img_content in output.output:
+                    for content in output.output:
                         if (
-                            isinstance(img_content, OutputImageContent)
-                            and img_content.image_data
+                            isinstance(content, OutputImageContent)
+                            and content.image_data
                         ):
-                            image_bytes = base64.b64decode(
-                                img_content.image_data
-                            )
+                            image_bytes = base64.b64decode(content.image_data)
                             img = Image.open(io.BytesIO(image_bytes))
                             frames.append(np.array(img))
+                        elif (
+                            isinstance(content, OutputVideoContent)
+                            and content.frames is not None
+                        ):
+                            frames.extend(list(content.frames))
                     if frames:
                         prefix = (
                             f"iter{i}_max_{req.width}x{req.height}"

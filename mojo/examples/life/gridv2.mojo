@@ -14,7 +14,7 @@
 from std import random
 from std.collections import Optional
 
-from std.memory import memcpy, memset_zero
+from std.memory import unsafe_memcpy, memset_zero
 
 
 struct Grid[rows: Int, cols: Int](Copyable, Writable):
@@ -23,7 +23,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
     # ===-------------------------------------------------------------------===#
 
     comptime num_cells = Self.rows * Self.cols
-    var data: UnsafePointer[Int8, MutExternalOrigin]
+    var data: UnsafePointer[Int8, MutUntrackedOrigin]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -35,7 +35,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
 
     def __init__(out self, *, copy: Self):
         self.data = alloc[Int8](self.num_cells)
-        memcpy(dest=self.data, src=copy.data, count=self.num_cells)
+        unsafe_memcpy(dest=self.data, src=copy.data, count=self.num_cells)
         # The lifetime of `existing` continues unchanged
 
     def __del__(deinit self):

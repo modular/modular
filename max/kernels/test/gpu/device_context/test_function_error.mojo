@@ -33,9 +33,7 @@ def test_function_error(ctx: DeviceContext) raises:
         var res_host = DeviceBuffer[DType.uint32](
             ctx, res_ptr_owned.unsafe_ptr(), 1, owning=False
         )
-        ctx.enqueue_function_experimental[kernel](
-            res_host, block_dim=(1), grid_dim=(1)
-        )
+        ctx.enqueue_function[kernel](res_host, block_dim=(1), grid_dim=(1))
         ctx.synchronize()
 
         # Don't allow early dealloc.
@@ -49,5 +47,5 @@ def test_function_error(ctx: DeviceContext) raises:
 
 def main() raises:
     with DeviceContext() as ctx:
-        # CHECK: To get more accurate error information, set MODULAR_DEVICE_CONTEXT_SYNC_MODE=true
+        # CHECK: To get more accurate error information, set MODULAR_DEBUG=device-sync-mode
         test_function_error(ctx)

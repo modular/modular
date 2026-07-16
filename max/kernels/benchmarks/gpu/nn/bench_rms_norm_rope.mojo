@@ -29,10 +29,10 @@ def bench_rms_norm_rope_gpu[
     comptime cols = shape[rank - 1]
     comptime rows = shape.flattened_length() // cols
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](cols)
-    var cos_h = alloc[Scalar[dtype]](rows * cols)
-    var sin_h = alloc[Scalar[dtype]](rows * cols)
+    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_h = List(length=cols, fill=Scalar[dtype](0))
+    var cos_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var sin_h = List(length=rows * cols, fill=Scalar[dtype](0))
 
     for i in range(rows * cols):
         data_h[i] = Scalar[dtype](random_float64(-1, 1).cast[dtype]())
@@ -55,7 +55,7 @@ def bench_rms_norm_rope_gpu[
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var cos_vals = TileTensor(cos_d, row_major(Coord(shape)))
     var sin_vals = TileTensor(sin_d, row_major(Coord(shape)))
-    var epsilon = Scalar[dtype](0.001)
+    var epsilon = Float32(0.001)
     var weight_offset = Scalar[dtype](0.0)
 
     ctx.enqueue_copy(data_d, data_h)
@@ -108,7 +108,15 @@ def bench_rms_norm_rope_gpu[
         def kernel_launch(ctx: DeviceContext) raises:
             rms_norm_rope_gpu[
                 input_fn, cos_fn, sin_fn, output_fn, multiply_before_cast=False
-            ](shape, gamma, epsilon, weight_offset, cos_vals, sin_vals, ctx)
+            ](
+                shape,
+                gamma,
+                epsilon,
+                weight_offset,
+                cos_vals,
+                sin_vals,
+                ctx,
+            )
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -126,11 +134,10 @@ def bench_rms_norm_rope_gpu[
     _ = cos_d
     _ = sin_d
     _ = output_d
-
-    data_h.free()
-    gamma_h.free()
-    cos_h.free()
-    sin_h.free()
+    _ = data_h^
+    _ = gamma_h^
+    _ = cos_h^
+    _ = sin_h^
 
 
 def main() raises:

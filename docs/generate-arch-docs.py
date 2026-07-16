@@ -16,9 +16,9 @@
 Scans the pipeline architecture registry, extracts metadata from each
 arch.py, and generates:
   - One RST page per registered architecture
-  - The architectures index RST (pipelines.architectures.rst)
-  - Toctree entries in index.rst
-  - Sidebar items in sidebars.js
+  - The architectures index RST (pipelines.architectures.rst), which carries
+    a hidden toctree so the per-architecture pages are discoverable
+  - Sidebar items under max.pipelines.architectures in sidebars.json
 
 Usage:
     ./bazelw run //oss/modular/docs:generate-arch-docs          # regenerate
@@ -27,6 +27,7 @@ Usage:
 
 import argparse
 import ast
+import json
 import os
 import sys
 from pathlib import Path
@@ -37,8 +38,7 @@ REPO_ROOT = Path(
 )
 ARCH_BASE = REPO_ROOT / "max" / "python" / "max" / "pipelines" / "architectures"
 DOCS_DIR = REPO_ROOT / "max" / "python" / "docs"
-INDEX_RST = DOCS_DIR / "index.rst"
-SIDEBARS_JS = REPO_ROOT / "oss" / "modular" / "docs" / "sidebars.js"
+SIDEBARS_JSON = REPO_ROOT / "oss" / "modular" / "docs" / "sidebars.json"
 
 # Maps PipelineTask enum values to human-readable category headings.
 # Ordered by display priority on the index page.
@@ -90,18 +90,59 @@ def discover_categories(dir_names: list[str]) -> dict[str, list[str]]:
 # ---------------------------------------------------------------------------
 
 
+def _lazy_arch_module(elt: ast.expr) -> str | None:
+    """Return the ``module`` field of a ``_LazyArch(name, module, symbol)`` call.
+
+    Returns ``None`` for nodes that are not such a call. The module is the
+    second positional argument or the ``module`` keyword.
+    """
+    if not isinstance(elt, ast.Call):
+        return None
+    if len(elt.args) >= 2 and isinstance(elt.args[1], ast.Constant):
+        value = elt.args[1].value
+        return value if isinstance(value, str) else None
+    for kw in elt.keywords:
+        if kw.arg == "module" and isinstance(kw.value, ast.Constant):
+            value = kw.value.value
+            return value if isinstance(value, str) else None
+    return None
+
+
 def discover_registered_dirs() -> list[str]:
-    """Return sorted directory names of all registered architectures."""
+    """Return sorted directory names of all registered architectures.
+
+    ``_modulev3`` architectures are intentionally excluded from the public
+    API docs. They stay registered and importable, but their internal
+    module-v3 variants are not documented.
+    """
     tree = ast.parse((ARCH_BASE / "__init__.py").read_text())
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.FunctionDef)
             and node.name == "register_all_models"
         ):
+            # Architectures are registered lazily via a `lazy_architectures`
+            # table of ``_LazyArch(name, module, symbol)`` entries. Collect the
+            # module directory names, stripping the leading ``.``.
             modules = set()
-            for stmt in node.body:
-                if isinstance(stmt, ast.ImportFrom) and stmt.module:
-                    modules.add(stmt.module)
+            for stmt in ast.walk(node):
+                if not (
+                    isinstance(stmt, ast.Assign)
+                    and any(
+                        isinstance(t, ast.Name) and t.id == "lazy_architectures"
+                        for t in stmt.targets
+                    )
+                    and isinstance(stmt.value, ast.List)
+                ):
+                    continue
+                for elt in stmt.value.elts:
+                    module = _lazy_arch_module(elt)
+                    if module is None:
+                        continue
+                    module = module.lstrip(".")
+                    if module.endswith("_modulev3"):
+                        continue
+                    modules.add(module)
             return sorted(modules)
     raise RuntimeError("Could not find register_all_models() in __init__.py")
 
@@ -201,62 +242,120 @@ def sync_file(path: Path, expected: str, check: bool, stale: list[str]) -> None:
         print(f"  wrote {path.name}")
 
 
-def _replace_between(
-    text: str, before: str, after: str, new_content: str
-) -> str:
-    """Replace text between *before* marker (inclusive end) and *after* marker (exclusive start)."""
-    bi = text.find(before)
-    ai = text.find(after)
-    if bi == -1 or ai == -1:
-        raise RuntimeError(f"Markers not found: {before!r} / {after!r}")
-    return text[: bi + len(before)] + new_content + text[ai:]
-
-
-def sync_index_rst(dir_names: list[str], check: bool, stale: list[str]) -> None:
-    """Keep architecture entries in index.rst in sync."""
-    entries = "".join(
-        f"   pipelines.architectures.{d}\n" for d in sorted(dir_names)
-    )
-    text = INDEX_RST.read_text()
-    expected = _replace_between(
-        text, "   pipelines.architectures\n", "   pipelines.core", entries
-    )
-    if text == expected:
-        return
-    if check:
-        stale.append("index.rst")
-    else:
-        INDEX_RST.write_text(expected)
-        print("  updated index.rst")
-
-
-def sync_sidebars_js(
+def sync_sidebars_json(
     dir_names: list[str], check: bool, stale: list[str]
 ) -> None:
-    """Keep architecture items in sidebars.js in sync."""
-    items = "".join(
-        f'            "max/api/python/pipelines.architectures.{d}",\n'
-        for d in sorted(dir_names)
-    )
-    text = SIDEBARS_JS.read_text()
-    label_idx = text.find('"max.pipelines.architectures"')
-    if label_idx == -1:
+    """Keep architecture doc IDs in sidebars.json (Python reference sidebar).
+
+    Looks for the architectures category in two locations, preferring nesting:
+
+    1. Inside the ``max.pipelines`` category, as a child with label
+       ``"architectures"``. This is the preferred location.
+    2. As a top-level sibling under ``"Python"`` with label
+       ``"max.pipelines.architectures"`` (legacy placement).
+
+    If neither exists, inserts a nested child under ``max.pipelines``.
+    """
+    path = SIDEBARS_JSON
+    original_text = path.read_text(encoding="utf-8")
+    data: object = json.loads(original_text)
+    if not isinstance(data, dict):
+        raise RuntimeError("sidebars.json: root value must be a JSON object")
+
+    max_ref = data.get("maxReferenceSidebar")
+    if not isinstance(max_ref, list):
         raise RuntimeError(
-            '"max.pipelines.architectures" not found in sidebars.js'
+            "sidebars.json: maxReferenceSidebar missing or not a list"
         )
-    begin = text.find("          items: [\n", label_idx)
-    end = text.find("          ],\n", begin + 1)
-    if begin == -1 or end == -1:
-        raise RuntimeError("Could not locate items block in sidebars.js")
-    content_start = begin + len("          items: [\n")
-    expected = text[:content_start] + items + text[end:]
-    if text == expected:
+
+    python_cat: dict[str, object] | None = None
+    for entry in max_ref:
+        if (
+            isinstance(entry, dict)
+            and entry.get("label") == "Python"
+            and entry.get("type") == "category"
+        ):
+            python_cat = entry
+            break
+    if python_cat is None:
+        raise RuntimeError(
+            'sidebars.json: category with label "Python" not found'
+        )
+
+    py_items = python_cat.get("items")
+    if not isinstance(py_items, list):
+        raise RuntimeError('sidebars.json: Python category "items" not a list')
+
+    new_doc_ids = [
+        f"max/api/python/pipelines.architectures.{d}" for d in sorted(dir_names)
+    ]
+
+    arch_cat: dict[str, object] | None = None
+
+    # Preferred: nested as a child of max.pipelines with short label.
+    pipelines_items: list[object] | None = None
+    for entry in py_items:
+        if isinstance(entry, dict) and entry.get("label") == "max.pipelines":
+            candidate = entry.get("items")
+            if isinstance(candidate, list):
+                pipelines_items = candidate
+            break
+    if pipelines_items is not None:
+        for entry in pipelines_items:
+            if (
+                isinstance(entry, dict)
+                and entry.get("label") == "architectures"
+            ):
+                arch_cat = entry
+                break
+
+    # Fallback: legacy top-level sibling.
+    if arch_cat is None:
+        for entry in py_items:
+            if (
+                isinstance(entry, dict)
+                and entry.get("label") == "max.pipelines.architectures"
+            ):
+                arch_cat = entry
+                break
+
+    if arch_cat is None:
+        # Neither location exists. Prefer nested insertion under max.pipelines.
+        new_cat: dict[str, object] = {
+            "type": "category",
+            "label": "architectures",
+            "link": {
+                "type": "doc",
+                "id": "max/api/python/pipelines.architectures",
+            },
+            "items": new_doc_ids,
+        }
+        if pipelines_items is not None:
+            pipelines_items.insert(0, new_cat)
+        else:
+            insert_at = len(py_items)
+            for i, entry in enumerate(py_items):
+                if (
+                    isinstance(entry, dict)
+                    and entry.get("label") == "max.profiler"
+                ):
+                    insert_at = i
+                    break
+            new_cat["label"] = "max.pipelines.architectures"
+            py_items.insert(insert_at, new_cat)
+    elif arch_cat.get("items") == new_doc_ids:
+        return
+    else:
+        arch_cat["items"] = new_doc_ids
+
+    new_text = json.dumps(data, indent=2) + "\n"
+    if new_text == original_text:
         return
     if check:
-        stale.append("sidebars.js")
+        stale.append("sidebars.json")
     else:
-        SIDEBARS_JS.write_text(expected)
-        print("  updated sidebars.js")
+        path.write_text(new_text, encoding="utf-8")
+        print("  updated sidebars.json")
 
 
 # ---------------------------------------------------------------------------
@@ -275,35 +374,33 @@ def main() -> None:
     categories = discover_categories(dir_names)
     stale: list[str] = []
 
+    # Manually re-implementing is_check() from lint_helpers since it's the only use here
+    is_check = args.check or os.getenv("CHECK", "").lower() in ("1", "true")
+
     # Per-architecture RST pages
     for d in dir_names:
         rst_path = DOCS_DIR / f"pipelines.architectures.{d}.rst"
-        sync_file(rst_path, generate_rst(d), args.check, stale)
+        sync_file(rst_path, generate_rst(d), is_check, stale)
 
-    # Index RST, index.rst toctree, sidebars.js
+    # Architectures index RST and sidebars.json
     sync_file(
         DOCS_DIR / "pipelines.architectures.rst",
         generate_index_rst(dir_names, categories),
         args.check,
         stale,
     )
-    sync_index_rst(dir_names, args.check, stale)
-    sync_sidebars_js(dir_names, args.check, stale)
+    sync_sidebars_json(dir_names, is_check, stale)
 
-    if args.check:
-        if stale:
-            print(
-                "❌ Architecture docs are out-of-date.\n"
-                "Stale files:\n"
-                + "\n".join(f"  - {f}" for f in stale)
-                + "\n\nRun `./bazelw run //oss/modular/docs:generate-arch-docs`"
-                " to regenerate.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        print("✅ Architecture docs are up-to-date.")
-    else:
-        print("✅ Architecture docs generated.")
+    if is_check and stale:
+        print(
+            "❌ Architecture docs are out-of-date.\n"
+            "Stale files:\n"
+            + "\n".join(f"  - {f}" for f in stale)
+            + "\n\nRun `./bazelw run //oss/modular/docs:generate-arch-docs`"
+            " to regenerate.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

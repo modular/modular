@@ -24,10 +24,11 @@ Instructions, ACM Transactions on the Web 12 (3), 2018.
 https://arxiv.org/abs/1704.00605
 """
 
+from std.bit import rotate_bits_right
 from std.math import iota, ceildiv
-from std.sys import llvm_intrinsic
+from std.sys import llvm_intrinsic, simd_byte_width
 
-from std.memory import Span, bitcast, memcpy
+from std.memory import Span, bitcast, unsafe_memcpy
 
 from std.utils import IndexList
 
@@ -198,13 +199,15 @@ def load_incomplete_simd[
 ) -> SIMD[DType.uint8, width]:
     var result = SIMD[DType.uint8, width](0)
     var tmp_buffer_pointer = UnsafePointer(to=result).bitcast[UInt8]()
-    memcpy(dest=tmp_buffer_pointer, src=pointer, count=nb_of_elements_to_load)
+    unsafe_memcpy(
+        dest=tmp_buffer_pointer, src=pointer, count=nb_of_elements_to_load
+    )
     return result
 
 
 @no_inline
 def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
-    comptime simd_width = sys.simd_byte_width()
+    comptime simd_width = simd_byte_width()
     comptime input_simd_width = simd_width * 3 // 4
     comptime equal_vector = SIMD[DType.uint8, simd_width](ord("="))
 
@@ -260,7 +263,7 @@ def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
         )
 
         var v_ptr = UnsafePointer(to=result_vector_with_equals).bitcast[Byte]()
-        memcpy(
+        unsafe_memcpy(
             dest=res_ptr + res_offset, src=v_ptr, count=nb_of_elements_to_store
         )
         res_offset += nb_of_elements_to_store
@@ -282,7 +285,7 @@ def _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
 
 def _rshift_bits_in_u16[shift: Int](input: Bytes) -> type_of(input):
     var u16 = bitcast[DType.uint16, input.size // 2](input)
-    var res = bit.rotate_bits_right[shift](u16)
+    var res = rotate_bits_right[shift](u16)
     return bitcast[DType.uint8, input.size](res)
 
 

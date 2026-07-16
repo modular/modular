@@ -104,22 +104,22 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         sep="",
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_scales_shape = row_major(
-        Coord(Idx(ceildiv(Int(k.value()), BLOCK_SCALE_K)), m)
+        Coord(ceildiv(Int(k.value()), BLOCK_SCALE_K), m)
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(n.value()), BLOCK_SCALE_K)),
-            Idx(ceildiv(Int(k.value()), BLOCK_SCALE_K)),
+            ceildiv(Int(n.value()), BLOCK_SCALE_K),
+            ceildiv(Int(k.value()), BLOCK_SCALE_K),
         )
     )
 
@@ -135,13 +135,13 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         Int(k.value()), BLOCK_SCALE_K
     )
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -153,9 +153,13 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        a_scales_size
+    )
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_size)
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        b_scales_size
+    )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_size)
@@ -163,31 +167,29 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var b_scales_device = ctx.enqueue_create_buffer[scales_type](b_scales_size)
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
-    memset_zero(c_host_ptr, c_size)
-    memset_zero(c_host_ref_ptr, c_size)
+    memset_zero(c_host_ptr.unsafe_ptr(), c_size)
+    memset_zero(c_host_ref_ptr.unsafe_ptr(), c_size)
 
     # Initialize matmul operands
     if simple_init():
         for m in range(Int(m.value())):
             for k in range(Int(k.value())):
-                comptime assert a_host.flat_rank >= 2
-                a_host[(Idx(m), Idx(k))] = Scalar[a_type](1.0)
+                comptime assert a_host.flat_rank == 2
+                a_host[m, k] = Scalar[a_type](1.0)
         for n in range(Int(n.value())):
             for k in range(Int(k.value())):
-                b_host[(Idx(n), Idx(k))] = Scalar[b_type](1.0)
+                b_host[n, k] = Scalar[b_type](1.0)
 
         for m in range(Int(m.value())):
             for k in range(Int(k.value())):
-                comptime assert a_scales_host.flat_rank >= 2
-                a_scales_host[(Idx(k // BLOCK_SCALE_K), Idx(m))] = Scalar[
-                    scales_type
-                ](0.5)
+                comptime assert a_scales_host.flat_rank == 2
+                a_scales_host[k // BLOCK_SCALE_K, m] = Scalar[scales_type](0.5)
         for n in range(Int(n.value())):
             for k in range(Int(k.value())):
-                comptime assert b_scales_host.flat_rank >= 2
-                b_scales_host[
-                    (Idx(n // BLOCK_SCALE_K), Idx(k // BLOCK_SCALE_K))
-                ] = Scalar[scales_type](0.5)
+                comptime assert b_scales_host.flat_rank == 2
+                b_scales_host[n // BLOCK_SCALE_K, k // BLOCK_SCALE_K] = Scalar[
+                    scales_type
+                ](0.5)
 
     else:
         rand(a_host.ptr, a_host.num_elements())
@@ -265,12 +267,6 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     )
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -311,9 +307,9 @@ def main() raises:
                 cta_group=2,
             ](
                 ctx,
-                Idx(Int(1000)),
-                Idx(576),
-                Idx(7168),
+                Int(1000),
+                Idx[576],
+                Idx[7168],
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -328,9 +324,9 @@ def main() raises:
                 cta_group=2,
             ](
                 ctx,
-                Idx(Int(1000)),
-                Idx(576),
-                Idx[256 + 64](),
+                Int(1000),
+                Idx[576],
+                Idx[256 + 64],
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -346,9 +342,9 @@ def main() raises:
                 cta_group=2,
             ](
                 ctx,
-                Idx(Int(1000)),
-                Idx(32768),
-                Idx(512),
+                Int(1000),
+                Idx[32768],
+                Idx[512],
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -363,9 +359,9 @@ def main() raises:
                 cta_group=2,
             ](
                 ctx,
-                Idx(Int(512)),
-                Idx(4096),
-                Idx(1024),
+                Int(512),
+                Idx[4096],
+                Idx[1024],
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -380,9 +376,9 @@ def main() raises:
                 cta_group=2,
             ](
                 ctx,
-                Idx(Int(500)),
-                Idx(24576),
-                Idx(1536),
+                Int(500),
+                Idx[24576],
+                Idx[1536],
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -397,9 +393,9 @@ def main() raises:
                 cta_group=2,
             ](
                 ctx,
-                Idx(Int(1024)),
-                Idx(1536),
-                Idx(7168),
+                Int(1024),
+                Idx[1536],
+                Idx[7168],
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -415,9 +411,9 @@ def main() raises:
                 cta_group=2,
             ](
                 ctx,
-                Idx(1024),
-                Idx(1024),
-                Idx(2048),
+                Idx[1024],
+                Idx[1024],
+                Idx[2048],
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -432,7 +428,7 @@ def main() raises:
                 cta_group=2,
             ](
                 ctx,
-                Idx(Int(8192)),
-                Idx(2560),
-                Idx(8192),
+                Int(8192),
+                Idx[2560],
+                Idx[8192],
             )

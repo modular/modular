@@ -32,8 +32,10 @@ from std.collections.string._utf8 import (
 )
 from std.collections.string.format import _FormatUtils
 from std.collections.string.iterators import (
+    BytesIter,
     CodepointSliceIter,
     CodepointsIter,
+    GraphemeIndicesIter,
     GraphemeSliceIter,
 )
 from std.hashlib.hasher import Hasher
@@ -49,10 +51,10 @@ from std.bit.mask import is_negative, splat
 from std.memory import (
     Span,
     memcmp,
-    memcpy,
+    unsafe_memcpy,
     pack_bits,
 )
-from std.python import ConvertibleToPython, Python, PythonObject
+from std.python import Python, PythonObject
 from std.format._utils import _write_hex
 
 
@@ -60,7 +62,7 @@ comptime StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice.
 
 This is a type of
-[`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice)
+[`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/)
 that's immutable and statically allocated. You might use this for situations
 that could also be done with a `String` type, but when you want to
 optimize memory usage with zero heap allocations.
@@ -86,7 +88,6 @@ print(format_string.format("bats", 6))     # => bats: 6
 
 struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Boolable,
-    ConvertibleToPython,
     Defaultable,
     Equatable,
     FloatableRaising,
@@ -102,7 +103,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
     A `StringSlice` is a lightweight view into string data that lets you look
     at part (or all) of an string without copying the data. Unlike a
-    [`String`](/mojo/std/collections/string/string/String), a `StringSlice`
+    [`String`](/docs/std/collections/string/string/String/), a `StringSlice`
     doesn't own the string data, but it knows where to find it and how long it
     is. It's designed for efficient zero-copy string operations without memory
     allocation, while maintaining memory safety and UTF-8 awareness.
@@ -139,11 +140,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
     Related types:
 
-    - [`String`](/mojo/std/collections/string/String): An owning,
+    - [`String`](/docs/std/collections/string/string/String/): An owning,
       mutable string that allocates and manages its own memory.
-    - [`StaticString`](/mojo/std/collections/string/string_slice/#StaticString): An
+    - [`StaticString`](/docs/std/collections/string/string_slice/#StaticString): An
       alias for an immutable constant `StringSlice`.
-    - [`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral/): A
+    - [`StringLiteral`](/docs/std/builtin/string_literal/StringLiteral/): A
       string literal. String literals are compile-time values.
 
     Parameters:
@@ -189,9 +190,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     def __init__(out self: StaticString, _kgen: __mlir_type.`!kgen.string`):
         # FIXME(MSTDL-160): !kgen.string's are not guaranteed to be UTF-8
         # encoded, they can be arbitrary binary data.
-        var length: Int = Int(mlir_value=__mlir_op.`pop.string.size`(_kgen))
+        var length: Int = Int(
+            SIMDSize(mlir_value=__mlir_op.`pop.string.size`(_kgen))
+        )
         var ptr = UnsafePointer[mut=False, _, StaticConstantOrigin](
-            __mlir_op.`pop.string.address`(_kgen)
+            _mlir_value=__mlir_op.`pop.string.address`(_kgen)
         ).bitcast[Byte]()
         self._slice = {ptr = ptr, length = length}
 
@@ -213,7 +216,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         self = StaticString(lit.value)
 
     @always_inline("builtin")
-    def __init__(out self, *, unsafe_from_utf8: Span[Byte, Self.origin, ...]):
+    def __init__(out self, *, unsafe_from_utf8: Span[Byte, Self.origin]):
         """Construct a new `StringSlice` from a sequence of UTF-8 encoded bytes.
 
         Args:
@@ -235,6 +238,29 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             length=unsafe_from_utf8.__len__(),
         )
 
+    @always_inline
+    def __init__[
+        cstring_origin: ImmutOrigin,
+        //,
+    ](
+        out self: StringSlice[cstring_origin],
+        *,
+        unsafe_from_utf8: CStringSlice[cstring_origin],
+    ):
+        """Construct a new `StringSlice` from a UTF-8 encoded `CStringSlice`.
+
+        Parameters:
+            cstring_origin: The origin of the source `CStringSlice`.
+
+        Args:
+            unsafe_from_utf8: A `CStringSlice` encoded in UTF-8.
+
+        Safety:
+            `unsafe_from_utf8` MUST be valid UTF-8 encoded data.
+        """
+        self._slice = unsafe_from_utf8.as_bytes()
+
+    @deprecated("Use the `unsafe_from_utf8: CStringSlice` constructor instead")
     def __init__(
         out self,
         *,
@@ -266,7 +292,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         )
         self = Self(unsafe_from_utf8=byte_slice)
 
-    def __init__(out self, *, from_utf8: Span[Byte, Self.origin, ...]) raises:
+    def __init__(out self, *, from_utf8: Span[Byte, Self.origin]) raises:
         """Construct a new `StringSlice` from a buffer containing UTF-8 encoded
         data.
 
@@ -282,6 +308,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         self = Self(unsafe_from_utf8=from_utf8)
 
+    @deprecated("Use the `unsafe_from_utf8: CStringSlice` constructor instead")
     def __init__(
         out self,
         *,
@@ -305,9 +332,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         var ptr = unsafe_from_utf8_ptr.bitcast[Byte]()
-        self = Self(unsafe_from_utf8_ptr=ptr)
+        var byte_slice = Span(
+            ptr=ptr,
+            length=Int(_unsafe_strlen(ptr)),
+        )
+        self = Self(unsafe_from_utf8=byte_slice)
 
     @always_inline("builtin")
+    @deprecated("Use the `unsafe_from_utf8: Span[Byte, _]` constructor instead")
     def __init__(
         out self,
         *,
@@ -346,12 +378,22 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Args:
             value: The string value.
         """
-        self._slice = Span[Byte, Self.origin](
-            ptr=value.unsafe_ptr()
-            .unsafe_mut_cast[Self.origin.mut]()
-            .unsafe_origin_cast[Self.origin](),
-            length=value.byte_length(),
-        )
+        comptime if Self.origin.mut:
+            # FIXME(MOCO-3906): Needs `unsafe_mut_cast()` because type refinement
+            #   based on the `if origin.mut` knowledge is not supported.
+            ref value_mut = UnsafePointer(to=value).unsafe_mut_cast[True]()[]
+
+            # Note: unsafe_as_bytes_mut() reallocates the `String` data if it
+            #   was originally constructed from a read-only static string.
+            # SAFETY:
+            #   This is safe because the resulting UTF-8 byte slice is
+            #   accessible only through the APIs of StringSlice, which
+            #   either guarantee UTF-8 validity, or are unsafe themselves.
+            self._slice = rebind[type_of(self._slice)](
+                value_mut.unsafe_as_bytes_mut()
+            )
+        else:
+            self._slice = rebind[type_of(self._slice)](value.as_bytes())
 
     # ===------------------------------------------------------------------===#
     # Trait implementations
@@ -471,16 +513,112 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         )
         return Self(unsafe_from_utf8=self._slice[byte])
 
-    def to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
+    def _get_codepoint(self, codepoint: Some[Indexer]) -> Self:
+        var c_idx = index(codepoint)
+        debug_assert[assert_mode="safe"](
+            c_idx >= 0, "negative indexing is not supported"
+        )
+        # NOTE: Edge case: when the element at idx 0 in a string is fetched and
+        # it's a multi-byte sequence, the code would assume it's an ascii
+        # sequence. Fetch 1 more byte (when not OOB) just to have a continuation
+        # byte and force the code to go into the clipped branch
+        var i0_multi_case = Int(c_idx == 0 and self.byte_length() > 1)
+        var ptr = self.unsafe_ptr()
+        var span = self._slice[: c_idx + 1 + i0_multi_case]
+        var c_count = len(span) - _count_utf8_continuation_bytes(span)
+        if likely(c_count == len(span)):  # ASCII
+            return Self(unsafe_from_utf8=Span(ptr=ptr + c_idx, length=1))
+        elif c_count == c_idx + 1:  # clipped the multi-byte sequence
+            var b_idx = c_idx
+            while _is_utf8_continuation_byte(ptr[b_idx]):
+                b_idx -= 1
+            var length = Int(_utf8_first_byte_sequence_length(ptr[b_idx]))
+            return self[byte = b_idx : b_idx + length]
+        else:  # keep going forward
+            var b_idx = c_idx + 1
+            while _is_utf8_continuation_byte(ptr[b_idx]):
+                b_idx += 1
+            for s in self[byte=b_idx:].codepoint_slices():
+                if c_count == c_idx:
+                    return s
+                c_count += 1
+            return {
+                unsafe_from_utf8 = Span(
+                    ptr=ptr + self.byte_length() - 1, length=0
+                )
+            }
+
+    def __getitem__(self, *, codepoint: Some[Indexer]) -> Self:
+        """Gets the character at the specified position.
+
+        Args:
+            codepoint: The codepoint index.
 
         Returns:
-            A PythonObject representing the value.
-
-        Raises:
-            If the operation fails.
+            A `StringSlice` view containing the unicode codepoint at the
+            specified position.
         """
-        return PythonObject(self)
+        var cp = self._get_codepoint(codepoint)
+        if cp.byte_length() == 0:
+            abort(t"codepoint index is out of bounds: {index(codepoint)}")
+        return cp
+
+    def __getitem__(self, *, codepoint: ContiguousSlice) -> Self:
+        """Gets a substring at the specified codepoint positions.
+
+        Args:
+            codepoint: A slice that specifies codepoint positions of the new
+                substring.
+
+        Returns:
+            A new StringSlice containing the codepoints in the specified range.
+        """
+
+        var res: Self
+        if not codepoint.start:
+            res = self
+        else:
+            var cp = self._get_codepoint(codepoint.start.value())
+            var cp_ptr = cp.unsafe_ptr()
+            var offset = Int(cp_ptr) - Int(self.unsafe_ptr())
+            var length = self.byte_length() - offset
+            res = {
+                unsafe_from_utf8 = Span(
+                    ptr=cp_ptr, length=length - Int(cp.byte_length() == 0)
+                )
+            }
+
+        if codepoint.end:
+            var idx = codepoint.end.value() - (codepoint.start.or_else(0) + 1)
+            if idx < 0:
+                res = {}
+            else:
+                var cp = res[codepoint=idx]
+                var r_ptr = res.unsafe_ptr()
+                var offset = Int(cp.unsafe_ptr()) - Int(r_ptr)
+                res = {
+                    unsafe_from_utf8 = Span(
+                        ptr=r_ptr, length=offset + cp.byte_length()
+                    )
+                }
+
+        return res
+
+    @always_inline
+    def __getitem__(self, *, grapheme: Some[Indexer]) -> Self:
+        """Gets the character at the specified position.
+
+        Args:
+            grapheme: The grapheme index.
+
+        Returns:
+            A `StringSlice` view containing the unicode grapheme at the
+            specified position.
+        """
+
+        var char = self.graphemes().nth(index(grapheme))
+        debug_assert[assert_mode="safe"](Bool(char), "Invalid grapheme index")
+        return char.take()
 
     @doc_hidden
     def __init__(
@@ -510,6 +648,19 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # ===------------------------------------------------------------------===#
     # Operator dunders
     # ===------------------------------------------------------------------===#
+
+    @doc_hidden
+    @unavailable(
+        "StringSlice does not support `__len__` because Mojo strings are"
+        " UTF-8 encoded, so a single length is ambiguous: it could mean the"
+        " number of UTF-8 bytes, the number of Unicode code points, or the"
+        " number of user-visible characters (grapheme clusters). Use"
+        " `s.byte_length()` or `len(s.bytes())` for the number of UTF-8 bytes,"
+        " `len(s.codepoints())` for Unicode code points, or"
+        " `len(s.graphemes())` for grapheme clusters."
+    )
+    def __len__(self) -> Int:
+        ...
 
     # This decorator informs the compiler that indirect address spaces are not
     # dereferenced by the method.
@@ -685,23 +836,42 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return StringSlice(rhs) <= self
 
-    @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
-    def __iter__(self) -> CodepointSliceIter[Self.origin]:
-        """Iterate over the string, returning immutable references.
+    def __iter__(self) -> GraphemeSliceIter[Self.origin]:
+        """Iterate over the grapheme clusters in the string slice.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen. See `graphemes()` for the precise
+        definition.
+
+        To iterate by Unicode codepoint or by byte instead, use
+        `codepoints()`/`codepoint_slices()` or `bytes()`.
 
         Returns:
-            An iterator of references to the string elements.
+            An iterator yielding each grapheme cluster as a `StringSlice`.
         """
-        return self.codepoint_slices()
+        return self.graphemes()
+
+    def __reversed__(self) -> GraphemeSliceIter[Self.origin, False]:
+        """Iterate backwards over the grapheme clusters in the string slice.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen. See `graphemes()` for the precise
+        definition.
+
+        Returns:
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
+        """
+        return self.graphemes_reversed()
 
     @always_inline
     def __getitem__[I: Indexer, //](self, *, byte: I) -> Self:
         """Gets a single byte at the specified byte index.
 
         This performs byte-level indexing, not character (codepoint) indexing.
-        For strings containing multi-byte UTF-8 characters, this may return a
-        partial or invalid character sequence. For proper character access, use
-        `codepoint_slices()` or iterate over the string directly.
+        For strings containing multi-byte UTF-8 characters `byte` must fall on
+        a codepoint boundary and an entire codepoint will be returned.
+        Aborts if `byte` does not fall on a codepoint boundary.
 
         Parameters:
             I: A type that can be used as an index.
@@ -730,7 +900,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             byte: The byte index (0-based).
 
         Returns:
-            A StringSlice containing a single byte at the specified position.
+            A StringSlice containing the codepoint starting at the specified
+            byte position.
         """
         comptime assert IntLiteral[byte.value]() >= 0, (
             "negative indexing is not supported, use e.g."
@@ -778,23 +949,24 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             start_idx >= 0, "grapheme start index must be non-negative"
         )
 
+        var total_bytes = len(self._slice)
         var iter = self.graphemes()
-        var start_bytes = 0
         var i = 0
 
-        # Skip `start_idx` graphemes to find the starting byte offset.
+        # Skip `start_idx` graphemes. Compute the byte offset once at the end
+        # by subtracting the iterator's remaining byte length, instead of
+        # summing each grapheme's `byte_length()` per iteration.
         while i < start_idx:
-            var g = iter.next()
-            if not g:
+            if not iter.next():
                 break
-            start_bytes += g.unsafe_value().byte_length()
             i += 1
+        var start_bytes = total_bytes - iter.remaining_byte_length()
 
         if not grapheme.end:
             return Self(
                 unsafe_from_utf8=Span[Byte, Self.origin](
                     ptr=self._slice.unsafe_ptr() + start_bytes,
-                    length=self._slice.__len__() - start_bytes,
+                    length=total_bytes - start_bytes,
                 )
             )
 
@@ -804,13 +976,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             "grapheme end index must be >= start index",
         )
 
-        var end_bytes = start_bytes
         while i < end_idx:
-            var g = iter.next()
-            if not g:
+            if not iter.next():
                 break
-            end_bytes += g.unsafe_value().byte_length()
             i += 1
+        var end_bytes = total_bytes - iter.remaining_byte_length()
 
         return Self(
             unsafe_from_utf8=Span[Byte, Self.origin](
@@ -838,10 +1008,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     @always_inline
     def _unchecked_get_byte(self, idx: Int) -> Self:
         return StringSlice(
-            ptr=self.unsafe_ptr() + idx,
-            length=_utf8_first_byte_sequence_length(
-                self._slice.unsafe_get(idx)
-            ),
+            unsafe_from_utf8=Span(
+                ptr=self.unsafe_ptr() + idx,
+                length=_utf8_first_byte_sequence_length(
+                    self._slice.unsafe_get(idx)
+                ),
+            )
         )
 
     def __contains__(self, substr: StringSlice) -> Bool:
@@ -935,10 +1107,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             A StringSlice merged with the other origin.
         """
         return {
-            ptr = self.unsafe_ptr()
-            .unsafe_mut_cast[result.mut]()
-            .unsafe_origin_cast[result.origin](),
-            length = self.byte_length(),
+            unsafe_from_utf8 = Span(
+                ptr=self.unsafe_ptr()
+                .unsafe_mut_cast[result.mut]()
+                .unsafe_origin_cast[result.origin](),
+                length=self.byte_length(),
+            )
         }
 
     # ===------------------------------------------------------------------===#
@@ -1167,6 +1341,47 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             l_idx += 1
         return Self(unsafe_from_utf8=self.as_bytes()[l_idx:])
 
+    def bytes(self) -> BytesIter[Self.origin]:
+        """Returns an iterator over the raw bytes of this string slice.
+
+        Unlike `codepoints()` and `graphemes()`, this iterator operates at the
+        byte level and yields individual `Byte` values without interpreting
+        multi-byte UTF-8 sequences.
+
+        Returns:
+            An iterator type that returns successive `Byte` values stored in
+            this string slice.
+
+        Examples:
+
+        Iterate over the bytes of an ASCII string:
+
+        ```mojo
+        from std.testing import assert_equal, assert_raises
+
+        var s = StringSlice("abc")
+        var iter = s.bytes()
+        assert_equal(next(iter), Byte(ord("a")))
+        assert_equal(next(iter), Byte(ord("b")))
+        assert_equal(next(iter), Byte(ord("c")))
+        with assert_raises():
+            _ = next(iter) # raises StopIteration
+        ```
+
+        Multi-byte UTF-8 sequences are yielded as individual bytes:
+
+        ```mojo
+        from std.testing import assert_equal
+
+        # "é" is encoded in UTF-8 as two bytes: 0xC3 0xA9.
+        var s = StringSlice("é")
+        var iter = s.bytes()
+        assert_equal(next(iter), Byte(0xC3))
+        assert_equal(next(iter), Byte(0xA9))
+        ```
+        """
+        return BytesIter(_slice=self)
+
     @always_inline
     def codepoints(self) -> CodepointsIter[Self.origin]:
         """Returns an iterator over the `Codepoint`s encoded in this string slice.
@@ -1247,7 +1462,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Example:
 
         ```mojo
-        %# from testing import assert_equal
+        from std.testing import assert_equal
         # "café" with combining accent: c, a, f, e + combining acute
         var s = StringSlice("cafe\\u{0301}")
         var count = 0
@@ -1289,6 +1504,90 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return GraphemeSliceIter[Self.origin, False](self)
 
+    def grapheme_indices(self) -> GraphemeIndicesIter[Self.origin]:
+        """Return an iterator over grapheme clusters paired with their byte
+        offsets.
+
+        Each yielded element is a `Tuple[Int, StringSlice]` where the first
+        element is the byte offset (relative to the start of this string)
+        at which the grapheme begins, and the second is the grapheme slice.
+
+        Mirrors the shape of Rust's `str::grapheme_indices`.
+
+        Returns:
+            An iterator yielding `(byte_offset, grapheme)` pairs.
+
+        Example:
+
+        ```mojo
+        from std.testing import assert_equal
+
+        # "café" decomposed: 'c','a','f','e' + combining acute (U+0301)
+        var s = StringSlice("cafe\\u{0301}")
+        var offsets = List[Int]()
+        for off, _ in s.grapheme_indices():
+            offsets.append(off)
+        # Offsets land at 0, 1, 2, 3; the 4th grapheme spans 3 bytes.
+        assert_equal(len(offsets), 4)
+        assert_equal(offsets[3], 3)
+        ```
+        """
+        return GraphemeIndicesIter[Self.origin](self)
+
+    def split_at_grapheme(
+        self, n: Int
+    ) -> Tuple[Self.Immutable, Self.Immutable]:
+        """Split this string at the `n`-th grapheme-cluster boundary.
+
+        Returns two slices: the first covers grapheme clusters `[0, n)` and
+        the second covers `[n, count)` in a single forward pass.
+
+        `n == 0` yields `("", self)`; `n >= count_graphemes()` yields
+        `(self, "")`. Negative `n` is rejected in safe builds.
+
+        Args:
+            n: The grapheme-cluster boundary at which to split. Must be
+                non-negative.
+
+        Returns:
+            A tuple `(prefix, suffix)` of `StringSlice`s.
+
+        Example:
+
+        ```mojo
+        from std.testing import assert_equal
+
+        var s = StringSlice("Hello, World!")
+        var prefix, suffix = s.split_at_grapheme(5)
+        assert_equal(prefix, "Hello")
+        assert_equal(suffix, ", World!")
+        ```
+        """
+        debug_assert[assert_mode="safe"](
+            n >= 0, "grapheme split index must be non-negative"
+        )
+        var iter = self.graphemes()
+        var split_bytes = 0
+        for _ in range(n):
+            var g = iter.next()
+            if not g:
+                break
+            split_bytes += g.unsafe_value().byte_length()
+
+        var total = len(self._slice)
+        var prefix = Self.Immutable(
+            unsafe_from_utf8=Span[Byte, ImmutOrigin(Self.origin)](
+                ptr=self._slice.unsafe_ptr(), length=split_bytes
+            )
+        )
+        var suffix = Self.Immutable(
+            unsafe_from_utf8=Span[Byte, ImmutOrigin(Self.origin)](
+                ptr=self._slice.unsafe_ptr() + split_bytes,
+                length=total - split_bytes,
+            )
+        )
+        return (prefix, suffix)
+
     def count_graphemes(self) -> Int:
         """Count the number of grapheme clusters in this string.
 
@@ -1301,7 +1600,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Example:
 
         ```mojo
-        %# from testing import assert_equal
+        from std.testing import assert_equal
         var s = StringSlice("Hello")
         assert_equal(s.count_graphemes(), 5)
         ```
@@ -1351,7 +1650,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             Query the length of a string, in bytes and Unicode codepoints:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("ನಮಸ್ಕಾರ")
             assert_equal(s.count_codepoints(), 7)
@@ -1362,7 +1661,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             Unicode codepoint length:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("abc")
             assert_equal(s.count_codepoints(), 3)
@@ -1373,7 +1672,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             the length in Unicode codepoints, not grapheme clusters:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("á")
             assert_equal(s.count_codepoints(), 2)
@@ -1395,7 +1694,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var continuation_count = _count_utf8_continuation_bytes(self.as_bytes())
         return self.byte_length() - continuation_count
 
-    def is_codepoint_boundary(self, index: UInt) -> Bool:
+    def is_codepoint_boundary(self, index: Int) -> Bool:
         """Returns True if `index` is the position of the first byte in a UTF-8
         codepoint sequence, or is at the end of the string.
 
@@ -1482,8 +1781,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         # TODO: Example: Print the byte indices that are codepoints boundaries:
 
-        if index >= UInt(self.byte_length()):
-            return index == UInt(self.byte_length())
+        if index >= self.byte_length():
+            return index == self.byte_length()
 
         var byte = self.as_bytes()[index]
         # If this is not a continuation byte, then it must be a start byte.
@@ -1509,7 +1808,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         if end == -1:
             return self.find(prefix, start) == start
         return StringSlice[Self.origin](
-            ptr=self.unsafe_ptr() + start, length=end - start
+            unsafe_from_utf8=Span(
+                ptr=self.unsafe_ptr() + start, length=end - start
+            )
         ).startswith(prefix)
 
     def endswith(
@@ -1538,7 +1839,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             )
         # FIXME: use normalize_index
         return StringSlice[Self.origin](
-            ptr=self.unsafe_ptr() + start, length=end - start
+            unsafe_from_utf8=Span(
+                ptr=self.unsafe_ptr() + start, length=end - start
+            )
         ).endswith(suffix)
 
     def removeprefix(self, prefix: StringSlice, /) -> Self:
@@ -1593,7 +1896,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         representations of the `args` arguments.
 
         For more information, see the discussion in the
-        [`format` module](/mojo/std/collections/string/format/).
+        [`format` module](/docs/std/collections/string/format/).
 
         Args:
             args: The substitution values.
@@ -1702,7 +2005,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Check if a string contains only whitespace:
 
         ```mojo
-        %# from testing import assert_true, assert_false
+        from std.testing import assert_true, assert_false
 
         # An empty string is not considered to contain only whitespace chars:
         assert_false(StringSlice("").isspace())
@@ -1877,15 +2180,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         comptime if single_character:
             return length != 0 and _is_newline_char_utf8[include_r_n=True](
-                ptr, 0, ptr[0], UInt(length)
+                ptr, 0, ptr[0], length
             )
         else:
             var offset = 0
             for s in self.codepoint_slices():
                 var b_len = s.byte_length()
-                if not _is_newline_char_utf8(
-                    ptr, UInt(offset), ptr[offset], UInt(b_len)
-                ):
+                if not _is_newline_char_utf8(ptr, offset, ptr[offset], b_len):
                     return False
                 offset += b_len
             return length != 0
@@ -1910,29 +2211,29 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var output = List[Self.Immutable](capacity=128)  # guessing
         var ptr = self.get_immutable().unsafe_ptr()
         var length = self.byte_length()
-        var line_start = UInt(0)
+        var line_start = 0
         var prev_b0 = Byte(0)
 
         @always_inline
         @parameter
         def _splitlines[keep: Bool]():
-            while line_start < UInt(length):
+            while line_start < length:
                 var line_end = line_start
                 var is_new_line = False
                 var b0 = Byte(0)
                 var char_len = 0
 
-                while not is_new_line and line_end < UInt(length):
+                while not is_new_line and line_end < length:
                     b0 = ptr[line_end]
                     char_len = _utf8_first_byte_sequence_length(b0)
-                    assert line_end + UInt(char_len) <= UInt(
-                        length
+                    assert (
+                        line_end + char_len <= length
                     ), "corrupted sequence causing unsafe memory access"
                     # percentage-wise a newline is uncommon compared to a normal byte
                     is_new_line = unlikely(
-                        _is_newline_char_utf8(ptr, line_end, b0, UInt(char_len))
+                        _is_newline_char_utf8(ptr, line_end, b0, char_len)
                     )
-                    line_end += UInt(char_len)
+                    line_end += char_len
 
                 var str_len = line_end - line_start
 
@@ -1944,21 +2245,23 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 # pointer
                 comptime if keep:
                     var is_r = unlikely(b0 == `\r`)
-                    var may_be_r_n = is_r and likely(line_end < UInt(length))
-                    var is_r_n = UInt(
+                    var may_be_r_n = is_r and likely(line_end < length)
+                    var is_r_n = Int(
                         unlikely(may_be_r_n and ptr[line_end] == `\n`)
                     )
                     line_end += is_r_n
                     str_len += is_r_n
                 else:
-                    str_len -= UInt(splat(likely(is_new_line))) & UInt(char_len)
+                    str_len -= splat(likely(is_new_line)) & char_len
                     var is_r_n = unlikely(prev_b0 == `\r` and b0 == `\n`)
                     prev_b0 = b0
                     if is_r_n:  # the line was already appended
                         line_start = line_end
                         continue
                 var s = Self.Immutable(
-                    ptr=ptr + line_start, length=Int(str_len)
+                    unsafe_from_utf8=Span(
+                        ptr=ptr + line_start, length=Int(str_len)
+                    )
                 )
                 output.append(s)
                 line_start = line_end
@@ -2228,7 +2531,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         if len(elems) == 0:
             return String()
 
-        var sep = StringSlice(ptr=self.unsafe_ptr(), length=self.byte_length())
+        var sep = StringSlice(
+            unsafe_from_utf8=Span(
+                ptr=self.unsafe_ptr(), length=self.byte_length()
+            )
+        )
         var total_bytes = _TotalWritableBytes(elems, sep=sep).size
         var result = String(capacity=total_bytes)
 
@@ -2309,7 +2616,11 @@ def _to_string_list[
         var elt_ptr = Pointer(to=items[i])
         var og_len = len_fn(elt_ptr[])
         var og_ptr = unsafe_ptr_fn(elt_ptr[])
-        out_list.append(String(StringSlice(ptr=og_ptr, length=og_len)))
+        out_list.append(
+            String(
+                StringSlice(unsafe_from_utf8=Span(ptr=og_ptr, length=og_len))
+            )
+        )
     return out_list^
 
 
@@ -2367,8 +2678,8 @@ def _to_string_list[
 
 @always_inline
 def _unsafe_strlen(
-    ptr: UnsafePointer[mut=False, Byte, _], max: UInt = UInt.MAX
-) -> UInt:
+    ptr: UnsafePointer[mut=False, Byte, _], max: Int = Int.MAX
+) -> Int:
     """Get the length of a null-terminated string from a pointer.
 
     Args:
@@ -2381,7 +2692,7 @@ def _unsafe_strlen(
     Notes:
         The length does NOT include the null terminator.
     """
-    var offset = UInt(0)
+    var offset = 0
     while offset < max and ptr[offset]:
         offset += 1
     return offset
@@ -2578,10 +2889,10 @@ def _split[
         var iterator = src_str.codepoint_slices()
         var i_len = len(iterator) + 2
         output = {capacity = i_len}
-        output.append(S(ptr=ptr, length=0))
+        output.append(S(unsafe_from_utf8=Span(ptr=ptr, length=0)))
         for s in iterator:
             output.append(s)
-        output.append(S(ptr=ptr + i_len - 1, length=0))
+        output.append(S(unsafe_from_utf8=Span(ptr=ptr + i_len - 1, length=0)))
         return
 
     comptime prealloc = 32  # guessing, Python's implementation uses 12
@@ -2607,7 +2918,7 @@ def _split[
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 
-        output.append(S(ptr=ptr + lhs, length=rhs - lhs))
+        output.append(S(unsafe_from_utf8=Span(ptr=ptr + lhs, length=rhs - lhs)))
         lhs = rhs + sep_len
 
 
@@ -2636,7 +2947,7 @@ def _split[
 
     @always_inline("nodebug")
     def _build_slice(p: PointerType, start: Int, end: Int) -> S:
-        return S(ptr=p + start, length=end - start)
+        return S(unsafe_from_utf8=Span(ptr=p + start, length=end - start))
 
     while lhs <= str_byte_len:
         # Python adds all "whitespace chars" as one separator
@@ -2659,5 +2970,5 @@ def _split[
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 
-        output.append(S(ptr=ptr + lhs, length=rhs - lhs))
+        output.append(S(unsafe_from_utf8=Span(ptr=ptr + lhs, length=rhs - lhs)))
         lhs = rhs

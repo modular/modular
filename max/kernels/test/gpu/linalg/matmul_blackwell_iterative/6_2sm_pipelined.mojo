@@ -678,7 +678,7 @@ def kernel_6[
     comptime c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
@@ -687,7 +687,7 @@ def kernel_6[
         UnsafePointer[
             Scalar[a_type],
             address_space=AddressSpace.SHARED,
-            ExternalOrigin[mut=True],
+            UntrackedOrigin[mut=True],
         ]
     ](
         external_memory[
@@ -712,7 +712,6 @@ def kernel_6[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
@@ -724,7 +723,6 @@ def kernel_6[
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
@@ -916,9 +914,9 @@ def blackwell_kernel_6[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c: LayoutTensor[mut=True, c_type, c_layout, _],
+    a: LayoutTensor[mut=True, a_type, a_layout, _],
+    b: LayoutTensor[mut=True, b_type, b_layout, _],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()
@@ -1004,7 +1002,7 @@ def blackwell_kernel_6[
         num_pipeline_stages=max_pipeline_stages,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -1061,9 +1059,9 @@ def test_blackwell_kernel_6[
     comptime c_layout = Layout.row_major(M, N)
 
     # Host memory allocation
-    var a_host_ptr = alloc[Scalar[a_type]](M * K)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
-    var b_host_ptr = alloc[Scalar[b_type]](N * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
     var c_host_managed = ManagedLayoutTensor[c_type, c_layout](ctx)
     var c_host = c_host_managed.tensor[update=False]()
@@ -1184,9 +1182,6 @@ def test_blackwell_kernel_6[
             rtol=rtol,
         )
         print("\n=== TEST PASSED ===\n")
-
-    a_host_ptr.free()
-    b_host_ptr.free()
 
 
 def get_dic_of_shapes(

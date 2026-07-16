@@ -13,7 +13,6 @@
 """Implements `TString`, a template string that captures interpolated values at compile-time."""
 from std.collections.string.format import _FormatUtils, _comptime_list_to_span
 from std.utils import Variant
-from std.reflection.traits import AllWritable
 import std.format._utils as fmt
 
 
@@ -66,7 +65,7 @@ struct TString[
             var literal_start = encoded_bytes.unsafe_ptr() + offset
             var literal_length = _strlen(literal_start)
             var string_literal = StringSlice(
-                ptr=literal_start, length=literal_length
+                unsafe_from_utf8=Span(ptr=literal_start, length=literal_length)
             )
             writer.write_string(string_literal)
             return literal_length
@@ -112,7 +111,9 @@ struct TString[
             writer: The writer to output the debug representation to.
         """
 
-        comptime assert AllWritable[*Self.Ts]  # satisfy where clause.
+        comptime assert Self.Ts.all_conforms_to[
+            Writable
+        ]()  # satisfy where clause.
 
         @parameter
         def fields(mut writer: Some[Writer]):
@@ -225,9 +226,11 @@ def _encode_format_string(format: StringSlice) raises -> List[Byte]:
     var bytes = format.as_bytes()
     var i = 0
 
+    var immut_bytes = bytes.get_immutable()
+
     @always_inline
     def peek_next_is(byte: Byte) {read} -> Bool:
-        return i + 1 < len(bytes) and bytes[i + 1] == byte
+        return i + 1 < len(immut_bytes) and immut_bytes[i + 1] == byte
 
     while i < len(bytes):
         var byte = bytes[i]

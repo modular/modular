@@ -66,7 +66,7 @@ def _host_reference[
     unnormed_ref: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     n: Int,
     n_normed: Int,
-    eps: Scalar[a_type],
+    eps: Float32,
 ):
     """Reference partial RMS norm on a [1, n] row, computed in f64."""
     var n_unnormed = n - n_normed
@@ -120,12 +120,12 @@ def main() raises:
             N_NORMED,
         )
 
-    comptime a_shape = row_major(Coord(Idx[1](), Idx[7168]()))
-    comptime b_shape = row_major(Coord(Idx[2112](), Idx[7168]()))
-    comptime c_shape = row_major(Coord(Idx[1](), Idx[2112]()))
-    comptime normed_shape = row_major(Coord(Idx[1](), Idx[1536]()))
-    var unnormed_shape = row_major(Coord(Idx(1), Idx(N_UNNORMED)))
-    comptime gamma_shape = row_major(Idx[1536]())
+    comptime a_shape = row_major(Coord(Idx[1], Idx[7168]))
+    comptime b_shape = row_major(Coord(Idx[2112], Idx[7168]))
+    comptime c_shape = row_major(Coord(Idx[1], Idx[2112]))
+    comptime normed_shape = row_major(Coord(Idx[1], Idx[1536]))
+    var unnormed_shape = row_major(Coord(Idx[1], N_UNNORMED))
+    comptime gamma_shape = row_major(Idx[1536])
 
     comptime variant: String = "fused" if fused else "unfused"
     comptime run_name: String = "gemv_partial_norm/" + variant
@@ -191,7 +191,7 @@ def main() raises:
         var a_iter0 = TileTensor(cb_a.offset_ptr(0), a_shape)
         var b_iter0 = TileTensor(cb_b.offset_ptr(0), b_shape)
 
-        var eps = Scalar[a_type](0.001)
+        var eps = Float32(0.001)
 
         # Kernel-internal scratch: reused across iters by design.
         var counter_buf = ctx.enqueue_create_buffer[DType.int32](1)
@@ -245,7 +245,9 @@ def main() raises:
                     b_tensor,
                     gamma_tensor,
                     eps,
-                    counter_buf.unsafe_ptr(),
+                    counter_buf.unsafe_ptr()
+                    .unsafe_mut_cast[True]()
+                    .as_unsafe_any_origin(),
                     ctx,
                 )
             else:
@@ -255,7 +257,7 @@ def main() raises:
                     b_tensor,
                     gamma_tensor,
                     eps,
-                    cb_y.offset_ptr(iteration),
+                    cb_y.offset_ptr(iteration).as_unsafe_any_origin(),
                     ctx,
                 )
 
@@ -274,34 +276,46 @@ def main() raises:
         # reference.
         kernel_launch(ctx, 0)
 
-        var y_ref_host_ptr = alloc[Scalar[c_type]](M * N)
-        var gamma_host_ptr = alloc[Scalar[a_type]](N_NORMED)
-        var normed_ref_ptr = alloc[Scalar[c_type]](M * N_NORMED)
-        var unnormed_ref_ptr = alloc[Scalar[c_type]](M * N_UNNORMED)
-        var normed_ours_ptr = alloc[Scalar[c_type]](M * N_NORMED)
-        var unnormed_ours_ptr = alloc[Scalar[c_type]](M * N_UNNORMED)
+        var y_ref_host_ptr = List(length=M * N, fill=Scalar[c_type](0))
+        var gamma_host_ptr = List(length=N_NORMED, fill=Scalar[a_type](0))
+        var normed_ref_ptr = List(length=M * N_NORMED, fill=Scalar[c_type](0))
+        var unnormed_ref_ptr = List(
+            length=M * N_UNNORMED, fill=Scalar[c_type](0)
+        )
+        var normed_ours_ptr = List(length=M * N_NORMED, fill=Scalar[c_type](0))
+        var unnormed_ours_ptr = List(
+            length=M * N_UNNORMED, fill=Scalar[c_type](0)
+        )
 
-        ctx.enqueue_copy(gamma_host_ptr, cb_gamma.offset_ptr(0), N_NORMED)
-        ctx.enqueue_copy(y_ref_host_ptr, y_ref_dev)
-        ctx.enqueue_copy(normed_ours_ptr, cb_normed.offset_ptr(0), M * N_NORMED)
         ctx.enqueue_copy(
-            unnormed_ours_ptr, cb_unnormed.offset_ptr(0), M * N_UNNORMED
+            gamma_host_ptr.unsafe_ptr(), cb_gamma.offset_ptr(0), N_NORMED
+        )
+        ctx.enqueue_copy(y_ref_host_ptr, y_ref_dev)
+        ctx.enqueue_copy(
+            normed_ours_ptr.unsafe_ptr(),
+            cb_normed.offset_ptr(0),
+            M * N_NORMED,
+        )
+        ctx.enqueue_copy(
+            unnormed_ours_ptr.unsafe_ptr(),
+            cb_unnormed.offset_ptr(0),
+            M * N_UNNORMED,
         )
         ctx.synchronize()
 
         _host_reference[c_type, a_type](
-            y_ref_host_ptr,
-            gamma_host_ptr,
-            normed_ref_ptr,
-            unnormed_ref_ptr,
+            y_ref_host_ptr.unsafe_ptr().as_unsafe_any_origin(),
+            gamma_host_ptr.unsafe_ptr().as_unsafe_any_origin(),
+            normed_ref_ptr.unsafe_ptr().as_unsafe_any_origin(),
+            unnormed_ref_ptr.unsafe_ptr().as_unsafe_any_origin(),
             N,
             N_NORMED,
             eps,
         )
 
         assert_almost_equal(
-            normed_ours_ptr,
-            normed_ref_ptr,
+            normed_ours_ptr.unsafe_ptr(),
+            normed_ref_ptr.unsafe_ptr(),
             M * N_NORMED,
             atol=5e-2,
             rtol=5e-2,
@@ -310,18 +324,17 @@ def main() raises:
         # into the matmul scratch). Only check for fused.
         comptime if fused:
             assert_almost_equal(
-                unnormed_ours_ptr,
-                unnormed_ref_ptr,
+                unnormed_ours_ptr.unsafe_ptr(),
+                unnormed_ref_ptr.unsafe_ptr(),
                 M * N_UNNORMED,
                 atol=1e-2,
                 rtol=1e-2,
             )
 
-        gamma_host_ptr.free()
-        y_ref_host_ptr.free()
-        normed_ref_ptr.free()
-        unnormed_ref_ptr.free()
-        normed_ours_ptr.free()
-        unnormed_ours_ptr.free()
-
         m.dump_report()
+        _ = unnormed_ours_ptr^
+        _ = normed_ours_ptr^
+        _ = unnormed_ref_ptr^
+        _ = normed_ref_ptr^
+        _ = y_ref_host_ptr^
+        _ = gamma_host_ptr^

@@ -176,10 +176,10 @@ def bench_p2p(
     length_in_elements = length_in_bytes // size_of[dtype]()
 
     # Create host buffers for verification
-    var host_ptr = alloc[Scalar[dtype]](length_in_elements)
+    var host_ptr = List(length=length_in_elements, fill=Scalar[dtype](0))
 
     # Initialize source data with known pattern
-    iota(host_ptr, length_in_elements)
+    iota(host_ptr)
 
     # Create and initialize device buffers
     var src_buf = ctx1.enqueue_create_buffer[dtype](length_in_elements)
@@ -235,9 +235,9 @@ def bench_p2p(
     parallelize_over_rows[verify_chunk](shape, 0, 256)
 
     # Cleanup
-    host_ptr.free()
     _ = src_buf
     _ = dst_buf
+    _ = host_ptr^
 
 
 def main() raises:
