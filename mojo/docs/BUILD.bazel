@@ -9,16 +9,26 @@ package(default_visibility = ["//oss/modular/docs:__subpackages__"])
 # -----------------------------------------------------------------------------
 # Targets cheat sheet
 #
+# Names mirror paths under modular-fe/mojosite/ after install-docs and
+# install-releases (underscores instead of slashes):
+#
+#   mojosite_docs (_pkg_tar_)  -> docs.tar; full tree installed under modular-fe/mojosite/docs/
+#   mojosite_docs_root         -> from docs_root/; modular-fe/mojosite/docs/<file> (tar root)
+#   mojosite_docs_docs_*       -> modular-fe/mojosite/docs/docs/...
+#   mojosite_docs_archive      -> mojodocs.tar (post-processed docs drop)
+#   mojosite_releases_archive  -> releases.tar (releases drop)
+#   mojosite_releases_nightly_*, mojosite_releases_pack -> pieces that roll into releases.tar
+#     (after install, modular-fe/mojosite/releases/...)
+#
+# Stable CI labels (aliases): :mojodocs, :releases
+#
 # CI / artifacts:
-#   ./bazelw build --config=ci -- //oss/modular/mojo/docs:mojodocs
-#   ./bazelw build --config=ci -- //oss/modular/mojo/docs:releases
-# Outputs under bazel-bin/.../mojodocs.tar and releases.tar.
-# Other workflows must unpack those tars into modular-fe (e.g. mojosite/docs/, mojosite/releases/).
+#   ./bazelw build --config=ci -- //oss/modular/mojo/docs:mojodocs //oss/modular/mojo/docs:releases
+# Outputs under bazel-bin/.../mojodocs.tar, docs.tar (pre-post-process), and releases.tar.
 #
 # Local dev (requires modular-fe cloned under .derived/modular-fe/; rsyncs from those tars):
 #   ./bazelw run //oss/modular/mojo/docs:install
-# Outputs under .derived/modular-fe/mojosite/docs/ and .derived/modular-fe/mojosite/releases/.
-# Or generate the docs/ and releases/ separately:
+# Or run separately:
 #   ./bazelw run //oss/modular/mojo/docs:install-docs
 #   ./bazelw run //oss/modular/mojo/docs:install-releases
 # -----------------------------------------------------------------------------
@@ -49,47 +59,26 @@ multirun(
 )
 
 genrule(
-    name = "mojodocs",
+    name = "mojosite_docs_archive",
     srcs = [
-        ":mojosite",
+        ":mojosite_docs",
     ],
     outs = ["mojodocs.tar"],
     cmd = """
-  # Unpack inputs for processing
-  mkdir -p mojosite_docs
-  tar -xf $(location :mojosite) -C mojosite_docs
-
-  # Post-process before restructuring (script expects original paths)
-  chmod -R +w mojosite_docs
-  $(location :post-process-mojodocs) mojosite_docs
-
-  # TODO: Refactor all this after new site launch
-  # Restructure for new site layout:
-  #   docs_root/ content → root (stripping docs_root/ prefix)
-  #   everything else   → docs/
-  mv mojosite_docs/docs_root docs_root_tmp
-  mkdir docs_tmp
-  mv mojosite_docs/* docs_tmp/
-  mkdir -p mojosite_docs/docs
-  mv docs_tmp/* mojosite_docs/docs/
-  rm -rf docs_tmp
-  cp -r docs_root_tmp/* mojosite_docs/
-  rm -rf docs_root_tmp
-  rm -f mojosite_docs/docs/nightly-changelog.md
-
-  # Generate final output
-  cd mojosite_docs
-  tar -cf ../$@ *
+  set -eu
+  mkdir -p mojosite_unpack
+  tar -xf $(location :mojosite_docs) -C mojosite_unpack
+  chmod -R +w mojosite_unpack
+  $(location :post-process-mojodocs) mojosite_unpack
+  ( cd mojosite_unpack && tar -cf ../$@ . )
   """,
     tags = ["manual"],
     tools = [":post-process-mojodocs"],
 )
 
 # releases.tar = static pages under releases/ (stripped prefix) plus generated nightly.md.
-# rules_pkg needs a genrule for the script output, then pkg_files (strip/renames differ
-# from the glob), then pkg_tar — this is the minimal composition for mixed sources.
 genrule(
-    name = "nightly_md",
+    name = "mojosite_releases_nightly_gen",
     outs = ["nightly.md"],
     cmd = "$(location :write-nightly-release) $@",
     tags = ["manual"],
@@ -97,45 +86,47 @@ genrule(
 )
 
 pkg_files(
-    name = "releases_nightly_md",
-    srcs = [":nightly_md"],
+    name = "mojosite_releases_nightly_md",
+    srcs = [":mojosite_releases_nightly_gen"],
     renames = {
-        "//oss/modular/mojo/docs:nightly_md": "nightly.md",
+        "//oss/modular/mojo/docs:mojosite_releases_nightly_gen": "nightly.md",
     },
     tags = ["manual"],
 )
 
 pkg_files(
-    name = "releases_pack",
+    name = "mojosite_releases_pack",
     srcs = glob(["releases/**"]),
     strip_prefix = strip_prefix.from_pkg("releases"),
     tags = ["manual"],
 )
 
 pkg_tar(
-    name = "releases",
+    name = "mojosite_releases_archive",
     srcs = [
-        ":releases_nightly_md",
-        ":releases_pack",
+        ":mojosite_releases_nightly_md",
+        ":mojosite_releases_pack",
     ],
+    out = "releases.tar",
     allow_duplicates_with_different_content = False,
     tags = ["manual"],
 )
 
 pkg_tar(
-    name = "mojosite",
+    name = "mojosite_docs",
+    # Installed under modular-fe/mojosite/docs/: top-level files + docs/ subtree (→ .../docs/docs/...).
     srcs = [
-        ":docs_root-docs",
-        ":mojo",
-        ":mojo-layout-public-docs",
-        ":mojo-std-public-docs",
+        ":mojosite_docs_docs",
+        ":mojosite_docs_root",
     ],
+    out = "docs.tar",
     allow_duplicates_with_different_content = False,
     tags = ["manual"],
 )
 
+# Sources in this package (manual, reference, …) before prefixing into the inner docs/ tree.
 pkg_files(
-    name = "docs",
+    name = "mojosite_docs_docs_package",
     srcs = glob(
         [
             "**",
@@ -145,6 +136,7 @@ pkg_files(
             "BUILD.bazel",
             "code/**",
             "docs_root/**",
+            "nightly-changelog.md",
             "post-process-mojodocs.py",
             "write-nightly-release.py",
             "releases/**",
@@ -154,11 +146,19 @@ pkg_files(
 )
 
 pkg_files(
-    name = "docs_root-docs",
+    name = "mojosite_docs_root",
     srcs = glob(
         ["docs_root/**"],
         allow_empty = True,
     ),
+    strip_prefix = strip_prefix.from_pkg("docs_root"),
+    tags = ["manual"],
+)
+
+pkg_files(
+    name = "mojosite_docs_docs_pages",
+    srcs = [":mojosite_docs_docs_package"],
+    prefix = "docs",
     strip_prefix = strip_prefix.from_pkg(""),
     tags = ["manual"],
 )
@@ -176,41 +176,41 @@ mojo_commands = [
 ]
 
 pkg_files(
-    name = "mojo-cli",
+    name = "mojosite_docs_docs_cli",
     srcs = ["//KGEN/tools/mojo:" + command + ".md_files" for command in mojo_commands],
-    prefix = "cli",
-    tags = ["manual"],
-)
-
-pkg_filegroup(
-    name = "mojo",
-    srcs = [
-        ":docs",
-        ":mojo-cli",
-    ],
-    tags = ["manual"],
-)
-
-pkg_filegroup(
-    name = "mojo-std-public-docs",
-    srcs = [
-        "//oss/modular/mojo/stdlib/std:docs",
-    ],
+    prefix = "docs/cli",
+    strip_prefix = strip_prefix.files_only(),
     tags = ["manual"],
 )
 
 pkg_files(
-    name = "layout-docs-files",
+    name = "mojosite_docs_docs_layout",
     srcs = ["//max/kernels/src/layout:layout.docs"],
+    prefix = "docs",
     renames = {
         "//max/kernels/src/layout:layout.docs": "layout",
     },
     tags = ["manual"],
 )
 
+pkg_files(
+    name = "mojosite_docs_docs_std",
+    srcs = ["//oss/modular/mojo/stdlib/std:docs"],
+    prefix = "docs",
+    renames = {
+        "//oss/modular/mojo/stdlib/std:docs": "std",
+    },
+    tags = ["manual"],
+)
+
 pkg_filegroup(
-    name = "mojo-layout-public-docs",
-    srcs = [":layout-docs-files"],
+    name = "mojosite_docs_docs",
+    srcs = [
+        ":mojosite_docs_docs_cli",
+        ":mojosite_docs_docs_layout",
+        ":mojosite_docs_docs_pages",
+        ":mojosite_docs_docs_std",
+    ],
     tags = ["manual"],
 )
 
@@ -228,5 +228,17 @@ modular_py_binary(
         ":write-nightly-release.py",
     ],
     data = ["nightly-changelog.md"],
+    tags = ["manual"],
+)
+
+alias(
+    name = "mojodocs",
+    actual = ":mojosite_docs_archive",
+    tags = ["manual"],
+)
+
+alias(
+    name = "releases",
+    actual = ":mojosite_releases_archive",
     tags = ["manual"],
 )

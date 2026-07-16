@@ -32,9 +32,12 @@ from max.driver import (
     accelerator_count,
 )
 from max.dtype import DType
-from max.interfaces import SamplingParams, TokenBuffer
-from max.pipelines.core import TextContext
-from max.pipelines.lib.sampling.sampling_logits_processor import (
+from max.pipelines.context import (
+    SamplingParams,
+    TextContext,
+    TokenBuffer,
+)
+from max.pipelines.sampling.sampling_logits_processor import (
     FrequencyData,
     FusedSamplingProcessor,
     _build_token_frequency_csr,
@@ -577,7 +580,6 @@ class TestFusedSamplingProcessorInit:
             sampler=MagicMock(),
             pipeline_config=config,
             context_batch=[context],
-            num_steps=1,
             device=device,
         )
 
@@ -604,7 +606,6 @@ class TestFusedSamplingProcessorAsyncCopy:
             sampler=MagicMock(),
             pipeline_config=config,
             context_batch=[context],
-            num_steps=1,
             device=device,
             pinned_new_tokens=pinned_new_tokens,
         )
@@ -703,7 +704,6 @@ class TestFusedSamplingProcessorAsyncCopyGPU:
             sampler=MagicMock(),
             pipeline_config=config,
             context_batch=[context],
-            num_steps=1,
             device=device,
             pinned_new_tokens=pinned_new_tokens,
         )

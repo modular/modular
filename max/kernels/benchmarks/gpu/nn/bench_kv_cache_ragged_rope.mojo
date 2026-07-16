@@ -81,6 +81,7 @@ def execute_kv_cache_ragged_rope[
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
         KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
+        ...,
     ]
     var input_row_offsets_device = ctx.enqueue_create_buffer[dtype.uint32](
         batch_size + 1
@@ -92,7 +93,6 @@ def execute_kv_cache_ragged_rope[
     var total_seq_len: UInt32 = 0
     var cache_len: UInt32 = 10
 
-    var flop_count = 0
     with cache_lengths_device.map_to_host() as cache_lengths_host:
         with input_row_offsets_device.map_to_host() as input_row_offsets_host:
             for i in range(batch_size):
@@ -119,16 +119,14 @@ def execute_kv_cache_ragged_rope[
         Int(total_seq_len) * num_q_heads * head_dim
     )
     var output_device = ctx.enqueue_create_buffer[dtype](len(q_device))
-    var q_layout = row_major(
-        (Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())
-    )
+    var q_layout = row_major((total_seq_len, Idx[num_q_heads], Idx[head_dim]))
     with q_device.map_to_host() as q_host:
         var q_tensor = TileTensor(q_host, q_layout)
         random(q_tensor)
     ctx.enqueue_copy(output_device, q_device)
     var output_device_tensor = TileTensor(
         output_device,
-        row_major(Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]()),
+        row_major(total_seq_len, Idx[num_q_heads], Idx[head_dim]),
     )
 
     var kv_block_shape = IndexList[6](
@@ -194,7 +192,7 @@ def execute_kv_cache_ragged_rope[
 
     num_flops_per_elem = 6
     num_elems = Int(total_seq_len) * num_q_heads * num_kv_heads * head_dim // 2
-    flop_count = num_flops_per_elem * num_elems
+    var flop_count = num_flops_per_elem * num_elems
 
     @parameter
     @__copy_capture(
@@ -210,14 +208,12 @@ def execute_kv_cache_ragged_rope[
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             fused_qk_rope_ragged[
-                CollectionType.CacheType,
+                kv_collection_device.CacheType,
                 interleaved=False,
                 target="gpu",
             ](
                 TileTensor(q_device, q_layout),
-                TileTensor(
-                    input_row_offsets_device, row_major(Idx(batch_size + 1))
-                ),
+                TileTensor(input_row_offsets_device, row_major(batch_size + 1)),
                 kv_collection_device,
                 TileTensor(freqs_cis_table_device, freqs_cis_table_layout),
                 None,

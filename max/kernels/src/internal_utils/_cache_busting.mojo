@@ -42,10 +42,15 @@ struct CacheBustingBuffer[dtype: DType](ImplicitlyCopyable):
         alignment: Int,
         ctx: DeviceContext,
         enabled: Bool = True,
+        budget_bytes: Int = CACHE_BUST_BYTES,
     ) raises:
+        # `budget_bytes` is the target buffer footprint. The default exceeds 2x
+        # GPU cache; pass a larger value when one tensor copy is itself bigger
+        # than the default (otherwise the buffer collapses to a single window
+        # and `offset()` always returns 0 — no cache busting).
         self.stride = align_up(tensor_size, alignment)
         var full_buf_size = (
-            align_up(CACHE_BUST_BYTES, self.stride * size_of[Self.dtype]())
+            align_up(budget_bytes, self.stride * size_of[Self.dtype]())
             // size_of[Self.dtype]()
         )
         self.buffer_size = full_buf_size if enabled else self.stride
@@ -60,12 +65,26 @@ struct CacheBustingBuffer[dtype: DType](ImplicitlyCopyable):
     @always_inline
     def unsafe_ptr(self) -> DeviceBuffer[Self.dtype]._DevicePtr:
         """Raw device pointer to base of buffer."""
-        return self._buf.unsafe_ptr()
+        # TODO: This should properly keep/use origins.
+        # `DeviceBuffer.unsafe_ptr()` ties the returned pointer's mutability
+        # and origin to the borrow of the buffer.
+        return (
+            self._buf.unsafe_ptr()
+            .unsafe_mut_cast[True]()
+            .unsafe_origin_cast[MutUntrackedOrigin]()
+        )
 
     @always_inline
     def offset_ptr(self, iteration: Int) -> DeviceBuffer[Self.dtype]._DevicePtr:
         """Device pointer offset to the window for this iteration."""
-        return self._buf.unsafe_ptr() + self.offset(iteration)
+        # TODO: This should properly keep/use origins.
+        # `DeviceBuffer.unsafe_ptr()` ties the returned pointer's mutability
+        # and origin to the borrow of the buffer.
+        return (
+            (self._buf.unsafe_ptr() + self.offset(iteration))
+            .unsafe_mut_cast[True]()
+            .unsafe_origin_cast[MutUntrackedOrigin]()
+        )
 
     @always_inline
     def device_buffer(self) -> DeviceBuffer[Self.dtype]:

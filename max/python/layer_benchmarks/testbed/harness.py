@@ -64,17 +64,16 @@ def dict_to_dataclass(cls: type[_T], d: dict[str, Any]) -> _T:
 
 
 class CompiledLayerBundle(NamedTuple):
-    """Result of compiling a layer graph.
-
-    Attributes:
-        compiled_model: The compiled model from session.load().
-        device: The GPU accelerator device.
-        session: The InferenceSession used for compilation.
-    """
+    """Result of compiling a layer graph."""
 
     compiled_model: Model
+    """The compiled model from session.load()."""
+
     device: Accelerator
+    """The GPU accelerator device."""
+
     session: InferenceSession
+    """The InferenceSession used for compilation."""
 
 
 class LayerTestHarness(ABC, Generic[StaticParamsT, DynamicParamsT, ContextT]):

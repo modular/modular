@@ -68,17 +68,11 @@ def test_conv_cudnn[
     comptime output_dim_flattened = Nout * Hout * Wout * Cout
 
     # Define TileTensor layouts
-    comptime input_tt_layout = row_major(
-        (Idx[N](), Idx[H](), Idx[W](), Idx[C_in]())
-    )
-    comptime filter_tt_layout = row_major(
-        (Idx[R](), Idx[S](), Idx[C](), Idx[F]())
-    )
-    comptime filter_nchw_tt_layout = row_major(
-        (Idx[F](), Idx[C](), Idx[R](), Idx[S]())
-    )
+    comptime input_tt_layout = row_major((Idx[N], Idx[H], Idx[W], Idx[C_in]))
+    comptime filter_tt_layout = row_major((Idx[R], Idx[S], Idx[C], Idx[F]))
+    comptime filter_nchw_tt_layout = row_major((Idx[F], Idx[C], Idx[R], Idx[S]))
     comptime output_tt_layout = row_major(
-        (Idx[Nout](), Idx[Hout](), Idx[Wout](), Idx[Cout]())
+        (Idx[Nout], Idx[Hout], Idx[Wout], Idx[Cout])
     )
 
     # Allocate host memory

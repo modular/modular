@@ -293,7 +293,7 @@ def winograd_conv2d_gpu_nhwc[
             # TODO: Can we do something like this instead?
             # var input_tile = input_tensor.tile[1,1,4,4](c_out, c_in)
             var input_tile = get_tile[4](
-                input.as_any_origin(), n, h_out, w_out, c_in
+                input.as_unsafe_any_origin(), n, h_out, w_out, c_in
             )
 
             # 2. Transform input (B^T * d * B)
@@ -390,10 +390,10 @@ def winograd_conv2d_gpu_launcher[
         block_size,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
-        input.get_immutable().as_any_origin(),
-        filter.get_immutable().as_any_origin(),
-        output.as_any_origin(),
+    ctx.enqueue_function[kernel](
+        input.get_immutable().as_unsafe_any_origin(),
+        filter.get_immutable().as_unsafe_any_origin(),
+        output.as_unsafe_any_origin(),
         stride,
         dilation,
         padding,
@@ -455,26 +455,26 @@ def test_winograd_conv_gpu[
     # Define TileTensor layouts
     comptime input_tt_layout = row_major(
         (
-            Idx[Int(input_dim[0])](),
-            Idx[Int(input_dim[1])](),
-            Idx[Int(input_dim[2])](),
-            Idx[Int(input_dim[3])](),
+            Idx[Int(input_dim[0])],
+            Idx[Int(input_dim[1])],
+            Idx[Int(input_dim[2])],
+            Idx[Int(input_dim[3])],
         )
     )
     comptime filter_tt_layout = row_major(
         (
-            Idx[Int(filter_dim[0])](),
-            Idx[Int(filter_dim[1])](),
-            Idx[Int(filter_dim[2])](),
-            Idx[Int(filter_dim[3])](),
+            Idx[Int(filter_dim[0])],
+            Idx[Int(filter_dim[1])],
+            Idx[Int(filter_dim[2])],
+            Idx[Int(filter_dim[3])],
         )
     )
     comptime output_tt_layout = row_major(
         (
-            Idx[Int(output_dim[0])](),
-            Idx[Int(output_dim[1])](),
-            Idx[Int(output_dim[2])](),
-            Idx[Int(output_dim[3])](),
+            Idx[Int(output_dim[0])],
+            Idx[Int(output_dim[1])],
+            Idx[Int(output_dim[2])],
+            Idx[Int(output_dim[3])],
         )
     )
 

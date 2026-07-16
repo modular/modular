@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .arch import Step3p5PretrainedConfig, step3p5_arch
-from .model import Step3p5Model
+from .arch import step3p5_arch
+from .model import Step3p5Inputs, Step3p5Model
 from .model_config import Step3p5Config
 
 __all__ = [
     "Step3p5Config",
+    "Step3p5Inputs",
     "Step3p5Model",
-    "Step3p5PretrainedConfig",
     "step3p5_arch",
 ]

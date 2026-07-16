@@ -54,30 +54,24 @@ def test_random_ui64() raises:
 
 def test_rand_count_dtype() raises:
     from std.random import randint, seed
-    from std.memory import alloc
 
     seed()
     var size: Int = 10
-    var ptr = alloc[Int32](size)
-    randint[DType.int32](ptr, size, -50, 50)
+    var data = List(length=size, fill=Int32(0))
+    randint(data, -50, 50)
     for i in range(size):
-        assert_true(Int32(-50) <= ptr[i] <= Int32(50))
-    ptr.free()
+        assert_true(Int32(-50) <= data[i] <= Int32(50))
 
 
 def test_rand_count_dtype_scale() raises:
     from std.random import rand, seed
-    from std.memory import alloc
 
     seed()
     var size: Int = 10
-    var ptr = alloc[Float32](size)
-    rand[DType.float32](ptr, size, min=0.0, max=1.0, int_scale=16)
+    var data = List(length=size, fill=Float32(0))
+    rand(data, min=0.0, max=1.0, int_scale=16)
     for i in range(size):
-        assert_true(Float32(0.0) <= ptr[i] < Float32(1.0))
-
-        _ = ptr[i]
-    ptr.free()
+        assert_true(Float32(0.0) <= data[i] < Float32(1.0))
 
 
 def test_randn_float64():
@@ -90,13 +84,11 @@ def test_randn_float64():
 
 def test_dtype_randn():
     from std.random import randn, seed
-    from std.memory import alloc
 
     seed()
     var size: Int = 1000
-    var ptr = alloc[Float64](size)
-    randn[DType.float64](ptr, size, mean=0.0, standard_deviation=1.0)
-    ptr.free()
+    var data = List(length=size, fill=Float64(0))
+    randn(data, mean=0.0, standard_deviation=1.0)
 
 
 def test_shuffle() raises:

@@ -139,7 +139,10 @@ Example: Epilogue Warp (context manager)
 from layout.tma_async import SharedMemBarrier
 from std.utils.index import IndexList
 from .config import OutputPipelineConfig
-from structured_kernels.pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline import (
+    ProducerConsumerPipeline,
+    SM100_PIPELINE_WAIT_TICKS,
+)
 from .tmem import TmemAllocation, TmemStage
 
 # SMemArray for barriers (non-tile arrays), SMemPtr for pointers
@@ -476,7 +479,10 @@ struct InputTilePipeline[
     @always_inline
     def _acquire_producer(mut self) -> Tuple[UInt32, MbarPtr]:
         """Wait for slot availability and return (stage, barrier)."""
-        self.pipeline.wait_consumer()
+        # SM100 warp-specialized matmul: hardware-suspend the producer warp
+        # while blocked instead of busy-spinning the wait loop (BRA/SYNCS).
+        # See SM100_PIPELINE_WAIT_TICKS.
+        self.pipeline.wait_consumer[ticks=SM100_PIPELINE_WAIT_TICKS]()
         var stage = self.pipeline.producer_stage()
         return (stage, self.pipeline.producer_mbar(stage))
 
@@ -488,7 +494,10 @@ struct InputTilePipeline[
     @always_inline
     def _acquire_consumer(mut self) -> Tuple[UInt32, MbarPtr]:
         """Wait for data availability and return (stage, barrier)."""
-        self.pipeline.wait_producer()
+        # SM100 warp-specialized matmul: hardware-suspend the consumer warp
+        # while blocked instead of busy-spinning the wait loop (BRA/SYNCS).
+        # See SM100_PIPELINE_WAIT_TICKS.
+        self.pipeline.wait_producer[ticks=SM100_PIPELINE_WAIT_TICKS]()
         var stage = self.pipeline.consumer_stage()
         return (stage, self.pipeline.consumer_mbar(stage))
 
@@ -679,7 +688,7 @@ struct InputProducerStage[
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-](Movable):
+](ImplicitlyDeletable where False, Movable):
     """Linear type handle for producer tile access.
 
     Compiler-enforced: must call release() to advance the producer stage.
@@ -828,7 +837,7 @@ struct InputConsumerStage[
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-](Movable):
+](ImplicitlyDeletable where False, Movable):
     """Linear type handle for consumer tile access.
 
     Compiler-enforced: must call release() to signal consumption and
@@ -1504,7 +1513,7 @@ struct OutputConsumer[
 struct MmaStage[
     origin: MutOrigin,
     opc: OutputPipelineConfig,
-]:
+](ImplicitlyDeletable where False):
     """Unified linear type handle for MMA stage in output pipeline.
 
     Works as both a linear type (direct use) and within context managers.
@@ -1568,7 +1577,7 @@ struct MmaStage[
 struct EpilogueStage[
     origin: MutOrigin,
     opc: OutputPipelineConfig,
-]:
+](ImplicitlyDeletable where False):
     """Unified linear type handle for epilogue stage in output pipeline.
 
     Works as both a linear type (direct use) and within context managers.
