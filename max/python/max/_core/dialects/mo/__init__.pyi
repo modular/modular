@@ -693,6 +693,46 @@ class CompositeNoMaskFlashAttentionCpuOp(max._core.Operation):
     @property
     def scale(self) -> max._core.Value[TensorType]: ...
 
+class CompositeRmsNormFusedQuantizeDynamicBlockScaledOp(max._core.Operation):
+    """
+    Fused operation computing block-scaled MXFP8 quantization of an
+    RMS-normalized input:
+
+      normed = rms_norm(input, weight, epsilon, weight_offset)
+                 {multiply_before_cast = true}
+      output, scale = quantize.dynamic.block.scaled(normed)
+                        {SF_VECTOR_SIZE}
+
+    Returns the E4M3 quantized output and its E8M0 per-block scale tensor in the
+    rank-5 interleaved layout the SM100 block-scaled GEMM consumes. `output` and
+    `scale` are numerically identical to the unfused
+    `rms_norm -> quantize.dynamic.block.scaled` (MXFP8) pipeline. The fusion
+    pattern attaches the block size as an `SF_VECTOR_SIZE` attribute (32 for
+    MXFP8), which the MOGG lowering forwards to the kernel as a compile-time
+    parameter. Produced by the RMS-norm + MXFP8-block-quantize fusion pattern
+    (GPU only).
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: TensorType,
+        scale: TensorType,
+        input: max._core.Value[TensorType],
+        weight: max._core.Value[TensorType],
+        epsilon: max._core.Value[TensorType],
+        weight_offset: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset(self) -> max._core.Value[TensorType]: ...
+
 class CompositeRmsNormFusedQuantizeDynamicScaledFp8Op(max._core.Operation):
     """
     Fused operation computing token-wise dynamic-scaled FP8 quantization of an
