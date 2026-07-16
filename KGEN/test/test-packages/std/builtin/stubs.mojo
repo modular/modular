@@ -22,7 +22,7 @@ struct _MLIR:
     ]
 
 
-comptime ImmutOrigin = Origin[mut=False]
+comptime ImmOrigin = Origin[mut=False]
 comptime MutOrigin = Origin[mut=True]
 
 comptime AnyOrigin[*, mut: Bool] = Origin[
@@ -30,7 +30,7 @@ comptime AnyOrigin[*, mut: Bool] = Origin[
         `#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`
     ]
 ]()
-comptime ImmutAnyOrigin = AnyOrigin[mut=False]
+comptime ImmAnyOrigin = AnyOrigin[mut=False]
 comptime MutAnyOrigin = AnyOrigin[mut=True]
 
 comptime UntrackedOrigin[*, mut: Bool] = Origin[

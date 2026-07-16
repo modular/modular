@@ -151,7 +151,7 @@ def reuse_implicit(a: Int, cond: __mlir_type.`!kgen.scalar<bool>`) raises:
 
 
 # CHECK-LABEL: lit.fn @"addrSpaces
-def addrSpaces[lt1: MutOrigin, lt2: ImmutOrigin, as1: AddressSpace]():
+def addrSpaces[lt1: MutOrigin, lt2: ImmOrigin, as1: AddressSpace]():
     # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut {{.*}}lt1{{.*}}, #lit.struct.extract<:!SIMDSize #lit.struct.extract<:!AddressSpace as1, "_value">, "_mlir_value">>
     var ref1: Pointer[MemExample, lt1, as1]._mlir_type
 

@@ -749,7 +749,7 @@ def test_bad_ref_errors[T: AnyType](a: Pointer[T, _], b: Pointer[T, _]):
   # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, b.origin]'}}
   var x : Pointer[T, b.origin] = a[]
 
-  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, MutAnyOrigin]'}}
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, MutUnsafeAnyOrigin]'}}
   var y : Pointer[T, AnyOrigin[mut=True], a.address_space] = a[]
 
 def test_subscript_conflict(a: Int):
@@ -865,7 +865,7 @@ def bad_union[ao: Origin[mut=True]](ref [ao] a: String, mut b: String) -> ref [a
     return c
 
 # https://github.com/modular/mojo/issues/3829
-def apply_in_memory[o: ImmutOrigin](f: def(ref[o] x: SomeNonTrivRegPassable) thin -> None, x: SomeNonTrivRegPassable):
+def apply_in_memory[o: ImmOrigin](f: def(ref[o] x: SomeNonTrivRegPassable) thin -> None, x: SomeNonTrivRegPassable):
 # expected-error @below {{value passed to 'x' cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
 # expected-note @below {{operand origin 'origin_of(x)' doesn't match expected origin 'origin_of(o)'}}
     f(x)
@@ -882,12 +882,12 @@ def test3830():
     # expected-note @below {{operand origin 'origin_of(anonymous*)' doesn't match expected origin 'origin_of(anonymous*)'}}
     direct3830(getSomeNonTrivRegPassable(), getSomeNonTrivRegPassable())
 
-def test3830_1[o: ImmutOrigin](f: def(ref[o] x: SomeNonTrivRegPassable) thin -> None):
+def test3830_1[o: ImmOrigin](f: def(ref[o] x: SomeNonTrivRegPassable) thin -> None):
     # expected-error @below {{invalid indirect call: value passed to 'x' cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
     # expected-note @below {{operand origin 'origin_of(anonymous*)' doesn't match expected origin 'origin_of(o)'}}
     f(getSomeNonTrivRegPassable())
 
-def test3830_2[o: ImmutOrigin](f: def(ref[o] x: Int) thin -> None, x: Int):
+def test3830_2[o: ImmOrigin](f: def(ref[o] x: Int) thin -> None, x: Int):
     # expected-error @below {{invalid indirect call: value passed to 'x' cannot be converted from 'Int' to ref 'Int'}}
     # expected-note @below {{operand origin 'origin_of(anonymous*)' doesn't match expected origin 'origin_of(o)'}}
     f(x)

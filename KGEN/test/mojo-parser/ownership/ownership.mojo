@@ -1579,7 +1579,7 @@ struct Driver:
     def __del__(deinit self): pass
 
 @fieldwise_init
-struct Event[origin: ImmutOrigin]:
+struct Event[origin: ImmOrigin]:
     def __del__(deinit self): pass
 
 def record_event(driver: Driver) -> Event[origin_of(driver)]:

@@ -35,7 +35,7 @@ static StringRef getNameFromSymbolRef(SymbolRefAttr symbol) {
     leaf = symbol.getNestedReferences().back().getAttr();
 
   // Demangle the name.  We can end up with functions like:
-  //   "__init__[LITImmutOrigin,::Origin[::Bool(False), $0]](::Int*)"
+  //   "__init__[LITImmOrigin,::Origin[::Bool(False), $0]](::Int*)"
   // and structs like:
   //   ParamStruct[:trait<_\"std::builtin::value::TrivialRegisterPassable\">
   //   _\"std::builtin::int::Int\"])
@@ -1676,7 +1676,7 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
         // Check to see if we have a Bool with a known constant parameter.
         //   #lit.struct<{value: i1 = 1}>
         if (auto value = getSingleElementStructAttr<SIMDAttr>(params[0])) {
-          os << (value.getAsBool() ? "MutOrigin" : "ImmutOrigin");
+          os << (value.getAsBool() ? "MutOrigin" : "ImmOrigin");
           // TODO: While the mlir_origin is almost always infer-only, it can
           // technically be written.  We should print it here if it isn't an
           // infer-only arg value.
@@ -1833,7 +1833,7 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
     if (originType.isMutableKnown(true))
       os << "LITMutOrigin";
     else if (originType.isMutableKnown(false))
-      os << "LITImmutOrigin";
+      os << "LITImmOrigin";
     else {
       os << "LITOrigin[";
       printParam(os, originType.isMutable(), ctx);
