@@ -405,7 +405,7 @@ void LIT::printFnType(AsmPrinter &p, FuncType signature) {
     printParamValue(p, metadata.getCaptureOrigins());
     p << ':';
   }
-  if (signature.getIsNestedOriginExclusivityCheckingDisabled())
+  if (signature.getIsNestedOriginsReadOnly())
     p << "no_nested_origin_exclusivity";
 
   PogListAttr argListAttr = signature.getArgListAttrs();

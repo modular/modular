@@ -1128,7 +1128,7 @@ struct VariadicPack[
     # This disables nested origin exclusivity checking because it is taking a
     # raw variadic pack which can have nested origins in it (which this does not
     # dereference).
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __init__(out self, value: Self._mlir_pack_type):
         self._value = value
 
@@ -1222,7 +1222,7 @@ struct Pointer[
     def __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
         return __get_litref_as_mvalue(self._value)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __eq__(
         self, rhs: Pointer[Self.type, _, Self.address_space, ...]
@@ -1319,12 +1319,12 @@ struct UnsafePointer[
     def unsafe_dangling() -> Self:
         return Self()
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
         while True:
             pass
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __getitem__(
         self, offset: Int
     ) -> ref[Self.origin, Self.address_space] Self.type:

@@ -279,12 +279,11 @@ getCallOpEffects(Operation &op,
     callArguments = callArguments.drop_front();
   }
 
-  // Callees marked `@__unsafe_disable_nested_origin_exclusivity` promise to
+  // Callees marked `@__unsafe_nested_origins_read_only` promise to
   // only read origins reachable through their arguments.  Model any
   // type-embedded origins as readonly-only so CheckLifetimes extends
   // lifetimes without treating them as exclusive mutable accesses.
-  bool originsAccessesAreReadOnly =
-      signature.getIsNestedOriginExclusivityCheckingDisabled();
+  bool originsAccessesAreReadOnly = signature.getIsNestedOriginsReadOnly();
 
   /// Argument conventions cause a direct use of the register of pointee, and
   /// handling them specifically allows us to be field sensitive in cases where

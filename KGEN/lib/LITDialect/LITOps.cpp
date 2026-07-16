@@ -789,7 +789,7 @@ static ParseResult parseLITFunctionSignature(
   } else {
     captureOrigins = OriginSetAttr::get({}, originSet);
   }
-  bool isNestedOriginExclusivityCheckingDisabled =
+  bool isNestedOriginsReadOnly =
       succeeded(p.parseOptionalKeyword("no_nested_origin_exclusivity"));
 
   SmallVector<ParamDeclAttr> originDecls;
@@ -874,9 +874,8 @@ static ParseResult parseLITFunctionSignature(
       PogListAttr::get(p.getContext(), argNames, argPassingKinds, argVariadics,
                        defaults, origVariadicConvention,
                        /*bodyConstraints=*/{});
-  auto metadata =
-      FnMetadataAttr::get(p.getContext(), originDecls.size(), captureOrigins,
-                          isNestedOriginExclusivityCheckingDisabled);
+  auto metadata = FnMetadataAttr::get(p.getContext(), originDecls.size(),
+                                      captureOrigins, isNestedOriginsReadOnly);
   signature = FuncTypeGeneratorType::remapToFuncTypeGenerator(
       params, functionType, argConventions, effects, metadata, paramListAttr,
       [&] { return p.emitError(startLoc); }, pogList);
@@ -908,7 +907,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     printParamValue(p, signature.getCaptureOrigins());
     p << ':';
   }
-  if (signature.getIsNestedOriginExclusivityCheckingDisabled())
+  if (signature.getIsNestedOriginsReadOnly())
     p << "no_nested_origin_exclusivity";
 
   ParameterEvaluator evaluator;

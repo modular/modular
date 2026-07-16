@@ -751,10 +751,9 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
   } else if (spelling == "parameter") {
     applyArgumentless(spelling, callNode,
                       [&]() { tcSignature.argList.effects.setCapturing(); });
-  } else if (spelling == "__unsafe_disable_nested_origin_exclusivity") {
-    applyArgumentless(spelling, callNode, [&]() {
-      tcSignature.isNestedOriginExclusivityCheckingDisabled = true;
-    });
+  } else if (spelling == "__unsafe_nested_origins_read_only") {
+    applyArgumentless(spelling, callNode,
+                      [&]() { tcSignature.isNestedOriginsReadOnly = true; });
   } else if (spelling == "__defines_interior_origins") {
     applyArgumentless(spelling, callNode,
                       [&]() { funcOp.setDefinesInteriorOrigins(true); });
