@@ -353,16 +353,19 @@ def test_topk_topp_sampling[
                 input_host_tensor, topp_mask_tensor, p, batch_size, N
             )
 
-    # Create a 1-element seed buffer on device.
-    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
-    var seed_layout = row_major(Idx[1])
+    # Per-row seed buffer: the kernel indexes rng_seed by row_idx (the
+    # request's logical row), so every row needs an entry even though all
+    # rows share the same seed value here.
+    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](batch_size)
+    var seed_layout = row_major(batch_size)
 
     # Run sampling trials.
     var num_passed = 0
     for trial in range(NUM_VALIDATION_TRIALS):
         var trial_seed = UInt64(42 + trial)
         with seed_buf.map_to_host() as seed_host:
-            seed_host[0] = trial_seed
+            for b in range(batch_size):
+                seed_host[b] = trial_seed
         var seed_tt = (
             TileTensor(seed_buf, seed_layout).as_unsafe_any_origin().as_immut()
         )
