@@ -423,25 +423,87 @@ modular_cc_library(
     ],
 )
 
+# Sources, headers, defines, and deps shared by the two :Profiling variants
+# below.
+#
+# RangeKineto.cpp is the libkineto backend; it lives in :ProfilingKineto so
+# libkineto stays out of this Mojo-facing library. RangeBackend.h is the
+# private header both sides share (quote-included from the same directory).
+PROFILING_SRCS = glob(
+    ["lib/Profiling/internal/*.cpp"],
+    # For OSS
+    allow_empty = True,
+    exclude = ["lib/Profiling/internal/RangeKineto.cpp"],
+) + ["lib/Profiling/internal/RangeBackend.h"]
+
+PROFILING_HDRS = glob(
+    ["include/Support/Profiling/internal/*.h"],
+    # For OSS
+    allow_empty = True,
+)
+
+# NOTE: Passed as defines to propagate to dependents.
+# TRACY_CUDA_ENABLE is propagated so consumers (e.g. CUDADeviceContext.cpp)
+# see the same define and the no-op vs. real initTracyCuda() are consistent.
+# TRACY_ROCM_ENABLE is propagated so consumers (e.g. HIPDeviceContext.cpp)
+# see the same define and the no-op vs. real initTracyRocm() are consistent.
+PROFILING_DEFINES = ASYNCRT_PROFILING_LOCAL_DEFINES + select({
+    "//:tracy_cuda_enabled": ["TRACY_CUDA_ENABLE=1"],
+    "//conditions:default": ["TRACY_CUDA_ENABLE=0"],
+}) + select({
+    "//:tracy_rocm_enabled": ["TRACY_ROCM_ENABLE=1"],
+    "//conditions:default": ["TRACY_ROCM_ENABLE=0"],
+})
+
+PROFILING_DEPS = [
+    ":Base",
+    # Configuration backs the session.debug.profiling_* settings that
+    # Range.cpp reads at enable()/disable() time (MXTOOLS-190).
+    ":Configuration",
+    ":Globals",
+    ":MArchTargetMinimal",
+    ":SymbolExport",
+    "//Config",
+    "@llvm-project//llvm:Support",
+] + select({
+    # Tracy without CUDA support
+    "//:tracy_enabled": ["@tracy//:Tracy"],
+    "//conditions:default": [],
+}) + select({
+    # Tracy CUDA support - only when both Tracy and NVIDIA GPU are enabled.
+    # cuda_cupti_headers provides <cupti.h> for TracyCUDA.hpp.
+    # cuda_runtime_headers provides cuda_runtime_api.h (transitively
+    # included by cupti.h) without linking against libcudart.so.
+    # libcudart_stub provides cudaDeviceSynchronize (called by
+    # TracyCUDA.hpp inline functions) via on-demand dlopen of libcudart.so,
+    # avoiding a hard NEEDED entry.
+    "//:tracy_cuda_enabled": [
+        "//bazel/third-party:cuda_cupti_headers",
+        "//bazel/third-party:cuda_runtime_headers",
+        "//bazel/third-party:libcudart_stub",
+    ],
+    "//conditions:default": [],
+}) + select({
+    # Tracy ROCm support - only when both Tracy and AMD GPU are enabled.
+    # rocprofiler_headers is needed for compiling rocprofiler-sdk types
+    # used in the Profiling sources.
+    "//:tracy_rocm_enabled": [
+        "//bazel/third-party:rocprofiler_headers",
+    ],
+    "//conditions:default": [],
+})
+
+# Shared-library variant of the Range API, used only with `--config=kineto`.
+# Shared so Range.cpp's statics (enable flag, registered backend pointer, TLS
+# registration guard) are single-instance in the process: the kineto backend
+# registered by max._core must be visible to the mo.profile ranges recorded
+# from the Mojo runtime DSOs. As a static library those statics would be
+# duplicated into every consuming DSO, making enable() in one DSO invisible
+# to isEnabled() in another.
 modular_shared_library(
-    name = "Profiling",
-    # RangeKineto.cpp is the libkineto backend; it lives in :ProfilingKineto so
-    # libkineto stays out of this Mojo-facing library. RangeBackend.h is the
-    # private header both sides share (quote-included from the same directory).
-    srcs = glob(
-        ["lib/Profiling/internal/*.cpp"],
-        # For OSS
-        allow_empty = True,
-        exclude = ["lib/Profiling/internal/RangeKineto.cpp"],
-    ) + ["lib/Profiling/internal/RangeBackend.h"],
-    hdrs = glob(
-        ["include/Support/Profiling/internal/*.h"],
-        # For OSS
-        allow_empty = True,
-    ),
-    # TracyRocm.cpp uses a constructor to promote Tracy symbols to RTLD_GLOBAL
-    # so that the rocprofiler-sdk plugin can resolve them via dlsym.
-    #
+    name = "ProfilingShared",
+    srcs = PROFILING_SRCS,
+    hdrs = PROFILING_HDRS,
     # -fvisibility=default exports every symbol the way a static library
     # would have, so existing consumers (which call non-Range.cpp APIs like
     # TimeTraceProfiler, Tracy CUDA helpers, Configuration glue) keep
@@ -449,59 +511,49 @@ modular_shared_library(
     copts = [
         "-fvisibility=default",
     ],
-    # NOTE: Passed as defines to propagate to dependents.
-    # TRACY_CUDA_ENABLE is propagated so consumers (e.g. CUDADeviceContext.cpp)
-    # see the same define and the no-op vs. real initTracyCuda() are consistent.
-    # TRACY_ROCM_ENABLE is propagated so consumers (e.g. HIPDeviceContext.cpp)
-    # see the same define and the no-op vs. real initTracyRocm() are consistent.
-    defines = ASYNCRT_PROFILING_LOCAL_DEFINES + select({
-        "//:tracy_cuda_enabled": ["TRACY_CUDA_ENABLE=1"],
-        "//conditions:default": ["TRACY_CUDA_ENABLE=0"],
-    }) + select({
-        "//:tracy_rocm_enabled": ["TRACY_ROCM_ENABLE=1"],
-        "//conditions:default": ["TRACY_ROCM_ENABLE=0"],
-    }),
-    # Shared library so Range.cpp's statics (enable flag, registered backend
-    # pointer, TLS registration guard) are single-instance in the process.
-    # As a static library they would be duplicated into every consuming DSO,
-    # making enable() in one DSO invisible to isEnabled() in another.
+    defines = PROFILING_DEFINES,
     output_name = "MAXProfiling",
-    deps = [
-        ":Base",
-        # Configuration backs the session.debug.profiling_* settings that
-        # Range.cpp reads at enable()/disable() time (MXTOOLS-190).
-        ":Configuration",
-        ":Globals",
-        ":MArchTargetMinimal",
-        ":SymbolExport",
-        "//Config",
-        "@llvm-project//llvm:Support",
-    ] + select({
-        # Tracy without CUDA support
-        "//:tracy_enabled": ["@tracy//:Tracy"],
-        "//conditions:default": [],
-    }) + select({
-        # Tracy CUDA support - only when both Tracy and NVIDIA GPU are enabled.
-        # cuda_cupti_headers provides <cupti.h> for TracyCUDA.hpp.
-        # cuda_runtime_headers provides cuda_runtime_api.h (transitively
-        # included by cupti.h) without linking against libcudart.so.
-        # libcudart_stub provides cudaDeviceSynchronize (called by
-        # TracyCUDA.hpp inline functions) via on-demand dlopen of libcudart.so,
-        # avoiding a hard NEEDED entry.
-        "//:tracy_cuda_enabled": [
-            "//bazel/third-party:cuda_cupti_headers",
-            "//bazel/third-party:cuda_runtime_headers",
-            "//bazel/third-party:libcudart_stub",
-        ],
-        "//conditions:default": [],
-    }) + select({
-        # Tracy ROCm support - only when both Tracy and AMD GPU are enabled.
-        # rocprofiler_headers is needed for compiling rocprofiler-sdk types
-        # used in the Profiling sources.
-        "//:tracy_rocm_enabled": [
-            "//bazel/third-party:rocprofiler_headers",
-        ],
-        "//conditions:default": [],
+    deps = PROFILING_DEPS,
+)
+
+# Static variant, used in default builds. Without the kineto backend there is
+# no cross-DSO enable()/isEnabled() traffic, so per-DSO copies of Range.cpp's
+# statics are harmless — and consumers (KGEN CompilerRT, max._core) carry no
+# DT_NEEDED on a libMAXProfiling.so that the external wheel / conda packages
+# do not ship. Range.h's MODULAR_VISIBILITY_EXPORT annotations still apply
+# here, so consuming DSOs export the Range API and cross-DSO symbol binding
+# is platform-dependent (ELF interposition picks one copy; the macOS two-level
+# namespace keeps per-DSO copies). That divergence is only safe while backend
+# attachment stays kineto-gated, which forces the shared variant.
+modular_cc_library(
+    name = "ProfilingStatic",
+    srcs = PROFILING_SRCS,
+    hdrs = PROFILING_HDRS,
+    # TracyRocm.cpp uses a constructor to promote Tracy symbols to RTLD_GLOBAL
+    # so that the rocprofiler-sdk plugin can resolve them via dlsym.
+    copts = ["-Wno-global-constructors"],
+    defines = PROFILING_DEFINES,
+    # :ProfilingShared already tidies the same sources.
+    tags = ["no-clang-tidy"],
+    deps = PROFILING_DEPS,
+)
+
+# The Range profiling API (MXTOOLS-190). Shared iff kineto profiling is opted
+# in (`--config=kineto`) — a strict superset of the //:linux_x86_64_kineto
+# condition gating the max._core -> :ProfilingKineto edge, so the shared
+# variant is always in place whenever the kineto backend can attach. Default
+# builds must not give the packaged mojo / MAX libraries a DT_NEEDED on
+# libMAXProfiling.so, which the external packages do not ship.
+#
+# An alias (not a deps-forwarding library) so layering_check keeps seeing the
+# selected variant's headers as directly exported to consumers. The OSS build
+# stubs both variants by name in oss/modular/bazel/api.bzl and defines a
+# default-off //:kineto_enabled so this select resolves there too.
+alias(
+    name = "Profiling",
+    actual = select({
+        "//:kineto_enabled": ":ProfilingShared",
+        "//conditions:default": ":ProfilingStatic",
     }),
 )
 
