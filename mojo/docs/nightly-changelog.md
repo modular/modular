@@ -321,6 +321,37 @@ This version is still a work in progress.
   - Anywhere in the midst of an `import` statement, save for parenthesized
     import lists.
 
+- It is now possible to import modules & packages through regular directories
+  using the same path-like syntax.
+
+  For example, given the following structure:
+
+  ```text
+  dir
+  └── nested_dir
+      ├── module.mojo
+      └── package
+          └── __init__.mojo
+  ```
+
+  It is possible to import from the modules and packages inside the directories
+  `dir` and `nested_dir`:
+
+  ```mojo
+  import dir.nested_dir.module
+
+  from dir.nested_dir.package import foo
+  ```
+
+  Note that an import statement *resolving* to a directory cannot later be used
+  for scoped lookups as if it were a module or package:
+
+  ```mojo
+  import dir
+
+  dir.nested_dir.package.foo() # error
+  ```
+
 ## Library stabilizations
 
 - `trait ImplicitlyDeletable`
