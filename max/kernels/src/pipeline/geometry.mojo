@@ -36,17 +36,7 @@ this struct is purely additive consolidation of the API surface.
 
 @fieldwise_init
 struct KernelGeometry(Copyable, Movable):
-    """Bundles kernel-shape inputs and the derived scheduling counts.
-
-    Fields:
-        BM, BN, BK: Block shape (M-tile, N-tile, K-tile per workgroup).
-        MMA_M, MMA_N, MMA_K: MFMA op shape.
-        elem_bytes: Element size in bytes (1 for FP8, 2 for BF16/FP16, 4 for FP32).
-        simd_width: SIMD load width in elements (typically `simd_width_of[in_type]()`).
-        is_fp8: True iff `elem_bytes == 1`.
-        vm_per_load_a, vm_per_load_b: vmcnt entries per A/B prefetch.
-        lgkm_per_load_a, lgkm_per_load_b: lgkmcnt entries per A/B frag-load.
-    """
+    """Bundles kernel-shape inputs and the derived scheduling counts."""
 
     var BM: Int
     """Block shape M (rows per workgroup tile)."""

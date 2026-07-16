@@ -18,6 +18,7 @@ around the target location to compute the interpolated value.
 """
 from std.math import clamp, floor
 
+from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_gpu
 from std.gpu import block_dim, block_idx, thread_idx
 from layout import (
@@ -28,8 +29,8 @@ from layout import (
     coord,
     coord_to_index_list,
 )
-from std.runtime.asyncrt import DeviceContextPtr
 from std.itertools import product
+from std.utils.coord import dyn_coord
 
 
 @always_inline
@@ -124,7 +125,7 @@ def cpu_bicubic_kernel(
         output_host.flat_rank == 4 and input_host.flat_rank == 4
     ), "bicubic resize only supports rank 4 tensors"
     comptime assert output_host.dtype == input_host.dtype
-    # Provide evidence that flat_rank >= 4 for the coord[DType.int64](...) loads/stores below.
+    # Provide evidence that flat_rank >= 4 for the dyn_coord[DType.int64](...) loads/stores below.
     comptime assert input_host.flat_rank >= 4
     comptime assert output_host.flat_rank >= 4
 
@@ -177,7 +178,7 @@ def cpu_bicubic_kernel(
             # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
             var pixel_value = Float32(
                 input_host.load[width=1](
-                    coord[DType.int64]((b, c, y_pos, x_pos))
+                    dyn_coord[DType.int64]((b, c, y_pos, x_pos))
                 )
             )
             sum_value += pixel_value * weight
@@ -185,12 +186,12 @@ def cpu_bicubic_kernel(
 
         # store the result in the output tensor
         output_host.store[width=1](
-            coord[DType.int64]((b, c, y_out, x_out)),
+            dyn_coord[DType.int64]((b, c, y_out, x_out)),
             sum_value.cast[output_host.dtype](),
         )
 
 
-@__name(t"gpu_bicubic_{dtype}", mangle=True)
+@__name(t"gpu_bicubic_{dtype}")
 def gpu_bicubic_kernel[
     dtype: DType,
     OutputLayoutType: TensorLayout,
@@ -210,7 +211,7 @@ def gpu_bicubic_kernel[
 
     comptime assert input.flat_rank == 4
     comptime assert output.flat_rank == 4
-    # Provide evidence that flat_rank >= 4 for the Coord(Idx(...), ...) loads/stores below.
+    # Provide evidence that flat_rank >= 4 for the Coord(..., ...) loads/stores below.
     comptime assert input.flat_rank >= 4
     comptime assert output.flat_rank >= 4
 
@@ -266,13 +267,13 @@ def gpu_bicubic_kernel[
 
             # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
             var pixel_value = input.load[width=1](
-                Coord(Idx(b), Idx(c), Idx(y_pos), Idx(x_pos))
+                Coord(b, c, y_pos, x_pos)
             ).cast[DType.float32]()
             sum_value += pixel_value * weight
             sum_weights += weight
 
         output.store[width=1](
-            Coord(Idx(b), Idx(c), Idx(y_out), Idx(x_out)),
+            Coord(b, c, y_out, x_out),
             sum_value.cast[dtype](),
         )
 
@@ -286,7 +287,7 @@ def resize_bicubic[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Perform bicubic interpolation.
 
@@ -313,7 +314,7 @@ def resize_bicubic[
             input_origin=ImmutOrigin(input.origin),
             InputLayoutType=input.LayoutType,
         ]
-        ctx.get_device_context().enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             output,
             input.as_immut(),
             grid_dim=(N, C),

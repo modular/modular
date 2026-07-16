@@ -20,8 +20,7 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
 
@@ -66,39 +65,6 @@ class MiniMaxM2Config(Llama3Config):
     partial_rotary_factor: float = 1.0
     """Fraction of head_dim used for rotary embeddings.
     For MiniMax-M2: rotary_dim/head_dim = 64/128 = 0.5."""
-
-    @staticmethod
-    def construct_kv_params(
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Constructs KV cache parameters using explicit head_dim from config.
-
-        Args:
-            huggingface_config: The HuggingFace configuration object.
-            pipeline_config: The MAX Engine pipeline configuration.
-            devices: Devices to use for the KV cache.
-            kv_cache_config: Configuration for KV cache.
-            cache_dtype: Data type for the cache.
-
-        Returns:
-            KVCacheParams object with the correct head_dim from config.
-        """
-        # DP attention: each GPU processes a different batch shard with
-        # all attention heads. Set data_parallel_degree = num_devices so
-        # KV cache allocates all heads per device.
-        data_parallel_degree = len(devices)
-        return kv_cache_config.to_params(
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=huggingface_config.head_dim,
-            num_layers=MiniMaxM2Config.get_num_layers(huggingface_config),
-            devices=devices,
-            data_parallel_degree=data_parallel_degree,
-        )
 
     @staticmethod
     def calculate_attention_multiplier(huggingface_config: AutoConfig) -> float:

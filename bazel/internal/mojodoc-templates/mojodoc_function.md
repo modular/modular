@@ -1,7 +1,6 @@
 <!-- rumdl-disable -->
 {% import 'macros.jinja' as macros %}
 {# Print YAML front matter #}
-{% set api_path = "/mojo" %}
 {% macro print_front_matter(decl) %}
 ---
 title: {{ decl.name }}
@@ -70,7 +69,7 @@ description: {% if decl.overloads[0].summary
         {%- for trait in param.traits -%}
             {# Trait names should never contain backticks, so no double backticks here. #}
             {%- if trait.path -%}
-                [`{{ trait.type }}`]({{ api_path }}{{ trait.path }})
+                [`{{ trait.type }}`]({{ api_href(trait.path) }})
             {%- else -%}
                 `{{ trait.type }}`
             {%- endif -%}
@@ -78,7 +77,7 @@ description: {% if decl.overloads[0].summary
         {%- endfor -%}
     {%- else -%}
         {%- if param.path -%}
-            [``{{ param.type | pad_backticks }}``]({{ api_path }}{{ param.path }})
+            [``{{ param.type | pad_backticks }}``]({{ api_href(param.path) }})
         {%- else -%}
             ``{{ param.type | pad_backticks }}``
         {%- endif -%}
@@ -91,7 +90,7 @@ description: {% if decl.overloads[0].summary
 
 {% for arg in decl.args -%}
 *   ​<b>{{ arg.name }}</b> ({% if arg.path
-        %}[``{{ arg.type | pad_backticks }}``]({{ api_path }}{{ arg.path }}){% else
+        %}[``{{ arg.type | pad_backticks }}``]({{ api_href(arg.path) }}){% else
         %}``{{ arg.type | pad_backticks }}``{% endif %}): {{ arg.description }}
 {% endfor %}
 {% endif %}
@@ -101,7 +100,7 @@ description: {% if decl.overloads[0].summary
 **Returns:**
 
 {% if decl.returns.path
-  %}[``{{ decl.returns.type | pad_backticks }}``]({{ api_path }}{{ decl.returns.path }}){% else
+  %}[``{{ decl.returns.type | pad_backticks }}``]({{ api_href(decl.returns.path) }}){% else
   %}``{{ decl.returns.type | pad_backticks }}``{% endif %}{% if decl.returns.doc
     %}: {{ decl.returns.doc }}{% endif %}
 {% endif %}

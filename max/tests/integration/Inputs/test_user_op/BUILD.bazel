@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "mojo_library")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -14,9 +13,7 @@ mojo_library(
     validate_missing_docs = False,
     deps = [
         "//max:compiler",
-        "//max:compiler_internal",
-        "//max:register",
-        "//max:tensor",
+        "//max:extensibility",
         "@mojo//:std",
     ],
 )

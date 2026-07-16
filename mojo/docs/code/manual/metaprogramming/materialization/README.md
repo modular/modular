@@ -1,7 +1,7 @@
 # Code examples and tests for Materialization
 
 This directory contains Code examples and tests for the
-[Materialization](../../../../../docs/manual/metaprogramming/materialization.mdx)
+[Materialization](../../../../manual/metaprogramming/materialization.mdx)
 section of the Mojo Manual.
 
 Contents:

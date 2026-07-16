@@ -125,7 +125,7 @@ def run_verify_kernel[
     var result_device = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS * 5)
 
     comptime kernel = _verify_buffers_gpu[dtype, BLOCK_SIZE]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         output_buf,
         reference_buf,
         length,
@@ -179,7 +179,7 @@ def fill_on_device[
     comptime FILL_BLOCK = 256
     var fill_grid = ceildiv(length, FILL_BLOCK)
     comptime kernel = _fill_buffer[dtype]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         buf,
         length,
         val,

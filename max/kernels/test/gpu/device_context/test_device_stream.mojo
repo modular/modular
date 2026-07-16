@@ -77,7 +77,7 @@ def test_create_stream_with_priority(ctx: DeviceContext) raises:
 
     # Test with lowest priority stream
     var low_priority_stream = ctx.create_stream(priority=priority_range.least)
-    var func = ctx.compile_function_experimental[simple_kernel]()
+    var func = ctx.compile_function[simple_kernel]()
     low_priority_stream.enqueue_function(
         func,
         input_device,
@@ -181,7 +181,7 @@ def test_multiple_priority_streams(ctx: DeviceContext) raises:
             current_priority += step
             multiplier_val += Float32(0.5)
 
-    var func = ctx.compile_function_experimental[simple_kernel]()
+    var func = ctx.compile_function[simple_kernel]()
 
     # Launch kernels concurrently on all streams
     for i in range(len(streams)):
@@ -243,7 +243,7 @@ def test_concurrent_priority_streams(ctx: DeviceContext) raises:
     var high_output_device = ctx.enqueue_create_buffer[DType.float32](length)
     var low_output_device = ctx.enqueue_create_buffer[DType.float32](length)
 
-    var func = ctx.compile_function_experimental[simple_kernel]()
+    var func = ctx.compile_function[simple_kernel]()
     # Launch multiple kernels on both streams to test priority behavior
     for i in range(iterations):
         # Launch on low priority stream first

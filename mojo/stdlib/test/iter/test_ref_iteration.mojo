@@ -77,21 +77,21 @@ struct _RefIter[
 # ===-----------------------------------------------------------------------===#
 
 
-struct MoveOnlyList[T: Movable & ImplicitlyDestructible]:
+struct MoveOnlyList[T: Movable & ImplicitlyDeletable]:
     """A simple list that holds move-only types."""
 
-    var _data: UnsafePointer[Self.T, MutExternalOrigin]
+    var _data: UnsafePointer[Self.T, MutUntrackedOrigin]
     var _len: Int
     var _capacity: Int
 
     def __init__(out self):
-        self._data = UnsafePointer[Self.T, MutExternalOrigin].unsafe_dangling()
+        self._data = UnsafePointer[Self.T, MutUntrackedOrigin].unsafe_dangling()
         self._len = 0
         self._capacity = 0
 
     def __del__(deinit self):
         for i in range(self._len):
-            (self._data + i).destroy_pointee()
+            (self._data + i).unsafe_deinit_pointee()
         if self._capacity > 0:
             self._data.free()
 
@@ -103,14 +103,12 @@ struct MoveOnlyList[T: Movable & ImplicitlyDestructible]:
             var new_cap = self._capacity * 2 if self._capacity > 0 else 4
             var new_data = alloc[Self.T](new_cap)
             for i in range(self._len):
-                (new_data + i).init_pointee_move(
-                    (self._data + i).take_pointee()
-                )
+                (new_data + i).unsafe_write((self._data + i).take_pointee())
             if self._capacity > 0:
                 self._data.free()
             self._data = new_data
             self._capacity = new_cap
-        (self._data + self._len).init_pointee_move(value^)
+        (self._data + self._len).unsafe_write(value^)
         self._len += 1
 
     def __getitem__(ref self, idx: Int) -> ref[self] Self.T:

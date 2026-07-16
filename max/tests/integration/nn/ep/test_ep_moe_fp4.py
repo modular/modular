@@ -522,6 +522,31 @@ def test_ep_moe_nvfp4(
         )
 
 
+def _shuffle_b_5d(src: torch.Tensor) -> torch.Tensor:
+    """Lay a row-major MXFP4 B weight ``[N, K_bytes]`` out in the AMD CDNA4
+    ``preb`` 5D layout. Byte-identical to the Mojo ``b_5d_grouped_layout`` in
+    ``max/kernels/src/linalg/matmul/gpu/amd/mxfp4_preshuffle_layouts.mojo``.
+    """
+    N, K_BYTES = src.shape
+    src_v = src.reshape(N // 16, 16, K_BYTES // 64, 4, 16).permute(
+        0, 2, 3, 1, 4
+    )
+    return src_v.contiguous().reshape(N, K_BYTES)
+
+
+def _shuffle_scale_4d(src: torch.Tensor) -> torch.Tensor:
+    """Lay a row-major MXFP4 E8M0 weight scale ``[MN, K_scales]`` out in the
+    ``preb`` 4D-cell layout addressed by ``Shuffler.scale_4d_byte_off`` (same
+    Mojo source). This is the static weight-scale permutation, distinct from
+    the runtime activation-scale slot packing.
+    """
+    MN, K_SCALES = src.shape
+    src_v = src.reshape(MN // 32, 2, 16, K_SCALES // 8, 2, 4).permute(
+        0, 3, 5, 2, 4, 1
+    )
+    return src_v.contiguous().reshape(MN, K_SCALES)
+
+
 @pytest.mark.skipif(
     accelerator_api() != "hip", reason="FP4 kernel only supports AMD GPUs"
 )
@@ -530,6 +555,14 @@ def test_ep_moe_mxfp4(
     n_devices: int,
     moe_weights_mxfp4: dict[str, torch.Tensor],
 ) -> None:
+    # Exercises the MXFP4 EP A-scale preshuffle fold (KS224 up-proj
+    # via ep_wait, KS64 down-proj via fused_silu) end-to-end against the torch
+    # reference. fused_shared_expert=False (below) routes the forward through
+    # the production `ep.dispatch_wait.mxfp4` path that carries the fold; the
+    # routed experts go through the preshuffled-B (preb) grouped matmul. The
+    # fold is numerically identical to the standalone preshuffle (proven
+    # byte-exact by the shmem kernel tests), so it has no fold-on/off numeric
+    # A/B; this gate validates the fold-fed preb grouped matmul output.
     assert n_devices <= accelerator_count(), (
         "Devices are not enough to run EP test"
     )
@@ -557,6 +590,29 @@ def test_ep_moe_mxfp4(
         else:
             wrapped_moe_weights_fp4[key] = value
 
+    # Lay the loaded routed-expert B weights + E8M0 B-scales out in
+    # the AMD CDNA4 `preb` layout (mxfp4_preshuffled_b=True below routes the
+    # grouped matmul to the preb kernel). Applied only to the CPU copy fed to
+    # load_state_dict; the GPU copy the torch reference dequantizes is left
+    # untouched. The permutations are byte-exact to the Mojo source of truth
+    # max/kernels/src/linalg/matmul/gpu/amd/mxfp4_preshuffle_layouts.mojo.
+    for _k in list(wrapped_moe_weights_fp4):
+        _v = wrapped_moe_weights_fp4[_k]
+        # The shared expert (fused_shared_expert=False) is computed by a
+        # separate dense MLP, not the grouped preb kernel, so its weights must
+        # stay row-major. Only the routed experts.* go through the preb matmul.
+        if (
+            not isinstance(_v, torch.Tensor)
+            or _k == "gate.gate_score.weight"
+            or _k.startswith("shared_experts.")
+        ):
+            continue
+        if _k.endswith(".weight") and _v.dtype == torch.uint8:
+            wrapped_moe_weights_fp4[_k] = _shuffle_b_5d(_v.contiguous())
+        elif _k.endswith(".weight_scale") and _v.dtype == torch.float8_e8m0fnu:
+            _scale = _shuffle_scale_4d(_v.contiguous().view(torch.uint8))
+            wrapped_moe_weights_fp4[_k] = _scale.view(torch.float8_e8m0fnu)
+
     # Initialize devices
     devices = [Accelerator(id) for id in range(n_devices)]
     devices_ref = [DeviceRef(d.label, d.id) for d in devices]
@@ -581,6 +637,7 @@ def test_ep_moe_mxfp4(
         attn_quantized_layers=set(),
         embedding_output_dtype=None,
         format=QuantFormat.MXFP4,
+        mxfp4_preshuffled_b=True,
     )
 
     # Create EP configuration
@@ -594,7 +651,11 @@ def test_ep_moe_mxfp4(
         n_gpus_per_node=n_devices,
         n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
         dispatch_quant_config=fp4_config,
-        fused_shared_expert=True,
+        # fused_shared_expert=False routes through the production
+        # `ep.dispatch_wait.mxfp4` path that carries the KS224/KS64 A-scale
+        # fold; the shared expert is computed separately (dense MLP) and added
+        # in _ep_forward, matching the torch reference.
+        fused_shared_expert=False,
     )
 
     # Initialize EP communication
@@ -717,6 +778,13 @@ def test_ep_moe_mxfp4(
         for k in moe_weights_fp4
         if k.endswith(".weight") and moe_weights_fp4[k].dtype == torch.uint8
     ]
+    # Confirm the A-scale fold actually activated during the forward
+    # trace (configure_ep_scale_fusion sets this flag); guards against the gate
+    # silently degrading to a no-op if a default or gate condition changes.
+    assert ep_batch_manager.config.mxfp4_a_scales_preshuffled, (
+        "MXFP4 EP A-scale fold did not activate; the numeric gate would be moot"
+    )
+
     for key in weight_keys:
         weight = moe_weights_fp4.pop(key)
         scale = moe_weights_fp4.pop(f"{key}_scale")

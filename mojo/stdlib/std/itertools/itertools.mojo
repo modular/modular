@@ -19,6 +19,8 @@ This module includes functions for creating specialized iterators:
 - `drop_while()` - Drops elements while predicate is true, then yields the rest
 - `product()` - Computes the Cartesian product of two, three, or four iterables
 - `repeat()` - Repeats an element a specified number of times
+- `drop()` - Drops the first n elements and yields the rest
+- `take()` - Yields the first n elements
 - `take_while()` - Yields elements while predicate is true
 
 These utilities enable functional-style iteration patterns and composable iterator
@@ -28,8 +30,6 @@ operations.
 # ===-----------------------------------------------------------------------===#
 # count
 # ===-----------------------------------------------------------------------===#
-
-from std.builtin.rebind import downcast
 
 
 @fieldwise_init
@@ -131,6 +131,8 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
         return self^
 
     def __next__(mut self) raises StopIteration -> Self.Element:
+        comptime assert conforms_to(Self.IteratorTypeA.Element, Copyable)
+
         # Take the first element from 'a' if we haven't got it yet.
         if not self._inner_a_elem:
             self._inner_a_elem = next(self._inner_a)
@@ -139,10 +141,8 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
             # Get the next element from 'b' if it exists.
             var b_val = next(self._inner_b)
 
-            var elem = trait_downcast[Copyable](
-                self._inner_a_elem.unsafe_value()
-            ).copy()
-            return rebind_var[Self.IteratorTypeA.Element](elem^), b_val^
+            var elem = self._inner_a_elem.unsafe_value().copy()
+            return elem^, b_val^
         except:
             # reset if we reach the end of the B iterator and grab the next
             # item from the A iterator.
@@ -150,10 +150,8 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
             self._inner_a_elem = next(self._inner_a)
             var b_val = next(self._inner_b)
             # If a and b iterators had more elements, return this one.
-            var elem = trait_downcast[Copyable](
-                self._inner_a_elem.unsafe_value()
-            ).copy()
-            return rebind_var[Self.IteratorTypeA.Element](elem^), b_val^
+            var elem = self._inner_a_elem.unsafe_value().copy()
+            return elem^, b_val^
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         # compute a * initial_b + b for lower and upper
@@ -180,8 +178,10 @@ def product[
     IterableTypeA: Iterable, IterableTypeB: Iterable
 ](ref iterable_a: IterableTypeA, ref iterable_b: IterableTypeB) -> _Product2[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
-    downcast[type_of(iter(iterable_b)), Copyable & Iterator],
-]:
+    IterableTypeB.IteratorType[origin_of(iterable_b)],
+] where conforms_to(
+    IterableTypeB.IteratorType[origin_of(iterable_b)], Copyable & Iterator
+):
     """Returns an iterator that yields tuples of the elements of the outer
     product of the iterables.
 
@@ -210,9 +210,7 @@ def product[
     """
     return {
         iter(iterable_a),
-        rebind_var[downcast[type_of(iter(iterable_b)), Copyable & Iterator]](
-            iter(iterable_b)
-        ),
+        iter(iterable_b),
     }
 
 
@@ -275,15 +273,9 @@ struct _Product3[
         comptime assert conforms_to(Self.IteratorTypeC.Element, Copyable)
 
         var nested = next(self._inner)  # Returns (a, (b, c))
-        var a = rebind_var[Self.IteratorTypeA.Element](
-            trait_downcast[Copyable](nested[0]).copy()
-        )
-        var b = rebind_var[Self.IteratorTypeB.Element](
-            trait_downcast[Copyable](nested[1][0]).copy()
-        )
-        var c = rebind_var[Self.IteratorTypeC.Element](
-            trait_downcast[Copyable](nested[1][1]).copy()
-        )
+        var a = nested[0].copy()
+        var b = nested[1][0].copy()
+        var c = nested[1][1].copy()
         # Flatten to (a, b, c)
         return (a^, b^, c^)
 
@@ -300,9 +292,13 @@ def product[
     ref iterable_c: IterableTypeC,
 ) -> _Product3[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
-    downcast[type_of(iter(iterable_b)), Copyable & Iterator],
-    downcast[type_of(iter(iterable_c)), Copyable & Iterator],
-]:
+    IterableTypeB.IteratorType[origin_of(iterable_b)],
+    IterableTypeC.IteratorType[origin_of(iterable_c)],
+] where conforms_to(
+    IterableTypeB.IteratorType[origin_of(iterable_b)], Copyable & Iterator
+) and conforms_to(
+    IterableTypeC.IteratorType[origin_of(iterable_c)], Copyable & Iterator
+):
     """Returns an iterator that yields tuples of the elements of the outer
     product of three iterables.
 
@@ -334,12 +330,8 @@ def product[
     """
     return {
         iter(iterable_a),
-        rebind_var[downcast[type_of(iter(iterable_b)), Copyable & Iterator]](
-            iter(iterable_b)
-        ),
-        rebind_var[downcast[type_of(iter(iterable_c)), Copyable & Iterator]](
-            iter(iterable_c)
-        ),
+        iter(iterable_b),
+        iter(iterable_c),
     }
 
 
@@ -408,18 +400,10 @@ struct _Product4[
         var nested = next(self._inner)  # Returns (a, (b, c, d))
         # Flatten to (a, b, c, d)
 
-        var a = rebind_var[Self.IteratorTypeA.Element](
-            trait_downcast[Copyable](nested[0]).copy()
-        )
-        var b = rebind_var[Self.IteratorTypeB.Element](
-            trait_downcast[Copyable](nested[1][0]).copy()
-        )
-        var c = rebind_var[Self.IteratorTypeC.Element](
-            trait_downcast[Copyable](nested[1][1]).copy()
-        )
-        var d = rebind_var[Self.IteratorTypeD.Element](
-            trait_downcast[Copyable](nested[1][2]).copy()
-        )
+        var a = nested[0].copy()
+        var b = nested[1][0].copy()
+        var c = nested[1][1].copy()
+        var d = nested[1][2].copy()
         return (a^, b^, c^, d^)
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -439,10 +423,20 @@ def product[
     ref iterable_d: IterableTypeD,
 ) -> _Product4[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
-    downcast[type_of(iter(iterable_b)), Copyable & Iterator],
-    downcast[type_of(iter(iterable_c)), Copyable & Iterator],
-    downcast[type_of(iter(iterable_d)), Copyable & Iterator],
-]:
+    IterableTypeB.IteratorType[origin_of(iterable_b)],
+    IterableTypeC.IteratorType[origin_of(iterable_c)],
+    IterableTypeD.IteratorType[origin_of(iterable_d)],
+] where (
+    conforms_to(
+        IterableTypeB.IteratorType[origin_of(iterable_b)], Copyable & Iterator
+    )
+    and conforms_to(
+        IterableTypeC.IteratorType[origin_of(iterable_c)], Copyable & Iterator
+    )
+    and conforms_to(
+        IterableTypeD.IteratorType[origin_of(iterable_d)], Copyable & Iterator
+    )
+):
     """Returns an iterator that yields tuples of the elements of the outer
     product of four iterables.
 
@@ -477,15 +471,9 @@ def product[
     """
     return {
         iter(iterable_a),
-        rebind_var[downcast[type_of(iter(iterable_b)), Copyable & Iterator]](
-            iter(iterable_b)
-        ),
-        rebind_var[downcast[type_of(iter(iterable_c)), Copyable & Iterator]](
-            iter(iterable_c)
-        ),
-        rebind_var[downcast[type_of(iter(iterable_d)), Copyable & Iterator]](
-            iter(iterable_d)
-        ),
+        iter(iterable_b),
+        iter(iterable_c),
+        iter(iterable_d),
     }
 
 
@@ -495,8 +483,8 @@ def product(
     var iterable_b: Some[IterableOwned],
 ) -> _Product2[
     type_of(iterable_a).IteratorOwnedType,
-    downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator],
-] where conforms_to(type_of(iterable_b).IteratorOwnedType, Copyable):
+    type_of(iterable_b).IteratorOwnedType,
+] where conforms_to(type_of(iterable_b).IteratorOwnedType, Copyable & Iterator):
     """Returns an iterator that yields tuples of the elements of the outer
     product of the iterables, consuming both iterables.
 
@@ -510,9 +498,7 @@ def product(
     """
     return {
         iter(iterable_a^),
-        rebind_var[
-            downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator]
-        ](iter(iterable_b^)),
+        iter(iterable_b^),
     }
 
 
@@ -523,12 +509,12 @@ def product(
     var iterable_c: Some[IterableOwned],
 ) -> _Product3[
     type_of(iterable_a).IteratorOwnedType,
-    downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator],
-    downcast[type_of(iterable_c).IteratorOwnedType, Copyable & Iterator],
+    type_of(iterable_b).IteratorOwnedType,
+    type_of(iterable_c).IteratorOwnedType,
 ] where conforms_to(
-    type_of(iterable_b).IteratorOwnedType, Copyable
+    type_of(iterable_b).IteratorOwnedType, Copyable & Iterator
 ) and conforms_to(
-    type_of(iterable_c).IteratorOwnedType, Copyable
+    type_of(iterable_c).IteratorOwnedType, Copyable & Iterator
 ):
     """Returns an iterator that yields tuples of the elements of the outer
     product of three iterables, consuming all three iterables.
@@ -544,12 +530,8 @@ def product(
     """
     return {
         iter(iterable_a^),
-        rebind_var[
-            downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator]
-        ](iter(iterable_b^)),
-        rebind_var[
-            downcast[type_of(iterable_c).IteratorOwnedType, Copyable & Iterator]
-        ](iter(iterable_c^)),
+        iter(iterable_b^),
+        iter(iterable_c^),
     }
 
 
@@ -561,13 +543,13 @@ def product(
     var iterable_d: Some[IterableOwned],
 ) -> _Product4[
     type_of(iterable_a).IteratorOwnedType,
-    downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator],
-    downcast[type_of(iterable_c).IteratorOwnedType, Copyable & Iterator],
-    downcast[type_of(iterable_d).IteratorOwnedType, Copyable & Iterator],
+    type_of(iterable_b).IteratorOwnedType,
+    type_of(iterable_c).IteratorOwnedType,
+    type_of(iterable_d).IteratorOwnedType,
 ] where (
-    conforms_to(type_of(iterable_b).IteratorOwnedType, Copyable)
-    and conforms_to(type_of(iterable_c).IteratorOwnedType, Copyable)
-    and conforms_to(type_of(iterable_d).IteratorOwnedType, Copyable)
+    conforms_to(type_of(iterable_b).IteratorOwnedType, Copyable & Iterator)
+    and conforms_to(type_of(iterable_c).IteratorOwnedType, Copyable & Iterator)
+    and conforms_to(type_of(iterable_d).IteratorOwnedType, Copyable & Iterator)
 ):
     """Returns an iterator that yields tuples of the elements of the outer
     product of four iterables, consuming all four iterables.
@@ -584,15 +566,9 @@ def product(
     """
     return {
         iter(iterable_a^),
-        rebind_var[
-            downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator]
-        ](iter(iterable_b^)),
-        rebind_var[
-            downcast[type_of(iterable_c).IteratorOwnedType, Copyable & Iterator]
-        ](iter(iterable_c^)),
-        rebind_var[
-            downcast[type_of(iterable_d).IteratorOwnedType, Copyable & Iterator]
-        ](iter(iterable_d^)),
+        iter(iterable_b^),
+        iter(iterable_c^),
+        iter(iterable_d^),
     }
 
 
@@ -633,10 +609,6 @@ struct _CycleIterator[InnerIteratorType: Iterator & Copyable](
         self._orig = iterator.copy()
         self._iter = iterator^
 
-    def __init__(out self, *, copy: Self):
-        self._orig = copy._orig.copy()
-        self._iter = copy._iter.copy()
-
     @always_inline
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
@@ -660,8 +632,8 @@ struct _CycleIterator[InnerIteratorType: Iterator & Copyable](
 def cycle[
     IterableType: Iterable
 ](ref iterable: IterableType) -> _CycleIterator[
-    downcast[type_of(iter(iterable)), Copyable & Iterator]
-]:
+    type_of(iter(iterable))
+] where conforms_to(type_of(iter(iterable)), Copyable & Iterator):
     """Creates an iterator that cycles through an iterable indefinitely.
 
     This function returns an iterator that yields elements from the input
@@ -700,19 +672,15 @@ def cycle[
     # Output: red, green, blue, red, green, blue
     ```
     """
-    return _CycleIterator(
-        rebind_var[downcast[type_of(iter(iterable)), Copyable & Iterator]](
-            iter(iterable)
-        )
-    )
+    return _CycleIterator(iter(iterable))
 
 
 @always_inline
 def cycle(
     var iterable: Some[IterableOwned],
-) -> _CycleIterator[
-    downcast[type_of(iterable).IteratorOwnedType, Copyable & Iterator]
-] where conforms_to(type_of(iterable).IteratorOwnedType, Copyable):
+) -> _CycleIterator[type_of(iterable).IteratorOwnedType] where conforms_to(
+    type_of(iterable).IteratorOwnedType, Copyable & Iterator
+):
     """Creates an iterator that cycles through an iterable indefinitely,
     consuming the iterable.
 
@@ -722,11 +690,7 @@ def cycle(
     Returns:
         An iterator that yields elements from the iterable forever.
     """
-    return _CycleIterator(
-        rebind_var[
-            downcast[type_of(iterable).IteratorOwnedType, Copyable & Iterator]
-        ](iter(iterable^))
-    )
+    return _CycleIterator(iter(iterable^))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -791,15 +755,15 @@ struct _TakeWhileIterator[
 
     @always_inline
     def __next__(mut self) raises StopIteration -> Self.Element:
+        comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
+
         if self._exhausted:
             raise StopIteration()
         var elem = next(self._inner)
         if not Self.predicate(elem):
             self._exhausted = True
             # Discard the element that failed the predicate
-            _ = rebind_var[
-                downcast[Self.Element, Movable & ImplicitlyDestructible]
-            ](elem^)
+            _ = elem^
             raise StopIteration()
         return elem^
 
@@ -815,7 +779,7 @@ def take_while[
     predicate=predicate,
 ] where conforms_to(
     IterableType.IteratorType[origin].Element,
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
 ):
     """Creates an iterator that yields elements while predicate returns True.
 
@@ -867,7 +831,7 @@ def take_while[
     predicate=predicate,
 ] where conforms_to(
     IterableType.IteratorOwnedType.Element,
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
 ):
     """Creates an iterator that yields elements while predicate returns True,
     consuming the iterable.
@@ -952,14 +916,14 @@ struct _DropWhileIterator[
 
     @always_inline
     def __next__(mut self) raises StopIteration -> Self.Element:
+        comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
+
         if self._dropping:
             while True:
                 var elem = next(self._inner)
                 if Self.predicate(elem):
                     # Discard the element that matched the predicate
-                    _ = rebind_var[
-                        downcast[Self.Element, Movable & ImplicitlyDestructible]
-                    ](elem^)
+                    _ = elem^
                     continue
                 self._dropping = False
                 return elem^
@@ -977,7 +941,7 @@ def drop_while[
     predicate=predicate,
 ] where conforms_to(
     IterableType.IteratorType[origin].Element,
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
 ):
     """Creates an iterator that drops elements while predicate returns True.
 
@@ -1030,7 +994,7 @@ def drop_while[
     predicate=predicate,
 ] where conforms_to(
     IterableType.IteratorOwnedType.Element,
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
 ):
     """Creates an iterator that drops elements while predicate returns True,
     consuming the iterable.
@@ -1060,7 +1024,7 @@ def drop_while[
 
 
 @fieldwise_init
-struct _RepeatIterator[ElementType: Copyable & ImplicitlyDestructible](
+struct _RepeatIterator[ElementType: Copyable & ImplicitlyDeletable](
     Copyable, Iterable, IterableOwned, Iterator
 ):
     """Iterator that repeats an element a specified number of times.
@@ -1096,7 +1060,7 @@ struct _RepeatIterator[ElementType: Copyable & ImplicitlyDestructible](
 
 @always_inline
 def repeat[
-    ElementType: Copyable & ImplicitlyDestructible
+    ElementType: Copyable & ImplicitlyDeletable
 ](element: ElementType, *, times: Int) -> _RepeatIterator[ElementType]:
     """Constructs an iterator that repeats the given element a specified number of times.
 
@@ -1131,3 +1095,296 @@ def repeat[
     """
     assert times >= 0, "The `times` argument must be non-negative"
     return {element.copy(), times}
+
+
+# ===-----------------------------------------------------------------------===#
+# take
+# ===-----------------------------------------------------------------------===#
+
+
+struct _TakeIterator[InnerIteratorType: Iterator](
+    Copyable where conforms_to(InnerIteratorType, Copyable),
+    Iterable where conforms_to(InnerIteratorType, Copyable),
+    IterableOwned,
+    Iterator,
+):
+    """Iterator that yields the first `n` elements from an inner iterator.
+
+    Parameters:
+        InnerIteratorType: The type of the inner iterator.
+    """
+
+    comptime Element = Self.InnerIteratorType.Element
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
+
+    var _inner: Self.InnerIteratorType
+    var _remaining: Int
+
+    def __init__(out self, var inner: Self.InnerIteratorType, *, count: Int):
+        """Creates a take iterator.
+
+        Args:
+            inner: The inner iterator to wrap.
+            count: The maximum number of elements to yield.
+        """
+        self._inner = inner^
+        self._remaining = count
+
+    def __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.InnerIteratorType, Copyable):
+        self._inner = copy._inner.copy()
+        self._remaining = copy._remaining
+
+    @always_inline
+    def __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.InnerIteratorType, Copyable
+    ):
+        return self.copy()
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    @always_inline
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        if self._remaining <= 0:
+            raise StopIteration()
+        var value = next(self._inner)
+        self._remaining -= 1
+        return value^
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var remaining = max(0, self._remaining)
+        var lower, upper = self._inner.bounds()
+        lower = min(lower, remaining)
+        if upper:
+            return (lower, min(upper.value(), remaining))
+        return (lower, remaining)
+
+
+@always_inline
+def take[
+    origin: ImmutOrigin,
+    IterableType: Iterable,
+    //,
+](ref[origin] iterable: IterableType, count: Int) -> _TakeIterator[
+    IterableType.IteratorType[origin]
+]:
+    """Creates an iterator that yields the first `count` elements.
+
+    This function returns an iterator that yields at most `count` elements
+    from the input iterable, then stops.
+
+    Parameters:
+        origin: The origin of the iterable.
+        IterableType: The type of the iterable.
+
+    Args:
+        iterable: The iterable to take elements from.
+        count: The maximum number of elements to yield.
+
+    Returns:
+        An iterator that yields at most `count` elements.
+
+    Examples:
+
+    ```mojo
+    from std.itertools import take
+
+    var nums = [1, 2, 3, 4, 5]
+    for num in take(nums, 3):
+        print(num)  # Prints: 1, 2, 3
+    ```
+    """
+    assert count >= 0, "The `count` argument must be non-negative"
+    # Unlike `drop` and `take_while`, `take` has no `ImplicitlyDeletable`
+    # constraint on the element type: it never discards an element, it just
+    # stops yielding once `count` is reached.
+    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
+    # substituted through associated types right.
+    return _TakeIterator(
+        rebind_var[IterableType.IteratorType[origin]](iter(iterable)),
+        count=count,
+    )
+
+
+@always_inline
+def take[
+    IterableType: IterableOwned, //
+](var iterable: IterableType, count: Int) -> _TakeIterator[
+    IterableType.IteratorOwnedType
+]:
+    """Creates an iterator that yields the first `count` elements, consuming
+    the iterable.
+
+    Parameters:
+        IterableType: The type of the iterable.
+
+    Args:
+        iterable: The iterable to consume and take elements from.
+        count: The maximum number of elements to yield.
+
+    Returns:
+        An iterator that yields at most `count` elements.
+    """
+    assert count >= 0, "The `count` argument must be non-negative"
+    return _TakeIterator(iter(iterable^), count=count)
+
+
+# ===-----------------------------------------------------------------------===#
+# drop
+# ===-----------------------------------------------------------------------===#
+
+
+struct _DropIterator[InnerIteratorType: Iterator](
+    Copyable where conforms_to(InnerIteratorType, Copyable),
+    Iterable where conforms_to(InnerIteratorType, Copyable),
+    IterableOwned,
+    Iterator,
+):
+    """Iterator that drops the first `n` elements and yields the rest.
+
+    Parameters:
+        InnerIteratorType: The type of the inner iterator.
+    """
+
+    comptime Element = Self.InnerIteratorType.Element
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
+
+    var _inner: Self.InnerIteratorType
+    var _to_drop: Int
+
+    def __init__(out self, var inner: Self.InnerIteratorType, *, count: Int):
+        """Creates a drop iterator.
+
+        Args:
+            inner: The inner iterator to wrap.
+            count: The number of elements to drop.
+        """
+        self._inner = inner^
+        self._to_drop = count
+
+    def __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.InnerIteratorType, Copyable):
+        self._inner = copy._inner.copy()
+        self._to_drop = copy._to_drop
+
+    @always_inline
+    def __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.InnerIteratorType, Copyable
+    ):
+        return self.copy()
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    @always_inline
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
+
+        while self._to_drop > 0:
+            # Discard dropped elements. If `next` raises, `_to_drop` is not
+            # decremented, leaving the iterator in a consistent exhausted
+            # state.
+            var elem = next(self._inner)
+            _ = elem^
+            self._to_drop -= 1
+        return next(self._inner)
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var to_drop = max(0, self._to_drop)
+        var lower, upper = self._inner.bounds()
+        lower = max(0, lower - to_drop)
+        if upper:
+            return (lower, max(0, upper.value() - to_drop))
+        return (lower, None)
+
+
+@always_inline
+def drop[
+    origin: ImmutOrigin,
+    IterableType: Iterable,
+    //,
+](ref[origin] iterable: IterableType, count: Int) -> _DropIterator[
+    IterableType.IteratorType[origin]
+] where conforms_to(
+    IterableType.IteratorType[origin].Element,
+    ImplicitlyDeletable,
+):
+    """Creates an iterator that drops the first `count` elements.
+
+    This function returns an iterator that drops the first `count` elements
+    from the input iterable, then yields all remaining elements.
+
+    Parameters:
+        origin: The origin of the iterable.
+        IterableType: The type of the iterable.
+
+    Args:
+        iterable: The iterable to drop elements from.
+        count: The number of elements to drop.
+
+    Returns:
+        An iterator that drops the first `count` elements.
+
+    Examples:
+
+    ```mojo
+    from std.itertools import drop
+
+    var nums = [1, 2, 3, 4, 5]
+    for num in drop(nums, 2):
+        print(num)  # Prints: 3, 4, 5
+    ```
+    """
+    assert count >= 0, "The `count` argument must be non-negative"
+    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
+    # substituted through associated types right.
+    return _DropIterator(
+        rebind_var[IterableType.IteratorType[origin]](iter(iterable)),
+        count=count,
+    )
+
+
+@always_inline
+def drop[
+    IterableType: IterableOwned, //
+](var iterable: IterableType, count: Int) -> _DropIterator[
+    IterableType.IteratorOwnedType
+] where conforms_to(
+    IterableType.IteratorOwnedType.Element,
+    ImplicitlyDeletable,
+):
+    """Creates an iterator that drops the first `count` elements, consuming
+    the iterable.
+
+    Parameters:
+        IterableType: The type of the iterable.
+
+    Args:
+        iterable: The iterable to consume and drop elements from.
+        count: The number of elements to drop.
+
+    Returns:
+        An iterator that drops the first `count` elements.
+    """
+    assert count >= 0, "The `count` argument must be non-negative"
+    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
+    # substituted through associated types right.
+    return _DropIterator(
+        rebind_var[IterableType.IteratorOwnedType](iter(iterable^)),
+        count=count,
+    )

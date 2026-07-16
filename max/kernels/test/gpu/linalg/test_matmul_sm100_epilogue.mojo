@@ -90,14 +90,14 @@ def test_matmul_sm100_epilogue[
         )
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = (
@@ -134,7 +134,7 @@ def test_matmul_sm100_epilogue[
     @__copy_capture(c_tensor_lt)
     def test_lambda_add_coords_summ[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -149,9 +149,9 @@ def test_matmul_sm100_epilogue[
 
     for i in range(Int(m.value())):
         for j in range(Int(n.value())):
-            comptime assert c_host.flat_rank >= 2
-            c_host[(Idx(i), Idx(j))] = Scalar[c_type](random_float64(-1, 1))
-            c_host_copy[(Idx(i), Idx(j))] = c_host[(Idx(i), Idx(j))]
+            comptime assert c_host.flat_rank == 2
+            c_host[i, j] = Scalar[c_type](random_float64(-1, 1))
+            c_host_copy[i, j] = c_host[i, j]
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -215,7 +215,7 @@ def test_matmul_sm100_epilogue[
     @__copy_capture(c_tensor_host_lt)
     def test_lambda_add_coords_summ_local[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -228,12 +228,9 @@ def test_matmul_sm100_epilogue[
         # alias compute_lambda = elementwise_compute_lambda_fn.value()
         for i in range(Int(m.value())):
             for j in range(Int(n.value())):
-                comptime assert c_host_ref.flat_rank >= 2
-                c_host_ref[
-                    (Idx(i), Idx(j))
-                ] = test_lambda_add_coords_summ_local(
-                    IndexList[2](i, j),
-                    c_host_ref[(Idx(i), Idx(j))],
+                comptime assert c_host_ref.flat_rank == 2
+                c_host_ref[i, j] = test_lambda_add_coords_summ_local(
+                    IndexList[2](i, j), c_host_ref[i, j]
                 )
 
     comptime rtol = 1e-2
@@ -314,16 +311,14 @@ def main() raises:
                         ](ctx, m, n, k)
 
                     # FASTER mode: 2 key test cases only
-                    run[4, 4](Idx(Int(1000)), Idx(1024), Idx(1024))
+                    run[4, 4](Int(1000), Idx[1024], Idx[1024])
 
                     comptime if not FASTER_TEST:
-                        run[4, 4](Idx(Int(512)), Idx(4096), Idx(1024))
-                        run[4, 4, k_group=2](
-                            Idx(Int(500)), Idx(2048), Idx(4096)
-                        )
-                        run[8, 2](Idx(Int(1024)), Idx(256), Idx(128))
+                        run[4, 4](Int(512), Idx[4096], Idx[1024])
+                        run[4, 4, k_group=2](Int(500), Idx[2048], Idx[4096])
+                        run[8, 2](Int(1024), Idx[256], Idx[128])
 
-                    run[2, 2](Idx(1024), Idx(1024), Idx(2048))
+                    run[2, 2](Idx[1024], Idx[1024], Idx[2048])
 
                     comptime if not FASTER_TEST:
-                        run[4, 4](Idx(Int(8192)), Idx(2560), Idx(8192))
+                        run[4, 4](Int(8192), Idx[2560], Idx[8192])
