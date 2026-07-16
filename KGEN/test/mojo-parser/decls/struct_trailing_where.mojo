@@ -68,3 +68,24 @@ struct ConditionallyDeletableWrapper[T: AnyType](
 struct TrailingWhereDeletableField[T: AnyType]
     where conforms_to(T, ImplicitlyDeletable):
     var value: ConditionallyDeletableWrapper[Self.T]
+
+
+# The auto-synthesized fieldwise `__init__` for a struct with a trailing
+# `where` clause must be able to use that clause's assumption to prove a
+# field's conditional conformance -- mirroring the dtor case above, but
+# exercising StructEmitter::synthesizeFieldwiseInit's field-movability check
+# instead of synthesizeEmptyDtor's.
+struct ConditionallyMovableWrapper[T: ImplicitlyDeletable](
+    Movable where conforms_to(T, Movable),
+):
+    var value: Self.T
+
+
+# CHECK-LABEL: lit.struct.decl @TrailingWhereMovableField
+# CHECK-SAME: <T: !AnyType_ImplicitlyDeletable
+# CHECK: lit.struct.field value : !lit.struct<#ConditionallyMovableWrapper
+# CHECK-SAME: <:!AnyType_ImplicitlyDeletable T>>
+struct TrailingWhereMovableField[T: ImplicitlyDeletable](
+    Movable where conforms_to(T, Movable)
+):
+    var value: ConditionallyMovableWrapper[Self.T]

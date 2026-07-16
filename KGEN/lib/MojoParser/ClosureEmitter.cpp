@@ -2565,7 +2565,7 @@ ClosureEmitter::buildParamCaptureInfo(ParamType paramType,
   };
 
   TypedAttr move;
-  if (selfType.isMovable(nestedFnDecl.getLoc(), shared, &nestedFnDecl))
+  if (selfType.isMovable(nestedFnDecl.getLoc(), shared, nestedFnDecl))
     move = makeWitness(moveParent);
 
   TypedAttr del;
@@ -2575,7 +2575,7 @@ ClosureEmitter::buildParamCaptureInfo(ParamType paramType,
 
   TypedAttr copy;
   if (selfType.isExplicitlyCopyable(nestedFnDecl.getLoc(), shared,
-                                    &nestedFnDecl))
+                                    nestedFnDecl))
     copy = makeWitness(copyParent);
 
   return {validateAndBuildTriple(copy, move, del, convention, capture, isMove,
@@ -3106,7 +3106,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
     Type type = valueInParent.getType().mlirType;
     if (auto ref = dyn_cast<RefType>(valueInParent.getType().mlirType))
       type = ref.getElementType();
-    if (!ASTType(type).isMovable(closure.getLoc(), shared)) {
+    if (!ASTType(type).isMovable(closure.getLoc(), shared, *fnParentDecl)) {
       shared.emitError(location, "Cannot capture ")
           << name << " by move because the type is not movable";
       return nullptr;

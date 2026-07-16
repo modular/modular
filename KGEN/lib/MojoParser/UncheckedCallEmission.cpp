@@ -765,7 +765,8 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     //
     // If we don't do this end up with an uninitialized value on the error
     // return path.  Movable types are supposed to be efficiently movable.
-    if (destRValueType.isMovable(callExpr->getLoc(), emitter.shared)) {
+    if (destRValueType.isMovable(callExpr->getLoc(), emitter.shared,
+                                 emitter.declScope)) {
       // If we're the top level, then nothing can use the result, so we can
       // microoptimize this case.
       Operation *opForRaise = nullptr;
@@ -893,8 +894,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       // Non-trivially copyable types cannot be copied from a non-default
       // address space, because copyinit doesn't allow 'ref'.
       if (!ASTType(refType.getElementType())
-               .isProvablyImplicitlyTriviallyCopyable(expr->getLoc(),
-                                                      emitter.shared)) {
+               .isProvablyImplicitlyTriviallyCopyable(
+                   expr->getLoc(), emitter.shared, emitter.declScope)) {
         emitter.emitError(
             expr->getLoc(),
             "non-implicitly trivially copyable value cannot be copied from a "
@@ -1865,7 +1866,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     for (auto [argIdx, argValAndExpr] : llvm::enumerate(argumentValues)) {
       auto argType = argValAndExpr.ir.getIfPValue().getRValueType();
       const ExprNode *expr = argValAndExpr.expr;
-      if (argType.isImplicitlyCopyable(expr->getLoc(), shared))
+      if (argType.isImplicitlyCopyable(expr->getLoc(), shared, declScope))
         continue;
       // We allow implicitly materializing default values to runtime.
       if (isDefaultMask.test(argIdx))

@@ -455,7 +455,7 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
   // way down from `emitPreemittedArgumentAsDynamicValue`.
   bool isDefaultArg = (context == EC_CallArgDefaultValue);
   if (isDefaultArg ||
-      valueType.isImplicitlyCopyable(value.expr->getLoc(), shared))
+      valueType.isImplicitlyCopyable(value.expr->getLoc(), shared, declScope))
     return SRValue(ParamMaterializeOp::create(*builder, location, value.ir));
 
   if (isa<ModuleType>(valueType)) {
@@ -917,7 +917,8 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
   // Only use memcpy for non-register passable types, unless we're forced to by
   // address space constraints.
   if (value.ir.isMValue() &&
-      valueType.isProvablyImplicitlyTriviallyCopyable(exprLoc, shared) &&
+      valueType.isProvablyImplicitlyTriviallyCopyable(exprLoc, shared,
+                                                      declScope) &&
       (!isRegisterPassable || isNonDefaultAddressSpace)) {
     if (!builder) {
       emitErrorForDynamicValueInParameter(value.expr);
@@ -969,12 +970,12 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
 
   // Verify that the type is copyable in this way so we can generate tailored
   // error messages, rather than just allowing IREmitter to do it.
-  if (!valueType.isImplicitlyCopyable(exprLoc, shared, &declScope)) {
+  if (!valueType.isImplicitlyCopyable(exprLoc, shared, declScope)) {
     // If the value is an RValue, it might be that the type isn't copyable or
     // movable at all. If so, give a specific error about this.
     if (value.ir.getIfRValue() &&
-        !valueType.isMovable(exprLoc, shared, &declScope) &&
-        !valueType.isExplicitlyCopyable(exprLoc, shared, &declScope)) {
+        !valueType.isMovable(exprLoc, shared, declScope) &&
+        !valueType.isExplicitlyCopyable(exprLoc, shared, declScope)) {
       emitError(exprLoc, "value of type ")
           << valueType
           << " cannot be copied or moved; consider conforming it to 'Movable'"
@@ -1004,7 +1005,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
 
     // Suggest transfer if the type is movable, or if it is a transferable
     // MValue.
-    if ((valueType.isMovable(exprLoc, shared, &declScope) ||
+    if ((valueType.isMovable(exprLoc, shared, declScope) ||
          canTransferFrom())) {
       diag.attachNote(exprLoc)
           << "consider transferring the value with '^'"
@@ -1014,7 +1015,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
 
     // Suggest .copy() if the type is explicitly copyable and we're trying to
     // implicitly copy it.
-    if (valueType.isExplicitlyCopyable(exprLoc, shared, &declScope)) {
+    if (valueType.isExplicitlyCopyable(exprLoc, shared, declScope)) {
       diag.attachNote(exprLoc)
           << "you can copy it explicitly with '.copy()'"
           << FixIt::insertAfterToken(value.expr->getRangeEnd(), ".copy()",
@@ -1132,8 +1133,8 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 
   // Verify that the result MLValue is in the right address space for a
   // copy/move constructor call, if it would come down to that.
-  if (!isDefaultAS &&
-      !valueType.isProvablyImplicitlyTriviallyCopyable(exprLoc, shared)) {
+  if (!isDefaultAS && !valueType.isProvablyImplicitlyTriviallyCopyable(
+                          exprLoc, shared, declScope)) {
     emitError(exprLoc, "value of type ")
         << valueType
         << " cannot be copied or moved into a non-default address space"
@@ -1181,7 +1182,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 
   // Otherwise, assign with a move constructor.  We own the RValue, so prefer
   // to use move ctor if present.
-  if (valueType.isMovable(exprLoc, shared, &declScope)) {
+  if (valueType.isMovable(exprLoc, shared, declScope)) {
     // Invoke `T(*, deinit move: Self)`.
     ExprDest moveDest(destRef, context);
     CallOperands operands(CallSyntax::kImplicitMoveCtor, value.expr,

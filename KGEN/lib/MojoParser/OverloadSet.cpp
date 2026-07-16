@@ -513,7 +513,8 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
       // Non-trivially copyable types cannot be copied from a non-default
       // address space, because copyinit doesn't allow 'ref'.
       if (!ASTType(eltType).isProvablyImplicitlyTriviallyCopyable(
-              operands[operandIdx].expr->getLoc(), emitter.shared)) {
+              operands[operandIdx].expr->getLoc(), emitter.shared,
+              emitter.declScope)) {
         emitter.emitError(
             operands[operandIdx].expr->getLoc(),
             "non-implicitly trivially copyable value cannot be copied from a "

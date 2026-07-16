@@ -652,8 +652,9 @@ FnOp StructEmitter::synthesizeFieldwiseInit(
     assert(fieldEntries.size() == 1 && "field decls cannot be overloaded");
     ASTDecl &fieldASTDecl = *fieldEntries[0];
 
-    if (!fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared) &&
-        !fieldType.isMovable(fieldASTDecl.getLoc(), shared)) {
+    if (!fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared,
+                                        *funcDecl) &&
+        !fieldType.isMovable(fieldASTDecl.getLoc(), shared, *funcDecl)) {
       auto diag = emitError(fieldASTDecl.getLoc())
                   << "cannot synthesize fieldwise init because field '"
                   << fieldOp.getName()
@@ -879,7 +880,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
   // Otherwise, invoke the copy/move ctors fieldwise as appropriate.
   bool isImplicitlyCopyableStruct =
       structDecl.getTypeDeclSelf().isImplicitlyCopyable(structDecl.getLoc(),
-                                                        shared);
+                                                        shared, fnDecl);
   ArrayRef<ConstraintAttr> bodyConstraints =
       fn.getFuncTypeGenerator().getParamListAttrs().getBodyConstraints();
 
@@ -905,9 +906,9 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
     if (isMove) {
       // The move constructor can work with movable (preferably) or implicitly
       // copyable (as a fallback) types.
-      if (!fieldType.isMovable(fieldASTDecl.getLoc(), shared, &fnDecl) &&
+      if (!fieldType.isMovable(fieldASTDecl.getLoc(), shared, fnDecl) &&
           !fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared,
-                                          &fnDecl)) {
+                                          fnDecl)) {
         conditionalTraitOp = fieldConditionallyConformsToBuiltin(
             fieldType, "Movable", shared, structDecl, bodyConstraints);
         if (!conditionalTraitOp)
@@ -926,7 +927,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       //   var f: some Copyable
       // ```
       if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared,
-                                isImplicitlyCopyableStruct, &fnDecl)) {
+                                isImplicitlyCopyableStruct, fnDecl)) {
         conditionalTraitOp = fieldConditionallyConformsToBuiltin(
             fieldType,
             isImplicitlyCopyableStruct ? "ImplicitlyCopyable" : "Copyable",
@@ -980,7 +981,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       // with the MLIR types.
       if (!isImplicitlyCopyableStruct &&
           !fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared,
-                                          &fnDecl)) {
+                                          fnDecl)) {
         // Invoke `T(*, copy: Self)`.
         ExprDest dest(MLValue(targetFieldOp), EC_SynthesizedMethod);
         CallOperands operands(CallSyntax::kImplicitCopyCtor, &expr,

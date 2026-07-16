@@ -2028,7 +2028,9 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
         }
       }
 
-      if (concreteType.doesConformTo(anyTrait.getTraitType(), shared, {})
+      if (concreteType
+              .doesConformTo(anyTrait.getTraitType(), shared,
+                             ASTDecl::getAssumptionsFromScope(&declScope))
               .isTrue()) {
         // This is just the trait itself, not a conformance, just upcast.
         return PValue(TypeParamAttr::get(ASTType(typePValue), anyTrait));
