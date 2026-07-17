@@ -66,16 +66,11 @@ modular_py_test(
         "conftest.py",
         "test_notification_latency.py",
     ],
-    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
-    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
-    data = [
-        "@nixl_upstream//:libplugin_LIBFABRIC.so",
-        "@nixl_upstream//:libplugin_UCX.so",
-    ],
-    # TODO(GEX-3817): upstream NIXL only ships a CUDA-flavor libplugin_UCX.so;
-    # CPU-only machines (e.g. m7i) lack libcuda so the plugin cannot load, and
-    # the standard b200 CI machines lack proper RDMA config for UCX IB path.
-    # Mark manual until a suitable runner + ucx_cpu variant are available.
+    # The NIXL plugins reach the runfiles tree via the kv_cache dep's
+    # :nixl_host_plugins data; the conftest resolves NIXL_PLUGIN_DIR through
+    # max._core.
+    # TODO(GEX-3817): the standard b200 CI machines lack proper RDMA config
+    # for the UCX IB path. Mark manual until a suitable runner is available.
     gpu_constraints = ["//:nvidia_gpu"],
     imports = ["."],
     tags = [
@@ -89,6 +84,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines/kv_cache",
+        "//max/tests/tests/nixl:nixl_plugin_env",
         requirement("numpy"),
     ],
 )
@@ -99,18 +95,14 @@ modular_py_test(
         "conftest.py",
         "test_send_recv.py",
     ],
-    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
-    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
-    data = [
-        "@nixl_upstream//:libplugin_LIBFABRIC.so",
-        "@nixl_upstream//:libplugin_UCX.so",
-    ],
-    # TODO(GEX-3817): upstream NIXL only ships a CUDA-flavor libplugin_UCX.so;
-    # AMD (mi355) lacks libcuda so the plugin cannot load there.  Gate to NVIDIA
-    # until ucx_rocm / ucx_cpu plugin variants are shipped.
+    # The NIXL plugins reach the runfiles tree via the kv_cache dep's
+    # :nixl_host_plugins data (vendor-selected flavors in per-vendor
+    # subdirs); the conftest resolves NIXL_PLUGIN_DIR through max._core.
+    # Needs a GPU host for a loadable UCX flavor: the cuda flavor needs
+    # libcuda, the rocm flavors need libhsa-runtime64; CPU-only machines
+    # (e.g. m7i) have neither until a ucx_cpu flavor ships.
     gpu_constraints = [
         "//:has_gpu",
-        "//:nvidia_gpu",
     ],
     imports = ["."],
     tags = [
@@ -123,6 +115,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines/kv_cache",
+        "//max/tests/tests/nixl:nixl_plugin_env",
         requirement("numpy"),
     ],
 )
@@ -133,16 +126,11 @@ modular_py_test(
         "conftest.py",
         "test_read_transfer.py",
     ],
-    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
-    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
-    data = [
-        "@nixl_upstream//:libplugin_LIBFABRIC.so",
-        "@nixl_upstream//:libplugin_UCX.so",
-    ],
-    # TODO(GEX-3817): upstream NIXL only ships a CUDA-flavor libplugin_UCX.so;
-    # CPU-only machines (e.g. m7i) lack libcuda so the plugin cannot load, and
-    # b200 CI machines have IB misconfiguration causing UCX transfers to
-    # timeout. Mark manual until a suitable runner is available.
+    # The NIXL plugins reach the runfiles tree via the kv_cache dep's
+    # :nixl_host_plugins data; the conftest resolves NIXL_PLUGIN_DIR through
+    # max._core.
+    # TODO(GEX-3817): b200 CI machines have IB misconfiguration causing UCX
+    # transfers to timeout. Mark manual until a suitable runner is available.
     gpu_constraints = ["//:nvidia_gpu"],
     imports = ["."],
     tags = [
@@ -156,6 +144,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines/kv_cache",
+        "//max/tests/tests/nixl:nixl_plugin_env",
         requirement("numpy"),
     ],
 )
@@ -179,12 +168,6 @@ modular_py_test(
         ["*_gpu.py"],
         exclude = _4X_GPU_TESTS + _LIGHT_TRANSFER_GPU_TESTS,
     ) + ["conftest.py"],
-    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
-    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
-    data = [
-        "@nixl_upstream//:libplugin_LIBFABRIC.so",
-        "@nixl_upstream//:libplugin_UCX.so",
-    ],
     exec_properties = {
         "test.resources:gpu-memory": "3",
     },
@@ -201,6 +184,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines/kv_cache",
+        "//max/tests/tests/nixl:nixl_plugin_env",
         requirement("numpy"),
     ],
 )
@@ -208,19 +192,12 @@ modular_py_test(
 modular_py_test(
     name = "transfer_light_gpu_tests",
     srcs = _LIGHT_TRANSFER_GPU_TESTS + ["conftest.py"],
-    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
-    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
-    data = [
-        "@nixl_upstream//:libplugin_LIBFABRIC.so",
-        "@nixl_upstream//:libplugin_UCX.so",
-    ],
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = [
         "//:has_gpu",
         "//:has_multi_gpu",
-        "//:nvidia_gpu",
     ],
     imports = ["."],
     tags = ["gpu"],
@@ -228,6 +205,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/pipelines/kv_cache",
+        "//max/tests/tests/nixl:nixl_plugin_env",
         requirement("numpy"),
     ],
 )
@@ -235,12 +213,6 @@ modular_py_test(
 modular_py_test(
     name = "4x-gpu-tests",
     srcs = _4X_GPU_TESTS + ["conftest.py"],
-    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
-    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
-    data = [
-        "@nixl_upstream//:libplugin_LIBFABRIC.so",
-        "@nixl_upstream//:libplugin_UCX.so",
-    ],
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
@@ -255,6 +227,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines/kv_cache",
+        "//max/tests/tests/nixl:nixl_plugin_env",
         requirement("numpy"),
     ],
 )

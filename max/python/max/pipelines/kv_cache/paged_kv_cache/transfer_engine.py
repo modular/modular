@@ -44,19 +44,21 @@ _ShardT = TypeVar("_ShardT")
 _NIXL_BACKEND_ENV_VAR = "MODULAR_NIXL_TRANSFER_BACKEND"
 _SUPPORTED_BACKENDS: set[NixlBackendType] = {"ucx", "libfabric"}
 
-# GPU runtime libraries that the upstream UCX plugin (libplugin_UCX.so, CUDA
-# flavor) references but does not itself dlopen. The upstream plugin manager
-# loads plugins with ``dlopen(..., RTLD_NOW | RTLD_LOCAL)``; ``RTLD_NOW``
-# requires every undefined symbol (CUDA driver, NVML, optionally RDMA/HIP) to
-# be resolvable at load time, and ``RTLD_LOCAL`` means the plugin cannot see
-# symbols unless they were already loaded ``RTLD_GLOBAL`` into the process.
+# GPU runtime libraries that the upstream UCX plugin (libplugin_UCX.so, in
+# its per-vendor flavors) references but does not itself dlopen. The upstream
+# plugin manager loads plugins with ``dlopen(..., RTLD_NOW | RTLD_LOCAL)``;
+# ``RTLD_NOW`` requires every undefined symbol (CUDA driver, NVML, HSA,
+# optionally RDMA verbs) to be resolvable at load time, and ``RTLD_LOCAL``
+# means the plugin cannot see symbols unless they were already loaded
+# ``RTLD_GLOBAL`` into the process.
 _NIXL_PLUGIN_DEP_LIBS: tuple[str, ...] = (
-    # RDMA verbs (only needed by the *_verbs UCX flavors); harmless if absent.
+    # RDMA verbs (only needed by the *-verbs UCX flavors); harmless if absent.
+    "libibverbs.so.1",
     "libmlx5.so.1",
     # CUDA driver + NVML: required by the CUDA-flavor UCX plugin.
     "libcuda.so.1",
     "libnvidia-ml.so.1",
-    # HSA runtime: required by the ROCm-flavor UCX plugin.
+    # HSA runtime: required by the ROCm-flavor UCX plugins.
     "libhsa-runtime64.so.1",
 )
 
@@ -67,9 +69,10 @@ def _preload_nixl_plugin_deps() -> None:
     """Pre-loads the UCX plugin's runtime dependencies with ``RTLD_GLOBAL``.
 
     The upstream NIXL plugin manager ``dlopen``s ``libplugin_UCX.so`` with
-    ``RTLD_NOW | RTLD_LOCAL``. The vendored plugin is the CUDA flavor and
-    references CUDA/NVML symbols; ``RTLD_LOCAL`` prevents the plugin from
-    resolving them against the process unless they were previously loaded with
+    ``RTLD_NOW | RTLD_LOCAL``. The vendored plugin flavor (selected per host
+    GPU vendor via ``NIXL_PLUGIN_DIR``) references CUDA/NVML, HSA, or RDMA
+    verbs symbols; ``RTLD_LOCAL`` prevents the plugin from resolving them
+    against the process unless they were previously loaded with
     ``RTLD_GLOBAL``. Without this, ``get_plugin_params("UCX")`` returns
     ``NIXL_ERR_NOT_FOUND`` because the plugin fails to load.
 
@@ -143,9 +146,7 @@ def available_port(
     raise RuntimeError("No available port found in the specified range.")
 
 
-def _validate_device_type(
-    devices: Sequence[Device], backend_type: NixlBackendType
-) -> None:
+def _validate_device_type(devices: Sequence[Device]) -> None:
     is_gpu = False
     is_cpu = False
     for d in devices:
@@ -160,9 +161,6 @@ def _validate_device_type(
         )
 
     first_device = devices[0]
-    if first_device.api == "hip" and backend_type == "ucx":
-        raise NotImplementedError("Currently UCX does not support HIP devices.")
-
     if not first_device.is_host and (
         "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT" not in os.environ
         and "BAZEL_TEST" not in os.environ
@@ -678,9 +676,7 @@ class KVTransferEngine:
         memory_types = []
 
         for replica_tensors in tensors:
-            _validate_device_type(
-                [t.device for t in replica_tensors], backend_type
-            )
+            _validate_device_type([t.device for t in replica_tensors])
             bytes_per_page, elts_per_page = _validate_tensor_shape(
                 replica_tensors,
                 total_num_pages,

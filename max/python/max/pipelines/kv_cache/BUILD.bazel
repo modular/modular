@@ -2,21 +2,62 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
+# GPU-flavor NIXL transport plugins for the build's target GPU vendor. When
+# no vendor is configured (CPU-only CI, local host builds) all flavors are
+# staged so the same runfiles tree serves any machine it lands on. Wheel and
+# conda packaging is independent of this (utils/packaging stages the
+# .stripped variants of every flavor unconditionally: one universal
+# linux-x86_64 package serves both vendors).
+filegroup(
+    name = "_nixl_gpu_flavor_plugins",
+    srcs = select({
+        "//:nvidia_gpu": [
+            "@nixl_upstream//:cuda/libplugin_LIBFABRIC.so",
+            "@nixl_upstream//:cuda/libplugin_UCX.so",
+        ],
+        "//:amd_gpu": [
+            # The verbs flavor adds the uct_ib RDMA transports; max._core
+            # prefers it when rdma-core resolves at runtime.
+            "@nixl_upstream//:rocm-verbs/libplugin_UCX.so",
+            "@nixl_upstream//:rocm/libplugin_UCX.so",
+        ],
+        "//conditions:default": [
+            "@nixl_upstream//:cuda/libplugin_LIBFABRIC.so",
+            "@nixl_upstream//:cuda/libplugin_UCX.so",
+            "@nixl_upstream//:rocm-verbs/libplugin_UCX.so",
+            "@nixl_upstream//:rocm/libplugin_UCX.so",
+        ],
+    }),
+    visibility = ["//visibility:private"],
+)
+
+# The complete NIXL plugin staging for the target host: the vendor-selected
+# GPU flavors above plus the cpu flavor, which is staged unconditionally —
+# it is the vendor-neutral runfiles anchor max._core resolves the plugin base
+# directory from (see Support/BazelRunfiles.cpp), and its tcp/shm transports
+# have no GPU load-time deps. Linux-x86_64 only (upstream ships prebuilt
+# binaries for that platform); empty elsewhere. Depend on this from any
+# target that creates a NIXL agent under `bazel run`/`bazel test`.
+filegroup(
+    name = "nixl_host_plugins",
+    srcs = select({
+        "//:linux_x86_64": [
+            ":_nixl_gpu_flavor_plugins",
+            "@nixl_upstream//:cpu/libplugin_UCX.so",
+        ],
+        "//conditions:default": [],
+    }),
+    visibility = ["//max:__subpackages__"],
+)
+
 modular_py_library(
     name = "kv_cache",
     srcs = glob(["**/*.py"]),
     # Stage the upstream NIXL transport plugins into the runfiles tree so that
     # `bazel run` workers (which have no install tree) can find them: max._core
     # resolves this runfiles location and sets NIXL_PLUGIN_DIR before the NIXL
-    # plugin manager is constructed. Linux-x86_64 only (upstream ships prebuilt
-    # binaries for that platform); degrades to nothing elsewhere.
-    data = select({
-        "//:linux_x86_64": [
-            "@nixl_upstream//:libplugin_LIBFABRIC.so",
-            "@nixl_upstream//:libplugin_UCX.so",
-        ],
-        "//conditions:default": [],
-    }),
+    # plugin manager is constructed.
+    data = [":nixl_host_plugins"],
     deps = [
         "//max/python/max/pipelines/context",
         requirement("numpy"),

@@ -26,6 +26,7 @@ modular_nanobind_extension(
     deps = [
         "//Support:BazelRunfiles",
         "//Support:NanobindUtils",
+        "//Support:NixlPluginDir",
         "//max/python/max/_core/internal:AsyncRTPython",
         "//max/python/max/_core/internal/modules",
         "@llvm-project//llvm:Support",
