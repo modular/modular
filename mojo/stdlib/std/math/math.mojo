@@ -37,7 +37,7 @@ from std.sys.info import _is_sm_9x_or_newer, is_32bit
 from std.algorithm import vectorize
 from std.bit import count_trailing_zeros
 from std.builtin.dtype import _integral_type_of
-from std.builtin.simd import _modf, _simd_apply
+from std.builtin.simd import FastMathFlag, _modf, _simd_apply
 from std.memory import Span
 from . import pi, inf, isfinite, isinf, isnan, nan, nextafter
 
@@ -1367,6 +1367,49 @@ def iota(span: Span[mut=True, Int, _], offset: Int = 0):
     """
     var buff = span.unsafe_ptr().bitcast[Scalar[DType.int]]()
     iota(buff, len(span), offset=offset)
+
+
+# ===----------------------------------------------------------------------=== #
+# mul_no_contraction
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline("nodebug")
+def mul_no_contraction[
+    dtype: DType, width: SIMDSize, //
+](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    """Performs elementwise multiplication without FMA contraction.
+
+    This prevents the compiler from fusing `a * b` with a subsequent addition
+    into a single FMA instruction. Use this when you need separate multiply
+    and add operations for numerical precision or symmetry requirements.
+
+    Parameters:
+        dtype: The `dtype` of the input SIMD vector.
+        width: The width of the input and output SIMD vector.
+
+    Args:
+        a: The first vector of inputs.
+        b: The second vector of inputs.
+
+    Returns:
+        Elementwise product of a and b, guaranteed not to be contracted
+        with a subsequent addition.
+
+    Examples:
+        ```mojo
+        from std.math import mul_no_contraction
+
+        var x = SIMD[DType.float64, 4](1.0, 2.0, 3.0, 4.0)
+        var y = SIMD[DType.float64, 4](5.0, 6.0, 7.0, 8.0)
+        var z = SIMD[DType.float64, 4](9.0, 10.0, 11.0, 12.0)
+
+        # This will NOT be contracted into FMA:
+        var result = mul_no_contraction(x, y) + z
+        ```
+    """
+    comptime assert dtype.is_numeric(), "the SIMD type must be numeric"
+    return a.fma[FastMathFlag.NONE](b, SIMD[dtype, width](0))
 
 
 # ===----------------------------------------------------------------------=== #
