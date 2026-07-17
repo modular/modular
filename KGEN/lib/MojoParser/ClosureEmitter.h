@@ -80,6 +80,13 @@ public:
   /// Return true if \p type is a compiler-synthesized closure type.
   static bool isClosureType(SharedState &shared, Type type);
 
+  /// Given a closure trait and "parameters", specialize the closure trait as
+  /// though it had parameters to bind. That is, replace the aliases with the
+  /// parameter bindings provided.
+  TraitType getSpecializedClosureTrait(GeneratorType aliasGenerator,
+                                       ArrayRef<TypedAttr> paramValues,
+                                       ASTDecl &moduleDecl, SMLoc loc);
+
   /// Generate a Parametric Closure Wrapper Struct, a struct that contains a
   /// parametric field. Both the field and the struct must conform to the
   /// associated closure trait characterized by the signature of the closure.

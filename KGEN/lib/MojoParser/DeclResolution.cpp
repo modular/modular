@@ -1495,6 +1495,57 @@ static LogicalResult createCaptureValues(ParserBase &p, ASTDecl &sigDecl,
   return didFail ? failure() : success();
 }
 
+/// Registers the closure-typed parameters in `params` whose signatures capture
+/// other parameters in the same list (e.g. `F: def[w: Int]() -> SIMD[dtype, w]`
+/// captures `dtype`) and returns the type-equality `where` clauses that bind
+/// each closure alias to the captured parameter (e.g. `eq(F.dtype, dtype)`).
+static SmallVector<ConstraintAttr>
+registerClosureParamCaptures(ArrayRef<ParamDeclAttr> params, ASTDecl &decl,
+                             SharedState &shared, OpBuilder &builder) {
+  SmallVector<ClosureExternalRef> closureExternalRefs;
+  for (ParamDeclAttr param : params)
+    shared.getClosureEmitter().collectClosureExternalRefs(param,
+                                                          closureExternalRefs);
+
+  SmallVector<ConstraintAttr> constraints;
+  if (closureExternalRefs.empty())
+    return constraints;
+
+  ClosureParamCaptures closureParamCaptures;
+  for (const ClosureExternalRef &ref : closureExternalRefs)
+    closureParamCaptures[ref.closureParam.getName()].push_back(
+        {ref.externalName, ref.externalType});
+  shared.setClosureParamCaptures(decl, std::move(closureParamCaptures));
+
+  // Emit a type-equality constraint for each external reference so the closure
+  // alias binds to the captured parameter.
+  for (const ClosureExternalRef &ref : closureExternalRefs) {
+    TypedAttr rhs = ParamDeclRefAttr::get(ref.externalName, ref.externalType);
+
+    ParamDeclAttr closureParam = ref.closureParam;
+
+    std::optional<TraitDeclOp> closureTraitOr = ClosureEmitter::getClosureDecl(
+        shared, getCanonicalType(closureParam.getType()));
+    assert(closureTraitOr && "expected closure type");
+
+    // Get the trait name for the GetWitnessAttr.
+    TraitDeclOp closureTrait = *closureTraitOr;
+    StringAttr traitName = builder.getStringAttr(
+        getFlattenedSymbolName(getFullyResolvedSymbolRef(closureTrait)));
+
+    // LHS: C.T - GetWitnessAttr accessing the alias on the closure param.
+    TypedAttr witnessAttr =
+        GetWitnessAttr::get(ParamDeclRefAttr::get(closureParam), traitName,
+                            ref.externalName, ref.externalType);
+
+    // Create eq constraint: eq(C.T, RHS).
+    TypedAttr eqConstraint = ParamOperatorAttr::get(POC::EQ, witnessAttr, rhs);
+    Location loc = shared.diags.translateLocation(decl.getLoc());
+    constraints.push_back(ConstraintAttr::get(eqConstraint, loc));
+  }
+  return constraints;
+}
+
 /// funcdef   ::=  [decorators] "def" identifier [param_signature]
 ///                "(" [argument_list] ")" ["->" expression] ":" suite
 LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
@@ -1757,57 +1808,12 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   OpBuilder builder = decl.getDeclEndBuilder();
   NamedAttrList attrs = funcOp->getAttrDictionary();
 
-  // Compute the signature of the function.
-  // Collect closure external references for parameters that are closure traits.
-  // These will need where clauses like: where _type_is_eq_parse_time[T, C.T]()
-  // Must be done BEFORE getFnTypeGeneratorType() so constraints are in
-  // signature.
-  SmallVector<ClosureExternalRef> closureExternalRefs;
-  for (ParamDeclAttr param : paramList.paramDeclAttrs)
-    shared.getClosureEmitter().collectClosureExternalRefs(param,
-                                                          closureExternalRefs);
-  ClosureParamCaptures closureParamCaptures;
-  for (const ClosureExternalRef &ref : closureExternalRefs) {
-    ClosureParamCapture capturedParam{ref.externalName, ref.externalType};
-    closureParamCaptures[ref.closureParam.getName()].push_back(capturedParam);
-  }
-  shared.setClosureParamCaptures(decl, std::move(closureParamCaptures));
-  // Emit type equality constraints for closure external references.
-  // These are pushed into tcSignature.paramList.emittedBodyConstraints so they
-  // appear in the generator type, and tracked separately in
-  // closureExternalRefConstraints so they can be inserted into decl's known
-  // assumptions below. Parsed `where` clauses are already in decl's known
-  // assumptions at this point.
-  SmallVector<ConstraintAttr> closureExternalRefConstraints;
-  for (const ClosureExternalRef &ref : closureExternalRefs) {
-    ParamDeclAttr closureParam = ref.closureParam;
-
-    std::optional<TraitDeclOp> closureTraitOr = ClosureEmitter::getClosureDecl(
-        shared, getCanonicalType(closureParam.getType()));
-    assert(closureTraitOr && "expected closure type");
-
-    // Get the trait name for the GetWitnessAttr.
-    TraitDeclOp closureTrait = *closureTraitOr;
-    StringAttr traitName = builder.getStringAttr(
-        getFlattenedSymbolName(getFullyResolvedSymbolRef(closureTrait)));
-
-    // LHS: C.T - GetWitnessAttr accessing the alias on the closure param
-    TypedAttr witnessAttr =
-        GetWitnessAttr::get(ParamDeclRefAttr::get(closureParam), traitName,
-                            ref.externalName, ref.externalType);
-
-    // RHS: T - reference to the function parameter with the same name
-    TypedAttr funcParamRef =
-        ParamDeclRefAttr::get(ref.externalName, ref.externalType);
-
-    // Create eq constraint: eq(C.T, T)
-    TypedAttr eqConstraint =
-        ParamOperatorAttr::get(POC::EQ, witnessAttr, funcParamRef);
-    Location loc = shared.diags.translateLocation(decl.getLoc());
-    ConstraintAttr constraint = ConstraintAttr::get(eqConstraint, loc);
-    tcSignature.paramList.emittedBodyConstraints.push_back(constraint);
-    closureExternalRefConstraints.push_back(constraint);
-  }
+  // Register closure-parameter captures and their `eq(C.T, T)` where clauses.
+  SmallVector<ConstraintAttr> closureExternalRefConstraints =
+      registerClosureParamCaptures(paramList.paramDeclAttrs, decl, shared,
+                                   builder);
+  llvm::append_range(tcSignature.paramList.emittedBodyConstraints,
+                     closureExternalRefConstraints);
 
   FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
   if (!signature)
@@ -1993,8 +1999,9 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     // - no explicit dynamic captures
     // - no default capture convention
     // Captured parameter references are handled by rebinding the promoted
-    // symbol within the defining scope.
-    if (closureExternalRefs.empty() &&
+    // symbol within the defining scope. There is one constraint per external
+    // ref, so an empty constraint list means there were no external refs.
+    if (closureExternalRefConstraints.empty() &&
         captureSignature.parsedCaptures.empty() &&
         !captureSignature.captureAllByConvention) {
       shared.closureEmitter->promoteClosure(decl, paramCaptures);
@@ -3218,6 +3225,16 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     return failure();
 
   paramSignature.emitBodyConstraints();
+
+  // Register closure-parameter captures and their `eq(F.dtype, dtype)` where
+  // clauses.
+  OpBuilder structBuilder = decl.getDeclEndBuilder();
+  SmallVector<ConstraintAttr> closureExternalRefConstraints =
+      registerClosureParamCaptures(paramSignature.paramDeclAttrs, decl, shared,
+                                   structBuilder);
+  llvm::append_range(paramSignature.emittedBodyConstraints,
+                     closureExternalRefConstraints);
+  decl.insertKnownAssumptions(closureExternalRefConstraints);
 
   // Look up traits the compiler unconditionally injects into every struct.
   // These lookups are reused below both for constraint building (to skip

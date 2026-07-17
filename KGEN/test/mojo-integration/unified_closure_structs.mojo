@@ -76,6 +76,132 @@ def testRegisterPassableUnifiedClosureAdaptor():
     print(wrapper.apply_fn(always_true))
 
 
+# COM: A parametric closure field whose signature captures a struct parameter
+# COM: (`dtype`).
+@fieldwise_init
+struct ParametricClosureField[
+    dtype: DType,
+    F: ImplicitlyCopyable
+    & ImplicitlyDeletable
+    & (def[w: Int]() -> SIMD[dtype, w]),
+](ImplicitlyCopyable, ImplicitlyDeletable):
+    var f: Self.F
+
+    def call[w: Int](self) -> SIMD[Self.dtype, w]:
+        return self.f[w]()
+
+
+def testParametricClosureField():
+    def impl[w: Int]() {} -> SIMD[DType.int32, w]:
+        return SIMD[DType.int32, w](7)
+
+    var h = ParametricClosureField[DType.int32, type_of(impl)](impl)
+    print(h.call[4]()[0])
+
+
+# COM: Same capture, but the captured parameter (`dtype`) is infer-only
+@fieldwise_init
+struct InferredClosureField[
+    dtype: DType,
+    //,
+    F: ImplicitlyCopyable
+    & ImplicitlyDeletable
+    & (def[w: Int]() -> SIMD[dtype, w]),
+](ImplicitlyCopyable, ImplicitlyDeletable):
+    var f: Self.F
+
+    def call[w: Int](self) -> SIMD[Self.dtype, w]:
+        return self.f[w]()
+
+
+def testInferredClosureField():
+    def impl[w: Int]() {} -> SIMD[DType.int32, w]:
+        return SIMD[DType.int32, w](8)
+
+    var h = InferredClosureField(impl)
+    print(h.call[4]()[0])
+
+
+# COM: A closure-typed struct parameter bound via a named parametric-alias
+# COM: trait whose captured alias (`in_dtype`) differs from the enclosing struct
+# COM: parameter it is bound to (`in_type`), with the captured auxiliary
+# COM: parameter bound explicitly by keyword on `__call__`.
+comptime _fn_trait[
+    in_dtype: DType
+] = ImplicitlyCopyable & ImplicitlyDeletable & (
+    def[w: Int]() -> SIMD[in_dtype, w]
+)
+
+
+@fieldwise_init
+struct ExplicitAuxClosureField[
+    in_type: DType,
+    F: _fn_trait[in_type],
+](ImplicitlyCopyable, ImplicitlyDeletable):
+    var f: Self.F
+
+    def call[w: Int](self) -> SIMD[Self.in_type, w]:
+        return self.f.__call__[_in_type=Self.in_type, w=w]()
+
+
+def testExplicitAuxClosureField():
+    def impl[w: Int]() {} -> SIMD[DType.int32, w]:
+        return SIMD[DType.int32, w](9)
+
+    var h = ExplicitAuxClosureField[DType.int32, type_of(impl)](impl)
+    print(h.call[4]()[0])
+
+
+# COM: Same named parametric-alias trait as above, but with `in_type` infer-only
+# COM: (the `//` marker).
+@fieldwise_init
+struct InferredAliasClosureField[
+    in_type: DType,
+    //,
+    F: _fn_trait[in_type],
+](ImplicitlyCopyable, ImplicitlyDeletable):
+    var f: Self.F
+
+    def call[w: Int](self) -> SIMD[Self.in_type, w]:
+        return self.f.__call__[_in_type=Self.in_type, w=w]()
+
+
+def testInferredAliasClosureField():
+    def impl[w: Int]() {} -> SIMD[DType.int32, w]:
+        return SIMD[DType.int32, w](10)
+
+    var h = InferredAliasClosureField(impl)
+    print(h.call[4]()[0])
+
+
+# COM: A chain of parametric-alias traits.
+comptime _chained_fn_trait0[
+    FOO: DType, cw: Int
+] = ImplicitlyCopyable & ImplicitlyDeletable & (def() -> SIMD[FOO, cw])
+
+comptime _chained_fn_trait1[BAR: DType] = _chained_fn_trait0[BAR, 4]
+
+
+@fieldwise_init
+struct ChainedAliasClosureField[
+    in_type: DType,
+    //,
+    F: _chained_fn_trait1[in_type],
+](ImplicitlyCopyable, ImplicitlyDeletable):
+    var f: Self.F
+
+    def call(self) -> SIMD[Self.in_type, 4]:
+        return self.f()
+
+
+def testChainedAliasClosureField():
+    def impl() -> SIMD[DType.int32, 4]:
+        return SIMD[DType.int32, 4](11)
+
+    var h = ChainedAliasClosureField(impl)
+    print(h.call()[0])
+
+
 def main() raises:
     var y: Int = atol(argv()[1])
     var one = atol(argv()[2])
@@ -94,3 +220,23 @@ def main() raises:
     # COM: Ensure RegisterPassable struct can forward args through closure adaptor
     # CHECK: True
     testRegisterPassableUnifiedClosureAdaptor()
+
+    # COM: Parametric closure field capturing a struct parameter.
+    # CHECK: 7
+    testParametricClosureField()
+
+    # COM: Infer-only captured parameter bound from the closure argument.
+    # CHECK: 8
+    testInferredClosureField()
+
+    # COM: Explicitly binding the captured auxiliary parameter by keyword.
+    # CHECK: 9
+    testExplicitAuxClosureField()
+
+    # COM: Infer-only parameter bound through a named parametric-alias trait.
+    # CHECK: 10
+    testInferredAliasClosureField()
+
+    # COM: Infer-only parameter bound through a chain of parametric-alias traits.
+    # CHECK: 11
+    testChainedAliasClosureField()

@@ -1689,6 +1689,82 @@ ASTDecl *ClosureEmitter::createClosureTrait(
   return getOrCreateClosureTrait(key, createTraitFn);
 }
 
+TraitType
+ClosureEmitter::getSpecializedClosureTrait(GeneratorType aliasGenerator,
+                                           ArrayRef<TypedAttr> paramValues,
+                                           ASTDecl &moduleDecl, SMLoc loc) {
+  // The generator body must be the meta type of a trait. The alias right-hand
+  // side is typically a conjunction; but only the closure-defining one is
+  // substituted. Locate the closure defining trait.
+  auto anyTrait = sugarDynCastIfPresent<AnyTraitType>(aliasGenerator.getBody());
+  if (!anyTrait)
+    return {};
+  TraitType origTraitType = anyTrait.getTraitType();
+  TraitDeclOp closureTrait;
+  SymbolRefAttr closureSymbol;
+  for (SymbolRefAttr symbol : origTraitType.getSymbols()) {
+    ASTDecl &decl = shared.getDeclResolver().getDeclForTypeSymbol(symbol);
+    if (auto candidate =
+            dyn_cast_if_present<TraitDeclOp>(decl.getIfOperation());
+        candidate && candidate.getDefinesClosure()) {
+      closureTrait = candidate;
+      closureSymbol = symbol;
+      break;
+    }
+  }
+  if (!closureTrait)
+    return {};
+  std::optional<FnTypeGeneratorType> keyOr = closureTrait.getClosureSignature();
+  if (!keyOr)
+    return {};
+  FnTypeGeneratorType key = *keyOr;
+
+  // Map each alias parameter name to its bound value
+  ArrayRef<PogMetadataAttr> genPogs = aliasGenerator.getMetadata().getPogs();
+  llvm::DenseMap<StringAttr, TypedAttr> valueByName;
+  for (auto [pog, value] : llvm::zip(genPogs, paramValues))
+    valueByName[pog.getName()] = value;
+
+  // "Bind" param to alias by replacing pog.
+  ArrayRef<PogMetadataAttr> keyPogs = key.getMetadata().getPogs();
+  ArrayRef<Type> keyParamTypes = key.getInputParamTypes();
+  SmallVector<TypedAttr> keyBindings;
+  keyBindings.reserve(keyPogs.size());
+  bool boundAny = false;
+  for (auto [pog, paramType] : llvm::zip(keyPogs, keyParamTypes)) {
+    auto it = valueByName.find(pog.getName());
+    if (it != valueByName.end()) {
+      keyBindings.push_back(it->second);
+      boundAny = true;
+    } else {
+      keyBindings.push_back(UnboundAttr::get(paramType));
+    }
+  }
+  if (!boundAny)
+    return {};
+
+  // Substitute the arguments into the closure signature and (re)create the
+  // trait.
+  auto reboundSig = dyn_cast_if_present<FnTypeGeneratorType>(
+      key.getSpecializedGenerator(keyBindings, /*evaluationContext=*/nullptr,
+                                  shared.translateLocation(loc)));
+  if (!reboundSig)
+    return {};
+
+  ASTDecl *newTraitDecl =
+      shared.getOrCreateClosureTrait(loc, moduleDecl, reboundSig);
+  if (!newTraitDecl)
+    return {};
+  SymbolRefAttr newClosureSymbol = getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(newTraitDecl->getIfOperation()));
+
+  // Preserve the non-closure conjuncts
+  SmallVector<SymbolRefAttr> symbols;
+  for (SymbolRefAttr symbol : origTraitType.getSymbols())
+    symbols.push_back(symbol == closureSymbol ? newClosureSymbol : symbol);
+  return TraitType::canonicalizeAndGet(shared.getContext(), symbols, {});
+}
+
 static bool hasCapturingParameterType(SharedState &shared,
                                       ArrayRef<ParamDeclAttr> params) {
   mlir::AttrTypeWalker walker;

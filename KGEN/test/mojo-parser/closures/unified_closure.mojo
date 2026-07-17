@@ -1696,3 +1696,36 @@ struct Builder[origin: Origin](Movable):
     def region(mut self, work: Some[def(mut Self) raises]) raises:
         work(self)
         pass
+
+# // -----
+
+# COM: Verify trait "specialization" rebinds "parameters" correctly.
+
+# CHECK-DAG: lit.trait.decl @"def[FOO: DType, cw: Int, //]() -> SIMD[FOO, SIMDSize(cw)]{2}"
+comptime _chained_fn_trait0[
+    FOO: DType, cw: Int
+] = ImplicitlyCopyable & ImplicitlyDeletable & (def() -> SIMD[FOO, cw])
+
+# CHECK-DAG: lit.trait.decl @"def[BAR: DType, //]() -> SIMD[BAR, SIMDSize(4)]{1}"
+comptime _chained_fn_trait1[BAR: DType] = _chained_fn_trait0[BAR, 4]
+
+
+# CHECK-DAG: lit.trait.decl @"def[in_type: DType, //]() -> SIMD[in_type, SIMDSize(4)]{1}"
+@fieldwise_init
+struct ChainedAliasClosureField[
+    in_type: DType,
+    //,
+    F: _chained_fn_trait1[in_type],
+](ImplicitlyCopyable, ImplicitlyDeletable):
+    var f: Self.F
+
+    def call(self) -> SIMD[Self.in_type, 4]:
+        return self.f()
+
+
+def testChainedAliasClosureField():
+    def impl() -> SIMD[DType.int32, 4]:
+        return SIMD[DType.int32, 4](11)
+
+    var h = ChainedAliasClosureField(impl)
+    _ = h.call()
