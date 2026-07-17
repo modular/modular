@@ -16,6 +16,8 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
+"""Registers attention graph ops (MHA, MLA, fused QKV) and dispatches them to the `nn.attention` kernels."""
+
 from std.collections import OptionalReg
 import extensibility
 
@@ -104,6 +106,9 @@ from .kernels import (
 
 @extensibility.register("mo.mla.indexer.ragged.float8.paged")
 struct MLAIndexerRaggedFloat8Paged:
+    """Registers the `mo.mla.indexer.ragged.float8.paged` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         *,
@@ -238,6 +243,9 @@ struct MLAIndexerRaggedFloat8Paged:
 
 @extensibility.register("mo.composite.masked_flash_attention_gpu")
 struct MaskedFlashAttentionGPU:
+    """Registers the `mo.composite.masked_flash_attention_gpu` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         target: StaticString, rank: Int
@@ -293,6 +301,20 @@ struct MaskedFlashAttentionGPU:
 
         The underlying fusion follows ideas taken from the 2022 FlashAttention paper
         by Tri Dao et al.
+
+        Parameters:
+            target: Target device identifier; must resolve to a GPU.
+            rank: Rank of the `q`, `k`, `v`, and `output` tensors.
+
+        Args:
+            output: Output attention tensor with the same shape as `q`.
+            q: Query tensor in BSHD layout.
+            k: Key tensor in BSHD layout, or BShD for grouped attention.
+            v: Value tensor in BSHD layout, or BShD for grouped attention.
+            mask: Attention mask tensor of rank 3 and shape BSS, added to
+                the scaled attention scores before softmax.
+            scale: Scaling factor applied to attention scores before softmax.
+            ctx: Device context for GPU execution.
         """
         comptime assert is_gpu[target](), "only valid on GPUs"
 
@@ -309,6 +331,8 @@ struct MaskedFlashAttentionGPU:
 
 @extensibility.register("mo.mha.no_cache")
 struct FlashAttentionGPU:
+    """Registers the `mo.mha.no_cache` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         rank: Int,
@@ -363,6 +387,23 @@ struct FlashAttentionGPU:
 
         The underlying fusion follows ideas taken from the 2022 FlashAttention paper
         by Tri Dao et al.
+
+        Parameters:
+            rank: Rank of the `q`, `k`, `v`, and `output` tensors
+                (inferred).
+            target: Target device identifier; must resolve to a GPU.
+            mask_str: Attention mask type string passed to
+                `dispatch_mask` to select the mask functor.
+            local_window_size: Sliding window size for windowed attention
+                (defaults to -1, meaning no window).
+
+        Args:
+            output: Output attention tensor with the same shape as `q`.
+            q: Query tensor in BSHD layout.
+            k: Key tensor in BSHD layout, or BShD for grouped attention.
+            v: Value tensor in BSHD layout, or BShD for grouped attention.
+            scale: Scaling factor applied to attention scores before softmax.
+            ctx: Device context for GPU execution.
         """
         comptime assert is_gpu[target](), "only valid on GPUs"
 
@@ -393,6 +434,9 @@ struct FlashAttentionGPU:
 
 @extensibility.register("mo.mha.padded.no_cache")
 struct PaddedFlashAttentionGPU:
+    """Registers the `mo.mha.padded.no_cache` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         rank: Int,
@@ -447,6 +491,9 @@ struct PaddedFlashAttentionGPU:
 
 @extensibility.register("mo.mha.ragged.no_cache")
 struct RaggedFlashAttentionGPU:
+    """Registers the `mo.mha.ragged.no_cache` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         rank: Int,
@@ -468,6 +515,29 @@ struct RaggedFlashAttentionGPU:
 
         The inputs q, k, v are in ragged format with shape [total_seq_len, num_heads, head_dim].
         input_row_offsets indicates where each sequence starts and ends in the ragged tensors.
+
+        Parameters:
+            rank: Rank of the `q`, `k`, `v`, and `output` tensors
+                (inferred).
+            target: Target device identifier; must resolve to a GPU.
+            mask_str: Attention mask type string passed to
+                `dispatch_mask` to select the mask functor.
+            local_window_size: Sliding window size for windowed attention
+                (defaults to -1, meaning no window).
+
+        Args:
+            output: Output attention tensor with the same shape as `q`.
+            q: Query tensor in ragged format with shape
+                [total_seq_len, num_heads, head_dim].
+            k: Key tensor in ragged format with shape
+                [total_seq_len, num_heads, head_dim].
+            v: Value tensor in ragged format with shape
+                [total_seq_len, num_heads, head_dim].
+            input_row_offsets: Row offsets [batch_size + 1] marking the
+                start and end of each sequence in the ragged tensors.
+            q_max_seq_len: Maximum query sequence length across the batch.
+            scale: Scaling factor applied to attention scores before softmax.
+            ctx: Device context for GPU execution.
         """
         comptime assert is_gpu[target](), "only valid on GPUs"
 
@@ -507,6 +577,9 @@ struct RaggedFlashAttentionGPU:
 
 @extensibility.register("mo.composite.no_mask_flash_attention_cpu")
 struct NoMaskFlashAttentionCPU:
+    """Registers the `mo.composite.no_mask_flash_attention_cpu` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -560,6 +633,9 @@ struct NoMaskFlashAttentionCPU:
 
 @extensibility.register("with_mask_flash_attention_split_kv_cpu")
 struct WithMaskFlashAttentionSplitKVCPU:
+    """Registers the `with_mask_flash_attention_split_kv_cpu` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -655,11 +731,16 @@ def with_mask_flash_attention_split_kv_cpu_shape[
     mask: InputTensor[dtype=dtype, ...],
     scale: Scalar[dtype=DType.float32],
 ) -> IndexList[q.rank]:
+    """Computes the output shape for the `with_mask_flash_attention_split_kv_cpu` graph op.
+    """
     return q.shape()
 
 
 @extensibility.register("mo.composite.masked_flash_attention_cpu")
 struct WithMaskFlashAttentionCPU:
+    """Registers the `mo.composite.masked_flash_attention_cpu` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -716,6 +797,9 @@ struct WithMaskFlashAttentionCPU:
 
 @extensibility.register("mo.fused_qkv_matmul.padded.paged")
 struct Struct_fused_qkv_matmul_padded_paged:
+    """Registers the `mo.fused_qkv_matmul.padded.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -764,6 +848,9 @@ struct Struct_fused_qkv_matmul_padded_paged:
 
 @extensibility.register("mo.fused_qkv_matmul.ragged.paged")
 struct Struct_fused_qkv_matmul_padded_ragged:
+    """Registers the `mo.fused_qkv_matmul.ragged.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -805,6 +892,9 @@ struct Struct_fused_qkv_matmul_padded_ragged:
 
 @extensibility.register("mo.fused_qkv_matmul.ragged.paged.quantized")
 struct Struct_fused_qkv_matmul_padded_ragged_quantized:
+    """Registers the `mo.fused_qkv_matmul.ragged.paged.quantized` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -855,6 +945,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
 
 @extensibility.register("mo.fused_qkv_matmul.ragged.paged.bias")
 struct Struct_fused_qkv_matmul_padded_ragged_bias:
+    """Registers the `mo.fused_qkv_matmul.ragged.paged.bias` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -898,6 +991,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
 
 @extensibility.register("mo.fused_qkv_matmul.ragged.paged.scale")
 struct Struct_fused_qkv_matmul_padded_ragged_scale:
+    """Registers the `mo.fused_qkv_matmul.ragged.paged.scale` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -961,6 +1057,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
 
 @extensibility.register("mo.fused_qkv_matmul.ragged.paged.scale.float4")
 struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
+    """Registers the `mo.fused_qkv_matmul.ragged.paged.scale.float4` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1013,6 +1112,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
 
 @extensibility.register("mo.fused_qkv_matmul.ragged.paged.scale.mxfp8")
 struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8:
+    """Registers the `mo.fused_qkv_matmul.ragged.paged.scale.mxfp8` graph op with the graph compiler.
+    """
+
     # Delegates to the NVFP4 entry point, which is dual-mode and also handles
     # MXFP8 from its data dtype, scale dtype, and SF_VECTOR_SIZE parameters. The
     # "float4" in the callee name is intentional. Do not split off a separate
@@ -1069,6 +1171,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8:
 
 @extensibility.register("mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8")
 struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
+    """Registers the `mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8` graph op with the graph compiler.
+    """
+
     # Dual-cache fused QKV + index-QK matmul for MiniMax-M3. Like the
     # single-cache mxfp8 struct above, this delegates to the dual-mode NVFP4
     # entry point, which also handles MXFP8 (E8M0 scales, SF_VECTOR_SIZE=32)
@@ -1153,6 +1258,9 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
 
 @extensibility.register("mo.fused_qkv_matmul.ragged.paged.scale.bias")
 struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
+    """Registers the `mo.fused_qkv_matmul.ragged.paged.scale.bias` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1218,6 +1326,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
 
 @extensibility.register("mo.fused_qkv_matmul.ragged.paged.bias.quantized")
 struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
+    """Registers the `mo.fused_qkv_matmul.ragged.paged.bias.quantized` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1270,6 +1381,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
 
 @extensibility.register("mo.fused_qk_rope.ragged.paged.with_position_id")
 struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
+    """Registers the `mo.fused_qk_rope.ragged.paged.with_position_id` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1321,6 +1435,9 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
 
 @extensibility.register("mo.fused_qk_rope.ragged.paged")
 struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
+    """Registers the `mo.fused_qk_rope.ragged.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1372,6 +1489,9 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
 
 @extensibility.register("mo.fused_qk_rope.padded.paged")
 struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
+    """Registers the `mo.fused_qk_rope.padded.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1414,6 +1534,8 @@ struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
 
 @extensibility.register("mo.mha.padded.paged")
 struct Struct_mha_padded_paged:
+    """Registers the `mo.mha.padded.paged` graph op with the graph compiler."""
+
     @always_inline
     @staticmethod
     def execute[
@@ -1468,6 +1590,9 @@ struct Struct_mha_padded_paged:
 
 @extensibility.register("mo.mha.decode.get_num_partitions")
 struct Struct_mha_decode_num_partitions:
+    """Registers the `mo.mha.decode.get_num_partitions` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1512,6 +1637,8 @@ struct Struct_mha_decode_num_partitions:
 
 @extensibility.register("mo.mha.ragged.paged")
 struct Struct_mha_ragged_paged_scalar_args:
+    """Registers the `mo.mha.ragged.paged` graph op with the graph compiler."""
+
     @always_inline
     @staticmethod
     def execute[
@@ -1562,6 +1689,9 @@ struct Struct_mha_ragged_paged_scalar_args:
 
 @extensibility.register("mo.mha.ragged.paged.sink_weights")
 struct Struct_mha_ragged_paged_sink_weights_scalar_args:
+    """Registers the `mo.mha.ragged.paged.sink_weights` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1619,6 +1749,9 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
 
 @extensibility.register("mo.mla.decode.ragged.paged")
 struct Struct_mla_decode_ragged_paged:
+    """Registers the `mo.mla.decode.ragged.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1669,6 +1802,9 @@ struct Struct_mla_decode_ragged_paged:
 
 @extensibility.register("mo.mla.decode.ragged.paged.scaled")
 struct Struct_mla_decode_ragged_paged_scaled:
+    """Registers the `mo.mla.decode.ragged.paged.scaled` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1772,6 +1908,9 @@ struct Struct_mla_decode_ragged_paged_scaled:
 
 @extensibility.register("mo.mla.prefill.ragged.paged")
 struct Struct_mla_prefill_ragged_paged:
+    """Registers the `mo.mla.prefill.ragged.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1824,6 +1963,9 @@ struct Struct_mla_prefill_ragged_paged:
 
 @extensibility.register("mo.mla.prefill.ragged.plan")
 struct Struct_mla_prefill_ragged_plan:
+    """Registers the `mo.mla.prefill.ragged.plan` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1869,6 +2011,9 @@ struct Struct_mla_prefill_ragged_plan:
 
 @extensibility.register("mo.mla.decompress.k.cache.ragged.paged")
 struct Struct_mla_decompress_k_cache_ragged_paged:
+    """Registers the `mo.mla.decompress.k.cache.ragged.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1912,6 +2057,9 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
 
 @extensibility.register("mo.mla.graph.prefill.paged.fp8")
 struct Struct_mla_prefill_graph_paged:
+    """Registers the `mo.mla.graph.prefill.paged.fp8` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     @parameter
@@ -2000,6 +2148,9 @@ struct Struct_mla_prefill_graph_paged:
 
 @extensibility.register("mo.mla.compute_dispatch_args.scalar")
 struct Struct_mla_compute_dispatch_args_scalar:
+    """Registers the `mo.mla.compute_dispatch_args.scalar` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -2054,6 +2205,9 @@ struct Struct_mla_compute_dispatch_args_scalar:
 
 @extensibility.register("mo.mla.graph.decode.paged.fp8")
 struct Struct_mla_decode_graph_paged_fp8:
+    """Registers the `mo.mla.graph.decode.paged.fp8` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     @parameter
@@ -2146,6 +2300,9 @@ struct Struct_mla_decode_graph_paged_fp8:
 
 @extensibility.register("mo.mla.graph.decode.paged.fp8.sparse")
 struct Struct_mla_decode_graph_paged_fp8_sparse:
+    """Registers the `mo.mla.graph.decode.paged.fp8.sparse` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     @parameter
@@ -2278,6 +2435,9 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
 
 @extensibility.register("mo.mla.graph.prefill.paged")
 struct Struct_mla_prefill_graph_bf16_paged:
+    """Registers the `mo.mla.graph.prefill.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     @parameter
@@ -2354,6 +2514,9 @@ struct Struct_mla_prefill_graph_bf16_paged:
 
 @extensibility.register("mo.mla.graph.decode.paged")
 struct Struct_mla_decode_graph_bf16_paged:
+    """Registers the `mo.mla.graph.decode.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     @parameter
@@ -2434,6 +2597,9 @@ struct Struct_mla_decode_graph_bf16_paged:
 
 @extensibility.register("mo.mla.graph.decode.paged.sparse")
 struct Struct_mla_decode_graph_bf16_paged_sparse:
+    """Registers the `mo.mla.graph.decode.paged.sparse` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     @parameter
@@ -2543,6 +2709,9 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
 
 @extensibility.register("mo.mla.graph.prefill.decode.paged.fp8")
 struct Struct_mla_prefill_graph_decode_paged_fp8:
+    """Registers the `mo.mla.graph.prefill.decode.paged.fp8` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     @parameter
@@ -2647,6 +2816,9 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
 
 @extensibility.register("mo.mla.graph.prefill.decode.paged.fp8.sparse")
 struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
+    """Registers the `mo.mla.graph.prefill.decode.paged.fp8.sparse` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     @parameter
@@ -2790,6 +2962,9 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
 
 @extensibility.register("mo.mla.prefill.sparse.paged")
 struct Struct_mla_prefill_sparse_paged:
+    """Registers the `mo.mla.prefill.sparse.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     @parameter
@@ -2904,6 +3079,9 @@ struct Struct_mla_prefill_sparse_paged:
 
 @extensibility.register("mo.mla.prefill.sparse.paged.fp8")
 struct Struct_mla_prefill_sparse_paged_fp8:
+    """Registers the `mo.mla.prefill.sparse.paged.fp8` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     @parameter
@@ -3011,6 +3189,9 @@ struct Struct_mla_prefill_sparse_paged_fp8:
 
 @extensibility.register("mo.mla.graph.prefill.decode.paged")
 struct Struct_mla_prefill_graph_decode_bf16_paged:
+    """Registers the `mo.mla.graph.prefill.decode.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     @parameter
@@ -3221,6 +3402,9 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
 
 @extensibility.register("mo.mla.graph.prefill.decode.paged.quantized")
 struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
+    """Registers the `mo.mla.graph.prefill.decode.paged.quantized` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     @parameter
@@ -3313,6 +3497,9 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
 
 @extensibility.register("mo.cross_attention.ragged.paged")
 struct Struct_cross_attention_ragged_paged:
+    """Registers the `mo.cross_attention.ragged.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[

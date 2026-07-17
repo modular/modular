@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Registers log-probability computation graph ops used by sampling pipelines."""
+
 from std.math import ceildiv, exp, inf, log
 
 from std.algorithm.functional import parallelize
@@ -26,22 +28,48 @@ from std.utils.index import IndexList
 
 
 struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
+    """Maintains a fixed-capacity min-heap of key/value pairs used to track top-k logits.
+
+    Parameters:
+        k_dtype: Element type of the heap keys, the token id dtype.
+        v_dtype: Element type of the heap values, the logit dtype.
+        levels: Number of heap levels; the heap stores `2**levels - 1` entries.
+    """
+
     comptime num_elements = 2**Self.levels - 1
+    """Maximum number of entries the heap can hold."""
+
     var k_array: InlineArray[Scalar[Self.k_dtype], Self.num_elements]
+    """Inline array of heap keys, storing token ids."""
+
     var v_array: InlineArray[Scalar[Self.v_dtype], Self.num_elements]
+    """Inline array of heap values, storing logits."""
 
     def __init__(
         out self, *, fill_k: Scalar[Self.k_dtype], fill_v: Scalar[Self.v_dtype]
     ):
+        """Initializes the heap with fill values for all slots.
+
+        Args:
+            fill_k: Key value to fill every heap slot with.
+            fill_v: Value to fill every heap slot with.
+        """
         self.k_array = InlineArray[size=Self.num_elements](fill=fill_k)
         self.v_array = InlineArray[size=Self.num_elements](fill=fill_v)
 
     @always_inline
     def swap(mut self, a: Int, b: Int) -> None:
+        """Swaps the key/value pairs at two heap positions.
+
+        Args:
+            a: Index of the first element to swap.
+            b: Index of the second element to swap.
+        """
         self.k_array[a], self.k_array[b] = self.k_array[b], self.k_array[a]
         self.v_array[a], self.v_array[b] = self.v_array[b], self.v_array[a]
 
     def heap_down(mut self) -> None:
+        """Restores the min-heap property by sifting the root down."""
         var current_index = 0
 
         comptime for level in range(Self.levels - 1):
@@ -53,7 +81,7 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
             if self.v_array[right_index] < self.v_array[left_index]:
                 smaller_index = right_index
             if self.v_array[current_index] < self.v_array[smaller_index]:
-                # Full heap property is satisfied.  We could stop here,
+                # Full heap property is satisfied. We could stop here,
                 # but this is an unrolled loop, so just continue on.
                 # (Useless but harmless work.)
                 pass
@@ -63,8 +91,11 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
 
 
 comptime logit_dtype = DType.float32
+"""Element type of logit tensors used by log-probability ops."""
 comptime token_dtype = DType.uint32
+"""Element type of token id tensors used by log-probability ops."""
 comptime offset_dtype = DType.uint32
+"""Element type of row offset tensors used by log-probability ops."""
 
 
 def compute_log_probabilities_1tok[
@@ -80,6 +111,32 @@ def compute_log_probabilities_1tok[
     token_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
     lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
 ) -> None:
+    """Computes log probabilities for a single token position from its logits row.
+
+    Parameters:
+        target: Compilation target string, such as `"cpu"` or `"gpu"`.
+        levels: Number of heap levels controlling the top-k width; the output
+            stores `2**levels` entries per token. When `levels <= 0`, only
+            the sampled token's log probability is emitted.
+
+    Args:
+        output_token_index: Global row index into `lp_logits` and `lp_tokens`
+            for this output position.
+        lp_logits: Output tensor of shape `[num_output_tokens, 2**levels]`
+            receiving the log probabilities.
+        lp_tokens: Output tensor of shape `[num_output_tokens, 2**levels]`
+            receiving the token ids paired with `lp_logits`.
+        logits: Input logits ragged by batch, shape
+            `[total_rows, vocab_size]`.
+        tokens: Previously generated tokens across all batches, ragged.
+        sampled_tokens: Most recently sampled token for each batch, used when
+            this position is the last token in its sequence.
+        logit_row_offsets: Per-batch start offsets into the first axis of
+            `logits`.
+        token_row_offsets: Per-batch start offsets into `tokens`.
+        lp_output_offsets: Per-batch start offsets into the output row axis,
+            mapping each output index to its batch.
+    """
     var vocab_size = logits.shape()[1]
     var batch_index = get_batch_from_row_offsets(
         lp_output_offsets.to_tile_tensor[DType.int64](), output_token_index
@@ -131,6 +188,9 @@ def compute_log_probabilities_1tok[
 
 @register("compute_log_probabilities_ragged")
 struct LogProbabilitiesRagged:
+    """Registers the `compute_log_probabilities_ragged` graph op computing per-token log probabilities over ragged batches.
+    """
+
     @staticmethod
     def execute[
         target: StaticString, levels: Int
@@ -146,6 +206,35 @@ struct LogProbabilitiesRagged:
         lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1, ...],
         ctx: DeviceContext,
     ) raises -> None:
+        """Executes the ragged log-probabilities computation across all batches.
+
+        Parameters:
+            target: Compilation target string, such as `"cpu"` or `"gpu"`.
+            levels: Number of heap levels controlling the top-k width; the
+                output stores `2**levels` entries per token.
+
+        Args:
+            lp_logits: Output tensor of shape `[num_output_tokens, 2**levels]`
+                receiving the log probabilities.
+            lp_tokens: Output tensor of shape `[num_output_tokens, 2**levels]`
+                receiving the token ids paired with `lp_logits`.
+            logits: Input logits ragged by batch, shape
+                `[total_rows, vocab_size]`.
+            tokens: Previously generated tokens across all batches, ragged.
+            sampled_tokens: Most recently sampled token for each batch.
+            logit_row_offsets: Per-batch start offsets into the first axis
+                of `logits`.
+            token_row_offsets: Per-batch start offsets into `tokens`.
+            lp_output_offsets: Per-batch start offsets into the output row
+                axis.
+            lp_output_offsets_host: Host-resident copy of `lp_output_offsets`
+                whose last element gives the total number of output tokens.
+            ctx: Device context used to enqueue the computation.
+
+        Raises:
+            Error: If `lp_logits` and `lp_tokens` disagree on axis 0, or if
+                either output's axis 1 does not match `2**levels`.
+        """
         var num_output_tokens = lp_logits.shape()[0]
         if lp_tokens.shape()[0] != num_output_tokens:
             raise Error("Mismatch in axis 0 of lp_logits and lp_tokens")
@@ -214,6 +303,27 @@ def compute_log_probabilities_ragged_shape[
     lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
     lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1, ...],
 ) -> IndexList[2]:
+    """Computes the output shapes for the ragged log-probabilities op.
+
+    Parameters:
+        levels: Number of heap levels; the output second dimension is
+            `2**levels`.
+
+    Args:
+        logits: Input logits ragged by batch, shape
+            `[total_rows, vocab_size]`.
+        tokens: Previously generated tokens across all batches, ragged.
+        sampled_tokens: Most recently sampled token for each batch.
+        logit_row_offsets: Per-batch start offsets into the first axis of
+            `logits`.
+        token_row_offsets: Per-batch start offsets into `tokens`.
+        lp_output_offsets: Per-batch start offsets into the output row axis.
+        lp_output_offsets_host: Host-resident copy of `lp_output_offsets`
+            whose last element gives the total number of output tokens.
+
+    Returns:
+        The output shape `[num_output_tokens, 2**levels]`.
+    """
     return IndexList[2](
         Int(lp_output_offsets_host[lp_output_offsets_host.shape()[0] - 1]),
         2**levels,

@@ -16,6 +16,8 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
+"""Registers matmul-family graph ops (matmul, grouped, batched, and quantized variants) and dispatches them to the `linalg` kernels."""
+
 from std.collections import OptionalReg
 from std.sys import align_of
 from std.sys.info import simd_width_of, _accelerator_arch
@@ -134,8 +136,29 @@ struct MatmulFusedPartialRMSNorm:
         """Execute fused GEMV + partial RMS norm.
 
         Calls `gemv_and_partial_norm` from `nn.gemv_partial_norm` which
-        computes y = x @ W.T, then partitions y into normed and unnormed
-        outputs.
+        computes y = x @ W.T, then partitions y into normed and
+        unnormed outputs.
+
+        Parameters:
+            dtype: Element type of all input and output tensors.
+            rank: Tensor rank of the input and output tensors.
+            target: The target GPU device.
+            transpose_b: Whether to transpose `weight` before the matmul
+                (defaults to `True`).
+
+        Args:
+            normed_output: Output tensor holding the RMS-normalized
+                leading columns of the matmul result.
+            unnormed_output: Output tensor holding the trailing columns
+                of the matmul result, passed through unchanged.
+            input: Input activation tensor `x` of the GEMV.
+            weight: Weight matrix `W` of shape `(N, K)` (rank 2).
+            gamma: RMS normalization scale vector (rank 1).
+            epsilon: Small constant added to the squared mean before
+                the reciprocal square root for numerical stability.
+            weight_offset: Reserved for API consistency with other RMS
+                norm ops; not consumed by this kernel.
+            ctx: The device context used to enqueue the kernel.
         """
         # weight_offset is passed but not used in this kernel - it's kept
         # for API consistency with other RMS norm ops.
@@ -170,6 +193,24 @@ def composite_matmul_fused_partial_rms_norm_shape[
     epsilon: Float32,
     weight_offset: Scalar[dtype=dtype],
 ) -> IndexList[rank]:
+    """Computes the output shape for the `mo.composite.matmul_fused_partial_rms_norm` graph op.
+
+    Parameters:
+        dtype: Element type of the input and weight tensors.
+        rank: Tensor rank of the input tensor.
+
+    Args:
+        input: Input activation tensor `x` of the GEMV.
+        weight: Weight matrix `W` of shape `(N, K)` (rank 2).
+        gamma: RMS normalization scale vector (rank 1).
+        epsilon: Small constant added to the squared mean before the
+            reciprocal square root for numerical stability.
+        weight_offset: Reserved for API consistency with other RMS norm
+            ops; not consumed by the shape function.
+
+    Returns:
+        The output shape, which matches the `input` shape.
+    """
     # Return the input shape for normed output
     # The actual shape split is handled by the op semantics
     return input.shape()
@@ -177,6 +218,8 @@ def composite_matmul_fused_partial_rms_norm_shape[
 
 @extensibility.register("mo.matmul")
 struct Matmul:
+    """Registers the `mo.matmul` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         transpose_b: Bool,
@@ -252,6 +295,8 @@ struct Matmul:
 
 @extensibility.register("mo.batch_matmul")
 struct BatchMatmul:
+    """Registers the `mo.batch_matmul` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         has_epilogue_fusion: Bool,
@@ -312,6 +357,20 @@ def batch_matmul_shape[
     a: InputTensor[dtype=a_type, rank=rank, ...],
     b: InputTensor[dtype=b_type, rank=rank, ...],
 ) raises -> IndexList[rank]:
+    """Computes the output shape for the `mo.batch_matmul` graph op.
+
+    Parameters:
+        rank: Tensor rank of the batched matmul operands and output.
+        a_type: Element type of the `a` input tensor.
+        b_type: Element type of the `b` input tensor.
+
+    Args:
+        a: Left-hand batched input tensor.
+        b: Right-hand batched input tensor.
+
+    Returns:
+        The output shape of the batched matmul.
+    """
     return batched_matmul_shape[rank](
         a.to_tile_tensor[DType.int64](),
         b.to_tile_tensor[DType.int64](),
@@ -320,6 +379,9 @@ def batch_matmul_shape[
 
 @extensibility.register("mo.composite.matmul_add")
 struct FusedMatmulAdd:
+    """Registers the `mo.composite.matmul_add` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         transpose_b: Bool,
@@ -363,6 +425,8 @@ struct FusedMatmulAdd:
 
 @extensibility.register("mo.linalg.band_part")
 struct LinalgBandPart:
+    """Registers the `mo.linalg.band_part` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -401,6 +465,9 @@ struct LinalgBandPart:
 
 @extensibility.register("mo.grouped.matmul.ragged")
 struct Struct_grouped_matmul_ragged:
+    """Registers the `mo.grouped.matmul.ragged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -556,6 +623,7 @@ struct Struct_grouped_matmul_block_scaled_swiglu:
         `(gate, up)` pairs that the epilogue consumes in-place.
 
         Parameters:
+            c_type: The output tensor data type.
             a_type: The input A data type. Constraints: Must be `uint8`.
             b_type: The input B data type. Constraints: Must be `uint8`.
             scales_type: The scale factor data type.
@@ -610,6 +678,9 @@ struct Struct_grouped_matmul_block_scaled_swiglu:
 
 @extensibility.register("mo.grouped.matmul.dynamic.scaled.fp8")
 struct Struct_grouped_matmul_dynamic_scaled_fp8:
+    """Registers the `mo.grouped.matmul.dynamic.scaled.fp8` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -820,6 +891,9 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[preshuffled_b: Bool = False]:
 
 @extensibility.register("mo.batched.matmul.dynamic.scaled.fp8")
 struct Struct_batched_matmul_dynamic_scaled_fp8:
+    """Registers the `mo.batched.matmul.dynamic.scaled.fp8` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -870,6 +944,9 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
 
 @extensibility.register("mo.matmul.dynamic.block.scaled")
 struct Struct_matmul_dynamic_block_scaled:
+    """Registers the `mo.matmul.dynamic.block.scaled` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -954,6 +1031,9 @@ struct Struct_matmul_dynamic_block_scaled:
 
 @extensibility.register("mo.matmul.dynamic.block.scaled.mxfp4")
 struct Struct_matmul_dynamic_block_scaled_mxfp4:
+    """Registers the `mo.matmul.dynamic.block.scaled.mxfp4` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -985,6 +1065,9 @@ struct Struct_matmul_dynamic_block_scaled_mxfp4:
 
 @extensibility.register("mo.matmul.mxfp4.dequant.fp8")
 struct Struct_matmul_mxfp4_dequant_fp8:
+    """Registers the `mo.matmul.mxfp4.dequant.fp8` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1256,6 +1339,9 @@ struct Struct_matmul_int8_w8a8_apple_bias:
 
 @extensibility.register("layout_transform_KN_to_KNkni")
 struct LayoutTransformMatmulKN2KNkni:
+    """Registers the `layout_transform_KN_to_KNkni` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1287,6 +1373,9 @@ struct LayoutTransformMatmulKN2KNkni:
 
 @extensibility.register("layout_transform_NK_to_KNkni")
 struct LayoutTransformMatmulNK2KNkni:
+    """Registers the `layout_transform_NK_to_KNkni` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1318,6 +1407,9 @@ struct LayoutTransformMatmulNK2KNkni:
 
 @extensibility.register("pack_matmul_b_shape_func")
 struct PackMatmulBShapeFunc:
+    """Registers the `pack_matmul_b_shape_func` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute(b_input: InputTensor) raises:
@@ -1334,6 +1426,29 @@ def pack_matmul_b_shape_func_shape[
     c_shape: IntTuple,
     transpose_in_0: Bool,
 ](b_input: InputTensor[dtype=b_type, rank=2, ...]) -> IndexList[2]:
+    """Computes the output shape for the `pack_matmul_b_shape_func` graph op.
+
+    Parameters:
+        a_type: Element type of the A (activation) operand of the matmul
+            the packed B will be used in.
+        a_shape: Static shape of the A operand; `a_shape[0]` is the M
+            dimension used to select the matmul kernel variant
+            (`UNKNOWN_VALUE` for dynamic M).
+        b_type: Element type of the B (weight) operand being packed.
+        b_shape: Static shape of the B operand.
+        c_type: Element type of the C (output) operand of the matmul
+            the packed B will be used in.
+        c_shape: Static shape of the C (output) operand.
+        transpose_in_0: True if the B operand is transposed, stored as
+            `[N, K]` instead of `[K, N]`.
+
+    Args:
+        b_input: Rank-2 B input tensor whose packed output shape is
+            computed.
+
+    Returns:
+        The packed output shape for the B operand.
+    """
     var kernel_type_m = 0
     comptime if a_shape[0] != UNKNOWN_VALUE:
         kernel_type_m = Int(a_shape[0])
@@ -1346,6 +1461,9 @@ def pack_matmul_b_shape_func_shape[
 
 @extensibility.register("mo.matmul_dynamic_scaled_fp8")
 struct MatmulDynamicScaledFloat8:
+    """Registers the `mo.matmul_dynamic_scaled_fp8` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1389,6 +1507,9 @@ struct MatmulDynamicScaledFloat8:
 
 @extensibility.register("mo.matmul_static_scaled_float8")
 struct MatmulStaticScaledFloat8:
+    """Registers the `mo.matmul_static_scaled_float8` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1494,6 +1615,9 @@ struct MatmulStaticScaledFloat8:
 
 @extensibility.register("mo.merge_ragged_tensors")
 struct MergeRaggedTensors:
+    """Registers the `mo.merge_ragged_tensors` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1523,6 +1647,8 @@ struct MergeRaggedTensors:
 
 @extensibility.register("mo.lora_sgmv.ragged")
 struct Struct_lora_sgmv_ragged:
+    """Registers the `mo.lora_sgmv.ragged` graph op with the graph compiler."""
+
     @always_inline
     @staticmethod
     def execute[
@@ -1559,6 +1685,9 @@ struct Struct_lora_sgmv_ragged:
 
 @extensibility.register("mo.lora_sgmv.qkv_shrink.ragged")
 struct Struct_lora_sgmv_qkv_shrink_ragged:
+    """Registers the `mo.lora_sgmv.qkv_shrink.ragged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[

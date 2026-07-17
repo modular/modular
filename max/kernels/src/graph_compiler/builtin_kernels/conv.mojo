@@ -16,6 +16,8 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
+"""Registers convolution graph ops and dispatches them to the `nn.conv` kernels."""
+
 import extensibility
 
 # ===-----------------------------------------------------------------------===#
@@ -57,6 +59,9 @@ from .kernels import (
 
 @extensibility.register("mo.convert_e4m3fn_to_e4m3fnuz")
 struct ConvertE4M3FNToE4M3FNUZ:
+    """Registers the `mo.convert_e4m3fn_to_e4m3fnuz` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -77,11 +82,15 @@ struct ConvertE4M3FNToE4M3FNUZ:
 def convert_e4m3fn_to_e4m3fnuz_shape(
     input: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
 ) -> IndexList[2]:
+    """Computes the output shape for the `mo.convert_e4m3fn_to_e4m3fnuz` graph op.
+    """
     return IndexList[2](input.dim_size[0](), input.dim_size[1]())
 
 
 @extensibility.register("mo.avg_pool")
 struct AvgPool:
+    """Registers the `mo.avg_pool` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         count_boundary: Bool,
@@ -120,6 +129,7 @@ def avg_pool_shape[
     dilations: InputTensor[dtype=int_type, rank=1, ...],
     paddings: InputTensor[dtype=int_type, rank=1, ...],
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.avg_pool` graph op."""
     return rebind[IndexList[input.rank]](
         pool_shape(
             input.to_tile_tensor[DType.int64](),
@@ -133,6 +143,9 @@ def avg_pool_shape[
 
 @extensibility.register("mo.avg_pool_ceil_mode_true")
 struct AvgPoolCeilModeTrue:
+    """Registers the `mo.avg_pool_ceil_mode_true` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         count_boundary: Bool,
@@ -171,6 +184,8 @@ def avg_pool_ceil_mode_true_shape[
     dilations: InputTensor[dtype=int_type, rank=1, ...],
     paddings: InputTensor[dtype=int_type, rank=1, ...],
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.avg_pool_ceil_mode_true` graph op.
+    """
     return rebind[IndexList[input.rank]](
         pool_shape_ceil(
             input.to_tile_tensor[DType.int64](),
@@ -184,6 +199,8 @@ def avg_pool_ceil_mode_true_shape[
 
 @extensibility.register("mo.pad.constant")
 struct PadConstant:
+    """Registers the `mo.pad.constant` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType, rank: Int, target: StaticString
@@ -226,6 +243,7 @@ def pad_constant_shape[
     padding: InputTensor[rank=1, ...],
     constant: Scalar[dtype=dtype],
 ) raises -> IndexList[rank]:
+    """Computes the output shape for the `mo.pad.constant` graph op."""
     # rebind is required because mojo can't figure out that
     # input.static_spec.to_layout_tensor().rank == input.rank
     return rebind[IndexList[rank]](
@@ -238,6 +256,8 @@ def pad_constant_shape[
 
 @extensibility.register("mo.pad.repeat")
 struct PadRepeat:
+    """Registers the `mo.pad.repeat` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -263,6 +283,7 @@ def pad_repeat_shape[
     input: InputTensor[dtype=dtype, rank=rank, ...],
     padding: InputTensor[rank=1, ...],
 ) raises -> IndexList[rank]:
+    """Computes the output shape for the `mo.pad.repeat` graph op."""
     return rebind[IndexList[rank]](
         pad_shape(
             input.to_tile_tensor[DType.int64](),
@@ -273,6 +294,8 @@ def pad_repeat_shape[
 
 @extensibility.register("mo.pad.reflect")
 struct PadReflect:
+    """Registers the `mo.pad.reflect` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -298,6 +321,7 @@ def pad_reflect_shape[
     input: InputTensor[dtype=dtype, rank=rank, ...],
     padding: InputTensor[rank=1, ...],
 ) raises -> IndexList[rank]:
+    """Computes the output shape for the `mo.pad.reflect` graph op."""
     return rebind[IndexList[rank]](
         pad_shape(
             input.to_tile_tensor[DType.int64](),
@@ -308,6 +332,8 @@ def pad_reflect_shape[
 
 @extensibility.register("mo.conv")
 struct Conv:
+    """Registers the `mo.conv` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         input_layout: StaticString,
@@ -474,6 +500,7 @@ def mo_conv_shape(
     paddings: InputTensor[rank=1, ...],
     num_groups: Scalar,
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.conv` graph op."""
     return rebind[IndexList[input.rank]](
         conv_shape(
             input.to_tile_tensor[DType.int64](),
@@ -574,12 +601,15 @@ def conv2d_residual_add_shape(
     source: InputTensor[rank=4, ...],
     bias: InputTensor[rank=1, ...],
 ) raises -> IndexList[4]:
+    """Computes the output shape for the `conv2d_residual_add` graph op."""
     # Output shape is the same as source shape (residual tensor).
     return source.shape()
 
 
 @extensibility.register("mo.conv_transpose")
 struct ConvTranspose:
+    """Registers the `mo.conv_transpose` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         input_layout: StaticString,
@@ -725,6 +755,7 @@ def mo_conv_transpose_shape[
     paddings: InputTensor[rank=1, ...],
     output_paddings: InputTensor[rank=1, ...],
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.conv_transpose` graph op."""
     return rebind[IndexList[input.rank]](
         conv_transpose_shape(
             input.to_tile_tensor[DType.int64](),
@@ -739,6 +770,9 @@ def mo_conv_transpose_shape[
 
 @extensibility.register("layout_transform_RSFC_to_FRSCf")
 struct LayoutTransformRSFC2FRSCf:
+    """Registers the `layout_transform_RSFC_to_FRSCf` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -752,6 +786,9 @@ struct LayoutTransformRSFC2FRSCf:
 
 @extensibility.register("layout_transform_QRSFC_to_FQRSCf")
 struct LayoutTransformQRSFC2FQRSCf:
+    """Registers the `layout_transform_QRSFC_to_FQRSCf` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -765,6 +802,9 @@ struct LayoutTransformQRSFC2FQRSCf:
 
 @extensibility.register("pack_conv_filter_shape")
 struct PackConvFilterShape:
+    """Registers the `pack_conv_filter_shape` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute(filter_buf: InputTensor) raises:
@@ -822,6 +862,9 @@ def pack_conv_filter_shape_fn[
 
 @extensibility.register("layout_transform_QRSCF_to_FQRSCf")
 struct LayoutTransformQRSCF2FQRSCf:
+    """Registers the `layout_transform_QRSCF_to_FQRSCf` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -837,6 +880,9 @@ struct LayoutTransformQRSCF2FQRSCf:
 
 @extensibility.register("layout_transform_RSCF_to_FRSCf")
 struct LayoutTransformRSCF2FRSCf:
+    """Registers the `layout_transform_RSCF_to_FRSCf` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -852,6 +898,9 @@ struct LayoutTransformRSCF2FRSCf:
 
 @extensibility.register("layout_transform_FCRS_to_FRSCf")
 struct LayoutTransformFCRS2FRSCf:
+    """Registers the `layout_transform_FCRS_to_FRSCf` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -867,6 +916,9 @@ struct LayoutTransformFCRS2FRSCf:
 
 @extensibility.register("layout_transform_FCQRS_to_FQRSCf")
 struct LayoutTransformFCQRS2FQRSCf:
+    """Registers the `layout_transform_FCQRS_to_FQRSCf` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[

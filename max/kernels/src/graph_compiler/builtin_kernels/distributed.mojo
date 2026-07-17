@@ -16,6 +16,8 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
+"""Registers distributed and multi-GPU collective graph ops backed by the `comm` and `shmem` kernels."""
+
 from std.math import ceildiv
 from std.sys import get_defined_bool
 from std.sys.info import size_of
@@ -82,6 +84,9 @@ from .kernels import (
 
 @extensibility.register("mo.distributed.allreduce.sum")
 struct DistributedAllReduceSum:
+    """Registers the `mo.distributed.allreduce.sum` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -97,6 +102,12 @@ struct DistributedAllReduceSum:
         dev_ctxs_input: DeviceContextList,
     ) capturing raises:
         """Distributed allreduce operation implementation for sum reduction.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Tensor rank (number of dimensions) of the inputs and outputs.
+            target: Target device string for tracing.
+            _trace_name: Trace name for profiling.
 
         Args:
             outputs: Output tensors (one per GPU) to store reduced results.
@@ -124,7 +135,7 @@ struct DistributedAllReduceSum:
         )
 
         # output_lambda writes each device's reduced output into the fused
-        # epilogue output tensor.  Defined at execute scope so that
+        # epilogue output tensor. Defined at execute scope so that
         # epilogue_wrapper in vendor_ccl.allreduce (also execute scope) can
         # call it without triggering the MLIR 'kgen.param.declare.region must
         # have subprogram scope' error that arises when parameterized functions
@@ -237,6 +248,9 @@ struct DistributedAllReduceSum:
 
 @extensibility.register("mo.distributed.reducescatter.sum")
 struct DistributedReduceScatterSum:
+    """Registers the `mo.distributed.reducescatter.sum` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -254,6 +268,17 @@ struct DistributedReduceScatterSum:
         dev_ctxs_input: DeviceContextList,
     ) capturing raises:
         """Distributed reduce-scatter operation implementation for sum reduction.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Tensor rank (number of dimensions) of the inputs and outputs.
+            target: Target device string for tracing.
+            _trace_name: Trace name for profiling.
+            axis: Axis along which to scatter the reduced result
+                (defaults to 0).
+            group_size: Number of devices per reduce-scatter group; must be
+                at least 1 and must evenly divide the total number of
+                devices (defaults to 0).
 
         Args:
             outputs: Output tensors (one per GPU) to store scattered reduced results.
@@ -362,6 +387,9 @@ struct DistributedReduceScatterSum:
 
 @extensibility.register("mo.distributed.allgather")
 struct DistributedAllGather:
+    """Registers the `mo.distributed.allgather` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -378,6 +406,15 @@ struct DistributedAllGather:
         dev_ctxs_input: DeviceContextList,
     ) capturing raises:
         """Distributed allgather operation implementation.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Tensor rank (number of dimensions) of the inputs and outputs.
+            target: Target device string for tracing.
+            _trace_name: Trace name for profiling.
+            group_size: Number of devices per allgather group; must be at
+                least 1 and must evenly divide the total number of devices
+                (defaults to 0).
 
         Args:
             outputs: Output tensors (one per GPU) to store gathered results.
@@ -667,6 +704,9 @@ struct DistributedScatter:
     "mo.composite.distributed.allreduce_add_rms_norm_quant_fp8"
 )
 struct DistributedAllReduceAddRMSNormQuantFP8:
+    """Registers the `mo.composite.distributed.allreduce_add_rms_norm_quant_fp8` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -807,6 +847,9 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
 
 @extensibility.register("mo.composite.distributed.matmul_reduce_scatter.sum")
 struct DistributedMatmulReduceScatterSum:
+    """Registers the `mo.composite.distributed.matmul_reduce_scatter.sum` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         a_type: DType,

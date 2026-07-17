@@ -99,7 +99,7 @@ def nan_check_count[
 
     Read-only: does not modify the input tensor. Outputs two single-element
     int32 tensors with the NaN and Inf counts. No D2H transfer or
-    synchronization is performed — the counts stay on the same device as
+    synchronization is performed: the counts stay on the same device as
     the input.
     """
     var total = input.size()

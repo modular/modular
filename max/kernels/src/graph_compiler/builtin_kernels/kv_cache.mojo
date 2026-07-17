@@ -16,6 +16,8 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
+"""Registers KV-cache graph ops backed by the `kv_cache` and `nn.kv_cache` kernels."""
+
 from std.sys.info import simd_width_of, _current_target
 import extensibility
 
@@ -75,6 +77,9 @@ from .kernels import *
 
 @extensibility.register("mo.kv_cache.store.paged.ragged")
 struct Struct_kv_cache_store_paged:
+    """Registers the `mo.kv_cache.store.paged.ragged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -126,6 +131,9 @@ struct Struct_kv_cache_store_paged:
 
 @extensibility.register("mo.kv_cache.store_k_scales.paged.ragged")
 struct Struct_kv_cache_store_k_scales_paged:
+    """Registers the `mo.kv_cache.store_k_scales.paged.ragged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -254,6 +262,9 @@ struct Struct_kv_cache_store_k_scales_paged:
 
 @extensibility.register("mo.kv_cache.store.paged.padded")
 struct Struct_kv_cache_store_padded:
+    """Registers the `mo.kv_cache.store.paged.padded` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -305,6 +316,9 @@ struct Struct_kv_cache_store_padded:
 
 @extensibility.register("mo.rms_norm_kv_cache.ragged.paged")
 struct Struct_rms_norm_kv_cache_ragged_paged:
+    """Registers the `mo.rms_norm_kv_cache.ragged.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -353,6 +367,9 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
 
 @extensibility.register("mo.fused_qk_rms_norm.ragged.paged")
 struct Struct_fused_qk_rms_norm_ragged_paged:
+    """Registers the `mo.fused_qk_rms_norm.ragged.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -403,6 +420,13 @@ struct Struct_fused_qk_rms_norm_ragged_paged:
 
 @extensibility.register("mo.fused_qk_rms_norm_rope.ragged.paged")
 struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
+    """Registers the `mo.fused_qk_rms_norm_rope.ragged.paged` graph op with the graph compiler.
+
+    Parameters:
+        interleaved: When true, RoPE rotates adjacent element pairs; when
+            false, rotates pairs separated by half the head dimension.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -473,6 +497,9 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
 
 @extensibility.register("mo.rms_norm_value_cache.ragged.paged")
 struct Struct_rms_norm_value_cache_ragged_paged:
+    """Registers the `mo.rms_norm_value_cache.ragged.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -521,6 +548,9 @@ struct Struct_rms_norm_value_cache_ragged_paged:
 
 @extensibility.register("mo.print_kv_cache.paged")
 struct Struct_print_kv_cache_paged:
+    """Registers the `mo.print_kv_cache.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -556,6 +586,9 @@ struct Struct_print_kv_cache_paged:
 
 @extensibility.register("mo.kv_matmul.ragged.paged")
 struct Struct_kv_matmul_ragged_paged:
+    """Registers the `mo.kv_matmul.ragged.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -593,6 +626,9 @@ struct Struct_kv_matmul_ragged_paged:
 
 @extensibility.register("mo.k_matmul.ragged.paged")
 struct Struct_k_matmul_ragged_paged:
+    """Registers the `mo.k_matmul.ragged.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -630,6 +666,9 @@ struct Struct_k_matmul_ragged_paged:
 
 @extensibility.register("mo.k_matmul.ragged.paged.scale")
 struct Struct_k_matmul_ragged_paged_scale:
+    """Registers the `mo.k_matmul.ragged.paged.scale` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -681,6 +720,9 @@ struct Struct_k_matmul_ragged_paged_scale:
 
 @extensibility.register("mo.kv_cache.row_offsets.ragged.paged")
 struct Struct_kv_cache_row_offsets_ragged_paged:
+    """Registers the `mo.kv_cache.row_offsets.ragged.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -701,6 +743,9 @@ struct Struct_kv_cache_row_offsets_ragged_paged:
 
 @extensibility.register("mo.kv_cache.ragged.paged.radd")
 struct Struct_kv_cache_ragged_paged_radd:
+    """Registers the `mo.kv_cache.ragged.paged.radd` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -739,6 +784,9 @@ struct Struct_kv_cache_ragged_paged_radd:
 
 @extensibility.register("mo.kv_cache.ragged.paged.2m_iadd")
 struct Struct_kv_cache_ragged_paged_2m_iadd:
+    """Registers the `mo.kv_cache.ragged.paged.2m_iadd` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -784,6 +832,9 @@ struct Struct_kv_cache_ragged_paged_2m_iadd:
 
 @extensibility.register("mo.kv_cache.copy_pages_d2h")
 struct KVCacheCopyPagesD2H:
+    """Registers the `mo.kv_cache.copy_pages_d2h` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,

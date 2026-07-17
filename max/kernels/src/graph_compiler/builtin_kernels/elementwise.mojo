@@ -16,6 +16,8 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
+"""Registers elementwise and unary/binary math graph ops."""
+
 from std.math import (
     acos,
     atanh,
@@ -104,6 +106,8 @@ def _elementwise_tile[
 
 @extensibility.register("mo.add")
 struct Add(ElementwiseBinaryOp):
+    """Registers the `mo.add` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -120,12 +124,22 @@ struct Add(ElementwiseBinaryOp):
         rhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
     ) -> TileTensor[dtype, LayoutType, MutAnyOrigin]:
         """Element-wise add two tiles in place into `lhs`; see `_elementwise_tile`.
+
+        Parameters:
+            dtype: The element type of the operands and the returned tile.
+            LayoutType: The static memory layout shared by both tiles.
+
+        Args:
+            lhs: Left operand tile; also the in-place result and return value.
+            rhs: Right operand tile of the element-wise sum.
         """
         return _elementwise_tile[Self, dtype, LayoutType](lhs, rhs)
 
 
 @extensibility.register("mo.sub")
 struct Sub(ElementwiseBinaryOp):
+    """Registers the `mo.sub` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -136,6 +150,8 @@ struct Sub(ElementwiseBinaryOp):
 
 @extensibility.register("mo.mul")
 struct Mul(ElementwiseBinaryOp):
+    """Registers the `mo.mul` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -152,12 +168,22 @@ struct Mul(ElementwiseBinaryOp):
         rhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
     ) -> TileTensor[dtype, LayoutType, MutAnyOrigin]:
         """Element-wise multiply two tiles in place into `lhs`; see `_elementwise_tile`.
+
+        Parameters:
+            dtype: The element type of the operands and the returned tile.
+            LayoutType: The static memory layout shared by both tiles.
+
+        Args:
+            lhs: Left operand tile; also the in-place result and return value.
+            rhs: Right operand tile of the element-wise product.
         """
         return _elementwise_tile[Self, dtype, LayoutType](lhs, rhs)
 
 
 @extensibility.register("mo.div")
 struct Div(ElementwiseBinaryOp):
+    """Registers the `mo.div` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -168,6 +194,8 @@ struct Div(ElementwiseBinaryOp):
 
 @extensibility.register("mo.mod")
 struct Mod(ElementwiseBinaryOp):
+    """Registers the `mo.mod` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -178,6 +206,8 @@ struct Mod(ElementwiseBinaryOp):
 
 @extensibility.register("mo.equal")
 struct Equal(ElementwiseBinaryComparisonOp):
+    """Registers the `mo.equal` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -190,6 +220,8 @@ struct Equal(ElementwiseBinaryComparisonOp):
 
 @extensibility.register("mo.greater")
 struct Greater(ElementwiseBinaryComparisonOp):
+    """Registers the `mo.greater` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -202,6 +234,8 @@ struct Greater(ElementwiseBinaryComparisonOp):
 
 @extensibility.register("mo.greater_equal")
 struct GreaterEqual(ElementwiseBinaryComparisonOp):
+    """Registers the `mo.greater_equal` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -214,6 +248,8 @@ struct GreaterEqual(ElementwiseBinaryComparisonOp):
 
 @extensibility.register("mo.not_equal")
 struct NotEqual(ElementwiseBinaryComparisonOp):
+    """Registers the `mo.not_equal` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -226,6 +262,8 @@ struct NotEqual(ElementwiseBinaryComparisonOp):
 
 @extensibility.register("mo.and")
 struct And(ElementwiseBinaryOp):
+    """Registers the `mo.and` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -237,6 +275,8 @@ struct And(ElementwiseBinaryOp):
 
 @extensibility.register("mo.or")
 struct Or(ElementwiseBinaryOp):
+    """Registers the `mo.or` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -248,6 +288,8 @@ struct Or(ElementwiseBinaryOp):
 
 @extensibility.register("mo.xor")
 struct Xor(ElementwiseBinaryOp):
+    """Registers the `mo.xor` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -259,6 +301,8 @@ struct Xor(ElementwiseBinaryOp):
 
 @extensibility.register("mo.pow")
 struct Pow:
+    """Registers the `mo.pow` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -272,6 +316,8 @@ struct Pow:
 
 @extensibility.register("mo.max")
 struct Max(ElementwiseBinaryOp):
+    """Registers the `mo.max` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -282,6 +328,8 @@ struct Max(ElementwiseBinaryOp):
 
 @extensibility.register("mo.min")
 struct Min(ElementwiseBinaryOp):
+    """Registers the `mo.min` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -292,6 +340,8 @@ struct Min(ElementwiseBinaryOp):
 
 @extensibility.register("mo.cast")
 struct Cast(ElementwiseUnaryMixedOp):
+    """Registers the `mo.cast` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -303,6 +353,8 @@ struct Cast(ElementwiseUnaryMixedOp):
 
 @extensibility.register("mo.negative")
 struct Negative(ElementwiseUnaryOp):
+    """Registers the `mo.negative` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -313,6 +365,8 @@ struct Negative(ElementwiseUnaryOp):
 
 @extensibility.register("mo.relu")
 struct ReLU(ElementwiseUnaryOp):
+    """Registers the `mo.relu` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -335,6 +389,8 @@ struct ReLU(ElementwiseUnaryOp):
 
 @extensibility.register("mo.gelu")
 struct Gelu(ElementwiseUnaryOp):
+    """Registers the `mo.gelu` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -345,6 +401,8 @@ struct Gelu(ElementwiseUnaryOp):
 
 @extensibility.register("mo.gelu_tanh")
 struct GeluTanh(ElementwiseUnaryOp):
+    """Registers the `mo.gelu_tanh` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -355,6 +413,8 @@ struct GeluTanh(ElementwiseUnaryOp):
 
 @extensibility.register("mo.gelu_quick")
 struct GeluQuick(ElementwiseUnaryOp):
+    """Registers the `mo.gelu_quick` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -365,6 +425,8 @@ struct GeluQuick(ElementwiseUnaryOp):
 
 @extensibility.register("mo.sigmoid")
 struct Sigmoid(ElementwiseUnaryOp):
+    """Registers the `mo.sigmoid` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -375,6 +437,8 @@ struct Sigmoid(ElementwiseUnaryOp):
 
 @extensibility.register("mo.silu")
 struct Silu(ElementwiseUnaryOp):
+    """Registers the `mo.silu` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -385,6 +449,8 @@ struct Silu(ElementwiseUnaryOp):
 
 @extensibility.register("mo.ceil")
 struct Ceil(ElementwiseUnaryOp):
+    """Registers the `mo.ceil` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -395,6 +461,8 @@ struct Ceil(ElementwiseUnaryOp):
 
 @extensibility.register("mo.floor")
 struct Floor(ElementwiseUnaryOp):
+    """Registers the `mo.floor` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -405,6 +473,8 @@ struct Floor(ElementwiseUnaryOp):
 
 @extensibility.register("mo.tanh")
 struct Tanh(ElementwiseUnaryOp):
+    """Registers the `mo.tanh` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -418,6 +488,8 @@ struct Tanh(ElementwiseUnaryOp):
 
 @extensibility.register("mo.acos")
 struct ACos(ElementwiseUnaryOp):
+    """Registers the `mo.acos` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -431,6 +503,8 @@ struct ACos(ElementwiseUnaryOp):
 
 @extensibility.register("mo.atanh")
 struct ATanh(ElementwiseUnaryOp):
+    """Registers the `mo.atanh` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -444,6 +518,8 @@ struct ATanh(ElementwiseUnaryOp):
 
 @extensibility.register("mo.cos")
 struct Cos(ElementwiseUnaryOp):
+    """Registers the `mo.cos` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -457,6 +533,8 @@ struct Cos(ElementwiseUnaryOp):
 
 @extensibility.register("mo.sin")
 struct Sin(ElementwiseUnaryOp):
+    """Registers the `mo.sin` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -470,6 +548,8 @@ struct Sin(ElementwiseUnaryOp):
 
 @extensibility.register("mo.erf")
 struct Erf(ElementwiseUnaryOp):
+    """Registers the `mo.erf` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -483,6 +563,8 @@ struct Erf(ElementwiseUnaryOp):
 
 @extensibility.register("mo.exp")
 struct Exp(ElementwiseUnaryOp):
+    """Registers the `mo.exp` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -496,6 +578,8 @@ struct Exp(ElementwiseUnaryOp):
 
 @extensibility.register("mo.round")
 struct Round(ElementwiseUnaryOp):
+    """Registers the `mo.round` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -506,6 +590,8 @@ struct Round(ElementwiseUnaryOp):
 
 @extensibility.register("mo.sqrt")
 struct Sqrt(ElementwiseUnaryOp):
+    """Registers the `mo.sqrt` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -516,6 +602,8 @@ struct Sqrt(ElementwiseUnaryOp):
 
 @extensibility.register("mo.rsqrt")
 struct Rsqrt(ElementwiseUnaryOp):
+    """Registers the `mo.rsqrt` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -526,6 +614,8 @@ struct Rsqrt(ElementwiseUnaryOp):
 
 @extensibility.register("mo.select")
 struct Select:
+    """Registers the `mo.select` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         cond_dtype: DType,
@@ -541,6 +631,8 @@ struct Select:
 
 @extensibility.register("mo.trunc")
 struct Trunc(ElementwiseUnaryOp):
+    """Registers the `mo.trunc` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -553,6 +645,8 @@ struct Trunc(ElementwiseUnaryOp):
 
 @extensibility.register("mo.log")
 struct Log(ElementwiseUnaryOp):
+    """Registers the `mo.log` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -566,6 +660,8 @@ struct Log(ElementwiseUnaryOp):
 
 @extensibility.register("mo.log1p")
 struct Log1p(ElementwiseUnaryOp):
+    """Registers the `mo.log1p` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -579,6 +675,8 @@ struct Log1p(ElementwiseUnaryOp):
 
 @extensibility.register("mo.is_nan")
 struct IsNan(ElementwiseUnaryMixedOp):
+    """Registers the `mo.is_nan` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -593,6 +691,8 @@ struct IsNan(ElementwiseUnaryMixedOp):
 
 @extensibility.register("mo.is_inf")
 struct IsInf(ElementwiseUnaryMixedOp):
+    """Registers the `mo.is_inf` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -607,6 +707,8 @@ struct IsInf(ElementwiseUnaryMixedOp):
 
 @extensibility.register("mo.not")
 struct Not(ElementwiseUnaryOp):
+    """Registers the `mo.not` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -618,6 +720,8 @@ struct Not(ElementwiseUnaryOp):
 
 @extensibility.register("mo.abs")
 struct Abs(ElementwiseUnaryOp):
+    """Registers the `mo.abs` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,

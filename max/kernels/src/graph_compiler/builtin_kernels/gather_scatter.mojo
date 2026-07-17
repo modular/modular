@@ -16,6 +16,8 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
+"""Registers gather, scatter, and indexed-access graph ops backed by the `nn.gather_scatter` kernels."""
+
 from std.math import gcd
 from std.sys import align_of
 from std.sys.info import simd_width_of
@@ -134,6 +136,8 @@ def check_axis_in_range[dim_size: Int](idx: Int) raises:
 
 @extensibility.register("mo.squeeze_shape")
 struct SqueezeShape:
+    """Registers the `mo.squeeze_shape` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -188,6 +192,7 @@ def squeeze_shape_fn[
     input_shape: InputTensor[dtype=dtype, rank=1, ...],
     remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
 ) raises -> IndexList[1]:
+    """Computes the output shape for the `mo.squeeze_shape` graph op."""
     var out_dim = input_shape.dim_size[0]() - remove_indices.dim_size[0]()
 
     if out_dim < 0:
@@ -200,6 +205,8 @@ def squeeze_shape_fn[
 
 @extensibility.register("mo.unsqueeze_shape")
 struct UnsqueezeShape:
+    """Registers the `mo.unsqueeze_shape` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -256,12 +263,15 @@ def unsqueeze_shape_fn[
     input_shape: InputTensor[dtype=dtype, rank=1, ...],
     remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
 ) -> IndexList[1]:
+    """Computes the output shape for the `mo.unsqueeze_shape` graph op."""
     var out_dim = input_shape.dim_size[0]() + remove_indices.dim_size[0]()
     return IndexList[1](out_dim)
 
 
 @extensibility.register("mo.scatter_nd")
 struct ScatterND:
+    """Registers the `mo.scatter_nd` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -288,6 +298,7 @@ def scatter_nd_shape_fn[](
     updates: InputTensor[dtype=input.dtype, ...],
     indices: InputTensor,
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.scatter_nd` graph op."""
     return rebind[IndexList[input.rank]](
         scatter_nd_shape(
             input.to_tile_tensor[DType.int64](),
@@ -299,6 +310,9 @@ def scatter_nd_shape_fn[](
 
 @extensibility.register("mo.scatter_nd.skip_neg_indices")
 struct ScatterNDSkipNegIndices:
+    """Registers the `mo.scatter_nd.skip_neg_indices` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -333,6 +347,8 @@ struct ScatterNDSkipNegIndices:
 
 @extensibility.register("mo.scatter_nd.add")
 struct ScatterNDAdd:
+    """Registers the `mo.scatter_nd.add` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -370,6 +386,7 @@ def scatter_nd_add_shape[](
     updates: InputTensor[dtype=input.dtype, ...],
     indices: InputTensor,
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.scatter_nd.add` graph op."""
     return rebind[IndexList[input.rank]](
         scatter_nd_shape(
             input.to_tile_tensor[DType.int64](),
@@ -381,6 +398,8 @@ def scatter_nd_add_shape[](
 
 @extensibility.register("mo.scatter_nd.mul")
 struct ScatterNDMul:
+    """Registers the `mo.scatter_nd.mul` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -418,6 +437,7 @@ def scatter_nd_mul_shape[](
     updates: InputTensor[dtype=input.dtype, ...],
     indices: InputTensor,
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.scatter_nd.mul` graph op."""
     return rebind[IndexList[input.rank]](
         scatter_nd_shape(
             input.to_tile_tensor[DType.int64](),
@@ -429,6 +449,8 @@ def scatter_nd_mul_shape[](
 
 @extensibility.register("mo.scatter_nd.min")
 struct ScatterNDMin:
+    """Registers the `mo.scatter_nd.min` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -466,6 +488,7 @@ def scatter_nd_min_shape[](
     updates: InputTensor[dtype=input.dtype, ...],
     indices: InputTensor,
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.scatter_nd.min` graph op."""
     return rebind[IndexList[input.rank]](
         scatter_nd_shape(
             input.to_tile_tensor[DType.int64](),
@@ -477,6 +500,8 @@ def scatter_nd_min_shape[](
 
 @extensibility.register("mo.scatter_nd.max")
 struct ScatterNDMax:
+    """Registers the `mo.scatter_nd.max` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -514,6 +539,7 @@ def scatter_nd_max_shape[](
     updates: InputTensor[dtype=input.dtype, ...],
     indices: InputTensor,
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.scatter_nd.max` graph op."""
     return rebind[IndexList[input.rank]](
         scatter_nd_shape(
             input.to_tile_tensor[DType.int64](),
@@ -525,6 +551,9 @@ def scatter_nd_max_shape[](
 
 @extensibility.register("mo.apply_packed_bitmask")
 struct ApplyPackedBitmask:
+    """Registers the `mo.apply_packed_bitmask` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -548,6 +577,9 @@ struct ApplyPackedBitmask:
 
 @extensibility.register("mo.scatter_set_constant")
 struct ScatterSetConstant:
+    """Registers the `mo.scatter_set_constant` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         data_type: DType,
@@ -570,6 +602,8 @@ struct ScatterSetConstant:
 
 @extensibility.register("mo.scatter")
 struct Scatter:
+    """Registers the `mo.scatter` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -610,6 +644,7 @@ def scatter_shape_fn[
     updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
     indices: InputTensor[rank=input.rank, ...],
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.scatter` graph op."""
     return rebind[IndexList[input.rank]](
         scatter_elements_shape(
             input.to_tile_tensor[DType.int64](),
@@ -622,6 +657,8 @@ def scatter_shape_fn[
 
 @extensibility.register("mo.scatter.add")
 struct ScatterAdd:
+    """Registers the `mo.scatter.add` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -661,6 +698,7 @@ def scatter_add_shape_fn(
     indices: InputTensor[rank=input.rank, ...],
     axis: Scalar,
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.scatter.add` graph op."""
     return rebind[IndexList[input.rank]](
         scatter_elements_shape(
             input.to_tile_tensor[DType.int64](),
@@ -673,6 +711,8 @@ def scatter_add_shape_fn(
 
 @extensibility.register("mo.scatter.max")
 struct ScatterMax:
+    """Registers the `mo.scatter.max` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -712,6 +752,7 @@ def scatter_max_shape_fn(
     indices: InputTensor[rank=input.rank, ...],
     axis: Scalar,
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.scatter.max` graph op."""
     return rebind[IndexList[input.rank]](
         scatter_elements_shape(
             input.to_tile_tensor[DType.int64](),
@@ -724,6 +765,8 @@ def scatter_max_shape_fn(
 
 @extensibility.register("mo.scatter.min")
 struct ScatterMin:
+    """Registers the `mo.scatter.min` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -763,6 +806,7 @@ def scatter_min_shape_fn(
     indices: InputTensor[rank=input.rank, ...],
     axis: Scalar,
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.scatter.min` graph op."""
     return rebind[IndexList[input.rank]](
         scatter_elements_shape(
             input.to_tile_tensor[DType.int64](),
@@ -775,6 +819,8 @@ def scatter_min_shape_fn(
 
 @extensibility.register("mo.scatter.mul")
 struct ScatterMul:
+    """Registers the `mo.scatter.mul` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -814,6 +860,7 @@ def scatter_mul_shape_fn(
     indices: InputTensor[rank=input.rank, ...],
     axis: Scalar,
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.scatter.mul` graph op."""
     return rebind[IndexList[input.rank]](
         scatter_elements_shape(
             input.to_tile_tensor[DType.int64](),
@@ -826,6 +873,8 @@ def scatter_mul_shape_fn(
 
 @extensibility.register("mo.broadcast_to")
 struct BroadcastTo:
+    """Registers the `mo.broadcast_to` graph op with the graph compiler."""
+
     # The `execute` method should never be used in the graph compiler.
     # We expect `mo.broadcast_to` to always simplify to `mo.static.broadcast_to`
     #
@@ -883,11 +932,14 @@ def broadcast_to_shape_fn[
     input: InputTensor[rank=input_rank, ...],
     shape: InputTensor[rank=1, ...],
 ) raises -> IndexList[output_rank]:
+    """Computes the output shape for the `mo.broadcast_to` graph op."""
     return BroadcastTo.shape_impl[output_rank=output_rank](input, shape)
 
 
 @extensibility.register("mo.broadcast_shape")
 struct BroadcastShape:
+    """Registers the `mo.broadcast_shape` graph op with the graph compiler."""
+
     @always_inline
     @staticmethod
     def broadcast_shape_impl(
@@ -946,6 +998,7 @@ struct BroadcastShape:
 def broadcast_shape_fn(
     lhs_buf: InputTensor[rank=1, ...], rhs_buf: InputTensor[rank=1, ...]
 ) raises -> IndexList[1]:
+    """Computes the output shape for the `mo.broadcast_shape` graph op."""
     var lhs_dim = lhs_buf.dim_size[0]()
     var rhs_dim = rhs_buf.dim_size[0]()
     return IndexList[1](max(lhs_dim, rhs_dim))
@@ -954,6 +1007,9 @@ def broadcast_shape_fn(
 @extensibility.register("mo.static.broadcast_to")
 @extensibility.view_kernel
 struct StaticBroadcastTo:
+    """Registers the `mo.static.broadcast_to` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def build_view[
@@ -1050,6 +1106,8 @@ struct StaticBroadcastTo:
 @extensibility.register("mo.static.reshape")
 @extensibility.view_kernel
 struct StaticReshape:
+    """Registers the `mo.static.reshape` graph op with the graph compiler."""
+
     @staticmethod
     def update_input_view[
         dtype: DType,
@@ -1104,6 +1162,8 @@ struct StaticReshape:
 
 @extensibility.register("mo.reshape")
 struct Reshape:
+    """Registers the `mo.reshape` graph op with the graph compiler."""
+
     # The `execute` method should never be used in the graph compiler.
     # We expect `mo.reshape` to always simplify to `mo.static.reshape`
     #
@@ -1119,6 +1179,7 @@ def reshape_shape_fn[
 ](input: InputTensor, shape: InputTensor[rank=1, ...]) raises -> IndexList[
     output_rank
 ]:
+    """Computes the output shape for the `mo.reshape` graph op."""
     return reshape_shape[output_rank=output_rank](
         input.to_tile_tensor[DType.int64](),
         shape.to_tile_tensor[DType.int64](),
@@ -1128,6 +1189,8 @@ def reshape_shape_fn[
 @extensibility.register("mo.transpose")
 @extensibility.view_kernel
 struct Transpose:
+    """Registers the `mo.transpose` graph op with the graph compiler."""
+
     @always_inline
     @staticmethod
     def transpose_in_place(
@@ -1228,12 +1291,15 @@ def transpose_shape_fn(
     input: InputTensor,
     permutations: InputTensor[rank=1, ...],
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.transpose` graph op."""
     return Transpose.shape_impl(input, permutations)
 
 
 @extensibility.register("mo.slice")
 @extensibility.view_kernel
 struct Slice:
+    """Registers the `mo.slice` graph op with the graph compiler."""
+
     @staticmethod
     def get_view_alignment[
         rank: Int,
@@ -1360,6 +1426,7 @@ def slice_shape_fn(
     stops: InputTensor[rank=1, ...],
     steps: InputTensor[rank=1, ...],
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.slice` graph op."""
     return rebind[IndexList[input.rank]](
         slice_shape(
             input.to_tile_tensor[DType.int64](),
@@ -1372,6 +1439,8 @@ def slice_shape_fn(
 
 @extensibility.register("mo.mutable.store")
 struct MutableStore(ElementwiseUnaryOp):
+    """Registers the `mo.mutable.store` graph op with the graph compiler."""
+
     @staticmethod
     def elementwise[
         dtype: DType,
@@ -1394,6 +1463,9 @@ struct MutableStore(ElementwiseUnaryOp):
 
 @extensibility.register("mo.mutable.store.slice")
 struct MutableStoreSlice:
+    """Registers the `mo.mutable.store.slice` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -1419,6 +1491,8 @@ struct MutableStoreSlice:
 
 @extensibility.register("mo.gather_nd")
 struct GatherND:
+    """Registers the `mo.gather_nd` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         batchDims: Int,
@@ -1442,6 +1516,7 @@ struct GatherND:
 def gather_nd_shape_fn[
     batch_dims: Int, output_rank: Int
 ](data: InputTensor, indices: InputTensor,) raises -> IndexList[output_rank]:
+    """Computes the output shape for the `mo.gather_nd` graph op."""
     return gather_nd_shape[
         batch_dims=batch_dims,
         output_rank=output_rank,
@@ -1453,6 +1528,8 @@ def gather_nd_shape_fn[
 
 @extensibility.register("mo.gather")
 struct Gather:
+    """Registers the `mo.gather` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -1514,6 +1591,7 @@ def gather_shape_fn[
     output_rank: Int,
     axis: Int,
 ](input: InputTensor, indices: InputTensor,) raises -> IndexList[output_rank]:
+    """Computes the output shape for the `mo.gather` graph op."""
     return gather_shape[output_rank=output_rank](
         input.to_tile_tensor[DType.int64](),
         indices.to_tile_tensor[DType.int64](),
@@ -1523,6 +1601,8 @@ def gather_shape_fn[
 
 @extensibility.register("mo.gather_sum")
 struct GatherSum:
+    """Registers the `mo.gather_sum` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -1552,6 +1632,8 @@ struct GatherSum:
 
 @extensibility.register("mo.tile")
 struct Tile:
+    """Registers the `mo.tile` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType, rank: Int
@@ -1572,6 +1654,7 @@ def tile_shape_fn(
     input: InputTensor,
     repeats: InputTensor[rank=1, ...],
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.tile` graph op."""
     return rebind[IndexList[input.rank]](
         tile_shape(
             input.to_tile_tensor[DType.int64](),
@@ -1582,6 +1665,8 @@ def tile_shape_fn(
 
 @extensibility.register("mo.shard_and_stack")
 struct ShardWeights:
+    """Registers the `mo.shard_and_stack` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         axis: Int,
@@ -1599,6 +1684,8 @@ struct ShardWeights:
 
 @extensibility.register("mo.concat")
 struct Concat:
+    """Registers the `mo.concat` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -1672,11 +1759,15 @@ def concat_shape_fn[
 ](
     inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...]
 ) raises -> IndexList[rank]:
+    """Computes the output shape for the `mo.concat` graph op."""
     return concat_shape_impl(axis, inputs)
 
 
 @extensibility.register("mo.composite.concat_slice")
 struct FusedConcatSlice:
+    """Registers the `mo.composite.concat_slice` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -1791,6 +1882,9 @@ struct FusedConcatSlice:
 
 @extensibility.register("mo.dual_fused_concat_slice")
 struct DualFusedConcatSlice:
+    """Registers the `mo.dual_fused_concat_slice` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -1986,6 +2080,8 @@ struct DualFusedConcatSlice:
 
 @extensibility.register("mo.split")
 struct Split:
+    """Registers the `mo.split` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -2041,6 +2137,9 @@ struct Split:
 
 @extensibility.register("split_ith_output_shape")
 struct SplitOutputShapeHelper:
+    """Registers the `split_ith_output_shape` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute(
         input_buf: InputTensor,
@@ -2062,6 +2161,7 @@ def split_ith_output_shape_fn[
     split_axis: Scalar,
     output_idx: Scalar,
 ) raises -> IndexList[rank]:
+    """Computes the output shape for the `split_ith_output_shape` graph op."""
     if not (0 <= Int(output_idx) < split_sizes_buf.size()):
         raise Error(
             "[split] output index must be within range [0, len(split_sizes))"
@@ -2090,6 +2190,8 @@ def split_ith_output_shape_fn[
 
 @extensibility.register("index_tensor")
 struct IndexTensor:
+    """Registers the `index_tensor` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -2115,6 +2217,9 @@ struct IndexTensor:
 
 @extensibility.register("advanced_indexing_getitem")
 struct AdvancedIndexingGetItem:
+    """Registers the `advanced_indexing_getitem` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -2192,6 +2297,8 @@ def advanced_indexing_getitem_shape_fn[
         dtype=index_type, rank=index_rank, size=num_index_tensors, ...
     ],
 ) -> IndexList[input_rank + index_rank - num_index_tensors]:
+    """Computes the output shape for the `advanced_indexing_getitem` graph op.
+    """
     return advanced_indexing_getitem_shape[
         start_axis=start_axis, num_index_tensors=num_index_tensors
     ](input_tensor.shape(), indices[0].shape())
@@ -2199,6 +2306,9 @@ def advanced_indexing_getitem_shape_fn[
 
 @extensibility.register("advanced_indexing_setitem_inplace")
 struct AdvancedIndexingSetItemInplace:
+    """Registers the `advanced_indexing_setitem_inplace` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -2257,6 +2367,9 @@ struct AdvancedIndexingSetItemInplace:
 
 @extensibility.register("advanced_indexing_setitem")
 struct AdvancedIndexingSetItem:
+    """Registers the `advanced_indexing_setitem` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -2323,6 +2436,8 @@ struct AdvancedIndexingSetItem:
 
 @extensibility.register("mo.sliced.add.ragged")
 struct Struct_sliced_add_ragged:
+    """Registers the `mo.sliced.add.ragged` graph op with the graph compiler."""
+
     @always_inline
     @staticmethod
     def execute[
