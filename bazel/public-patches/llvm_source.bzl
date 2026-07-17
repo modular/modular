@@ -4,9 +4,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 # BEGIN_GENERATED
 # NOTE: Use 'update-llvm' to update these values
-LLVM_COMMIT = "4a5bdadabdfba0f38188adc1e68210d3375b7f95"
+LLVM_COMMIT = "61fa8d3db491c4a864242f22ce31b730fb78ecb5"
 
-LLVM_SHA = "38a986f945c6fe7d5f4890d2582763ac2827caee93b2beea360d27e3507769ca"
+LLVM_SHA = "6dd26f8ee511f1c03afe15096526cbebc1c7fdf78fe055f94483a455afdf8ff2"
 # END_GENERATED
 
 PATCHES = [
