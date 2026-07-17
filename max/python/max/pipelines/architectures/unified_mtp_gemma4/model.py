@@ -42,13 +42,10 @@ from max.nn.kv_cache import (
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
+    MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
-)
-from max.pipelines.lib.interfaces import (
-    PipelineModelWithKVCache,
     UnifiedEagleOutputs,
     UnifiedSpecDecodeInputs,
 )
@@ -59,6 +56,7 @@ from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.pipelines.modeling.types import RequestID
 from transformers import AutoConfig
+from typing_extensions import override
 
 from ..gemma4.batch_vision_inputs import (
     ImageInputs,
@@ -138,7 +136,7 @@ class UnifiedMTPGemma4Inputs(UnifiedSpecDecodeInputs):
 class UnifiedMTPGemma4Model(
     _UnifiedSpecDecodeModelMixin,
     AlwaysSignalBuffersMixin,
-    PipelineModelWithKVCache[Gemma4Context],
+    MultiGraphPipelineModelWithKVCache[Gemma4Context],
 ):
     """Gemma4 with MTP: merge + target + rejection + shift in one graph."""
 
@@ -206,225 +204,219 @@ class UnifiedMTPGemma4Model(
         """Release vision encoder cache for a completed request."""
         self._ve_cache.release_request(request_id)
 
-    def load_model(
-        self, session: InferenceSession
-    ) -> tuple[Model | None, Model]:
-        max_batch_size = self._max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
+    _draft_state_dict: dict[str, Any]
+    _target_state_dict: dict[str, Any]
+    _draft_config: Gemma4AssistantConfig
 
-        with CompilationTimer("unified_mtp_gemma4_model") as timer:
-            # -- 1. Load target weights --
-            target_state_dict = parse_state_dict_from_weights(
-                self.pipeline_config, self.weights, self.adapter
+    @override
+    def _load_state_dict(self) -> dict[str, Any]:
+        assert self._max_batch_size, "Expected max_batch_size to be set"
+
+        weights_dict = dict(self.weights.items())
+        self._vision_weights_dict = convert_safetensor_vision_state_dict(
+            weights_dict
+        )
+        self._language_weights_dict = {}
+
+        target_state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, self.weights, self.adapter
+        )
+
+        assert self.pipeline_config.draft_model is not None
+        draft_model_config = self.pipeline_config.draft_model
+        draft_weight_paths = draft_model_config.resolved_weight_paths()
+        draft_weights = load_weights(draft_weight_paths)
+        self._draft_state_dict = self._convert_draft_weights(
+            dict(draft_weights.items())
+        )
+
+        return target_state_dict
+
+    @override
+    def _create_model_config(
+        self, state_dict: dict[str, Any]
+    ) -> Gemma4ForConditionalGenerationConfig:
+        config = Gemma4ForConditionalGenerationConfig.initialize(
+            self.pipeline_config
+        )
+        config.finalize(
+            huggingface_config=self.huggingface_config,
+            state_dict=state_dict,
+            return_logits=ReturnLogits.VARIABLE,
+        )
+        self.config = config
+
+        self._target_state_dict = state_dict
+        # DISTINF-194: pre-fuse the target's gate/up and qkv/qk projections
+        # when configured (before target.*/draft.* prefixing below), so the
+        # fused keys match the target submodel's FusedMLP / stacked qkv
+        # layers. The draft submodel is not fused.
+        if gemma4_uses_fused_projections(config):
+            self._target_state_dict = fuse_gemma4_projection_weights(
+                self._target_state_dict
             )
 
-            # -- 2. Load draft weights from draft_model checkpoint --
-            assert self.pipeline_config.draft_model is not None
-            draft_model_config = self.pipeline_config.draft_model
-            draft_weight_paths = draft_model_config.resolved_weight_paths()
-            draft_weights = load_weights(draft_weight_paths)
+        assert self.pipeline_config.draft_model is not None
+        draft_hf_config = self.pipeline_config.draft_model.huggingface_config
+        assert draft_hf_config is not None
+        self._draft_config = self._create_draft_config(
+            draft_hf_config, config.devices
+        )
 
-            draft_state_dict = self._convert_draft_weights(
-                dict(draft_weights.items())
-            )
+        assert isinstance(self.kv_params, MultiKVCacheParams)
+        self._target_sliding_kv_params = self.kv_params.children[
+            "sliding_attention"
+        ]
+        self._target_global_kv_params = self.kv_params.children[
+            "full_attention"
+        ]
+        self._target_layer_types = config.text_config.layer_types
 
-            # -- 3. Create target config --
-            config = Gemma4ForConditionalGenerationConfig.initialize(
-                self.pipeline_config
-            )
-            config.finalize(
-                huggingface_config=self.huggingface_config,
-                state_dict=target_state_dict,
-                return_logits=ReturnLogits.VARIABLE,
-            )
-            self.config = config
+        # The draft is Q-only cross-attention into the target's KV caches
+        # (no K/V projections), so it allocates no cache of its own. None
+        # signals SpecDecodeState to skip the draft manager and the graph to
+        # declare no draft KV inputs.
+        self._draft_kv_params = None
 
-            # DISTINF-194: pre-fuse the target's gate/up and qkv/qk projections
-            # when configured (before target.*/draft.* prefixing below), so the
-            # fused keys match the target submodel's FusedMLP / stacked qkv
-            # layers. The draft submodel is not fused.
-            if gemma4_uses_fused_projections(config):
-                target_state_dict = fuse_gemma4_projection_weights(
-                    target_state_dict
-                )
+        return config
 
-            # -- 4. Create draft config --
-            draft_hf_config = draft_model_config.huggingface_config
-            assert draft_hf_config is not None
-            draft_config = self._create_draft_config(
-                draft_hf_config, config.devices
-            )
-            # -- 5. Create unified module --
-            spec_cfg = self.pipeline_config.speculative
-            assert spec_cfg is not None
-            nn_model = UnifiedMTPGemma4(
-                config,
-                draft_config,
-                speculative_config=spec_cfg,
-                enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
-                use_greedy_acceptance=spec_cfg.use_greedy_acceptance,
-            )
+    def _include_vision_graph(
+        self, model_config: Gemma4ForConditionalGenerationConfig
+    ) -> bool:
+        return model_config.vision_config is not None
 
-            # Set return modes on the target model
-            nn_model.target.return_logits = ReturnLogits.VARIABLE
-            nn_model.target.return_hidden_states = (
-                ReturnHiddenStates.ALL_NORMALIZED
-            )
+    @override
+    def _build_language_graph(
+        self,
+        model_config: Gemma4ForConditionalGenerationConfig,
+        state_dict: dict[str, Any],
+        module: Module,
+    ) -> tuple[Graph, dict[str, DLPackArray]]:
+        del state_dict
+        spec_cfg = self.pipeline_config.speculative
+        assert spec_cfg is not None
 
-            # -- 6. Create draft model and share embed_tokens/lm_head --
-            assert isinstance(self.kv_params, MultiKVCacheParams)
-            target_sliding_kv_params = self.kv_params.children[
-                "sliding_attention"
+        nn_model = UnifiedMTPGemma4(
+            model_config,
+            self._draft_config,
+            speculative_config=spec_cfg,
+            enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
+            use_greedy_acceptance=spec_cfg.use_greedy_acceptance,
+        )
+
+        nn_model.target.return_logits = ReturnLogits.VARIABLE
+        nn_model.target.return_hidden_states = ReturnHiddenStates.ALL_NORMALIZED
+
+        assert isinstance(self._target_sliding_kv_params, KVCacheParams)
+        assert isinstance(self._target_global_kv_params, KVCacheParams)
+        nn_model.draft = Gemma4Assistant(
+            self._draft_config,
+            target_layer_types=self._target_layer_types,
+            target_sliding_kv_params=self._target_sliding_kv_params,
+            target_global_kv_params=self._target_global_kv_params,
+        )
+        # Share the target's embed_tokens for the concat(embed, hidden)
+        # input step.  The assistant's own 1024-dim draft_embed_tokens
+        # and tied lm_head are loaded from the assistant checkpoint.
+        nn_model.draft.embed_tokens = nn_model.target.embed_tokens
+
+        unified_state_dict = convert_unified_safetensor_state_dict(
+            self._target_state_dict, self._draft_state_dict
+        )
+        # strict=False: shared weights (embed_tokens, lm_head) are aliased
+        # to target's and won't have draft.* copies.
+        nn_model.load_state_dict(
+            unified_state_dict,
+            override_quantization_encoding=True,
+            weight_alignment=1,
+            strict=False,
+        )
+        weights_registry = nn_model.state_dict()
+
+        n_devs = len(self.devices)
+        with Graph(
+            "gemma4_with_mtp_graph",
+            input_types=nn_model.input_types(self.kv_params),
+            module=module,
+        ) as graph:
+            graph_inputs = iter(graph.inputs)
+            tokens = next(graph_inputs)
+            # Vision embeds + scatter indices follow tokens, matching
+            # build_spec_decode_input_types(enable_vision=True).
+            image_embeddings = [
+                next(graph_inputs).tensor for _ in range(n_devs)
             ]
-            assert isinstance(target_sliding_kv_params, KVCacheParams)
-            target_global_kv_params = self.kv_params.children["full_attention"]
-            assert isinstance(target_global_kv_params, KVCacheParams)
-            target_layer_types = config.text_config.layer_types
+            image_token_indices = [
+                next(graph_inputs).tensor for _ in range(n_devs)
+            ]
+            device_input_row_offsets = next(graph_inputs)
+            host_input_row_offsets = next(graph_inputs)
+            return_n_logits = next(graph_inputs)
+            data_parallel_splits = next(graph_inputs)
+            variadic_args = list(graph_inputs)
 
-            nn_model.draft = Gemma4Assistant(
-                draft_config,
-                target_layer_types=target_layer_types,
-                target_sliding_kv_params=target_sliding_kv_params,
-                target_global_kv_params=target_global_kv_params,
+            variadic_args_iter = iter(variadic_args)
+            signal_buffers = [
+                next(variadic_args_iter).buffer
+                for _ in range(len(self.devices))
+            ]
+
+            # Unflatten the hybrid {sliding, global} KV tree.
+            sliding_kv_collections, global_kv_collections = (
+                self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
             )
-            # Share the target's embed_tokens for the concat(embed, hidden)
-            # input step.  The assistant's own 1024-dim draft_embed_tokens
-            # and tied lm_head are loaded from the assistant checkpoint.
-            nn_model.draft.embed_tokens = nn_model.target.embed_tokens
 
-            # -- 7. Merge with target.*/draft.* prefixes --
-            unified_state_dict = convert_unified_safetensor_state_dict(
-                target_state_dict, draft_state_dict
+            batch_context_lengths = [
+                next(variadic_args_iter).tensor
+                for _ in range(len(self.devices))
+            ]
+
+            draft_tokens = next(variadic_args_iter).tensor
+
+            seed = next(variadic_args_iter).tensor
+            temperature = next(variadic_args_iter).tensor
+            top_k = next(variadic_args_iter).tensor
+            max_k = next(variadic_args_iter).tensor
+            top_p = next(variadic_args_iter).tensor
+            min_top_p = next(variadic_args_iter).tensor
+            in_thinking_phase = next(variadic_args_iter).tensor
+
+            pinned_bitmask_graph = None
+            wait_payload_graph = None
+            device_bitmask_scratch_graph = None
+            if nn_model.enable_structured_output:
+                pinned_bitmask_graph = next(variadic_args_iter).tensor
+                wait_payload_graph = next(variadic_args_iter).buffer
+                device_bitmask_scratch_graph = next(variadic_args_iter).buffer
+
+            outputs = nn_model(
+                tokens=tokens.tensor,
+                input_row_offsets=device_input_row_offsets.tensor,
+                image_embeddings=image_embeddings,
+                image_token_indices=image_token_indices,
+                draft_tokens=draft_tokens,
+                signal_buffers=signal_buffers,
+                sliding_kv_collections=sliding_kv_collections,
+                global_kv_collections=global_kv_collections,
+                return_n_logits=return_n_logits.tensor,
+                host_input_row_offsets=host_input_row_offsets.tensor,
+                data_parallel_splits=data_parallel_splits.tensor,
+                batch_context_lengths=batch_context_lengths,
+                seed=seed,
+                temperature=temperature,
+                top_k=top_k,
+                max_k=max_k,
+                top_p=top_p,
+                min_top_p=min_top_p,
+                in_thinking_phase=in_thinking_phase,
+                pinned_bitmask=pinned_bitmask_graph,
+                wait_payload=wait_payload_graph,
+                device_bitmask_scratch=device_bitmask_scratch_graph,
             )
 
-            # strict=False: shared weights (embed_tokens, lm_head) are aliased
-            # to target's and won't have draft.* copies.
-            nn_model.load_state_dict(
-                unified_state_dict,
-                override_quantization_encoding=True,
-                weight_alignment=1,
-                strict=False,
-            )
-            self.state_dict = nn_model.state_dict()
+            graph.output(*outputs)
 
-            # -- 8. The draft is Q-only cross-attention into the target's KV
-            # caches (no K/V projections), so it allocates no cache of its
-            # own. None signals SpecDecodeState to skip the draft manager
-            # and the graph to declare no draft KV inputs.
-            self._draft_kv_params = None
-
-            # -- 9. Build the vision + unified graphs into one Module --
-            module = Module()
-
-            # Vision encoder graph (built into the shared Module so it compiles
-            # and loads alongside the unified graph). Its weights live under
-            # model.vision_tower.* / model.embed_vision.* in the target
-            # checkpoint and are stripped from the language state dict, so they
-            # are extracted separately here.
-            vision_graph: Graph | None = None
-            vision_state_dict: dict[str, DLPackArray] = {}
-            if config.vision_config is not None:
-                vision_weights_dict = convert_safetensor_vision_state_dict(
-                    dict(self.weights.items())
-                )
-                vision_graph, vision_state_dict = self._build_vision_graph(
-                    config, vision_weights_dict, module=module
-                )
-
-            n_devs = len(self.devices)
-            with Graph(
-                "gemma4_with_mtp_graph",
-                input_types=nn_model.input_types(self.kv_params),
-                module=module,
-            ) as graph:
-                graph_inputs = iter(graph.inputs)
-                tokens = next(graph_inputs)
-                # Vision embeds + scatter indices follow tokens, matching
-                # build_spec_decode_input_types(enable_vision=True).
-                image_embeddings = [
-                    next(graph_inputs).tensor for _ in range(n_devs)
-                ]
-                image_token_indices = [
-                    next(graph_inputs).tensor for _ in range(n_devs)
-                ]
-                device_input_row_offsets = next(graph_inputs)
-                host_input_row_offsets = next(graph_inputs)
-                return_n_logits = next(graph_inputs)
-                data_parallel_splits = next(graph_inputs)
-                variadic_args = list(graph_inputs)
-
-                variadic_args_iter = iter(variadic_args)
-                signal_buffers = [
-                    next(variadic_args_iter).buffer
-                    for _ in range(len(self.devices))
-                ]
-
-                # Unflatten the hybrid {sliding, global} KV tree.
-                sliding_kv_collections, global_kv_collections = (
-                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
-                )
-
-                batch_context_lengths = [
-                    next(variadic_args_iter).tensor
-                    for _ in range(len(self.devices))
-                ]
-
-                draft_tokens = next(variadic_args_iter).tensor
-
-                seed = next(variadic_args_iter).tensor
-                temperature = next(variadic_args_iter).tensor
-                top_k = next(variadic_args_iter).tensor
-                max_k = next(variadic_args_iter).tensor
-                top_p = next(variadic_args_iter).tensor
-                min_top_p = next(variadic_args_iter).tensor
-                in_thinking_phase = next(variadic_args_iter).tensor
-
-                pinned_bitmask_graph = None
-                wait_payload_graph = None
-                device_bitmask_scratch_graph = None
-                if nn_model.enable_structured_output:
-                    pinned_bitmask_graph = next(variadic_args_iter).tensor
-                    wait_payload_graph = next(variadic_args_iter).buffer
-                    device_bitmask_scratch_graph = next(
-                        variadic_args_iter
-                    ).buffer
-
-                outputs = nn_model(
-                    tokens=tokens.tensor,
-                    input_row_offsets=device_input_row_offsets.tensor,
-                    image_embeddings=image_embeddings,
-                    image_token_indices=image_token_indices,
-                    draft_tokens=draft_tokens,
-                    signal_buffers=signal_buffers,
-                    sliding_kv_collections=sliding_kv_collections,
-                    global_kv_collections=global_kv_collections,
-                    return_n_logits=return_n_logits.tensor,
-                    host_input_row_offsets=host_input_row_offsets.tensor,
-                    data_parallel_splits=data_parallel_splits.tensor,
-                    batch_context_lengths=batch_context_lengths,
-                    seed=seed,
-                    temperature=temperature,
-                    top_k=top_k,
-                    max_k=max_k,
-                    top_p=top_p,
-                    min_top_p=min_top_p,
-                    in_thinking_phase=in_thinking_phase,
-                    pinned_bitmask=pinned_bitmask_graph,
-                    wait_payload=wait_payload_graph,
-                    device_bitmask_scratch=device_bitmask_scratch_graph,
-                )
-
-                graph.output(*outputs)
-
-            timer.mark_build_complete()
-            combined_weights = {**vision_state_dict, **self.state_dict}
-            models = session.load_all(module, weights_registry=combined_weights)
-            vision_model = (
-                models[vision_graph.name] if vision_graph is not None else None
-            )
-            model = models[graph.name]
-
-        return vision_model, model
+        return graph, weights_registry
 
     def execute(
         self,

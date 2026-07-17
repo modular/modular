@@ -23,25 +23,24 @@ import logging
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import InferenceSession
 from max.graph import BufferValue, Graph, TensorValue, Value
 from max.graph.weights import load_weights
-from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import (
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.pipelines.lib import CompilationTimer
 from max.pipelines.lib.interfaces import UnifiedSpecDecodeInputs
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 from typing_extensions import override
 
 from ..deepseekV3.model import DeepseekV3Inputs, DeepseekV3Model
+from ..deepseekV3.model_config import DeepseekV3Config
 from ..eagle_common.eagle_mha_draft import Eagle3MHADraftConfig
 from ..kimik2_5.unified_eagle_mha_model import Eagle3MHAKimiK25Unified
 from ..kimik2_5.unified_eagle_mha_pipeline_model import (
@@ -83,35 +82,14 @@ class Eagle3MHADeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
         Eagle3MHADeepseekV3BatchProcessor
     )
 
+    _draft_state_dict: dict[str, Any]
+    _draft_config: Eagle3MHADraftConfig
+
     @override
-    def load_model(self, session: InferenceSession) -> Model:
-        if self.adapter:
-            target_state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=self.huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            target_state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-
-        config = self._create_model_config(target_state_dict)
-
-        n_devices = len(self.devices)
-        if n_devices > 1 and self.pipeline_config.runtime.ep_size != n_devices:
-            raise ValueError("Only the EP strategy is supported.")
-
-        self.ep_comm_initializer = None
-        if config.ep_config is not None and not is_virtual_device_mode():
-            self.ep_comm_initializer = EPCommInitializer(config.ep_config)
-            self.ep_comm_initializer.ep_init(session)
-            config.ep_config.node_id = self.ep_comm_initializer.config.node_id
-            if config.ep_config.node_id == -1:
-                raise ValueError(
-                    "EP node ID is not set. Please check if the EP "
-                    "initialization is successful."
-                )
+    def _load_state_dict(self) -> dict[str, Any]:
+        target_state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, self.weights, self.adapter
+        )
 
         assert self.pipeline_config.draft_model is not None
         draft_model_config = self.pipeline_config.draft_model
@@ -120,12 +98,29 @@ class Eagle3MHADeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
 
         draft_weight_paths = draft_model_config.resolved_weight_paths()
         draft_weights = load_weights(draft_weight_paths)
-        draft_state_dict = convert_llama_eagle3_draft_state_dict(
+        self._draft_state_dict = convert_llama_eagle3_draft_state_dict(
             dict(draft_weights.items())
         )
 
+        return target_state_dict
+
+    @override
+    def _create_model_config(
+        self, state_dict: dict[str, Any]
+    ) -> DeepseekV3Config:
+        config = DeepseekV3Model._create_model_config(self, state_dict)
+
+        n_devices = len(self.devices)
+        if n_devices > 1 and self.pipeline_config.runtime.ep_size != n_devices:
+            raise ValueError("Only the EP strategy is supported.")
+
+        assert self.pipeline_config.draft_model is not None
+        draft_model_config = self.pipeline_config.draft_model
+        draft_hf = draft_model_config.huggingface_config
+        assert draft_hf is not None
+
         fc_input_multiplier = _infer_fc_input_multiplier(
-            draft_state_dict, hidden_size=int(draft_hf.hidden_size)
+            self._draft_state_dict, hidden_size=int(draft_hf.hidden_size)
         )
 
         if config.eagle_aux_hidden_state_layer_ids is None:
@@ -179,7 +174,7 @@ class Eagle3MHADeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
             {"target": target_kv, "draft": self._draft_kv_params}
         )
 
-        draft_config: Eagle3MHADraftConfig = _build_mha_draft_config(
+        self._draft_config = _build_mha_draft_config(
             draft_hf,
             target_config=config,
             devices=config.devices,
@@ -188,11 +183,22 @@ class Eagle3MHADeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
             kv_params=self._draft_kv_params,
             sliding_window_override=draft_model_config.sliding_window,
         )
+        return config
 
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        assert isinstance(model_config, DeepseekV3Config)
         assert self.pipeline_config.speculative is not None
+
         nn_model = Eagle3MHAKimiK25Unified(
-            config,
-            draft_config,
+            model_config,
+            self._draft_config,
             speculative_config=self.pipeline_config.speculative,
             enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
         )
@@ -201,14 +207,14 @@ class Eagle3MHADeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
         nn_model.draft.embed_tokens = nn_model.target.embed_tokens
 
         nn_model.target.load_state_dict(
-            target_state_dict, weight_alignment=1, strict=True
+            state_dict, weight_alignment=1, strict=True
         )
         nn_model.draft.load_state_dict(
-            draft_state_dict, weight_alignment=1, strict=False
+            self._draft_state_dict, weight_alignment=1, strict=False
         )
 
         draft_expected = set(nn_model.draft.raw_state_dict().keys())
-        draft_provided = set(draft_state_dict.keys())
+        draft_provided = set(self._draft_state_dict.keys())
         shared_prefixes = ("embed_tokens.",)
         missing = {
             k
@@ -229,105 +235,95 @@ class Eagle3MHADeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
                 continue
             weight.name = f"draft.{name}"
 
-        self.state_dict = dict(nn_model.target.state_dict())
+        weights_registry = dict(nn_model.target.state_dict())
         for k, v in draft_weights_registry.items():
             if k.startswith("embed_tokens."):
                 continue
-            self.state_dict[f"draft.{k}"] = v
+            weights_registry[f"draft.{k}"] = v
 
-        with CompilationTimer("eagle3_mha_deepseekV3_model") as timer:
-            with Graph(
-                "eagle3_mha_deepseekV3_graph",
-                input_types=nn_model.input_types(self.kv_params),
-            ) as graph:
-                (
-                    tokens,
-                    devices_input_row_offsets,
-                    host_input_row_offsets,
-                    return_n_logits,
-                    data_parallel_splits,
-                    *variadic_args,
-                ) = graph.inputs
+        assert isinstance(self.kv_params, MultiKVCacheParams)
+        kv_params = self.kv_params
 
-                variadic_args_iter = iter(variadic_args)
-                signal_buffers = [
-                    next(variadic_args_iter).buffer
-                    for _ in range(len(self.devices))
-                ]
+        with Graph(
+            "eagle3_mha_deepseekV3_graph",
+            input_types=nn_model.input_types(kv_params),
+        ) as graph:
+            (
+                tokens,
+                devices_input_row_offsets,
+                host_input_row_offsets,
+                return_n_logits,
+                data_parallel_splits,
+                *variadic_args,
+            ) = graph.inputs
 
-                # Unflatten the unified KV-cache tree ``{"target", "draft"}``
-                kv_caches_per_dev, draft_kv_collections = (
-                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
-                )
+            variadic_args_iter = iter(variadic_args)
+            signal_buffers = [
+                next(variadic_args_iter).buffer
+                for _ in range(len(self.devices))
+            ]
 
-                batch_context_lengths = [
-                    next(variadic_args_iter).tensor
-                    for _ in range(len(self.devices))
-                ]
-
-                target_ep_inputs: list[Value[Any]] | None = None
-                if nn_model.target.ep_manager is not None:
-                    n_target_ep = len(nn_model.target.ep_manager.input_types())
-                    target_ep_inputs = [
-                        next(variadic_args_iter) for _ in range(n_target_ep)
-                    ]
-
-                draft_tokens = next(variadic_args_iter).tensor
-
-                seed = next(variadic_args_iter).tensor
-                temperature = next(variadic_args_iter).tensor
-                top_k = next(variadic_args_iter).tensor
-                max_k = next(variadic_args_iter).tensor
-                top_p = next(variadic_args_iter).tensor
-                min_top_p = next(variadic_args_iter).tensor
-                in_thinking_phase = next(variadic_args_iter).tensor
-
-                pinned_bitmask_graph: TensorValue | None = None
-                wait_payload_graph: BufferValue | None = None
-                device_bitmask_scratch_graph: BufferValue | None = None
-                if nn_model.enable_structured_output:
-                    pinned_bitmask_graph = next(variadic_args_iter).tensor
-                    wait_payload_graph = next(variadic_args_iter).buffer
-                    device_bitmask_scratch_graph = next(
-                        variadic_args_iter
-                    ).buffer
-
-                outputs = nn_model(
-                    tokens=tokens.tensor,
-                    input_row_offsets=devices_input_row_offsets.tensor,
-                    draft_tokens=draft_tokens.tensor,
-                    signal_buffers=signal_buffers,
-                    kv_collections=kv_caches_per_dev,
-                    return_n_logits=return_n_logits.tensor,
-                    host_input_row_offsets=host_input_row_offsets.tensor,
-                    data_parallel_splits=data_parallel_splits.tensor,
-                    batch_context_lengths=batch_context_lengths,
-                    seed=seed,
-                    temperature=temperature,
-                    top_k=top_k,
-                    max_k=max_k,
-                    top_p=top_p,
-                    min_top_p=min_top_p,
-                    in_thinking_phase=in_thinking_phase,
-                    ep_inputs=target_ep_inputs,
-                    draft_kv_collections=draft_kv_collections,
-                    pinned_bitmask=pinned_bitmask_graph,
-                    wait_payload=wait_payload_graph,
-                    device_bitmask_scratch=device_bitmask_scratch_graph,
-                )
-                graph.output(*outputs)
-
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=self.state_dict)
-
-        if self._batch_processor is not None:
-            bind_ep = getattr(
-                self._batch_processor, "bind_ep_comm_initializer", None
+            # Unflatten the unified KV-cache tree ``{"target", "draft"}``
+            kv_caches_per_dev, draft_kv_collections = (
+                kv_params.unflatten_basic_kv_tree(variadic_args_iter)
             )
-            if bind_ep is not None:
-                bind_ep(self.ep_comm_initializer)
 
-        return model
+            batch_context_lengths = [
+                next(variadic_args_iter).tensor
+                for _ in range(len(self.devices))
+            ]
+
+            target_ep_inputs: list[Value[Any]] | None = None
+            if nn_model.target.ep_manager is not None:
+                n_target_ep = len(nn_model.target.ep_manager.input_types())
+                target_ep_inputs = [
+                    next(variadic_args_iter) for _ in range(n_target_ep)
+                ]
+
+            draft_tokens = next(variadic_args_iter).tensor
+
+            seed = next(variadic_args_iter).tensor
+            temperature = next(variadic_args_iter).tensor
+            top_k = next(variadic_args_iter).tensor
+            max_k = next(variadic_args_iter).tensor
+            top_p = next(variadic_args_iter).tensor
+            min_top_p = next(variadic_args_iter).tensor
+            in_thinking_phase = next(variadic_args_iter).tensor
+
+            pinned_bitmask_graph: TensorValue | None = None
+            wait_payload_graph: BufferValue | None = None
+            device_bitmask_scratch_graph: BufferValue | None = None
+            if nn_model.enable_structured_output:
+                pinned_bitmask_graph = next(variadic_args_iter).tensor
+                wait_payload_graph = next(variadic_args_iter).buffer
+                device_bitmask_scratch_graph = next(variadic_args_iter).buffer
+
+            outputs = nn_model(
+                tokens=tokens.tensor,
+                input_row_offsets=devices_input_row_offsets.tensor,
+                draft_tokens=draft_tokens.tensor,
+                signal_buffers=signal_buffers,
+                kv_collections=kv_caches_per_dev,
+                return_n_logits=return_n_logits.tensor,
+                host_input_row_offsets=host_input_row_offsets.tensor,
+                data_parallel_splits=data_parallel_splits.tensor,
+                batch_context_lengths=batch_context_lengths,
+                seed=seed,
+                temperature=temperature,
+                top_k=top_k,
+                max_k=max_k,
+                top_p=top_p,
+                min_top_p=min_top_p,
+                in_thinking_phase=in_thinking_phase,
+                ep_inputs=target_ep_inputs,
+                draft_kv_collections=draft_kv_collections,
+                pinned_bitmask=pinned_bitmask_graph,
+                wait_payload=wait_payload_graph,
+                device_bitmask_scratch=device_bitmask_scratch_graph,
+            )
+            graph.output(*outputs)
+
+        return graph, weights_registry
 
 
 def _default_aux_layer_ids(
