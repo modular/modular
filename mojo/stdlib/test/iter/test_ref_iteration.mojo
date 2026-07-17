@@ -51,7 +51,7 @@ struct _RefIter[
     """A ref-returning iterator that works with move-only types."""
 
     var index: Int
-    var data: UnsafePointer[Self.T, Self.origin]
+    var data: Pointer[Self.T, Self.origin]
     var length: Int
 
     def __iter__(ref self) -> Self:
@@ -64,12 +64,12 @@ struct _RefIter[
             if self.index >= self.length:
                 raise StopIteration()
             self.index += 1
-            return self.data[self.index - 1]
+            return self.data[unsafe_offset=self.index - 1]
         else:
             if self.index <= 0:
                 raise StopIteration()
             self.index -= 1
-            return self.data[self.index]
+            return self.data[unsafe_offset=self.index]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -80,20 +80,20 @@ struct _RefIter[
 struct MoveOnlyList[T: Movable & ImplicitlyDeletable]:
     """A simple list that holds move-only types."""
 
-    var _data: UnsafePointer[Self.T, MutUntrackedOrigin]
+    var _data: Pointer[Self.T, MutUntrackedOrigin]
     var _len: Int
     var _capacity: Int
 
     def __init__(out self):
-        self._data = UnsafePointer[Self.T, MutUntrackedOrigin].unsafe_dangling()
+        self._data = Pointer[Self.T, MutUntrackedOrigin].unsafe_dangling()
         self._len = 0
         self._capacity = 0
 
     def __del__(deinit self):
         for i in range(self._len):
-            (self._data + i).unsafe_deinit_pointee()
+            self._data.unsafe_offset(i).unsafe_deinit_pointee()
         if self._capacity > 0:
-            self._data.free()
+            MutUnsafePointer(self._data).free()
 
     def __len__(self) -> Int:
         return self._len
@@ -101,22 +101,26 @@ struct MoveOnlyList[T: Movable & ImplicitlyDeletable]:
     def append(mut self, var value: Self.T):
         if self._len >= self._capacity:
             var new_cap = self._capacity * 2 if self._capacity > 0 else 4
-            var new_data = alloc[Self.T](new_cap)
+            var new_data: Pointer[Self.T, MutUntrackedOrigin] = alloc[Self.T](
+                new_cap
+            )
             for i in range(self._len):
-                (new_data + i).unsafe_write((self._data + i).take_pointee())
+                new_data.unsafe_offset(i).unsafe_write(
+                    self._data.unsafe_offset(i).unsafe_take_pointee()
+                )
             if self._capacity > 0:
-                self._data.free()
+                MutUnsafePointer(self._data).free()
             self._data = new_data
             self._capacity = new_cap
-        (self._data + self._len).unsafe_write(value^)
+        self._data.unsafe_offset(self._len).unsafe_write(value^)
         self._len += 1
 
     def __getitem__(ref self, idx: Int) -> ref[self] Self.T:
-        return self._data[idx]
+        return self._data[unsafe_offset=idx]
 
     def unsafe_ptr[
         origin: Origin, //
-    ](ref[origin] self) -> UnsafePointer[Self.T, origin]:
+    ](ref[origin] self) -> Pointer[Self.T, origin]:
         return self._data.unsafe_mut_cast[origin.mut]().unsafe_origin_cast[
             origin
         ]()

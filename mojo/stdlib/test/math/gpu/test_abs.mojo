@@ -28,8 +28,8 @@ def test_abs() raises:
     # AMD GPU kernels cannot have a return value
     def do_abs_noreturn[
         dtype: DType, *, width: Int = 1
-    ](val: SIMD[dtype, width], x: UnsafePointer[mut=True, Scalar[dtype], _]):
-        x.store(0, abs(val))
+    ](val: SIMD[dtype, width], x: Pointer[mut=True, Scalar[dtype], _]):
+        x.unsafe_store(0, abs(val))
 
     # Check the NVIDIA PTX.
     assert_true(
