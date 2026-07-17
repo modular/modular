@@ -14,6 +14,7 @@
 from std.collections import List
 
 from std.gpu import global_idx, thread_idx
+from std.gpu.host.dim import Dim
 from std.gpu.memory import external_memory
 from std.gpu.sync import barrier
 from _device_context_hal import (
@@ -831,6 +832,40 @@ def test_external_shared_mem_execution_config(ctx: DeviceContext) raises:
     _ = res_device
 
 
+def test_cluster_launch(ctx: DeviceContext) raises:
+    # Cluster launches require an NVIDIA sm_90+ device; the degenerate
+    # (1, 1, 1) cluster exercises the launch-attribute plumbing.
+    comptime info = DeviceContext.default_device_info
+
+    comptime if not (info.api == "cuda" and info.compute >= 9.0):
+        return
+
+    comptime length = 64
+    var dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var host_in = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var host_out = ctx.enqueue_create_host_buffer[DType.float32](length)
+    ctx.synchronize()
+    for i in range(length):
+        host_in[i] = Float32(i)
+
+    ctx.enqueue_copy(dev, host_in)
+    ctx.enqueue_function[_vec_add_kernel](
+        dev,
+        dev,
+        dev,
+        length,
+        1,
+        grid_dim=(length // 32),
+        block_dim=32,
+        cluster_dim=Dim(1),
+    )
+    ctx.enqueue_copy(host_out, dev)
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_out[i], Float32(i) + Float32(i) + Float32(1))
+
+
 def _bump_counter[origin: MutOrigin](user_data: OpaquePointer[origin]):
     var counter_ptr = user_data.bitcast[Scalar[DType.int32]]()
     _ = Atomic[DType.int32].fetch_add(counter_ptr, 1)
@@ -943,6 +978,7 @@ def main() raises:
         test_push_context(ctx)
         test_occupancy_max_active_blocks(ctx)
         test_enqueue_host_func(ctx)
+        test_cluster_launch(ctx)
         test_id(ctx)
         test_synchronize(ctx)
         test_default_stream(ctx)

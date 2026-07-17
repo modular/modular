@@ -79,11 +79,13 @@ struct M_driver_dlpack_device(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct M_driver_queue_execute_config_gpu(TrivialRegisterPassable):
+struct M_driver_queue_execute_config_gpu[attr_origin: MutOrigin](
+    TrivialRegisterPassable
+):
     var grid: M_driver_dim
     var block: M_driver_dim
     var shared_mem_bytes: UInt32
-    var attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]]
+    var attributes: OptionalReg[OpaquePointer[Self.attr_origin]]
     var num_attributes: UInt32
 
 
@@ -95,9 +97,9 @@ struct M_driver_queue_execute_mode(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct M_driver_queue_execute_config:
+struct M_driver_queue_execute_config[attr_origin: MutOrigin]:
     var mode: M_driver_queue_execute_mode
-    var config: UnsafeUnion[M_driver_queue_execute_config_gpu]
+    var config: UnsafeUnion[M_driver_queue_execute_config_gpu[Self.attr_origin]]
 
 
 @fieldwise_init
@@ -977,16 +979,20 @@ struct RawDriver(Movable):
         arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
         shared_mem_bytes: UInt32 = 0,
+        attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]] = None,
+        num_attributes: UInt32 = 0,
     ) raises HALError:
-        var config = M_driver_queue_execute_config(
+        var config = M_driver_queue_execute_config[MutUntrackedOrigin](
             mode=M_driver_queue_execute_mode.GPU,
-            config=UnsafeUnion[M_driver_queue_execute_config_gpu](
-                M_driver_queue_execute_config_gpu(
+            config=UnsafeUnion[
+                M_driver_queue_execute_config_gpu[MutUntrackedOrigin]
+            ](
+                M_driver_queue_execute_config_gpu[MutUntrackedOrigin](
                     grid=M_driver_dim(x=grid[0], y=grid[1], z=grid[2]),
                     block=M_driver_dim(x=block[0], y=block[1], z=block[2]),
                     shared_mem_bytes=shared_mem_bytes,
-                    attributes={},
-                    num_attributes=UInt32(0),
+                    attributes=attributes,
+                    num_attributes=num_attributes,
                 )
             ),
         )
@@ -1404,6 +1410,7 @@ struct RawPlugin(Movable):
     var queue_execute: HALFunction[
         "M_driver_queue_execute",
         def[
+            attr_origin: MutOrigin,
             config_origin: MutOrigin,
             args_origin: MutOrigin,
             arg_sizes_origin: MutOrigin,
@@ -1411,7 +1418,7 @@ struct RawPlugin(Movable):
             queue: QueueHandle,
             function: FunctionHandle,
             config: InternalHandle[
-                M_driver_queue_execute_config, config_origin
+                M_driver_queue_execute_config[attr_origin], config_origin
             ],
             args: UnsafePointer[OpaquePointer[MutUntrackedOrigin], args_origin],
             arg_sizes: UnsafePointer[UInt64, arg_sizes_origin],

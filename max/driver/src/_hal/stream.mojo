@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .plugin import OpaquePointer, FunctionHandle, OutParam
+from std.collections import OptionalReg
 from .buffer import Buffer, BufferView
 from .context import Context
 from .queue import Queue
@@ -109,6 +110,8 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
         shared_mem_bytes: UInt32 = 0,
+        attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]] = None,
+        num_attributes: UInt32 = 0,
     ) raises HALError:
         """Enqueues a function execution. Runs after all previous Stream ops."""
         self._chain_wait()
@@ -120,6 +123,8 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             arg_sizes,
             num_args,
             shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes,
+            num_attributes=num_attributes,
         )
         self._chain_signal()
 
@@ -133,6 +138,8 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         args: UnsafePointer[mut=True, OpaquePointer[MutUntrackedOrigin], _],
         arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
+        attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]] = None,
+        num_attributes: UInt32 = 0,
     ) raises HALError:
         """Enqueues a function execution. Runs after all previous Stream ops."""
         self._chain_wait()
@@ -142,6 +149,8 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             args,
             arg_sizes,
             num_args,
+            attributes=attributes,
+            num_attributes=num_attributes,
         )
         self._chain_signal()
 

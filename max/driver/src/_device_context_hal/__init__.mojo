@@ -1520,19 +1520,14 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        # HAL doesn't yet support cluster launch or arbitrary launch
-        # attributes; the underlying Stream.execute primitive surfaces only
-        # `shared_mem_bytes`. Refuse non-default values rather than silently
-        # dropping them.
+        # Launch `attributes` (e.g. PDL / programmatic stream serialization,
+        # cluster dimensions) are forwarded to the plugin via the attribute
+        # array assembled below. `constant_memory` mappings DO change
+        # semantics and are not yet plumbed through, so refuse them rather
+        # than silently dropping them.
         if cluster_dim:
-            raise Error(
-                "HAL DeviceContext.enqueue_function does not support"
-                " `cluster_dim`."
-            )
-        if attributes:
-            raise Error(
-                "HAL DeviceContext.enqueue_function does not support launch"
-                " `attributes`."
+            attributes.append(
+                LaunchAttribute.from_cluster_dim(cluster_dim.value())
             )
         if constant_memory:
             raise Error(
@@ -1551,7 +1546,7 @@ struct DeviceFunction[
         )
 
         self._call_with_pack_checked[*Ts, ContextT=ContextT](
-            ctx, config, *args, location=location
+            ctx, config, *args, attributes=attributes^, location=location
         )
 
     @always_inline
@@ -1566,6 +1561,7 @@ struct DeviceFunction[
         ctx: ContextT,
         mut execution_config: ExecutionConfigType,
         *args: *Ts,
+        var attributes: List[LaunchAttribute] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
         _check_device_context_hal_only_supported_exec_config(execution_config)
@@ -1674,6 +1670,17 @@ struct DeviceFunction[
                 capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
             )
 
+        # Kernels that use `with PDL()` emit `griddepcontrol` instructions
+        # and require the launch to be configured with the matching attribute;
+        # dropping it faults the launch.
+        var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
+        if len(attributes) > 0:
+            attr_ptr = OptionalReg(
+                attributes.unsafe_ptr()
+                .bitcast[NoneType]()
+                .unsafe_origin_cast[MutUntrackedOrigin]()
+            )
+
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
             execution_config,
@@ -1684,6 +1691,8 @@ struct DeviceFunction[
                 dense_args_sizes
             ),
             num_args=UInt32(num_translated_args + num_captures),
+            attributes=attr_ptr,
+            num_attributes=UInt32(len(attributes)),
         )
 
         if num_captures > num_captures_static:
@@ -1715,15 +1724,14 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
+        # Launch `attributes` (e.g. PDL / programmatic stream serialization,
+        # cluster dimensions) are forwarded to the plugin via the attribute
+        # array assembled below. `constant_memory` mappings DO change
+        # semantics and are not yet plumbed through, so refuse them rather
+        # than silently dropping them.
         if cluster_dim:
-            raise Error(
-                "HAL DeviceContext.enqueue_function does not support"
-                " `cluster_dim`."
-            )
-        if attributes:
-            raise Error(
-                "HAL DeviceContext.enqueue_function does not support launch"
-                " `attributes`."
+            attributes.append(
+                LaunchAttribute.from_cluster_dim(cluster_dim.value())
             )
         if constant_memory:
             raise Error(
@@ -1785,6 +1793,17 @@ struct DeviceFunction[
                 capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
             )
 
+        # Kernels that use `with PDL()` emit `griddepcontrol` instructions and
+        # require the launch to be configured with the matching attribute;
+        # dropping it faults the launch.
+        var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
+        if len(attributes) > 0:
+            attr_ptr = OptionalReg(
+                attributes.unsafe_ptr()
+                .bitcast[NoneType]()
+                .unsafe_origin_cast[MutUntrackedOrigin]()
+            )
+
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
             grid=(
@@ -1805,6 +1824,8 @@ struct DeviceFunction[
             ),
             num_args=UInt32(num_args + num_captures),
             shared_mem_bytes=UInt32(shared_mem_bytes.or_else(0)),
+            attributes=attr_ptr,
+            num_attributes=UInt32(len(attributes)),
         )
 
         if num_captures > num_captures_static:
@@ -2016,15 +2037,14 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
+        # Launch `attributes` (e.g. PDL / programmatic stream serialization,
+        # cluster dimensions) are forwarded to the plugin via the attribute
+        # array assembled below. `constant_memory` mappings DO change
+        # semantics and are not yet plumbed through, so refuse them rather
+        # than silently dropping them.
         if cluster_dim:
-            raise Error(
-                "HAL DeviceContext.enqueue_function does not support"
-                " `cluster_dim`."
-            )
-        if attributes:
-            raise Error(
-                "HAL DeviceContext.enqueue_function does not support launch"
-                " `attributes`."
+            attributes.append(
+                LaunchAttribute.from_cluster_dim(cluster_dim.value())
             )
         if constant_memory:
             raise Error(
@@ -2053,6 +2073,17 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         comptime for i in range(num_args):
             _populate_arg_sizes[i]()
 
+        # Kernels that use `with PDL()` emit `griddepcontrol` instructions
+        # and require the launch to be configured with the matching attribute;
+        # dropping it faults the launch.
+        var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
+        if len(attributes) > 0:
+            attr_ptr = OptionalReg(
+                attributes.unsafe_ptr()
+                .bitcast[NoneType]()
+                .unsafe_origin_cast[MutUntrackedOrigin]()
+            )
+
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
             grid=(
@@ -2073,6 +2104,8 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
             ),
             num_args=UInt32(num_args),
             shared_mem_bytes=UInt32(shared_mem_bytes.or_else(0)),
+            attributes=attr_ptr,
+            num_attributes=UInt32(len(attributes)),
         )
 
     @always_inline
@@ -2132,7 +2165,6 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
 
 struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
     """Represents a CUDA/HIP stream for asynchronous GPU operations.
-
     A DeviceStream provides a queue for GPU operations that can execute concurrently
     with operations in other streams. Operations within a single stream execute in
     the order they are issued, but operations in different streams may execute in

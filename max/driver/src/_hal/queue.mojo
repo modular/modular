@@ -101,6 +101,8 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
         shared_mem_bytes: UInt32 = 0,
+        attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]] = None,
+        num_attributes: UInt32 = 0,
     ) raises HALError:
         """
         Enqueue an execution of the passed function as a kernel on this queue.
@@ -117,6 +119,8 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             arg_sizes,
             num_args,
             shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes,
+            num_attributes=num_attributes,
         )
 
     def execute[
@@ -129,6 +133,8 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         args: UnsafePointer[mut=True, OpaquePointer[MutUntrackedOrigin], _],
         arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
+        attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]] = None,
+        num_attributes: UInt32 = 0,
     ) raises HALError:
         """
         Enqueue an execution of the passed function as a kernel on this queue.
@@ -190,6 +196,8 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             arg_sizes,
             num_args,
             shared_mem_bytes=UInt32(near_compute_scratchpad_usage),
+            attributes=attributes,
+            num_attributes=num_attributes,
         )
 
     # Direction-specific transports. Callable directly for fine-grained
