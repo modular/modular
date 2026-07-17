@@ -410,7 +410,9 @@ async def benchmark(
     # Create a request driver instance without pbar for test prompt
     # (pbar will be set later for the actual benchmark runs)
     test_request_driver: RequestDriver = request_driver_class(
-        tokenizer=session.tokenizer, extra_body=args.extra_body
+        tokenizer=session.tokenizer,
+        extra_body=args.extra_body,
+        backend=args.backend,
     )
 
     if args.warm_shared_prefix:
@@ -459,7 +461,9 @@ async def benchmark(
     logger.info(f"Maximum request concurrency: {max_concurrency}")
 
     base_driver = request_driver_class(
-        tokenizer=session.tokenizer, extra_body=args.extra_body
+        tokenizer=session.tokenizer,
+        extra_body=args.extra_body,
+        backend=args.backend,
     )
 
     # Warm up the initial-slot sessions before starting the timer.
