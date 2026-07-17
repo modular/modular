@@ -4014,11 +4014,6 @@ def mla_prefill_decode_graph(
     input_values.append(scalar_args)
 
     if sparse_indices is not None:
-        if quant_config is None:
-            raise ValueError(
-                "mla_prefill_decode_graph sparse path requires FP8"
-                " (quant_config)."
-            )
         if (
             sparse_topk_lengths is None
             or sparse_attn_sink is None

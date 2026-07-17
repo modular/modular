@@ -36,7 +36,6 @@ from max.nn.comm import Allreduce
 from max.nn.kernels import (
     mla_decode_graph,
     mla_prefill_decode_graph,
-    mla_prefill_graph,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.linear import Linear
@@ -49,8 +48,11 @@ from .indexer import Indexer
 logger = logging.getLogger("max.pipelines")
 
 
-# The sparse-prefill kernel comptime-asserts these counts; others use decode.
-_SPARSE_PREFILL_SUPPORTED_HEADS = (128,)
+# Head counts the sparse-prefill kernel supports, per weights dtype (FP8's
+# 64-head path isn't wired yet).  Other counts (e.g. TP-sharded 128 // 8 = 16)
+# fall back to decode rather than tripping the kernel's comptime assert.
+_SPARSE_PREFILL_SUPPORTED_HEADS_BF16 = (64, 128)
+_SPARSE_PREFILL_SUPPORTED_HEADS_FP8 = (128,)
 
 # Head counts already warned about; the guard runs per layer, so dedup the log.
 _WARNED_FALLBACK_HEADS: set[int] = set()
@@ -188,7 +190,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         effective_graph_mode = self.graph_mode
         if (
             effective_graph_mode != "decode"
-            and self.n_heads not in _SPARSE_PREFILL_SUPPORTED_HEADS
+            and self.n_heads not in _SPARSE_PREFILL_SUPPORTED_HEADS_FP8
         ):
             if self.n_heads not in _WARNED_FALLBACK_HEADS:
                 _WARNED_FALLBACK_HEADS.add(self.n_heads)
@@ -198,7 +200,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                     "for prefill. This usually means tensor-parallel attention "
                     "sharded the head count below a supported value.",
                     self.n_heads,
-                    _SPARSE_PREFILL_SUPPORTED_HEADS,
+                    _SPARSE_PREFILL_SUPPORTED_HEADS_FP8,
                 )
             effective_graph_mode = "decode"
 
@@ -828,7 +830,24 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
             "v_head_dim": self.v_head_dim,
         }
 
-        if self.graph_mode in ["prefill", "auto"]:
+        effective_graph_mode = self.graph_mode
+        if (
+            effective_graph_mode != "decode"
+            and self.n_heads not in _SPARSE_PREFILL_SUPPORTED_HEADS_BF16
+        ):
+            if self.n_heads not in _WARNED_FALLBACK_HEADS:
+                _WARNED_FALLBACK_HEADS.add(self.n_heads)
+                logger.warning(
+                    "Sparse MLA prefill does not support %d query heads "
+                    "(supported: %s); falling back to the slower decode path "
+                    "for prefill. This usually means tensor-parallel attention "
+                    "sharded the head count below a supported value.",
+                    self.n_heads,
+                    _SPARSE_PREFILL_SUPPORTED_HEADS_BF16,
+                )
+            effective_graph_mode = "decode"
+
+        if effective_graph_mode in ["prefill", "auto"]:
             if _mla_prefill_metadata is None:
                 mla_prefill_metadata = self.create_mla_prefill_metadata(
                     input_row_offsets, kv_collection
@@ -846,7 +865,7 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
             attn_kwargs["w_k"] = self.w_k
             attn_kwargs["w_uv"] = self.w_uv
 
-        if self.graph_mode in ["decode", "auto"]:
+        if self.graph_mode in ["prefill", "decode", "auto"]:
             attn_kwargs["w_uk"] = self.w_uk
             attn_kwargs["w_uv"] = self.w_uv
             assert kv_collection.attention_dispatch_metadata is not None
@@ -867,11 +886,11 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
                 "sparse_indices_stride": sparse_indices_stride,
             }
 
-        if self.graph_mode == "prefill":
-            result = mla_prefill_graph(**attn_kwargs)
-        elif self.graph_mode == "decode":
+        if effective_graph_mode == "decode":
             result = mla_decode_graph(**attn_kwargs, **sparse_kw)
         else:
+            # TODO(KERN-3198): "prefill" uses the combined op because
+            # mla_prefill_graph doesn't support sparse args yet.
             result = mla_prefill_decode_graph(**attn_kwargs, **sparse_kw)
 
         return result.reshape((-1, self.n_heads * self.v_head_dim))
@@ -921,17 +940,16 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
                 )
             topk_indices = prev_topk_indices
 
-        batch_dim = kv_collection.lookup_table.shape[0]
         sparse_topk_lengths = ops.broadcast_to(
             ops.constant(
                 self.index_topk,
                 dtype=DType.int32,
                 device=xq.device,
             ),
-            (batch_dim,),
+            (xq.shape[0],),
         )
         sparse_attn_sink = ops.broadcast_to(
-            ops.constant(float("-inf"), dtype=DType.float32, device=xq.device),
+            ops.constant(-1.0e38, dtype=DType.float32, device=xq.device),
             (self.n_heads,),
         )
 
