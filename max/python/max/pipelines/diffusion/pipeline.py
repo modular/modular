@@ -44,6 +44,7 @@ from max.pipelines.modeling.types import (
 from max.pipelines.request.open_responses import (
     OutputImageContent,
     OutputVideoContent,
+    Usage,
 )
 from max.pipelines.weights.weight_loading import auto_cast_weights_from_env
 
@@ -318,6 +319,12 @@ class PixelGenerationPipeline(
             pixel_data = images[offset : offset + num_images_per_prompt]
 
             output_format = getattr(_context, "output_format", "jpeg")
+            # Usage reports generated pixels as output tokens, counted from
+            # the actual output arrays rather than the requested dimensions.
+            # Prompt text is not counted, so input_tokens stays 0.
+            output_pixels = int(
+                sum(img.shape[0] * img.shape[1] for img in pixel_data)
+            )
             responses[request_id] = GenerationOutput(
                 request_id=request_id,
                 final_status=GenerationStatus.END_OF_SEQUENCE,
@@ -325,6 +332,11 @@ class PixelGenerationPipeline(
                     OutputImageContent.from_numpy(img, format=output_format)
                     for img in pixel_data
                 ],
+                usage=Usage(
+                    input_tokens=0,
+                    output_tokens=output_pixels,
+                    total_tokens=output_pixels,
+                ),
             )
 
         return responses

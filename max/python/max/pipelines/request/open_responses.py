@@ -1084,7 +1084,12 @@ class OutputTokensDetails(BaseModel):
 
 
 class Usage(BaseModel):
-    """Token usage statistics."""
+    """Token usage statistics.
+
+    Image generation responses report generated pixels: ``output_tokens``
+    is the total pixel count of the generated images, and ``input_tokens``
+    is 0 (prompt text is not counted).
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -1611,7 +1616,7 @@ class ResponseResource(BaseModel):
             status="completed",
             model=model,
             output=[message],
-            usage=None,  # TODO: Populate token usage if available from generation_output
+            usage=generation_output.usage,
         )
 
 

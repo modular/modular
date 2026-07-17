@@ -115,6 +115,11 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Image generation responses on the Open Responses endpoint now report
+  `usage`: `output_tokens` and `total_tokens` carry the total pixel count of
+  the generated images, counted from the actual output arrays, and
+  `input_tokens` is 0 (prompt text is not counted). Previously `usage` was
+  always `null`.
 - Added `--no-enable-tool-call-constrained-decode` (config key
   `sampling.enable_tool_call_constrained_decode`, default enabled) to decouple
   tool-call parsing from constrained decoding. When disabled, a configured

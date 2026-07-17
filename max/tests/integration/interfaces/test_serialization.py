@@ -32,6 +32,7 @@ from max.pipelines.modeling.types.utils.serialization import (
 from max.pipelines.request.open_responses import (
     OutputImageContent,
     OutputVideoContent,
+    Usage,
 )
 
 
@@ -242,6 +243,7 @@ def test_generation_output_serialization() -> None:
         output=[
             OutputImageContent.from_numpy(img_array, format="png"),
         ],
+        usage=Usage(input_tokens=0, output_tokens=4096, total_tokens=4096),
     )
 
     # Encode the GenerationOutput
@@ -258,6 +260,7 @@ def test_generation_output_serialization() -> None:
     assert decoded_output.request_id == test_output.request_id
     assert decoded_output.final_status == test_output.final_status
     assert decoded_output.is_done == test_output.is_done
+    assert decoded_output.usage == test_output.usage
     assert len(decoded_output.output) == len(test_output.output)
 
     # Verify the OutputImageContent is correct
