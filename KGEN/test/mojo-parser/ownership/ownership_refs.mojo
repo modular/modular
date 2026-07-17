@@ -548,8 +548,8 @@ struct MyListInterior[T: Movable]:
     @__defines_interior_origins
     def __getitem__(
         ref self
-    ) -> ref[self.data.get_ref_with_unsafe_interior_origin["element"](self)] Self.T:
-      return (self.data).get_ref_with_unsafe_interior_origin["element"](self)
+    ) -> ref[self.data._get_ref_with_unsafe_interior_origin["element"](self)] Self.T:
+      return (self.data)._get_ref_with_unsafe_interior_origin["element"](self)
 
 # CHECK-LABEL: lit.fn @"test_interior0
 def test_interior0():
