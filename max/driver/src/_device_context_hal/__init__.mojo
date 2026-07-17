@@ -57,6 +57,7 @@ from _hal.execution_config import (
 from std.builtin.variadics import TypeList
 
 from std.gpu.host.constant_memory_mapping import ConstantMemoryMapping
+from std.gpu.host.device_attribute import DeviceAttribute
 from std.gpu.host.dim import Dim
 from std.gpu.host.info import GPUInfo
 from std.gpu.host.launch_attribute import LaunchAttribute
@@ -325,6 +326,58 @@ struct DeviceContext(
         """
         var info = self._context[].get_memory_info()
         return (c_size_t(info[0]), c_size_t(info[1]))
+
+    @always_inline
+    def get_attribute(self, attr: DeviceAttribute) raises -> Int:
+        """Returns the specified attribute for this device.
+
+        Use the aliases defined by
+        [DeviceAttribute](/docs/std/gpu/host/device_attribute/DeviceAttribute/)
+        to specify attributes. For example:
+
+        ```mojo
+        from std.gpu.host import DeviceAttribute, DeviceContext
+
+        def main() raises:
+            var ctx = DeviceContext()
+            var attr = DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
+            var max_blocks = ctx.get_attribute(attr)
+            print(max_blocks)
+        ```
+
+        Args:
+            attr: The device attribute to query.
+
+        Returns:
+            The value for `attr` on this device.
+
+        Raises:
+            If the operation fails.
+        """
+        return Int(self._device[].get_attribute(attr._value))
+
+    @doc_hidden
+    @always_inline
+    def compute_capability(self) raises -> Int:
+        """Returns the compute capability of this NVIDIA GPU device.
+
+        This internal method retrieves the compute capability version of the current
+        NVIDIA GPU device. The compute capability is a version number that identifies
+        the features supported by the CUDA hardware.
+
+        Returns:
+            The compute capability as an integer (e.g., 70 for 7.0, 86 for 8.6).
+
+        Raises:
+            If there's an error retrieving the compute capability.
+
+        Notes:
+
+        This is a private method intended for internal use only.
+        """
+        var major = self.get_attribute(DeviceAttribute.COMPUTE_CAPABILITY_MAJOR)
+        var minor = self.get_attribute(DeviceAttribute.COMPUTE_CAPABILITY_MINOR)
+        return major * 10 + minor
 
     def set_as_current(self) raises:
         """For use with libraries that require a specific GPU context to be

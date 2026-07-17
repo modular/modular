@@ -14,6 +14,7 @@
 from std.collections import List
 
 from std.gpu import global_idx, thread_idx
+from std.gpu.host.device_attribute import DeviceAttribute
 from std.gpu.host.dim import Dim
 from std.gpu.memory import external_memory
 from std.gpu.sync import barrier
@@ -832,6 +833,16 @@ def test_external_shared_mem_execution_config(ctx: DeviceContext) raises:
     _ = res_device
 
 
+def test_device_attributes(ctx: DeviceContext) raises:
+    comptime info = DeviceContext.default_device_info
+
+    comptime if info.api == "metal":
+        return
+
+    assert_true(ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT) > 0)
+    assert_true(ctx.compute_capability() > 0)
+
+
 def test_cluster_launch(ctx: DeviceContext) raises:
     # Cluster launches require an NVIDIA sm_90+ device; the degenerate
     # (1, 1, 1) cluster exercises the launch-attribute plumbing.
@@ -979,6 +990,7 @@ def main() raises:
         test_occupancy_max_active_blocks(ctx)
         test_enqueue_host_func(ctx)
         test_cluster_launch(ctx)
+        test_device_attributes(ctx)
         test_id(ctx)
         test_synchronize(ctx)
         test_default_stream(ctx)

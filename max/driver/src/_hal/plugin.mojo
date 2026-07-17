@@ -296,6 +296,23 @@ struct RawDriver(Movable):
 
         return num_devices.unsafe_assume_init_ref()
 
+    def get_device_attribute(
+        self, device: DeviceHandle, attribute: Int32
+    ) raises HALError -> Int32:
+        var value = UnsafeMaybeUninit[Int32]()
+        var status = self._raw.device_attribute.f(
+            device, attribute, OutParam[Int32](to=value)
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to get device attribute {attribute}: {err.message}"
+                ),
+            )
+        return value.unsafe_assume_init_ref()
+
     # ===-------------------------------------------------------------------===#
     # Queue operations
     # ===-------------------------------------------------------------------===#
@@ -1397,6 +1414,14 @@ struct RawPlugin(Movable):
             value: OpaquePointer[value_origin],
         ) thin -> PluginResultCode,
     ]
+    var device_attribute: HALFunction[
+        "M_driver_device_attribute",
+        def(
+            device: DeviceHandle,
+            attribute: Int32,
+            value: OutParam[Int32, _],
+        ) thin -> PluginResultCode,
+    ]
     var memory_property: HALFunction[
         "M_driver_memory_property",
         def[
@@ -1582,6 +1607,7 @@ struct RawPlugin(Movable):
             self.function_occupancy_max_active_blocks
         )(handle, so_path)
         self.device_property = type_of(self.device_property)(handle, so_path)
+        self.device_attribute = type_of(self.device_attribute)(handle, so_path)
         self.memory_property = type_of(self.memory_property)(handle, so_path)
         self.queue_execute = type_of(self.queue_execute)(handle, so_path)
         self.queue_record_event = type_of(self.queue_record_event)(
