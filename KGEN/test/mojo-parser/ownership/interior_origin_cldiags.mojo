@@ -35,8 +35,8 @@ struct MyListInterior[T: AnyType]:
     @__unsafe_nested_origins_read_only
     def __getitem__(
         ref self
-    ) -> ref[self.data.get_ref_with_unsafe_interior_origin["element"](self)] Self.T:
-        return self.data.get_ref_with_unsafe_interior_origin["element"](self)
+    ) -> ref[self.data._get_ref_with_unsafe_interior_origin["element"](self)] Self.T:
+        return self.data._get_ref_with_unsafe_interior_origin["element"](self)
 
 def test_invalidate_base():
     # expected-note @+1 {{'list' declared here}}

@@ -95,7 +95,7 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
         origin_of(Self._mlir_origin, element._mlir_origin)
     ]
 
-    comptime get_owned_interior[name: StringLiteral] = Origin[
+    comptime _get_owned_interior[name: StringLiteral] = Origin[
         _mlir_origin=__mlir_attr[
             `#lit.interior.origin<`,
             Self._mlir_origin,
@@ -1339,12 +1339,12 @@ struct UnsafePointer[
     # collections that need to vend owned interior references.
     @__defines_interior_origins
     @always_inline
-    def get_ref_with_unsafe_interior_origin[
+    def _get_ref_with_unsafe_interior_origin[
         name: StringLiteral,
     ](self, ref base: Some[AnyType]) -> ref[
-        origin_of(base).get_owned_interior[name], Self.address_space
+        origin_of(base)._get_owned_interior[name], Self.address_space
     ] Self.type:
-        comptime res_origin = origin_of(base).get_owned_interior[name]
+        comptime res_origin = origin_of(base)._get_owned_interior[name]
         comptime ptr_type = Pointer[Self.type, res_origin, Self.address_space]
         # Do this delicately since we're manufacturing an interior origin here.
         return __get_litref_as_mvalue(
