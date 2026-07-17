@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -32,6 +33,8 @@ from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from pydantic import Field
 from typing_extensions import Self
+
+logger = logging.getLogger("max.pipelines")
 
 
 @dataclass(frozen=True)
@@ -75,8 +78,9 @@ class Flux2BlockQuant:
             return cls()
         if base.is_int8_w8a8:
             # int8 W8A8 (RTN-at-load): quantize every block Linear, both
-            # streams. There is no BFL metadata split -- the klein bf16
-            # checkpoint carries no per-layer quant tags.
+            # streams, regardless of checkpoint source (bf16 checkpoints
+            # carry no per-layer quant tags; NVFP4-sourced requants RTN
+            # their bf16 leftovers to int8 too).
             return cls(
                 attn_qkv=base,
                 attn_out=base,
@@ -174,19 +178,103 @@ def _make_int8_w8a8_config(
     )
 
 
-def _int8_w8a8_enabled() -> bool:
-    """Whether the klein int8 W8A8 path is enabled (default off).
+def _is_apple_m5(device: Device) -> bool:
+    """Whether ``device`` is an Apple M5-generation (Metal) GPU.
 
-    Gated by the ``FLUX2_KLEIN_INT8_W8A8`` env var (``1``/``true``/``yes``)
-    so the bf16 default path is byte-identical when unset. Klein-scoped
-    experimental toggle; the checkpoint stays bf16 (weights are RTN-quantized
-    at load).
+    Metal devices report ``architecture_name`` as the M-series compute
+    capability with an optional toolchain suffix (``"5"`` or ``"5-metal4"``
+    for M5). Mirrors the ``_is_sm10x_gpu`` / ``_is_apple_gpu`` helpers in
+    ``max.nn.kernels``; ``architecture_name`` raises on CPU devices and on
+    unrecognized Metal device names, so failures resolve to ``False``.
     """
-    return os.environ.get("FLUX2_KLEIN_INT8_W8A8", "").lower() in (
-        "1",
-        "true",
-        "yes",
+    # NOTE: the Device API exposes no structured chip-series accessor for
+    # Metal (only ``architecture_name``), so parse the series out of the
+    # name here; switch to a driver accessor if one grows.
+    try:
+        return (
+            device.api == "metal"
+            and device.architecture_name.split("-")[0] == "5"
+        )
+    except Exception:
+        return False
+
+
+_warned_deprecated_env_var = False
+
+
+def _int8_w8a8_env() -> str | None:
+    """Reads the int8 W8A8 env override, honoring the deprecated alias.
+
+    ``APPLE_FLUX2_INT8_W8A8`` is the primary name; when it is unset and the
+    deprecated ``FLUX2_KLEIN_INT8_W8A8`` is set, that value is honored with
+    a one-time warning (the path is Apple-Metal-only and no longer
+    klein-only, hence the rename).
+    """
+    global _warned_deprecated_env_var
+    raw = os.environ.get("APPLE_FLUX2_INT8_W8A8")
+    if raw is not None:
+        return raw
+    raw = os.environ.get("FLUX2_KLEIN_INT8_W8A8")
+    if raw is not None and not _warned_deprecated_env_var:
+        _warned_deprecated_env_var = True
+        logger.warning(
+            "FLUX2_KLEIN_INT8_W8A8 is deprecated; use APPLE_FLUX2_INT8_W8A8"
+            " instead."
+        )
+    return raw
+
+
+def _int8_w8a8_forced(devices: list[Device]) -> bool | None:
+    """Tri-state ``APPLE_FLUX2_INT8_W8A8`` override.
+
+    Returns True when the env var forces the int8 W8A8 path on, False when
+    it forces it off, and None when unset (the caller picks the device
+    default). The int8 W8A8 matmul op is Apple-M5-only, so a force-on
+    request with any non-M5 device logs a warning and resolves to False
+    instead of raising later at graph build.
+    """
+    raw = _int8_w8a8_env()
+    if raw is None:
+        return None
+    if raw.lower() not in ("1", "true", "yes"):
+        return False
+    if devices and all(_is_apple_m5(d) for d in devices):
+        return True
+    logger.warning(
+        "APPLE_FLUX2_INT8_W8A8=%s requests the int8 W8A8 path, which is only"
+        " implemented for Apple M5 GPUs; ignoring it on devices %s.",
+        raw,
+        [d.label for d in devices],
     )
+    return False
+
+
+def _int8_w8a8_enabled(
+    config_dict: dict[str, Any], devices: list[Device]
+) -> bool:
+    """Whether the int8 W8A8 path is enabled for a bf16 checkpoint.
+
+    Defaults ON for klein (guidance-distilled, ``guidance_embeds: false``)
+    checkpoints when every device is an Apple M5 GPU: measured 1.45x faster
+    end-to-end than bf16 at faithful quality (PSNR 34.2 dB / SSIM 0.9966,
+    1024x1024 4-step renders on FLUX.2-klein-4B). FLUX.2-dev (no
+    ``guidance_embeds`` key, defaults True) and non-M5 devices stay on bf16,
+    where int8 quality is unvalidated.
+
+    The ``APPLE_FLUX2_INT8_W8A8`` env var is a two-way override: set to
+    ``1``/``true``/``yes`` it forces the path on (on Apple M5 devices --
+    elsewhere it logs a warning and falls back to bf16, since the int8 op is
+    M5-only), set to anything else it forces bf16, and unset picks the device
+    default above. The checkpoint stays bf16 either way (weights are
+    RTN-quantized at load).
+    """
+    forced = _int8_w8a8_forced(devices)
+    if forced is not None:
+        return forced
+    if config_dict.get("guidance_embeds", True):
+        # Not a klein/distilled checkpoint (e.g. FLUX.2-dev): stay bf16.
+        return False
+    return bool(devices) and all(_is_apple_m5(d) for d in devices)
 
 
 class Flux2Config(MAXModelConfigBase):
@@ -213,7 +301,9 @@ class Flux2Config(MAXModelConfigBase):
     stay single-device (text encoder, VAE, etc.).
     """
     quant_config: QuantConfig | None = None
-    """NVFP4 quantization config, populated when encoding is float4_e2m1fnx2."""
+    """Quantization config: NVFP4 when encoding is float4_e2m1fnx2 (or int8
+    W8A8 when ``APPLE_FLUX2_INT8_W8A8`` forces the requant path on Apple M5),
+    int8 W8A8 for bf16 checkpoints when the int8 path is enabled."""
 
     nvfp4_layers_bfl: frozenset[str] = Field(default_factory=frozenset)
     """BFL-named layers that the checkpoint tagged ``nvfp4`` in its
@@ -240,11 +330,21 @@ class Flux2Config(MAXModelConfigBase):
         # quantized matmul path.
         quant_config: QuantConfig | None = None
         if encoding == "float4_e2m1fnx2":
-            quant_config = _make_nvfp4_config(
-                init_dict.get("num_layers", 8),
-                init_dict.get("num_single_layers", 48),
-            )
-        elif encoding == "bfloat16" and _int8_w8a8_enabled():
+            if _int8_w8a8_forced(devices):
+                # Opt-in NVFP4 -> int8 W8A8 requant (Apple M5): decode the
+                # FP4 weights and RTN-requantize to int8 at load, trading
+                # the W4A16 path for the faster int8 kernel. Unset keeps
+                # NVFP4's weight-only W4A16 default.
+                quant_config = _make_int8_w8a8_config(
+                    init_dict.get("num_layers", 8),
+                    init_dict.get("num_single_layers", 48),
+                )
+            else:
+                quant_config = _make_nvfp4_config(
+                    init_dict.get("num_layers", 8),
+                    init_dict.get("num_single_layers", 48),
+                )
+        elif encoding == "bfloat16" and _int8_w8a8_enabled(init_dict, devices):
             # int8 W8A8 rides on the bf16 checkpoint (weights RTN-quantized at
             # load); computation dtype stays bfloat16.
             quant_config = _make_int8_w8a8_config(

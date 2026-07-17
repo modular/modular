@@ -137,6 +137,88 @@ def _bf16_weightdata_to_fp32(value: WeightData) -> np.ndarray:
     return buf.to_numpy().astype(np.float32)
 
 
+# fp32 value of each 4-bit FP4 E2M1 code (bit 3 sign, bits 2:1 exponent,
+# bit 0 mantissa). Mirrors ``E2M1_TO_FLOAT32`` in
+# ``max/kernels/src/linalg/fp4_utils.mojo``.
+_E2M1_TO_FLOAT32 = np.array(
+    [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0]
+    + [-0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0],
+    dtype=np.float32,
+)
+
+
+def _f8e4m3fn_to_fp32(value: WeightData) -> np.ndarray:
+    """Decode float8-e4m3fn bytes to an fp32 numpy array (numpy has no fp8).
+
+    e4m3fn: 1 sign, 4 exponent (bias 7), 3 mantissa bits; ``exp == 0`` is
+    subnormal. Checkpoint block scales are finite, so the two NaN encodings
+    (``0x7f``/``0xff``) are not special-cased.
+    """
+    bits = value.to_buffer().view(DType.uint8).to_numpy()
+    sign = np.where(bits & 0x80, np.float32(-1.0), np.float32(1.0))
+    exp = ((bits >> 3) & 0x0F).astype(np.int32)
+    mantissa = (bits & 0x07).astype(np.float32) / np.float32(8.0)
+    magnitude = np.where(
+        exp > 0,
+        (np.float32(1.0) + mantissa) * np.exp2((exp - 7).astype(np.float32)),
+        mantissa * np.float32(2.0**-6),
+    )
+    return (sign * magnitude).astype(np.float32)
+
+
+def _nvfp4_weightdata_to_fp32(
+    weight: WeightData,
+    weight_scale: WeightData,
+    weight_scale_2: WeightData,
+) -> np.ndarray:
+    """Reconstruct one fp32 ``[N, K]`` weight from its NVFP4 encoding.
+
+    ``w[n, k] = E2M1(nibble[n, k]) * block_scale[n, k // 16] *
+    weight_scale_2`` with lo-first nibble packing (two FP4 values per uint8
+    byte, low nibble first -- ``convert_nvfp4_state_dict`` swaps checkpoint
+    bytes into this order) and plain rank-2 fp8-e4m3fn block scales
+    (deinterleaved from BFL's TCGEN5 layout by the same conversion).
+    """
+    packed = weight.to_buffer().to_numpy()  # [N, K//2] uint8, lo-first
+    nibbles = np.empty((packed.shape[0], packed.shape[1] * 2), dtype=np.uint8)
+    nibbles[:, 0::2] = packed & 0x0F
+    nibbles[:, 1::2] = packed >> 4
+    w = _E2M1_TO_FLOAT32[nibbles]  # [N, K] fp32
+
+    block_scale = _f8e4m3fn_to_fp32(weight_scale)  # [N, K//16]
+    w *= np.repeat(block_scale, w.shape[1] // block_scale.shape[1], axis=1)
+    w *= weight_scale_2.to_buffer().to_numpy().astype(np.float32)
+    return w
+
+
+def _quantize_fp32_to_int8_rowwise(
+    w: np.ndarray, key: str
+) -> dict[str, WeightData]:
+    """RTN-quantize one fp32 ``[N, K]`` weight to symmetric int8, rowwise.
+
+    Computes a per-output-channel (per-row) symmetric absmax/127 int8
+    quantization and returns the int8 weight under ``key`` plus its fp32
+    ``[N, 1]`` scale under the ``.weight -> .weight_scale`` key.
+    """
+    absmax = np.abs(w).max(axis=1, keepdims=True)  # [N, 1]
+    scale = np.where(absmax != 0.0, absmax / 127.0, np.float32(1.0)).astype(
+        np.float32
+    )
+    q = np.rint(w / scale).astype(np.int32)
+    q = np.clip(q, -127, 127).astype(np.int8)  # [N, K] int8
+
+    q_buf = Buffer.from_numpy(np.ascontiguousarray(q))
+    scale_key = key[: -len(".weight")] + ".weight_scale"
+    scale_c = np.ascontiguousarray(scale)  # [N, 1]
+    scale_buf = Buffer.from_numpy(scale_c)
+    return {
+        key: WeightData(q_buf, key, DType.int8, Shape(q.shape)),
+        scale_key: WeightData(
+            scale_buf, scale_key, DType.float32, Shape(scale_c.shape)
+        ),
+    }
+
+
 def _rtn_quantize_int8(
     state_dict: dict[str, WeightData],
 ) -> dict[str, WeightData]:
@@ -159,22 +241,69 @@ def _rtn_quantize_int8(
             continue
 
         w = _bf16_weightdata_to_fp32(value)  # [N, K] fp32
-        absmax = np.abs(w).max(axis=1, keepdims=True)  # [N, 1]
-        scale = np.where(absmax != 0.0, absmax / 127.0, np.float32(1.0)).astype(
-            np.float32
-        )
-        q = np.rint(w / scale).astype(np.int32)
-        q = np.clip(q, -127, 127).astype(np.int8)  # [N, K] int8
+        out.update(_quantize_fp32_to_int8_rowwise(w, key))
+    return out
 
-        q_buf = Buffer.from_numpy(np.ascontiguousarray(q))
-        out[key] = WeightData(q_buf, key, DType.int8, Shape(q.shape))
 
-        scale_key = key[: -len(".weight")] + ".weight_scale"
-        scale_c = np.ascontiguousarray(scale)  # [N, 1]
-        scale_buf = Buffer.from_numpy(scale_c)
-        out[scale_key] = WeightData(
-            scale_buf, scale_key, DType.float32, Shape(scale_c.shape)
-        )
+def _rtn_quantize_int8_from_nvfp4(
+    state_dict: dict[str, WeightData],
+) -> dict[str, WeightData]:
+    """RTN-requantize a BFL NVFP4 checkpoint to symmetric int8 W8A8.
+
+    Runs the standard NVFP4 conversion first (BFL -> diffusers naming, FP4
+    nibble swap, scale deinterleave, stacked-QKV split), then reconstructs
+    each targeted Linear's fp32 weight from its FP4 nibbles + two-level
+    scales and feeds it through the same rowwise int8 helper as the bf16
+    path. Targeted Linears the checkpoint left in bf16 (layers absent from
+    its ``_quantization_metadata``) take the bf16 RTN route, so every
+    int8-configured Linear ends up int8.
+
+    Weights decode one at a time, and each consumed NVFP4 source entry (the
+    packed weight, its fp8 block ``.weight_scale``, and the per-tensor
+    ``.weight_scale_2`` / ``.input_scale``) is dropped as it is processed,
+    so no full-model fp32/bf16 copy is ever resident: the load peak is about
+    the packed FP4 source + the int8 output + one weight's fp32 scratch.
+    """
+    state_dict = convert_nvfp4_state_dict(state_dict)
+    state_dict = _split_stacked_qkv(state_dict)
+
+    # Pull the NVFP4 side tensors of every packed targeted weight out of the
+    # main dict up front so the passthrough loop below cannot emit them; they
+    # are consumed (and dropped) by the requant of their base ``.weight``.
+    sidecar_keys = {
+        key[: -len(".weight")] + suffix
+        for key, value in state_dict.items()
+        if key.endswith(_INT8_QUANTIZED_WEIGHT_SUFFIXES)
+        and value.dtype == DType.uint8
+        for suffix in (".weight_scale", ".weight_scale_2", ".input_scale")
+    }
+    sidecars: dict[str, WeightData] = {
+        key: state_dict.pop(key) for key in sidecar_keys if key in state_dict
+    }
+
+    out: dict[str, WeightData] = {}
+    for key in list(state_dict):
+        value = state_dict.pop(key)
+        if (
+            not key.endswith(_INT8_QUANTIZED_WEIGHT_SUFFIXES)
+            or len(value.shape) != 2
+        ):
+            out[key] = value
+            continue
+
+        if value.dtype == DType.uint8:
+            base = key[: -len(".weight")]
+            w = _nvfp4_weightdata_to_fp32(
+                value,
+                sidecars[base + ".weight_scale"],
+                sidecars[base + ".weight_scale_2"],
+            )
+            # Drop the consumed NVFP4 scales before the next weight decodes.
+            for suffix in (".weight_scale", ".weight_scale_2", ".input_scale"):
+                sidecars.pop(base + suffix, None)
+        else:
+            w = _bf16_weightdata_to_fp32(value)
+        out.update(_quantize_fp32_to_int8_rowwise(w, key))
     return out
 
 
@@ -245,6 +374,15 @@ def adapt_weights(
         weights split into separate Q, K, V entries.
     """
     if quant_config is not None and quant_config.is_int8_w8a8:
+        if any(
+            key.endswith(".weight") and value.dtype == DType.uint8
+            for key, value in state_dict.items()
+        ):
+            # int8 W8A8 from an NVFP4 checkpoint (packed uint8 FP4 weights,
+            # opt-in via APPLE_FLUX2_INT8_W8A8=1): reconstruct each targeted
+            # Linear's fp32 weight from its FP4 encoding and RTN-requantize
+            # to int8, one weight at a time.
+            return _rtn_quantize_int8_from_nvfp4(state_dict)
         # int8 W8A8 rides on the bf16 (diffusers-named) checkpoint: RTN-quantize
         # the targeted Linear weights to int8 + synthesize their scales. No
         # BFL conversion / QKV split (klein bf16 already has split diffusers

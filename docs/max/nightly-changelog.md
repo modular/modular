@@ -79,6 +79,25 @@ This version is still a work in progress.
   the thinking back into the `content` field wrapped in `<think>...</think>`
   tags, matching the official MiniMax M3 endpoint. The field is a no-op for
   every other model.
+- FLUX.2-klein bf16 checkpoints on Apple M5 GPUs now default to int8 W8A8
+  quantization (weights round-to-nearest-quantized at load, per-token dynamic
+  activation scales in a fused Metal matmul — MAX's own Mojo kernel).
+  Measured ~1.45x faster end-to-end than bf16 on FLUX.2-klein-4B (1024x1024,
+  4 steps) at near-lossless quality (PSNR 34.2 dB, SSIM 0.9966). Set
+  `APPLE_FLUX2_INT8_W8A8=0` to opt back into bf16; FLUX.2-dev and non-M5
+  devices are unaffected.
+- NVFP4 FLUX.2 checkpoints (for example FLUX.2-dev) can now opt into an int8
+  W8A8 requant at load on Apple M5 with `APPLE_FLUX2_INT8_W8A8=1`: each
+  quantized layer's weight is reconstructed from its FP4 data and scales,
+  then requantized to int8 one weight at a time, so no full-model
+  high-precision copy is ever resident. Measured ~2.56x faster end-to-end
+  than the default weight-only W4A16 path on FLUX.2-dev (1024x1024, 24
+  steps) at faithful quality (SSIM 0.996-0.999). Unset, NVFP4 keeps its
+  W4A16 default.
+- Renamed the FLUX.2 int8 W8A8 override env var `FLUX2_KLEIN_INT8_W8A8` to
+  `APPLE_FLUX2_INT8_W8A8` (the path is Apple-Metal-only and no longer
+  klein-only). The old name is still honored with a one-time deprecation
+  warning; the new name wins when both are set.
 - FLUX.2 diffusion pipelines now support both denoising-cache backends to skip
   redundant transformer passes during generation: `--taylorseer` (Taylor-series
   step skipping — the recommended default, with `balanced` and `fast` presets)
