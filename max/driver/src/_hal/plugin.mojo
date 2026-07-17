@@ -785,6 +785,26 @@ struct RawDriver(Movable):
                 message=String(t"failed to fill memory: {err.message}"),
             )
 
+    def queue_launch_host_func[
+        origin: MutOrigin
+    ](
+        self,
+        queue: QueueHandle,
+        func: def(OpaquePointer[origin]) thin -> None,
+        user_data: OpaquePointer[origin],
+    ) raises HALError:
+        """Enqueues a host function callback on the queue (e.g.
+        cuLaunchHostFunc)."""
+        var status = self._raw.queue_launch_host_func.f(queue, func, user_data)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to enqueue host function: {err.message}"
+                ),
+            )
+
     def synchronize_queue(self, queue: QueueHandle) raises HALError:
         var status = self._raw.queue_synchronize.f(queue)
         if status != STATUS_SUCCESS:
@@ -1432,6 +1452,16 @@ struct RawPlugin(Movable):
             value: OpaquePointer[value_origin],
         ) thin -> PluginResultCode,
     ]
+    var queue_launch_host_func: HALFunction[
+        "M_driver_queue_launch_host_func",
+        def[
+            origin: MutOrigin
+        ](
+            queue: QueueHandle,
+            func: def(OpaquePointer[origin]) thin -> None,
+            user_data: OpaquePointer[origin],
+        ) thin -> PluginResultCode,
+    ]
     var bundle_load: HALFunction[
         "M_driver_bundle_load",
         def[
@@ -1537,6 +1567,9 @@ struct RawPlugin(Movable):
         )
         self.is_event_ready = type_of(self.is_event_ready)(handle, so_path)
         self.function_load = type_of(self.function_load)(handle, so_path)
+        self.queue_launch_host_func = type_of(self.queue_launch_host_func)(
+            handle, so_path
+        )
         self.function_unload = type_of(self.function_unload)(handle, so_path)
         self.function_occupancy_max_active_blocks = type_of(
             self.function_occupancy_max_active_blocks

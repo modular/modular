@@ -2213,6 +2213,38 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
         """
         self._stream[].synchronize()
 
+    def enqueue_host_func[
+        origin: MutOrigin
+    ](
+        self,
+        func: def(OpaquePointer[origin]) thin -> None,
+        user_data: OpaquePointer[origin],
+    ) raises:
+        """Enqueues a host callback to run on this stream.
+
+        This corresponds to CUDA's `cuLaunchHostFunc`. The callback `func`
+        runs on a driver thread once all preceding work on this stream has
+        completed, and receives `user_data` as its only argument. Per the
+        CUDA contract, the callback must not call any device APIs.
+
+        Currently only implemented for CUDA streams; other backends raise.
+
+        Parameters:
+            origin: The origin of `user_data`, shared with the callback's
+                argument so the two are coupled at the type level.
+
+        Args:
+            func: A `thin` C-compatible function pointer that accepts a
+                single `void*` argument.
+            user_data: An opaque pointer passed through to `func` when it
+                runs.
+
+        Raises:
+            If the underlying device does not support host callbacks, or if
+            the driver rejects the enqueue.
+        """
+        self._stream[].enqueue_host_func(func, user_data)
+
     def enqueue_wait_for(self, event: DeviceEvent) raises:
         """Makes this stream wait for the specified event.
 

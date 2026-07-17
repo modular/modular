@@ -235,6 +235,16 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         )
         self._raw[].copy_intra_device(self._handle, dst._view, src._view)
 
+    def launch_host_func[
+        origin: MutOrigin
+    ](
+        self,
+        func: def(OpaquePointer[origin]) thin -> None,
+        user_data: OpaquePointer[origin],
+    ) raises HALError:
+        """Enqueues a host function callback (e.g. cuLaunchHostFunc)."""
+        self._raw[].queue_launch_host_func(self._handle, func, user_data)
+
     def set_memory(
         self,
         dst: BufferView,

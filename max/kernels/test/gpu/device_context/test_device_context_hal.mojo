@@ -24,7 +24,8 @@ from _device_context_hal import (
     DeviceStream,
     HostBuffer,
 )
-from std.memory import alloc, AddressSpace, Span, UnsafePointer
+from std.atomic import Atomic
+from std.memory import alloc, AddressSpace, OpaquePointer, Span, UnsafePointer
 from std.testing import assert_equal, assert_true
 from std.gpu.host.dim import Dim
 from _hal.execution_config import (
@@ -830,6 +831,27 @@ def test_external_shared_mem_execution_config(ctx: DeviceContext) raises:
     _ = res_device
 
 
+def _bump_counter[origin: MutOrigin](user_data: OpaquePointer[origin]):
+    var counter_ptr = user_data.bitcast[Scalar[DType.int32]]()
+    _ = Atomic[DType.int32].fetch_add(counter_ptr, 1)
+
+
+def test_enqueue_host_func(ctx: DeviceContext) raises:
+    var stream = ctx.stream()
+
+    var counter = Atomic[DType.int32](0)
+    var counter_ptr = UnsafePointer(to=counter.value).bitcast[NoneType]()
+
+    comptime N = 4
+    for _ in range(N):
+        stream.enqueue_host_func(
+            _bump_counter[type_of(counter_ptr).origin], counter_ptr
+        )
+
+    stream.synchronize()
+    assert_equal(Int(counter.load()), N)
+
+
 def test_memory_info(ctx: DeviceContext) raises:
     free_bytes, total_bytes = ctx.get_memory_info()
     assert_true(total_bytes > 0)
@@ -920,6 +942,7 @@ def main() raises:
         test_memory_info(ctx)
         test_push_context(ctx)
         test_occupancy_max_active_blocks(ctx)
+        test_enqueue_host_func(ctx)
         test_id(ctx)
         test_synchronize(ctx)
         test_default_stream(ctx)

@@ -254,6 +254,19 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         self._queue[].wait_for_events(*events)
         self._chain_signal()
 
+    def enqueue_host_func[
+        origin: MutOrigin
+    ](
+        mut self,
+        func: def(OpaquePointer[origin]) thin -> None,
+        user_data: OpaquePointer[origin],
+    ) raises HALError:
+        """Enqueues a host function callback. Runs after all previous Stream
+        ops."""
+        self._chain_wait()
+        self._queue[].launch_host_func(func, user_data)
+        self._chain_signal()
+
     def synchronize(self) raises HALError:
         """Blocks the host until all submitted ops on this stream complete."""
         self._queue[].synchronize()
