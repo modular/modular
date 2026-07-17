@@ -32,6 +32,31 @@ from max.experimental.cascade.pipelines.dummy_textgen import (
 from max.pipelines.lib.config import PipelineConfig
 
 
+def count_unique_device_specs(config: PipelineConfig) -> int:
+    """Count the unique GPU ``device_specs`` sets across pipeline components.
+
+    Each distinct set of GPU device IDs is treated as needing its own worker
+    process; components sharing the same GPUs share a process. Used by the
+    serve CLI to size the ``gpu`` worker pool from the model configuration.
+
+    Args:
+        config: The pipeline configuration whose components to inspect.
+
+    Returns:
+        The number of unique GPU ``device_specs`` sets, at least 1.
+    """
+    unique: set[frozenset[tuple[str, int]]] = set()
+    for component in config.models.values():
+        gpu_specs = frozenset(
+            (spec.device_type, spec.id)
+            for spec in component.device_specs
+            if spec.device_type == "gpu"
+        )
+        if gpu_specs:
+            unique.add(gpu_specs)
+    return max(1, len(unique))
+
+
 async def build_pipeline(
     config: PipelineConfig,
 ) -> CascadePipeline:

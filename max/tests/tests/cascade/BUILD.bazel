@@ -85,6 +85,33 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_context_config",
+    size = "small",
+    srcs = ["test_context_config.py"],
+    deps = [
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/deployment:context_config",
+        "//max/python/max/experimental/cascade/deployment:routing",
+        "//max/python/max/experimental/cascade/grpc_runtime",
+        "//max/python/max/experimental/cascade/http_runtime",
+        "//max/python/max/experimental/cascade/pipelines",
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_routing",
+    size = "small",
+    srcs = ["test_routing.py"],
+    deps = [
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/core",
+        "//max/python/max/experimental/cascade/deployment:routing",
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
     name = "test_max_tokenizer",
     size = "medium",
     srcs = ["test_max_tokenizer.py"],

@@ -19,6 +19,8 @@ ALL_MAX_PYTHON_DEPS = ALL_ARCHITECTURES + [
     "//max/python/max/dtype",
     "//max/python/max/engine",
     "//max/python/max/experimental/cascade",
+    "//max/python/max/experimental/cascade/deployment:context_config",
+    "//max/python/max/experimental/cascade/deployment:routing",
     "//max/python/max/experimental/cascade/grpc_runtime",
     "//max/python/max/experimental/cascade/http_runtime",
     "//max/python/max/experimental/cascade/workers",
