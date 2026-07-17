@@ -4,15 +4,22 @@ package(default_visibility = ["//visibility:private"])
 
 _DATA = [
     "inputs/**",
+    "internal/inputs/**",
 ]
 
 filegroup(
     name = "fixtures",
     testonly = True,
-    srcs = glob([
-        "inputs/**/*.ll",
-        "inputs/**/*.mojo",
-    ]),
+    srcs = glob(
+        [
+            "inputs/**/*.ll",
+            "inputs/**/*.mojo",
+            "internal/inputs/**/*.ll",
+            "internal/inputs/**/*.mojo",
+        ],
+        # `internal/inputs/` fixtures may not include every extension.
+        allow_empty = True,
+    ),
 )
 
 lit_tests(
