@@ -174,7 +174,7 @@ def _pipeline_resolve_mocks(
 
     Mocks external I/O and hardware while leaving the real resolution
     logic intact:
-    - devices_exist, load_devices — avoid GPU probes
+    - load_devices — avoid GPU probes
     - WeightPathParser.parse — avoid network
     - validate_hf_repo_access — avoid network
     - MemoryEstimator — avoid real memory estimation
@@ -184,10 +184,6 @@ def _pipeline_resolve_mocks(
     mock_devices = [DeviceRef.GPU()] * num_devices
 
     with (
-        patch(
-            "max.pipelines.lib.config.model_config.devices_exist",
-            return_value=True,
-        ),
         patch(
             "max.pipelines.lib.config.model_config.WeightPathParser.parse",
             return_value=weight_path_return,

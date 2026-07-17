@@ -129,10 +129,6 @@ def _resolve_mocks(
     """
     with (
         patch(
-            "max.pipelines.lib.config.model_config.devices_exist",
-            return_value=True,
-        ),
-        patch(
             "max.pipelines.lib.config.model_config.WeightPathParser.parse",
             return_value=weight_path_return,
         ),
