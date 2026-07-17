@@ -22,12 +22,10 @@ from std.gpu.host.info import _get_h100_target
 
 
 def sin_func(x: Float64) raises -> Float64:
-    # CHECK: constraint failed: DType.float64 is not supported for sin on NVIDIA GPU
     return sin(x)
 
 
 def cos_func(x: Float64) raises -> Float64:
-    # CHECK: constraint failed: DType.float64 is not supported for cos on NVIDIA GPU
     return cos(x)
 
 
@@ -42,3 +40,9 @@ def main() raises:
             cos_func, emission_kind="llvm", target=_get_h100_target()
         ]()
     )
+
+
+# Offload diagnostics are emitted in bundling order, which is sorted by
+# mangled kernel name, hence cos before sin despite source order.
+# CHECK: constraint failed: DType.float64 is not supported for cos on NVIDIA GPU
+# CHECK: constraint failed: DType.float64 is not supported for sin on NVIDIA GPU
