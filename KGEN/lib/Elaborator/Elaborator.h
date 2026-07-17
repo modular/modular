@@ -292,10 +292,11 @@ private:
   /// Process a CompileOffloadOp by replace its parametric attributes
   // to concrete values.
   ElaborationState processCompileOffload(ImplNode *node, CompileOffloadOp op);
-  /// bundliing CompileOffloadOps into one sliced Module.
-  ErrorTreeOrSuccess bundleOffloadModules(ModuleOp theModule);
+  /// bundling CompileOffloadOps into one sliced Module.
+  ErrorTreeOrSuccess bundleOffloadModules();
 
-  ErrorTreeOrSuccess bundleCompileOffloadOp(CompileOffloadOp Op);
+  ErrorTreeOrSuccess bundleCompileOffloadOp(CompileOffloadOp op,
+                                            StringAttr name);
 
   /// Process a deferred op by replacing it with an operation and attributes it
   /// stores.

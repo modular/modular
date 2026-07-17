@@ -5,11 +5,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "ElaboratorHelper.h"
+#include "IREvaluatorContext.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/Support/NameMangling.h"
+#include "KGEN/TransformUtils/ManglingUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace M;
 using namespace KGEN;
@@ -142,4 +147,54 @@ void KGEN::renameFunctions(mlir::ModuleOp theModule, bool isGPU, bool &failed) {
   }
 
   replaceSymNames(theModule, symToRename);
+}
+
+ErrorTreeOrSuccess KGEN::sortAndBundleOffloadOps(
+    const llvm::SetVector<CompileOffloadOp> &offloadOps,
+    mlir::SymbolTable &symTab,
+    llvm::function_ref<ErrorTreeOrSuccess(CompileOffloadOp, StringAttr)>
+        bundleOp) {
+  struct BundleItem {
+    StringAttr name;
+    CompileOffloadOp op;
+  };
+  SmallVector<BundleItem> items;
+  items.reserve(offloadOps.size());
+  for (CompileOffloadOp op : offloadOps) {
+    ErrorTreeOr<OffloadFunc> offloadFuncOr = extractOffloadFunc(op, symTab);
+    if (offloadFuncOr.isError())
+      return offloadFuncOr.takeError();
+    auto [symbol, func] = offloadFuncOr.takeValue();
+
+    // Use mangleParameterValues for the bundling name so it matches the name
+    // evaluateCompileOffloadClosureAttr uses for the _populate_captures stub.
+    StringAttr name = StringAttr::get(
+        op.getContext(), mangleParameterValues(func, symbol.getParamValues()));
+    items.push_back({name, op});
+  }
+
+  // The same kernel can be offloaded more than once (e.g. for different targets
+  // or emission kinds), so tie-break equal names on the target and emission
+  // attributes. The separators keep the key legible if it is ever dumped while
+  // debugging a bundling-order question.
+  auto emissionKey = [](CompileOffloadOp op) {
+    std::string key;
+    llvm::raw_string_ostream os(key);
+    os << op.getTargetTypeAttr() << ';' << op.getEmissionKindAttr() << ';'
+       << op.getEmissionOptionAttr() << ';' << op.getEmissionLinkOptionAttr();
+    return key;
+  };
+  llvm::sort(items, [&](const BundleItem &lhs, const BundleItem &rhs) {
+    if (lhs.name != rhs.name)
+      return lhs.name.getValue() < rhs.name.getValue();
+    return emissionKey(lhs.op) < emissionKey(rhs.op);
+  });
+
+  for (const BundleItem &item : items) {
+    ErrorTreeOrSuccess result = bundleOp(item.op, item.name);
+    if (result.isError())
+      return result.takeError();
+  }
+
+  return success();
 }
