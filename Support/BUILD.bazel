@@ -290,6 +290,18 @@ modular_cc_library(
 )
 
 modular_cc_library(
+    name = "NixlPluginDir",
+    srcs = ["lib/NixlPluginDir.cpp"],
+    hdrs = ["include/Support/NixlPluginDir.h"],
+    # Single source of truth for per-vendor NIXL plugin flavor selection,
+    # shared by max._core (runtime) and the MLRT NIXL unittests.
+    visibility = [
+        "//MLRT/unittests/Driver/NIXL:__pkg__",
+        "//max/python/max:__pkg__",
+    ],
+)
+
+modular_cc_library(
     name = "Configuration",
     srcs = ["lib/Configuration.cpp"],
     hdrs = ["include/Support/Configuration.h"],
