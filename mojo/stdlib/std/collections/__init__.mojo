@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Core data structures: List, Dict, Set, Optional, plus specialized collections.
+"""Core data types: List, Dict, Set, Optional, String, and other collections.
 
 The `collections` package provides fundamental data structures for organizing
 and managing data in Mojo programs. It includes general-purpose collections
