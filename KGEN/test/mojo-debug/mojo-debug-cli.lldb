@@ -44,10 +44,6 @@
 # RUN: not env %debug --debug-level=line-tables -X foo --dry-run target.exe --debug-level full 2>&1 | FileCheck %s --check-prefix=CHECK-BINARY-DEBUG-WITH-COMPILATION-OPTION
 # CHECK-BINARY-DEBUG-WITH-COMPILATION-OPTION: unexpected compilation option '--debug-level'
 
-# COM: Check `mojo debug --cuda-gdb` stuff
-# RUN: mojo debug --cuda-gdb --cuda-gdb-path /foo/bar/cuda-gdb --break-on-launch --dry-run file.mojo | FileCheck %s --check-prefix=CHECK-CUDA-BREAK
-# CHECK-CUDA-BREAK: /foo/bar/cuda-gdb -ex 'set cuda break_on_launch application' --args {{.*}}mojo{{-compiler-only}} run -O0 --debug-level=full file.mojo
-
 # COM: Check that the driver rejects unknown arguments (e.g. user typo)
 # RUN: not mojo debug --cusa-gdb 2>&1 | FileCheck %s --check-prefix=CHECK-UNRECOGNIZED
 # CHECK-UNRECOGNIZED: unrecognized argument '--cusa-gdb'

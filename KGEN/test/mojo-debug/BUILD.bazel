@@ -8,7 +8,11 @@ lit_tests(
     srcs = glob([
         "*.lldb",
         "*.mojo",
-    ]),
+    ]) + glob(
+        ["internal/*.lldb"],
+        # `internal/` is excluded via .bazelignore in the open source build.
+        allow_empty = True,
+    ),
     custom_substitutions = {
         # Mirrored from lit.cfg.py to avoid searching $PATH for 'mojo'
         "%debug": "$(rlocationpath //KGEN/tools/mojo) debug -X -x -X --source-quietly -X -S -X $(rlocationpath //KGEN/unittests:lit-lldb-init.in)",
