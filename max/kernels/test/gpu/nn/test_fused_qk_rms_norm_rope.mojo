@@ -29,6 +29,7 @@ from std.random import random_ui64
 from std.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
+    Coord,
     Idx,
     Layout,
     LayoutTensor,
@@ -347,10 +348,20 @@ def run_fused_qk_rms_norm_rope[
         context=ctx,
     )
 
+    @always_inline
+    @parameter
+    @__copy_capture(q_in_tt)
+    def q_input_fn[
+        width: Int, alignment: Int
+    ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+        return q_in_tt.load[width=width](Coord(Index(token, head, col)))
+
     fused_qk_rms_norm_rope_ragged_paged[
-        target="gpu", multiply_before_cast=True, interleaved=False
+        target="gpu",
+        multiply_before_cast=True,
+        interleaved=False,
+        q_input_fn=q_input_fn,
     ](
-        q_in_tt,
         fused_collection,
         gamma_q_tt,
         gamma_k_tt,

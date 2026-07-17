@@ -45,6 +45,7 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from layout import (
+    Coord,
     Idx,
     Layout,
     LayoutTensor,
@@ -345,12 +346,22 @@ def bench_fused_qk_rms_norm_rope[
                 max_prompt_len,
                 max_cache_len,
             )
+            var q_src = q_fused_tile.as_immut()
+
+            @always_inline
+            @parameter
+            @__copy_capture(q_src)
+            def q_input_fn[
+                width: Int, alignment: Int
+            ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+                return q_src.load[width=width](Coord(Index(token, head, col)))
+
             fused_qk_rms_norm_rope_ragged_paged[
                 target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
+                q_input_fn=q_input_fn,
             ](
-                q_fused_tile.as_immut(),
                 kv_fused,
                 gamma_q_tile.as_immut(),
                 gamma_k_tile.as_immut(),

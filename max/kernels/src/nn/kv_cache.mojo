@@ -1219,9 +1219,6 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     q_out_layout: TensorLayout,
     q_out_origin: Origin[mut=True],
     q_out_storage: TensorStorage,
-    q_layout: TensorLayout,
-    q_origin: Origin[mut=False],
-    q_storage: TensorStorage,
     q_gamma_layout: TensorLayout,
     q_gamma_origin: Origin[mut=False],
     q_gamma_storage: TensorStorage,
@@ -1237,6 +1234,9 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     dtype: DType,
     freq_dtype: DType,
     //,
+    q_input_fn: def[width: Int, alignment: Int](
+        token: Int, head: Int, col: Int
+    ) capturing -> SIMD[dtype, width],
     simd_width: Int,
     warps_per_block: Int,
     multiply_before_cast: Bool,
@@ -1247,7 +1247,6 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     q_output: TileTensor[
         dtype, q_out_layout, q_out_origin, Storage=q_out_storage
     ],
-    q_proj: TileTensor[dtype, q_layout, q_origin, Storage=q_storage],
     k_cache: cache_t,
     q_gamma: TileTensor[
         dtype, q_gamma_layout, q_gamma_origin, Storage=q_gamma_storage
@@ -1268,7 +1267,6 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     num_cols: Int,
 ):
     comptime assert q_output.flat_rank == 3, "q_output must have rank 3"
-    comptime assert q_proj.flat_rank == 3, "q_proj must have rank 3"
     comptime assert q_gamma.flat_rank == 1, "q_gamma must have rank 1"
     comptime assert k_gamma.flat_rank == 1, "k_gamma must have rank 1"
     comptime assert freqs_cis.flat_rank == 2, "freqs_cis must have rank 2"
@@ -1318,9 +1316,9 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
             ).cast[accum_type]()
             gamma_val = k_gamma.load[width=simd_width](Coord(idx))
         else:
-            vec_data = q_proj.load[width=simd_width](
-                Coord(Index(global_token_idx, head_idx, idx))
-            ).cast[accum_type]()
+            vec_data = q_input_fn[
+                simd_width, align_of[SIMD[dtype, simd_width]]()
+            ](global_token_idx, head_idx, idx).cast[accum_type]()
             gamma_val = q_gamma.load[width=simd_width](Coord(idx))
 
     var norm_val = _rms_norm_warp_tiling_subkernel[
@@ -1446,6 +1444,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
             )
 
 
+@always_inline
 def fused_qk_rms_norm_rope_ragged_paged[
     dtype: DType,
     freq_dtype: DType,
@@ -1456,8 +1455,10 @@ def fused_qk_rms_norm_rope_ragged_paged[
     target: StaticString,
     multiply_before_cast: Bool,
     interleaved: Bool,
+    q_input_fn: def[width: Int, alignment: Int](
+        token: Int, head: Int, col: Int
+    ) capturing -> SIMD[dtype, width],
 ](
-    q_proj: TileTensor[mut=False, dtype, ...],
     kv_collection: PagedKVCacheCollection[
         cache_dtype,
         params,
@@ -1476,10 +1477,14 @@ def fused_qk_rms_norm_rope_ragged_paged[
 ) raises:
     """Fuses per-head RMSNorm and RoPE for Q and new K-cache entries.
 
-    This applies per-head RMSNorm to Q and the newly written key-cache entries,
-    then applies RoPE to the normalized values, in a single GPU launch. It is
-    the fusion of `fused_qk_rms_norm_ragged_paged` and `fused_qk_rope_ragged`,
-    saving one elementwise RoPE launch per QK group.
+    Applies per-head RMSNorm to Q and the newly written key-cache entries, then
+    RoPE to the normalized values, in a single GPU launch (the fusion of
+    `fused_qk_rms_norm_ragged_paged` and `fused_qk_rope_ragged`).
+
+    Q is read through `q_input_fn(token, head, col)`, so the caller reads Q from
+    wherever it lives: a rank-3 projection, or a slice + reshape of a combined
+    matmul output that the graph compiler folds into the read. K comes from the
+    paged key cache.
 
     The RoPE dimension is taken from `freqs_cis.static_shape[1]`. When it is
     smaller than the head dimension, RoPE is applied only to the prefix
@@ -1489,7 +1494,6 @@ def fused_qk_rms_norm_rope_ragged_paged[
     comptime assert is_gpu[
         target
     ](), "fused_qk_rms_norm_rope_ragged_paged is GPU-only"
-    comptime assert q_proj.flat_rank == 3, "q_proj must be rank 3"
     comptime assert q_output.flat_rank == 3, "q_output must be rank 3"
     comptime assert q_gamma.flat_rank == 1, "q_gamma must be rank 1"
     comptime assert k_gamma.flat_rank == 1, "k_gamma must be rank 1"
@@ -1503,7 +1507,10 @@ def fused_qk_rms_norm_rope_ragged_paged[
     )
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
-    var q_num_heads = Int(q_proj.dim[1]())
+    # Derived from `q_output` (identical shape to Q) rather than passed in, so
+    # `q_num_heads` stays a compile-time constant via static-shape propagation.
+    var q_num_heads = Int(q_output.dim[1]())
+    var total_seq_len = UInt32(q_output.dim[0]())
     comptime rms_norm_cols = q_gamma.static_shape[0]
     comptime k_rms_norm_cols = k_gamma.static_shape[0]
     comptime assert rms_norm_cols != -1, "Need static shape for q_gamma"
@@ -1526,7 +1533,6 @@ def fused_qk_rms_norm_rope_ragged_paged[
             rope_dim % 2 == 0
         ), "prefix partial RoPE rope_dim must be even for split layout"
 
-    var total_seq_len = UInt32(q_proj.dim[0]())
     if total_seq_len == 0:
         return
 
@@ -1539,7 +1545,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
     def description_fn() -> String:
         return (
             trace_arg(
-                "q_proj", coord_to_index_list(q_proj.layout.shape_coord())
+                "q_output", coord_to_index_list(q_output.layout.shape_coord())
             )
             + ";layer_idx="
             + String(layer_idx)
@@ -1587,9 +1593,6 @@ def fused_qk_rms_norm_rope_ragged_paged[
             q_out_layout=q_output.LayoutType,
             q_out_origin=q_output.origin,
             q_out_storage=q_output.Storage,
-            q_layout=q_proj.LayoutType,
-            q_origin=q_proj.origin,
-            q_storage=q_proj.Storage,
             q_gamma_layout=q_gamma.LayoutType,
             q_gamma_origin=q_gamma.origin,
             q_gamma_storage=q_gamma.Storage,
@@ -1604,6 +1607,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
             offsets_storage=input_row_offsets.Storage,
             dtype=dtype,
             freq_dtype=freq_dtype,
+            q_input_fn,
             simd_width,
             warps_per_block,
             multiply_before_cast,
@@ -1613,7 +1617,6 @@ def fused_qk_rms_norm_rope_ragged_paged[
         ]
         context.enqueue_function[kernel](
             q_output,
-            q_proj,
             k_cache,
             q_gamma,
             k_gamma,

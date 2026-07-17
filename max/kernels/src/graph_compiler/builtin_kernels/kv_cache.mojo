@@ -414,7 +414,7 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
         target: StaticString,
     ](
         q_output: OutputTensor[dtype=dtype, rank=3, ...],
-        q_proj: InputTensor[dtype=dtype, rank=3, ...],
+        q_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
@@ -429,6 +429,12 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
         weight_offset: Scalar[dtype=dtype],
         context: DeviceContext,
     ) raises:
+        # `q_proj` is a `FusedInputTensor`, so any elementwise/view producer
+        # feeding it (e.g. a `slice` + `reshape` that carves Q out of a combined
+        # `[Q | IndexQ]` matmul output) is folded into the Q read lambda by the
+        # graph compiler's input-prologue fusion. When there is no producer to
+        # fuse, `_fused_load` degrades to a plain strided load, so the default
+        # rank-3 Q-projection path is unchanged.
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
             cache_lengths,
@@ -436,12 +442,22 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
             max_prompt_length,
             max_cache_length,
         )
+
+        @always_inline
+        @parameter
+        def q_input_fn[
+            width: Int, alignment: Int
+        ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+            return q_proj._fused_load[width=width, element_alignment=alignment](
+                IndexList[3](token, head, col)
+            )
+
         fused_qk_rms_norm_rope_ragged_paged[
             target=target,
             multiply_before_cast=multiply_before_cast,
             interleaved=Self.interleaved,
+            q_input_fn=q_input_fn,
         ](
-            q_proj.to_tile_tensor[DType.int64](),
             kv_collection,
             q_gamma.to_tile_tensor[DType.int64](),
             k_gamma.to_tile_tensor[DType.int64](),
