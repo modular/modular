@@ -15,9 +15,9 @@ example, with Pixi), and run tests. Start here if you're new to contributing.
   lifecycle, API docstrings, and how to validate docstrings.
 
 - [docstring-style-guide.md](docstring-style-guide.md)—**Mojo docstring style guide**:
-  How to write API docs (docstrings) in Mojo: Markdown usage, code font,
-  Parameters and Constraints sections, and alignment with the Google Python
-  docstring style.
+  How to write API docs (docstrings) in Mojo: voice and tone, named sections
+  (including `Safety:`), formatting rules, and per-declaration-level conventions
+  for packages, modules, types, fields, aliases, and functions.
 
 - [faq.md](faq.md)—**Frequently asked questions**: Contributor-focused FAQ for
   the standard library (platform support, bug reporting, `AnyType` vs
