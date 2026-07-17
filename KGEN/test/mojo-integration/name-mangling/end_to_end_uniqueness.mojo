@@ -24,8 +24,8 @@ def make_me_unique[n: Int]():
 # The two instantiations of the function 'make_me_unique' are separate concrete
 # functions whose linkage names would clash if we didn't mangle.
 # Check that the output assembly contains both functions with unique suffixes.
-# Check also that the names are not sanitized or shortened, as this is not a
-# GPU target.
+# Check also that the names are not sanitized or shortened, as this is not an
+# accelerator target.
 
 # CHECK-DAG: {{^_?}}0this_name_is_long_and_will_clash_so_mangle_it_{{[0-9a-f]+}}:
 # CHECK-DAG: {{^_?}}0this_name_is_long_and_will_clash_so_mangle_it_{{[0-9a-f]+}}:
