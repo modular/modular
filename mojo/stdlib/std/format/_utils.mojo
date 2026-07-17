@@ -396,7 +396,7 @@ comptime STACK_BUFFER_BYTES = get_defined_int["STACK_BUFFER_BYTES", 4096]()
 
 
 struct _WriteBufferHeap(Writable, Writer):
-    var _data: UnsafePointer[Byte, MutUntrackedOrigin]
+    var _data: Pointer[Byte, MutUntrackedOrigin]
     var _pos: Int
 
     def __init__(out self):
@@ -436,7 +436,7 @@ struct _WriteBufferHeap(Writable, Writer):
             ]()
             abort()
         unsafe_memcpy(
-            dest=self._data + self._pos,
+            dest=self._data.unsafe_offset(self._pos),
             src=string.unsafe_ptr(),
             count=len_bytes,
         )
@@ -456,11 +456,11 @@ struct _WriteBufferHeap(Writable, Writer):
                 " HEAP_BUFFER_BYTES=4096`\n"
             ]()
             abort()
-        self._data[self._pos] = 0
+        self._data[unsafe_offset=self._pos] = 0
         self._pos += 1
 
         return CStringSlice(
-            unsafe_from_ptr=self._data.bitcast[Int8]()
+            unsafe_from_ptr=self._data.unsafe_bitcast[Int8]()
             .as_immutable()
             .unsafe_origin_cast[origin_of(self).unsafe_mut_cast[False]()]()
         )
@@ -469,7 +469,7 @@ struct _WriteBufferHeap(Writable, Writer):
         mut: Bool, origin: Origin[mut=mut], //
     ](ref[origin] self) -> StringSlice[origin]:
         return StringSlice(
-            unsafe_from_utf8=Span(
+            unsafe_from_utf8=Span[Byte, origin](
                 ptr=self._data.mut_cast[mut]().unsafe_origin_cast[origin](),
                 length=self._pos,
             )

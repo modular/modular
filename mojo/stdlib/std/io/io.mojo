@@ -149,8 +149,8 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
         var bytes_read = external_call["getdelim", c_ssize_t](
-            UnsafePointer(to=buffer),
-            UnsafePointer(to=n),
+            Pointer(to=buffer),
+            Pointer(to=n),
             ord(delimiter),
             self.handle,
         )

@@ -40,7 +40,7 @@ def keep[T: AnyType, origin: Origin, //](ref[origin] value: T):
     Args:
         value: The value to not optimize away.
     """
-    var tmp_ptr = UnsafePointer(to=value)
+    var tmp_ptr = Pointer(to=value)
     inlined_assembly[
         "",
         NoneType,

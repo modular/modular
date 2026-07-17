@@ -46,7 +46,7 @@ struct CStringSlice[origin: ImmOrigin](
         origin: The origin of the `CStringSlice`.
     """
 
-    comptime _PointerType = UnsafePointer[Int8, Self.origin]
+    comptime _PointerType = Pointer[Int8, Self.origin]
 
     var _data: Self._PointerType
 
@@ -187,7 +187,7 @@ struct CStringSlice[origin: ImmOrigin](
         Returns:
             The length of the C string.
         """
-        return Int(_unsafe_strlen(self._data.bitcast[Byte]()))
+        return Int(_unsafe_strlen(self._data.unsafe_bitcast[Byte]()))
 
     def write_to(self, mut writer: Some[Writer]):
         """Write the `CStringSlice` to a `Writer`, the nul terminator is
@@ -227,8 +227,8 @@ struct CStringSlice[origin: ImmOrigin](
         Returns:
             A span of the underlying `CStringSlice` as bytes.
         """
-        return Span(
-            ptr=self._data.bitcast[Byte](),
+        return Span[Byte, Self.origin](
+            ptr=self._data.unsafe_bitcast[Byte](),
             length=len(self),
         )
 
@@ -243,8 +243,8 @@ struct CStringSlice[origin: ImmOrigin](
         Returns:
             A span of the underlying `CStringSlice` as bytes.
         """
-        return Span(
-            ptr=self._data.bitcast[Byte](),
+        return Span[Byte, Self.origin](
+            ptr=self._data.unsafe_bitcast[Byte](),
             length=len(self) + 1,
         )
 

@@ -194,11 +194,11 @@ def _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sig
 
 def load_incomplete_simd[
     width: Int
-](
-    pointer: UnsafePointer[mut=False, UInt8, _], nb_of_elements_to_load: Int
-) -> SIMD[DType.uint8, width]:
+](pointer: Pointer[mut=False, UInt8, _], nb_of_elements_to_load: Int) -> SIMD[
+    DType.uint8, width
+]:
     var result = SIMD[DType.uint8, width](0)
-    var tmp_buffer_pointer = UnsafePointer(to=result).bitcast[UInt8]()
+    var tmp_buffer_pointer = Pointer(to=result).unsafe_bitcast[UInt8]()
     unsafe_memcpy(
         dest=tmp_buffer_pointer, src=pointer, count=nb_of_elements_to_load
     )
@@ -262,7 +262,7 @@ def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
             ](nb_of_elements_to_load)
         )
 
-        var v_ptr = UnsafePointer(to=result_vector_with_equals).bitcast[Byte]()
+        var v_ptr = Pointer(to=result_vector_with_equals).unsafe_bitcast[Byte]()
         unsafe_memcpy(
             dest=res_ptr + res_offset, src=v_ptr, count=nb_of_elements_to_store
         )

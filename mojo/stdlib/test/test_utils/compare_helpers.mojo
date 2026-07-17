@@ -19,24 +19,22 @@
 
 def _minmax[
     dtype: DType, //
-](x: UnsafePointer[Scalar[dtype], _], N: Int) -> Tuple[
-    Scalar[dtype], Scalar[dtype]
-]:
-    var max_val = x[0]
-    var min_val = x[0]
+](x: Pointer[Scalar[dtype], _], N: Int) -> Tuple[Scalar[dtype], Scalar[dtype]]:
+    var max_val = x[unsafe_offset=0]
+    var min_val = x[unsafe_offset=0]
     for i in range(1, N):
-        if x[i] > max_val:
-            max_val = x[i]
-        if x[i] < min_val:
-            min_val = x[i]
+        if x[unsafe_offset=i] > max_val:
+            max_val = x[unsafe_offset=i]
+        if x[unsafe_offset=i] < min_val:
+            min_val = x[unsafe_offset=i]
     return (min_val, max_val)
 
 
 def compare[
     dtype: DType, verbose: Bool = True
 ](
-    x: UnsafePointer[Scalar[dtype], _],
-    y: UnsafePointer[Scalar[dtype], _],
+    x: Pointer[Scalar[dtype], _],
+    y: Pointer[Scalar[dtype], _],
     num_elements: Int,
     *,
     msg: String = "",
@@ -60,8 +58,8 @@ def compare[
     var rtol = List(length=num_elements, fill=Scalar[dtype](0))
 
     for i in range(num_elements):
-        var d = abs(x[i] - y[i])
-        var e = abs(d / y[i])
+        var d = abs(x[unsafe_offset=i] - y[unsafe_offset=i])
+        var e = abs(d / y[unsafe_offset=i])
         atol[i] = d
         rtol[i] = e
 

@@ -54,7 +54,7 @@ comptime target_regular = __mlir_attr[
 
 
 def _test_data_layout_llvm[emission_kind: StaticString]() raises:
-    def my_func(src: UnsafePointer[Int32, ImmutAnyOrigin]):
+    def my_func(src: Pointer[Int32, ImmutAnyOrigin]):
         return
 
     var target_short_llvm = compile_info[
@@ -82,9 +82,9 @@ def test_data_layout_llvm() raises:
 
 def test_data_layout_asm() raises:
     @parameter
-    def my_func(src: UnsafePointer[Int32, ImmutAnyOrigin]):
+    def my_func(src: Pointer[Int32, ImmutAnyOrigin]):
         var a = stack_allocation[20, Int32, address_space=AddressSpace.SHARED]()
-        a[thread_idx.x] = src[0]
+        a[thread_idx.x] = src[unsafe_offset=0]
         barrier()
 
     var target_short_asm = compile_info[
