@@ -816,9 +816,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         return self._host_ptr[idx]
 
     @always_inline
-    def __setitem__(
-        self: HostBuffer[Self.dtype], idx: Int, val: Scalar[Self.dtype]
-    ):
+    def __setitem__(self, idx: Int, val: Scalar[Self.dtype]):
         """Sets the element at the specified index in the host buffer.
 
         This operator allows direct modification of individual elements in the host buffer
