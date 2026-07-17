@@ -53,10 +53,13 @@ static constexpr RunfileMapping kRunfileMappings[] = {
     {"mojo-max.compilerrt_path", "", "KGEN", true, "KGENCompilerRTShared"},
     {"mojo-max.lldb_plugin_path", "", "KGEN", true, "MojoLLDB"},
 
-    // Directory paths. The upstream NIXL transport plugins live at the root of
-    // the @nixl_upstream repo; resolve one plugin file and let the caller take
-    // its parent directory (which is what NIXL_PLUGIN_DIR expects).
-    {"nixl_plugin_dir", "nixl_upstream", "libplugin_UCX.so", false, ""},
+    // Directory paths. The upstream NIXL transport plugins live in per-vendor
+    // cpu/, cuda/, and rocm/ subdirectories of the @nixl_upstream repo;
+    // resolve one plugin file and let the caller derive the vendor directory
+    // to use as NIXL_PLUGIN_DIR (see Support/NixlPluginDir.h). Anchor on the
+    // cpu flavor: it is the only one staged unconditionally — the GPU flavors
+    // are select()ed per vendor in consumers' data deps.
+    {"nixl_plugin_dir", "nixl_upstream", "cpu/libplugin_UCX.so", false, ""},
 };
 
 /// Returns nullptr if runfiles cannot be initialized (not running under Bazel)
