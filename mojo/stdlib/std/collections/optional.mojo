@@ -239,12 +239,12 @@ struct Optional[T: Movable](
     @always_inline("nodebug")
     @implicit
     @doc_hidden
-    def __init__[
-        U: TrivialRegisterPassable
-    ](out self: Optional[U], optional_reg: OptionalReg[U]):
+    def __init__(
+        out self, optional_reg: OptionalReg[Self.T]
+    ) where conforms_to(Self.T, TrivialRegisterPassable):
         """Implicitly cast an `OptionalReg[T]` to an `Optional[T]`."""
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        UnsafePointer(to=self).bitcast[OptionalReg[U]]()[] = optional_reg
+        UnsafePointer(to=self).bitcast[OptionalReg[Self.T]]()[] = optional_reg
 
     # -------
     # Special temporary constructors while Pointer unification is happening
@@ -485,7 +485,7 @@ struct Optional[T: Movable](
 
     def _write_to[
         *, is_repr: Bool
-    ](self: Self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
+    ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         if self:
             comptime if is_repr:
                 self.value().write_repr_to(writer)
@@ -495,7 +495,7 @@ struct Optional[T: Movable](
             writer.write_string("None")
 
     def write_to(
-        self: Self, mut writer: Some[Writer]
+        self, mut writer: Some[Writer]
     ) where conforms_to(Self.T, Writable):
         """Write this `Optional` to a `Writer`.
 
@@ -505,7 +505,7 @@ struct Optional[T: Movable](
         self._write_to[is_repr=False](writer)
 
     def write_repr_to(
-        self: Self, mut writer: Some[Writer]
+        self, mut writer: Some[Writer]
     ) where conforms_to(Self.T, Writable):
         """Write this `Optional`'s representation to a `Writer`.
 
@@ -753,15 +753,11 @@ struct Optional[T: Movable](
             # trivially destructible, so `_NoneType.__del__` is a no-op.
             self._value^.deinit_with[_NoneType](_NoneType.__del__)
 
-    def or_else[
-        _T: Movable & ImplicitlyDeletable, //
-    ](deinit self: Optional[_T], var default: _T) -> _T:
+    def or_else(
+        deinit self, var default: Self.T
+    ) -> Self.T where conforms_to(Self.T, Movable & ImplicitlyDeletable):
         """Return the underlying value contained in the `Optional` or a default
         value if the `Optional`'s underlying value is not present.
-
-        Parameters:
-            _T: Type of the optional element, which must conform to
-                `ImplicitlyDeletable`.
 
         Args:
             default: The new value to use if no value was present.
@@ -781,7 +777,7 @@ struct Optional[T: Movable](
         ```
         """
         if self:
-            return self._value^.unsafe_take[_T]()
+            return self._value^.unsafe_take[Self.T]()
         return default^
 
     def copied[
