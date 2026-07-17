@@ -242,6 +242,13 @@ def quantize_tensor_dynamic_scaled_fp8[
         group_size % simd_width == 0
     ), "group size must be multiple of simd size"
 
+    # TODO: MOCO-4295
+    @always_inline
+    def wrap[
+        width: Int, alignment: Int
+    ](row: Int, col: Int) {var input_fn} -> SIMD[in_dtype, width]:
+        return input_fn.__call__[width=width, alignment=alignment](row, col)
+
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "quantize_tensor_dynamic_scaled_fp8",
         task_id=Int(ctx.id()),
@@ -258,13 +265,11 @@ def quantize_tensor_dynamic_scaled_fp8[
         if num_rows > 1:
             var scales_kernel = _ComputeScalesFp8Kernel[
                 out_type=out_dtype,
-                in_type=in_dtype,
-                InputFnType=type_of(input_fn),
                 num_threads=num_threads,
                 group_size=group_size,
                 simd_width=simd_width,
             ](
-                input_fn,
+                wrap,
                 scales.address_space_cast[AddressSpace.GENERIC](),
                 scale_ub.cast[scales_dtype](),
             )
@@ -277,14 +282,12 @@ def quantize_tensor_dynamic_scaled_fp8[
             )
 
             var quant_kernel = _QuantizeFp8KernelPerTensor[
-                in_type=in_dtype,
-                InputFnType=type_of(input_fn),
                 num_threads=num_threads,
                 group_size=group_size,
                 simd_width=simd_width,
                 num_groups=num_cols // group_size,
             ](
-                input_fn,
+                wrap,
                 scaled_output.address_space_cast[AddressSpace.GENERIC](),
                 scales.address_space_cast[AddressSpace.GENERIC](),
                 scale_ub.cast[scales_dtype](),
@@ -299,13 +302,11 @@ def quantize_tensor_dynamic_scaled_fp8[
             )
         else:
             var kernel = _QuantizeFp8Kernel[
-                in_type=in_dtype,
-                InputFnType=type_of(input_fn),
                 num_threads=num_threads,
                 group_size=group_size,
                 simd_width=simd_width,
             ](
-                input_fn,
+                wrap,
                 scaled_output.address_space_cast[AddressSpace.GENERIC](),
                 scales.address_space_cast[AddressSpace.GENERIC](),
                 scale_ub.cast[scales_dtype](),
@@ -373,6 +374,13 @@ def quantize_dynamic_scaled_fp8[
         group_size % simd_width == 0
     ), "group size must be multiple of simd size"
 
+    # TODO: MOCO-4295
+    @always_inline
+    def wrap[
+        width: Int, alignment: Int
+    ](row: Int, col: Int) {var input_fn} -> SIMD[in_dtype, width]:
+        return input_fn.__call__[width=width, alignment=alignment](row, col)
+
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "quantize_dynamic_scaled_fp8",
         task_id=Int(ctx.id()),
@@ -397,13 +405,11 @@ def quantize_dynamic_scaled_fp8[
 
         else:
             var kernel = _QuantizeFp8Kernel[
-                in_type=in_dtype,
-                InputFnType=type_of(input_fn),
                 num_threads=num_threads,
                 group_size=group_size,
                 simd_width=simd_width,
             ](
-                input_fn,
+                wrap,
                 scaled_output.address_space_cast[AddressSpace.GENERIC](),
                 scales.address_space_cast[AddressSpace.GENERIC](),
                 scale_ub.cast[scales_dtype](),
@@ -489,7 +495,6 @@ struct _QuantizeFp8Kernel[
             ):
                 var idx: Int = i * Self.simd_width + group_idx * Self.group_size
                 input_vec = input_fn.__call__[
-                    _in_dtype=Self.in_type,
                     width=Self.simd_width,
                     alignment=Self.simd_width,
                 ](row, idx).cast[accum_type]()
@@ -528,7 +533,6 @@ struct _QuantizeFp8Kernel[
                     pass
                 else:
                     input_vec = input_fn.__call__[
-                        _in_dtype=Self.in_type,
                         width=Self.simd_width,
                         alignment=Self.simd_width,
                     ](row, idx).cast[accum_type]()
@@ -607,7 +611,6 @@ struct _ComputeScalesFp8Kernel[
             ):
                 var idx: Int = i * Self.simd_width + group_idx * Self.group_size
                 var input_vec = input_fn.__call__[
-                    _in_dtype=Self.in_type,
                     width=Self.simd_width,
                     alignment=Self.simd_width,
                 ](row, idx).cast[accum_type]()
@@ -723,7 +726,6 @@ struct _QuantizeFp8KernelPerTensor[
             ):
                 var idx: Int = i * Self.simd_width + group_idx * Self.group_size
                 var input_vec = input_fn.__call__[
-                    _in_dtype=Self.in_type,
                     width=Self.simd_width,
                     alignment=Self.simd_width,
                 ](row, idx).cast[accum_type]()
@@ -782,14 +784,21 @@ def batched_quantize_dynamic_scaled_fp8[
     if batch_size == 0 or num_rows == 0:
         return
 
+    # TODO: MOCO-4295
+    @always_inline
+    def wrap[
+        width: Int, alignment: Int
+    ](batch: Int, row: Int, col: Int) {var input_fn} -> SIMD[in_dtype, width]:
+        return input_fn.__call__[width=width, alignment=alignment](
+            batch, row, col
+        )
+
     var kernel = _BatchedQuantizeFp8Kernel[
-        in_type=in_dtype,
-        InputFnType=type_of(input_fn),
         num_threads=num_threads,
         group_size=group_size,
         simd_width=simd_width,
     ](
-        input_fn,
+        wrap,
         scaled_output.address_space_cast[AddressSpace.GENERIC](),
         scales.address_space_cast[AddressSpace.GENERIC](),
         scale_ub.cast[scales_dtype](),
@@ -868,7 +877,6 @@ struct _BatchedQuantizeFp8Kernel[
             ):
                 var idx: Int = i * Self.simd_width + group_idx * Self.group_size
                 input_vec = input_fn.__call__[
-                    _in_dtype=Self.in_type,
                     width=Self.simd_width,
                     alignment=Self.simd_width,
                 ](batch_idx, row, idx).cast[accum_type]()
@@ -896,7 +904,6 @@ struct _BatchedQuantizeFp8Kernel[
                     pass
                 else:
                     input_vec = input_fn.__call__[
-                        _in_dtype=Self.in_type,
                         width=Self.simd_width,
                         alignment=Self.simd_width,
                     ](batch_idx, row, idx).cast[accum_type]()
