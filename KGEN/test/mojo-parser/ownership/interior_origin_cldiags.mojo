@@ -162,3 +162,9 @@ def test_rederive_interior_in_variadic_pack(list: MyListInterior[Int]):
     ref k = n
     use_any(list[])
     use_any(k, list[])
+
+# MOCO-4345 - vardecl store handling
+def test_vardecl_store_handling(list: MyListInterior[Int]):
+    var p: type_of(Pointer(to=list[]))
+    p = Pointer(to=list[])
+    _ = p
