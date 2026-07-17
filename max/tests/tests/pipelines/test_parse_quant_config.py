@@ -23,8 +23,9 @@ import pytest
 import torch
 from max.dtype import DType
 from max.experimental.torch import max_dtype_to_torch
-from max.graph import Shape
+from max.graph import DeviceRef, Shape
 from max.graph.weights import WeightData
+from max.nn import Linear
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -34,6 +35,7 @@ from max.nn.quant_config import (
     WeightScaleSpec,
 )
 from max.pipelines.weights.quant import (
+    _compressed_tensors_targets_to_modelopt_ignore,
     _modelopt_ignore_patterns,
     _modelopt_shared_experts_quantized_dtype,
     parse_quant_config,
@@ -862,6 +864,180 @@ def test_modelopt_ignore_normalizes_block_sparse_moe_shared_experts() -> None:
         _modelopt_shared_experts_quantized_dtype(global_ignore)
         == DType.bfloat16
     )
+
+
+@pytest.fixture
+def hf_config_compressed_tensors_nvfp4() -> SimpleNamespace:
+    """Minimal RedHatAI Llama compressed-tensors NVFP4 config."""
+    return SimpleNamespace(
+        num_hidden_layers=2,
+        quantization_config={
+            "quant_method": "compressed-tensors",
+            "format": "nvfp4-pack-quantized",
+            "config_groups": {
+                "group_0": {
+                    "format": "nvfp4-pack-quantized",
+                    "targets": ["Linear"],
+                    "weights": {
+                        "dynamic": False,
+                        "group_size": 16,
+                        "num_bits": 4,
+                        "strategy": "tensor_group",
+                        "type": "float",
+                    },
+                    "input_activations": {
+                        "dynamic": "local",
+                        "group_size": 16,
+                        "num_bits": 4,
+                        "strategy": "tensor_group",
+                        "type": "float",
+                    },
+                }
+            },
+            "ignore": ["lm_head"],
+        },
+    )
+
+
+@pytest.fixture
+def nvfp4_embedding_state_dict() -> dict[str, WeightData]:
+    return {
+        "embed_tokens.weight": WeightData(
+            name="embed_tokens.weight",
+            shape=Shape((1, 1)),
+            dtype=DType.bfloat16,
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.bfloat16)),
+        ),
+        "lm_head.weight": WeightData(
+            name="lm_head.weight",
+            shape=Shape((1, 1)),
+            dtype=DType.bfloat16,
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.bfloat16)),
+        ),
+    }
+
+
+def test_parse_compressed_tensors_nvfp4_linear_targets(
+    hf_config_compressed_tensors_nvfp4: SimpleNamespace,
+    nvfp4_embedding_state_dict: dict[str, WeightData],
+) -> None:
+    quant_config = parse_quant_config(
+        hf_config_compressed_tensors_nvfp4,
+        nvfp4_embedding_state_dict,
+        DType.uint8,
+    )
+
+    assert quant_config is not None
+    assert quant_config.format == QuantFormat.NVFP4
+    assert quant_config.input_scale.granularity == ScaleGranularity.BLOCK
+    assert quant_config.input_scale.origin == ScaleOrigin.STATIC
+    assert quant_config.input_scale.block_size == (1, 16)
+    assert quant_config.weight_scale.granularity == ScaleGranularity.BLOCK
+    assert quant_config.weight_scale.block_size == (1, 16)
+    assert quant_config.mlp_quantized_layers == {0, 1}
+    assert quant_config.attn_quantized_layers == {0, 1}
+    assert quant_config.embedding_output_dtype == DType.bfloat16
+    assert quant_config.scales_pre_interleaved is False
+
+    translated_ignore = _compressed_tensors_targets_to_modelopt_ignore(
+        hf_config_compressed_tensors_nvfp4,
+        hf_config_compressed_tensors_nvfp4.quantization_config,
+        modules_prefix="model.",
+    )
+    assert "model.lm_head" in translated_ignore
+
+    # Llama3 uses ``embedding_output_dtype`` for its output Linear without
+    # passing the body quant_config. This is the graph-facing declaration that
+    # must match the checkpoint's BF16 ``lm_head.weight``.
+    lm_head = Linear(
+        in_dim=1,
+        out_dim=1,
+        dtype=quant_config.embedding_output_dtype,
+        device=DeviceRef.CPU(),
+    )
+    assert lm_head.weight.dtype == DType.bfloat16
+
+
+def test_parse_compressed_tensors_nvfp4_regex_targets(
+    hf_config_compressed_tensors_nvfp4: SimpleNamespace,
+    nvfp4_embedding_state_dict: dict[str, WeightData],
+) -> None:
+    config = deepcopy(hf_config_compressed_tensors_nvfp4)
+    config.quantization_config["config_groups"]["group_0"]["targets"] = [
+        r"re:.*mlp\.(gate_proj|up_proj|down_proj)$",
+        r"re:.*experts\.[0-9]+\.(gate_proj|up_proj|down_proj)$",
+        r"re:.*shared_expert\.(gate_proj|up_proj|down_proj)$",
+        r"re:.*mlp\.(gate_up_proj|down_proj)$",
+        r"re:.*shared_expert\.(gate_up_proj|down_proj)$",
+    ]
+    config.quantization_config["ignore"] = [
+        "lm_head",
+        r"re:.*\.self_attn\.q_proj$",
+        r"re:.*\.self_attn\.k_proj$",
+        r"re:.*\.self_attn\.v_proj$",
+        r"re:.*\.self_attn\.o_proj$",
+        r"re:.*\.mlp\.gate$",
+    ]
+
+    translated_ignore = _compressed_tensors_targets_to_modelopt_ignore(
+        config,
+        config.quantization_config,
+        modules_prefix="model.",
+    )
+    assert "model.layers.0.self_attn*" in translated_ignore
+    assert "model.layers.1.self_attn*" in translated_ignore
+    assert "model.layers.0.mlp*" not in translated_ignore
+    assert "model.layers.1.mlp*" not in translated_ignore
+    assert "model.lm_head" in translated_ignore
+
+    quant_config = parse_quant_config(
+        config,
+        nvfp4_embedding_state_dict,
+        DType.uint8,
+    )
+    assert quant_config is not None
+    assert quant_config.mlp_quantized_layers == {0, 1}
+    assert quant_config.attn_quantized_layers == set()
+
+
+@pytest.mark.parametrize(
+    ("target", "subtree"),
+    [
+        (r"re:.*\.self_attn\.q_proj$", "self_attn"),
+        ("model.layers.*.mlp.gate_proj", "mlp"),
+    ],
+)
+def test_parse_compressed_tensors_nvfp4_rejects_partial_subtree(
+    hf_config_compressed_tensors_nvfp4: SimpleNamespace,
+    nvfp4_embedding_state_dict: dict[str, WeightData],
+    target: str,
+    subtree: str,
+) -> None:
+    config = deepcopy(hf_config_compressed_tensors_nvfp4)
+    config.quantization_config["config_groups"]["group_0"]["targets"] = [target]
+    config.quantization_config["ignore"] = ["lm_head"]
+
+    with pytest.raises(
+        ValueError,
+        match=rf"all-or-nothing quantization for layer 0 {subtree}",
+    ):
+        parse_quant_config(
+            config,
+            nvfp4_embedding_state_dict,
+            DType.uint8,
+        )
+
+
+def test_parse_float4_skips_non_nvfp4_compressed_tensors(
+    hf_config_compressed_tensors_nvfp4: SimpleNamespace,
+) -> None:
+    config = deepcopy(hf_config_compressed_tensors_nvfp4)
+    config.quantization_config["format"] = "pack-quantized"
+    config.quantization_config["config_groups"]["group_0"]["format"] = (
+        "pack-quantized"
+    )
+
+    assert parse_quant_config(config, {}, DType.uint8) is None
 
 
 def test_parse_float4_skips_gptq_quant_method(

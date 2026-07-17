@@ -350,7 +350,7 @@ class QuantConfig:
 
     @property
     def is_nvfp4(self) -> bool:
-        """``True`` if this config represents modelopt NVFP4."""
+        """``True`` if this config represents NVFP4 quantization."""
         return self.format == QuantFormat.NVFP4
 
     @property

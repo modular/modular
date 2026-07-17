@@ -171,39 +171,16 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
 
         The compute dtype is bf16 (embedding, attention, norms, lm_head), so the
         base ``finalize`` calls ``parse_quant_config`` with bf16 and gets
-        ``None``. Laguna ships compressed-tensors NVFP4, which is numerically
-        identical to modelopt NVFP4 (group_size 16, e4m3 per-group scales, fp32
-        global scale) but is not recognised by MAX's FP4 parser, which only
-        handles the modelopt flavor. Present a modelopt-shaped
-        ``quantization_config`` to the parser so the dense/MoE Linears pack via
-        ``quant_config.is_fp4``; the non-quant layers stay bf16 from
-        ``config.dtype``.
+        ``None``. Parse again with the checkpoint's packed FP4 dtype; the
+        generic compressed-tensors parser translates its target scope into the
+        per-layer ``QuantConfig`` representation.
         """
         hf_qc = getattr(self.huggingface_config, "quantization_config", None)
         if model_config.quant_config is not None or not hf_qc:
             return
-        # The MAX parser reads only from ``huggingface_config``, so present the
-        # modelopt-shaped config to it and restore the original afterwards.
-        # compressed-tensors defines quant scope by ``targets`` (only MLP/MoE
-        # gate/up/down_proj are FP4); the modelopt parser uses inverse
-        # ``ignore`` semantics (quantize all Linears except ignore), so ignore
-        # everything that is NOT a target: attention, the router gate, lm_head.
-        orig_qc = self.huggingface_config.quantization_config
-        try:
-            self.huggingface_config.quantization_config = {
-                "quant_method": "modelopt",
-                "quant_algo": "NVFP4",
-                "ignore": [
-                    "re:.*self_attn\\..*",
-                    "re:.*\\.mlp\\.gate$",
-                    "lm_head",
-                ],
-            }
-            model_config.quant_config = parse_quant_config(
-                self.huggingface_config, state_dict, DType.uint8
-            )
-        finally:
-            self.huggingface_config.quantization_config = orig_qc
+        model_config.quant_config = parse_quant_config(
+            self.huggingface_config, state_dict, DType.uint8
+        )
 
     @staticmethod
     def _detect_state_dict_dtypes(

@@ -19,6 +19,7 @@ import fnmatch
 import json
 import logging
 import os
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -33,6 +34,9 @@ from max.nn.quant_config import (
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
+)
+from max.pipelines.weights._compressed_tensors import (
+    is_compressed_tensors_nvfp4_config,
 )
 from transformers import AutoConfig
 
@@ -141,6 +145,175 @@ def _modelopt_ignore_patterns(
     if not isinstance(ignore, Sequence) or isinstance(ignore, str):
         return []
     return [_normalize_modelopt_ignore_pattern(str(entry)) for entry in ignore]
+
+
+def _compressed_tensors_patterns(value: Any) -> tuple[str, ...]:
+    """Normalize a compressed-tensors target/ignore value to patterns."""
+    if isinstance(value, str):
+        return (value,)
+    if not isinstance(value, Sequence):
+        return ()
+    return tuple(str(pattern) for pattern in value)
+
+
+def _compressed_tensors_pattern_matches(
+    pattern: str,
+    module_path: str,
+    *,
+    modules_prefix: str,
+) -> bool:
+    """Match one compressed-tensors target against a known Linear path."""
+    candidates = (module_path, module_path.removeprefix(modules_prefix))
+    if pattern == "Linear":
+        return True
+    if pattern.startswith("re:"):
+        return any(
+            re.fullmatch(pattern.removeprefix("re:"), candidate) is not None
+            for candidate in candidates
+        )
+    return any(fnmatch.fnmatch(candidate, pattern) for candidate in candidates)
+
+
+def _compressed_tensors_module_selected(
+    module_paths: Sequence[str],
+    targets: Sequence[str],
+    ignore_patterns: Sequence[str],
+    *,
+    modules_prefix: str,
+) -> bool:
+    """Whether a logical Linear has a target match and no ignore match."""
+    is_targeted = any(
+        _compressed_tensors_pattern_matches(
+            pattern, module_path, modules_prefix=modules_prefix
+        )
+        for module_path in module_paths
+        for pattern in targets
+    )
+    is_ignored = any(
+        _compressed_tensors_pattern_matches(
+            pattern, module_path, modules_prefix=modules_prefix
+        )
+        for module_path in module_paths
+        for pattern in ignore_patterns
+    )
+    return is_targeted and not is_ignored
+
+
+def _compressed_tensors_targets_to_modelopt_ignore(
+    huggingface_config: AutoConfig,
+    hf_quant_config: Mapping[str, Any],
+    *,
+    modules_prefix: str,
+) -> list[str]:
+    """Invert compressed-tensors targets into modelopt-style ignore globs.
+
+    ``QuantConfig`` represents MLP and attention quantization per layer, so each
+    subtree must be wholly selected or wholly excluded. Compressed-tensors can
+    express selection per module; reject configurations that select only part
+    of a subtree instead of silently quantizing modules absent from the
+    checkpoint.
+    """
+    config_groups = hf_quant_config.get("config_groups")
+    assert isinstance(config_groups, Mapping)
+    group = config_groups.get("group_0")
+    assert isinstance(group, Mapping)
+
+    targets = _compressed_tensors_patterns(group.get("targets", ()))
+    source_ignore = _compressed_tensors_patterns(
+        hf_quant_config.get("ignore", ())
+    )
+
+    # Keep source ignore entries for representable exceptions such as BF16
+    # shared experts. The generated subtree globs below are what the existing
+    # modelopt parser uses for its per-layer sets.
+    translated_ignore = [
+        re.sub(
+            r"shared_expert(?!s)",
+            "shared_experts",
+            _normalize_modelopt_ignore_pattern(pattern),
+        )
+        for pattern in source_ignore
+    ]
+
+    projection_aliases: dict[str, dict[str, tuple[str, ...]]] = {
+        "mlp": {
+            "gate_proj": (
+                "mlp.gate_proj",
+                "mlp.gate_up_proj",
+                "mlp.experts.0.gate_proj",
+                "mlp.shared_expert.gate_proj",
+                "mlp.shared_experts.gate_proj",
+                "mlp.shared_expert.gate_up_proj",
+                "mlp.shared_experts.gate_up_proj",
+            ),
+            "up_proj": (
+                "mlp.up_proj",
+                "mlp.gate_up_proj",
+                "mlp.experts.0.up_proj",
+                "mlp.shared_expert.up_proj",
+                "mlp.shared_experts.up_proj",
+                "mlp.shared_expert.gate_up_proj",
+                "mlp.shared_experts.gate_up_proj",
+            ),
+            "down_proj": (
+                "mlp.down_proj",
+                "mlp.experts.0.down_proj",
+                "mlp.shared_expert.down_proj",
+                "mlp.shared_experts.down_proj",
+            ),
+        },
+        "self_attn": {
+            "q_proj": ("self_attn.q_proj",),
+            "k_proj": ("self_attn.k_proj",),
+            "v_proj": ("self_attn.v_proj",),
+            "o_proj": ("self_attn.o_proj",),
+        },
+    }
+
+    for layer_idx in range(_get_num_hidden_layers(huggingface_config)):
+        layer_prefix = f"{modules_prefix}layers.{layer_idx}."
+        for subtree, projections in projection_aliases.items():
+            selected = {
+                projection: _compressed_tensors_module_selected(
+                    tuple(layer_prefix + alias for alias in aliases),
+                    targets,
+                    source_ignore,
+                    modules_prefix=modules_prefix,
+                )
+                for projection, aliases in projections.items()
+            }
+            if all(selected.values()):
+                continue
+            if any(selected.values()):
+                selected_names = ", ".join(
+                    name
+                    for name, is_selected in selected.items()
+                    if is_selected
+                )
+                unselected_names = ", ".join(
+                    name
+                    for name, is_selected in selected.items()
+                    if not is_selected
+                )
+                raise ValueError(
+                    "compressed-tensors NVFP4 requires all-or-nothing "
+                    f"quantization for layer {layer_idx} {subtree}; selected: "
+                    f"{selected_names}; unselected: {unselected_names}"
+                )
+            translated_ignore.append(f"{layer_prefix}{subtree}*")
+
+    lm_head = f"{modules_prefix}lm_head"
+    if not _compressed_tensors_module_selected(
+        (lm_head,),
+        targets,
+        source_ignore,
+        modules_prefix=modules_prefix,
+    ):
+        translated_ignore.append(lm_head)
+
+    # Preserve order for deterministic configs while avoiding duplicate exact
+    # entries (for example, an explicit ``model.lm_head`` source ignore).
+    return list(dict.fromkeys(translated_ignore))
 
 
 def _modelopt_layer_subtree_ignored(
@@ -812,11 +985,14 @@ def _parse_modelopt_float4_config(
     *,
     quant_method_override: str | None = None,
     quant_algo_override: str | None = None,
+    resolved_quant_config_override: Mapping[str, Any] | None = None,
     state_dict_name_prefix: str = "",
     ignored_modules_prefix: str = "model.",
 ) -> QuantConfig | None:
-    resolved_quant_config = _resolve_quant_config(
-        huggingface_config, state_dict
+    resolved_quant_config = (
+        resolved_quant_config_override
+        if resolved_quant_config_override is not None
+        else _resolve_quant_config(huggingface_config, state_dict)
     )
     quant_method = quant_method_override
     quant_algo = quant_algo_override
@@ -871,6 +1047,41 @@ def _parse_modelopt_float4_config(
         bias_dtype=bias_dtype,
         shared_experts_weight_dtype=shared_experts_weight_dtype,
         format=QuantFormat.NVFP4,
+    )
+
+
+def _parse_compressed_tensors_float4_config(
+    huggingface_config: AutoConfig,
+    state_dict: Mapping[str, WeightData],
+    dtype: DType,
+    *,
+    state_dict_name_prefix: str = "",
+    ignored_modules_prefix: str = "model.",
+) -> QuantConfig | None:
+    """Parse compressed-tensors NVFP4 through the common NVFP4 builder."""
+    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+    if not is_compressed_tensors_nvfp4_config(hf_quant_config):
+        return None
+    # ``is_compressed_tensors_nvfp4_config`` already verified the mapping shape;
+    # narrow ``Any | None`` for the typed helper call below.
+    assert isinstance(hf_quant_config, Mapping)
+
+    modelopt_equivalent = {
+        "quant_method": "modelopt",
+        "quant_algo": "NVFP4",
+        "ignore": _compressed_tensors_targets_to_modelopt_ignore(
+            huggingface_config,
+            hf_quant_config,
+            modules_prefix=ignored_modules_prefix,
+        ),
+    }
+    return _parse_modelopt_float4_config(
+        huggingface_config,
+        state_dict,
+        dtype,
+        resolved_quant_config_override=modelopt_equivalent,
+        state_dict_name_prefix=state_dict_name_prefix,
+        ignored_modules_prefix=ignored_modules_prefix,
     )
 
 
@@ -959,6 +1170,14 @@ def _parse_float4_config(
             dtype,
             quant_method_override=quant_method,
             quant_algo_override=quant_config.get("quant_algo"),
+            state_dict_name_prefix=state_dict_name_prefix,
+            ignored_modules_prefix=ignored_modules_prefix,
+        )
+    if quant_method == "compressed-tensors":
+        return _parse_compressed_tensors_float4_config(
+            huggingface_config,
+            state_dict,
+            dtype,
             state_dict_name_prefix=state_dict_name_prefix,
             ignored_modules_prefix=ignored_modules_prefix,
         )
