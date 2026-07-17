@@ -8,7 +8,11 @@
 #define KGEN_ELABORATOR_ELABORATORHELPER_H
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "Support/Compiler/ErrorTree.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/SymbolTable.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/SetVector.h"
 
 namespace M::KGEN {
 
@@ -42,6 +46,22 @@ mlir::StringAttr applyLinkageName(mlir::StringAttr resolved,
 ///
 /// Sets `failed = true` on errors (unresolved linkage name, duplicate symbols).
 void renameFunctions(mlir::ModuleOp theModule, bool isGPU, bool &failed);
+
+/// Bundle a set of `compile_offload` ops in a deterministic order that does not
+/// depend on the order elaboration discovered them (which varies run to run,
+/// since `offloadOps` is populated concurrently during parallel elaboration).
+/// Ops are sorted by their mangled kernel name, tie-broken on the target and
+/// emission attributes, then `bundleOp` is invoked for each op with its mangled
+/// name.
+///
+/// \param offloadOps  Ops to bundle; their generators must live in `symTab`.
+/// \param symTab      Symbol table used to resolve each op's `func` attribute.
+/// \param bundleOp    Per-elaborator bundling of one op given its mangled name.
+ErrorTreeOrSuccess sortAndBundleOffloadOps(
+    const llvm::SetVector<CompileOffloadOp> &offloadOps,
+    mlir::SymbolTable &symTab,
+    llvm::function_ref<ErrorTreeOrSuccess(CompileOffloadOp, mlir::StringAttr)>
+        bundleOp);
 
 } // namespace M::KGEN
 

@@ -1853,22 +1853,11 @@ ElaborationState ParametricElaborator::specializeGenerator(PImplNode *inode,
 // ParametricElaborator::bundleOffloadModules
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOrSuccess
-ParametricElaborator::bundleOffloadModules(ModuleOp theModule) {
-  std::optional<ErrorTree> error;
-
-  for (CompileOffloadOp op : compileOffloadOps.get()) {
-    ErrorTreeOrSuccess result = bundleCompileOffloadOp(op);
-    if (result.isError()) {
-      error = result.takeError();
-      break;
-    }
-  }
-
-  if (error)
-    return std::move(*error);
-
-  return success();
+ErrorTreeOrSuccess ParametricElaborator::bundleOffloadModules() {
+  return sortAndBundleOffloadOps(compileOffloadOps.get(), oldSymTab,
+                                 [&](CompileOffloadOp op, StringAttr name) {
+                                   return bundleCompileOffloadOp(op, name);
+                                 });
 }
 
 //===----------------------------------------------------------------------===//
@@ -1876,7 +1865,8 @@ ParametricElaborator::bundleOffloadModules(ModuleOp theModule) {
 //===----------------------------------------------------------------------===//
 
 ErrorTreeOrSuccess
-ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
+ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
+                                             StringAttr name) {
 
   TargetInfoAttr target =
       cast<TargetParamAttr>(op.getTargetTypeAttr()).getTarget();
@@ -1892,17 +1882,6 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
   if (offloadFuncOr.isError())
     return offloadFuncOr.takeError();
   auto [symbol, func] = offloadFuncOr.takeValue();
-
-  // Use mangleParameterValues for the bundling name so it matches the name
-  // evaluateCompileOffloadClosureAttr uses for the _populate_captures stub.
-  StringAttr name = StringAttr::get(
-      op.getContext(), mangleParameterValues(func, symbol.getParamValues()));
-
-  // Handle the emission options.
-  // Parse the emission options from a comma separated list of values.
-  SmallVector<StringRef> emissionOptions;
-  emissionOptionsStr.split(emissionOptions, /*Separator=*/",",
-                           /*MaxSplit=*/-1, /*KeepEmpty=*/false);
 
   // Construct the expected result type.
   MLIRContext *ctx = op.getContext();
@@ -2658,7 +2637,7 @@ LogicalResult ParametricElaborator::run(
     return failure();
   }
 
-  ErrorTreeOrSuccess bundleOr = bundleOffloadModules(theModule);
+  ErrorTreeOrSuccess bundleOr = bundleOffloadModules();
 
   if (bundleOr.isError()) {
 
