@@ -146,6 +146,8 @@ struct CodeCompletionListener : public BaseCompletionListener {
         else if (Filesystem::isMojoBinaryPackagePath(it.path()) ||
                  Filesystem::isMojoSourcePackagePath(it.path()))
           addImportCompletion(it.path(), /*isPackage=*/true);
+        else if (std::filesystem::is_directory(it.path(), ec) && !ec)
+          addImportCompletion(it.path(), /*isPackage=*/true);
       }
     }
   }

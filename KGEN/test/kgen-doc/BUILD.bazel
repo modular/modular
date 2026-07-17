@@ -9,11 +9,13 @@ lit_tests(
         exclude = [
             "test_std_mock/**/*.mojo",
             "test_package/**/*.mojo",
+            "test_dir_package/**/*.mojo",
         ],
     ),
     data = glob([
         "test_std_mock/**/*.mojo",
         "test_package/**/*.mojo",
+        "test_dir_package/**/*.mojo",
     ]),
     mojo_deps = [
         "//max:layout",  # required by mojo_doc.mojo (layout.int_tuple)
