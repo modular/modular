@@ -427,6 +427,9 @@ class OpenAIChatResponseGenerator(
         for result in results:
             if result.outcome == "valid":
                 continue
+            # Count by the bounded outcome only; the function name and failing
+            # JSON paths stay in the log line to keep label cardinality bounded.
+            METRICS.tool_call_conformance_error(result.outcome)
             logger.warning(
                 "tool_call_conformance req=%s stream=%s fn=%s outcome=%s errors=%s",
                 request_id,
@@ -1720,7 +1723,11 @@ async def openai_create_chat_completion(
             and response_format.type == "grammar"
             and response_format.grammar is not None
         ):
-            grammar_validator.check_tool_grammar(response_format.grammar)
+            try:
+                grammar_validator.check_tool_grammar(response_format.grammar)
+            except InputError:
+                METRICS.structured_output_grammar_rejection("tool_grammar")
+                raise
 
         stream_options = None
         if completion_request.stream:
@@ -2051,7 +2058,11 @@ def _create_response_format(
     # Fall back to the backend-agnostic check when there is no validator.
     if json_schema:
         if grammar_validator is not None:
-            grammar_validator.check_json_schema(json.dumps(json_schema))
+            try:
+                grammar_validator.check_json_schema(json.dumps(json_schema))
+            except InputError:
+                METRICS.structured_output_grammar_rejection("json_schema")
+                raise
         else:
             _validate_json_schema(json_schema)
 

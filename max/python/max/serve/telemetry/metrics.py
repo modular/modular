@@ -416,6 +416,24 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="percent",
         description="Per-batch vision encoder cache hit rate (0-100%).",
     ),  # type: ignore
+    "maxserve.tool_call.conformance_errors": _meter.create_counter(
+        "maxserve.tool_call.conformance_errors",
+        description=(
+            "Count of generated tool calls that failed the observability-only "
+            "schema-conformance check, split by the 'outcome' tag "
+            "(invalid_json, unknown_tool, schema_mismatch). Mirrors the "
+            "'tool_call_conformance' warning log; the function name and failing "
+            "JSON paths stay in the log to keep label cardinality bounded."
+        ),
+    ),  # type: ignore
+    "maxserve.structured_output.grammar_rejections": _meter.create_counter(
+        "maxserve.structured_output.grammar_rejections",
+        description=(
+            "Count of structured-output requests rejected at admission "
+            "(HTTP 400) because the active grammar backend could not compile "
+            "the schema, split by the 'kind' tag (tool_grammar, json_schema)."
+        ),
+    ),  # type: ignore
 }
 
 
@@ -1110,6 +1128,24 @@ class _AsyncMetrics:
                 "maxserve.dkv.nixl_write_gib_per_s",
                 gib_per_s,
                 self.extra_attributes,
+            ),
+        )
+
+    def tool_call_conformance_error(self, outcome: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.tool_call.conformance_errors",
+                1,
+                {**self.extra_attributes, "outcome": outcome},
+            ),
+        )
+
+    def structured_output_grammar_rejection(self, kind: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.structured_output.grammar_rejections",
+                1,
+                {**self.extra_attributes, "kind": kind},
             ),
         )
 
