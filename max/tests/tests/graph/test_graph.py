@@ -203,3 +203,14 @@ def test_load_from_file() -> None:
     assert isinstance(loaded_graph._mlir_op, mlir.Operation | mlir.OpView) and (
         str(loaded_graph) == str(graph)
     )
+
+
+def test_device_graph() -> None:
+    with Graph(
+        "device_graph",
+        input_types=[],
+        is_device_graph=True,
+    ) as graph:
+        graph.output()
+
+    assert "isDeviceGraph" in str(graph)

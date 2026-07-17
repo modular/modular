@@ -648,6 +648,7 @@ class Graph:
         kernel_library: KernelLibrary | None = None,
         module: Module | None = None,
         strict_device_placement: DevicePlacementPolicy = DevicePlacementPolicy.Warn,
+        is_device_graph: bool = False,
         **kwargs,
     ) -> None:
         self.name = name
@@ -733,6 +734,10 @@ class Graph:
 
         self._subgraphs = {}
 
+        # If we're building a device graph, annotate the graph appropriately.
+        if is_device_graph:
+            op.is_device_graph = builtin.UnitAttr()
+
         if forward is not None:
             # If the forward method was passed stage the graph directly in the
             # constructor.
@@ -776,6 +781,7 @@ class Graph:
         path: Path | None = None,
         custom_extensions: Iterable[Path] = [],
         devices: Iterable[DeviceRef] = [],
+        is_device_graph: bool = False,
     ) -> Graph:
         """Creates a reusable subgraph for the current graph.
 
@@ -833,6 +839,8 @@ class Graph:
             custom_extensions: Paths to custom op libraries (``.mojoc``/``.mojopkg``
                 files or Mojo source directories) to load for the subgraph.
             devices: Devices this subgraph targets.
+            is_device_graph: Should the subgraph be synthesized to a device graph
+                for device graph based execution.
 
         Returns:
             A :class:`Graph` instance registered as a subgraph of this graph.
@@ -845,6 +853,7 @@ class Graph:
             # *args,
             custom_extensions=custom_extensions,
             module=self.module,
+            is_device_graph=is_device_graph,
             # **kwargs,
         )
 
@@ -852,6 +861,10 @@ class Graph:
         op = Operation._from_cmlir(subgraph._mlir_op)
         assert isinstance(op, _mo.GraphOp)
         op.is_subgraph = builtin.UnitAttr()
+
+        # If we're building a device graph, annotate the graph appropriately.
+        if is_device_graph:
+            op.is_device_graph = builtin.UnitAttr()
 
         # Union callee's existing params  with the caller's params.
         # This may over-declare but is deterministic and comprehensive.
