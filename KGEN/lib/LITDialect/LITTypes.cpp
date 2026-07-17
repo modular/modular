@@ -1067,7 +1067,7 @@ std::optional<SugarKind> OriginType::canElideSugarFor(TypedAttr attr) const {
   if (sugarIsa<SIMDAttr>(getIsMutable()))
     return SugarKind::Alias;
 
-  // StaticConstantOrigin can also be elided.
+  // ImmStaticOrigin can also be elided.
   if (auto originField = sugarDynCast<OriginFieldAttr>(attr)) {
     if (isa<StaticOriginAttr>(originField.getBase())) {
       if (originField.getField().str() == "__constants__" &&

@@ -573,7 +573,7 @@ def test_tuple():
 
 def takes_variadic_params[
     T: Copyable, //, *values: T
-]() -> Span[T, StaticConstantOrigin]:
+]() -> Span[T, ImmStaticOrigin]:
     return values.get_span()
 
 

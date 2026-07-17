@@ -40,7 +40,7 @@ comptime UntrackedOrigin[*, mut: Bool] = Origin[
         `>`,
     ],
 ]()
-comptime StaticConstantOrigin = Origin[
+comptime ImmStaticOrigin = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.origin.field<`,
         `#lit.static.origin : !lit.origin<false>`,
@@ -505,7 +505,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return self._slice._len
 
 
-comptime StaticString = StringSlice[StaticConstantOrigin]
+comptime StaticString = StringSlice[ImmStaticOrigin]
 
 
 @always_inline("builtin")

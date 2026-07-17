@@ -11,7 +11,7 @@ using namespace M;
 using namespace lldb;
 
 TEST(StringsTest, testStringSlice) {
-  // Ensures that StaticString (= StringSlice[False, StaticConstantOrigin]) is
+  // Ensures that StaticString (= StringSlice[False, ImmStaticOrigin]) is
   // shown as a quoted string by the StringSlice summary formatter.
   StopContext ctx = buildAndLaunch("string_slice.mojo");
 

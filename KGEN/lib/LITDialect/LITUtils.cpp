@@ -149,7 +149,7 @@ void OriginPrinter::print(raw_ostream &os, TypedAttr param,
     if (isa<StaticOriginAttr>(originField.getBase())) {
       if (originField.getField().str() == "__constants__" &&
           originField.getType().isMutableKnown(false)) {
-        os << "StaticConstantOrigin";
+        os << "ImmStaticOrigin";
         return;
       }
     }
