@@ -76,6 +76,7 @@ struct FunctionLikeOp {
   DebugInfo::DISubprogramAttr getSubprogramScope() const;
   Region &getBodyRegion() const;
   FnTypeGeneratorType getFuncTypeGenerator() const;
+  ArrayRef<ParamDeclAttr> getInputParams() const;
   /// The underlying function like op.
   Operation *op;
 };
@@ -406,11 +407,29 @@ static SpecialMemberInfo getSpecialMemberForType(
   return SpecialMemberInfo::available(result);
 }
 
+/// Append `bodyConstraints` to `assumptions`, converting each proposition's
+/// parameter references from index to name form.
+static void
+appendNamedBodyConstraints(ArrayRef<ParamDeclAttr> params,
+                           ArrayRef<ConstraintAttr> bodyConstraints,
+                           SmallVectorImpl<ConstraintAttr> &assumptions) {
+  ParameterEvaluator evaluator;
+  for (ParamDeclAttr param : params)
+    evaluator.appendIndexBinding(ParamDeclRefAttr::get(param));
+  for (ConstraintAttr constraint : bodyConstraints) {
+    Attribute namedProposition = evaluator.getReboundAttribute(constraint);
+    assert(namedProposition && "invalid constraint");
+    assumptions.push_back(cast<ConstraintAttr>(namedProposition));
+  }
+}
+
 /// Given a function context, return the constraints known from the context.
 static SmallVector<ConstraintAttr>
 getConstraintsFromContext(FunctionLikeOp fnContext) {
+  SmallVector<ConstraintAttr> assumptions;
   PogListAttr paramList = fnContext.getFuncTypeGenerator().getParamListAttrs();
-  SmallVector<ConstraintAttr> assumptions(paramList.getBodyConstraints());
+  appendNamedBodyConstraints(fnContext.getInputParams(),
+                             paramList.getBodyConstraints(), assumptions);
   return assumptions;
 }
 
@@ -5243,6 +5262,14 @@ FnTypeGeneratorType FunctionLikeOp::getFuncTypeGenerator() const {
     return fn.getFuncTypeGenerator();
   if (auto closure = dyn_cast<LIT::ClosureInitOp>(op))
     return closure.getFuncTypeGenerator();
+  return {};
+}
+
+ArrayRef<ParamDeclAttr> FunctionLikeOp::getInputParams() const {
+  if (auto fn = dyn_cast<FnOp>(op))
+    return fn.getInputParams();
+  if (auto closure = dyn_cast<LIT::ClosureInitOp>(op))
+    return closure.getInputParams();
   return {};
 }
 
