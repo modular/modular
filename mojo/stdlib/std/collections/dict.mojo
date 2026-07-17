@@ -1739,10 +1739,9 @@ struct Dict[
         var h = hash[Self.H](key)
         var found, slot_idx = self._table.find_slot(h, key)
         if not found:
-            # TODO(MSTDL-2837): the key is hashed twice — as `h` above and
-            # again in the `DictEntry` constructor. Collapse to one via a
-            # precomputed-hash entry constructor.
-            var entry = DictEntry[Self.K, Self.V, Self.H](key^, default^)
+            var entry = DictEntry[Self.K, Self.V, Self.H](
+                key^, default^, unsafe_hash=h
+            )
             self._table.set_ctrl(slot_idx, h2(h))
             (self._table._slots + slot_idx).unsafe_write(entry^)
             self._order.append(Int32(slot_idx))
