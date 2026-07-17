@@ -308,8 +308,19 @@ mapToTypedLLVMFuncAttr(LLVM::LLVMFuncOp func, NamedAttrList &attrs,
   if (suffix == "section" || suffix == "garbageCollector")
     return requireString();
 
-  if (suffix == "alignment" || suffix == "function_entry_count")
+  if (suffix == "alignment")
     return requireInt(/*bitWidth=*/64);
+
+  if (suffix == "function_entry_count") {
+    auto intAttr = dyn_cast<IntegerAttr>(value);
+    if (!intAttr)
+      return Error(Twine("'llvm.") + suffix + "' expects an integer value");
+    setOnFunc(LLVM::FunctionEntryCountAttr::get(
+        ctx, intAttr.getValue().getZExtValue(), LLVM::ProfileCountType::Real,
+        /*imports=*/{}));
+    return success();
+  }
+
   if (suffix == "intel_reqd_sub_group_size")
     return requireInt(/*bitWidth=*/32);
 
