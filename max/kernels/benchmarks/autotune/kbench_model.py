@@ -1947,6 +1947,11 @@ class Scheduler:
             if not df.empty:
                 df.insert(0, "mesh_idx", mesh_idx)
                 df.insert(len(df.columns), "spec", str(current_spec))
+                kbench_filter = " ".join(
+                    f"{p.name.lstrip('$')}={p.value}"
+                    for p in current_spec.params
+                )
+                df.insert(len(df.columns), "kbench_filter", kbench_filter)
                 # If there are more than one entries in CSV then bencher
                 # has added an extra column at the end of name with input_id.
                 # TODO: This will create multiple rows with same mesh_idx.
