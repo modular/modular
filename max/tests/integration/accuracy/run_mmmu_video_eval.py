@@ -401,22 +401,43 @@ def infer(cfg: EvalConfig, item: tuple[dict[str, Any], str]) -> dict[str, Any]:
         [{"role": "user", "content": content}],
     )
 
-    try:
-        resp = cfg.client.chat.completions.create(
-            model=cfg.model,
-            messages=messages,
-            max_tokens=cfg.max_tokens,
-            temperature=cfg.temperature,
-            top_p=cfg.top_p,
-        )
-    except Exception as e:
+    # Long videos can exceed the server's max_total_pixels budget at the
+    # default 672 long-side tier: the vendor manual specifies error-on-exceed,
+    # while MiniMax's own API downscales and answers, so those samples are
+    # answerable. On that specific 400, retry at lower long-side tiers
+    # (multiples of 28; 504 covers overages to ~1.78x, 336 to ~4x) via the
+    # per-video max_long_side_pixel knob instead of structurally failing the
+    # sample. Byte-cap (413-style "maximum allowed size") rejections are not
+    # retried; resolution does not change encoded size.
+    resp = None
+    last_err: Exception | None = None
+    used_tier: int | None = None
+    for tier in (None, 504, 336):
+        if tier is not None:
+            video_url["max_long_side_pixel"] = tier
+        try:
+            resp = cfg.client.chat.completions.create(
+                model=cfg.model,
+                messages=messages,
+                max_tokens=cfg.max_tokens,
+                temperature=cfg.temperature,
+                top_p=cfg.top_p,
+            )
+            used_tier = tier
+            break
+        except Exception as e:
+            last_err = e
+            if "exceeds max_total_pixels" in str(e):
+                continue
+            break
+    if resp is None:
         return {
             "id": qid,
             "config": config,
             "answer": answer,
             "predicted": "",
             "correct": False,
-            "error": f"request: {e}",
+            "error": f"request: {last_err}",
         }
 
     # The server's reasoning parser (if any) already removed chain-of-thought
@@ -439,7 +460,7 @@ def infer(cfg: EvalConfig, item: tuple[dict[str, Any], str]) -> dict[str, Any]:
         correct = bool(predicted) and predicted == gold
     else:
         predicted, correct = grade_open(raw, doc.get("answer"))
-    return {
+    result = {
         "id": qid,
         "config": config,
         "answer": answer,
@@ -450,6 +471,11 @@ def infer(cfg: EvalConfig, item: tuple[dict[str, Any], str]) -> dict[str, Any]:
             resp.usage.completion_tokens if resp.usage else 0
         ),
     }
+    if used_tier is not None:
+        # Answered after downscaling; recorded so score interpretation can
+        # distinguish full-resolution answers from downscaled ones.
+        result["video_max_long_side"] = used_tier
+    return result
 
 
 def local_snapshot_dir() -> str:
@@ -690,6 +716,11 @@ def main(
     errors = sum(1 for r in results if r.get("error"))
     total = len(results)
     accuracy = correct / total if total else 0.0
+    # Errored samples count as incorrect in `accuracy` (never dropped); the
+    # ex-errors view makes any structural ceiling (e.g. server media-cap
+    # rejections) visible alongside it.
+    answerable = total - errors
+    accuracy_excluding_errors = correct / answerable if answerable else 0.0
     # Output (completion) token stats over SUCCESSFUL samples only.
     _otoks = [
         r["completion_tokens"]
@@ -699,7 +730,8 @@ def main(
     mean_output_tokens = round(statistics.mean(_otoks), 1) if _otoks else 0.0
     p50_output_tokens = round(statistics.median(_otoks), 1) if _otoks else 0.0
     print(
-        f"MMMU-Video: {accuracy:.4f} ({correct}/{total}, {errors} errors) "
+        f"MMMU-Video: {accuracy:.4f} ({correct}/{total}, {errors} errors; "
+        f"excluding errors {accuracy_excluding_errors:.4f}) "
         f"mean_out_tok={mean_output_tokens:.1f} p50_out_tok={p50_output_tokens:.1f}"
     )
 
@@ -707,6 +739,7 @@ def main(
         json.dumps(
             {
                 "accuracy": accuracy,
+                "accuracy_excluding_errors": accuracy_excluding_errors,
                 "correct": correct,
                 "total": total,
                 "errors": errors,
