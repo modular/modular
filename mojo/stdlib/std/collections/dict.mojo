@@ -780,14 +780,63 @@ struct Dict[
     def _reserved(self) -> Int:
         return self._table._capacity
 
-    # TODO(MSTDL-2806): Optimize Dict.fromkeys() to allow us to remove ImplicitlyDeletable
+    # TODO(MSTDL-2848): Once we have a system for adapting `Iterable` to
+    # `IterableOwned`, have this function call the `IterableOwned` version below.
     @staticmethod
-    def fromkeys(
-        keys: List[Self.K], value: Self.V
-    ) -> Self where conforms_to(
-        Self.K, Copyable & ImplicitlyDeletable
-    ) and conforms_to(Self.V, Copyable & ImplicitlyDeletable):
-        """Create a new dictionary with keys from list and values set to value.
+    def fromkeys[
+        Keys: Iterable
+    ](ref keys: Keys, value: Self.V) -> Self where (
+        Keys.IteratorType[origin_of(keys)].Element == Self.K
+        and conforms_to(Self.K, ImplicitlyDeletable)
+        and conforms_to(Self.V, Copyable & ImplicitlyDeletable)
+    ):
+        """Create a new dictionary with keys from a borrowed iterable and values
+        set to value.
+
+        Selected when the iterable is passed by reference, leaving the source
+        intact.
+
+        Parameters:
+            Keys: The type of the borrowed iterable of keys.
+
+        Args:
+            keys: The keys to set.
+            value: The value to set.
+
+        Returns:
+            The new dictionary.
+
+        Example:
+
+        ```mojo
+        var keys: InlineArray[String, 3] = ["a", "b", "c"]
+        var dict = Dict.fromkeys(keys, 0)
+        print(dict)  # => {"a": 0, "b": 0, "c": 0}
+        ```
+        """
+        var my_dict = Self()
+        for var key in keys:
+            # TODO(MOCO-4355): Drop `rebind_var` once the `where` clause's
+            # `Element == Self.K` equality is applied when checking the body.
+            var k = rebind_var[Self.K](key^)
+            my_dict[k^] = value.copy()
+        return my_dict^
+
+    @staticmethod
+    def fromkeys[
+        Keys: IterableOwned
+    ](var keys: Keys, value: Self.V) -> Self where (
+        Keys.IteratorOwnedType.Element == Self.K
+        and conforms_to(Self.K, ImplicitlyDeletable)
+        and conforms_to(Self.V, Copyable & ImplicitlyDeletable)
+    ):
+        """Create a new dictionary with keys from an owned iterable and values
+        set to value.
+
+        Selected when the iterable is transferred with `keys^`.
+
+        Parameters:
+            Keys: The type of the owned iterable of keys.
 
         Args:
             keys: The keys to set.
@@ -800,13 +849,16 @@ struct Dict[
 
         ```mojo
         var keys = ["a", "b", "c"]
-        var dict = Dict.fromkeys(keys, 0)
+        var dict = Dict.fromkeys(keys^, 0)
         print(dict)  # => {"a": 0, "b": 0, "c": 0}
         ```
         """
-        var my_dict = Dict[Self.K, Self.V, Self.H]()
-        for key in keys:
-            my_dict[key.copy()] = value.copy()
+        var my_dict = Self()
+        for var key in keys^:
+            # TODO(MOCO-4355): Drop `rebind_var` once the `where` clause's
+            # `Element == Self.K` equality is applied when checking the body.
+            var k = rebind_var[Self.K](key^)
+            my_dict[k^] = value.copy()
         return my_dict^
 
     def __init__(
@@ -919,14 +971,7 @@ struct Dict[
             return displaced^
 
         # New entry.
-        self._table.set_ctrl(slot_idx, h2(entry._hash))
-        (self._table._slots + slot_idx).unsafe_write(entry^)
-        self._order.append(Int32(slot_idx))
-        self._table._len += 1
-        self._table._growth_left -= 1
-        assert (
-            self._table._growth_left >= 0
-        ), "_growth_left went negative after insert"
+        self._place_new_entry(slot_idx, entry^)
         return None
 
     def __contains__(self, key: Self.K) -> Bool:
@@ -1694,6 +1739,9 @@ struct Dict[
         var h = hash[Self.H](key)
         var found, slot_idx = self._table.find_slot(h, key)
         if not found:
+            # TODO(MSTDL-2837): the key is hashed twice — as `h` above and
+            # again in the `DictEntry` constructor. Collapse to one via a
+            # precomputed-hash entry constructor.
             var entry = DictEntry[Self.K, Self.V, Self.H](key^, default^)
             self._table.set_ctrl(slot_idx, h2(h))
             (self._table._slots + slot_idx).unsafe_write(entry^)
@@ -1736,6 +1784,30 @@ struct Dict[
         """
         self._table.set_ctrl(index, value)
 
+    @always_inline
+    def _place_new_entry(
+        mut self, slot_idx: Int, var entry: DictEntry[Self.K, Self.V, Self.H]
+    ):
+        """Write a new entry into a known-empty slot.
+
+        The caller must have located `slot_idx` via `find_slot` and confirmed
+        the key is absent, so no existing entry is displaced or destroyed. This
+        keeps the placement path free of implicit destruction, so it works even
+        when `K` or `V` is linear (non-`ImplicitlyDeletable`).
+
+        Args:
+            slot_idx: The empty slot to write into, as returned by `find_slot`.
+            entry: The new entry to store.
+        """
+        self._table.set_ctrl(slot_idx, h2(entry._hash))
+        (self._table._slots + slot_idx).unsafe_write(entry^)
+        self._order.append(Int32(slot_idx))
+        self._table._len += 1
+        self._table._growth_left -= 1
+        assert (
+            self._table._growth_left >= 0
+        ), "_growth_left went negative after insert"
+
     def _insert(
         mut self, var key: Self.K, var value: Self.V
     ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
@@ -1758,14 +1830,7 @@ struct Dict[
             (self._table._slots + slot_idx).unsafe_write(entry^)
         else:
             # New entry
-            self._table.set_ctrl(slot_idx, h2(entry._hash))
-            (self._table._slots + slot_idx).unsafe_write(entry^)
-            self._order.append(Int32(slot_idx))
-            self._table._len += 1
-            self._table._growth_left -= 1
-            assert (
-                self._table._growth_left >= 0
-            ), "_growth_left went negative after insert"
+            self._place_new_entry(slot_idx, entry^)
 
     def _ensure_capacity(mut self):
         """Ensures the table has room for one more insertion.

@@ -426,6 +426,10 @@ This version is still a work in progress.
   displaced = d.insert(1, 20)      # the displaced (1, 10) entry
   ```
 
+- `Dict.fromkeys(keys, value)` has been generalized from taking a `List` to
+  accepting any iterable of keys. Both forms require the key and
+  value types to be `ImplicitlyDeletable`.
+
 - By-reference `Dict` iteration (`for entry in dict`, `keys()`, `values()`,
   `items()`, and `reversed()`) no longer requires the key and value types to be
   `ImplicitlyDeletable`. These iterators only borrow references and never

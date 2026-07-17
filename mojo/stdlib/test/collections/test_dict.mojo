@@ -168,6 +168,43 @@ def test_dict_fromkeys_optional() raises:
         assert_false(v)
 
 
+def test_dict_fromkeys_duplicate_keys() raises:
+    # Duplicate keys in the input list collapse to a single entry (matching
+    # Python's `dict.fromkeys`), all sharing the given value.
+    comptime keys = [String("a"), "b", "a", "c", "b"]
+    var dict = Dict.fromkeys(materialize[keys](), 7)
+
+    assert_equal(len(dict), 3)
+    assert_equal(dict["a"], 7)
+    assert_equal(dict["b"], 7)
+    assert_equal(dict["c"], 7)
+
+
+def test_dict_fromkeys_iterable() raises:
+    # `fromkeys` accepts any borrowed `Iterable`, not just `List`. Duplicate
+    # keys collapse to a single entry.
+    var keys: InlineArray[String, 4] = ["a", "b", "a", "c"]
+    var dict = Dict.fromkeys(keys, 7)
+
+    assert_equal(len(dict), 3)
+    assert_equal(dict["a"], 7)
+    assert_equal(dict["b"], 7)
+    assert_equal(dict["c"], 7)
+
+
+def test_dict_fromkeys_moving() raises:
+    # Transferring the iterable with `^` selects the move overload of
+    # `fromkeys`, consuming it and moving keys into the new dictionary.
+    # Duplicate keys collapse to a single entry.
+    var keys = [String("a"), "b", "a", "c"]
+    var dict = Dict.fromkeys(keys^, 7)
+
+    assert_equal(len(dict), 3)
+    assert_equal(dict["a"], 7)
+    assert_equal(dict["b"], 7)
+    assert_equal(dict["c"], 7)
+
+
 def test_basic() raises:
     var dict: Dict[String, Int] = {}
     dict["a"] = 1
