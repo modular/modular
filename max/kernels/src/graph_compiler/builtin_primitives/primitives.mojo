@@ -866,6 +866,96 @@ def mgp_buffer_device_to_device[
         )
 
 
+@no_inline
+def _memset_buffer[
+    dtype: DType, bDevice: StaticString
+](
+    buffer: OwnedByteBuffer, val: Scalar[dtype], dev_context: DeviceContext
+) raises:
+    """Fills every `dtype`-sized element of `buffer` with `val`.
+
+    Dispatches to the device memset on an accelerator, and to a direct host
+    store loop on cpu (the AsyncRT memset external is device-only).
+
+    Parameters:
+        dtype: The unsigned integer element type whose width matches the
+            element byte size.
+        bDevice: The device the buffer lives on (`cpu` or `gpu`).
+
+    Args:
+        buffer: The buffer whose elements are set.
+        val: The element value replicated across the buffer.
+        dev_context: The device context the buffer is associated with.
+    """
+    var count = buffer.size() // size_of[dtype]()
+    comptime if is_accelerator[bDevice]():
+        # Wrap the existing device memory in a non-owning typed DeviceBuffer
+        # (no allocation), then memset it -- mirrors `to_device_buffer`.
+        var dev_buf = DeviceBuffer[dtype](
+            dev_context,
+            buffer.unsafe_ptr().bitcast[Scalar[dtype]](),
+            count,
+            owning=False,
+        )
+        dev_context.enqueue_memset[dtype](dev_buf, val)
+    else:
+        # cpu: fill the raw bytes directly via a typed store loop.
+        var ptr = buffer.unsafe_ptr().bitcast[Scalar[dtype]]()
+        for i in range(count):
+            ptr.store(i, val)
+
+
+@register_internal("mgp.buffer.memset")
+@no_inline
+def mgp_buffer_memset[
+    bDevice: StaticString
+](
+    buffer: OwnedByteBuffer,
+    value_bits: UInt64,
+    elem_size: Int,
+    dev_context: DeviceContext,
+) raises:
+    """Sets every `elem_size`-byte element of `buffer` to a scalar pattern.
+
+    The scalar is the little-endian byte pattern formed by the low `elem_size`
+    bytes of `value_bits`. Reinterpreting those bytes as an unsigned integer of
+    the matching width and filling with it is bit-exact for the buffer's
+    originating dtype, so one primitive memsets any element type. Works
+    uniformly for `bDevice` == cpu and gpu.
+
+    Parameters:
+        bDevice: The device the buffer lives on (`cpu` or `gpu`).
+
+    Args:
+        buffer: The buffer to fill.
+        value_bits: The scalar byte pattern; only the low `elem_size` bytes are
+            used.
+        elem_size: The element size in bytes, one of {1, 2, 4, 8}.
+        dev_context: The device context the buffer is associated with.
+
+    Raises:
+        If `elem_size` is not one of {1, 2, 4, 8}.
+    """
+    # `cast` to the matching-width unsigned int truncates to the low N bits,
+    # which is exactly the little-endian low-byte pattern.
+    if elem_size == 1:
+        _memset_buffer[DType.uint8, bDevice](
+            buffer, value_bits.cast[DType.uint8](), dev_context
+        )
+    elif elem_size == 2:
+        _memset_buffer[DType.uint16, bDevice](
+            buffer, value_bits.cast[DType.uint16](), dev_context
+        )
+    elif elem_size == 4:
+        _memset_buffer[DType.uint32, bDevice](
+            buffer, value_bits.cast[DType.uint32](), dev_context
+        )
+    elif elem_size == 8:
+        _memset_buffer[DType.uint64, bDevice](buffer, value_bits, dev_context)
+    else:
+        raise Error("mgp.buffer.memset: elem_size must be one of {1, 2, 4, 8}")
+
+
 @register_internal("mgp.buffer.host_to_device")
 @no_inline
 def mgp_buffer_host_to_device[

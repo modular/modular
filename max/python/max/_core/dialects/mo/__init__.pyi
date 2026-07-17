@@ -2425,13 +2425,23 @@ class BroadcastToOp(max._core.Operation):
 
 class BufferCreateOp(max._core.Operation):
     """
-    This operation creates an uninitialized buffer with the specified shape and data type on a given device.
-    The buffer is not initialized with any values, and the operation is intended for use cases where the buffer
-    will be filled with data later in the computation.
+    This operation creates a buffer with the specified shape and data type on a given device.
+
+    By default the buffer is uninitialized and (re)allocated on every execution,
+    for use cases where it will be filled with data later in the computation.
+
+    When the optional `initValue` scalar attribute is set, the buffer instead
+    becomes persistent state: it is allocated once and filled with `initValue`
+    a single time during the model's `init` phase, and the same buffer is reused
+    across every `execute` call. This lets a kernel keep and mutate persistent
+    scratch state that is only initialized once (e.g. a counter buffer that a
+    kernel zeroes at the end of each invocation and expects to find zeroed on the
+    first call). `initValue` must have the same element type as the buffer.
 
     Example:
     ```mlir
     %buf = mo.buffer.create : !mo.buffer<[20, 20], f32, gpu:0>
+    %zeroed = mo.buffer.create { initValue = 0.0 : f32 } : !mo.buffer<[20, 20], f32, gpu:0>
     ```
     """
 
@@ -2439,8 +2449,13 @@ class BufferCreateOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: BufferType,
+        result: max._core.Type,
+        init_value: max._core.Attribute = ...,
     ) -> None: ...
+    @property
+    def init_value(self) -> max._core.Attribute | None: ...
+    @init_value.setter
+    def init_value(self, arg: max._core.Attribute, /) -> None: ...
 
 class BufferTransferOp(max._core.Operation):
     """

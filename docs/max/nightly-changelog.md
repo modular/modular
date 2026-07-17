@@ -374,6 +374,14 @@ This version is still a work in progress.
 
 ### Python API
 
+- Added an optional `init_value` argument to `max.graph.ops.buffer_create`.
+  When set, the buffer becomes persistent state: it is allocated and filled
+  with the scalar `init_value` exactly once when the model is loaded, and the
+  same buffer (with its mutations preserved) is reused across every execution,
+  rather than being re-created per call. Use it for a buffer that a kernel
+  mutates in place and only needs initialized once, such as a counter a kernel
+  resets at the end of each call.
+
 - Added `max.graph.ops.floor_div` (and `F.floor_div`), element-wise floor
   division matching Python `//`. Unlike `ops.div`, integer operands stay in
   the integer domain instead of being promoted to `float64`, so integer floor
