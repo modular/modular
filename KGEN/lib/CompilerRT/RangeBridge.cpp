@@ -23,9 +23,10 @@
 
 extern "C" {
 
-// Mojo-callable range begin / end. Both branch on M::Profiling::isEnabled()
-// before doing any work, so they are safe to call from hot kernel-launch
-// paths even when profiling is disabled.
+// Mojo-callable range begin / end. Both are cheap when no trace is live —
+// RangeBegin branches on M::Profiling::isRangeRecordingActive() and RangeEnd
+// on this thread's pairing state — so they are safe to call from hot
+// kernel-launch paths.
 //
 // Precondition: `namePtr` must be non-null even when `nameLen == 0`.
 // Constructing a `std::string_view` from a null pointer is undefined behavior
@@ -77,7 +78,11 @@ KGEN_CompilerRT_RangeDisable(void) {
 }
 
 // Returns 1 if the profiler is currently enabled, 0 otherwise. Useful from
-// Mojo to elide expensive name materialization on the disabled fast path.
+// Mojo to elide expensive name materialization on the disabled fast path —
+// but note this reflects only the session API's enable intent: it stays 0
+// during Dynolog daemon-driven on-demand traces, when ranges DO record, so
+// eliding on it opts the caller out of daemon-trace annotation (RangeBegin
+// itself is one predicted branch when idle, so unconditional calls are fine).
 // Returns `size_t` to match the existing `KGEN_CompilerRT_TracyIsEnabled`
 // shape so Mojo callers can treat both predicates uniformly.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
