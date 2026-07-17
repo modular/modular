@@ -880,22 +880,24 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
     not is_b100_b200(),
     reason="Sparse MLA prefill kernel is SM100-class (B100/B200); skip elsewhere.",
 )
-def test_mla_prefill_decode_graph_sparse_prefill_bf16_cache_e2e() -> None:
+@pytest.mark.parametrize("num_heads", [128, 64])
+def test_mla_prefill_decode_graph_sparse_prefill_bf16_cache_e2e(
+    num_heads: int,
+) -> None:
     """E2E fresh prefill through the sparse-prefill branch of the combined op.
 
-    Uses ``num_heads=128`` (the sparse-prefill kernel hardcodes the DSv3.2
-    absorbed shape: ``num_q_heads=128``, ``qk_depth=576``, ``v_depth=512``) and a
-    BF16 MLA KV cache (the default for the ``float8_e4m3fn`` weight encoding), so
-    the combined ``.fp8.sparse`` op routes its prefill else-branch to
-    ``mla_sm100_prefill_sparse`` rather than the dense prefill kernel.
-    ``prefill_len > MLA_DECODE_MAX_SEQ_LEN`` (8 on NVIDIA) forces the prefill
-    branch. Asserts numerics (finite, no NaN, correct shape).
+    Runs ``num_heads=128`` (DeepSeek V3.2) and ``num_heads=64`` (GLM 5.1); the
+    sparse-prefill kernel supports both absorbed shapes (``qk_depth=576``,
+    ``v_depth=512``). Uses a BF16 MLA KV cache (the default for the
+    ``float8_e4m3fn`` weight encoding), so the combined ``.fp8.sparse`` op routes
+    its prefill else-branch to ``mla_sm100_prefill_sparse`` rather than the dense
+    prefill kernel. ``prefill_len > MLA_DECODE_MAX_SEQ_LEN`` (8 on NVIDIA) forces
+    the prefill branch. Asserts numerics (finite, no NaN, correct shape).
     """
     device = Accelerator(0)
     session = InferenceSession(devices=[Accelerator()])
 
     prefill_len = 32
-    num_heads = 128
     topk = 64
     hidden_size = 2048
     q_lora_rank = 256
@@ -1301,12 +1303,12 @@ def test_mla_sparse_auto_tp_sharded_heads_falls_back_to_decode() -> None:
     """A TP-sharded head count in ``graph_mode="auto"`` must build via the guard.
 
     ``mla_sm100_prefill_sparse`` (the combined op's prefill branch) comptime-
-    asserts ``num_q_heads == 128``; tensor-parallel attention shards 128 heads
+    asserts ``num_q_heads`` is 64 or 128; tensor-parallel attention shards heads
     down (e.g. 128 // 8 = 16). Without the head-count guard in
     ``SparseLatentAttentionWithRopeFp8._mla_impl`` this graph would fail to
     compile. The guard routes the unsupported count to the head-count-general
-    decode op, so ``session.load`` and a prefill execute succeed. (128 heads
-    exercising the real prefill branch is covered by
+    decode op, so ``session.load`` and a prefill execute succeed. (64 and 128
+    heads exercising the real prefill branch are covered by
     ``test_mla_prefill_decode_graph_sparse_prefill_bf16_cache_e2e``.)
     """
     device = Accelerator(0)

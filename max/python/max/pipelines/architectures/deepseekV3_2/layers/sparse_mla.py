@@ -48,11 +48,11 @@ from .indexer import Indexer
 logger = logging.getLogger("max.pipelines")
 
 
-# Head counts the sparse-prefill kernel supports, per weights dtype (FP8's
-# 64-head path isn't wired yet).  Other counts (e.g. TP-sharded 128 // 8 = 16)
-# fall back to decode rather than tripping the kernel's comptime assert.
+# Head counts the sparse-prefill kernel supports (both bf16 and FP8 handle
+# {64, 128}).  Other counts (e.g. TP-sharded 128 // 8 = 16) fall back to
+# decode rather than tripping the kernel's comptime assert.
 _SPARSE_PREFILL_SUPPORTED_HEADS_BF16 = (64, 128)
-_SPARSE_PREFILL_SUPPORTED_HEADS_FP8 = (128,)
+_SPARSE_PREFILL_SUPPORTED_HEADS_FP8 = (64, 128)
 
 # Head counts already warned about; the guard runs per layer, so dedup the log.
 _WARNED_FALLBACK_HEADS: set[int] = set()
