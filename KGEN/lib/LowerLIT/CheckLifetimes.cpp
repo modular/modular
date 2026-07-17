@@ -2387,8 +2387,33 @@ static Operation *getProgramPointThatDefinedInteriorOrigin(Value v) {
       // Here we treat the program point for the reference as %vd instead of
       // %tmp.
       v = load.getOperand();
-    } else
+    } else if (auto varDecl = v.getDefiningOp<VarDeclOp>()) {
+      // If we have a vardecl, scan down its block to find the first use that
+      // might be a store to it.  We know the vardecl itself doesn't have an
+      // interior origin as its origin, so this must be something nested within
+      // it (e.g. a Pointer or Span).  We scan to avoid problems like:
+      //    %vd = lit.var.decl
+      //    ...
+      //    ref r1 = get_interior_origin()
+      //    store r1 -> %vd
+      //    ...
+      //    use(%vd)
+      // If we didn't do this, we'd consider the access to start at the var.decl
+      // which is earlier than the interior origin is alive from. Instead we
+      // want to consider the vardecl live at the first store.  This is very
+      // conservative correct, but could be made more aggressive if needbe.
+      auto *block = varDecl->getBlock();
+      for (Block::iterator it = varDecl->getIterator(); it != block->end();
+           ++it) {
+        if (llvm::any_of(it->getOperands(), [](Value v) { return v == v; }))
+          return &*it;
+      }
+      // If we found no uses of the vardecl, we could return the terminator, but
+      // be more conservative than that - return the VD itself.
+      return varDecl;
+    } else {
       return v.getDefiningOp();
+    }
   }
 }
 
