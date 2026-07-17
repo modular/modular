@@ -11,10 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import List
+from std.collections import InlineArray, List
+from std.sys import size_of
 
 from std.gpu import global_idx, thread_idx
 from std.gpu.host.device_attribute import DeviceAttribute
+from std.gpu.host._tensormap import (
+    DataType,
+    InterleaveMode,
+    L2Promotion,
+    OOBFill,
+    SwizzleMode,
+    TensorMap,
+)
 from std.gpu.host.dim import Dim
 from std.gpu.memory import external_memory
 from std.gpu.sync import barrier
@@ -833,6 +842,40 @@ def test_external_shared_mem_execution_config(ctx: DeviceContext) raises:
     _ = res_device
 
 
+def test_tensor_map_encode(ctx: DeviceContext) raises:
+    # TMA descriptor encoding requires an NVIDIA sm_90+ device.
+    comptime info = DeviceContext.default_device_info
+
+    comptime if not (info.api == "cuda" and info.compute >= 9.0):
+        return
+
+    comptime dim = 64
+    var buf = ctx.enqueue_create_buffer[DType.float32](dim * dim)
+    ctx.synchronize()
+
+    var tensormap = TensorMap()
+    var global_dim_arg = InlineArray[Int64, 2](fill=Int64(dim))
+    var global_strides_arg = InlineArray[Int64, 2](uninitialized=True)
+    global_strides_arg[0] = Int64(size_of[DType.float32]())
+    global_strides_arg[1] = Int64(dim * size_of[DType.float32]())
+    var box_dim_arg = InlineArray[Int32, 2](fill=Int32(16))
+    var element_stride_arg = InlineArray[Int32, 2](fill=Int32(1))
+
+    buf._tensor_map_encode_tiled(
+        UnsafePointer(to=tensormap).bitcast[NoneType](),
+        DataType.from_dtype[DType.float32]()._value,
+        Int32(2),
+        global_dim_arg.unsafe_ptr(),
+        global_strides_arg.unsafe_ptr() + 1,
+        box_dim_arg.unsafe_ptr(),
+        element_stride_arg.unsafe_ptr(),
+        InterleaveMode.NONE._value,
+        SwizzleMode.NONE._value,
+        L2Promotion.NONE._value,
+        OOBFill.NONE._value,
+    )
+
+
 def test_device_attributes(ctx: DeviceContext) raises:
     comptime info = DeviceContext.default_device_info
 
@@ -991,6 +1034,7 @@ def main() raises:
         test_enqueue_host_func(ctx)
         test_cluster_launch(ctx)
         test_device_attributes(ctx)
+        test_tensor_map_encode(ctx)
         test_id(ctx)
         test_synchronize(ctx)
         test_default_stream(ctx)

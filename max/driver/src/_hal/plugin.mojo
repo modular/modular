@@ -33,6 +33,7 @@ from std.ffi import (
 from std.memory import (
     alloc,
     ImmPointer,
+    MutOpaquePointer,
     MutPointer,
     OpaquePointer,
     UnsafePointer,
@@ -973,6 +974,94 @@ struct RawDriver(Movable):
             )
         return num_blocks.unsafe_assume_init_ref()
 
+    def tensor_map_encode_tiled(
+        self,
+        context: ContextHandle,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_device_address: UInt64,
+        global_dim: UnsafePointer[mut=False, UInt64, _],
+        global_strides: UnsafePointer[mut=False, UInt64, _],
+        box_dim: UnsafePointer[mut=False, UInt32, _],
+        element_strides: UnsafePointer[mut=False, UInt32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises HALError:
+        """Encodes a tiled TMA descriptor into `tensor_map` (128 host bytes)."""
+        var status = self._raw.tensor_map_encode_tiled.f(
+            context,
+            tensor_map,
+            data_type,
+            rank,
+            global_device_address,
+            global_dim,
+            global_strides,
+            box_dim,
+            element_strides,
+            interleave,
+            swizzle,
+            l2_promotion,
+            oob_fill,
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to encode tiled tensor map: {err.message}"
+                ),
+            )
+
+    def tensor_map_encode_im2col(
+        self,
+        context: ContextHandle,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_device_address: UInt64,
+        global_dim: UnsafePointer[mut=False, UInt64, _],
+        global_strides: UnsafePointer[mut=False, UInt64, _],
+        pixel_box_lower_corner: UnsafePointer[mut=False, Int32, _],
+        pixel_box_upper_corner: UnsafePointer[mut=False, Int32, _],
+        channels_per_pixel: Int32,
+        pixels_per_column: Int32,
+        element_strides: UnsafePointer[mut=False, UInt32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises HALError:
+        """Encodes an im2col TMA descriptor into `tensor_map`."""
+        var status = self._raw.tensor_map_encode_im2col.f(
+            context,
+            tensor_map,
+            data_type,
+            rank,
+            global_device_address,
+            global_dim,
+            global_strides,
+            pixel_box_lower_corner,
+            pixel_box_upper_corner,
+            channels_per_pixel,
+            pixels_per_column,
+            element_strides,
+            interleave,
+            swizzle,
+            l2_promotion,
+            oob_fill,
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to encode im2col tensor map: {err.message}"
+                ),
+            )
+
     def unload_function(
         self,
         context: ContextHandle,
@@ -1404,6 +1493,61 @@ struct RawPlugin(Movable):
             num_blocks: OutParam[Int32, _],
         ) thin -> PluginResultCode,
     ]
+    # The array parameters mirror the C header's `const uint64_t *` /
+    # `const uint32_t *` types; the device address is a `uint64_t` like the
+    # other device-address parameters in the ABI.
+    var tensor_map_encode_tiled: HALFunction[
+        "M_driver_tensor_map_encode_tiled",
+        def[
+            tensor_map_origin: MutOrigin,
+            global_dim_origin: ImmOrigin,
+            global_strides_origin: ImmOrigin,
+            box_dim_origin: ImmOrigin,
+            element_strides_origin: ImmOrigin,
+        ](
+            context: ContextHandle,
+            tensor_map: OpaquePointer[tensor_map_origin],
+            data_type: Int32,
+            rank: Int32,
+            global_device_address: UInt64,
+            global_dim: UnsafePointer[UInt64, global_dim_origin],
+            global_strides: UnsafePointer[UInt64, global_strides_origin],
+            box_dim: UnsafePointer[UInt32, box_dim_origin],
+            element_strides: UnsafePointer[UInt32, element_strides_origin],
+            interleave: Int32,
+            swizzle: Int32,
+            l2_promotion: Int32,
+            oob_fill: Int32,
+        ) thin -> PluginResultCode,
+    ]
+    var tensor_map_encode_im2col: HALFunction[
+        "M_driver_tensor_map_encode_im2col",
+        def[
+            tensor_map_origin: MutOrigin,
+            global_dim_origin: ImmOrigin,
+            global_strides_origin: ImmOrigin,
+            lower_corner_origin: ImmOrigin,
+            upper_corner_origin: ImmOrigin,
+            element_strides_origin: ImmOrigin,
+        ](
+            context: ContextHandle,
+            tensor_map: OpaquePointer[tensor_map_origin],
+            data_type: Int32,
+            rank: Int32,
+            global_device_address: UInt64,
+            global_dim: UnsafePointer[UInt64, global_dim_origin],
+            global_strides: UnsafePointer[UInt64, global_strides_origin],
+            pixel_box_lower_corner: UnsafePointer[Int32, lower_corner_origin],
+            pixel_box_upper_corner: UnsafePointer[Int32, upper_corner_origin],
+            channels_per_pixel: Int32,
+            pixels_per_column: Int32,
+            element_strides: UnsafePointer[UInt32, element_strides_origin],
+            interleave: Int32,
+            swizzle: Int32,
+            l2_promotion: Int32,
+            oob_fill: Int32,
+        ) thin -> PluginResultCode,
+    ]
     var device_property: HALFunction[
         "M_driver_device_property",
         def[
@@ -1606,6 +1750,12 @@ struct RawPlugin(Movable):
         self.function_occupancy_max_active_blocks = type_of(
             self.function_occupancy_max_active_blocks
         )(handle, so_path)
+        self.tensor_map_encode_tiled = type_of(self.tensor_map_encode_tiled)(
+            handle, so_path
+        )
+        self.tensor_map_encode_im2col = type_of(self.tensor_map_encode_im2col)(
+            handle, so_path
+        )
         self.device_property = type_of(self.device_property)(handle, so_path)
         self.device_attribute = type_of(self.device_attribute)(handle, so_path)
         self.memory_property = type_of(self.memory_property)(handle, so_path)

@@ -22,15 +22,9 @@ support for various data types and memory layouts.
 """
 
 from .. import DeviceBuffer
-from std.ffi import external_call
 from std.sys import size_of
 
 from std.gpu._utils import to_llvm_ptr
-from std.gpu.host.device_context import (
-    _CString,
-    _checked,
-    _DeviceBufferPtr,
-)
 
 from std.utils import IndexList, StaticTuple
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -400,46 +394,18 @@ def create_tma_descriptor[
         " but is: ",
         global_strides_arg[0],
     )
-    # const char *AsyncRT_cuda_tensorMapEncodeTiled(
-    #     void *tensorMap, int32_t tensorDataType, uint32_t tensorRank,
-    #     const DeviceBuffer *globalAddress, const uint64_t *globalDim,
-    #     const uint64_t *globalStrides, const uint32_t *boxDim,
-    #     const uint32_t *elementStrides, int32_t interleave, int32_t swizzle,
-    #     int32_t l2Promotion, int32_t oobFill) {
-    _checked(
-        external_call[
-            "AsyncRT_cuda_tensorMapEncodeTiled",
-            _CString[],
-            OpaquePointer[origin_of(tma_descriptor)],  # tensorMap
-            Int32,  # tensorDataType
-            Int32,  # tensorRank
-            type_of(global_buf._handle),  #  globalAddress
-            UnsafePointer[Int64, origin_of(global_dim_arg)],  # globalDim
-            UnsafePointer[
-                Int64, origin_of(global_strides_arg)
-            ],  # globalStrides
-            UnsafePointer[Int32, origin_of(box_dim_arg)],  # boxDim
-            UnsafePointer[
-                Int32, origin_of(element_stride_arg)
-            ],  # elementStrides
-            Int32,  # interleave
-            Int32,  # swizzle
-            Int32,  # l2Promotion
-            Int32,  # oobFill
-        ](
-            tensor_map_ptr,
-            TensorMapDataType.from_dtype[dtype]()._value,
-            Int32(rank),
-            global_buf._handle,
-            global_dim_arg.unsafe_ptr(),
-            # global_strides_arg[0] is implicitly size_of[dtype]()
-            global_strides_arg.unsafe_ptr() + 1,
-            box_dim_arg.unsafe_ptr(),
-            element_stride_arg.unsafe_ptr(),
-            TensorMapInterleave.INTERLEAVE_NONE._value,
-            swizzle_mode._value,
-            l2_promotion._value,
-            TensorMapFloatOOBFill.NONE._value,
-        )
+    global_buf._tensor_map_encode_tiled(
+        tensor_map_ptr,
+        TensorMapDataType.from_dtype[dtype]()._value,
+        Int32(rank),
+        global_dim_arg.unsafe_ptr(),
+        # global_strides_arg[0] is implicitly size_of[dtype]()
+        global_strides_arg.unsafe_ptr() + 1,
+        box_dim_arg.unsafe_ptr(),
+        element_stride_arg.unsafe_ptr(),
+        TensorMapInterleave.INTERLEAVE_NONE._value,
+        swizzle_mode._value,
+        l2_promotion._value,
+        TensorMapFloatOOBFill.NONE._value,
     )
     return tma_descriptor

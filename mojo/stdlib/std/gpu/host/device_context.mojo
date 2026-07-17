@@ -1845,6 +1845,78 @@ struct DeviceBuffer[dtype: DType](
             origin
         ]()
 
+    def _tensor_map_encode_tiled(
+        self,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_dim: UnsafePointer[mut=False, Int64, _],
+        global_strides: UnsafePointer[mut=False, Int64, _],
+        box_dim: UnsafePointer[mut=False, Int32, _],
+        element_strides: UnsafePointer[mut=False, Int32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises:
+        """Encodes a tiled TMA descriptor for this buffer via AsyncRT. Used by
+        `std.gpu.host._tensormap.create_tensormap`."""
+        _checked(
+            external_call["AsyncRT_cuda_tensorMapEncodeTiled", _CString[]](
+                tensor_map,
+                data_type,
+                rank,
+                self._handle,
+                global_dim,
+                global_strides,
+                box_dim,
+                element_strides,
+                interleave,
+                swizzle,
+                l2_promotion,
+                oob_fill,
+            )
+        )
+
+    def _tensor_map_encode_im2col(
+        self,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_dim: UnsafePointer[mut=False, Int64, _],
+        global_strides: UnsafePointer[mut=False, Int64, _],
+        pixel_box_lower_corner: UnsafePointer[mut=False, Int32, _],
+        pixel_box_upper_corner: UnsafePointer[mut=False, Int32, _],
+        channels_per_pixel: Int32,
+        pixels_per_column: Int32,
+        element_strides: UnsafePointer[mut=False, Int32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises:
+        """Encodes an im2col TMA descriptor for this buffer via AsyncRT. Used by
+        `std.gpu.host._tensormap.create_tensormap_im2col`."""
+        _checked(
+            external_call["AsyncRT_cuda_tensorMapEncodeIm2col", _CString[]](
+                tensor_map,
+                data_type,
+                rank,
+                self._handle,
+                global_dim,
+                global_strides,
+                pixel_box_lower_corner,
+                pixel_box_upper_corner,
+                channels_per_pixel,
+                pixels_per_column,
+                element_strides,
+                interleave,
+                swizzle,
+                l2_promotion,
+                oob_fill,
+            )
+        )
+
     def device_ptr(
         ref self,
     ) raises -> DevicePointer[Self.dtype, origin_of(self)]:

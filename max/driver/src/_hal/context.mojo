@@ -34,6 +34,7 @@ from .status import STATUS_SUCCESS, HALError
 from std.memory import (
     ImmPointer,
     ArcPointer,
+    MutOpaquePointer,
     UnsafePointer,
     UnsafeMaybeUninit,
 )
@@ -445,6 +446,78 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         """
         return self._raw[].function_occupancy_max_active_blocks(
             self._handle, func, block_size, dynamic_shared_memory_bytes
+        )
+
+    def tensor_map_encode_tiled(
+        self,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_device_address: UInt64,
+        global_dim: UnsafePointer[mut=False, UInt64, _],
+        global_strides: UnsafePointer[mut=False, UInt64, _],
+        box_dim: UnsafePointer[mut=False, UInt32, _],
+        element_strides: UnsafePointer[mut=False, UInt32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises HALError:
+        """Encodes a tiled TMA descriptor into `tensor_map` for this
+        context's device."""
+        self._raw[].tensor_map_encode_tiled(
+            self._handle,
+            tensor_map,
+            data_type,
+            rank,
+            global_device_address,
+            global_dim,
+            global_strides,
+            box_dim,
+            element_strides,
+            interleave,
+            swizzle,
+            l2_promotion,
+            oob_fill,
+        )
+
+    def tensor_map_encode_im2col(
+        self,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_device_address: UInt64,
+        global_dim: UnsafePointer[mut=False, UInt64, _],
+        global_strides: UnsafePointer[mut=False, UInt64, _],
+        pixel_box_lower_corner: UnsafePointer[mut=False, Int32, _],
+        pixel_box_upper_corner: UnsafePointer[mut=False, Int32, _],
+        channels_per_pixel: Int32,
+        pixels_per_column: Int32,
+        element_strides: UnsafePointer[mut=False, UInt32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises HALError:
+        """Encodes an im2col TMA descriptor into `tensor_map` for this
+        context's device."""
+        self._raw[].tensor_map_encode_im2col(
+            self._handle,
+            tensor_map,
+            data_type,
+            rank,
+            global_device_address,
+            global_dim,
+            global_strides,
+            pixel_box_lower_corner,
+            pixel_box_upper_corner,
+            channels_per_pixel,
+            pixels_per_column,
+            element_strides,
+            interleave,
+            swizzle,
+            l2_promotion,
+            oob_fill,
         )
 
 
