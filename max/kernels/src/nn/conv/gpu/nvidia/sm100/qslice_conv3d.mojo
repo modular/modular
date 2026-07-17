@@ -285,6 +285,9 @@ def dispatch_qslice_conv3d_sm100[
     var accum_fp32_ptr = accum_fp32_buf.unsafe_ptr()
 
     var temp_bf16_buf = ctx.enqueue_create_buffer[output_type](per_batch_elems)
+    # Redundant for correctness (conv2d fully overwrites this via TMA store);
+    # works around initcheck not tracking TMA bulk stores as initializing writes.
+    temp_bf16_buf.enqueue_fill(Scalar[output_type](0))
 
     # --- 2. Per-(n, q) conv into temp_bf16, then accumulate into fp32. ---
     comptime accum_block = 256
