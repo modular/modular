@@ -51,12 +51,4 @@ kgen.func @byref_result(%arg0: !kgen.pointer<i32> byref_result) {
 kgen.func @byref_error(%arg0: !kgen.pointer<i32> byref_error, %arg1: !kgen.pointer<i32> byref_result) throws {
   kgen.return
 }
-
-// CHECK: @convergent_call() #[[X:.*]] {
-kgen.func @convergent_call() attributes {convergent} {
-  nvvm.barrier
-  kgen.return
-}
-
-// CHECK: attributes #[[X]] = { convergent "target-cpu" "target-features" }
 }

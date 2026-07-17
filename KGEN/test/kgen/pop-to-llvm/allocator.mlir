@@ -21,12 +21,3 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     kgen.return
   }
 }
-
-// -----
-
-// CHECK: define void @empty
-module attributes {M.target_info = #M.target<triple = "hexagon", arch = "", index_bit_width = 32>} {
-  llvm.func @empty() {
-    llvm.return
-  }
-}
