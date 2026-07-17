@@ -381,6 +381,22 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `Tuple.consume_elements`, which moves each element out of a tuple into a
+  caller-provided closure one at a time. Destructuring such as `a, b = t^`
+  copies each element, so it cannot take apart a tuple whose elements are
+  `Movable` but not `ImplicitlyCopyable`; `consume_elements` transfers ownership
+  instead, mirroring `VariadicPack.consume_elements`.
+
+  ```mojo
+  var t = ([1, 2, 3], [4, 5, 6])  # `List` is not `ImplicitlyCopyable`
+
+  @parameter
+  def handler[idx: Int](var elt: t.element_types[idx]):
+      print(len(elt))
+
+  t^.consume_elements[handler]()
+  ```
+
 - `List.capacity` is now a `capacity()` method instead of a public field. This
   keeps the allocated capacity out of the stable public field surface, since it
   should only change indirectly through operations like `append()`. Replace

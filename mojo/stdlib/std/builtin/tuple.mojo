@@ -511,3 +511,46 @@ struct Tuple[*element_types: Movable](
                     ]
                 ](UnsafePointer(to=other[i]))
             )
+
+    @always_inline("nodebug")
+    def consume_elements[
+        elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
+    ](deinit self):
+        """Consume the tuple by transferring ownership of each element into the
+        provided closure one at a time.
+
+        Destructuring assignment such as `a, b = t^` desugars to
+        reference-returning subscripts, so it copies each element and cannot
+        extract elements whose type is `Movable` but not `ImplicitlyCopyable`.
+        `consume_elements` hands each element to `elt_handler` by value instead,
+        so a tuple of move-only elements can still be taken apart. Elements are
+        visited in index order.
+
+        Parameters:
+            elt_handler: A function called once for each element of the tuple,
+                receiving ownership of the element at that index.
+
+        Example:
+
+        `List` is `Movable` but not `ImplicitlyCopyable`, so its elements can
+        be moved out of a tuple but not copied out:
+
+        ```mojo
+        # Each `List` is moved out of the tuple, one at a time.
+        var t = ([1, 2, 3], [4, 5, 6])
+
+        @parameter
+        def handler[idx: Int](var elt: t.element_types[idx]):
+            print(len(elt))  # prints 3, then 3
+
+        t^.consume_elements[handler]()
+        ```
+        """
+        # `deinit self` disables `Tuple.__del__`; the underlying `!kgen.struct`
+        # destructor is trivial, so moving every element out and letting `self`
+        # die leaks nothing.
+        comptime for i in range(Self.__len__()):
+            var ptr = UnsafePointer(to=self[i])
+            elt_handler[i](
+                __get_address_as_owned_value(ptr._get_kgen_pointer())
+            )

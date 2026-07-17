@@ -19,7 +19,7 @@ from std.testing import (
     assert_raises,
     TestSuite,
 )
-from test_utils import CopyCounter, MoveOnly
+from test_utils import CopyCounter, MoveOnly, ObservableMoveOnly
 
 
 def test_tuple_contains() raises:
@@ -382,6 +382,103 @@ def test_tuple_conditional_register_passable() raises:
     # Mixture of RP and non-RP
     assert_false(conforms_to(Tuple[Int, String], RegisterPassable))
     assert_false(conforms_to(Tuple[Bool, List[Int], Int], RegisterPassable))
+
+
+# ===-------------------------------------------------------------------===#
+# consume_elements
+# ===-------------------------------------------------------------------===#
+
+
+def test_tuple_consume_elements_move_only() raises:
+    var t = (MoveOnly[Int](10), MoveOnly[Int](20), MoveOnly[Int](30))
+    var collected = [0, 0, 0]
+
+    @parameter
+    def handler[idx: Int](var elt: t.element_types[idx]):
+        collected[idx] = elt.data
+
+    t^.consume_elements[handler]()
+    assert_equal(collected, [10, 20, 30])
+
+
+def test_tuple_consume_elements_destroys_once() raises:
+    var actions = List[String]()
+    var actions_ptr = UnsafePointer(to=actions).as_immutable()
+    comptime Observed = ObservableMoveOnly[actions_ptr.origin]
+
+    var t = (
+        Observed(1, actions_ptr),
+        Observed(2, actions_ptr),
+        Observed(3, actions_ptr),
+    )
+    assert_equal(actions_ptr[0].count("__del__"), 0)
+
+    @parameter
+    def handler[idx: Int](var elt: t.element_types[idx]):
+        # Discarding the owned `elt` runs its destructor exactly once.
+        _ = elt^
+
+    t^.consume_elements[handler]()
+    # Each element is destroyed once and `deinit self` disables the tuple's own
+    # destructor, so there is no double-free.
+    assert_equal(actions_ptr[0].count("__del__"), 3)
+
+
+def test_tuple_consume_elements_heterogeneous() raises:
+    var t = (String("hello"), 42, [1, 2, 3])
+    var got_str = String()
+    var got_int = 0
+    var got_sum = 0
+
+    @parameter
+    def handler[idx: Int](var elt: t.element_types[idx]):
+        comptime if idx == 0:
+            got_str = rebind_var[String](elt^)
+        elif idx == 1:
+            got_int = rebind_var[Int](elt^)
+        else:
+            var lst = rebind_var[List[Int]](elt^)
+            for x in lst:
+                got_sum += x
+
+    t^.consume_elements[handler]()
+    assert_equal(got_str, "hello")
+    assert_equal(got_int, 42)
+    assert_equal(got_sum, 6)
+
+
+def test_tuple_consume_elements_single() raises:
+    var t = (MoveOnly[Int](7),)
+    var collected = [0]
+
+    @parameter
+    def handler[idx: Int](var elt: t.element_types[idx]):
+        collected[idx] = elt.data
+
+    t^.consume_elements[handler]()
+    assert_equal(collected, [7])
+
+
+# Drives `consume_elements` in a generic context, where the element bound stays
+# `Movable & ImplicitlyDeletable`, so an empty tuple compiles (a concrete
+# `Tuple[]()` degrades its element type to a non-deletable `AnyType`).
+def _count_consumed[
+    *Ts: Movable & ImplicitlyDeletable
+](var t: Tuple[*Ts]) -> Int:
+    var count = 0
+
+    @parameter
+    def handler[idx: Int](var elt: t.element_types[idx]):
+        _ = elt^
+        count += 1
+
+    t^.consume_elements[handler]()
+    return count
+
+
+def test_tuple_consume_elements_empty() raises:
+    assert_equal(_count_consumed(Tuple[]()), 0)
+    assert_equal(_count_consumed((1, 2, 3)), 3)
 
 
 def main() raises:
