@@ -18,7 +18,8 @@ import faulthandler
 import os
 import signal
 import sys
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
@@ -45,7 +46,16 @@ from max._core.profiler import (
     kineto_is_enabled as _kineto_is_enabled,
 )
 from max._core.profiler import (
+    kineto_is_recording as _kineto_is_recording,
+)
+from max._core.profiler import (
     kineto_last_trace_error as _kineto_last_trace_error,
+)
+from max._core.profiler import (
+    kineto_range_begin as _kineto_range_begin,
+)
+from max._core.profiler import (
+    kineto_range_end as _kineto_range_end,
 )
 from max._core.profiler import (
     kineto_state as _kineto_state,
@@ -560,13 +570,64 @@ class _ProfilingNamespace:
         """``True`` between :meth:`start` and :meth:`stop`.
 
         Equivalent to ``state in {"warmup", "active"}``; ``False`` in
-        ``"idle"`` and ``"flushing"``.
+        ``"idle"`` and ``"flushing"``.  Reflects only this session API's
+        enable intent — it stays ``False`` during Dynolog daemon-driven
+        on-demand traces, when :meth:`range` annotations do record; gate
+        hot-path annotation work on :attr:`is_recording` instead.
 
         Cheap relative to constructing a trace name you would otherwise skip,
         but still crosses the Python/C++ FFI boundary on every call — cache
         the result if you need it inside a tight loop.
         """
         return _kineto_is_enabled()
+
+    @property
+    def is_recording(self) -> bool:
+        """``True`` while a trace is live and :meth:`range` spans record.
+
+        Covers traces of either origin — :meth:`start` via this API or a
+        Dynolog daemon-driven on-demand request — so it is the right gate
+        for eliding expensive range-name construction on the hot path:
+        unlike :attr:`is_enabled`, it does not opt the caller out of
+        daemon-trace annotation.  A single relaxed atomic load behind the
+        FFI boundary.
+        """
+        return _kineto_is_recording()
+
+    @contextmanager
+    def range(self, name: str, color: int = 0) -> Iterator[None]:
+        """Annotate a semantic CPU range in the trace.
+
+        Opens a named span on the calling thread for the duration of the
+        ``with`` block. The span is recorded by libkineto as a Chrome-trace
+        CPU activity and correlated to the GPU kernels launched inside it,
+        so it shows up as a labeled bar above the kernel timeline in
+        Perfetto/HTA. Use it to mark application-level phases — the
+        runtime already records every kernel launch automatically:
+
+        .. code-block:: python
+
+            session.profiling.start()
+            with session.profiling.range("prefill"):
+                model.execute(input_data)
+            session.profiling.stop()
+
+        Ranges may be nested. When the profiler is not recording, the
+        underlying begin/end calls reduce to a single predicted branch in
+        the runtime, so leaving these annotations in production code is
+        safe; only the Python-side overhead of entering a context manager
+        remains.
+
+        Args:
+            name: Label shown on the span in the trace viewer.
+            color: Reserved for a future color hint; currently not carried
+                into the trace (libkineto activities have no color channel).
+        """
+        _kineto_range_begin(name, color)
+        try:
+            yield
+        finally:
+            _kineto_range_end()
 
     def __enter__(self) -> _ProfilingNamespace:
         """Enter a profiling context: equivalent to calling :meth:`start`.

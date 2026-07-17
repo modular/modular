@@ -22,10 +22,21 @@ What it does:
      to the dynolog daemon and registers this PID. The segfault-fix
      (init-once) keeps the profiler proxy + IPC/config-poll thread alive after
      stop(), so the process sits "registered-but-idle".
-  2. Idles in an execute() loop (real CUDA add kernels) so an on-demand
+  2. Idles in a loop of real CUDA add kernels so an on-demand
      `dyno gputrace --pids <pid>` request has live GPU activity to capture,
      while MAX itself holds NO trace. The dynolog-driven trace is written by
      libkineto to the --log-file dyno passes, independent of MAX.
+
+The idle loop runs in one of two modes (HARNESS_MODE env var):
+  - "eager" (default): model.execute() per iteration — eager kernel
+    launches, the path verified for MXTOOLS-190.
+  - "replay": the model is captured into a CUDA graph BEFORE libkineto is
+    ever initialized, and the loop replays that graph exec. This is the
+    MXTOOLS-266 scenario: an on-demand trace must capture kernels launched
+    from a graph exec that was instantiated while CUPTI was cold (verified
+    to work on CUDA 13.1 — CUPTI no longer requires subscribing before
+    cuGraphInstantiate). The loop also reports a median per-iteration
+    latency at each heartbeat so disarm-overhead reversion is observable.
 
 Run order (see run script):
   - start dynolog daemon FIRST (IPC client connects at init)
@@ -35,6 +46,7 @@ Run order (see run script):
 """
 
 import os
+import statistics
 import sys
 import time
 from pathlib import Path
@@ -51,6 +63,15 @@ STOP_FILE = Path(os.environ.get("HARNESS_STOP_FILE", "/tmp/dyno_harness.stop"))
 INIT_TRACE = os.environ.get(
     "HARNESS_INIT_TRACE", "/tmp/harness_init_trace.json"
 )
+MODE = os.environ.get("HARNESS_MODE", "eager")
+# Fail fast on a typo'd mode: "replay" is the documented re-validation repro
+# for CUDA toolkit bumps (docs/internal/Profiling.md), and silently falling
+# back to eager would make that re-validation vacuously pass.
+if MODE not in ("eager", "replay"):
+    sys.exit(
+        f"[harness] unknown HARNESS_MODE: {MODE!r} (want 'eager' or 'replay')"
+    )
+GRAPH_KEY = 1
 
 
 def build_tiny_add_graph() -> Graph:
@@ -83,6 +104,14 @@ def main() -> None:
     a = Buffer.from_numpy(np.ones((4, 8), dtype=np.float32)).to(dev)
     b = Buffer.from_numpy(np.full((4, 8), 2.0, dtype=np.float32)).to(dev)
 
+    # In replay mode, instantiate the CUDA graph BEFORE libkineto ever runs,
+    # so the on-demand trace must capture kernels from a pre-existing exec.
+    captured_outputs = None
+    if MODE == "replay":
+        captured_outputs = model.capture(GRAPH_KEY, a, b)
+        model.replay(GRAPH_KEY, a, b)
+        print("[harness] CUDA graph captured with CUPTI cold", flush=True)
+
     # (1) Bring libkineto + Dynolog IPC listener up, then go idle.
     session.profiling.start()
     model.execute(a, b)
@@ -105,13 +134,30 @@ def main() -> None:
     print(f"[harness] touch {STOP_FILE} to exit", flush=True)
 
     i = 0
+    window: list[float] = []
     while not STOP_FILE.exists():
-        model.execute(a, b)
+        t0 = time.perf_counter()
+        # The range is a no-op while no trace is live; during a dyno-driven
+        # window it must appear as a named user_annotation span (MXTOOLS-266).
+        with session.profiling.range("harness-iter"):
+            if MODE == "replay":
+                model.replay(GRAPH_KEY, a, b)
+            else:
+                model.execute(a, b)
+        window.append(time.perf_counter() - t0)
         i += 1
         if i % 400 == 0:
-            print(f"[harness] heartbeat iter={i}", flush=True)
+            median_us = statistics.median(window) * 1e6
+            print(
+                f"[harness] heartbeat iter={i} mode={MODE}"
+                f" median_iter={median_us:.1f}us"
+                f" kineto_enabled={kineto_is_enabled()}",
+                flush=True,
+            )
+            window.clear()
         time.sleep(0.005)
     print(f"[harness] stop after {i} iters", flush=True)
+    del captured_outputs
 
 
 if __name__ == "__main__":

@@ -38,6 +38,9 @@ from max._core.profiler import (
     kineto_can_record,
     kineto_disable,
     kineto_is_enabled,
+    kineto_is_recording,
+    kineto_range_begin,
+    kineto_range_end,
 )
 from max.driver import CPU
 from max.engine import InferenceSession, ProfilingError
@@ -423,3 +426,75 @@ def test_wait_for_trace_succeeds_on_happy_path(
 
     assert target.exists()
     json.loads(target.read_text())
+
+
+# ---------------------------------------------------------------------------
+# Semantic ranges — session.profiling.range() (MXTOOLS-266).
+# ---------------------------------------------------------------------------
+
+
+def test_range_is_safe_when_not_recording() -> None:
+    # With no trace live, range() must reduce to safe no-ops: the C++ side
+    # gates on the recording flag and an unmatched end is tolerated, so user
+    # code can keep annotations in place permanently.
+    session = _new_session()
+    assert not session.profiling.is_recording
+    assert not kineto_is_recording()
+    with session.profiling.range("never-recorded"):
+        pass
+    # Raw bindings stay balanced-safe even when called unbalanced.
+    kineto_range_begin("never-recorded")
+    kineto_range_end()
+    kineto_range_end()
+
+
+@_skip_without_recording
+def test_range_appears_in_trace_as_user_annotation(
+    tmp_path: Path, _reset_profiling_output_path: InferenceSession
+) -> None:
+    # A range opened while the trace is live must surface as a named
+    # user_annotation CPU activity in the written JSON. The span is what
+    # users see above the kernel timeline in Perfetto/HTA, so its presence
+    # (not just lack of crash) is the contract.
+    target = tmp_path / "range-trace.json"
+    session = _reset_profiling_output_path
+    session.debug.profiling_output_path = str(target)
+
+    session.profiling.start()
+    # The recording gate (not just the enable flag) must be up while the
+    # trace is live — it is what range() records against.
+    assert session.profiling.is_recording
+    with session.profiling.range("py-span-outer"):
+        with session.profiling.range("py-span-inner"):
+            pass
+    session.profiling.stop()
+    assert not session.profiling.is_recording
+    session.profiling.wait_for_trace()
+
+    events = json.loads(target.read_text())["traceEvents"]
+    annotations = {
+        e["name"] for e in events if e.get("cat") == "user_annotation"
+    }
+    assert "py-span-outer" in annotations, annotations
+    assert "py-span-inner" in annotations, annotations
+
+
+@_skip_without_recording
+def test_range_open_at_stop_is_dropped_not_fatal(
+    tmp_path: Path, _reset_profiling_output_path: InferenceSession
+) -> None:
+    # A begin without its end at stop() time must not corrupt the trace or
+    # crash; the incomplete span is simply absent from the output.
+    target = tmp_path / "open-range-trace.json"
+    session = _reset_profiling_output_path
+    session.debug.profiling_output_path = str(target)
+
+    session.profiling.start()
+    kineto_range_begin("never-closed")
+    session.profiling.stop()
+    session.profiling.wait_for_trace()
+    kineto_range_end()  # late end after stop: safe no-op
+
+    events = json.loads(target.read_text())["traceEvents"]
+    names = {e.get("name") for e in events}
+    assert "never-closed" not in names

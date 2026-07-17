@@ -49,17 +49,111 @@ analyzer = TraceAnalysis(trace_dir="/tmp")
 print(analyzer.get_temporal_breakdown())
 ```
 
+## CLI invocation
+
+`max pipelines generate` (and `max pipelines benchmark`) honor a
+`--profiling-enabled` flag that arms libkineto automatically inside
+`configure_session()` — before model load and therefore before MLRT
+instantiates any CUDA graph. No Python wrapper is required:
+
+```bash
+max pipelines generate --model modularai/Llama-3.1-8B-Instruct-GGUF \
+    --prompt "Hello, world!" --max-new-tokens 64 --profiling-enabled
+```
+
+Arming at session-construction time captures the whole run, including model
+load and compilation. It is no longer *required* for CUDA-Graph workloads:
+CUPTI in CUDA 13.1 captures kernels launched from graph execs that were
+instantiated before profiling was armed, so a mid-run
+`session.profiling.start()` (or a Dynolog on-demand request) records
+graph-replay kernels too — verified on B200. An `atexit` hook flushes the
+trace on interpreter shutdown for callers that never call
+`session.profiling.stop()` explicitly.
+
+### Dynolog on-demand capture (no flags required)
+
+Any MAX process launched with `KINETO_USE_DAEMON=1` in its environment
+registers with a running [Dynolog](https://github.com/facebookincubator/dynolog)
+daemon at device initialization — `--profiling-enabled` is **not** required
+and the process holds no trace until asked. A single CLI invocation then
+captures any registered PID on demand:
+
+```bash
+dyno gputrace --pids <pid> --duration-ms 3000 --log-file /tmp/trace.json
+```
+
+libkineto writes the trace to the daemon-supplied path (suffixed with the
+PID), independent of `session.debug.profiling_output_path`. Set
+`session.debug.profiling_dynolog_enabled = False` (or
+`MODULAR_MAX_DEBUG_PROFILING_DYNOLOG_ENABLED=0`) to keep a daemon-mode
+process unregistered.
+
+### Enabling via `MODULAR_PROFILING_ENABLED`
+
+For indirect launches (CI runners, wrapper scripts, `max serve` under
+systemd), set the env var instead of the flag:
+
+```bash
+MODULAR_PROFILING_ENABLED=1 max pipelines generate ...
+```
+
+`1`/`true`/`yes`/`on` enable; `0`/`false`/`no`/`off` disable an explicit
+`profiling_enabled=True`.
+
+**Caveat for `bazelw run`.** Bazel sandboxes child processes and does
+**not** inherit arbitrary environment variables, so the env var above is
+filtered out when running via `./bazelw run`. Use the flag instead, or
+whitelist the env var with `--action_env`:
+
+```bash
+# ❌ Silently dropped — env var does not reach the sandbox.
+MODULAR_PROFILING_ENABLED=1 ./bazelw run //max/python/max/entrypoints:pipelines \
+    -- generate ...
+
+# ✅ Pass the flag through bazel run.
+./bazelw run //max/python/max/entrypoints:pipelines -- generate \
+    ... --profiling-enabled
+
+# ✅ Or whitelist the env var on the bazel command line.
+./bazelw run --action_env=MODULAR_PROFILING_ENABLED \
+    //max/python/max/entrypoints:pipelines -- generate ...
+```
+
+Direct invocations of the installed `max` binary (outside bazel) propagate
+the env var normally.
+
 ## Control surface
 
 The `session.profiling` namespace exposes the runtime lifecycle:
 
-| Method / property  | Effect                                                                                                                                                        |
-|--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `start()`          | Enable libkineto and subscribe to CUPTI. Idempotent — calling while enabled is a no-op.                                                                       |
-| `stop()`           | Flush and serialize the trace. Idempotent. Never raises on serialization failure — the error is recorded and surfaced by `wait_for_trace()`.                  |
-| `wait_for_trace()` | Block until the most recent `stop()` finishes writing. Raises `max.engine.ProfilingError` on serialization failure (see [Error reporting](#error-reporting)). |
-| `state`            | One of `"idle"`, `"active"`, `"flushing"` (plus `"warmup"` once the step-window state machine lands — see below).                                             |
-| `is_enabled`       | `True` while enabled. Cheap; use to elide expensive trace-name construction on the hot path.                                                                  |
+| Method / property  | Effect                                                                                                                                                                 |
+|--------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `start()`          | Enable the profiler. Idempotent — calling while enabled is a no-op.                                                                                                    |
+| `stop()`           | Flush and serialize the trace. Idempotent. Never raises on serialization failure — the error is recorded and surfaced by `wait_for_trace()`.                           |
+| `wait_for_trace()` | Block until the most recent `stop()` finishes writing. Raises `max.engine.ProfilingError` on serialization failure (see [Error reporting](#error-reporting)).          |
+| `state`            | One of `"idle"`, `"warmup"`, `"active"`, `"flushing"` (`"warmup"` is reserved for the step-window state machine — see the note under [Configuration](#configuration)). |
+| `is_enabled`       | `True` while enabled via this API. Stays `False` during Dynolog on-demand traces — gate hot-path annotation on `is_recording` instead.                                 |
+| `is_recording`     | `True` while a trace of either origin (session API or Dynolog on-demand) is live and `range()` spans record. Cheap; the right hot-path gate.                           |
+| `range(name)`      | Context manager annotating a named CPU span; see below.                                                                                                                |
+
+### Semantic ranges
+
+The runtime records every kernel launch automatically; `range()` is for
+marking *application-level* phases on top of that:
+
+```python
+session.profiling.start()
+with session.profiling.range("prefill"):
+    model.execute(input_data)
+session.profiling.stop()
+```
+
+The span appears as a `user_annotation` bar above the kernel timeline in
+Perfetto/HTA, and the GPU kernels launched inside it are correlated to it.
+Ranges nest. When no trace is live the underlying calls reduce to a single
+predicted branch in the runtime, so annotations are safe to leave in
+production code. Ranges also record during Dynolog-initiated on-demand
+traces — no `start()` required in the annotated process.
 
 ## Configuration
 

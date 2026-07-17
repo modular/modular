@@ -400,7 +400,7 @@ class DebugConfig:
     @property
     def profiling_dynolog_enabled(self) -> bool:
         """
-        Whether the Dynolog IPC listener is active. Defaults to ``True``. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_DYNOLOG_ENABLED`` environment variable. Currently a no-op; takes effect once Dynolog integration is available.
+        Opt a daemon-mode process out of Dynolog registration. Only has an effect when the process is launched with ``KINETO_USE_DAEMON=1`` -- that env var is what turns on-demand capture on (libkineto keys its IPC client on it), registering the PID at device creation so ``dyno gputrace`` works with no other setup. This knob then defaults to ``True`` and is the off switch. Mirrored by ``MODULAR_MAX_DEBUG_PROFILING_DYNOLOG_ENABLED``.
         """
 
     @profiling_dynolog_enabled.setter

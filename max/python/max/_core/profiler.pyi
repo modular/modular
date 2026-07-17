@@ -92,8 +92,49 @@ def kineto_is_enabled() -> bool:
     """
     Return ``True`` while the profiler is enabled.
 
-    Suitable for use on the hot path to elide expensive trace-name
-    construction when off.
+    Reflects only the session API's enable intent (``start()`` /
+    ``stop()``): it stays ``False`` during Dynolog daemon-driven on-demand
+    traces, when ranges do record.  To elide range-annotation work on the
+    hot path, gate on :func:`kineto_is_recording` instead.
+    """
+
+def kineto_is_recording() -> bool:
+    """
+    Return ``True`` while a trace is live and ranges record.
+
+    Covers traces of either origin — ``start()`` via the session API or a
+    Dynolog daemon-driven on-demand request — so it is the right hot-path
+    gate for eliding expensive range-name construction: unlike
+    :func:`kineto_is_enabled`, it does not opt the caller out of
+    daemon-trace annotation.  Single relaxed atomic load.
+    """
+
+def kineto_range_begin(name: str, color: int = 0) -> None:
+    """
+    Begin a semantic CPU range on the calling thread.
+
+    The range is recorded by libkineto as a Chrome-trace CPU span and
+    correlated to the GPU kernels launched while it is open.  When no
+    trace is live this is a single predicted branch, so calling it
+    unconditionally is safe — but constructing the ``name`` string still
+    costs Python-side work; gate on :func:`kineto_is_recording` in tight
+    loops (not :func:`kineto_is_enabled`, which stays ``False`` during
+    Dynolog daemon-driven traces even though ranges record).
+
+    Must be paired with :func:`kineto_range_end` on the same thread.
+    Prefer the ``session.profiling.range(...)`` context manager, which
+    guarantees pairing.  Unbalanced begins while a trace is live hold
+    memory per call until the per-thread depth cap (2^20), beyond which
+    they are dropped.
+    """
+
+def kineto_range_end() -> None:
+    """
+    End the innermost open semantic range on the calling thread.
+
+    Pairing is tracked per-thread in the C++ runtime: an end without a
+    matching begin (for example after the profiler was stopped between
+    the two calls) is a safe no-op.
     """
 
 def kineto_last_trace_error() -> str:

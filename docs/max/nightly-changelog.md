@@ -418,6 +418,27 @@ This version is still a work in progress.
   start with the profiler disabled and can call `start()` again; the parent
   retains its enabled state across the fork. (MAX itself launches
   workers with the `spawn` start method and is unaffected.)
+- `session.profiling.range(name)` is a new context manager that annotates a
+  named CPU span in the trace. The span appears as a `user_annotation` bar in
+  Perfetto/HTA with the GPU kernels launched inside it correlated to it, and
+  also records during Dynolog-initiated on-demand traces. When no trace is
+  live the calls reduce to a single predicted branch, so annotations are safe
+  to leave in production code. The companion `session.profiling.is_recording`
+  property reports whether a trace of either origin is live — the right gate
+  for eliding annotation work on hot paths (`is_enabled` reflects only the
+  session API and stays `False` during daemon-driven traces).
+- MAX processes launched with `KINETO_USE_DAEMON=1` now register with a
+  [Dynolog](https://github.com/facebookincubator/dynolog) daemon at device
+  initialization, so `dyno gputrace --pids <pid>` captures any such process
+  on demand with no profiling flags and no code changes. Set
+  `profiling_dynolog_enabled = False` (or
+  `MODULAR_MAX_DEBUG_PROFILING_DYNOLOG_ENABLED=0`) to opt a process out.
+- Profiling can now be armed and disarmed at runtime for CUDA-graph
+  (capture/replay) workloads: a mid-run `session.profiling.start()` or a
+  Dynolog `dyno gputrace` request captures kernels replayed from graphs that
+  were instantiated before profiling was enabled, and replay overhead reverts
+  when the trace stops. Enabling at session construction is no longer
+  required for these workloads.
 - This API is orthogonal to the existing `session.gpu_profiling()`
   (NVTX/Nsight) path. See `max/docs/profiling.md` in the repository for the
   full user guide.
