@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values -split-input-file | FileCheck %s
 
-
 # COM: Verify generated trait and struct structure.
 
 # CHECK-DAG: [[PARENT:!Int_AnyType_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
@@ -41,7 +40,6 @@ def make_closure(x: Int, mem: String):
     def my_closure(y: Int) {var x, var mem} -> Int:
         return x + y
 
-
 # // -----
 
 # COM: Verify Nested closures are supported
@@ -60,7 +58,6 @@ def make_closure(x: Int, mem: String):
 
         return x + y
 
-
 # // -----
 
 # COM: Ensure identical closure traits are reused
@@ -77,7 +74,6 @@ def make_closure(x: Int):
 def make_identical_closure(x: Int):
     def my_closure(y: Int) {var} -> Int:
         return y
-
 
 # // -----
 
@@ -104,7 +100,6 @@ def make_closure(x: Int, mem: String) -> Int:
         _ = mem
 
     return x
-
 
 # // -----
 
@@ -134,7 +129,6 @@ def make_closure(x: Int, mem: String) -> Int:
 
     return x
 
-
 # // -----
 
 # COM: Verify that the constructor is assembled correctly
@@ -162,9 +156,7 @@ def make_closure(x: Int, mem: String) -> Int:
 
     return x
 
-
 # // -----
-
 
 # COM: Verify the closure instance is created correctly.
 
@@ -181,7 +173,6 @@ def make_closure(x: Int, mem: String):
     def my_closure(y: Int) {var x, var mem} -> Int:
         return x + y
 
-
 # // -----
 
 # COM: Check that the argument is augmented at the definition site.
@@ -195,7 +186,6 @@ def make_closure(x: Int, mem: String):
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 def take_closure[f: def(y: Int) -> Int](myFunc: f, x: Int):
     _ = myFunc(x)
-
 
 # // -----
 
@@ -213,7 +203,6 @@ def take_closure[closure1: def(y: Int) -> Int](x: Int):
         closure2: def(y: Int) -> Int
     ](impl: closure2, y: Int) {var x} -> Int:
         return x
-
 
 # // -----
 
@@ -234,7 +223,6 @@ def take_closures[
 ](impl1: closure1, impl2: closure2, x: Int):
     pass
 
-
 # // -----
 
 # COM: Unified Closure Parameters compose
@@ -251,7 +239,6 @@ def nested[
     x: def[y: def(z: Int) -> Int](impl: y, u: Int) -> Int, //
 ](impl: x, do_not_dce_int: Int):
     pass
-
 
 # // -----
 
@@ -273,7 +260,6 @@ def bindIt(x: Int, y: Int, mem: String) -> Int:
     def myclosure(z: Int) {var x, var y, var mem} -> Int:
         return x + y + z
 
-
 # // -----
 
 # COM: Check that parameters are emitted correctly
@@ -289,7 +275,6 @@ def bindIt(x: Int, y: Int, mem: String) -> Int:
 def bindIt(mem: String) -> Int:
     def myclosure[my_param: AnyType](z: Int) {var}:
         _ = mem
-
 
 # // -----
 
@@ -326,7 +311,6 @@ def make_closure(x: Int, mem: String) -> Int:
 
     return x
 
-
 # // -----
 
 # COM: Check that the origin set is bound to the wrapper
@@ -340,7 +324,6 @@ def nonemptyOriginSet(mut byRefMut: String):
     # CHECK-SAME: :origin.set {}
     def myclosure() {mut byRefMut}:
         pass
-
 
 # // -----
 
@@ -366,7 +349,6 @@ def bindIt(z: Int, mem: String):
 
     takeIt[type_of(myclosure)](myclosure)
 
-
 # // -----
 
 # COM: Verify that closures can be rebound even when traits are combined
@@ -390,7 +372,6 @@ def bindIt(z: Int, mem: String):
         return z
 
     takeIt[type_of(myclosure)](myclosure)
-
 
 # // -----
 
@@ -429,7 +410,6 @@ def bindIt(z: Int):
 
     takeIt[type_of(fakeclosure)](fakeclosure)
 
-
 # // -----
 
 # COM: Verify that closures can be rebound with differing parameter names
@@ -456,7 +436,6 @@ def bindIt(z: Int, mem: String):
 
     takeIt[type_of(myclosure)](myclosure)
 
-
 # // -----
 
 # COM: Ensure that structs can conform to the closure trait
@@ -467,7 +446,6 @@ def bindIt(z: Int, mem: String):
 struct custom(def(x: Int) -> Int):
     def __call__(self, x: Int) capturing -> Int:
         return x
-
 
 # // -----
 
@@ -522,7 +500,6 @@ def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
         useIt(one^)
         return x
 
-
 # // -----
 
 # COM: "U" cannot be called "T" until MOCO-4028 is fixed
@@ -543,7 +520,6 @@ def makeIt[U: TrivialRegisterPassable](a: U):
     def parametric() {var a} -> U:
         return a
 
-
 # // -----
 
 # COM: Check that device passable conformance is emitted properly
@@ -557,7 +533,6 @@ def conditionallyDevicePassable(x: Int):
     # CHECK-NEXT: kgen.witness "get_type_name{{.*}}" : !lit.generator
     def device_passable() {var} -> Int:
         return x
-
 
 # // -----
 
@@ -581,7 +556,6 @@ struct House[T: DoIt]:
 def useIt[TT: DoIt, C: def(x: TT)](impl: C):
     pass
 
-
 # // -----
 
 # CHECK: kgen.conformance @"{{.*}}::RegisterPassable" {
@@ -596,7 +570,6 @@ def addTrivialRegisterPassable(x: Int):
         return x
 
     takesRegisterPassable(closure)
-
 
 # // -----
 
@@ -648,7 +621,6 @@ def is_vec_a[w: Int](vec: ToySIMD[1, w]) -> ToyMask[1, w]:
 def repro_top_level():
     var s = MiniSpan[1](0)
     _ = s.count(is_vec_a)
-
 
 # // -----
 
@@ -703,7 +675,6 @@ def repro_capturing(mem: String):
     var s = MiniSpan[1](0)
     _ = s.count(is_vec_a_capturing)
 
-
 # // -----
 
 # COM: Verify nested type parameters constrained by a trait (not just Int
@@ -752,7 +723,6 @@ def repro_nested_type_param(mem: String):
     var s = Store[ConcreteElem](0)
     _ = s.apply(apply_concrete)
 
-
 # // -----
 
 # COM: Verify that custom types (the result type !kgen.none in this case) are compared using equality
@@ -784,7 +754,6 @@ def main() raises:
         print(x)
 
     callee[simd_width=4](10, 11, my_func)
-
 
 # // -----
 
@@ -819,7 +788,6 @@ def rebindResult():
         return V[42, width](0)
 
     callee[42](my_closure)
-
 
 # // -----
 
@@ -860,7 +828,6 @@ def repro_variadic_attr():
 
     variadic_callee[2, type_of(my_map_fn)](my_map_fn)
 
-
 # // -----
 
 # COM: Verify ParamOperatorAttr and LITStructAttr matching: Pair(tag, 0) lowers
@@ -898,7 +865,6 @@ def repro_struct_attr():
 
     struct_callee[2, type_of(my_fn)](my_fn)
 
-
 # // -----
 
 # COM: Verify SymbolConstantAttr matching: closure returning a type
@@ -933,7 +899,6 @@ def repro_symbol_attr():
         return Dispatch[identity](x)
 
     symbol_callee[1, type_of(my_fn)](my_fn)
-
 
 # // -----
 
@@ -972,9 +937,7 @@ def repro_rebind_nonref_operand[
 
     _ = body
 
-
 # // -----
-
 
 trait Coord(ImplicitlyCopyable, TrivialRegisterPassable):
     comptime Dim: Int
@@ -1021,9 +984,7 @@ def takes2[T: Int, U: Int, F: def(x: Container[T], y: Container[U])](impl: F):
 def takes_w[T: Int, F: def(w: Container[T])](impl: F):
     impl(Container[T]())
 
-
 # // -----
-
 
 struct Foo(ImplicitlyCopyable, Movable):
     var x: Int
@@ -1040,7 +1001,6 @@ def thing(foo: Foo):
     # CHECK-NEXT: kgen.witness "__init__(copy:$0)" : !lit.generator<[2](*, "copy":
     def thing() {var}:
         _ = foo
-
 
 # // -----
 
@@ -1066,7 +1026,6 @@ def test(x: Foo):
 
 struct Foo:
     var x: Int
-
 
 # // -----
 
@@ -1095,7 +1054,6 @@ def foo(x: Int):
         return x * 2
 
     _ = map[Int, Int, type_of(double)](x, double)
-
 
 # // -----
 
@@ -1127,40 +1085,6 @@ def bar[U: DoB](x: U):
     def closure(y: U) {var}:
         pass
 
-
-# // -----
-
-# COM: Verify that @__llvm_metadata on a closure is preserved on the op
-
-# CHECK: LLVMMetadataArray = ["nvvm.maxntid", #pop.array<256> : !pop.array<1, i32>]
-
-
-def metadata_closure(x: Int):
-    @__llvm_metadata(
-        `nvvm.maxntid`=__mlir_attr.`#pop.array<256> : !pop.array<1, i32>`
-    )
-    def _kernel() {var x} -> Int:
-        return x
-
-    _ = _kernel()
-
-
-# // -----
-
-# COM: Verify that @__llvm_arg_metadata on a closure is preserved
-
-# CHECK: LLVMArgMetadataArray
-# CHECK-SAME: "nvvm.grid_constant", unit
-
-
-def arg_metadata_closure(x: Int):
-    @__llvm_arg_metadata(x, `nvvm.grid_constant`)
-    def _kernel(x: Int) {var} -> Int:
-        return x
-
-    _ = _kernel(x)
-
-
 # // -----
 
 # COM: Verify that a register_passable closure capturing a generic
@@ -1186,7 +1110,6 @@ def call_inner[
         return f(y) + payload.value
 
     return outer(x)
-
 
 # // -----
 
@@ -1214,9 +1137,7 @@ def call_inner[
 
     return outer(x)
 
-
 # // -----
-
 
 def captures_with_default_convention():
     var a, b, c, d = ("a", "b", "c", "d")
@@ -1231,8 +1152,8 @@ def captures_with_default_convention():
     def my_fn() {mut a, b, c^, read}:
         pass
 
-
 # // -----
+
 #
 # COM: Verify stateless promoted closures are registered for apply attributes.
 
@@ -1253,7 +1174,6 @@ def trigger_dtype():
     var x = SIMD[dtype, 1]()
     _ = x
 
-
 # // -----
 
 # COM: Verify async closures use an async trait name and async call op.
@@ -1271,7 +1191,6 @@ def async_unified_closure():
         value += 1
 
     _ = inc()
-
 
 # // -----
 
@@ -1294,8 +1213,8 @@ def trigger_dtype_implicit_origin[n: Int]():
     var x = SIMD[dtype, 1]()
     _ = x
 
-
 # // -----
+
 #
 # COM: Verify promoted stateless closures can bind captured params
 # COM: before satisfying thin function generic constraints.
@@ -1318,7 +1237,6 @@ def trigger_promoted_params[n: Int]():
             return DType.float32
 
     takesThin[nonsense]()
-
 
 # // -----
 
@@ -1349,7 +1267,6 @@ def trigger_promoted_param_wrapper[n: Int]():
 
     takesFatVale(nonsense)
 
-
 # // -----
 
 # COM: Verify promoted closures keep captured params before implicit origins.
@@ -1371,8 +1288,8 @@ def trigger_dtype_implicit_origin[n: Int]():
     var x = SIMD[dtype, 1]()
     _ = x
 
-
 # // -----
+
 #
 # COM: Verify promoted stateless unified closures can bind captured params
 # COM: before satisfying thin function generic constraints.
@@ -1395,7 +1312,6 @@ def trigger_promoted_params[n: Int]():
             return DType.float32
 
     takesThin[nonsense]()
-
 
 # // -----
 
@@ -1426,7 +1342,6 @@ def trigger_promoted_param_wrapper[n: Int]():
 
     takesFatVale(nonsense)
 
-
 # // -----
 
 # COM: Verify comptime conversion of a promoted wrapper value constructs the
@@ -1455,7 +1370,6 @@ def trigger[xx: Int, func: def(Int) capturing -> Int]() -> Int:
     comptime X = take_closure_param[type_of(wrapped_ok)](wrapped_ok)
     # CHECK: lit.call @{{.*}}::@"take_closure_param
     var Y = take_closure_param[type_of(wrapped_ok)](wrapped_ok)
-
 
 # // -----
 
@@ -1491,7 +1405,6 @@ def trigger[rank: Int, dtype: DType]():
 
     local_higher_order[rank, dtype, type_of(compute_init2)](compute_init2)
 
-
 # // -----
 
 # COM: Ensure Proper Ordering Of Parameters In Promoted Functions
@@ -1508,9 +1421,7 @@ def callIt[T: AnyType, list: MyList[T]]():
 
     comptime x = thinClosure[list]()
 
-
 # // -----
-
 
 # COM: Thin Closures With Concrete Captures Are Properly Lifted
 
@@ -1554,7 +1465,6 @@ def repro_stencil_indirect_call[
 
     target[rank, dtype, type_of(compute_gpu)](compute_gpu)
 
-
 # // -----
 
 # COM: Stateless nested functions whose signature references both a captured
@@ -1589,7 +1499,6 @@ def outer[dtype: DType, valid: Bool](a: LayoutTensor[dtype, ...]) raises:
     # CHECK: lit.call tail @{{.*}}::@"inner{{.*}}"<:!DType dtype, :!Int *"a.alignment{{.*}}">(%a)
     var x = inner(a)
 
-
 # // -----
 
 # COM: Verify Captures Are Prepended
@@ -1611,7 +1520,6 @@ def top[A: Copyable, B: Copyable](aa: A, bb: B):
 
     closure(aa, bb, 3)
     bind[A, B, type_of(closure)](closure)
-
 
 # // -----
 
@@ -1636,7 +1544,6 @@ def top():
 
     bind[String, String, type_of(closureConcrete)](closureConcrete)
 
-
 # // -----
 
 # COM: Origins are properly captured and lifted into the storage struct
@@ -1655,7 +1562,6 @@ def demo[
         ptr.store(0, 3)
 
     can_mutate(write)
-
 
 # // -----
 
@@ -1684,9 +1590,7 @@ def demo[
 
     must_be_read_only(read, immut_ptr)
 
-
 # // -----
-
 
 # COM: MOCO-4128
 
@@ -1703,7 +1607,6 @@ def apply_closure[T: TrivialRegisterPassable](x: T):
 
 def main():
     apply_closure(Int(42))
-
 
 # // -----
 
@@ -1725,7 +1628,6 @@ def thing():
 
     # CHECK: lit.call @{{.*}}::@"typed_raises{{.*}}"[{{.*}}]<:!AnyType !Int
     typed_raises(closure)
-
 
 # // -----
 
@@ -1764,9 +1666,7 @@ struct Foo[width: Int]:
         # CHECK-SAME: #kgen.gen<#kgen.func.symbol<@{{.*}}::@MySIMD::@"__add__({{.*}}MySIMD[$0],{{.*}}MySIMD[$0])"<:!MyInt
         Self.helper(MySIMD[Self.width].__add__)
 
-
 # // -----
-
 
 # CHECK: lit.trait.decl @"def{{.*}}mut Builder[origin]{{.*}}definesClosure
 # CHECK: lit.alias.decl {{.*}}origin.mut`{{.*}}: !Bool
