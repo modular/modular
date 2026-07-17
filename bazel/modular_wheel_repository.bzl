@@ -49,6 +49,7 @@ def _rebuild_wheel(rctx):
     rctx.execute(["mkdir", "-p", "max/_mlir/_mlir_libs"])
     rctx.execute(["bash", "-c", "mv */platlib/max/_mlir/_mlir_libs/_mlir.*.so max/_mlir/_mlir_libs/"])
 
+    shared_lib_ext = "dylib" if rctx.attr.platform == "macos_arm64" else "so"
     rctx.file(
         "BUILD.bazel",
         """
@@ -124,7 +125,7 @@ cc_import(
     name = "max_lib",
     shared_library = glob(["modular/lib/libmax.*"])[0],
     visibility = ["//visibility:public"],
-    data = glob(["modular/lib/*.so"]),
+    data = glob(["modular/lib/*.SHARED_LIB_EXT"]),
     deps = [":" + dep + "_lib" for dep in INDIRECT_DEPENDENCIES] + select({
         "@//:linux_x86_64": [":NVPTX_lib", ":nixl_lib"],
         "@//:linux_aarch64": [":NVPTX_lib"],
@@ -143,7 +144,7 @@ mojo_import(
     mojodeps = ["modular/lib/mojo/matmul_rs.mojoc"],
     visibility = ["//visibility:public"],
 )
-""",
+""".replace("SHARED_LIB_EXT", shared_lib_ext),
     )
 
 rebuild_wheel = repository_rule(
