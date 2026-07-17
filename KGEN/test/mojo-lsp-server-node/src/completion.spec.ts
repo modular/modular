@@ -1,4 +1,5 @@
 import * as assert from "assert";
+import * as path from "path";
 import { Document, LanguageServer } from "./harness";
 import {
   CompletionItemKind,
@@ -67,6 +68,69 @@ import std.builtin.
       completions.some(
         (i) => i.label === "bool" && i.kind! === CompletionItemKind.Module
       )
+    );
+  });
+
+  // Imports can resolve through regular directories, not just packages with
+  // an __init__.mojo, so completion should offer plain source directories
+  // too. `dir` here is a regular directory next to the opened document.
+  //
+  // The on-disk consumer.mojo is valid Mojo (so it stays lintable); we open
+  // it with in-memory content containing the incomplete import, using the
+  // real file:// URI so the document's directory is searched for imports.
+  it("should complete source directories in imports", async function () {
+    let file = path.resolve(
+      "KGEN/test/mojo-lsp-server-node/data/import_dir/consumer.mojo"
+    );
+    let doc = new Document(
+      server,
+      `file://${file}`,
+      `import d
+`
+    );
+    await doc.open();
+
+    let completions = await doc.complete(doc.findFirstRange("import d").end);
+    assert.ok(completions);
+    assert.ok(
+      completions.some(
+        (i) => i.label === "dir" && i.kind! === CompletionItemKind.Folder
+      ),
+      "expected directory 'dir' among: " +
+        completions.map((i) => i.label).join(", ")
+    );
+  });
+
+  it("should complete nested imports through source directories", async function () {
+    let file = path.resolve(
+      "KGEN/test/mojo-lsp-server-node/data/import_dir/consumer.mojo"
+    );
+    let doc = new Document(
+      server,
+      `file://${file}`,
+      `import dir.
+`
+    );
+    await doc.open();
+
+    let completions = await doc.complete(
+      doc.findFirstRange("import dir.").end
+    );
+    assert.ok(completions);
+    assert.ok(
+      completions.some(
+        (i) => i.label === "module" && i.kind! === CompletionItemKind.Module
+      ),
+      "expected module 'module' among: " +
+        completions.map((i) => i.label).join(", ")
+    );
+    assert.ok(
+      completions.some(
+        (i) =>
+          i.label === "nested_dir" && i.kind! === CompletionItemKind.Folder
+      ),
+      "expected nested directory 'nested_dir' among: " +
+        completions.map((i) => i.label).join(", ")
     );
   });
 

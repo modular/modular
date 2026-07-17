@@ -1033,6 +1033,51 @@ auto SharedState::lookupAllDeclsWithName(StringRef name, SMLoc loc,
   return entry;
 }
 
+/// Mojo import kinds. Enumerator order defines resolution priority: a
+/// lower value outranks a higher one when several candidates share a stem.
+enum class MojoImportKind {
+  SourcePackage,
+  Precompiled,
+  SourceModule,
+  LegacyPkg,
+  SourceDir,
+};
+
+static std::optional<MojoImportKind>
+classifyMojoImportKind(const std::filesystem::path &path) {
+  if (Filesystem::isMojoSourcePackagePath(path))
+    return MojoImportKind::SourcePackage;
+
+  std::error_code ec;
+  if (std::filesystem::is_directory(path, ec) && !ec)
+    return MojoImportKind::SourceDir;
+
+  if (Filesystem::isMojoBinaryPackagePath(path)) {
+    auto ext = path.filename().extension();
+    return ext == ".mojopkg" ? MojoImportKind::LegacyPkg
+                             : MojoImportKind::Precompiled;
+  }
+
+  if (Filesystem::isMojoSourceFile(path))
+    return MojoImportKind::SourceModule;
+
+  return std::nullopt;
+}
+
+/// Return true if the import candidate (kind, path) takes precedence over
+/// the other. Higher-priority kinds win; between candidates of
+/// the same kind (e.g. directories foo and foo.bar, which share the stem
+/// 'foo'), the lexicographically smaller filename wins so the result does not
+/// depend on the platform's directory iteration order.
+static bool takesImportPrecedence(MojoImportKind kind,
+                                  const std::filesystem::path &path,
+                                  MojoImportKind otherKind,
+                                  const std::filesystem::path &otherPath) {
+  if (kind != otherKind)
+    return kind < otherKind;
+  return path.filename() < otherPath.filename();
+}
+
 /// Resolve the absolute path for a given module name within the provided
 /// directory. Returns nullopt if the module cannot be found.
 static std::optional<std::string> resolveModulePath(SharedState &shared,
@@ -1052,55 +1097,31 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
   if (ec)
     return std::nullopt;
 
-  std::optional<path> sourcePkgPath, sourceDirPath, pkgPath, legacyPkgPath,
-      sourceModulePath;
-
   // Gets the name of the file or directory in a case sensitive way. On non-case
   // sensitive systems we cannot just do `path / moduleName` since the
   // constructed path will not adhere to case sensitivity.
+  std::optional<std::pair<MojoImportKind, std::filesystem::path>> bestMatch;
   for (const auto &entry : iter) {
     if (entry.path().filename().stem().string() != moduleName)
       continue;
 
-    // Mojo source package
-    if (Filesystem::isMojoSourcePackagePath(entry.path())) {
-      sourcePkgPath = std::filesystem::absolute(entry.path());
+    auto kind = classifyMojoImportKind(entry.path());
+
+    if (ignorePrebuilt && (kind == MojoImportKind::Precompiled ||
+                           kind == MojoImportKind::LegacyPkg)) {
       continue;
     }
-    // Source directory
-    std::error_code ec;
-    if (std::filesystem::is_directory(entry.path(), ec) && !ec) {
-      sourceDirPath = std::filesystem::absolute(entry.path());
-      continue;
+
+    if (kind && (!bestMatch ||
+                 takesImportPrecedence(*kind, entry.path(), bestMatch->first,
+                                       bestMatch->second))) {
+      bestMatch =
+          std::make_pair(*kind, std::filesystem::absolute(entry.path()));
     }
-    path ext = entry.path().filename().extension();
-    // Precompiled file
-    if (!ignorePrebuilt && ext == ".mojoc") {
-      pkgPath = std::filesystem::absolute(entry.path());
-      continue;
-    }
-    // Deprecated file extension
-    if (!ignorePrebuilt && ext == ".mojopkg") {
-      legacyPkgPath = std::filesystem::absolute(entry.path());
-      continue;
-    }
-    // Source path
-    if (ext == ".mojo")
-      sourceModulePath = std::filesystem::absolute(entry.path());
   }
 
-  // Priority: source package dir > precompiled (.mojoc) > source file (.mojo) >
-  // legacy (.mojopkg).
-  if (sourcePkgPath)
-    return sourcePkgPath;
-  if (pkgPath)
-    return pkgPath;
-  if (sourceModulePath)
-    return sourceModulePath;
-  if (legacyPkgPath)
-    return legacyPkgPath;
-  if (sourceDirPath)
-    return sourceDirPath;
+  if (bestMatch)
+    return bestMatch->second;
 
   return std::nullopt;
 }
@@ -1170,23 +1191,28 @@ void SharedState::registerSourcePackageChildren(ASTDecl &packageDecl) {
 
   // Collect the directory entries and sort them, so children are registered in
   // a deterministic order across platforms.
-  SmallVector<std::filesystem::path> paths;
+  std::map<std::string, std::pair<std::filesystem::path, MojoImportKind>>
+      packageChildren;
   for (const auto &entry : std::filesystem::directory_iterator(directory, ec)) {
-    if (ec)
-      break;
-    paths.push_back(entry.path());
-  }
-  llvm::sort(paths, [](const std::filesystem::path &a,
-                       const std::filesystem::path &b) {
-    return a.filename().string() < b.filename().string();
-  });
-
-  for (const std::filesystem::path &path : paths) {
-    bool isSourcePackage = Filesystem::isMojoSourcePackagePath(path);
-    bool isSourceModule = path.extension() == ".mojo";
-    if (!isSourcePackage && !isSourceModule)
+    std::optional<MojoImportKind> kind = classifyMojoImportKind(entry.path());
+    if (!kind)
       continue;
-    std::string name = path.filename().replace_extension().generic_string();
+    std::string name =
+        entry.path().filename().replace_extension().generic_string();
+    auto it = packageChildren.find(name);
+    if (it == packageChildren.end() ||
+        takesImportPrecedence(*kind, entry.path(), it->second.second,
+                              it->second.first)) {
+      packageChildren[name] = {entry.path(), *kind};
+    }
+  }
+
+  for (const auto &[name, value] : packageChildren) {
+    std::filesystem::path path = value.first;
+    MojoImportKind kind = value.second;
+    if (kind == MojoImportKind::Precompiled ||
+        kind == MojoImportKind::LegacyPkg)
+      continue;
     // The package's own __init__ is resolved separately by resolveBody.
     if (name == "__init__")
       continue;
@@ -1195,10 +1221,12 @@ void SharedState::registerSourcePackageChildren(ASTDecl &packageDecl) {
     // __init__, or __init__ itself).
     if (parentState->nestedModules.count(nameAttr))
       continue;
-    auto fileLoc = createLocation(
-        isSourcePackage ? getPackageInitPath(path.string()) : path.string(),
-        /*line=*/1, /*column=*/1);
-    if (isSourcePackage) {
+    auto fileLoc = createLocation(kind == MojoImportKind::SourcePackage
+                                      ? getPackageInitPath(path.string())
+                                      : path.string(),
+                                  /*line=*/1, /*column=*/1);
+    if (kind == MojoImportKind::SourcePackage ||
+        kind == MojoImportKind::SourceDir) {
       // Registered by the directory scan so it gets no import location here.
       // We'll resolve that location if/when it's actually resolved.
       createPackageState(nameAttr, path.string(), *parentState, fileLoc,
@@ -1393,17 +1421,16 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
   }
 
   // Check if the path is a precompiled file or binary package.
-  StringRef pathRef(*modulePath);
-  if (pathRef.ends_with(".mojoc") || pathRef.ends_with(".mojopkg"))
+  if (Filesystem::isMojoBinaryPackagePath(*modulePath))
     return &createBinaryPackageState(loc, declNameAttr, *modulePath,
                                      *parentState);
 
   // Open + lex the module source file.
   SMLoc openLoc =
       parentState->importLoc.isValid() ? parentState->importLoc : loc;
-  const llvm::MemoryBuffer *moduleBuffer = openModuleFile(pathRef, openLoc);
+  const llvm::MemoryBuffer *moduleBuffer = openModuleFile(*modulePath, openLoc);
   if (!moduleBuffer)
-    return notFound("unable to resolve imported module '" + pathRef + "'");
+    return notFound("unable to resolve imported module '" + *modulePath + "'");
   auto fileLoc = createLocation(moduleBuffer->getBufferIdentifier(), /*line=*/1,
                                 /*column=*/1);
   return &createModuleState(declNameAttr, moduleBuffer, *parentState, fileLoc);
