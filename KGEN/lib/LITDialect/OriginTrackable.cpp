@@ -703,8 +703,6 @@ static Value findArgPassedToVariadicConstructor(Value val) {
 SmallVector<Value>
 OriginTrackable::decodeIndividualVariadicArguments(Value callArgVal,
                                                    TypedAttr &extraOrigin) {
-  // TODO: Despite the name, this is used for VariadicList as well. It gets the
-  // argument to the VariadicList/VariadicPack constructor.
   auto ctorArg = findArgPassedToVariadicConstructor(callArgVal);
   assert(ctorArg && "couldn't decode variadic information!");
 
@@ -714,9 +712,11 @@ OriginTrackable::decodeIndividualVariadicArguments(Value callArgVal,
   } else if (ctorArg.getDefiningOp<ParamConstantOp>()) {
     // Zero argument lists/packs are kgen.param.constant. They have no elements.
   } else if (auto pack = ctorArg.getDefiningOp<RefPackCreateOp>()) {
-    // Handle variadic packs.
+    // Handle variadic packs. They are made by rebinding each reference into a
+    // common origin union type.  Strip the rebind off so each operand reference
+    // has its original origin, not the union.
     for (auto elt : pack.getOperands())
-      result.push_back(elt);
+      result.push_back(RebindOp::strip(elt));
   } else if (auto fromPointerPackOp =
                  ctorArg.getDefiningOp<RefPackFromPointerPackOp>()) {
     // This is either a RefPackFromPointerPackOp directly.

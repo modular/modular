@@ -10,6 +10,7 @@
 
 # RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-parameters -verify-diagnostics
 
+def use_any[*Ts: AnyType](*args: *Ts): pass
 
 # ===----------------------------------------------------------------------=== #
 # Interior Origin Handling
@@ -154,3 +155,10 @@ def test_rederive_after_mutation_in_block(cond: Bool, mut list: MyListInterior[I
         list.mutate() # expected-note {{origin was invalidated here}}
         # expected-error @+1 {{use of invalidated interior reference}}
         r += 1
+
+# MOCO-4344 - Variadic packs + interior origins.
+def test_rederive_interior_in_variadic_pack(list: MyListInterior[Int]):
+    var n = 0
+    ref k = n
+    use_any(list[])
+    use_any(k, list[])
