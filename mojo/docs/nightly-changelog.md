@@ -900,6 +900,13 @@ This version is still a work in progress.
 
 ## Fixed
 
+- [#6784](https://github.com/modular/modular/issues/6784),
+  [#6434](https://github.com/modular/modular/issues/6434) - `math.sqrt` on
+  `Float64` now works on NVIDIA GPU. It lowers to the IEEE correctly-rounded
+  hardware sqrt (`sqrt.rn.f64`) instead of being rejected at compile time.
+  NVIDIA has no approximate f64 sqrt, so the `Float32` fast path continues to
+  use `sqrt.approx.ftz.f32`.
+
 - [#6755](https://github.com/modular/modular/issues/6755) - Volatile loads are
   no longer removed when their results are unused.
 

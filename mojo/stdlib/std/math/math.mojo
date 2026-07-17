@@ -244,9 +244,11 @@ def sqrt[
     elif is_nvidia_gpu():
         comptime if dtype in (DType.float16, DType.bfloat16):
             return _sqrt_nvvm(x.cast[DType.float32]()).cast[dtype]()
-        comptime assert (
-            dtype != DType.float64
-        ), "DType.float64 is not supported for approx sqrt on NVIDIA GPU"
+        comptime if dtype == DType.float64:
+            # NVIDIA has no approximate f64 sqrt (`sqrt.approx.d` does not
+            # exist); use the IEEE correctly-rounded hardware sqrt via the
+            # generic intrinsic, which lowers to `sqrt.rn.f64`.
+            return _llvm_unary_fn["llvm.sqrt"](x)
         return _sqrt_nvvm(x)
     elif is_apple_gpu():
         return _llvm_unary_fn["llvm.air.sqrt"](x)
