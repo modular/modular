@@ -29,10 +29,19 @@ This file is parametrized by compile-time defines so one source drives a
 `mask × depth × P` sweep (see BUILD):
   * `-D FA4_1Q_SPLITK_CACHE=N`  sets the KV cache length, which STEERS the
         dispatch's auto-selected partition count P. The production dispatch has
-        no compile-time P knob (it auto-picks from occupancy + KV length); with
-        this file's tiny prompt the heuristic's `by_cache` term dominates, so
-        `P == floor_pow2(N // 512)`: 1024->2, 2048->4, 4096->8 (512->1). The
-        test replicates the same heuristic to know the realized P.
+        no compile-time P knob (it auto-picks the largest P from the candidate
+        set {16,10,8,6,4,2} -- no longer pow2-only -- whose clusters all fit one
+        GPC-fragmented wave, bounded by KV length); with this file's tiny prompt
+        the `by_cache = N // 512` term dominates, so for the default 8-kv-head
+        shape P is the largest candidate C with C <= N//512 and raw_grid_1q <=
+        clusters_per_wave[C]: 1024->2, 2048->4, 3072->6, 4096->8, 5120->10
+        (512->1). P=16 needs raw_grid_1q <= 7 (the GPC cap on 16-CTA clusters),
+        unreachable at 8 kv-heads -- see FA4_1Q_SPLITK_KVHEADS. The test replays
+        the same GPC-aware scan (`clusters_per_wave`) to know the realized P.
+  * `-D FA4_1Q_SPLITK_KVHEADS=H`  sets num_kv_heads (default 8; num_q_heads =
+        8*H). raw_grid_1q == H for this harness, so a P=16 target uses H=4
+        (raw_grid_1q=4 <= 7) with CACHE=8192 (by_cache=16) to launch a genuine
+        16-CTA cluster.
   * `-D FA4_1Q_SPLITK_MASK=M`   selects the mask:
         0=Null, 1=Causal, 2=Chunked, 3=SlidingWindowCausal,
         4=SlidingWindowNonCausal.
@@ -57,7 +66,7 @@ from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
 from std.sys import get_defined_int, get_defined_bool
 
-from std.gpu.host import DeviceContext, DeviceAttribute
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from kv_cache.types import (
@@ -65,6 +74,9 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
+from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    clusters_per_wave,
+)
 from nn.attention.mha_mask import (
     MHAMask,
     NullMask,
@@ -107,13 +119,22 @@ def execute_combine_test[
     comptime USE_SINK = get_defined_bool["FA4_1Q_SPLITK_SINK", False]()
     comptime sink_layout = Layout.row_major(UNKNOWN_VALUE)
 
-    # gpt-oss-20b-like shape: 64 q-heads, 8 kv-heads (group 8).
-    comptime num_q_heads = 64
-    comptime kv_params = KVCacheStaticParams(num_heads=8, head_size=head_size)
+    # gpt-oss-20b-like shape: 64 q-heads, 8 kv-heads (group 8). `num_kv_heads` is
+    # steerable so a P=16 target can shrink the work-item count: with this tiny
+    # prompt (one tile), batch 1, and fuse_gqa, raw_grid_1q == num_kv_heads, and
+    # the GPC-aware dispatch only picks P=16 when raw_grid_1q <=
+    # clusters_per_wave[16] (== 7 on B200). The _p16 targets set KVHEADS=4
+    # (raw_grid_1q=4); the default 8 keeps every other target byte-identical.
+    # Group ratio stays 8.
+    comptime num_kv_heads = get_defined_int["FA4_1Q_SPLITK_KVHEADS", 8]()
+    comptime group = 8
+    comptime num_q_heads = num_kv_heads * group
+    comptime kv_params = KVCacheStaticParams(
+        num_heads=num_kv_heads, head_size=head_size
+    )
     comptime dtype = DType.bfloat16
     comptime page_size = 128
     comptime kv_heads = kv_params.num_heads
-    comptime group = num_q_heads // kv_params.num_heads
     comptime num_layers = 1
     comptime layer_idx = 0
     # head_size in {64,128} / page_size=128 -> FA4 1Q BN == 128 == page_size:
@@ -121,29 +142,36 @@ def execute_combine_test[
     comptime BN = 128
 
     var valid_length = 2
-    # Shape-driven split-K: the dispatch auto-selects P from occupancy + KV
-    # length (no compile-time P knob). We steer P via the cache length -- with
-    # this tiny prompt the heuristic's `by_cache = max_cache_valid_length // 512`
-    # term dominates, so P == floor_pow2(cache_length // 512):
-    #   512 -> 1, 1024 -> 2, 2048 -> 4, 4096 -> 8.
+    # Shape-driven split-K: the dispatch auto-selects P (no compile-time P knob);
+    # we steer it via cache length + kv-head count (the GPC-aware scan below
+    # mirrors the dispatch to recover the realized P).
     var cache_length = get_defined_int["FA4_1Q_SPLITK_CACHE", 1024]()
     var num_keys = cache_length + valid_length
     var total_length = valid_length
     var batch_size = 1
 
-    # Replicate the dispatch's auto-P heuristic (sm100/dispatch.mojo) so the test
-    # knows the realized cluster size. The prompt is tiny (valid_length = 2 << any
-    # 2Q tile), so the 2Q grid is exactly one prompt tile and (with fuse_gqa
-    # folding the 64 q-heads into 8 kv-heads) raw_grid_2q = num_kv_heads *
-    # batch_size. On B200 `by_grid` is then large, so `by_cache` selects P.
-    # Same inputs + same formula as the dispatch => this P IS the launched P.
-    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
-    var grid_threshold = UInt32(sm_count // 2)
-    var raw_grid_2q = UInt32(kv_heads * batch_size)
-    var by_grid = grid_threshold // max(raw_grid_2q, UInt32(1))
+    # Replicate the dispatch's GPC-aware auto-P scan (sm100/dispatch.mojo) so the
+    # test knows the realized cluster size. The prompt is tiny (valid_length = 2
+    # << any 1Q tile), so there is exactly one prompt tile and (with fuse_gqa
+    # folding the q-heads into the kv-heads) raw_grid_1q = num_kv_heads *
+    # batch_size. The dispatch picks the LARGEST pow2 C (16..2) with C <= by_cache
+    # AND raw_grid_1q <= clusters_per_wave[C] (GPC co-residency), else P=1.
+    # Same inputs + same helper as the dispatch => this P IS the launched P.
+    var raw_grid_1q = UInt32(kv_heads * batch_size)
     var by_cache = UInt32(cache_length) // UInt32(512)
-    var np = min(min(by_grid, by_cache), UInt32(8))
-    var P = Int(8 if np >= 8 else (4 if np >= 4 else (2 if np >= 2 else 1)))
+    var P: Int = 1
+    var chosen: Bool = False
+    # Mirror sm100/dispatch.mojo's candidate scan EXACTLY (descending, the first
+    # /largest feasible wins) so the predicted P equals the launched P. The
+    # candidate set is no longer pow2-only: 6 and 10 fill the occupancy gaps
+    # between the pow2 rungs. Keep this list in sync with SPLITK_CANDIDATES.
+    comptime for C in [16, 10, 8, 6, 4, 2]:
+        comptime fits_wave = UInt32(
+            clusters_per_wave[C, ctx.default_device_info.sm_count]()
+        )
+        if (not chosen) and UInt32(C) <= by_cache and raw_grid_1q <= fits_wave:
+            chosen = True
+            P = C
 
     # Front-loaded balanced split (matches `splitk_window`); diagnostic only
     # here -- the combine writer emits the FULL O, so the oracle is full-range.

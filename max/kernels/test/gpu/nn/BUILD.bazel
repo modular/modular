@@ -419,6 +419,12 @@ _FILECHECK_TESTS = [
             "test_mla_prefill_per_token_scale_paged.mojo",
             "test_mla_prefill_vhead_repro.mojo",
             "_paged_prefill_test_utils.mojo",
+            # SM100 FA4 1Q split-K combine test: fully covered by the explicit
+            # b200-gated (mask, depth, P) registrations below. Exclude the default
+            # catch-all target, which would otherwise be gated only by //:has_gpu
+            # and fail to COMPILE on non-B200 GPUs -- its default config reaches
+            # clusters_per_wave(), whose comptime LUT models B200/B300 only.
+            "attention/test_mha_sm100_1q_splitk_lse.mojo",
             # Dtype-parameterized 4-wave conv test (explicit per-dtype
             # targets are declared below).
             "test_amd_4wave_conv_dtypes.mojo",
@@ -443,9 +449,11 @@ _FILECHECK_TESTS = [
 # compared directly to `mha_gpu_naive` over the SAME mask + full key range.
 # `-D FA4_1Q_SPLITK_MASK` selects the mask (0=null,1=causal,2=chunked,
 # 3=swcausal,4=swnoncausal); `-D FA4_1Q_SPLITK_DEPTH` selects head_size.
-# Committed (gates the M4 sign-off): {null,causal} x {64,128} x P{2,4,8}.
+# Committed (gates the M4 sign-off): {null,causal} x {64,128} x P{2,4,6,8,10}.
+# P=6 (cache 3072) and P=10 (cache 5120) are the non-pow2 cluster sizes; the
+# combine is P-general (all P partitions write their own, possibly uneven, band).
 # Discovery (start_column>0; chunked@P8 also exercises M6 empty partitions):
-# {chunked,swcausal,swnoncausal} x {64} x P{2,4,8}.
+# {chunked,swcausal,swnoncausal} x {64} x P{2,4,6,8,10}.
 # depth=128 (M4.4 / #36): TWO independent depth-128 bugs, both now FIXED, so
 # ALL masks pass and are committed (no `manual` targets remain):
 #   1. The split-KV load path (num_qk_stages=2, depth>=128) did not window its
@@ -514,7 +522,9 @@ _FILECHECK_TESTS = [
             for p in [
                 2,
                 4,
+                6,
                 8,
+                10,
             ]
         ] + [
             (
@@ -531,13 +541,16 @@ _FILECHECK_TESTS = [
             for p in [
                 2,
                 4,
+                6,
                 8,
+                10,
             ]
         ]
     )
 ]
 
-# WINDOWED masks (chunked / sliding-window) at depth 128, swept over P{1,2,4,8}.
+# WINDOWED masks (chunked / sliding-window) at depth 128, swept over
+# P{1,2,4,6,8,10} (6 and 10 are the non-pow2 cluster sizes).
 # RESOLVED (#36 windowed@128, 2026-06-23): these mismatched vs `mha_gpu_naive`
 # (chunked 0.866, SW 0.043) until the depth-128 split-K combine bug was fixed.
 # Root cause was NOT empty-partitions or bf16 tolerance: `fa4_splitk_combine_write`
@@ -603,7 +616,78 @@ _FILECHECK_TESTS = [
             1,
             2,
             4,
+            6,
             8,
+            10,
+        ]
+    ]
+]
+
+# P=16 (non-portable 16-CTA cluster). The GPC model fits only 7 size-16 clusters
+# per wave (clusters_per_wave[16] == 7 on B200), so the dispatch reaches P=16 ONLY
+# when raw_grid_1q <= 7. This harness's raw_grid_1q == num_kv_heads (tiny prompt,
+# batch 1, fuse_gqa), so these targets shrink to KVHEADS=4 (raw_grid_1q=4) and
+# steer cache=8192 (by_cache=16) to launch a genuine 16-CTA cluster. The combine
+# is validated against the full-range oracle exactly as at P<=8. SM100-only (B200).
+[
+    mojo_test(
+        name = "attention/test_mha_sm100_1q_splitk_combine_{}_d{}_p16.mojo.test".format(
+            cfg[1],
+            cfg[2],
+        ),
+        size = "large",
+        srcs = ["attention/test_mha_sm100_1q_splitk_lse.mojo"],
+        copts = [
+            "-D",
+            "FA4_1Q_SPLITK_CACHE=8192",
+            "-D",
+            "FA4_1Q_SPLITK_MASK={}".format(cfg[0]),
+            "-D",
+            "FA4_1Q_SPLITK_DEPTH={}".format(cfg[2]),
+            "-D",
+            "FA4_1Q_SPLITK_KVHEADS=4",
+        ],
+        exec_properties = {
+            "test.resources:gpu-memory": "3",
+        },
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:testdata",
+            "@mojo//:std",
+        ],
+    )
+    # cfg = (mask_id, mask_name, depth)
+    for cfg in [
+        (
+            mask[0],
+            mask[1],
+            depth,
+        )
+        for mask in [
+            (0, "null"),
+            (1, "causal"),
+        ]
+        for depth in [
+            64,
+            128,
+        ]
+    ] + [
+        (
+            mask[0],
+            mask[1],
+            128,
+        )
+        for mask in [
+            (2, "chunked"),
+            (3, "swcausal"),
         ]
     ]
 ]

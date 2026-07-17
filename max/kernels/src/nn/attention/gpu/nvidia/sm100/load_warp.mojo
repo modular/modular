@@ -322,7 +322,11 @@ def fa4_load[
         var _gT: UInt32 = mask.last_masked_set_end[BM_mask, BN, page_size](
             seq_info.prompt_idx, score_row, num_keys
         )
-        var _np: UInt32 = UInt32(cluster_dim.x)
+        var _np: UInt32
+        comptime if config.dynamic_cluster_dim:
+            _np = UInt32(cluster_dim.x)
+        else:
+            _np = UInt32(config.splitk_partitions)
         var _w = splitk_window(
             _gT,
             _np,

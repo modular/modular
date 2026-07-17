@@ -28,7 +28,6 @@ from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import llvm_intrinsic
 from std.bit import prev_power_of_two, pop_count
 from std.gpu import block_idx
-from std.gpu.primitives.id import cluster_dim
 from std.gpu.globals import WARP_SIZE
 from std.gpu.primitives.warp import broadcast
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -3053,6 +3052,41 @@ def apply_mask[
 
 
 @always_inline
+def clusters_per_wave[cluster_size: Int, sm_count: Int]() -> Int:
+    """Number of size-`cluster_size` thread-block clusters that fit on the target
+    Blackwell datacenter GPU in ONE wave, honoring GPC co-residency.
+
+    A cluster's CTAs must all live inside a single GPC, so a size-`C` cluster
+    occupies `C` SMs within one GPC and only `floor(gpc_sm / C)` such clusters
+    fit per GPC. The usable count is therefore *below* the flat `sm_count / C`;
+    it is the per-GPC histogram `sum_g floor(gpc_sm[g] / C)`. GPC layout is not
+    queryable (neither `DeviceAttribute` nor `GPUInfo` exposes it), so it is
+    hardcoded per chip; the whole expression folds at comptime since both
+    parameters are comptime.
+
+    B200 (148 SMs) has 11 GPCs with an irregular layout -- three 20s, four 18s,
+    one 10, three 2s (`2x` the pair counts `10,10,10,9,9,9,9,5,1,1,1`). B300 /
+    Blackwell Ultra (160 SMs) is the full die with 8 GPCs of a UNIFORM 20 SMs
+    each, so the histogram collapses to `8 * (20 // C)`.
+
+    Non-increasing in `cluster_size`, so scanning candidate sizes largest-first
+    yields the largest that fits. Only B200 (148) and B300 (160) are modeled;
+    the `else` branch is a comptime error on any other chip.
+    """
+    comptime C = cluster_size
+    comptime if sm_count == 148:
+        # B200: irregular 11-GPC layout -- three 20s, four 18s, one 10, three 2s.
+        return 3 * (20 // C) + 4 * (18 // C) + (10 // C) + 3 * (2 // C)
+    elif sm_count == 160:
+        # B300 / Blackwell Ultra: uniform 8 GPCs x 20 SMs.
+        return 8 * (20 // C)
+    else:
+        comptime assert (
+            False
+        ), "clusters_per_wave: only B200 (148) / B300 (160) modeled"
+
+
+@always_inline
 def splitk_partition_idx(splitk_partitions: UInt32) -> UInt32:
     """This CTA's split-K partition index `[0, splitk_partitions)`.
 
@@ -3091,7 +3125,7 @@ def splitk_window(
     weights them to zero. M6 routes idle CTAs (`partition_idx >=
     num_partitions`) through that same neutral path.
 
-    `T` is a tile count (small) and `num_partitions <= 8`, so the products
+    `T` is a tile count (small) and `num_partitions <= 16`, so the products
     cannot overflow `UInt32`. `num_partitions` is comptime at every call
     site, so the `//`/`%` lower to multiply-shift, not real divides.
     """
@@ -3448,22 +3482,21 @@ struct FA4MiscMBars[
         if lane_idx < Int32(Self.number_warpgroup_count):
             return 128
         # Split-K publish barrier: every WG0 row (BM of them) of every partition
-        # CTA arrives, so the COUNT is `BM * cluster_dim.x`. `cluster_dim.x` is
-        # the RUNTIME cluster size (== launch P), not the comptime P_MAX ceiling
-        # — else the barrier waits for arrivals that never come when launched at
-        # P < P_MAX (deadlock). Per-row (rather than one leader per CTA) lets the
-        # publish sites drop their CTA-local `named_barrier`: each row's arrive
-        # already happens-after that row's own staging write. The slot itself is
-        # gated comptime on Publish_count (= P_MAX>1). ONLY round-1 (phase 0) uses
-        # this barrier now -- it makes peers' staged O_cta + (max,sum) visible
-        # before the DSMEM reads. There is no round-2: the combine packs its bf16
-        # into its OWN-band dead f32 slice (no peer reads it), and the kernel's
-        # terminal `cluster_sync()` keeps the peer-read bands alive through reads.
-        # cluster.nctaid.x is a launch parameter readable here (init runs before
-        # cluster_sync), no hazard.
+        # CTA arrives, so the COUNT is `BM * splitk_partitions`. Each split-K
+        # kernel is compiled once per static partition count `P`, so
+        # `Self.splitk_partitions` is the exact launch cluster size (comptime) —
+        # no ceiling/launch mismatch to guard against. Per-row (rather than one
+        # leader per CTA) lets the publish sites drop their CTA-local
+        # `named_barrier`: each row's arrive already happens-after that row's own
+        # staging write. The slot itself is gated comptime on Publish_count.
+        # ONLY round-1 (phase 0) uses this barrier now -- it makes peers' staged
+        # O_cta + (max,sum) visible before the DSMEM reads. There is no round-2:
+        # the combine packs its bf16 into its OWN-band dead f32 slice (no peer
+        # reads it), and the kernel's terminal `cluster_sync()` keeps the
+        # peer-read bands alive through reads.
         comptime if Self.Publish_count > 0:
             if lane_idx == Int32(Self.Publish_offset):
-                return Int32(Self.BM * cluster_dim.x)
+                return Int32(Self.BM * Self.splitk_partitions)
         return 1
 
     @always_inline

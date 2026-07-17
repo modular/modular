@@ -99,6 +99,13 @@ struct FA4Config[
     # split-K (the cluster is then just `cta_group` for pair-CTA). Compile-time
     # because it drives the static `nvvm.cluster_dim` metadata.
     var splitk_partitions: Int
+    # When True, the split-K cluster width is NOT baked into `nvvm.cluster_dim`
+    # (a dynamic-cluster launch), so the per-partition load/mma/correction warps
+    # must read it from `cluster_dim.x` at runtime. False -- the default, and
+    # every config today, since split-K is compiled once per static P -- means
+    # the width equals the comptime `splitk_partitions`, so those reads fold to a
+    # constant. Retained as the single switch for a future dynamic-cluster kernel.
+    var dynamic_cluster_dim: Bool
     var row_major_v_atoms: Bool
     var row_major_k_atoms: Bool
 
@@ -151,19 +158,6 @@ struct FA4Config[
         `cluster_dim`.
         """
         return self.cta_group() * self.splitk_partitions
-
-    @always_inline
-    def splitk_dynamic(self) -> Bool:
-        """True when this config uses the runtime-sized (dynamic) split-K
-        cluster — the num_q==1 split-K path (cta_group==1, splitk_partitions>1).
-
-        Such configs launch via `SM100MHA2Q.kernel_dyncluster` (no static
-        `nvvm.cluster_dim` metadata; cluster size chosen at launch) rather than
-        the static `kernel` entry. `supported()` forbids `splitk_partitions>1`
-        for any config other than num_q==1, so the `num_q==1` term is implied,
-        but it is spelled out for clarity at the dispatch/selection site.
-        """
-        return self.num_q == 1 and self.splitk_partitions > 1
 
     @always_inline
     def PairBM_eff(self) -> Int:
@@ -382,6 +376,7 @@ struct FA4Config[
         num_q: Int = 2,
         num_qk_stages: Int = 0,
         splitk_partitions: Int = 1,
+        dynamic_cluster_dim: Bool = False,
         nope_depth: Int = -1,
         single_o: Bool = False,
         bn_cap: Int = 0,
@@ -406,6 +401,7 @@ struct FA4Config[
         self.page_size = page_size
         self.is_mla = is_mla
         self.splitk_partitions = splitk_partitions
+        self.dynamic_cluster_dim = dynamic_cluster_dim
         self.MMA_M = 256 if pair_cta else 128
         # num_q=1 halves BM to MMA_M (=128) — each CTA now covers half as
         # many Q rows. supported() forbids num_q=1 with pair_cta, so MMA_M
@@ -738,14 +734,30 @@ struct FA4Config[
                 and self.qk_depth >= 64
                 and self.qk_depth <= 256
                 and not self.pair_cta
-                # Split-K cluster size P (portable: 2-SM clusters cap at 8).
-                # P must be a power of two so block_idx.x // P (scheduler) and
-                # the depth-band split (M4) fold to shifts.
+                # Split-K cluster size P. P need NOT be a power of two: the
+                # scheduler tile recovery (block_idx.x // P) and the depth-band
+                # split both take P as a comptime constant, so a non-pow2 P
+                # lowers to a multiply-shift rather than a real divide -- the
+                # combine / splitk_window math is P-general (see
+                # attention_utils.splitk_window and softmax_warp's
+                # reduce-scatter band split). P MUST be even, though: the
+                # SIMD-2 weight-normalize loop in fa4_splitk_combine_write
+                # strides by 2 (`range(0, P, 2)`), so an odd P would read
+                # w[P] out of bounds. 6 and 10 fill the occupancy gaps between
+                # the pow2 rungs (P=6 -> 132 SMs like P=4; P=10 -> 110 SMs).
+                # P in {10, 16} exceeds the portable cluster cap (8) and is
+                # non-portable, but the runtime sets
+                # NON_PORTABLE_CLUSTER_SIZE_ALLOWED on every function load
+                # (CUDADeviceContext::loadFunction), so those clusters are
+                # launchable on B200 without extra plumbing.
                 and (
                     self.splitk_partitions == 1
                     or self.splitk_partitions == 2
                     or self.splitk_partitions == 4
+                    or self.splitk_partitions == 6
                     or self.splitk_partitions == 8
+                    or self.splitk_partitions == 10
+                    or self.splitk_partitions == 16
                 )
             )
         if self.pair_cta:
@@ -781,6 +793,7 @@ struct FA4Config[
             pair_cta=False,
             num_q=num_q,
             num_qk_stages=num_qk_stages,
+            dynamic_cluster_dim=self.dynamic_cluster_dim,
             nope_depth=self.nope_depth,
             # Preserve single-O only when the reconstructed config is itself 1Q.
             # The existing prefer_1q short-seq path calls with_num_q(1) on a
@@ -817,6 +830,7 @@ struct FA4Config[
             num_q=self.num_q,
             num_qk_stages=self.num_qk_stages,
             splitk_partitions=splitk_partitions,
+            dynamic_cluster_dim=self.dynamic_cluster_dim,
             nope_depth=self.nope_depth,
             single_o=self.single_o,
         )
