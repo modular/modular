@@ -309,9 +309,9 @@ struct Report(Copyable, Defaultable):
             The total benchmark iterations.
         """
         var iters = 0
-        for i in range(len(self.runs)):
-            if self.runs[i]._is_significant:
-                iters += self.runs[i].iterations
+        for run in self.runs:
+            if run._is_significant:
+                iters += run.iterations
         return iters
 
     def duration(self, unit: String = Unit.s) -> Float64:
@@ -325,9 +325,9 @@ struct Report(Copyable, Defaultable):
             The total duration it took to run all benchmarks.
         """
         var duration = 0
-        for i in range(len(self.runs)):
-            if self.runs[i]._is_significant:
-                duration += self.runs[i].duration
+        for run in self.runs:
+            if run._is_significant:
+                duration += run.duration
         return Float64(duration) / Float64(Unit._divisor(unit))
 
     def mean(self, unit: String = Unit.s) -> Float64:
@@ -355,9 +355,9 @@ struct Report(Copyable, Defaultable):
         if len(self.runs) == 0:
             return 0
         var min = max_finite[DType.float64]()
-        for i in range(len(self.runs)):
-            if self.runs[i]._is_significant and self.runs[i].mean(unit) < min:
-                min = self.runs[i].mean(unit)
+        for run in self.runs:
+            if run._is_significant and run.mean(unit) < min:
+                min = run.mean(unit)
         return min
 
     def max(self, unit: String = Unit.s) -> Float64:
@@ -373,12 +373,9 @@ struct Report(Copyable, Defaultable):
         if len(self.runs) == 0:
             return 0
         var result = min_finite[DType.float64]()
-        for i in range(len(self.runs)):
-            if (
-                self.runs[i]._is_significant
-                and self.runs[i].mean(unit) > result
-            ):
-                result = self.runs[i].mean(unit)
+        for run in self.runs:
+            if run._is_significant and run.mean(unit) > result:
+                result = run.mean(unit)
         return result
 
     def as_string(self, unit: String = Unit.s) -> String:
