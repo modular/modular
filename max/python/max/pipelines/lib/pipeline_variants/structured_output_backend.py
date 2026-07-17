@@ -366,6 +366,19 @@ class XgrammarMatcher:
         return XgrammarMatcher(self._matcher.fork())
 
 
+# xgrammar's compiled-grammar cache is unbounded by default; a long-running
+# server accumulating unique schemas would grow it without limit. Bound it like
+# vLLM does (its VLLM_XGRAMMAR_CACHE_MB, default 512 MB); override the MB budget
+# with MODULAR_XGRAMMAR_CACHE_MB.
+_DEFAULT_XGRAMMAR_CACHE_MB = 512
+
+
+def _xgrammar_cache_limit_bytes() -> int:
+    """Return the byte budget for xgrammar's compiled-grammar LRU cache."""
+    mb = os.environ.get("MODULAR_XGRAMMAR_CACHE_MB")
+    return (int(mb) if mb else _DEFAULT_XGRAMMAR_CACHE_MB) * 1024 * 1024
+
+
 class XgrammarBackend(GrammarBackend[Any]):
     """xgrammar backend.
 
@@ -404,7 +417,11 @@ class XgrammarBackend(GrammarBackend[Any]):
                 vocab_size=vocab_size,
                 stop_token_ids=stop_token_ids,
             )
-        return cls(xgrammar.GrammarCompiler(tokenizer_info))
+        return cls(
+            xgrammar.GrammarCompiler(
+                tokenizer_info, max_memory_bytes=_xgrammar_cache_limit_bytes()
+            )
+        )
 
     @_log_if_slow
     def compile_json_schema(self, json_schema: Any) -> Any:

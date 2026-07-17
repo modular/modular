@@ -27,6 +27,7 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/_entrypoints",
+        "//max/python/max/_xgrammar",
         "//max/python/max/config",
         "//max/python/max/driver",
         "//max/python/max/dtype",
