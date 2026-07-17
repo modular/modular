@@ -131,6 +131,7 @@ from std.builtin.type_aliases import (
     Never,
     Origin,
     OriginSet,
+    ImmStaticOrigin,
     StaticConstantOrigin,
     ExternalOrigin,
     ImmutExternalOrigin,

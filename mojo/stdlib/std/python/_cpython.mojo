@@ -300,7 +300,7 @@ def _py_get_version(lib: _DLHandle) -> StaticString:
         unsafe_from_utf8=CStringSlice(
             unsafe_from_ptr=lib.call[
                 "Py_GetVersion",
-                _CPointer[c_char, StaticConstantOrigin],
+                _CPointer[c_char, ImmStaticOrigin],
             ]().value()
         )
     )
@@ -321,7 +321,7 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var method_name: _CPointer[c_char, StaticConstantOrigin]
+    var method_name: _CPointer[c_char, ImmStaticOrigin]
     """A pointer to the name of the method as a C string.
 
     Notes:
@@ -337,7 +337,7 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
     References:
     - https://docs.python.org/3/c-api/structures.html#c.PyMethodDef"""
 
-    var method_docstring: _CPointer[c_char, StaticConstantOrigin]
+    var method_docstring: _CPointer[c_char, ImmStaticOrigin]
     """The docstring for the method."""
 
     # ===-------------------------------------------------------------------===#
@@ -455,7 +455,7 @@ struct PyType_Spec(ImplicitlyCopyable, RegisterPassable):
     - https://docs.python.org/3/c-api/type.html#c.PyType_Spec
     """
 
-    var name: _CPointer[c_char, StaticConstantOrigin]
+    var name: _CPointer[c_char, ImmStaticOrigin]
     var basicsize: c_int
     var itemsize: c_int
     var flags: c_uint
@@ -683,10 +683,10 @@ struct PyModuleDef(Movable, Writable):
 
     var base: PyModuleDef_Base
 
-    var name: _CPointer[c_char, StaticConstantOrigin]
+    var name: _CPointer[c_char, ImmStaticOrigin]
     """Name for the new module."""
 
-    var docstring: _CPointer[c_char, StaticConstantOrigin]
+    var docstring: _CPointer[c_char, ImmStaticOrigin]
     """Points to the contents of the docstring for the module."""
 
     var size: Py_ssize_t
@@ -1519,7 +1519,7 @@ struct CPython(Defaultable, Movable):
             unsafe_from_utf8=CStringSlice(
                 unsafe_from_ptr=external_call[
                     "KGEN_CompilerRT_Python_SetPythonPath",
-                    UnsafePointer[c_char, StaticConstantOrigin],
+                    UnsafePointer[c_char, ImmStaticOrigin],
                 ]()
             )
         )

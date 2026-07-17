@@ -126,9 +126,9 @@ an [origin union](#origin-unions).
 Most origin values are created by the compiler. As a developer, there are a
 few ways to specify origin values:
 
-- Static origin. The `StaticConstantOrigin` `comptime` value
+- Static origin. The `ImmStaticOrigin` `comptime` value
   represents immutable values that last for the duration of the program.
-  String literal values have a `StaticConstantOrigin`.
+  String literal values have a `ImmStaticOrigin`.
 - Derived origin. The `origin_of()` magic function returns the origin
   associated with the value (or values) passed in.
 - Inferred origin. You can use inferred parameters to capture the origin of a
@@ -142,7 +142,7 @@ few ways to specify origin values:
 
 #### Static origins
 
-You can use the static origin `StaticConstantOrigin` when you have a
+You can use the static origin `ImmStaticOrigin` when you have a
 value that exists for the entire duration of the program.
 
 For example, the `StringLiteral` method

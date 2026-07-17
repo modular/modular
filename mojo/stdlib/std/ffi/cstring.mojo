@@ -73,12 +73,12 @@ struct CStringSlice[origin: ImmOrigin](
 
         def getenv_wrapper(
             name: CStringSlice,
-        ) raises -> CStringSlice[StaticConstantOrigin]:
+        ) raises -> CStringSlice[ImmStaticOrigin]:
             # External call to 'getenv'.
             # C signature: const char *getenv(const char *name);
             var result = external_call[
                 "getenv",
-                Optional[CStringSlice[StaticConstantOrigin]],
+                Optional[CStringSlice[ImmStaticOrigin]],
             ](name)
 
             try:

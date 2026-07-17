@@ -61,7 +61,7 @@ struct M_driver_slice[origin: ImmOrigin](TrivialRegisterPassable):
 @fieldwise_init
 struct M_driver_static_bundle[origin: ImmOrigin](TrivialRegisterPassable):
     var mapped_data: M_driver_slice[Self.origin]
-    var file_type: ImmPointer[Int8, StaticConstantOrigin]
+    var file_type: ImmPointer[Int8, ImmStaticOrigin]
     var file_type_len: UInt64
 
 

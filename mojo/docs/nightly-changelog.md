@@ -402,6 +402,11 @@ This version is still a work in progress.
   should only change indirectly through operations like `append()`. Replace
   `my_list.capacity` with `my_list.capacity()`.
 
+- Renamed `StaticConstantOrigin` to `ImmStaticOrigin`, to align with the
+  `Imm`-prefixed spelling used for the other immutable origins. The old name
+  is still available as a deprecated alias and will be removed in a future
+  release.
+
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
   `destroy_func`, so it can clear a `Dict` whose key or value type is not

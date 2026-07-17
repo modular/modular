@@ -19,7 +19,7 @@ from std.ffi import external_call
 
 
 # TODO: When we have global variables, this should be a global list.
-def argv() -> Span[StaticString, StaticConstantOrigin]:
+def argv() -> Span[StaticString, ImmStaticOrigin]:
     """Gets the list of command line arguments given to the `mojo` CLI.
 
     For example:
@@ -48,6 +48,6 @@ def argv() -> Span[StaticString, StaticConstantOrigin]:
     # SAFETY:
     #   It is valid to use `StringSlice` (and thus `StaticString`) here because
     #   `StringSlice` is guaranteed to be ABI compatible with `llvm::StringRef`.
-    var result = Span[StaticString, StaticConstantOrigin]()
+    var result = Span[StaticString, ImmStaticOrigin]()
     external_call["KGEN_CompilerRT_GetArgV", NoneType](Pointer(to=result))
     return result

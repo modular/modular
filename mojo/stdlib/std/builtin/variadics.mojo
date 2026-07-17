@@ -679,7 +679,7 @@ struct _ParameterListIter[type: Copyable, //, *values: type](
     @always_inline
     def __next__(
         mut self,
-    ) raises StopIteration -> ref[StaticConstantOrigin] Self.type:
+    ) raises StopIteration -> ref[ImmStaticOrigin] Self.type:
         var index = self.index
 
         if index >= Self.values.size:
@@ -779,7 +779,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         return Self.size
 
     @staticmethod
-    def get_span() -> Span[Self.type, StaticConstantOrigin]:
+    def get_span() -> Span[Self.type, ImmStaticOrigin]:
         """Gets a span of the elements on the variadic list.
 
         Returns:
@@ -801,7 +801,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         return Span(ptr=first_elt, length=Self.size)
 
     @always_inline
-    def __getitem__(self, idx: Int) -> ref[StaticConstantOrigin] Self.type:
+    def __getitem__(self, idx: Int) -> ref[ImmStaticOrigin] Self.type:
         """Gets a single element on the variadic list.
 
         Args:

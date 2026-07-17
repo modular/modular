@@ -137,7 +137,7 @@ comptime MutUntrackedOrigin = UntrackedOrigin[mut=True]
 """A mutable origin the lifetime checker does not track."""
 
 # Static constants are a named subset of the global origin.
-comptime StaticConstantOrigin = Origin[
+comptime ImmStaticOrigin = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.origin.field<`,
         `#lit.static.origin : !lit.origin<false>`,
@@ -145,6 +145,11 @@ comptime StaticConstantOrigin = Origin[
     ]
 ]()
 """An origin for strings and other always-immutable static constants."""
+
+
+@doc_hidden
+@deprecated(use=ImmStaticOrigin)
+comptime StaticConstantOrigin = ImmStaticOrigin
 
 comptime OriginSet = __mlir_type.`!lit.origin.set`
 """A set of origin parameters."""

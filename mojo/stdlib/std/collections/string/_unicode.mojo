@@ -61,7 +61,7 @@ def _to_index[lookup: List[UInt32]](rune: Codepoint) -> Int:
 
 
 # TODO:
-#   Refactor this to return a Span[Codepoint, StaticConstantOrigin], so that the
+#   Refactor this to return a Span[Codepoint, ImmStaticOrigin], so that the
 #   return `Int` count and fixed-size `InlineArray` are not necessary.
 def _get_uppercase_mapping(
     char: Codepoint,
