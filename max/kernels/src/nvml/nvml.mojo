@@ -31,8 +31,11 @@ from std.memory import stack_allocation
 # ===-----------------------------------------------------------------------===#
 
 comptime CUDA_NVML_LIBRARY_DIR = Path("/usr/lib/x86_64-linux-gnu")
+"""The directory searched for the NVML shared library."""
 comptime CUDA_NVML_LIBRARY_BASE_NAME = "libnvidia-ml"
+"""The base name of the NVML shared library."""
 comptime CUDA_NVML_LIBRARY_EXT = ".so"
+"""The file extension of the NVML shared library."""
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -55,6 +58,7 @@ def _get_nvml_library_paths() raises -> List[Path]:
 
 
 comptime CUDA_NVML_LIBRARY = _Global["CUDA_NVML_LIBRARY", _init_dylib]
+"""The lazily-initialized NVML dynamic library handle."""
 
 
 def _init_dylib() -> OwnedDLHandle:
@@ -83,21 +87,58 @@ def _get_dylib_function[
 
 
 struct DriverVersion(ImplicitlyCopyable, Writable):
+    """Represents an NVIDIA driver version as major, minor, and patch."""
+
     var _value: List[String]
 
     def __init__(out self, var value: List[String]):
+        """Constructs a driver version from its dot-separated components.
+
+        Args:
+            value: The version components, ordered as major, minor, and an
+                optional patch.
+        """
         self._value = value^
 
     def __init__(out self, *, copy: Self):
+        """Constructs a copy of an existing driver version.
+
+        Args:
+            copy: The driver version to copy.
+        """
         self._value = copy._value.copy()
 
     def major(self) raises -> Int:
+        """Returns the major version number.
+
+        Returns:
+            The major component of the driver version.
+
+        Raises:
+            If the major component is not a valid integer.
+        """
         return Int(self._value[0])
 
     def minor(self) raises -> Int:
+        """Returns the minor version number.
+
+        Returns:
+            The minor component of the driver version.
+
+        Raises:
+            If the minor component is not a valid integer.
+        """
         return Int(self._value[1])
 
     def patch(self) raises -> Int:
+        """Returns the patch version number.
+
+        Returns:
+            The patch component of the driver version, or 0 if it is absent.
+
+        Raises:
+            If the patch component is present but not a valid integer.
+        """
         return Int(self._value[2]) if len(self._value) > 2 else 0
 
     def write_to(self, mut writer: Some[Writer]):
@@ -119,7 +160,10 @@ struct DriverVersion(ImplicitlyCopyable, Writable):
 
 @fieldwise_init
 struct Result(Equatable, TrivialRegisterPassable, Writable):
+    """Represents the status code returned by an NVML library call."""
+
     var code: Int32
+    """The numeric NVML status code."""
 
     comptime SUCCESS = Self(0)
     """The operation was successful."""
@@ -217,9 +261,22 @@ struct Result(Equatable, TrivialRegisterPassable, Writable):
 
     @always_inline("nodebug")
     def __eq__(self, other: Self) -> Bool:
+        """Returns True if two result codes are equal.
+
+        Args:
+            other: The result code to compare against.
+
+        Returns:
+            True if the result codes match, False otherwise.
+        """
         return self.code == other.code
 
     def write_to(self, mut writer: Some[Writer]):
+        """Writes the result code's symbolic name.
+
+        Args:
+            writer: The writer to write to.
+        """
         if self == Result.SUCCESS:
             writer.write("SUCCESS")
         elif self == Result.UNINITIALIZED:
@@ -295,7 +352,10 @@ def _check_error(err: Result) raises:
 
 @fieldwise_init
 struct EnableState(Equatable, TrivialRegisterPassable):
+    """Represents whether a device feature is enabled or disabled."""
+
     var code: Int32
+    """The numeric feature-state code."""
 
     comptime DISABLED = Self(0)
     """Feature disabled."""
@@ -305,6 +365,14 @@ struct EnableState(Equatable, TrivialRegisterPassable):
 
     @always_inline("nodebug")
     def __eq__(self, other: Self) -> Bool:
+        """Returns True if two feature states are equal.
+
+        Args:
+            other: The feature state to compare against.
+
+        Returns:
+            True if the feature states match, False otherwise.
+        """
         return self.code == other.code
 
 
@@ -315,7 +383,10 @@ struct EnableState(Equatable, TrivialRegisterPassable):
 
 @fieldwise_init
 struct ClockType(Equatable, TrivialRegisterPassable):
+    """Identifies a GPU clock domain to query or configure."""
+
     var code: Int32
+    """The numeric clock-domain code."""
 
     comptime GRAPHICS = Self(0)
     """Graphics clock domain."""
@@ -331,6 +402,14 @@ struct ClockType(Equatable, TrivialRegisterPassable):
 
     @always_inline("nodebug")
     def __eq__(self, other: Self) -> Bool:
+        """Returns True if two clock domains are equal.
+
+        Args:
+            other: The clock domain to compare against.
+
+        Returns:
+            True if the clock domains match, False otherwise.
+        """
         return self.code == other.code
 
 
@@ -353,10 +432,23 @@ struct _DeviceImpl(Defaultable, ImplicitlyCopyable, RegisterPassable):
 
 
 struct Device(Writable):
+    """Provides access to a single NVIDIA GPU through the NVML library."""
+
     var idx: Int
+    """The zero-based index of the GPU."""
+
     var device: _DeviceImpl
+    """The underlying NVML device handle."""
 
     def __init__(out self, idx: Int = 0) raises:
+        """Initializes a handle to the GPU at the given index.
+
+        Args:
+            idx: The zero-based index of the GPU to open.
+
+        Raises:
+            If the device handle cannot be obtained.
+        """
         var device = _DeviceImpl()
         _check_error(
             _get_dylib_function[
@@ -370,10 +462,13 @@ struct Device(Writable):
         self.device = device
 
     def get_driver_version(self) raises -> DriverVersion:
-        """Returns NVIDIA driver version.
+        """Returns the NVIDIA driver version.
+
+        Returns:
+            The driver version reported by NVML.
 
         Raises:
-            If the dynamic library cannot be found.
+            If the NVML call fails.
         """
         comptime max_length = 16
         var driver_version_buffer = stack_allocation[max_length, c_char]()
@@ -406,12 +501,36 @@ struct Device(Writable):
         return Int(clock)
 
     def max_mem_clock(self) raises -> Int:
+        """Returns the maximum supported memory clock in MHz.
+
+        Returns:
+            The maximum memory clock frequency in MHz.
+
+        Raises:
+            If the NVML call fails.
+        """
         return self._max_clock(ClockType.MEM)
 
     def max_graphics_clock(self) raises -> Int:
+        """Returns the maximum supported graphics clock in MHz.
+
+        Returns:
+            The maximum graphics clock frequency in MHz.
+
+        Raises:
+            If the NVML call fails.
+        """
         return self._max_clock(ClockType.GRAPHICS)
 
     def mem_clocks(self) raises -> List[Int]:
+        """Returns the supported memory clock frequencies.
+
+        Returns:
+            The supported memory clock frequencies in MHz.
+
+        Raises:
+            If the NVML call fails.
+        """
         var num_clocks = UInt32()
 
         var result = _get_dylib_function[
@@ -449,6 +568,18 @@ struct Device(Writable):
         return res^
 
     def graphics_clocks(self, memory_clock_mhz: Int) raises -> List[Int]:
+        """Returns the supported graphics clocks for a given memory clock.
+
+        Args:
+            memory_clock_mhz: The memory clock frequency, in MHz, to query
+                against.
+
+        Returns:
+            The supported graphics clock frequencies in MHz.
+
+        Raises:
+            If the NVML call fails.
+        """
         var num_clocks = UInt32()
 
         var result = _get_dylib_function[
@@ -498,6 +629,15 @@ struct Device(Writable):
         return res^
 
     def set_clock(self, mem_clock: Int, graphics_clock: Int) raises:
+        """Sets the GPU's application memory and graphics clocks.
+
+        Args:
+            mem_clock: The memory clock frequency to set, in MHz.
+            graphics_clock: The graphics clock frequency to set, in MHz.
+
+        Raises:
+            If the NVML call fails.
+        """
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceSetApplicationsClocks",
@@ -506,10 +646,13 @@ struct Device(Writable):
         )
 
     def gpu_turbo_enabled(self) raises -> Bool:
-        """Returns True if the gpu turbo is enabled.
+        """Returns True if GPU turbo is enabled.
+
+        Returns:
+            True if GPU turbo (auto-boosted clocks) is enabled.
 
         Raises:
-            If the dynamic library cannot be found.
+            If the NVML call fails.
         """
         var is_enabled = _EnableState.DISABLED
         var default_is_enabled = _EnableState.DISABLED
@@ -530,10 +673,13 @@ struct Device(Writable):
         return is_enabled == _EnableState.ENABLED
 
     def set_gpu_turbo(self, enabled: Bool = True) raises:
-        """Sets the GPU turbo state.
+        """Sets the GPU turbo (auto-boosted clocks) state.
+
+        Args:
+            enabled: Whether to enable GPU turbo. Defaults to True.
 
         Raises:
-            If the dynamic library cannot be found.
+            If the NVML call fails.
         """
         _check_error(
             _get_dylib_function[
@@ -546,10 +692,13 @@ struct Device(Writable):
         )
 
     def get_persistence_mode(self) raises -> Bool:
-        """Returns True if the gpu persistence mode is enabled.
+        """Returns True if GPU persistence mode is enabled.
+
+        Returns:
+            True if persistence mode is enabled.
 
         Raises:
-            If the dynamic library cannot be found.
+            If the NVML call fails.
         """
         var is_enabled = _EnableState.DISABLED
         _check_error(
@@ -567,10 +716,13 @@ struct Device(Writable):
         return is_enabled == _EnableState.ENABLED
 
     def set_persistence_mode(self, enabled: Bool = True) raises:
-        """Sets the persistence mode.
+        """Sets the GPU persistence mode.
+
+        Args:
+            enabled: Whether to enable persistence mode. Defaults to True.
 
         Raises:
-            If the dynamic library cannot be found.
+            If the NVML call fails.
         """
         _check_error(
             _get_dylib_function[
@@ -583,6 +735,11 @@ struct Device(Writable):
         )
 
     def set_max_gpu_clocks(device: Device) raises:
+        """Sets the GPU to its maximum supported memory and graphics clocks.
+
+        Raises:
+            If no valid clock combination can be applied to the device.
+        """
         var max_mem_clock = device.mem_clocks()
         sort(max_mem_clock)
         var max_mem = max_mem_clock[len(max_mem_clock) - 1]
@@ -610,10 +767,20 @@ struct Device(Writable):
 
     @no_inline
     def write_to(self, mut writer: Some[Writer]):
+        """Writes a human-readable representation of the device.
+
+        Args:
+            writer: The writer to write to.
+        """
         t"Device({self.idx})".write_to(writer)
 
     @no_inline
     def write_repr_to(self, mut writer: Some[Writer]):
+        """Writes a developer representation of the device.
+
+        Args:
+            writer: The writer to write to.
+        """
         self.write_to(writer)
 
 
