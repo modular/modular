@@ -483,3 +483,34 @@ struct Moco4296Collection[T: AnyType](Movable):
 @fieldwise_init
 struct Moco4296Iter[T: Movable & ImplicitlyDeletable]:
     var _collection: Moco4296Collection[Self.T]
+
+
+# ===========================================================================
+# Nested `downcast` on a type argument
+# ===========================================================================
+
+# Like MOCO-4296, but the `downcast` is not on a direct parameter binding of
+# the declared return type.
+@fieldwise_init
+struct InlineArray[ElementType: Movable, size: Int]:
+    pass
+
+
+@fieldwise_init
+struct MyPtr[type: AnyType](Copyable, Movable):
+    pass
+
+
+@fieldwise_init
+struct MyIter[T: Copyable, size: Int]:
+    var ptr: MyPtr[InlineArray[Self.T, Self.size]]
+
+
+# CHECK-LABEL: lit.fn @"make_iter
+# CHECK-SAME: %__result__: !lit.ref<!lit.struct<#MyIter <{{.*}}downcast(:!AnyType_Movable ElementType){{.*}}>>,{{.*}}> byref_result
+# CHECK: kgen.rebind {{.*}}InlineArray<:!AnyType_Movable upcast(:!AnyType_Copyable_Movable downcast(:!AnyType_Movable ElementType))
+# CHECK: lit.call {{.*}}@struct_conditional_trait_conformance::@MyIter::@"__init__
+def make_iter[
+    ElementType: Movable, size: Int
+]() -> MyIter[downcast[ElementType, Copyable], size]:
+    return {MyPtr[InlineArray[ElementType, size]]()}

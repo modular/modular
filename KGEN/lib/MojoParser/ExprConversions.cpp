@@ -962,6 +962,40 @@ static TypedAttr stripTypeValueCasts(TypedAttr typeValue) {
   return typeValue;
 }
 
+namespace {
+class CastRemover : public ParameterReplacer<CastRemover> {
+  template <typename T>
+  std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>
+  doReplace(T value, size_t depth) {
+    if constexpr (std::is_base_of_v<Attribute, T>) {
+      if (auto downcast = dyn_cast<DowncastAttr>(value))
+        value = TypeParamAttr::get(ParamType::get(downcast.getInputTypeValue()),
+                                   downcast.getType());
+      if (auto upcast = dyn_cast<UpcastAttr>(value))
+        value = TypeParamAttr::get(ParamType::get(upcast.getInputTypeValue()),
+                                   upcast.getType());
+    }
+
+    SmallVector<Attribute, 16> newAttrs;
+    SmallVector<Type, 16> newTypes;
+    bool changed = false;
+    auto walkFn = [&](auto value, SmallVectorImpl<decltype(value)> &values) {
+      auto newValue = this->replaceImpl(value, depth);
+      changed |= newValue != value;
+      values.push_back(newValue);
+    };
+    value.walkImmediateSubElements(
+        [&](Attribute attr) { walkFn(attr, newAttrs); },
+        [&](Type type) { walkFn(type, newTypes); });
+    if (!changed)
+      return value;
+    return value.replaceImmediateSubElements(newAttrs, newTypes);
+  }
+
+  friend class ParameterReplacer<CastRemover>;
+};
+} // namespace
+
 // Returns true if `fromParam` and `toParam` denote the same parameter value up
 // to `downcast`/`upcast` wrappers. A downcasted (or upcasted) type-value is
 // semantically equivalent to its underlying type-value for rebind purposes. The
@@ -1073,13 +1107,9 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
       // type-universe level.
       if (fromDecl == toDecl && sugarIsa<StructType>(fromType) &&
           sugarIsa<StructType>(toType)) {
-        ArrayRef<TypedAttr> fromParams = fromType.getParamBindings();
-        ArrayRef<TypedAttr> toParams = toType.getParamBindings();
-        if (fromParams.size() == toParams.size() &&
-            llvm::all_of(llvm::zip(fromParams, toParams), [](auto pair) {
-              return zeroCostConvertibleTypeValues(std::get<0>(pair),
-                                                   std::get<1>(pair));
-            }))
+        CastRemover remover;
+        if (remover.replace(fromType.mlirType) ==
+            remover.replace(toType.mlirType))
           return true;
       }
       return false;
