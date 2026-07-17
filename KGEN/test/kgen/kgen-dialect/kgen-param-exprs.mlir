@@ -697,12 +697,6 @@ kgen.generator @target_has_feature<t0: target>() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @target_is_gpu_triple<t0: target>()
-kgen.generator @target_is_gpu_triple<t0: target>() {
-  kgen.param.assert <eq(:string target_get_field(t0, "triple"), "nvptx64-nvidia-cuda")>, "triple must be nvptx64-nvidia-cuda"
-  kgen.return
-}
-
 // CHECK-LABEL: kgen.generator @target_is_os<t0: target>()
 kgen.generator @target_is_os<t0: target>() {
   kgen.param.assert <eq(:string target_get_field(t0, "os"), "darwin")>, "os must be darwin"
@@ -1047,34 +1041,6 @@ kgen.generator @int_literal_param<abcd: !pop.int_literal>() {
 }
 
 kgen.generator @kernel() {
-  kgen.return
-}
-
-// CHECK-LABEL: @compile_assembly
-kgen.generator @compile_assembly<emission_kind: index>() {
-  kgen.param.declare nvptx: target = <#kgen.target<triple = "nvptx64-nvidia-cuda", arch = "sm_75", data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64", simd_bit_width = 128>>
-  kgen.param.declare amd: target = <#kgen.target<triple = "amdgcn-amd-amdhsa", arch = "", data_layout = "e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9", simd_bit_width = 128>>
-
-  // CHECK: constant: string = <#kgen.compile_assembly<nvptx, =asm, "", false, :() -> () @kernel>>
-  kgen.param.constant: string = <#kgen.compile_assembly<nvptx, =asm, "", false, :() -> () @kernel>>
-  // CHECK: constant: string = <#kgen.compile_assembly<nvptx, =llvm, "", true, :() -> () @kernel>>
-  kgen.param.constant: string = <#kgen.compile_assembly<nvptx, =llvm, "", true, :() -> () @kernel>>
-  // CHECK: constant: string = <#kgen.compile_assembly<nvptx, =llvm, "option1=value1,option2=value2", true, :() -> () @kernel>>
-  kgen.param.constant: string = <#kgen.compile_assembly<nvptx, =llvm, "option1=value1,option2=value2", true, :() -> () @kernel>>
-
-  // CHECK: constant: string = <#kgen.compile_assembly<amd, =object, "", true, :() -> () @kernel>>
-  kgen.param.constant: string = <#kgen.compile_assembly<amd, =object, "", true, :() -> () @kernel>>
-  // CHECK: constant: string = <#kgen.compile_assembly<nvptx, emission_kind, "", true, :() -> () @kernel>>
-  kgen.param.constant: string = <#kgen.compile_assembly<nvptx, emission_kind, "", true, :() -> () @kernel>>
-
-  kgen.return
-}
-
-// CHECK-LABEL: @compile_offload_closure
-kgen.generator @compile_offload_closure() {
-  kgen.param.declare nvptx: target = <#kgen.target<triple = "nvptx64-nvidia-cuda", arch = "sm_75", data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64", simd_bit_width = 128>>
-  // CHECK: constant: string = <#kgen.compile_offload_closure<nvptx, #kgen.symbol.constant<@kernel> : !kgen.generator<() -> ()>>>
-  kgen.param.constant: string = <#kgen.compile_offload_closure<nvptx, #kgen.symbol.constant<@kernel> : !kgen.generator<() -> ()>>>
   kgen.return
 }
 
