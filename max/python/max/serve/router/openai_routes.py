@@ -404,14 +404,17 @@ class OpenAIChatResponseGenerator(
         # schema-conformance logging (see tool_call_validation). The raw
         # client schema is kept so it matches what callers validate against.
         self._tool_schemas: dict[str, dict[str, Any]] = {}
+        # Every declared tool name, including parameter-less tools that have no
+        # schema. The conformance check uses this to tell a legitimate call to a
+        # schemaless tool apart from a hallucinated (unknown) tool.
+        self._tool_names: set[str] = set()
         for t in tools or []:
             name = maybe_name_from_tool(t)
+            if not name:
+                continue
+            self._tool_names.add(name)
             fn = t.get("function")
-            if (
-                name
-                and isinstance(fn, dict)
-                and isinstance(fn.get("parameters"), dict)
-            ):
+            if isinstance(fn, dict) and isinstance(fn.get("parameters"), dict):
                 self._tool_schemas[name] = fn["parameters"]
         # Per-call streaming accumulators for end-of-stream conformance check.
         self._stream_tool_names: dict[int, str] = {}
@@ -423,7 +426,9 @@ class OpenAIChatResponseGenerator(
         request_id: str,
         is_streaming: bool,
     ) -> None:
-        results = check_tool_call_conformance(calls, self._tool_schemas)
+        results = check_tool_call_conformance(
+            calls, self._tool_schemas, self._tool_names
+        )
         for result in results:
             if result.outcome == "valid":
                 continue

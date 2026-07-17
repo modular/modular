@@ -28,8 +28,9 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Literal
 
 from jsonschema import Draft7Validator
@@ -40,11 +41,13 @@ logger = logging.getLogger("max.serve")
 # Cap errors recorded per call so a deeply-wrong object can't bloat a log line.
 _MAX_ERRORS_PER_CALL = 5
 
-# Compiled validators keyed by a stable schema string. Building a validator is
-# the only non-trivial cost (validation itself is microseconds); caching keeps
-# this off the hot path. Dict writes are atomic under the GIL and a concurrent
-# double-build is idempotent, so no lock is needed.
-_VALIDATOR_CACHE: dict[str, Validator] = {}
+# Bound on the number of compiled validators kept in memory. Schemas are
+# client-supplied per request, so an unbounded cache would grow without limit
+# under high schema cardinality (a memory leak). Building a validator is the
+# only non-trivial cost (validation itself is microseconds); an LRU keeps that
+# off the hot path while capping retained memory. lru_cache is internally
+# locked, so concurrent builds are safe.
+_VALIDATOR_CACHE_SIZE = 1024
 
 Outcome = Literal["valid", "invalid_json", "unknown_tool", "schema_mismatch"]
 
@@ -59,35 +62,33 @@ class ToolCallConformance:
     errors: list[str] = field(default_factory=list)
 
 
-def _validator_for(schema: Mapping[str, Any]) -> Validator | None:
-    """Returns a cached validator for *schema*, or ``None`` if unbuildable.
+@lru_cache(maxsize=_VALIDATOR_CACHE_SIZE)
+def _build_validator(schema_key: str) -> Validator | None:
+    """Returns an LRU-cached Draft 7 validator for a schema, or ``None``.
+
+    *schema_key* is the canonical ``json.dumps`` of the schema (sorted keys),
+    used both as the cache key and as the source to rebuild from, so it is
+    always valid JSON. Returns ``None`` when the schema cannot be compiled.
 
     Validates under JSON Schema Draft 7 to match the OpenRouter evaluator that
     scores our tool-call error rate under that dialect. Draft 7 is pinned
     unconditionally -- any ``$schema`` the caller declares is ignored.
     """
-    try:
-        key = json.dumps(schema, sort_keys=True, separators=(",", ":"))
-    except (TypeError, ValueError):
-        return None
-    cached = _VALIDATOR_CACHE.get(key)
-    if cached is not None:
-        return cached
+    schema = json.loads(schema_key)
     # check_schema rejects an invalid tool-definition schema (SchemaError); a
     # bad tool definition is not a model failure, so skip rather than blame it.
     # Broad except keeps this observability path from ever raising.
     try:
-        Draft7Validator.check_schema(dict(schema))
-        validator: Validator = Draft7Validator(dict(schema))
+        Draft7Validator.check_schema(schema)
+        return Draft7Validator(schema)
     except Exception:
         return None
-    _VALIDATOR_CACHE[key] = validator
-    return validator
 
 
 def check_tool_call_conformance(
     calls: list[tuple[str, object]],
     schemas_by_name: Mapping[str, Mapping[str, Any]],
+    known_tools: Collection[str] | None = None,
 ) -> list[ToolCallConformance]:
     """Validates each ``(name, arguments)`` call against its declared schema.
 
@@ -96,12 +97,24 @@ def check_tool_call_conformance(
     An empty/whitespace argument string is treated as ``{}`` (a no-arg call).
     A schema that cannot be compiled yields ``valid`` -- this check never
     invents a failure it cannot substantiate.
+
+    ``known_tools`` is the full set of declared tool names. A call to a tool in
+    ``known_tools`` that has no entry in ``schemas_by_name`` (a legitimately
+    parameter-less tool) yields ``valid``; only a call to a name that was never
+    declared yields ``unknown_tool``. When ``known_tools`` is ``None`` the
+    declared set is taken to be ``schemas_by_name`` (the prior behavior).
     """
+    declared = (
+        known_tools if known_tools is not None else schemas_by_name.keys()
+    )
     results: list[ToolCallConformance] = []
     for name, raw_args in calls:
         schema = schemas_by_name.get(name)
         if schema is None:
-            results.append(ToolCallConformance(name, "unknown_tool"))
+            # A declared-but-schemaless tool has nothing to validate against;
+            # only a name that was never declared is a genuine unknown tool.
+            outcome: Outcome = "valid" if name in declared else "unknown_tool"
+            results.append(ToolCallConformance(name, outcome))
             continue
 
         if isinstance(raw_args, str):
@@ -113,16 +126,33 @@ def check_tool_call_conformance(
         else:
             parsed = raw_args
 
-        validator = _validator_for(schema)
+        # Canonical JSON doubles as the validator's LRU cache key. An
+        # unserializable schema (or one the backend cannot compile) yields no
+        # validator, so we don't invent a failure we cannot substantiate.
+        try:
+            schema_key = json.dumps(
+                schema, sort_keys=True, separators=(",", ":")
+            )
+            validator = _build_validator(schema_key)
+        except (TypeError, ValueError):
+            validator = None
         if validator is None:
             results.append(ToolCallConformance(name, "valid"))
             continue
 
         errors: list[str] = []
-        for err in validator.iter_errors(parsed):
-            errors.append(f"{err.validator}@{err.json_path}")
-            if len(errors) >= _MAX_ERRORS_PER_CALL:
-                break
+        # iter_errors can raise on a schema that check_schema accepts but cannot
+        # execute (e.g. an unresolvable ``$ref``). This path is observability
+        # only and must never raise into the request, so treat any such failure
+        # as ``valid`` rather than inventing a mismatch it cannot substantiate.
+        try:
+            for err in validator.iter_errors(parsed):
+                errors.append(f"{err.validator}@{err.json_path}")
+                if len(errors) >= _MAX_ERRORS_PER_CALL:
+                    break
+        except Exception:
+            results.append(ToolCallConformance(name, "valid"))
+            continue
         results.append(
             ToolCallConformance(
                 name, "schema_mismatch" if errors else "valid", errors
