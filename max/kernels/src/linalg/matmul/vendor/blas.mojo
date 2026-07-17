@@ -31,6 +31,7 @@ from _cublas.cublas import (
     cublasOperation_t,
     cublasSetMathMode,
     cublasSetStream,
+    cublasSetWorkspace,
 )
 from _cublas.cublaslt import (
     Preference,
@@ -748,8 +749,22 @@ def _cublas_matmul[
     # transformation. To be rigorous though, we should set `c_is_row_major = True`
     # for accuracy validations and uses default column-major in benchmark.
 
+    # cuBLAS's default internal workspace pool is uninitialized memory that
+    # its split-K reduction kernel reads from, which trips initcheck. Supply
+    # our own zeroed workspace instead to pass in.
+    var workspace_size = 32 * 1024 * 1024
+    var workspace = ctx.enqueue_create_buffer[DType.uint8](workspace_size)
+    ctx.enqueue_memset(workspace, UInt8(0))
+    check_cublas_error(
+        cublasSetWorkspace(
+            handle,
+            workspace.unsafe_ptr().bitcast[NoneType]().as_unsafe_any_origin(),
+            workspace_size,
+        )
+    )
+
     if c_row_major:
-        return check_cublas_error(
+        check_cublas_error(
             cublasGemmEx(
                 handle,
                 _convert_to_cublas_transpose(transpose_b),
@@ -792,6 +807,8 @@ def _cublas_matmul[
                 b_type,
             ),
         )
+        _ = workspace^
+        return
     # Default column-major.
     check_cublas_error(
         cublasGemmEx(
@@ -836,6 +853,7 @@ def _cublas_matmul[
             b_type,
         ),
     )
+    _ = workspace^
 
 
 # ===----------------------------------------------------------------------===#
