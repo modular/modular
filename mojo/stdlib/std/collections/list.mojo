@@ -66,9 +66,9 @@ struct _ListIter[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
-    var index: Int
-    var src: UnsafePointer[Self.T, Self.origin]
-    var length: Int
+    var _index: Int
+    var _data: Pointer[Self.T, Self.origin]
+    var _length: Int
 
     @always_inline
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -78,24 +78,24 @@ struct _ListIter[
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
         comptime if Self.forward:
-            if self.index >= self.length:
+            if self._index >= self._length:
                 raise StopIteration()
-            self.index += 1
-            return self.src[self.index - 1]
+            self._index += 1
+            return self._data[unsafe_offset=self._index - 1]
         else:
-            if self.index <= 0:
+            if self._index <= 0:
                 raise StopIteration()
-            self.index -= 1
-            return self.src[self.index]
+            self._index -= 1
+            return self._data[unsafe_offset=self._index]
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         var iter_len: Int
 
         comptime if Self.forward:
-            iter_len = self.length - self.index
+            iter_len = self._length - self._index
         else:
-            iter_len = self.index
+            iter_len = self._index
 
         return (iter_len, {iter_len})
 
@@ -134,7 +134,7 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
         if self._index >= len(self._list):
             raise StopIteration()
         self._index += 1
-        return (self._list.unsafe_ptr() + self._index - 1).take_pointee()
+        return (self._list.unsafe_ptr() + self._index - 1).unsafe_take_pointee()
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -328,10 +328,10 @@ struct List[T: Movable, /](
         T: The type of elements stored in the list.
     """
 
-    comptime _UnsafePointerType = UnsafePointer[Self.T, MutUntrackedOrigin]
+    comptime _PointerType = Pointer[Self.T, MutUntrackedOrigin]
 
     # Fields
-    var _data: Self._UnsafePointerType
+    var _data: Self._PointerType
     """The underlying storage for the list."""
     var _len: Int
     """The number of elements in the list."""
@@ -356,34 +356,58 @@ struct List[T: Movable, /](
     # asan annotation methods
     def _annotate_new(self):
         __sanitizer_annotate_contiguous_container(
-            beg=self._data.bitcast[NoneType](),
-            end=(self._data + self._capacity).bitcast[NoneType](),
-            old_mid=(self._data + self._capacity).bitcast[NoneType](),
-            new_mid=(self._data + self._len).bitcast[NoneType](),
+            beg=self._data.unsafe_bitcast[NoneType](),
+            end=self._data.unsafe_offset(self._capacity).unsafe_bitcast[
+                NoneType
+            ](),
+            old_mid=self._data.unsafe_offset(self._capacity).unsafe_bitcast[
+                NoneType
+            ](),
+            new_mid=self._data.unsafe_offset(self._len).unsafe_bitcast[
+                NoneType
+            ](),
         )
 
     def _annotate_delete(self):
         __sanitizer_annotate_contiguous_container(
-            beg=self._data.bitcast[NoneType](),
-            end=(self._data + self._capacity).bitcast[NoneType](),
-            old_mid=(self._data + self._len).bitcast[NoneType](),
-            new_mid=(self._data + self._capacity).bitcast[NoneType](),
+            beg=self._data.unsafe_bitcast[NoneType](),
+            end=self._data.unsafe_offset(self._capacity).unsafe_bitcast[
+                NoneType
+            ](),
+            old_mid=self._data.unsafe_offset(self._len).unsafe_bitcast[
+                NoneType
+            ](),
+            new_mid=self._data.unsafe_offset(self._capacity).unsafe_bitcast[
+                NoneType
+            ](),
         )
 
     def _annotate_increase(self, n: Int = 1):
         __sanitizer_annotate_contiguous_container(
-            beg=self._data.bitcast[NoneType](),
-            end=(self._data + self._capacity).bitcast[NoneType](),
-            old_mid=(self._data + self._len).bitcast[NoneType](),
-            new_mid=(self._data + self._len + n).bitcast[NoneType](),
+            beg=self._data.unsafe_bitcast[NoneType](),
+            end=self._data.unsafe_offset(self._capacity).unsafe_bitcast[
+                NoneType
+            ](),
+            old_mid=self._data.unsafe_offset(self._len).unsafe_bitcast[
+                NoneType
+            ](),
+            new_mid=self._data.unsafe_offset(self._len + n).unsafe_bitcast[
+                NoneType
+            ](),
         )
 
     def _annotate_shrink(self, old_size: Int):
         __sanitizer_annotate_contiguous_container(
-            beg=self._data.bitcast[NoneType](),
-            end=(self._data + self._capacity).bitcast[NoneType](),
-            old_mid=(self._data + old_size).bitcast[NoneType](),
-            new_mid=(self._data + self._len).bitcast[NoneType](),
+            beg=self._data.unsafe_bitcast[NoneType](),
+            end=self._data.unsafe_offset(self._capacity).unsafe_bitcast[
+                NoneType
+            ](),
+            old_mid=self._data.unsafe_offset(old_size).unsafe_bitcast[
+                NoneType
+            ](),
+            new_mid=self._data.unsafe_offset(self._len).unsafe_bitcast[
+                NoneType
+            ](),
         )
 
     # ===-------------------------------------------------------------------===#
@@ -393,7 +417,7 @@ struct List[T: Movable, /](
     @stable(since="1.0")
     def __init__(out self):
         """Constructs an empty list."""
-        self._data = Self._UnsafePointerType.unsafe_dangling()
+        self._data = Self._PointerType.unsafe_dangling()
         self._len = 0
         self._capacity = 0
 
@@ -407,7 +431,7 @@ struct List[T: Movable, /](
         if capacity:
             self._data = alloc(Layout[Self.T](count=capacity)).unsafe_leak()
         else:
-            self._data = Self._UnsafePointerType.unsafe_dangling()
+            self._data = Self._PointerType.unsafe_dangling()
         self._len = 0
         self._capacity = capacity
         self._annotate_new()
@@ -438,7 +462,7 @@ struct List[T: Movable, /](
 
         # Transfer all of the elements into the List.
         def init_elt(idx: Int, var elt: Self.T) {ref}:
-            (self._data + idx).unsafe_write(elt^)
+            self._data.unsafe_offset(idx).unsafe_write(elt^)
 
         values^.consume_elements(init_elt)
 
@@ -519,11 +543,11 @@ struct List[T: Movable, /](
             deinit_func: The deinitializing closure called on each `List` element.
         """
         for i in range(len(self)):
-            # TODO(MOCO-4111): `deinit_func` cannot convert to UnsafePointer.destroy_pointee_with
+            # TODO(MOCO-4111): `deinit_func` cannot convert to Pointer.unsafe_deinit_pointee_with
             # `deinit_func` type since UP is bound on `T: AnyType` but List has `T: Movable`.
             deinit_func(
                 __get_address_as_owned_value(
-                    (self.unsafe_ptr() + i)._get_kgen_pointer()
+                    self._data.unsafe_offset(i)._get_kgen_pointer()
                 )
             )
         self^._unsafe_assume_destroyed_and_deallocate()
@@ -689,11 +713,12 @@ struct List[T: Movable, /](
             Self.T, Copyable
         ), "List iteration requires the element to be `Copyable`."
         return _ListIter(
-            index=0,
-            src=rebind[
-                UnsafePointer[downcast[Self.T, Copyable], origin_of(self)]
-            ](self.unsafe_ptr()),
-            length=self._len,
+            0,
+            # TODO(MOCO-4326): Remove rebind
+            rebind[Pointer[downcast[Self.T, Copyable], origin_of(self)]](
+                self._data
+            ),
+            self._len,
         )
 
     def __reversed__(
@@ -707,9 +732,12 @@ struct List[T: Movable, /](
             A reversed iterator of immutable references to the list elements.
         """
         return _ListIter[forward=False](
-            index=len(self),
-            src=self.unsafe_ptr(),
-            length=self._len,
+            len(self),
+            # TODO(MOCO-4326): Remove rebind
+            rebind[Pointer[downcast[Self.T, Copyable], origin_of(self)]](
+                self._data
+            ),
+            self._len,
         )
 
     # ===-------------------------------------------------------------------===#
@@ -878,11 +906,14 @@ struct List[T: Movable, /](
         self.append(value^)
 
         for _ in range(normalized_idx, len(self) - 1):
-            var earlier_ptr = self._data + earlier_idx
-            var later_ptr = self._data + later_idx
+            var earlier_ptr = self._data.unsafe_offset(earlier_idx)
+            var later_ptr = self._data.unsafe_offset(later_idx)
 
-            var tmp = earlier_ptr.take_pointee()
-            earlier_ptr.init_pointee_move_from(later_ptr)
+            var tmp = earlier_ptr.unsafe_take_pointee()
+            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_ method
+            MutUnsafePointer(earlier_ptr).init_pointee_move_from(
+                MutUnsafePointer(later_ptr)
+            )
             later_ptr.unsafe_write(tmp^)
 
             earlier_idx -= 1
@@ -910,7 +941,7 @@ struct List[T: Movable, /](
         var final_size = len(self) + other_len
         self.reserve(final_size)
 
-        var dest_ptr = self._data + self._len
+        var dest_ptr = self._data.unsafe_offset(self._len)
         var src_ptr = other.unsafe_ptr()
         self._annotate_increase(other_len)
 
@@ -954,7 +985,7 @@ struct List[T: Movable, /](
         self._len = new_num_elts
 
         uninit_copy_n[overlapping=False](
-            dest=self.unsafe_ptr() + i,
+            dest=self._data.unsafe_offset(i),
             src=elements.unsafe_ptr(),
             count=elements_len,
         )
@@ -987,7 +1018,7 @@ struct List[T: Movable, /](
         """
         self.reserve(self._len + value.size)
         self._annotate_increase(value.size)
-        self._unsafe_next_uninit_ptr().store(value)
+        self._unsafe_next_uninit_ptr().unsafe_store(value)
         self._len += value.size
 
     def extend[
@@ -1021,7 +1052,7 @@ struct List[T: Movable, /](
         assert count <= value.size, "count must be <= value.size"
         self.reserve(self._len + count)
         self._annotate_increase(count)
-        var v_ptr = UnsafePointer(to=value).bitcast[Scalar[dtype]]()
+        var v_ptr = Pointer(to=value).unsafe_bitcast[Scalar[dtype]]()
         unsafe_memcpy(
             dest=self._unsafe_next_uninit_ptr(), src=v_ptr, count=count
         )
@@ -1062,10 +1093,10 @@ struct List[T: Movable, /](
         ```
         """
         check_bounds(i, len(self))
-        var ret_val = (self._data + i).take_pointee()
+        var ret_val = self._data.unsafe_offset(i).unsafe_take_pointee()
         uninit_move_n[overlapping=True](
-            dest=self._data + i,
-            src=self._data + i + 1,
+            dest=self._data.unsafe_offset(i),
+            src=self._data.unsafe_offset(i + 1),
             count=len(self) - i - 1,
         )
         self._len -= 1
@@ -1123,7 +1154,7 @@ struct List[T: Movable, /](
         self.reserve(new_length)
         self._annotate_increase(new_length - self._len)
         for i in range(self._len, new_length):
-            (self._data + i).unsafe_write(copy=fill)
+            self._data.unsafe_offset(i).unsafe_write(copy=fill)
         self._len = new_length
 
     def resize(
@@ -1184,7 +1215,10 @@ struct List[T: Movable, /](
                 " size is smaller than the current size."
             )
 
-        destroy_n(self._data + new_length, count=len(self) - new_length)
+        destroy_n(
+            self._data.unsafe_offset(new_length),
+            count=len(self) - new_length,
+        )
 
         var old_length: Int = self._len
         self._len = new_length
@@ -1209,11 +1243,14 @@ struct List[T: Movable, /](
         var half_len = effective_len // 2
 
         for _ in range(half_len):
-            var earlier_ptr = self._data + earlier_idx
-            var later_ptr = self._data + later_idx
+            var earlier_ptr = self._data.unsafe_offset(earlier_idx)
+            var later_ptr = self._data.unsafe_offset(later_idx)
 
-            var tmp = earlier_ptr.take_pointee()
-            earlier_ptr.init_pointee_move_from(later_ptr)
+            var tmp = earlier_ptr.unsafe_take_pointee()
+            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_ method
+            MutUnsafePointer(earlier_ptr).init_pointee_move_from(
+                MutUnsafePointer(later_ptr)
+            )
             later_ptr.unsafe_write(tmp^)
 
             earlier_idx += 1
@@ -1310,7 +1347,7 @@ struct List[T: Movable, /](
         """
         self._annotate_delete()
         var ptr = self._data
-        self._data = Self._UnsafePointerType.unsafe_dangling()
+        self._data = Self._PointerType.unsafe_dangling()
         self._len = 0
         self._capacity = 0
         return ptr
@@ -1355,7 +1392,7 @@ struct List[T: Movable, /](
         """
         var start, end = slice.indices(len(self))
         return Span[Self.T, origin](
-            ptr=self.unsafe_ptr() + start, length=end - start
+            ptr=self.unsafe_ptr().unsafe_offset(start), length=end - start
         )
 
     @always_inline
@@ -1372,7 +1409,7 @@ struct List[T: Movable, /](
             IntLiteral[idx.value]() >= 0
         ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
         check_bounds(idx, len(self))
-        return self._data[idx]
+        return self._data[unsafe_offset=idx]
 
     @always_inline
     def __getitem__(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
@@ -1385,7 +1422,7 @@ struct List[T: Movable, /](
             A reference to the element at the given index.
         """
         check_bounds(idx, len(self))
-        return self._data[idx]
+        return self._data[unsafe_offset=idx]
 
     @always_inline
     def unsafe_get(ref self, idx: Int) -> ref[self] Self.T:
@@ -1408,7 +1445,7 @@ struct List[T: Movable, /](
             list. Instead, do `my_list.unsafe_get(len(my_list) - 1)`.
         """
         check_bounds[cpu_default=False](idx, len(self))
-        return self._data[idx]
+        return self._data[unsafe_offset=idx]
 
     @always_inline
     def unsafe_set(
@@ -1431,8 +1468,9 @@ struct List[T: Movable, /](
             the list. Instead, do `my_list.unsafe_set(len(my_list) - 1, value)`.
         """
         check_bounds[cpu_default=False](idx, len(self))
-        (self._data + idx).unsafe_deinit_pointee()
-        (self._data + idx).unsafe_write(value^)
+        var ptr = self._data.unsafe_offset(idx)
+        ptr.unsafe_deinit_pointee()
+        ptr.unsafe_write(value^)
 
     def count(self, value: Self.T) -> Int where conforms_to(Self.T, Equatable):
         """Counts the number of occurrences of a value in the list.
@@ -1480,7 +1518,7 @@ struct List[T: Movable, /](
             " [0, len(List)-1]"
         )
         var ptr = self._data
-        (ptr + elt_idx_1).swap_pointees(ptr + elt_idx_2)
+        ptr.unsafe_offset(elt_idx_1).swap_pointees(ptr.unsafe_offset(elt_idx_2))
 
     def unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
@@ -1503,13 +1541,13 @@ struct List[T: Movable, /](
         return (
             self._data.unsafe_mut_cast[origin.mut]()
             .unsafe_origin_cast[origin]()
-            .address_space_cast[address_space]()
+            .unsafe_address_space_cast[address_space]()
         )
 
     @always_inline
     def _unsafe_next_uninit_ptr(
         ref self,
-    ) -> UnsafePointer[Self.T, origin_of(self)]:
+    ) -> Pointer[Self.T, origin_of(self)]:
         """Retrieves a pointer to the next uninitialized element position.
 
         Safety:
@@ -1531,10 +1569,8 @@ struct List[T: Movable, /](
             " next uninitialized element"
         )
 
-        # self.unsafe_ptr() + self._len won't work because .unsafe_ptr()
-        # takes a ref that might mutate self
-        var length = self._len
-        return self.unsafe_ptr() + length
+        var length = len(self)
+        return self.unsafe_ptr().unsafe_offset(length)
 
 
 def _clip(value: Int, start: Int, end: Int) -> Int:
