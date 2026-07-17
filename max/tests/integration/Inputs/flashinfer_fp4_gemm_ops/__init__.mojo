@@ -42,7 +42,13 @@ struct Module:
         workspace: DLTensor[dtype=DType.int8, rank=1],
         tactic: Int = 0,  # auto
     ) raises -> None:
-        safe_call = self.lib.get_function[SafeFunction]("__tvm_ffi_fp4_gemm")
+        # `borrow()` hands back the underlying handle so we call
+        # `get_function` directly. That's safe here because `self.lib`
+        # is a long-lived member that outlives the call, so the looked-up
+        # symbol can't be `dlclose`d out from under us.
+        safe_call = self.lib.borrow().get_function[SafeFunction](
+            "__tvm_ffi_fp4_gemm"
+        )
 
         # `def` params are already mutable local copies, and
         # `DLTensor.__copyinit__` (used at the call site) already fixed

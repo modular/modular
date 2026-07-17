@@ -739,6 +739,24 @@ This version is still a work in progress.
   names going forward. Each method's docstring documents the exact `Safety:`
   requirements the caller must uphold.
 
+- `OwnedDLHandle.get_function` now returns a callable that keeps the owning
+  handle alive while it runs, fixing a crash where the library could be
+  `dlclose`d between symbol lookup and the call. Its parameter is now the
+  return type instead of the full function-pointer type, and it raises if the
+  symbol is missing (previously it aborted the process):
+
+  ```mojo
+  # Before:
+  var sqrt = lib.get_function[def(Float64) abi("C") -> Float64]("sqrt")
+  # After:
+  var sqrt = lib.get_function[Float64]("sqrt")
+  ```
+
+  Arguments are passed using the Mojo calling convention, which is correct
+  for scalar and register-passable arguments. Multi-field struct arguments
+  are rejected at compile time because the Mojo and C conventions can
+  disagree on how aggregates are passed.
+
 ## Tooling changes
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.

@@ -544,16 +544,14 @@ Declares that a function uses the C calling convention. Because C has no
 closure mechanism, `abi("C")` always appears together with `thin`:
 
 ```mojo
-from std.ffi import OwnedDLHandle
+# `add` is compiled with the C calling convention, so it can be called
+# from C or stored in a C-ABI function pointer.
+def add(a: Int32, b: Int32) abi("C") -> Int32:
+    return a + b
 
-def main() raises:
-    # On Linux. On macOS, use "libSystem.dylib", and so forth
-    var lib = OwnedDLHandle("libm.so")
-    var sqrt = lib.get_function[def(Float64) thin abi("C") -> Float64](
-        "sqrt"
-    )
-    print(sqrt(4.0))  # 2.0
-    _ = lib  # Keep the library handle alive until the call is done
+def main():
+    var fp: def(Int32, Int32) thin abi("C") -> Int32 = add
+    print(fp(1, 2))  # 3
 ```
 
 :::caution

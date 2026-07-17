@@ -60,9 +60,7 @@ comptime CUDA_NVML_LIBRARY = _Global["CUDA_NVML_LIBRARY", _init_dylib]
 def _init_dylib() -> OwnedDLHandle:
     try:
         var dylib = _try_find_dylib(_get_nvml_library_paths())
-        _check_error(
-            dylib.get_function[def() thin abi("C") -> Result]("nvmlInit_v2")()
-        )
+        _check_error(dylib.get_function[Result]("nvmlInit_v2")())
         return dylib^
     except e:
         abort(t"CUDA NVML library initialization failed: {e}")
