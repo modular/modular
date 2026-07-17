@@ -864,14 +864,34 @@ class Spec:
                 filters[name] = []
             filters[name].append(val)
 
+        # Skip filter keys that don't appear in any shape's params. An
+        # unknown key (e.g. a function argument embedded in a benchmark name
+        # that isn't a YAML parameter) would otherwise require num_filters
+        # matches per instance, silently eliminating every shape.
+        all_param_names: set[str] = {
+            p.name for s in self.mesh for p in s.params
+        }
+        known_filters = {
+            k: v
+            for k, v in filters.items()
+            if any(self._param_names_match(pn, k) for pn in all_param_names)
+        }
+        unknown_keys = sorted(set(filters) - set(known_filters))
+        if unknown_keys:
+            print(
+                f"kbench --filter: ignoring unknown parameter(s) {unknown_keys}"
+                " (not present in any YAML shape)",
+                file=sys.stderr,
+            )
+
         filtered_insts: list[SpecInstance] = []
-        num_filters = len(filter_list)
+        num_filters = len(known_filters)
 
         # Count the number of valid filters in each instance.
         # If the count==num_filters then add the instance to the result.
         valid_cnt = np.zeros(len(self.mesh), dtype=np.int32)
 
-        for k_filter, v_filter in filters.items():
+        for k_filter, v_filter in known_filters.items():
             for i, s in enumerate(self.mesh):
                 for p in s.params:
                     if (
