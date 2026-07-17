@@ -36,6 +36,15 @@ from max.serve.schemas.openai import (
 from sse_starlette.sse import EventSourceResponse
 
 
+def _convert_stop(stop: str | Sequence[str] | None) -> list[str] | None:
+    """Normalize the OpenAI ``stop`` field into a list of strings."""
+    if stop is None:
+        return None
+    if isinstance(stop, str):
+        return [stop]
+    return list(stop)
+
+
 def _normalize_message_content(
     content: str | Sequence[Mapping[str, Any]],
 ) -> str:
@@ -106,11 +115,36 @@ def build_router(
             }
             for message in request.messages
         ]
+        # Forward every request-configurable text-gen field OpenAI exposes.
+        # The passthrough fields share ``GenerateRequest``'s ``None`` defaults,
+        # so forwarding them verbatim leaves unset ones on the model default.
         req = GenerateRequest(
             ignore_eos=request.ignore_eos,
+            top_k=request.top_k,
+            top_p=request.top_p,
+            min_p=request.min_p,
+            thinking_temperature=request.thinking_temperature,
+            seed=request.seed,
+            frequency_penalty=request.frequency_penalty,
+            presence_penalty=request.presence_penalty,
+            repetition_penalty=request.repetition_penalty,
+            stop=_convert_stop(request.stop),
+            stop_token_ids=request.stop_token_ids,
         )
-        if request.max_tokens is not None:
-            req.num_tokens = request.max_tokens
+        # Fields whose ``GenerateRequest`` default differs from "unset" are only
+        # overridden when the client supplies a value. ``max_completion_tokens``
+        # supersedes the legacy ``max_tokens``.
+        max_new_tokens = (
+            request.max_completion_tokens
+            if request.max_completion_tokens is not None
+            else request.max_tokens
+        )
+        if max_new_tokens is not None:
+            req.num_tokens = max_new_tokens
+        if request.min_tokens is not None:
+            req.min_new_tokens = request.min_tokens
+        if request.temperature is not None:
+            req.temperature = request.temperature
         response = pipeline.generate_text(req, messages)
 
         if request.stream:

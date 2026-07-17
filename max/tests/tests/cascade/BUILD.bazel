@@ -117,6 +117,7 @@ modular_py_test(
     }),
     deps = [
         "//max/python/max/driver",
+        "//max/python/max/experimental/cascade/interfaces",
         "//max/python/max/experimental/cascade/workers",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
