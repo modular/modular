@@ -8,7 +8,7 @@ from debug_test_utils import keep_alive
 
 
 def main():
-    # StaticString is StringSlice[False, StaticConstantOrigin] -- exercises the
+    # StaticString is StringSlice[False, ImmStaticOrigin] -- exercises the
     # formatter for a non-empty and an empty slice.
     var s1: StaticString = "static_string"
     var s2: StaticString = ""
