@@ -85,6 +85,15 @@ trait TensorStorage:
 
     comptime element_size: Int = 1
 
+    comptime _BASE_TYPE_NAME: StaticString
+    """The unparameterized name of the conforming storage policy.
+
+    Used to gate same-policy constraints at compile time. This exists as a
+    workaround for `reflect[T].base_name()` comparisons never folding inside
+    `comptime assert` (MOCO-4353); drop it in favor of `reflect` once that is
+    fixed.
+    """
+
     comptime StorageType[
         mut: Bool,
         //,
@@ -560,6 +569,164 @@ def _copy_from[
             )
 
 
+@always_inline
+def _elementwise_binary_with_broadcast[
+    SelfLayoutType: TensorLayout,
+    self_origin: MutOrigin,
+    OtherLayoutType: TensorLayout,
+    other_mut: Bool,
+    other_origin: Origin[mut=other_mut],
+    //,
+    dtype: DType,
+    width: Int,
+    self_address_space: AddressSpace,
+    other_address_space: AddressSpace,
+    DstStorage: TensorStorage,
+    OtherStorage: TensorStorage,
+](
+    storage: Tuple[
+        DstStorage.StorageType[dtype, self_origin, self_address_space],
+        SelfLayoutType,
+    ],
+    other: Tuple[
+        OtherStorage.StorageType[dtype, other_origin, other_address_space],
+        OtherLayoutType,
+    ],
+    func: Some[
+        def(SIMD[dtype, width], SIMD[dtype, width]) -> (SIMD[dtype, width])
+    ],
+):
+    """Shared loop backing every `TensorOps` elementwise binary operation.
+
+    Applies `func` between elements of `storage` and `other` with limited
+    broadcasting support, in place on `storage`. The right-hand operand is
+    loaded through its (possibly different) storage policy (`OtherStorage`)
+    while the destination is read and written through `DstStorage`. Expressed
+    entirely in terms of each policy's `load`, `store`, and `unsafe_cast`.
+
+    Parameters:
+        SelfLayoutType: The layout type of the destination storage.
+        self_origin: The origin of the destination storage.
+        OtherLayoutType: The layout type of the right-hand storage operand.
+        other_mut: The mutability of the right-hand storage operand.
+        other_origin: The origin of the right-hand storage operand.
+        dtype: The dtype of both tensors' elements.
+        width: The number of scalar elements per logical element. Must equal
+            both policies' `element_size`.
+        self_address_space: The address space of the destination storage.
+        other_address_space: The address space of the right-hand storage
+            operand.
+        DstStorage: The storage policy of the destination.
+        OtherStorage: The storage policy of the right-hand operand.
+
+    Args:
+        storage: A tuple of the destination storage (modified in place) and
+            its layout.
+        other: A tuple of the right-hand storage operand and its layout.
+        func: A binary function that takes two elements (one from each
+            tensor) and returns a single element as the result of the
+            operation.
+
+    Notes:
+
+    - Currently supports only rank-2 tensors or tensors of the same rank.
+    - For tensors of the same rank, shapes must match exactly.
+    - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
+        match the corresponding dimension of the rank-2 tensor.
+    - The operation is optimized based on the memory layout of both tensors.
+    """
+    ref dst_storage = storage[0]
+    ref self_layout = storage[1]
+    ref other_layout = other[1]
+
+    # Immutable views for loading: `load` requires an immutable-origin handle
+    # while both operands may be mutable.
+    var lhs_storage = DstStorage.unsafe_cast[
+        dtype,
+        self_origin.unsafe_mut_cast[False](),
+        self_address_space,
+    ](storage[0])
+    var rhs_storage = OtherStorage.unsafe_cast[
+        dtype,
+        other_origin.unsafe_mut_cast[False](),
+        other_address_space,
+    ](other[0])
+
+    comptime assert (
+        width == DstStorage.element_size and width == OtherStorage.element_size
+    ), "elementwise binary operations require matching logical element size"
+
+    comptime self_rank = type_of(self_layout).rank
+    comptime other_rank = type_of(other_layout).rank
+    comptime other_shape[i: Int] = type_of(other_layout).static_shape[i]
+    comptime self_shape[i: Int] = type_of(self_layout).static_shape[i]
+
+    comptime if self_rank == other_rank:
+        comptime for axis in range(type_of(self_layout).rank):
+            comptime assert other_shape[axis] == self_shape[axis], (
+                "_elementwise_binary_with_broadcast requires shape to"
+                " be the same for tensors of the same rank"
+            )
+
+    comptime assert type_of(self_layout).all_dims_known, (
+        "_elementwise_binary_with_broadcast must operates on tensors"
+        " of statically know layouts"
+    )
+    comptime assert other_rank <= self_rank, (
+        "_elementwise_binary_with_broadcast must operates on tensor of"
+        " equal of lower rank"
+    )
+
+    # TODO(KERN-812): Support numpy like broadcasting and relax rank-2
+    # constrain.
+    comptime assert (
+        self_rank == 2 or self_rank == other_rank
+    ), "Only supports rank-2 tensor, or same rank"
+
+    comptime alignment = align_of[SIMD[dtype, width]]() if is_gpu() else 1
+
+    comptime if other_rank == 1:
+        comptime assert other_shape[0] == self_shape[0], (
+            "_elementwise_binary_with_broadcast 1d tensor operand must"
+            " have a dim that matches the tensors"
+        )
+
+        comptime for i in range(type_of(self_layout).static_product):
+            comptime other_size = type_of(other_layout).static_product
+
+            var lhs_idx = self_layout(Idx[i])
+            var rhs_idx = other_layout(Idx[i % other_size])
+
+            DstStorage.store[alignment=alignment](
+                dst_storage,
+                lhs_idx,
+                func(
+                    DstStorage.load[width=width, alignment=alignment](
+                        lhs_storage, lhs_idx
+                    ),
+                    OtherStorage.load[width=width, alignment=alignment](
+                        rhs_storage, rhs_idx
+                    ),
+                ),
+            )
+    else:
+        comptime for i in range(type_of(self_layout).static_product):
+            var lhs_idx = self_layout(Idx[i])
+            var rhs_idx = other_layout(Idx[i])
+            DstStorage.store[alignment=alignment](
+                dst_storage,
+                lhs_idx,
+                func(
+                    DstStorage.load[width=width, alignment=alignment](
+                        lhs_storage, lhs_idx
+                    ),
+                    OtherStorage.load[width=width, alignment=alignment](
+                        rhs_storage, rhs_idx
+                    ),
+                ),
+            )
+
+
 trait TensorOps(TensorStorage):
     """Extends `TensorStorage` with in-place elementwise arithmetic.
 
@@ -580,13 +747,14 @@ trait TensorOps(TensorStorage):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -602,6 +770,9 @@ trait TensorOps(TensorStorage):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -621,13 +792,14 @@ trait TensorOps(TensorStorage):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -643,6 +815,9 @@ trait TensorOps(TensorStorage):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -662,13 +837,14 @@ trait TensorOps(TensorStorage):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -684,6 +860,9 @@ trait TensorOps(TensorStorage):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -703,13 +882,14 @@ trait TensorOps(TensorStorage):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -725,6 +905,9 @@ trait TensorOps(TensorStorage):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -744,13 +927,14 @@ trait TensorOps(TensorStorage):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -766,6 +950,9 @@ trait TensorOps(TensorStorage):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -785,13 +972,14 @@ trait TensorOps(TensorStorage):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -807,6 +995,9 @@ trait TensorOps(TensorStorage):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -826,13 +1017,14 @@ trait TensorOps(TensorStorage):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -848,6 +1040,9 @@ trait TensorOps(TensorStorage):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -940,6 +1135,9 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
 
     comptime element_size = Self.element_width
     """Number of scalar elements per logical element (alias of `element_width`)."""
+
+    comptime _BASE_TYPE_NAME: StaticString = "PointerStorage"
+    """The unparameterized name of this storage policy."""
 
     comptime StorageType[
         mut: Bool,
@@ -1223,9 +1421,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         # units, then `rebind` back to the original handle type.
         comptime assert offset_coord.flat_rank == 1
         return (
-            storage.bitcast[Scalar[type_of(storage).T.dtype]]()
-            + offset_coord[0].value()
-        ).bitcast[SIMD[type_of(storage).T.dtype, Self.element_width]]()
+            storage.bitcast[Scalar[offset_dtype]]() + offset_coord[0].value()
+        ).bitcast[SIMD[offset_dtype, Self.element_width]]()
 
     @staticmethod
     def distance[
@@ -1317,138 +1514,6 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space=other_address_space,
         ](storage, other)
 
-    @always_inline
-    @staticmethod
-    def _elementwise_binary_with_broadcast[
-        SelfLayoutType: TensorLayout,
-        self_origin: MutOrigin,
-        self_address_space: AddressSpace,
-        OtherLayoutType: TensorLayout,
-        other_mut: Bool,
-        other_origin: Origin[mut=other_mut],
-        other_address_space: AddressSpace,
-        //,
-        dtype: DType,
-    ](
-        storage: Tuple[
-            Self.StorageType[dtype, self_origin, self_address_space],
-            SelfLayoutType,
-        ],
-        other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
-            OtherLayoutType,
-        ],
-        func: Some[
-            def(
-                SIMD[dtype, Self.element_width], SIMD[dtype, Self.element_width]
-            ) -> (SIMD[dtype, Self.element_width])
-        ],
-    ):
-        """Apply an elementwise binary operation with broadcasting support.
-
-        This internal method applies a binary operation between elements of this
-        tensor and another tensor, with support for limited broadcasting
-        patterns. The operation is performed in-place on this tensor.
-
-        Parameters:
-            SelfLayoutType: The layout type of the destination storage.
-            self_origin: The origin of the destination storage.
-            self_address_space: The address space of the destination storage.
-            OtherLayoutType: The layout type of the right-hand storage operand.
-            other_mut: The mutability of the right-hand storage operand.
-            other_origin: The origin of the right-hand storage operand.
-            other_address_space: The address space of the right-hand storage
-                operand.
-            dtype: The dtype of both tensors' elements.
-
-        Args:
-            storage: A tuple of the destination storage (modified in place) and
-                its layout.
-            other: A tuple of the right-hand storage operand and its layout.
-            func: A binary function that takes two elements (one from each
-                tensor) and returns a single element as the result of the
-                operation.
-
-        Notes:
-
-        - Currently supports only rank-2 tensors or tensors of the same rank.
-        - For tensors of the same rank, shapes must match exactly.
-        - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
-            match the corresponding dimension of the rank-2 tensor.
-        - The operation is optimized based on the memory layout of both tensors.
-        """
-
-        ref self_storage = storage[0]
-        ref self_layout = storage[1]
-        ref other_storage = other[0]
-        ref other_layout = other[1]
-
-        comptime self_rank = type_of(self_layout).rank
-        comptime other_rank = type_of(other_layout).rank
-        comptime other_shape[i: Int] = type_of(other_layout).static_shape[i]
-        comptime self_shape[i: Int] = type_of(self_layout).static_shape[i]
-
-        comptime if self_rank == other_rank:
-            comptime for axis in range(type_of(self_layout).rank):
-                comptime assert other_shape[axis] == self_shape[axis], (
-                    "_elementwise_binary_with_broadcast requires shape to"
-                    " be the same for tensors of the same rank"
-                )
-
-        comptime assert type_of(self_layout).all_dims_known, (
-            "_elementwise_binary_with_broadcast must operates on tensors"
-            " of statically know layouts"
-        )
-        comptime assert other_rank <= self_rank, (
-            "_elementwise_binary_with_broadcast must operates on tensor of"
-            " equal of lower rank"
-        )
-
-        # TODO(KERN-812): Support numpy like broadcasting and relax rank-2
-        # constrain.
-        comptime assert (
-            self_rank == 2 or self_rank == other_rank
-        ), "Only supports rank-2 tensor, or same rank"
-
-        comptime if other_rank == 1:
-            comptime assert other_shape[0] == self_shape[0], (
-                "_elementwise_binary_with_broadcast 1d tensor operand must"
-                " have a dim that matches the tensors"
-            )
-
-            comptime for i in range(type_of(self_layout).static_product):
-                comptime other_size = type_of(other_layout).static_product
-
-                var lhs_idx = self_layout(Idx[i])
-                var rhs_idx = other_layout(Idx[i % other_size])
-
-                self_storage.bitcast[Scalar[dtype]]().store(
-                    lhs_idx,
-                    func(
-                        self_storage.bitcast[Scalar[dtype]]().load[
-                            width=Self.element_width
-                        ](lhs_idx),
-                        other_storage.bitcast[Scalar[dtype]]().load[
-                            width=Self.element_width
-                        ](rhs_idx),
-                    ),
-                )
-
-        comptime for i in range(type_of(self_layout).static_product):
-            var lhs_idx = self_layout(Idx[i])
-            var rhs_idx = other_layout(Idx[i])
-            self_storage.bitcast[Scalar[dtype]]().store(
-                lhs_idx,
-                func(
-                    self_storage.bitcast[Scalar[dtype]]().load[
-                        width=Self.element_size
-                    ](lhs_idx),
-                    other_storage.bitcast[Scalar[dtype]]().load[
-                        width=Self.element_size
-                    ](rhs_idx),
-                ),
-            )
-
     @staticmethod
     def add[
         SelfLayoutType: TensorLayout,
@@ -1460,13 +1525,14 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -1482,6 +1548,9 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -1495,7 +1564,12 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ) -> type_of(lhs):
             return lhs + rhs
 
-        Self._elementwise_binary_with_broadcast(storage, other, add)
+        _elementwise_binary_with_broadcast[
+            width=Self.element_size,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+            DstStorage=Self,
+        ](storage, other, add)
 
     @staticmethod
     def mul[
@@ -1508,13 +1582,14 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -1530,6 +1605,9 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -1543,7 +1621,12 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ) -> type_of(lhs):
             return lhs * rhs
 
-        Self._elementwise_binary_with_broadcast(storage, other, mul)
+        _elementwise_binary_with_broadcast[
+            width=Self.element_size,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+            DstStorage=Self,
+        ](storage, other, mul)
 
     @staticmethod
     def sub[
@@ -1556,13 +1639,14 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -1578,6 +1662,9 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -1591,7 +1678,12 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ) -> type_of(lhs):
             return lhs - rhs
 
-        Self._elementwise_binary_with_broadcast(storage, other, sub)
+        _elementwise_binary_with_broadcast[
+            width=Self.element_size,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+            DstStorage=Self,
+        ](storage, other, sub)
 
     @staticmethod
     def floordiv[
@@ -1604,13 +1696,14 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -1626,6 +1719,9 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -1639,7 +1735,12 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ) -> type_of(lhs):
             return lhs // rhs
 
-        Self._elementwise_binary_with_broadcast(storage, other, floordiv)
+        _elementwise_binary_with_broadcast[
+            width=Self.element_size,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+            DstStorage=Self,
+        ](storage, other, floordiv)
 
     @staticmethod
     def truediv[
@@ -1652,13 +1753,14 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -1674,6 +1776,9 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -1687,7 +1792,12 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ) -> type_of(lhs):
             return lhs / rhs
 
-        Self._elementwise_binary_with_broadcast(storage, other, truediv)
+        _elementwise_binary_with_broadcast[
+            width=Self.element_size,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+            DstStorage=Self,
+        ](storage, other, truediv)
 
     @staticmethod
     def min[
@@ -1700,13 +1810,14 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -1722,6 +1833,9 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -1735,7 +1849,12 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ) -> type_of(lhs):
             return min(lhs, rhs)
 
-        Self._elementwise_binary_with_broadcast(storage, other, min_fn)
+        _elementwise_binary_with_broadcast[
+            width=Self.element_size,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+            DstStorage=Self,
+        ](storage, other, min_fn)
 
     @staticmethod
     def max[
@@ -1748,13 +1867,14 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -1770,6 +1890,9 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -1783,7 +1906,12 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ) -> type_of(lhs):
             return max(lhs, rhs)
 
-        Self._elementwise_binary_with_broadcast(storage, other, max_fn)
+        _elementwise_binary_with_broadcast[
+            width=Self.element_size,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+            DstStorage=Self,
+        ](storage, other, max_fn)
 
     @always_inline
     @staticmethod
@@ -2014,6 +2142,9 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
 
     comptime element_size = Self.element_width
     """Number of scalar elements per logical element (alias of `element_width`)."""
+
+    comptime _BASE_TYPE_NAME: StaticString = "DevicePointerStorage"
+    """The unparameterized name of this storage policy."""
 
     comptime StorageType[
         mut: Bool,
@@ -2438,133 +2569,6 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space=other_address_space,
         ](storage, other)
 
-    @always_inline
-    @staticmethod
-    def _elementwise_binary_with_broadcast[
-        SelfLayoutType: TensorLayout,
-        self_origin: MutOrigin,
-        OtherLayoutType: TensorLayout,
-        other_mut: Bool,
-        other_origin: Origin[mut=other_mut],
-        //,
-        dtype: DType,
-    ](
-        storage: Tuple[
-            Self.StorageType[dtype, self_origin, AddressSpace.GENERIC],
-            SelfLayoutType,
-        ],
-        other: Tuple[
-            Self.StorageType[dtype, other_origin, AddressSpace.GENERIC],
-            OtherLayoutType,
-        ],
-        func: Some[
-            def(
-                SIMD[dtype, Self.element_width], SIMD[dtype, Self.element_width]
-            ) -> (SIMD[dtype, Self.element_width])
-        ],
-    ):
-        """Apply an elementwise binary operation with broadcasting support.
-
-        This internal method applies a binary operation between elements of this
-        tensor and another tensor, with support for limited broadcasting
-        patterns. The operation is performed in-place on this tensor.
-
-        Parameters:
-            SelfLayoutType: The layout type of the destination storage.
-            self_origin: The origin of the destination storage.
-            OtherLayoutType: The layout type of the right-hand storage operand.
-            other_mut: The mutability of the right-hand storage operand.
-            other_origin: The origin of the right-hand storage operand.
-            dtype: The dtype of both tensors' elements.
-
-        Args:
-            storage: A tuple of the destination storage (modified in place) and
-                its layout.
-            other: A tuple of the right-hand storage operand and its layout.
-            func: A binary function that takes two elements (one from each
-                tensor) and returns a single element as the result of the
-                operation.
-
-        Notes:
-
-        - Currently supports only rank-2 tensors or tensors of the same rank.
-        - For tensors of the same rank, shapes must match exactly.
-        - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
-            match the corresponding dimension of the rank-2 tensor.
-        - The operation is optimized based on the memory layout of both tensors.
-        """
-
-        ref self_storage = storage[0]
-        ref self_layout = storage[1]
-        ref other_storage = other[0]
-        ref other_layout = other[1]
-
-        comptime self_rank = type_of(self_layout).rank
-        comptime other_rank = type_of(other_layout).rank
-        comptime other_shape[i: Int] = type_of(other_layout).static_shape[i]
-        comptime self_shape[i: Int] = type_of(self_layout).static_shape[i]
-
-        comptime if self_rank == other_rank:
-            comptime for axis in range(type_of(self_layout).rank):
-                comptime assert other_shape[axis] == self_shape[axis], (
-                    "_elementwise_binary_with_broadcast requires shape to"
-                    " be the same for tensors of the same rank"
-                )
-
-        comptime assert type_of(self_layout).all_dims_known, (
-            "_elementwise_binary_with_broadcast must operates on tensors"
-            " of statically know layouts"
-        )
-        comptime assert other_rank <= self_rank, (
-            "_elementwise_binary_with_broadcast must operates on tensor of"
-            " equal of lower rank"
-        )
-
-        # TODO(KERN-812): Support numpy like broadcasting and relax rank-2
-        # constrain.
-        comptime assert (
-            self_rank == 2 or self_rank == other_rank
-        ), "Only supports rank-2 tensor, or same rank"
-
-        comptime if other_rank == 1:
-            comptime assert other_shape[0] == self_shape[0], (
-                "_elementwise_binary_with_broadcast 1d tensor operand must"
-                " have a dim that matches the tensors"
-            )
-
-            comptime for i in range(type_of(self_layout).static_product):
-                comptime other_size = type_of(other_layout).static_product
-
-                var lhs_idx = self_layout(Idx[i])
-                var rhs_idx = other_layout(Idx[i % other_size])
-
-                _device_leaf_ptr(self_storage).store(
-                    lhs_idx,
-                    func(
-                        _device_leaf_ptr(self_storage).load[
-                            width=Self.element_width
-                        ](lhs_idx),
-                        _device_leaf_ptr(other_storage).load[
-                            width=Self.element_width
-                        ](rhs_idx),
-                    ),
-                )
-
-        comptime for i in range(type_of(self_layout).static_product):
-            var lhs_idx = self_layout(Idx[i])
-            var rhs_idx = other_layout(Idx[i])
-            _device_leaf_ptr(self_storage).store(
-                lhs_idx,
-                func(
-                    _device_leaf_ptr(self_storage).load[
-                        width=Self.element_size
-                    ](lhs_idx),
-                    _device_leaf_ptr(other_storage).load[
-                        width=Self.element_size
-                    ](rhs_idx),
-                ),
-            )
-
     @staticmethod
     def add[
         SelfLayoutType: TensorLayout,
@@ -2576,13 +2580,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -2598,6 +2603,9 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -2611,7 +2619,12 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ) -> type_of(lhs):
             return lhs + rhs
 
-        Self._elementwise_binary_with_broadcast(storage, other, add)
+        _elementwise_binary_with_broadcast[
+            width=Self.element_size,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+            DstStorage=Self,
+        ](storage, other, add)
 
     @staticmethod
     def mul[
@@ -2624,13 +2637,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -2646,6 +2660,9 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -2659,7 +2676,12 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ) -> type_of(lhs):
             return lhs * rhs
 
-        Self._elementwise_binary_with_broadcast(storage, other, mul)
+        _elementwise_binary_with_broadcast[
+            width=Self.element_size,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+            DstStorage=Self,
+        ](storage, other, mul)
 
     @staticmethod
     def sub[
@@ -2672,13 +2694,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -2694,6 +2717,9 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -2707,7 +2733,12 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ) -> type_of(lhs):
             return lhs - rhs
 
-        Self._elementwise_binary_with_broadcast(storage, other, sub)
+        _elementwise_binary_with_broadcast[
+            width=Self.element_size,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+            DstStorage=Self,
+        ](storage, other, sub)
 
     @staticmethod
     def floordiv[
@@ -2720,13 +2751,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -2742,6 +2774,9 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -2755,7 +2790,12 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ) -> type_of(lhs):
             return lhs // rhs
 
-        Self._elementwise_binary_with_broadcast(storage, other, floordiv)
+        _elementwise_binary_with_broadcast[
+            width=Self.element_size,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+            DstStorage=Self,
+        ](storage, other, floordiv)
 
     @staticmethod
     def truediv[
@@ -2768,13 +2808,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -2790,6 +2831,9 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -2803,7 +2847,12 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ) -> type_of(lhs):
             return lhs / rhs
 
-        Self._elementwise_binary_with_broadcast(storage, other, truediv)
+        _elementwise_binary_with_broadcast[
+            width=Self.element_size,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+            DstStorage=Self,
+        ](storage, other, truediv)
 
     @staticmethod
     def min[
@@ -2816,13 +2865,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -2838,6 +2888,9 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -2851,7 +2904,12 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ) -> type_of(lhs):
             return min(lhs, rhs)
 
-        Self._elementwise_binary_with_broadcast(storage, other, min_fn)
+        _elementwise_binary_with_broadcast[
+            width=Self.element_size,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+            DstStorage=Self,
+        ](storage, other, min_fn)
 
     @staticmethod
     def max[
@@ -2864,13 +2922,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
+        OtherStorage: TensorStorage,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherStorage.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -2886,6 +2945,9 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
+            OtherStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the two policies have the same
+                logical element size.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -2899,7 +2961,12 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ) -> type_of(lhs):
             return max(lhs, rhs)
 
-        Self._elementwise_binary_with_broadcast(storage, other, max_fn)
+        _elementwise_binary_with_broadcast[
+            width=Self.element_size,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+            DstStorage=Self,
+        ](storage, other, max_fn)
 
     @always_inline
     @staticmethod
@@ -3059,3 +3126,385 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
                     * scale
                 ),
             )
+
+
+struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
+    TensorStorage
+):
+    """Stub of the planned static-offset storage policy family.
+
+    Views externally owned memory like `PointerStorage`, but starts every
+    access `static_offset` scalar elements past the handle. The offset is
+    encoded in the policy's parameters, so it costs nothing at runtime and
+    survives `unsafe_cast`. This is a minimal placeholder used by the
+    TensorOps binary-op tests to exercise per-operand storage policies until
+    the full static-offset design lands.
+
+    Parameters:
+        static_offset: The number of scalar elements every access is advanced
+            by.
+        element_width: Number of scalar elements per logical element. A value
+            of `1` (the default) is a non-vectorized tensor; larger values
+            describe a vectorized view whose logical elements are SIMD vectors.
+    """
+
+    comptime element_size = Self.element_width
+    """Number of scalar elements per logical element (alias of `element_width`)."""
+
+    comptime _BASE_TYPE_NAME: StaticString = "StaticOffsetStorage"
+    """The unparameterized name of this storage policy."""
+
+    comptime StorageType[
+        mut: Bool,
+        //,
+        dtype: DType,
+        origin: Origin[mut=mut],
+        address_space: AddressSpace,
+    ]: TrivialRegisterPassable = UnsafePointer[
+        SIMD[dtype, Self.element_width], origin, address_space=address_space
+    ]
+    """A raw `UnsafePointer` borrowing the storage, `static_offset` scalar
+    elements before the viewed region.
+
+    Parameters:
+        mut: The mutability of the borrowed storage, inferred from `origin`.
+        dtype: The element data type of the borrowed storage.
+        origin: The origin tracking the lifetime of the borrowed storage.
+        address_space: The address space the borrowed storage resides in.
+    """
+
+    @doc_hidden
+    @staticmethod
+    @always_inline
+    def unsafe_ptr[
+        mut: Bool,
+        dtype: DType,
+        origin: Origin[mut=mut],
+        address_space: AddressSpace,
+        //,
+    ](
+        storage: Self.StorageType[dtype, origin, address_space],
+    ) raises -> UnsafePointer[
+        Scalar[dtype], origin, address_space=address_space
+    ]:
+        """Returns a raw scalar pointer to the start of the viewed region.
+
+        Parameters:
+            mut: The mutability of the borrowed storage, inferred from `origin`.
+            dtype: The element data type of the borrowed storage.
+            origin: The origin tracking the lifetime of the borrowed storage.
+            address_space: The address space the borrowed storage resides in.
+
+        Args:
+            storage: The storage to reinterpret as a raw scalar pointer.
+
+        Returns:
+            An `UnsafePointer` to `Scalar[dtype]` referring to the first
+            element the policy exposes, i.e. `static_offset` scalar elements
+            past the handle.
+        """
+        return storage.bitcast[Scalar[dtype]]() + Self.static_offset
+
+    @staticmethod
+    @always_inline
+    def unsafe_cast[
+        to_mut: Bool,
+        //,
+        to_dtype: DType,
+        to_origin: Origin[mut=to_mut],
+        to_address_space: AddressSpace,
+    ](
+        storage: Self.StorageType[...],
+        out result: Self.StorageType[
+            mut=to_mut, to_dtype, to_origin, to_address_space
+        ],
+    ):
+        """Reinterprets a storage handle with new type parameters.
+
+        The static offset lives in the policy's parameters, so it is
+        unaffected by the reinterpret.
+
+        Parameters:
+            to_mut: The mutability of the origin.
+            to_dtype: The element data type to reinterpret the storage as.
+            to_origin: The origin to reinterpret the storage as.
+            to_address_space: The address space to reinterpret the storage as.
+
+        Args:
+            storage: The storage to reinterpret.
+
+        Returns:
+            A handle referring to the same storage, viewed with the new type
+            parameters.
+        """
+        result = {
+            _mlir_value = __mlir_op.`pop.pointer.bitcast`[
+                _type=type_of(result)._mlir_type,
+            ](storage._get_kgen_pointer())
+        }
+
+    @staticmethod
+    @always_inline
+    def load[
+        dtype: DType,
+        //,
+        width: SIMDSize,
+        alignment: Int,
+        invariant: Bool = False,
+        non_temporal: Bool = False,
+    ](storage: Self.StorageType[mut=False, dtype, ...]) -> SIMD[dtype, width]:
+        """Loads a `SIMD` value from the start of the viewed region.
+
+        Parameters:
+            dtype: The element data type of the storage.
+            width: The number of elements to load.
+            alignment: The alignment guarantee for the load.
+            invariant: If True, the compiler may assume the memory won't be
+                modified during the kernel, enabling load hoisting and caching.
+            non_temporal: If True, indicates the data will not be reused soon,
+                allowing the hardware to bypass caches (e.g., streaming loads).
+
+        Args:
+            storage: The storage to load from.
+
+        Returns:
+            The loaded `SIMD` value.
+        """
+        return (storage.bitcast[Scalar[dtype]]() + Self.static_offset).load[
+            width=width,
+            alignment=alignment,
+            invariant=invariant,
+            non_temporal=non_temporal,
+        ]()
+
+    @staticmethod
+    @always_inline
+    def load[
+        dtype: DType,
+        //,
+        width: SIMDSize,
+        alignment: Int,
+        invariant: Bool = False,
+        non_temporal: Bool = False,
+    ](
+        storage: Self.StorageType[mut=False, dtype, ...],
+        offset: Some[Indexer],
+    ) -> SIMD[dtype, width]:
+        """Loads a `SIMD` value at a scalar-element offset into the region.
+
+        Parameters:
+            dtype: The element data type of the storage.
+            width: The number of elements to load.
+            alignment: The alignment guarantee for the load.
+            invariant: If True, the compiler may assume the memory won't be
+                modified during the kernel, enabling load hoisting and caching.
+            non_temporal: If True, indicates the data will not be reused soon,
+                allowing the hardware to bypass caches (e.g., streaming loads).
+
+        Args:
+            storage: The storage to load from.
+            offset: The scalar-element offset to load at, relative to the
+                start of the viewed region.
+
+        Returns:
+            The loaded `SIMD` value.
+        """
+        return (storage.bitcast[Scalar[dtype]]() + Self.static_offset).load[
+            width=width,
+            alignment=alignment,
+            invariant=invariant,
+            non_temporal=non_temporal,
+        ](offset)
+
+    @staticmethod
+    @always_inline
+    def store[
+        dtype: DType,
+        alignment: Int,
+        *,
+        non_temporal: Bool = False,
+    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _],):
+        """Stores a `SIMD` value at the start of the viewed region.
+
+        Parameters:
+            dtype: The element data type of the storage.
+            alignment: The alignment guarantee for the store.
+            non_temporal: If True, indicates the data will not be reused soon,
+                allowing the hardware to bypass caches (e.g., streaming stores).
+
+        Args:
+            storage: The storage to store into.
+            value: The `SIMD` value to store.
+        """
+        (storage.bitcast[Scalar[dtype]]() + Self.static_offset).store[
+            alignment=alignment, non_temporal=non_temporal
+        ](value)
+
+    @staticmethod
+    @always_inline
+    def store[
+        dtype: DType,
+        alignment: Int,
+        *,
+        non_temporal: Bool = False,
+    ](
+        storage: Self.StorageType[mut=True, dtype, ...],
+        offset: Some[Indexer],
+        value: SIMD[dtype, _],
+    ):
+        """Stores a `SIMD` value at a scalar-element offset into the region.
+
+        Parameters:
+            dtype: The element data type of the storage.
+            alignment: The alignment guarantee for the store.
+            non_temporal: If True, indicates the data will not be reused soon,
+                allowing the hardware to bypass caches (e.g., streaming stores).
+
+        Args:
+            storage: The storage to store into.
+            offset: The scalar-element offset to store at, relative to the
+                start of the viewed region.
+            value: The `SIMD` value to store.
+        """
+        (storage.bitcast[Scalar[dtype]]() + Self.static_offset).store[
+            alignment=alignment, non_temporal=non_temporal
+        ](offset, value)
+
+    comptime OffsetResultType[
+        offset_types: TypeList[Trait=CoordLike, ...],
+    ]: TensorStorage = Self
+    """The storage type produced by offsetting with a given coordinate.
+
+    Dynamic offsetting never changes the storage policy, so this is `Self`;
+    the static offset stays encoded in the parameters.
+
+    Parameters:
+        offset_types: The coordinate element types of the applied offset.
+    """
+
+    @staticmethod
+    @always_inline
+    def offset[
+        offset_mut: Bool,
+        offset_types: TypeList[Trait=CoordLike, ...],
+        //,
+        offset_dtype: DType,
+        offset_origin: Origin[mut=offset_mut],
+        offset_address_space: AddressSpace,
+    ](
+        var storage: Self.StorageType[
+            offset_dtype, offset_origin, offset_address_space
+        ],
+        var offset_coord: Coord[*offset_types],
+    ) -> Self.OffsetResultType[offset_types].StorageType[
+        offset_dtype, offset_origin, offset_address_space
+    ]:
+        """Returns a storage handle offset by a number of scalar elements.
+
+        The dynamic offset advances the handle itself; the static offset
+        remains in the policy's parameters and continues to apply on top.
+
+        Parameters:
+            offset_mut: The mutability of the storage, inferred from
+                `offset_origin`.
+            offset_types: The coordinate element types of `offset_coord`.
+            offset_dtype: The element data type of the storage.
+            offset_origin: The origin tracking the lifetime of the storage.
+            offset_address_space: The address space the storage resides in.
+
+        Args:
+            storage: The storage to offset from.
+            offset_coord: A rank-1 coordinate holding the number of scalar
+                elements to advance the handle by.
+
+        Returns:
+            A handle of the same type starting the given number of scalar
+            elements into the referenced storage.
+        """
+        comptime assert offset_coord.flat_rank == 1
+        return (
+            storage.bitcast[Scalar[offset_dtype]]() + offset_coord[0].value()
+        ).bitcast[SIMD[offset_dtype, Self.element_width]]()
+
+    @staticmethod
+    def distance[
+        dtype: DType, address_space: AddressSpace, //
+    ](
+        storage: Self.StorageType[mut=False, dtype, _, address_space],
+        other: Self.StorageType[mut=False, dtype, _, address_space],
+    ) -> Int:
+        """Returns the scalar-element distance from `other` to `storage`.
+
+        Both handles carry the same static offset, so it cancels out of the
+        distance.
+
+        Parameters:
+            dtype: The storages' `DType`.
+            address_space: The storages' `AddressSpace`.
+
+        Args:
+            storage: The storage to measure the distance to.
+            other: The storage to measure the distance from.
+
+        Returns:
+            The number of scalar elements separating the two handles. The
+            value is positive when `storage` is ahead of `other` and negative
+            when it precedes `other`.
+        """
+        return (Int(storage) - Int(other)) // size_of[dtype]()
+
+    @staticmethod
+    @always_inline
+    def copy_from[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dst_dtype: DType,
+        src_dtype: DType,
+        OtherStorage: TensorStorage,
+    ](
+        storage: Tuple[
+            Self.StorageType[dst_dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            OtherStorage.StorageType[
+                src_dtype, other_origin, other_address_space
+            ],
+            OtherLayoutType,
+        ],
+    ):
+        """Copies the elements of `other` into `storage`, in place.
+
+        Delegates to the shared `_copy_from` loop; destination accesses go
+        through this policy's `load`/`store`, so the static offset applies.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the source storage.
+            other_mut: The mutability of the source storage.
+            other_origin: The origin of the source storage.
+            other_address_space: The address space of the source storage.
+            dst_dtype: The element data type of the destination storage.
+            src_dtype: The element data type of the source storage.
+            OtherStorage: The storage policy of the source. May differ from
+                `Self` as long as the two policies are copy-compatible (same
+                logical element size).
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the source storage and its layout.
+        """
+        _copy_from[
+            DstStorage=Self,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+        ](storage, other)

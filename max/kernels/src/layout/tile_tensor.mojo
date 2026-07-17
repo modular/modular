@@ -2683,13 +2683,19 @@ struct TileTensor[
 
     @always_inline
     def __iadd__(
-        self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
+        self, rhs: TileTensor[Self.dtype, ...]
     ) where Self.mut and conforms_to(Self.Storage, TensorOps):
         """Adds `rhs` into this tensor elementwise, in place.
 
         Args:
             rhs: The tensor to add, broadcast against this tensor's layout.
         """
+        comptime assert (
+            Self.Storage._BASE_TYPE_NAME == rhs.Storage._BASE_TYPE_NAME
+        ), "in-place binary ops require operands with the same storage class"
+        comptime assert (
+            self.element_size == rhs.element_size
+        ), "in-place binary ops require operands with the same element size"
         Self.Storage.add(
             (self._unsafe_storage_cast[to_mut=True](), self.layout),
             (rhs._storage, rhs.layout),
@@ -2697,7 +2703,7 @@ struct TileTensor[
 
     @always_inline
     def __imul__(
-        self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
+        self, rhs: TileTensor[Self.dtype, ...]
     ) where Self.mut and conforms_to(Self.Storage, TensorOps):
         """Multiplies this tensor by `rhs` elementwise, in place.
 
@@ -2705,6 +2711,12 @@ struct TileTensor[
             rhs: The tensor to multiply by, broadcast against this tensor's
                 layout.
         """
+        comptime assert (
+            Self.Storage._BASE_TYPE_NAME == rhs.Storage._BASE_TYPE_NAME
+        ), "in-place binary ops require operands with the same storage class"
+        comptime assert (
+            self.element_size == rhs.element_size
+        ), "in-place binary ops require operands with the same element size"
         Self.Storage.mul(
             (self._unsafe_storage_cast[to_mut=True](), self.layout),
             (rhs._storage, rhs.layout),
@@ -2712,13 +2724,19 @@ struct TileTensor[
 
     @always_inline
     def __isub__(
-        self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
+        self, rhs: TileTensor[Self.dtype, ...]
     ) where Self.mut and conforms_to(Self.Storage, TensorOps):
         """Subtracts `rhs` from this tensor elementwise, in place.
 
         Args:
             rhs: The tensor to subtract, broadcast against this tensor's layout.
         """
+        comptime assert (
+            Self.Storage._BASE_TYPE_NAME == rhs.Storage._BASE_TYPE_NAME
+        ), "in-place binary ops require operands with the same storage class"
+        comptime assert (
+            self.element_size == rhs.element_size
+        ), "in-place binary ops require operands with the same element size"
         Self.Storage.sub(
             (self._unsafe_storage_cast[to_mut=True](), self.layout),
             (rhs._storage, rhs.layout),
@@ -2726,7 +2744,7 @@ struct TileTensor[
 
     @always_inline
     def __ifloordiv__(
-        self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
+        self, rhs: TileTensor[Self.dtype, ...]
     ) where Self.mut and conforms_to(Self.Storage, TensorOps):
         """Floor-divides this tensor by `rhs` elementwise, in place.
 
@@ -2734,6 +2752,12 @@ struct TileTensor[
             rhs: The tensor to floor-divide by, broadcast against this tensor's
                 layout.
         """
+        comptime assert (
+            Self.Storage._BASE_TYPE_NAME == rhs.Storage._BASE_TYPE_NAME
+        ), "in-place binary ops require operands with the same storage class"
+        comptime assert (
+            self.element_size == rhs.element_size
+        ), "in-place binary ops require operands with the same element size"
         Self.Storage.floordiv(
             (self._unsafe_storage_cast[to_mut=True](), self.layout),
             (rhs._storage, rhs.layout),
@@ -2741,7 +2765,7 @@ struct TileTensor[
 
     @always_inline
     def __itruediv__(
-        self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
+        self, rhs: TileTensor[Self.dtype, ...]
     ) where Self.mut and conforms_to(Self.Storage, TensorOps):
         """True-divides this tensor by `rhs` elementwise, in place.
 
@@ -2749,6 +2773,12 @@ struct TileTensor[
             rhs: The tensor to true-divide by, broadcast against this tensor's
                 layout.
         """
+        comptime assert (
+            Self.Storage._BASE_TYPE_NAME == rhs.Storage._BASE_TYPE_NAME
+        ), "in-place binary ops require operands with the same storage class"
+        comptime assert (
+            self.element_size == rhs.element_size
+        ), "in-place binary ops require operands with the same element size"
         Self.Storage.truediv(
             (self._unsafe_storage_cast[to_mut=True](), self.layout),
             (rhs._storage, rhs.layout),
@@ -2756,7 +2786,7 @@ struct TileTensor[
 
     @always_inline
     def min(
-        self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
+        self, rhs: TileTensor[Self.dtype, ...]
     ) where Self.mut and conforms_to(Self.Storage, TensorOps):
         """Takes the elementwise minimum with `rhs`, in place.
 
@@ -2764,6 +2794,12 @@ struct TileTensor[
             rhs: The tensor to take the minimum against, broadcast against this
                 tensor's layout.
         """
+        comptime assert (
+            Self.Storage._BASE_TYPE_NAME == rhs.Storage._BASE_TYPE_NAME
+        ), "in-place binary ops require operands with the same storage class"
+        comptime assert (
+            self.element_size == rhs.element_size
+        ), "in-place binary ops require operands with the same element size"
         Self.Storage.min(
             (self._unsafe_storage_cast[to_mut=True](), self.layout),
             (rhs._storage, rhs.layout),
@@ -2771,7 +2807,7 @@ struct TileTensor[
 
     @always_inline
     def max(
-        self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
+        self, rhs: TileTensor[Self.dtype, ...]
     ) where Self.mut and conforms_to(Self.Storage, TensorOps):
         """Takes the elementwise maximum with `rhs`, in place.
 
@@ -2779,6 +2815,12 @@ struct TileTensor[
             rhs: The tensor to take the maximum against, broadcast against this
                 tensor's layout.
         """
+        comptime assert (
+            Self.Storage._BASE_TYPE_NAME == rhs.Storage._BASE_TYPE_NAME
+        ), "in-place binary ops require operands with the same storage class"
+        comptime assert (
+            self.element_size == rhs.element_size
+        ), "in-place binary ops require operands with the same element size"
         Self.Storage.max(
             (self._unsafe_storage_cast[to_mut=True](), self.layout),
             (rhs._storage, rhs.layout),
