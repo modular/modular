@@ -38,7 +38,7 @@ from collections.abc import Callable, Container, Mapping, Sequence
 from dataclasses import dataclass, field
 from math import prod
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Protocol, TypeVar
 
 from max import _core, engine
 from max._mlir_context import in_default_mlir_context
@@ -115,6 +115,11 @@ def discover_devices() -> list[Device]:
     return load_devices([DeviceSpec.cpu()]) + load_devices(
         [DeviceSpec.accelerator(i) for i in range(accelerator_count())]
     )
+
+
+# Discovered once at import (not per family) so a missing driver fails here,
+# not at first dispatch; every family sweeps this same device set.
+DISCOVERED_DEVICES = discover_devices()
 
 
 def device_class_of(device: Device) -> str:
@@ -361,22 +366,57 @@ def session_for(device: Device) -> engine.InferenceSession:
     return session
 
 
-@dataclass
-class GCOpFamily:
-    """One eager GC op family's model cache plus warm/adopt/dispatch logic.
+class GCFamilySpec(Protocol):
+    """Immutable per-family strategy: how one ``*_gc.py`` builds/sweeps its
+    models.
 
-    Registered once per family (:func:`register_family`); replaces the
-    per-module ``_swept`` / ``_X_MODEL_CACHE`` globals each ``*_gc.py`` copied.
+    Each ``*_gc.py`` provides a concrete class implementing this Protocol
+    (e.g. ``matmul_gc._MatmulFamily``); registered once via
+    :func:`register_family` by wrapping it in a :class:`GCOpFamily`.
+    Implementations are typically stateless, with methods closing over
+    their module's own globals rather than instance state.
     """
 
     name: str
     """Family id; namespaces cache keys and per-slot MEF names."""
-    build_module: Callable[[], Module]
-    """Builds the full sweep matrix (every device it sweeps)."""
-    build_module_for_device: Callable[[Device], Module]
-    """Builds one device's slot module."""
-    sweep_devices: Callable[[], list[Device]]
-    """Returns the devices this family sweeps."""
+
+    def build_module(self) -> Module:
+        """Builds the full sweep matrix (every device it sweeps)."""
+        ...
+
+    def build_module_for_device(
+        self, device: Device, module: Module | None = None
+    ) -> Module:
+        """Builds one device's slot module.
+
+        Args:
+            device: The device to build for.
+            module: When given, appends this device's graphs into it instead
+                of a fresh :class:`Module`, so :meth:`build_module` can share
+                one module across every device in the sweep.
+        """
+        ...
+
+    def sweep_devices(self) -> list[Device]:
+        """Returns the devices this family sweeps.
+
+        Every family sweeps the same discovered set, so this is a concrete,
+        inherited implementation rather than a per-family override point.
+        """
+        return list(DISCOVERED_DEVICES)
+
+
+@dataclass
+class GCOpFamily:
+    """One eager GC op family's runtime state plus warm/adopt/dispatch logic.
+
+    Wraps a :class:`GCFamilySpec` (registered once per family via
+    :func:`register_family`); replaces the per-module ``_swept`` /
+    ``_X_MODEL_CACHE`` globals each ``*_gc.py`` copied.
+    """
+
+    spec: GCFamilySpec
+    """This family's build/sweep strategy."""
 
     cache: dict[str, engine.Model] = field(default_factory=dict)
     """Compiled models, keyed by graph_name."""
@@ -385,6 +425,21 @@ class GCOpFamily:
     manifest_adopted: bool = False
     """Whether the cache was force-loaded from a manifest."""
 
+    @property
+    def name(self) -> str:
+        """Family id; namespaces cache keys and per-slot MEF names."""
+        return self.spec.name
+
+    def sweep_devices(self) -> list[Device]:
+        return self.spec.sweep_devices()
+
+    def build_module_for_device(
+        self, device: Device, module: Module | None = None
+    ) -> Module:
+        return self.spec.build_module_for_device(device, module)
+
+    # No build_module passthrough: only compile_sweep uses it, via self.spec.
+
     @in_default_mlir_context
     def compile_sweep(self) -> None:
         """Force-load an adoptable manifest, else batch-compile every target."""
@@ -392,7 +447,7 @@ class GCOpFamily:
             return
         session = engine.InferenceSession(devices=self.sweep_devices())
         self.cache.update(
-            session.load_all(self.build_module(), weights_registry={})
+            session.load_all(self.spec.build_module(), weights_registry={})
         )
         self.swept = True
 
@@ -419,6 +474,70 @@ class GCOpFamily:
                     self.name,
                     exc_info=True,
                 )
+
+    def model_for(
+        self,
+        key: str,
+        device: Device,
+        build: Callable[[Module], None],
+        *,
+        unsupported_reason: Callable[[], str | None] | None = None,
+        display_name: str | None = None,
+    ) -> engine.Model:
+        """Shared lazy-dispatch skeleton every family's ``*_model`` function
+        wraps: cache hit, optional support-guard, precompile-mode hard error,
+        then locked adopt-or-compile.
+
+        Args:
+            key: The cache key for this target (family-specific format).
+            device: The target device, passed through to *build* on a lazy
+                miss.
+            build: Builds the single-target graph into a fresh ``Module``.
+            unsupported_reason: When given, called only on a cache miss (a
+                cache hit never pays for the support check) to test whether
+                the target is outside the family's supported set; a
+                non-``None`` return is raised as ``KeyError`` verbatim before
+                the precompile check (each family formats its own
+                wording/details).
+            display_name: Overrides this family's own ``name`` in the
+                precompile-miss message for families whose historical
+                wording diverges from the registry name (e.g.
+                ``reduce_axis`` -> ``"reduce"``).
+
+        Returns:
+            The compiled :class:`~max.engine.Model`.
+
+        Raises:
+            KeyError: *unsupported_reason*'s message if it returns one;
+                else, with ``MAX_EAGER_OP_PRECOMPILE=1``, if the target was
+                not precompiled.
+        """
+        model = self.cache.get(key)
+        if model is not None:
+            return model
+        if unsupported_reason is not None:
+            reason = unsupported_reason()
+            if reason is not None:
+                raise KeyError(reason)
+        if should_precompile():
+            # TODO(MXF-510): raise UnsupportedGraphError so executors fall
+            # back.
+            name = display_name if display_name is not None else self.name
+            raise KeyError(
+                f"No pre-compiled {name} model for key {key!r}."
+                f"  Available: {sorted(self.cache)}."
+                f"  Unset {EAGER_OP_PRECOMPILE_ENV_VAR} (the default)"
+                " to compile targets lazily on first use."
+            )
+        with COMPILE_LOCK:
+            model = self.cache.get(key)
+            if model is not None:
+                return model
+            self.ensure_swept()
+            model = self.cache.get(key)
+            if model is not None:
+                return model
+            return compile_single_target(self, key, device, build)
 
     def _adopt_manifest_if_adoptable(self) -> bool:
         manifest = read_manifest()

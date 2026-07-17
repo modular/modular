@@ -123,7 +123,8 @@ def _spec_for(op_type: type[_core.Operation]) -> RearrangeSpec | None:
     return gc_compile.spec_for(op_type, _REARRANGE_OPS_BY_NAME)
 
 
-_DEVICES = gc_compile.discover_devices()
+# Every family sweeps the same discovered set; see gc_compile.DISCOVERED_DEVICES.
+_DEVICES = gc_compile.DISCOVERED_DEVICES
 
 
 def _devices_for(spec: RearrangeSpec) -> list[Device]:
@@ -169,12 +170,28 @@ def _is_supported(
     return dtype in _supported_dtypes(spec, device)
 
 
-def build_shape_rearrange_module() -> Module:
-    """Batched module: every supported (op, device, dtype, rank), all
-    devices."""
-    module = Module()
-    for op_type, spec in _REARRANGE_OPS.items():
-        for device in _devices_for(spec):
+class _ShapeRearrangeFamily(gc_compile.GCFamilySpec):
+    name = "shape_rearrange"
+
+    def build_module(self) -> Module:
+        """Batched module: every supported (op, device, dtype, rank), all
+        devices."""
+        module = Module()
+        for device in self.sweep_devices():
+            self.build_module_for_device(device, module)
+        return module
+
+    def build_module_for_device(
+        self, device: Device, module: Module | None = None
+    ) -> Module:
+        """Per-slot counterpart of :meth:`build_module`: one *device* only.
+        A ``CPU_ONLY`` op (e.g. ``Tile``) is skipped below via
+        :func:`_devices_for`."""
+        if module is None:
+            module = Module()
+        for op_type, spec in _REARRANGE_OPS.items():
+            if device not in _devices_for(spec):
+                continue
             for dtype in _supported_dtypes(spec, device):
                 if not _is_supported(op_type, device, dtype):
                     continue
@@ -182,30 +199,10 @@ def build_shape_rearrange_module() -> Module:
                     spec.build_graph(
                         module, op_type.__name__, device, dtype, rank
                     )
-    return module
+        return module
 
 
-def build_shape_rearrange_module_for_device(device: Device) -> Module:
-    """Per-slot counterpart of :func:`build_shape_rearrange_module`: one
-    *device* only. A ``CPU_ONLY`` op (e.g. ``Tile``) is skipped elsewhere."""
-    module = Module()
-    for op_type, spec in _REARRANGE_OPS.items():
-        if device not in _devices_for(spec):
-            continue
-        for dtype in _supported_dtypes(spec, device):
-            if not _is_supported(op_type, device, dtype):
-                continue
-            for rank in _ranks_for(spec):
-                spec.build_graph(module, op_type.__name__, device, dtype, rank)
-    return module
-
-
-_FAMILY = gc_compile.GCOpFamily(
-    name="shape_rearrange",
-    build_module=build_shape_rearrange_module,
-    build_module_for_device=build_shape_rearrange_module_for_device,
-    sweep_devices=lambda: list(_DEVICES),
-)
+_FAMILY = gc_compile.GCOpFamily(_ShapeRearrangeFamily())
 gc_compile.register_family(_FAMILY)
 
 
@@ -217,44 +214,45 @@ def model(
 ) -> engine.Model:
     """Return the compiled model for the given target (lazy by default)."""
     key = _graph_name(op_type, device, dtype, rank)
+    # Cache-check before building the closures below: this runs on every
+    # eager op dispatch, so a hit must not pay for closures it won't use.
     cached = _FAMILY.cache.get(key)
     if cached is not None:
         return cached
-    if not _is_supported(op_type, device, dtype):
-        raise KeyError(
-            f"Unsupported shape-rearrange op/device/dtype for key {key!r}."
-        )
-    spec = _spec_for(op_type)
-    if spec is not None and spec.rank_keyed and rank not in _ranks_for(spec):
-        # Same unsupported-target signal as the dtype check above: a clean error
-        # rather than the GC kernel's comptime rank assert firing deep in
-        # compilation (e.g. tile is capped at rank 4).
-        raise KeyError(
-            f"Unsupported shape-rearrange rank {rank} for {op_type.__name__}"
-            f" (max {_ranks_for(spec)[-1]}); key {key!r}."
-        )
-    if gc_compile.should_precompile():
-        raise KeyError(
-            f"No pre-compiled shape-rearrange model for key {key!r}."
-            f" Unset {gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR} to compile lazily."
-        )
-    with gc_compile.COMPILE_LOCK:
-        cached = _FAMILY.cache.get(key)
-        if cached is not None:
-            return cached
-        _FAMILY.ensure_swept()
-        cached = _FAMILY.cache.get(key)
-        if cached is not None:
-            return cached
 
-        def build(module: Module) -> None:
-            spec = _spec_for(op_type)
-            assert spec is not None, (
-                f"unsupported op {op_type!r} reached compile"
+    def check_supported() -> str | None:
+        if not _is_supported(op_type, device, dtype):
+            return (
+                f"Unsupported shape-rearrange op/device/dtype for key {key!r}."
             )
-            spec.build_graph(module, op_type.__name__, device, dtype, rank)
+        spec = _spec_for(op_type)
+        # Same unsupported-target signal as the dtype check above: a clean
+        # error rather than the GC kernel's comptime rank assert firing deep
+        # in compilation (e.g. tile is capped at rank 4).
+        if (
+            spec is not None
+            and spec.rank_keyed
+            and rank not in _ranks_for(spec)
+        ):
+            return (
+                f"Unsupported shape-rearrange rank {rank} for"
+                f" {op_type.__name__} (max {_ranks_for(spec)[-1]});"
+                f" key {key!r}."
+            )
+        return None
 
-        return gc_compile.compile_single_target(_FAMILY, key, device, build)
+    def build(module: Module) -> None:
+        spec = _spec_for(op_type)
+        assert spec is not None, f"unsupported op {op_type!r} reached compile"
+        spec.build_graph(module, op_type.__name__, device, dtype, rank)
+
+    return _FAMILY.model_for(
+        key,
+        device,
+        build,
+        unsupported_reason=check_supported,
+        display_name="shape-rearrange",
+    )
 
 
 def _build_concat_graph(
@@ -265,17 +263,17 @@ def _build_concat_graph(
     rank: int | None,
 ) -> None:
     """Pairwise 2-input concat at axis=1 of rank-3 [outer, a/b, inner]."""
-    dev = DeviceRef.from_device(device)
-    a = TensorType(dtype, ["d0", "a1", "d2"], device=dev)
-    b = TensorType(dtype, ["d0", "b1", "d2"], device=dev)
-    g = Graph(
+    device_ref = DeviceRef.from_device(device)
+    a = TensorType(dtype, ["d0", "a1", "d2"], device=device_ref)
+    b = TensorType(dtype, ["d0", "b1", "d2"], device=device_ref)
+    graph = Graph(
         _graph_name(mo.ConcatOp, device, dtype, rank),
         input_types=[a, b],
         module=module,
     )
-    with g:
-        x, y = (v.tensor for v in g.inputs)
-        g.output(ops.concat([x, y], axis=1))
+    with graph:
+        x, y = (v.tensor for v in graph.inputs)
+        graph.output(ops.concat([x, y], axis=1))
 
 
 _register_spec(
@@ -296,22 +294,22 @@ def _build_split_graph(
     rank: int | None,
 ) -> None:
     """Slice one chunk along axis=1 of rank-3 [outer, D, inner]."""
-    dev = DeviceRef.from_device(device)
-    x = TensorType(dtype, ["d0", "d1", "d2"], device=dev)
+    device_ref = DeviceRef.from_device(device)
+    x = TensorType(dtype, ["d0", "d1", "d2"], device=device_ref)
     start = TensorType(DType.int64, [], device=DeviceRef.CPU())
     stop = TensorType(DType.int64, [], device=DeviceRef.CPU())
-    g = Graph(
+    graph = Graph(
         _graph_name(mo.SplitOp, device, dtype, rank),
         input_types=[x, start, stop],
         module=module,
     )
-    with g:
-        data, lo, hi = (v.tensor for v in g.inputs)
+    with graph:
+        data, lo, hi = (v.tensor for v in graph.inputs)
         chunk = ops.slice_tensor(
             data,
             [slice(None), (slice(lo, hi), "s"), slice(None)],
         )
-        g.output(chunk)
+        graph.output(chunk)
 
 
 _register_spec(
@@ -337,21 +335,23 @@ def _build_tile_graph(
 ) -> None:
     """rmo.MoTileOp with repeats as a runtime [rank] host operand."""
     assert rank is not None
-    dev = DeviceRef.from_device(device)
-    x = TensorType(dtype, _symbolic_dims(rank, "d"), device=dev)
+    device_ref = DeviceRef.from_device(device)
+    x = TensorType(dtype, _symbolic_dims(rank, "d"), device=device_ref)
     repeats = TensorType(DType.int64, [rank], device=DeviceRef.CPU())
-    g = Graph(
+    graph = Graph(
         _graph_name(mo.TileOp, device, dtype, rank),
         input_types=[x, repeats],
         module=module,
     )
-    with g:
-        data, reps = (v.tensor for v in g.inputs)
-        out_type = TensorType(dtype, _symbolic_dims(rank, "o"), device=dev)
+    with graph:
+        data, reps = (v.tensor for v in graph.inputs)
+        out_type = TensorType(
+            dtype, _symbolic_dims(rank, "o"), device=device_ref
+        )
         tiled = Graph.current._add_op_generated(
             rmo.MoTileOp, out_type, data, reps, kgen.ParamDeclArrayAttr([])
         )[0].tensor
-        g.output(tiled)
+        graph.output(tiled)
 
 
 _register_spec(
@@ -378,21 +378,23 @@ def _build_pad_graph(
 ) -> None:
     """Emit rmo.MoPad*Op with runtime paddings [2*rank] (+ rank-0 constant)."""
     assert rank is not None
-    dev = DeviceRef.from_device(device)
+    device_ref = DeviceRef.from_device(device)
     input_types = [
-        TensorType(dtype, _symbolic_dims(rank, "d"), device=dev),
+        TensorType(dtype, _symbolic_dims(rank, "d"), device=device_ref),
         TensorType(DType.int64, [2 * rank], device=DeviceRef.CPU()),
     ]
     if has_constant:
         input_types.append(TensorType(dtype, [], device=DeviceRef.CPU()))
-    g = Graph(
+    graph = Graph(
         _graph_name(mo_cls, device, dtype, rank),
         input_types=input_types,
         module=module,
     )
-    with g:
-        ins = [v.tensor for v in g.inputs]
-        out_type = TensorType(dtype, _symbolic_dims(rank, "o"), device=dev)
+    with graph:
+        ins = [v.tensor for v in graph.inputs]
+        out_type = TensorType(
+            dtype, _symbolic_dims(rank, "o"), device=device_ref
+        )
         kwargs = dict(
             result=out_type,
             input=ins[0],
@@ -401,7 +403,9 @@ def _build_pad_graph(
         )
         if has_constant:
             kwargs["constant"] = ins[2]
-        g.output(Graph.current._add_op_generated(rmo_cls, **kwargs)[0].tensor)
+        graph.output(
+            Graph.current._add_op_generated(rmo_cls, **kwargs)[0].tensor
+        )
 
 
 def _pad_spec(
@@ -445,21 +449,23 @@ def _build_slice_graph(
 ) -> None:
     """rmo.MoSliceOp with runtime starts/stops/steps [rank]."""
     assert rank is not None
-    dev = DeviceRef.from_device(device)
+    device_ref = DeviceRef.from_device(device)
     cpu = DeviceRef.CPU()
-    g = Graph(
+    graph = Graph(
         _graph_name(mo.SliceOp, device, dtype, rank),
         input_types=[
-            TensorType(dtype, _symbolic_dims(rank, "d"), device=dev),
+            TensorType(dtype, _symbolic_dims(rank, "d"), device=device_ref),
             TensorType(DType.int64, [rank], device=cpu),
             TensorType(DType.int64, [rank], device=cpu),
             TensorType(DType.int64, [rank], device=cpu),
         ],
         module=module,
     )
-    with g:
-        data, starts, stops, steps = (v.tensor for v in g.inputs)
-        out_type = TensorType(dtype, _symbolic_dims(rank, "o"), device=dev)
+    with graph:
+        data, starts, stops, steps = (v.tensor for v in graph.inputs)
+        out_type = TensorType(
+            dtype, _symbolic_dims(rank, "o"), device=device_ref
+        )
         sliced = Graph.current._add_op_generated(
             rmo.MoSliceOp,
             result=out_type,
@@ -469,7 +475,7 @@ def _build_slice_graph(
             step=steps,
             output_param_decls=kgen.ParamDeclArrayAttr([]),
         )[0].tensor
-        g.output(sliced)
+        graph.output(sliced)
 
 
 _register_spec(
