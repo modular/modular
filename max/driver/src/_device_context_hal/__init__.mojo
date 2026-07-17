@@ -1913,6 +1913,32 @@ struct DeviceFunction[
                 ).unsafe_with_layout({count = num_captures + num_args})
             )
 
+    @always_inline
+    def occupancy_max_active_blocks_per_multiprocessor(
+        self, block_size: Int, dynamic_shared_mem_size: Int
+    ) raises -> Int:
+        """Returns the maximum number of active blocks per multiprocessor for the given function.
+
+        Args:
+            block_size: The number of threads per block.
+            dynamic_shared_mem_size: The size of dynamically allocated shared memory in bytes.
+
+        Returns:
+            The maximum number of active blocks that can run concurrently per multiprocessor.
+
+        Raises:
+            If the occupancy calculation fails.
+        """
+        return Int(
+            self._inner[]
+            ._context[]
+            .function_occupancy_max_active_blocks(
+                self._inner[]._func_handle,
+                Int32(block_size),
+                UInt64(dynamic_shared_mem_size),
+            )
+        )
+
 
 # ===-----------------------------------------------------------------------===#
 # DeviceExternalFunction

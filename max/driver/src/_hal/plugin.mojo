@@ -909,6 +909,31 @@ struct RawDriver(Movable):
             )
         return func.unsafe_assume_init_ref()
 
+    def function_occupancy_max_active_blocks(
+        self,
+        context: ContextHandle,
+        func: FunctionHandle,
+        block_size: Int32,
+        dynamic_shared_memory_bytes: UInt64,
+    ) raises HALError -> Int32:
+        var num_blocks = UnsafeMaybeUninit[Int32]()
+        var status = self._raw.function_occupancy_max_active_blocks.f(
+            context,
+            func,
+            block_size,
+            dynamic_shared_memory_bytes,
+            OutParam[Int32](to=num_blocks),
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to query function occupancy: {err.message}"
+                ),
+            )
+        return num_blocks.unsafe_assume_init_ref()
+
     def unload_function(
         self,
         context: ContextHandle,
@@ -1326,6 +1351,16 @@ struct RawPlugin(Movable):
             context: ContextHandle, function: FunctionHandle
         ) thin -> PluginResultCode,
     ]
+    var function_occupancy_max_active_blocks: HALFunction[
+        "M_driver_function_occupancy_max_active_blocks",
+        def(
+            context: ContextHandle,
+            function: FunctionHandle,
+            block_size: Int32,
+            dynamic_shared_memory_bytes: UInt64,
+            num_blocks: OutParam[Int32, _],
+        ) thin -> PluginResultCode,
+    ]
     var device_property: HALFunction[
         "M_driver_device_property",
         def[
@@ -1503,6 +1538,9 @@ struct RawPlugin(Movable):
         self.is_event_ready = type_of(self.is_event_ready)(handle, so_path)
         self.function_load = type_of(self.function_load)(handle, so_path)
         self.function_unload = type_of(self.function_unload)(handle, so_path)
+        self.function_occupancy_max_active_blocks = type_of(
+            self.function_occupancy_max_active_blocks
+        )(handle, so_path)
         self.device_property = type_of(self.device_property)(handle, so_path)
         self.memory_property = type_of(self.memory_property)(handle, so_path)
         self.queue_execute = type_of(self.queue_execute)(handle, so_path)

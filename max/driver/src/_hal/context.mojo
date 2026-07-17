@@ -434,6 +434,19 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     def unload_function(self, func: FunctionHandle) raises HALError:
         self._raw[].unload_function(self._handle, func)
 
+    def function_occupancy_max_active_blocks(
+        self,
+        func: FunctionHandle,
+        block_size: Int32,
+        dynamic_shared_memory_bytes: UInt64,
+    ) raises HALError -> Int32:
+        """Returns the max number of resident blocks per multiprocessor for
+        the function at the given block size and dynamic shared-memory usage.
+        """
+        return self._raw[].function_occupancy_max_active_blocks(
+            self._handle, func, block_size, dynamic_shared_memory_bytes
+        )
+
 
 @fieldwise_init
 struct RuntimeBundle(Movable):

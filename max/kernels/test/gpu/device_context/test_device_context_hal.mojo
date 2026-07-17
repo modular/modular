@@ -842,6 +842,14 @@ def test_push_context(ctx: DeviceContext) raises:
         active_ctx.synchronize()
 
 
+def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
+    var compiled = ctx.compile_function[_vec_add_kernel]()
+    var num_blocks = compiled.occupancy_max_active_blocks_per_multiprocessor(
+        32, 0
+    )
+    assert_true(num_blocks > 0)
+
+
 def test_stream_enqueue_function(ctx: DeviceContext) raises:
     comptime length = 128
     var stream = ctx.create_stream()
@@ -911,6 +919,7 @@ def main() raises:
         test_move(ctx)
         test_memory_info(ctx)
         test_push_context(ctx)
+        test_occupancy_max_active_blocks(ctx)
         test_id(ctx)
         test_synchronize(ctx)
         test_default_stream(ctx)
