@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 from huggingface_hub import constants as hf_hub_constants
 from max.config import ConfigFileModel
-from max.driver import DeviceSpec, devices_exist, scan_available_devices
+from max.driver import DeviceSpec
 from max.dtype import DType
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import (
@@ -766,10 +766,7 @@ class MAXModelConfig(MAXModelConfigBase):
         Called after initialization to ensure all fields are in a valid state
         and to set fields that can't be determined in the default factory.
 
-        Resolves fields in this order:
-
-        1. Validates that the provided ``device_specs`` are available.
-        2. Parses the weight path and initializes ``_weights_repo_id``.
+        Parses the weight path and initializes ``_weights_repo_id``.
 
         Encoding and weight_path are resolved elsewhere: diffuser
         sub-components resolve on demand at consumption time (see
@@ -777,14 +774,6 @@ class MAXModelConfig(MAXModelConfigBase):
         resolve during architecture-level validation in
         ``_validate_model_config_against_arch()``.
         """
-        # Validate that the device_specs provided are available
-        if not devices_exist(self.device_specs):
-            available_devices = scan_available_devices()
-            raise ValueError(
-                f"device specs provided ({self.device_specs}) do not exist.\n"
-                f"available devices: {available_devices}"
-            )
-
         self.weight_path, self.model_path, self._weights_repo_id = (
             _resolve_weight_path_identity(
                 model_path=self.model_path,

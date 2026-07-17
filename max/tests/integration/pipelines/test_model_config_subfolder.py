@@ -214,10 +214,6 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
                 return_value=([Path("model.safetensors")], None),
             ),
             patch(
-                "max.pipelines.lib.config.model_config.devices_exist",
-                return_value=True,
-            ),
-            patch(
                 "max.pipelines.lib.config.model_config.validate_hf_repo_access",
             ),
         ):
@@ -236,10 +232,6 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
             patch(
                 "max.pipelines.lib.config.model_config.WeightPathParser.parse",
                 return_value=([Path("vae/model.safetensors")], None),
-            ),
-            patch(
-                "max.pipelines.lib.config.model_config.devices_exist",
-                return_value=True,
             ),
             patch(
                 "max.pipelines.lib.config.model_config.validate_hf_repo_access",
@@ -263,10 +255,6 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
                     "max.pipelines.lib.config.model_config.WeightPathParser.parse",
                     return_value=([abs_path], None),
                 ),
-                patch(
-                    "max.pipelines.lib.config.model_config.devices_exist",
-                    return_value=True,
-                ),
             ):
                 config.resolve()
                 assert config.weight_path == [abs_path]
@@ -282,10 +270,6 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
             patch(
                 "max.pipelines.lib.config.model_config.WeightPathParser.parse",
                 return_value=([Path("model.safetensors")], None),
-            ),
-            patch(
-                "max.pipelines.lib.config.model_config.devices_exist",
-                return_value=True,
             ),
             patch(
                 "max.pipelines.lib.config.model_config.validate_hf_repo_access",

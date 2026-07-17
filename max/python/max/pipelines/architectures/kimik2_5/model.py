@@ -53,8 +53,8 @@ from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
+    MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
-    PipelineModelWithKVCache,
 )
 from max.pipelines.lib.eplb_stats import (
     EplbPlacement,
@@ -70,6 +70,7 @@ from max.pipelines.weights.mxfp4_preshuffle import (
     preshuffle_mxfp4_b_scales,
 )
 from max.pipelines.weights.quant import parse_quant_config
+from max.profiler import traced
 from transformers import AutoConfig
 
 from ..deepseekV3.model import DeepseekV3Inputs
@@ -158,7 +159,7 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
 
 class KimiK2_5Model(
     AlwaysSignalBuffersMixin,
-    PipelineModelWithKVCache[KimiK2_5TextAndVisionContext],
+    MultiGraphPipelineModelWithKVCache[KimiK2_5TextAndVisionContext],
 ):
     """A Kimi-K2.5 pipeline model for multimodal text generation."""
 
@@ -177,7 +178,7 @@ class KimiK2_5Model(
     this; rounded up from ~16x to leave headroom.
     """
 
-    vision_model: Model
+    vision_model: Model | None
     """The compiled vision model for processing images."""
 
     language_model: Model
@@ -227,6 +228,7 @@ class KimiK2_5Model(
             self._batch_processor.bind_vision_cache(self._ve_cache)
             assert self.model_config is not None
             self._batch_processor.bind_model_config(self.model_config)
+            assert self.vision_model is not None
             self._batch_processor.bind_vision_encoder(
                 vision_model=self.vision_model,
                 session=self.session,
@@ -428,9 +430,7 @@ class KimiK2_5Model(
         )
         return model_config
 
-    def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
-        """Load the model with the given weights."""
-
+    def _load_state_dict(self) -> dict[str, Any]:
         if self.adapter:
             state_dict = self.adapter(
                 dict(self.weights.items()),
@@ -441,9 +441,47 @@ class KimiK2_5Model(
             state_dict = {
                 key: value.data() for key, value in self.weights.items()
             }
+        # Weights are loaded onto ``nn_model`` in ``_init_distributed_runtime``.
+        self._vision_weights_dict = {}
+        self._language_weights_dict = {}
+        return state_dict
 
-        # Create the LM model first
+    @traced
+    def load_model(
+        self, session: InferenceSession
+    ) -> tuple[Model | None, Model]:
+        state_dict = self._load_state_dict()
         config = self._create_model_config(state_dict)
+        self._init_distributed_runtime(session, config, state_dict)
+        assert self.model_config is not None
+        kimik2_5_config = self.model_config
+
+        with CompilationTimer("vision + language model") as timer:
+            module = Module()
+
+            vision_graph, vision_registry = self._build_vision_graph(
+                kimik2_5_config, self._vision_weights_dict, module=module
+            )
+            language_graph, language_registry = self._build_language_graph(
+                config, self._language_weights_dict, module=module
+            )
+            timer.mark_build_complete()
+
+            models = session.load_all(
+                module,
+                weights_registry={**vision_registry, **language_registry},
+            )
+
+        vision_model = models[vision_graph.name]
+        language_model = models[language_graph.name]
+        return vision_model, language_model
+
+    def _init_distributed_runtime(  # type: ignore[override]
+        self,
+        session: InferenceSession,
+        config: KimiK2_5TextConfig,
+        state_dict: dict[str, Any],
+    ) -> None:
         # ---- EPLB placement -----------------------------------------------------
         plan: EplbPlacement | None = None
         if config.ep_config is not None:
@@ -515,32 +553,14 @@ class KimiK2_5Model(
         else:
             self._eplb_stats_accumulator = None
 
-        # Load the vision + language model.
-        with CompilationTimer("vision + language model") as timer:
-            # Create a new module to hold both models
-            module = Module()
-
-            # Build the vision graph in the module
-            vision_graph = self._build_vision_graph(
-                kimik2_5_config, state_dict, module=module
-            )
-
-            # Build the language graph in the module
-            language_graph = self._build_language_graph(config, module=module)
-            timer.mark_build_complete()
-            models = session.load_all(module, weights_registry=self.state_dict)
-            vision_model = models[vision_graph.name]
-            language_model = models[language_graph.name]
-
-        return vision_model, language_model
-
     def _build_vision_graph(
         self,
         config: KimiK2_5Config,
         state_dict: dict[str, WeightData],
-        module: Module | None = None,
-    ) -> Graph:
+        module: Module,
+    ) -> tuple[Graph, dict[str, Any]]:
         """Build the vision model graph for processing images."""
+        del state_dict
         assert isinstance(self.nn_model, KimiK2_5)
         vision_encoder = self.nn_model.vision_encoder
 
@@ -658,14 +678,17 @@ class KimiK2_5Model(
 
             graph.output(*image_embeddings)
 
-            return graph
+            return graph, self.state_dict
 
     def _build_language_graph(
         self,
         config: KimiK2_5TextConfig,
-        module: Module | None = None,
-    ) -> Graph:
+        state_dict: dict[str, WeightData],
+        module: Module,
+    ) -> tuple[Graph, dict[str, Any]]:
         """Build the language model graph for text generation with image embeddings."""
+        del state_dict
+        assert isinstance(config, KimiK2_5TextConfig)
         assert isinstance(self.nn_model, KimiK2_5)
         language_model = self.nn_model.language_model
         assert language_model is not None, "Language model must be initialized"
@@ -738,7 +761,7 @@ class KimiK2_5Model(
 
             graph.output(*outputs)
 
-        return graph
+        return graph, {}
 
     def execute(
         self,
@@ -749,6 +772,7 @@ class KimiK2_5Model(
             "KimiK2_5 requires KV cache inputs"
         )
         if model_inputs.has_vision_inputs:
+            assert self.vision_model is not None
             assert model_inputs.image_token_indices is not None
             assert model_inputs.pixel_values is not None
             assert model_inputs.vision_position_ids is not None

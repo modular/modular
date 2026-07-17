@@ -21,7 +21,7 @@ import sys
 from collections.abc import Generator
 from threading import Thread
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, TypeVar
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import numpy as np
@@ -165,6 +165,78 @@ async def test_openai_chat_completion_single(app) -> None:  # noqa: ANN001
         choice = response.choices[0]
         assert choice.message.content == request_content
         assert choice.finish_reason == "stop"
+
+
+def _force_request_queue_full(app: FastAPI) -> None:
+    """Make the worker request queue report itself as full.
+
+    Mimics a bounded ZMQ PUSH socket at its high-water mark whose consumer has
+    stopped draining: ``writable`` returns False, so admission rejects
+    immediately with RequestQueueFull instead of attempting a push. (Startup
+    already established connectivity, so an unwritable queue means "full".)
+    """
+    worker = app.state.pipeline.model_worker
+
+    async def _not_writable(timeout_s: float | None = 0.0) -> bool:
+        return False
+
+    worker.request_queue.writable = _not_writable
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_rejects_when_queue_full(app) -> None:  # noqa: ANN001
+    """A full model-worker queue rejects new (non-streaming) requests with 429."""
+    async with AsyncTestClient(app) as client:
+        _force_request_queue_full(app)
+
+        response = await client.post(
+            "/v1/chat/completions",
+            json=simple_openai_request(model_name="echo", content="test data"),
+        )
+
+        assert response.status_code == 429
+        body = response.json()
+        assert body["error"]["type"] == "rate_limit_error"
+        assert body["error"]["code"] == "429"
+        # The rejected request must not leak an output-queue registration.
+        assert len(app.state.pipeline.model_worker.pending_out_queues) == 0
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_streaming_rejects_with_429_not_200(app) -> None:  # noqa: ANN001
+    """Streaming admission failures surface as a 429 status, never a 200.
+
+    Regression: the push to the worker is awaited before the SSE response is
+    constructed, so a full queue (or crashed worker) fails with a real status
+    code instead of a truncated 200 stream.
+    """
+    async with AsyncTestClient(app) as client:
+        _force_request_queue_full(app)
+
+        response = await client.post(
+            "/v1/chat/completions",
+            json=simple_openai_request(
+                model_name="echo", content="test data", stream=True
+            ),
+        )
+
+        assert response.status_code == 429
+        assert len(app.state.pipeline.model_worker.pending_out_queues) == 0
+
+
+@pytest.mark.asyncio
+async def test_completion_streaming_rejects_with_429_not_200(app) -> None:  # noqa: ANN001
+    """The legacy /v1/completions streaming path also fails fast with 429."""
+    async with AsyncTestClient(app) as client:
+        _force_request_queue_full(app)
+
+        response = await client.post(
+            "/v1/completions",
+            json={"model": "echo", "prompt": "test data", "stream": True},
+        )
+
+        assert response.status_code == 429
+        assert len(app.state.pipeline.model_worker.pending_out_queues) == 0
 
 
 def test_openai_chat_completion_concurrent(app) -> None:  # noqa: ANN001
@@ -915,6 +987,20 @@ def _make_disconnect_request(
     return request
 
 
+_QueueItemT = TypeVar("_QueueItemT")
+
+
+class _WritableQueue(asyncio.Queue[_QueueItemT]):
+    """``asyncio.Queue`` that also satisfies the ``MAXAsyncPushQueue`` protocol.
+
+    Admission probes ``writable()`` before pushing; a plain ``asyncio.Queue``
+    lacks it, so this stand-in reports itself as always writable.
+    """
+
+    async def writable(self, timeout_s: float | None = 0.0) -> bool:
+        return True
+
+
 @pytest.mark.asyncio
 async def test_openai_chat_completion_cancels_disconnected_request(
     mock_pipeline_config: PipelineConfig,
@@ -924,9 +1010,9 @@ async def test_openai_chat_completion_cancels_disconnected_request(
 
     request_started = asyncio.Event()
 
-    request_queue = asyncio.Queue[BaseContext]()
+    request_queue = _WritableQueue[BaseContext]()
     response_queue = asyncio.Queue[Any]()  # not used here
-    cancel_queue = asyncio.Queue[list[RequestID]]()
+    cancel_queue = _WritableQueue[list[RequestID]]()
     model_worker = ZmqModelWorkerProxy(
         request_queue=request_queue,
         response_queue=response_queue,

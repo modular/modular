@@ -283,11 +283,11 @@ def _do_broadcast_units[
         def launch_broadcast[
             index: Int
         ]() raises {
-            read in_tile,
-            read rank_sigs,
-            read unit_ptrs,
-            read dev_ctxs,
-            read stride,
+            imm in_tile,
+            imm rank_sigs,
+            imm unit_ptrs,
+            imm dev_ctxs,
+            imm stride,
         }:
             var out_tile = TileTensor(unit_ptrs[index], row_major(stride))
             broadcast[ngpus, use_multimem=False](

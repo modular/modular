@@ -92,10 +92,8 @@ if WarpRole.is_epilogue():
 
 from layout.tma_async import SharedMemBarrier
 
-from structured_kernels.pipeline import (
-    MbarPtr,
-    ProducerConsumerPipeline,
-)
+from structured_kernels.pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline_backend import MbarPtr
 
 
 # =============================================================================
@@ -200,7 +198,9 @@ struct EpiLoadPipeline[num_stages: Int]:
         Returns:
             Barrier pointer for TMA arrive.
         """
-        return self.pipeline.producer_mbar(self.pipeline.producer_stage())
+        return rebind[MbarPtr](
+            self.pipeline.producer_mbar(self.pipeline.producer_stage())
+        )
 
     @always_inline
     def producer_step(mut self):

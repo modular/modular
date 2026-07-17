@@ -62,9 +62,11 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     comptime zero: UInt32 = 0
 
     # CDNA3 supports the FNUZ float8 dtypes, and CDNA4 supports the Open
-    # Compute Project (OCP) float8 dtypes.
-    comptime fp8_dtype = get_amd_fp8_dtype()
-    comptime bf8_dtype = get_amd_bf8_dtype()
+    # Compute Project (OCP) float8 dtypes. RDNA has no native FP8/BF8 support,
+    # but this code path is unreachable on RDNA (see the early return above),
+    # so the dtypes are guaranteed present here.
+    comptime fp8_dtype = get_amd_fp8_dtype().value()
+    comptime bf8_dtype = get_amd_bf8_dtype().value()
 
     @parameter
     def _f8f6f4_intrinsic() -> SIMD[d.dtype, d.size]:

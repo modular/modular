@@ -39,9 +39,7 @@ from std.ffi import OwnedDLHandle
 
 def main() raises:
     var lib = OwnedDLHandle("libm.so")
-    var sqrt = lib.get_function[def(Float64) thin abi("C") -> Float64](
-        "sqrt"
-    )
+    var sqrt = lib.get_function[Float64]("sqrt")
     print(sqrt(4.0))  # 2.0
 ```
 """
@@ -55,9 +53,10 @@ from std.pathlib import Path
 from std.sys._libc import dlclose, dlerror, dlopen, dlsym
 from std.sys._libc_errno import ErrNo, get_errno, set_errno
 
-from std.memory import OwnedPointer
+from std.memory import OwnedPointer, Pointer
 from std.memory.alloc import dealloc, ThinAllocation
 from std.memory.unsafe_pointer import unsafe_cast
+from std.reflection import reflect
 
 from std.sys.info import CompilationTarget, is_32bit, is_64bit, size_of
 from .cstring import CStringSlice
@@ -195,6 +194,86 @@ comptime DEFAULT_RTLD = RTLD.NOW | RTLD.GLOBAL
 """Default runtime linker flags for dynamic library loading."""
 
 
+@fieldwise_init
+struct _DLCallable[
+    return_type: RegisterPassable,
+    origin: ImmOrigin,
+](TrivialRegisterPassable):
+    """A callable proxy returned from `OwnedDLHandle.get_function`.
+
+    Holds a raw function pointer resolved via `dlsym` together with an
+    immutable borrow of the originating `OwnedDLHandle` (via `origin`),
+    so the library cannot be `dlclose`d until after the pointer is invoked.
+
+    Parameters:
+        return_type: The return type of the underlying C function.
+        origin: The origin of the `OwnedDLHandle` that this callable borrows
+            from, preventing ASAP destruction of the handle across the call.
+
+    Notes:
+        Argument forwarding uses the Mojo calling convention rather than
+        strict `abi("C")`, matching the behavior of `OwnedDLHandle.call`.
+        This is safe in practice for scalar and register-passable arguments
+        where Mojo and C conventions agree, but may silently corrupt struct
+        arguments or return values; multi-field argument types are rejected
+        at compile time. Strict-C-ABI support is tracked in MOCO-3692.
+    """
+
+    var _opaque: UnsafePointer[NoneType, MutUntrackedOrigin]
+    """The raw function pointer resolved via `dlsym`, stored opaquely."""
+
+    var _lib: Pointer[OwnedDLHandle, Self.origin]
+    """An immutable borrow of the owning handle. Its presence forces the
+    compiler to keep the handle alive for the lifetime of this callable."""
+
+    @always_inline
+    def __call__[*T: AnyType](self, *args: *T) -> Self.return_type:
+        """Invokes the underlying C function with the given arguments.
+
+        Parameters:
+            T: The types of the arguments.
+
+        Args:
+            args: The arguments to forward to the underlying function.
+
+        Returns:
+            The return value of the C function.
+        """
+        # Reject aggregate (multi-field) argument types at comptime: the
+        # Mojo ABI path here passes them via a kgen pack, which can disagree
+        # with the C ABI's struct-passing rules (SSE-pair / HFA-2 / sret),
+        # silently corrupting the call. Single-field wrappers — `Int`,
+        # `Float64`, `SIMD[*, n]`, `UnsafePointer`, etc. — are accepted
+        # since they round-trip through a register the same way in both
+        # ABIs. Strict-C-ABI struct support is tracked in MOCO-3692.
+        comptime for i in range(args.__len__()):
+            comptime if reflect[type_of(args[i])].is_struct():
+                comptime assert reflect[type_of(args[i])].field_count() == 1, (
+                    "OwnedDLHandle.get_function: aggregate (multi-field)"
+                    " argument types are unsafe through the Mojo ABI and"
+                    " are not supported."
+                )
+        var v = args.get_loaded_kgen_pack()
+        # Mojo ABI path: the variadic pack is loaded into a kgen pack and
+        # passed as a single struct-shaped argument. Struct args/returns
+        # can silently corrupt here, which is why multi-field aggregates
+        # are rejected above.
+        #
+        # The bitcast goes via `UnsafePointer(to=self._opaque)` — taking
+        # the address of the field and reinterpreting it as pointing to a
+        # function-pointer type, then loading — because an
+        # `UnsafePointer[NoneType]` value cannot be directly reinterpreted
+        # as a function-pointer value (`.bitcast` only changes the pointee
+        # type).
+        var typed_fn = UnsafePointer(to=self._opaque).bitcast[
+            def(type_of(v)) thin -> Self.return_type
+        ]()[]
+        # The `_lib` field's origin parameter keeps `OwnedDLHandle` borrowed
+        # for the lifetime of `self`, which spans this entire method — so
+        # `dlclose` cannot run before `typed_fn` returns.
+        return typed_fn(v)
+
+
 struct OwnedDLHandle(Movable):
     """Represents an owned handle to a dynamically linked library with RAII
     semantics.
@@ -209,9 +288,7 @@ struct OwnedDLHandle(Movable):
 
     def main() raises:
         var lib = OwnedDLHandle("libm.so")
-        var sqrt = lib.get_function[def(Float64) thin abi("C") -> Float64](
-            "sqrt"
-        )
+        var sqrt = lib.get_function[Float64]("sqrt")
         print(sqrt(4.0))  # Prints: 2.0
         # Library automatically closed when lib goes out of scope
     ```
@@ -301,34 +378,77 @@ struct OwnedDLHandle(Movable):
         return self._handle.check_symbol(name)
 
     def get_function[
-        result_type: TrivialRegisterPassable
-    ](self, var name: String) -> result_type:
-        """Returns a handle to the function with the given name in the dynamic
-        library.
+        return_type: RegisterPassable = NoneType,
+    ](ref self, var name: String) raises -> _DLCallable[
+        return_type, origin_of(self)
+    ]:
+        """Returns a callable for the function with the given name in the
+        dynamic library.
 
-        `result_type` must be a C-ABI function type (using the `abi("C")` effect)
-        to ensure correct argument and return-value passing. Using a plain Mojo
-        function type (`fn(...) -> T`) produces silent ABI corruption for any
-        struct argument or return value.
+        The returned callable carries an immutable borrow of `self`, so the
+        library cannot be `dlclose`d until after the callable is invoked.
+        This prevents the dangling-function-pointer crash that would occur
+        if the raw function pointer were returned directly and ASAP
+        destruction ran `dlclose` between `dlsym` and the call.
+
+        Warning:
+            Argument forwarding uses the Mojo calling convention, not
+            strict `abi("C")`. This path is safe **only** for scalar and
+            single-field register-passable arguments where Mojo and C
+            conventions happen to agree (integers, floats, raw pointers).
+            For any C function that takes or returns a struct by value,
+            this path would silently corrupt the call without raising or
+            aborting. Multi-field structs are rejected at comptime;
+            single-field wrappers around aggregates are not, and are the
+            most likely silent-corruption case. Strict-C-ABI support is
+            tracked in MOCO-3692 / MOCO-3709.
+
+        Missing symbols raise `Error("symbol not found: ...")` rather than
+        aborting the process, so callers can probe for optional symbols.
 
         Example:
         ```mojo
         from std.ffi import OwnedDLHandle
 
         var lib = OwnedDLHandle("libm.so")
-        var sqrt = lib.get_function[def(Float64) thin abi("C") -> Float64]("sqrt")
+        var sqrt = lib.get_function[Float64]("sqrt")
+        print(sqrt(4.0))  # 2.0
         ```
 
         Parameters:
-            result_type: The C-ABI function pointer type to return.
+            return_type: The return type of the underlying C function.
+                Defaults to `NoneType` for void-returning functions.
 
         Args:
             name: The name of the function to get the handle for.
 
         Returns:
-            A handle to the function.
+            A callable proxy that forwards to the resolved function and
+            keeps the owning handle alive for the duration of each call.
+
+        Raises:
+            If the symbol cannot be resolved in the dynamic library.
         """
-        return self._handle.get_function[result_type](name)
+        # The type parameter used to be the full function pointer type
+        # (e.g. `def(Float64) abi("C") -> Float64`). It is now just the
+        # return type, matching `OwnedDLHandle.call`. Catch the old shape
+        # at compile time to give users a clear migration pointer instead
+        # of a confusing "function is not called" warning + silent no-op.
+        comptime assert not __fn_type_is_cabi[return_type](), (
+            "OwnedDLHandle.get_function now takes the return type only,"
+            " not the full function type. For scalar args/returns, change"
+            ' `get_function[def(Arg) abi("C") -> Ret](name)` to'
+            " `get_function[Ret](name)`."
+        )
+        var ptr = self._handle.get_symbol[NoneType](
+            cstr_name=name.as_c_string_slice().unsafe_ptr()
+        )
+        if not ptr:
+            raise Error(t"symbol not found: {name}")
+        return _DLCallable[return_type, origin_of(self)](
+            ptr.unsafe_value().unsafe_origin_cast[MutUntrackedOrigin](),
+            Pointer(to=self),
+        )
 
     @always_inline
     def _get_function[

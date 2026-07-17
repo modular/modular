@@ -471,7 +471,14 @@ class _CompletedRunBase(BaseModel):
     completed: int
     failures: int
     request_throughput: float
-    latency_ms: StandardPercentileMetrics
+    # ``None`` when the iteration produced no measured samples (e.g. every
+    # request failed or all were skipped). Emitting ``None`` rather than a
+    # NaN-filled metric keeps the serialized JSON free of null-valued
+    # percentile objects: ``model_dump_json`` renders ``NaN`` as ``null``
+    # (and BigQuery does the same on ingest), which strict downstream
+    # consumers — the benchmark-visibility dashboard — otherwise reject
+    # field-by-field and surface as spurious "dropped metric" warnings.
+    latency_ms: StandardPercentileMetrics | None = None
 
     errors: list[str] = Field(default_factory=list)
     request_submit_times: list[float | None] = Field(default_factory=list)
@@ -491,8 +498,9 @@ class _CompletedRunBase(BaseModel):
             "request_submit_times": self.request_submit_times,
             "request_complete_times": self.request_complete_times,
         }
-        d.update(self.latency_ms.to_flat_dict("latency_ms"))
-        d.update(self.latency_ms.confidence_to_flat_dict("latency_ms"))
+        if self.latency_ms is not None:
+            d.update(self.latency_ms.to_flat_dict("latency_ms"))
+            d.update(self.latency_ms.confidence_to_flat_dict("latency_ms"))
         return d
 
     def validate_metrics(self) -> tuple[bool, list[str]]:
@@ -510,9 +518,10 @@ class _CompletedRunBase(BaseModel):
                 "Invalid throughput:"
                 f" request_throughput={self.request_throughput}"
             )
-        ok, sub_errors = self.latency_ms.validate_metrics()
-        if not ok:
-            errors.extend(f"latency_ms: {e}" for e in sub_errors)
+        if self.latency_ms is not None:
+            ok, sub_errors = self.latency_ms.validate_metrics()
+            if not ok:
+                errors.extend(f"latency_ms: {e}" for e in sub_errors)
         return len(errors) == 0, errors
 
     def confidence_warnings(self) -> list[str]:
@@ -532,21 +541,27 @@ class TextGenAggregates(_CompletedRunBase):
     nonempty_response_chunks: int
     max_concurrent_conversations: int | None = None
 
-    input_throughput: ThroughputMetrics
-    output_throughput: ThroughputMetrics = Field(
-        json_schema_extra={"phase": "decode"}
+    # All metric fields below are ``None`` when the iteration produced no
+    # samples to derive them from (see ``latency_ms`` on the base class):
+    # a fully-failed iteration leaves every field ``None``, while a
+    # prefill-only / single-output-token iteration leaves just the
+    # decode-phase fields (``tpot_ms`` / ``itl_ms`` / ``step_tpot_ms``)
+    # ``None``. This avoids serializing NaN-filled percentile objects.
+    input_throughput: ThroughputMetrics | None = None
+    output_throughput: ThroughputMetrics | None = Field(
+        default=None, json_schema_extra={"phase": "decode"}
     )
-    ttft_ms: StandardPercentileMetrics
-    tpot_ms: StandardPercentileMetrics = Field(
-        json_schema_extra={"phase": "decode"}
+    ttft_ms: StandardPercentileMetrics | None = None
+    tpot_ms: StandardPercentileMetrics | None = Field(
+        default=None, json_schema_extra={"phase": "decode"}
     )
     # Per-step TPOT: ITL / tokens_per_step for each decode step.
     # Only populated when chunk-level text is available for re-tokenization.
     step_tpot_ms: StandardPercentileMetrics | None = Field(
         default=None, json_schema_extra={"phase": "decode"}
     )
-    itl_ms: StandardPercentileMetrics = Field(
-        json_schema_extra={"phase": "decode"}
+    itl_ms: StandardPercentileMetrics | None = Field(
+        default=None, json_schema_extra={"phase": "decode"}
     )
 
     max_input: int
@@ -607,15 +622,17 @@ class TextGenAggregates(_CompletedRunBase):
             ("input_throughput", self.input_throughput),
             ("output_throughput", self.output_throughput),
         ]:
-            d.update(pm.to_flat_dict(name))
-            d.update(pm.confidence_to_flat_dict(name))
+            if pm is not None:
+                d.update(pm.to_flat_dict(name))
+                d.update(pm.confidence_to_flat_dict(name))
         for name, spm in [
             ("ttft_ms", self.ttft_ms),
             ("tpot_ms", self.tpot_ms),
             ("itl_ms", self.itl_ms),
         ]:
-            d.update(spm.to_flat_dict(name))
-            d.update(spm.confidence_to_flat_dict(name))
+            if spm is not None:
+                d.update(spm.to_flat_dict(name))
+                d.update(spm.confidence_to_flat_dict(name))
         if self.step_tpot_ms is not None:
             d.update(self.step_tpot_ms.to_flat_dict("step_tpot_ms"))
             d.update(self.step_tpot_ms.confidence_to_flat_dict("step_tpot_ms"))
@@ -649,17 +666,19 @@ class TextGenAggregates(_CompletedRunBase):
             errors.append(
                 f"No output tokens generated (total_output={self.total_output})"
             )
-        optional_metrics: list[tuple[str, StandardPercentileMetrics]] = []
-        if self.step_tpot_ms is not None:
-            optional_metrics.append(("step_tpot_ms", self.step_tpot_ms))
         for name, m in [
             ("input_throughput", self.input_throughput),
             ("output_throughput", self.output_throughput),
             ("ttft_ms", self.ttft_ms),
             ("tpot_ms", self.tpot_ms),
             ("itl_ms", self.itl_ms),
-            *optional_metrics,
+            ("step_tpot_ms", self.step_tpot_ms),
         ]:
+            # ``None`` means the metric had no samples this iteration
+            # (e.g. decode metrics on a prefill-only run); the empty case
+            # is already reported via ``completed`` / ``total_output``.
+            if m is None:
+                continue
             ok, sub_errors = m.validate_metrics()
             if not ok:
                 errors.extend(f"{name}: {e}" for e in sub_errors)
@@ -694,15 +713,14 @@ class TextGenAggregates(_CompletedRunBase):
 
     def confidence_warnings(self) -> list[str]:
         warns: list[str] = []
-        optional_pairs: list[tuple[str, StandardPercentileMetrics]] = []
-        if self.step_tpot_ms is not None:
-            optional_pairs.append(("step_tpot_ms", self.step_tpot_ms))
         for name, metric in [
             ("ttft_ms", self.ttft_ms),
             ("tpot_ms", self.tpot_ms),
             ("output_throughput", self.output_throughput),
-            *optional_pairs,
+            ("step_tpot_ms", self.step_tpot_ms),
         ]:
+            if metric is None:
+                continue
             ci = getattr(metric, "confidence_info", None)
             if ci and ci.confidence in ("low", "insufficient_data"):
                 warns.append(

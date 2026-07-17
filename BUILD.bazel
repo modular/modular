@@ -117,6 +117,23 @@ string_flag(
     build_setting_default = "deadbeef",
 )
 
+# The libkineto profiling backend is internal-only; this default-off flag
+# exists so Support/BUILD.bazel's //Support:Profiling select resolves here,
+# always picking the (stubbed) static variant. Only referenced when this
+# package is the workspace root, so the internal unused-targets lint must
+# skip it.
+bool_flag(
+    name = "kineto_profiling",
+    build_setting_default = False,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "kineto_enabled",
+    flag_values = {"//:kineto_profiling": "true"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
 config_setting(
     name = "linux_x86_64",
     constraint_values = [

@@ -79,6 +79,25 @@ This version is still a work in progress.
   the thinking back into the `content` field wrapped in `<think>...</think>`
   tags, matching the official MiniMax M3 endpoint. The field is a no-op for
   every other model.
+- FLUX.2-klein bf16 checkpoints on Apple M5 GPUs now default to int8 W8A8
+  quantization (weights round-to-nearest-quantized at load, per-token dynamic
+  activation scales in a fused Metal matmul — MAX's own Mojo kernel).
+  Measured ~1.45x faster end-to-end than bf16 on FLUX.2-klein-4B (1024x1024,
+  4 steps) at near-lossless quality (PSNR 34.2 dB, SSIM 0.9966). Set
+  `APPLE_FLUX2_INT8_W8A8=0` to opt back into bf16; FLUX.2-dev and non-M5
+  devices are unaffected.
+- NVFP4 FLUX.2 checkpoints (for example FLUX.2-dev) can now opt into an int8
+  W8A8 requant at load on Apple M5 with `APPLE_FLUX2_INT8_W8A8=1`: each
+  quantized layer's weight is reconstructed from its FP4 data and scales,
+  then requantized to int8 one weight at a time, so no full-model
+  high-precision copy is ever resident. Measured ~2.56x faster end-to-end
+  than the default weight-only W4A16 path on FLUX.2-dev (1024x1024, 24
+  steps) at faithful quality (SSIM 0.996-0.999). Unset, NVFP4 keeps its
+  W4A16 default.
+- Renamed the FLUX.2 int8 W8A8 override env var `FLUX2_KLEIN_INT8_W8A8` to
+  `APPLE_FLUX2_INT8_W8A8` (the path is Apple-Metal-only and no longer
+  klein-only). The old name is still honored with a one-time deprecation
+  warning; the new name wins when both are set.
 - FLUX.2 diffusion pipelines now support both denoising-cache backends to skip
   redundant transformer passes during generation: `--taylorseer` (Taylor-series
   step skipping — the recommended default, with `balanced` and `fast` presets)
@@ -119,6 +138,17 @@ This version is still a work in progress.
   failure at submission time (for example, a dead model worker) maps to an HTTP
   5xx (or 4xx for input errors). Errors that occur mid-stream, after the first
   chunk has been sent, are still serialized as an error event within the stream.
+- Added request-queue backpressure to MAX serve via two cooperating caps. The
+  `--max-queue-size` flag (env var `MAX_SERVE_MAX_QUEUE_SIZE`, cap *N*) bounds
+  the request queue to the model worker; once it is full, new requests are
+  rejected immediately with HTTP 429 instead of being enqueued. The
+  `--max-pending-requests` flag (env var `MAX_SERVE_MAX_PENDING_REQUESTS`, cap
+  *M*) stops the worker from draining the request queue once its pending
+  (prefill) queue is *M* deep, so the request queue actually backs up under
+  load. Together they form a self-calibrating mechanism that sheds load to keep
+  latency within SLAs and naturally accounts for long requests holding batch
+  space. Both default to unbounded. Rejections are observable via the existing
+  `maxserve.request_count` metric with `code="429"`.
 - Added `MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S` to control how long the server
   waits for in-flight requests to finish after receiving `SIGTERM` before
   exiting (default 5 seconds). Raise it so long-running requests are drained
@@ -353,15 +383,18 @@ This version is still a work in progress.
   the same architecture family. Mirrors `set_virtual_device_target_arch()` for
   GPUs. Leaving it unset compiles for the build host's CPU, as before.
 
-- **Preview (no-op today)**: `InferenceSession.profiling` is a new namespace
-  that will control the libkineto-backed MAX profiler. The control surface is
-  final and callable — `session.profiling.start()` / `.stop()` /
-  `.wait_for_trace()` and the read-only `.state` / `.is_enabled` — but it does
-  not record yet: libkineto-backed Chrome-trace JSON capture (compatible with
-  Meta's [HTA](https://github.com/facebookresearch/HolisticTraceAnalysis))
-  lands in a later nightly. This API is orthogonal to the existing
-  `session.gpu_profiling()` (NVTX/Nsight) path; see `max/docs/profiling.md`
-  in the repository for the user guide.
+- `InferenceSession.profiling` now records libkineto traces in
+  `--config=kineto` builds (Linux x86_64). libkineto is auto-enabled when the
+  pipeline entrypoints configure a session with profiling enabled;
+  `session.profiling.start()` also enables it explicitly and (on hosts with a
+  live CUDA primary context) subscribes to CUPTI's Activity Callback API, and
+  `session.profiling.stop()` flushes and serializes a Chrome-trace JSON file
+  compatible with Meta's
+  [HTA](https://github.com/facebookresearch/HolisticTraceAnalysis).
+  `session.profiling.wait_for_trace()` blocks until serialization is done and
+  raises `max.engine.ProfilingError` if libkineto could not write the trace.
+  Default builds — including the shipped wheels — do not link the libkineto
+  backend yet, so the control surface remains a safe no-op there.
 - `ProfilingConfig` gains six new fields for the libkineto profiler, each
   configurable from Python through the matching `session.debug.profiling_*`
   setter or its `MODULAR_MAX_DEBUG_PROFILING_*` environment variable:
@@ -369,19 +402,20 @@ This version is still a work in progress.
   `profiling_warmup_steps`, `profiling_active_steps`, and
   `profiling_periodic_flush_seconds`.
 - `profiling_output_path` accepts template variables (`{pid}`, `{rank}`) and a
-  directory form (`/tmp/traces/`); the path is expanded per process (keyed on
-  rank, PID, timestamp, and a sequence counter) so that, once trace capture is
-  enabled, multi-process and multi-rank runs won't collide on a single fixed
+  directory form (`/tmp/traces/`) that auto-generates a distinct per-process
+  file (keyed on rank, PID, timestamp, and a sequence counter), so
+  multi-process and multi-rank captures no longer collide on a single fixed
   filename. `{rank}` resolves to `MODULAR_RANK` / `OMPI_COMM_WORLD_RANK` /
   `"0"`.
-- `max.engine.ProfilingError` is a new exception type the profiler will raise
-  to surface trace-write failures.
 - Forking while the profiler is enabled is safe for host applications that
   embed `InferenceSession` and fork (Python `multiprocessing` with the `fork`
   start method, pre-fork servers, or a bare `os.fork()`) — child processes
   start with the profiler disabled and can call `start()` again; the parent
   retains its enabled state across the fork. (MAX itself launches
   workers with the `spawn` start method and is unaffected.)
+- This API is orthogonal to the existing `session.gpu_profiling()`
+  (NVTX/Nsight) path. See `max/docs/profiling.md` in the repository for the
+  full user guide.
 
 - Eager execution in `max.experimental` now routes every realization through
   the `max.experimental.executor.Executor` abstraction. The out-of-the-box
@@ -515,6 +549,16 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- `max.nn.Module.build_subgraph()` now takes representative input *values*
+  (`inputs=`) instead of input *types* (`input_types=`). Each argument may be a
+  single `Value`, a nested list/tuple of values, or a structured
+  `FlattenableGraphInput` such as `PagedCacheValues`; the subgraph signature is
+  derived from the flattened leaves and the structure is rebuilt before the
+  layer runs. This lets structured inputs cross the subgraph boundary directly,
+  so `DistributedTransformerBlock` now accepts `list[PagedCacheValues]` rather
+  than the hand-decomposed per-field lists. Update call sites from
+  `build_subgraph(name, input_types=[v.type for v in values])` to
+  `build_subgraph(name, inputs=values)`.
 - Removed the `MAX_SERVE_METRIC_LEVEL` and
   `MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR` environment variables along with
   the `BASIC`/`DETAILED` metric-level distinction. MAX Serve now always emits

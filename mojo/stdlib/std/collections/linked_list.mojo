@@ -719,7 +719,7 @@ struct LinkedList[ElementType: Movable](
             self._size = other._size
 
     def count(
-        self, read elem: Self.ElementType
+        self, imm elem: Self.ElementType
     ) -> Int where conforms_to(Self.ElementType, Equatable):
         """Count the occurrences of `elem` in the list.
 
@@ -796,8 +796,8 @@ struct LinkedList[ElementType: Movable](
         return False
 
     def __eq__(
-        read self,
-        read other: Self,
+        imm self,
+        imm other: Self,
     ) -> Bool where conforms_to(Self.ElementType, Equatable):
         """Checks if the two lists are equal.
 

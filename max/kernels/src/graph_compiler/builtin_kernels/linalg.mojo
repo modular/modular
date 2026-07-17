@@ -79,7 +79,7 @@ from linalg.grouped_matmul import (
     grouped_matmul,
     grouped_matmul_rowwise_dynamic_scaled_fp8,
 )
-from linalg.lora import shrink_qkv_permute_3mn_sm100
+from linalg.lora import expand_qkv_sm100, shrink_qkv_permute_3mn_sm100
 from linalg.matmul import matmul
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.matrix_band_part import matrix_band_part
@@ -1655,4 +1655,43 @@ struct MatmulSwiGLUBias:
                     unsafe_from_address=Int(bias.unsafe_ptr())
                 )
             ),
+        )
+
+
+@extensibility.register("mo.lora_sgmv.qkv_expand.ragged")
+struct Struct_lora_sgmv_qkv_expand_ragged:
+    @always_inline
+    @staticmethod
+    def execute[
+        q_type: DType,
+        kv_type: DType,
+        p_type: DType,
+        b_type: DType,
+        //,
+        target: StaticString,
+    ](
+        q_out: OutputTensor[dtype=q_type, rank=2, ...],
+        kv_out: OutputTensor[dtype=kv_type, rank=2, ...],
+        p: InputTensor[dtype=p_type, rank=3, ...],
+        b: InputTensor[dtype=b_type, rank=3, ...],
+        lora_grouped_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        lora_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        max_seq_length: UInt32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), "SGMV only supported on GPUs"
+
+        if p.dim_size[1]() == 0:
+            return
+
+        expand_qkv_sm100(
+            q_out.to_tile_tensor[DType.int64](),
+            kv_out.to_tile_tensor[DType.int64](),
+            p.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            lora_grouped_offsets.to_tile_tensor[DType.int64](),
+            lora_ids.to_tile_tensor[DType.int64](),
+            Int(max_seq_length),
+            lora_ids.dim_size[0](),
+            context,
         )

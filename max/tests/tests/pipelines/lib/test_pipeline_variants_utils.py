@@ -20,6 +20,7 @@ import max.pipelines.lib.pipeline_variants.structured_output_backend as _sob
 import numpy as np
 import numpy.typing as npt
 import pytest
+from max import _xgrammar as xgrammar
 from max.pipelines.context import (
     GenerationStatus,
     GrammarMatcher,
@@ -563,3 +564,26 @@ class TestGrammarValidation:
         monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
         _sob.make_grammar_validator(None, object(), 128)
         assert captured["name"] == DEFAULT_STRUCTURED_OUTPUT_BACKEND
+
+
+class TestXgrammarCacheBound:
+    """xgrammar's compiled-grammar cache is bounded (vLLM's VLLM_XGRAMMAR_CACHE_MB
+    analog) so a long-running server can't grow it without limit."""
+
+    def test_default_limit_is_512_mb(self) -> None:
+        assert _sob._xgrammar_cache_limit_bytes() == 512 * 1024 * 1024
+
+    def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MODULAR_XGRAMMAR_CACHE_MB", "64")
+        assert _sob._xgrammar_cache_limit_bytes() == 64 * 1024 * 1024
+
+    def test_compiler_honors_byte_limit(self) -> None:
+        vocab = [f"tok{i}".encode() for i in range(16)]
+        tokenizer_info = xgrammar.TokenizerInfo(
+            vocab, vocab_type=xgrammar.VocabType.RAW, stop_token_ids=[0]
+        )
+        limit = 8 * 1024 * 1024
+        compiler = xgrammar.GrammarCompiler(
+            tokenizer_info, max_memory_bytes=limit
+        )
+        assert compiler._impl.cache_limit_bytes == limit

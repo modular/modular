@@ -505,13 +505,12 @@ class _ProfilingNamespace:
     def start(self) -> None:
         """Enable libkineto and begin recording.
 
-        Subscribes to CUPTI activity callbacks. Tracy and libkineto are
-        mutually exclusive at build time, so in ``--config=tracy`` builds
-        (which do not link libkineto) this is a no-op. Idempotent — calling
+        Subscribes to CUPTI activity callbacks. Idempotent — calling
         :meth:`start` while already enabled is a no-op.
 
-        On builds without libkineto (today: macOS and Linux aarch64) or
-        hosts without a live CUDA primary context, this is a safe no-op:
+        On builds without libkineto (it is linked only in
+        ``--config=kineto`` builds on Linux x86_64) or hosts without a
+        live CUDA primary context, this is a safe no-op:
         ``state`` will still report ``"warmup"`` but no trace file is
         written by the matching :meth:`stop`.
         """

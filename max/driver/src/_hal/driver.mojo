@@ -13,10 +13,23 @@
 """HAL Driver — entry point for interacting with hardware via a plugin."""
 
 from .plugin import RawDriver
-from .device import Device, get_device_spec
+from .device import Device, get_device_spec, get_machine_definition
 from .status import HALError
 from std.memory import ArcPointer
 from std.memory.arc_pointer import WeakPointer
+
+
+def _first_accelerator() -> Optional[Int64]:
+    var machine = get_machine_definition()
+    for i in range(len(machine.devices())):
+        ref device = machine.devices()[i]
+        if device.spec.info:
+            # Currently, only accelerators have corresponding GPUInfo.
+            # Once this turns into broader DeviceInfo, this should
+            # instead check if `info.is_accelerator()`
+            return Optional(Int64(i))
+
+    return Optional[Int64]()
 
 
 @fieldwise_init
@@ -66,4 +79,30 @@ struct Driver(ImplicitlyDeletable, Movable):
         id: Int64
     ](self) raises HALError -> ArcPointer[Device[get_device_spec[id]()]]:
         """Retrieve a device by ID."""
-        return Device[get_device_spec[id]()]._create(self, id)
+        return rebind[ArcPointer[Device[get_device_spec[id]()]]](
+            self.get_device_dynamic[id](id)
+        )
+
+    def get_device_dynamic[
+        StaticID: Optional[Int64] = _first_accelerator()
+    ](self, dynamic_id: Int64) raises HALError -> ArcPointer[
+        Device[get_device_spec[StaticID.value()]()]
+    ]:
+        """
+        Allows type-erased contexts to retrieve devices by a dynamic ID by assuming
+        their architecture is equal to (or dynamically compatible with) the ID in `StaticID`.
+
+        Parameters:
+            StaticID: The ID to assume for the device at compile time. Must be `Some`, `Optional` allows for inferring ID when not provided.
+
+        Arguments:
+            dynamic_id: The ID to assume for runtime execution, regardless of the value of StaticID.
+        """
+
+        comptime assert (
+            StaticID
+        ), "No accelerator could be found for the given StaticID"
+
+        return Device[get_device_spec[StaticID.value()]()]._create(
+            self, dynamic_id
+        )

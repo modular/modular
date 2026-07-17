@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 from typing import Generic, TypeVar, cast
@@ -27,6 +28,7 @@ from max.pipelines.modeling.types import (
     RequestID,
 )
 from max.serve.scheduler_result import SchedulerResult
+from max.serve.worker_interface import RequestQueueFull
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerProxy
 
 _T = TypeVar("_T")
@@ -43,6 +45,9 @@ class FakeAsyncPushQueue(Generic[_T]):
 
     async def put(self, item: _T) -> None:
         await self._queue.put(item)
+
+    async def writable(self, timeout_s: float | None = 0.0) -> bool:
+        return True
 
     def get_nowait(self) -> _T:
         return self._queue.get_nowait()
@@ -169,3 +174,68 @@ async def test_buffering() -> None:
             [FakeOutput("b"), FakeOutput("c")],
             [FakeOutput("d"), FakeOutput("e"), FakeOutput("f", _is_done=True)],
         ]
+
+
+class _FullPushQueue(FakeAsyncPushQueue[_T]):
+    """Push queue that reports itself as full.
+
+    Mimics a bounded ZMQ PUSH socket at its high-water mark whose consumer has
+    stopped draining: ``writable`` returns False, so admission rejects
+    immediately rather than attempting (and blocking on) a push.
+    """
+
+    async def writable(self, timeout_s: float | None = 0.0) -> bool:
+        return False
+
+    async def put(self, item: _T) -> None:
+        raise AssertionError("put must not be called when the queue is full")
+
+
+def _make_proxy(
+    request_queue: FakeAsyncPushQueue[BaseContext] | None = None,
+) -> ZmqModelWorkerProxy[BaseContext, FakeOutput]:
+    return ZmqModelWorkerProxy(
+        request_queue or FakeAsyncPushQueue(),
+        FakeAsyncPullQueue(),
+        FakeAsyncPushQueue(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_stream_raises_request_queue_full() -> None:
+    # A full request queue must surface as RequestQueueFull from awaiting
+    # stream, immediately (without attempting the push) and before any response
+    # is drained, and must not leave a dangling output-queue registration.
+    proxy = _make_proxy(request_queue=_FullPushQueue())
+    req_id = RequestID("rejected")
+    fake_context = cast(BaseContext, FakeContext(name="ctx"))
+
+    with pytest.raises(RequestQueueFull):
+        await proxy.stream(req_id, fake_context)
+
+    assert req_id not in proxy.pending_out_queues
+    assert len(proxy.pending_out_queues) == 0
+
+
+@pytest.mark.asyncio
+async def test_stream_registers_and_cleans_up() -> None:
+    request_queue: FakeAsyncPushQueue[BaseContext] = FakeAsyncPushQueue()
+    proxy = _make_proxy(request_queue=request_queue)
+    req_id = RequestID("ok")
+    fake_context = cast(BaseContext, FakeContext(name="ctx"))
+
+    generator = await proxy.stream(req_id, fake_context)
+    # Awaiting stream pushed the request and registered the output queue for
+    # routing.
+    assert request_queue.get_nowait() == fake_context
+    assert req_id in proxy.pending_out_queues
+
+    # Feed a terminal result and drain the generator to completion; the drain
+    # loop deregisters the output queue in its finally block.
+    proxy.pending_out_queues[req_id].put_nowait(
+        (time.monotonic(), SchedulerResult(is_done=True, result=None))
+    )
+    async for _ in generator:
+        pass
+
+    assert req_id not in proxy.pending_out_queues

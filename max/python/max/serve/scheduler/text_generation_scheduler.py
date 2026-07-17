@@ -67,6 +67,7 @@ class TokenGenerationScheduler(Scheduler):
         kv_cache: PagedKVCacheManager,
         support_empty_batches: bool = False,
         dp_padder: DPBatchPadder | None = None,
+        max_pending_requests: int | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -74,6 +75,16 @@ class TokenGenerationScheduler(Scheduler):
         self.request_queue = request_queue
         self.response_queue = response_queue
         self.cancel_queue = cancel_queue
+
+        # Cap M on the scheduler's pending (CE/prefill) queue depth. When set,
+        # the scheduler stops pulling from the request queue once it already
+        # holds this many not-yet-running requests, so excess backlog stays in
+        # the bounded request queue and exerts backpressure (the API rejects
+        # with HTTP 429) instead of growing this unbounded pending pool. This
+        # naturally accounts for long requests holding batch/KV space: when
+        # they can't drain into a batch, the pending queue stays full and new
+        # admissions are shed sooner.
+        self.max_pending_requests = max_pending_requests
 
         # Parse batch scheduling strategy from environment variable
         batch_strategy = BatchSchedulingStrategy.PER_REPLICA
@@ -114,10 +125,22 @@ class TokenGenerationScheduler(Scheduler):
         This method is responsible for ensuring that new requests are continuously
         fetched and made available for batching and scheduling.
         """
+        max_items = self.max_items_per_drain
+        if self.max_pending_requests is not None:
+            # Cap M: only pull enough to keep the pending (CE/prefill) queue at
+            # or below max_pending_requests. Anything beyond that stays in the
+            # request queue, backing it up so the API can shed load.
+            available = self.max_pending_requests - len(
+                self.batch_constructor.all_ce_reqs
+            )
+            if available <= 0:
+                return
+            max_items = min(max_items, available)
+
         with Tracer("drain_queue"):
             items = drain_queue(
                 self.request_queue,
-                max_items=self.max_items_per_drain,
+                max_items=max_items,
             )
 
         with Tracer(f"adding_to_batch_constructor: {len(items)} items"):
@@ -249,6 +272,7 @@ def load_text_generation_scheduler(
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ],
     cancel_queue: MAXPullQueue[list[RequestID]],
+    max_pending_requests: int | None = None,
 ) -> TokenGenerationScheduler:
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
@@ -284,4 +308,5 @@ def load_text_generation_scheduler(
         cancel_queue=cancel_queue,
         support_empty_batches=pipeline_config.runtime.execute_empty_batches,
         dp_padder=dp_padder,
+        max_pending_requests=max_pending_requests,
     )

@@ -173,7 +173,7 @@ def _memcpy_impl(
         n: The number of bytes to copy.
     """
 
-    def copy[width: Int](offset: Int) {read}:
+    def copy[width: Int](offset: Int) {imm}:
         dest_data.store(offset, src_data.load[width=width](offset))
 
     comptime if is_gpu():
@@ -356,7 +356,7 @@ def memmove[
 def _memset_impl(
     ptr: UnsafePointer[mut=True, Byte, ...], value: Byte, count: Int
 ):
-    def fill[width: Int](offset: Int) {read}:
+    def fill[width: Int](offset: Int) {imm}:
         ptr.store(offset, SIMD[DType.uint8, width](value))
 
     comptime simd_width = simd_width_of[Byte]()
@@ -372,7 +372,7 @@ def memset(ptr: UnsafePointer[mut=True, ...], value: Byte, count: Int):
         value: The value to fill with.
         count: Number of elements to fill (in elements, not bytes).
     """
-    _memset_impl(ptr.bitcast[Byte](), value, count * size_of[ptr.type]())
+    _memset_impl(ptr.bitcast[Byte](), value, count * size_of[ptr.T]())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -408,7 +408,7 @@ def memset_zero[
     comptime if count > 128:
         return memset_zero(ptr, count)
 
-    def fill[width: Int](offset: Int) {read}:
+    def fill[width: Int](offset: Int) {imm}:
         ptr.store(offset, SIMD[dtype, width](0))
 
     vectorize[simd_width_of[dtype]()](count, fill)

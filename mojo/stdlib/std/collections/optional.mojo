@@ -291,7 +291,7 @@ struct Optional[T: Movable](
         other: Pointer[...],
         out self: Optional[
             UnsafePointer[
-                other.type,
+                other.T,
                 other.origin,
                 address_space=other.address_space,
             ]

@@ -1895,13 +1895,26 @@ struct EPDispatchKernel[
                 )
 
                 # Wait until all the tokens for the expert have been sent.
-                while (
-                    _counter_atomic.load[ordering=Ordering.ACQUIRE](
-                        expert_finished_counter + counter_offset
-                    )
-                    != expert_count
-                ):
-                    pass
+                comptime if is_amd_gpu():
+                    # TODO(KERN-3184): Investigate why AMD GPUs are slow if the below
+                    # ACQUIRE atomic load is used instead of this volatile load.
+                    while (
+                        expert_finished_counter.load[volatile=True](
+                            counter_offset
+                        )
+                        != expert_count
+                    ):
+                        pass
+                    # Acquire the flag's release; the volatile poll is unordered.
+                    fence[ordering=Ordering.ACQUIRE, scope=DEVICE_SCOPE]()
+                else:
+                    while (
+                        _counter_atomic.load[ordering=Ordering.ACQUIRE](
+                            expert_finished_counter + counter_offset
+                        )
+                        != expert_count
+                    ):
+                        pass
 
                 ep_signal_completion[
                     Self.use_shmem,
@@ -2342,7 +2355,7 @@ struct EPDispatchKernel[
         ]()
 
         @always_inline
-        def fetch_tile_id() {read} -> Int32:
+        def fetch_tile_id() {imm} -> Int32:
             """Fetch the start of the next tile for the current expert. Should
             be called by a single thread.
             """
@@ -2415,7 +2428,7 @@ struct EPDispatchKernel[
             @always_inline
             def _recv_buf_ptr_for(
                 tok_local: Int,
-            ) {read} -> UnsafePointer[UInt8, MutUntrackedOrigin]:
+            ) {imm} -> UnsafePointer[UInt8, MutUntrackedOrigin]:
                 """Return the pointer to the token in the receive buffer."""
                 var wep = tile_start + tok_local
                 var src_rank = Int(tok_rank_map[tok_local])
@@ -2435,7 +2448,7 @@ struct EPDispatchKernel[
             def extract_topk_info(
                 token_ptr: UnsafePointer[UInt8, MutUntrackedOrigin],
                 output_pos: Int,
-            ) {read} -> None:
+            ) {imm} -> None:
                 """Extract the top-k info from the token ans save it to the
                 src_info tensor. Should be called by whole warp.
                 """
@@ -2554,7 +2567,7 @@ struct EPDispatchKernel[
             @always_inline
             def _send_buf_ptr_for(
                 tok_local: Int,
-            ) {read} -> UnsafePointer[UInt8, MutUntrackedOrigin]:
+            ) {imm} -> UnsafePointer[UInt8, MutUntrackedOrigin]:
                 return send_buf_p + Self.send_buf_layout(
                     (tile_start + tok_local, Idx[0])
                 )
@@ -2563,7 +2576,7 @@ struct EPDispatchKernel[
             def extract_topk_info(
                 token_ptr: UnsafePointer[UInt8, MutUntrackedOrigin],
                 output_pos: Int,
-            ) {read} -> None:
+            ) {imm} -> None:
                 pass
 
             format_handler.copy_msg_tile_to_output_tensor[

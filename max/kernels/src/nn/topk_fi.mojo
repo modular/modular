@@ -1261,8 +1261,8 @@ def TopKTopPSamplingFromProbKernel[
         top_p_arr: Optional per-row top_p values [batch_size].
         top_p_val: Default top_p value if top_p_arr is null.
         d: Vocabulary size.
-        rng_seed: Pointer to seed value. If non-null, rng_seed[0] is used
-            as the seed. If null, defaults to 0.
+        rng_seed: Optional per-row seed array [batch_size], indexed by
+            row_idx. If null, defaults to 0.
         rng_offset: Random offset for Random number generator.
         temperature: Optional per-row temperature [batch_size]. Only used
             when `from_logits` is True; defaults to 1.0 per row.
@@ -1688,8 +1688,8 @@ def topk_topp_sampling_from_prob[
         top_k_val: Default top-k value (number of top tokens to consider).
         top_p_val: Default top-p value (nucleus probability threshold).
         deterministic: Whether to use deterministic sampling.
-        rng_seed: Optional seed tensor. If provided, rng_seed[0] is used
-            as the seed. If None, defaults to 0.
+        rng_seed: Optional per-row seed tensor [batch_size], indexed by the
+            request's logical row (see `indices`). If None, defaults to 0.
         rng_offset: Random offset for Random number generator.
         indices: Optional row indices for batch indexing [batch_size].
         top_k_arr: Optional per-row top-k values [batch_size].

@@ -47,6 +47,9 @@ from nn.bicubic import resize_bicubic
 from nn.kv_cache import generic_get_paged_cache
 from nn.kv_cache_ragged import unfused_qkv_matmul_ragged_paged_gguf_quantized
 from nn.normalization import rms_norm_fused_fp8
+from linalg.rms_norm_block_scaled import (
+    rms_norm_fused_quantize_dynamic_block_scaled,
+)
 from nn.resize import (
     CoordinateTransformationMode,
     RoundMode,
@@ -156,6 +159,65 @@ def composite_rms_norm_fused_quantize_dynamic_scaled_fp8_shape[
     weight_offset: Scalar[dtype=input_dtype],
     scale_ub: Float32,
 ) -> IndexList[rank]:
+    return input.shape()
+
+
+@extensibility.register(
+    "mo.composite.rms_norm_fused_quantize_dynamic_block_scaled"
+)
+struct RMSNormFusedQuantizeDynamicBlockScaled:
+    @staticmethod
+    def execute[
+        input_dtype: DType,
+        output_dtype: DType,
+        scale_dtype: DType,
+        SF_VECTOR_SIZE: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_dtype, rank=2, ...],
+        scales: OutputTensor[dtype=scale_dtype, rank=5, ...],
+        input: FusedInputTensor[dtype=input_dtype, rank=2, ...],
+        gamma: InputTensor[dtype=input_dtype, rank=1, ...],
+        epsilon: Float32,
+        weight_offset: Scalar[dtype=input_dtype],
+        ctx: DeviceContext,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int
+        ](row: Int, col: Int) -> SIMD[input_dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                Index(row, col)
+            )
+
+        rms_norm_fused_quantize_dynamic_block_scaled[
+            input_fn,
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            target=target,
+        ](
+            output.dim_size[0](),
+            output.dim_size[1](),
+            output.to_tile_tensor[DType.int64](),
+            scales.to_tile_tensor[DType.int64](),
+            gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            ctx,
+        )
+
+
+@extensibility.register_shape_function(
+    "mo.composite.rms_norm_fused_quantize_dynamic_block_scaled"
+)
+def composite_rms_norm_fused_quantize_dynamic_block_scaled_shape[
+    input_dtype: DType,
+](
+    input: InputTensor[dtype=input_dtype, rank=2, ...],
+    gamma: InputTensor[dtype=input_dtype, rank=1, ...],
+    epsilon: Float32,
+    weight_offset: Scalar[dtype=input_dtype],
+) -> IndexList[2]:
     return input.shape()
 
 

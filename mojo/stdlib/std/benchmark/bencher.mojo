@@ -987,7 +987,7 @@ struct Bench(Writable):
         @always_inline
         def bench_iter(
             mut b: Bencher,
-        ) {read func,}:
+        ) {imm func,}:
             b.iter(func)
 
         self.bench_function(bench_iter, bench_id, measures=measures)

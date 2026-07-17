@@ -653,14 +653,14 @@ def bench_dispatch[
         def launch(
             dctx: DeviceContext,
         ) raises {
-            read buf0,
-            read buf1,
-            read buf2,
-            read buf3,
-            read out_tt,
-            read seed_imm,
-            read batch_size,
-            read N,
+            imm buf0,
+            imm buf1,
+            imm buf2,
+            imm buf3,
+            imm out_tt,
+            imm seed_imm,
+            imm batch_size,
+            imm N,
             mut iter0,
         }:
             var r = iter0 % 4

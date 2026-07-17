@@ -175,29 +175,29 @@ struct AddressSpace(
 
 
 comptime MutPointer[
-    type: AnyType,
+    T: AnyType,
     origin: MutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = Pointer[type, origin, address_space=address_space]
+] = Pointer[T, origin, address_space=address_space]
 """A mutable pointer.
 
 Parameters:
-    type: The pointee type.
+    T: The pointee type.
     origin: The origin of the pointer.
     address_space: The address space of the pointer.
 """
 
 comptime ImmPointer[
-    type: AnyType,
+    T: AnyType,
     origin: ImmOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = Pointer[type, origin, address_space=address_space]
+] = Pointer[T, origin, address_space=address_space]
 """An immutable pointer.
 
 Parameters:
-    type: The pointee type.
+    T: The pointee type.
     origin: The origin of the pointer.
     address_space: The address space of the pointer.
 """
@@ -216,15 +216,15 @@ comptime ImmutPointer = ImmPointer
 comptime Pointer[
     mut: Bool,
     //,
-    type: AnyType,
+    T: AnyType,
     origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = _CommonPointer[type, origin, address_space=address_space, _safe=True]
-"""A non-nullable pointer to a value of `type`.
+] = _CommonPointer[T, origin, address_space=address_space, _safe=True]
+"""A non-nullable pointer to a value of `T`.
 
 Parameters:
     mut: Whether the pointee data may be mutated through this.
-    type: The type the pointer points to.
+    T: The type the pointer points to.
     origin: The origin of the pointer.
     address_space: The address space of the pointee data.
 """

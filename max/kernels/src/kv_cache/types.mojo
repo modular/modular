@@ -966,7 +966,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
     comptime dtype: DType
     comptime kv_params: KVCacheStaticParams
     comptime page_size_: Int
-    comptime scale_dtype: DType = DType.invalid
+    comptime scale_dtype: DType
     comptime quantization_enabled: Bool = False
     comptime quantization_granularity: Int = 1
 
@@ -1000,13 +1000,15 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         """Stores an element at the given index."""
         ...
 
-    def store_scale(
+    def store_scale[
+        scales_dtype: DType = Self.scale_dtype, width: Int = 1
+    ](
         self,
         bs: Int,
         head_idx: Int,
         tok_idx: Int,
         head_dim_idx: Int,
-        scales: SIMD[Self.scale_dtype, ...],
+        scales: SIMD[scales_dtype, width],
     ):
         """Stores the quantization scales at the given index."""
         ...
@@ -1521,13 +1523,15 @@ struct ContinuousBatchingKVCache[
         return SIMD[Self.scale_dtype, width](0)
 
     @always_inline
-    def store_scale(
+    def store_scale[
+        scales_dtype: DType = Self.scale_dtype, width: Int = 1
+    ](
         self,
         bs: Int,
         head_idx: Int,
         tok_idx: Int,
         head_dim_idx: Int,
-        scales: SIMD[Self.scale_dtype, ...],
+        scales: SIMD[scales_dtype, width],
     ):
         """Stores the quantization scales at the given index.
 
@@ -1818,7 +1822,7 @@ struct PagedKVCache[
     lookup_table_origin: ImmOrigin,
     scales_origin: MutOrigin,
     *,
-    scale_dtype_: DType = DType.invalid,
+    scale_dtype_: Optional[DType] = None,
     quantization_granularity_: Int = 1,
 ](KVCacheT, TrivialRegisterPassable):
     """The PagedKVCache is a wrapper around the KVCache blocks for a given layer.
@@ -1845,8 +1849,8 @@ struct PagedKVCache[
     comptime dtype = Self.dtype_
     comptime kv_params = Self.kv_params_
     comptime page_size_ = Self.page_size
-    comptime scale_dtype = Self.scale_dtype_
-    comptime quantization_enabled = Self.scale_dtype_ != DType.invalid
+    comptime scale_dtype = Self.scale_dtype_.or_else(Self.dtype_)
+    comptime quantization_enabled = Self.scale_dtype_ is not None
     comptime quantization_granularity = Self.quantization_granularity_
 
     # Shape is [total_num_blocks, page_size, num_heads, head_size].
@@ -2603,9 +2607,6 @@ struct PagedKVCache[
         comptime assert (
             Self.quantization_enabled
         ), "Scales only exist for quantized KVCache"
-        comptime assert (
-            Self.scale_dtype != DType.invalid
-        ), "Invalid scale data type"
         assert (
             self.scales is not None
         ), "Scales missing, yet KVCache quantization enabled"
@@ -2614,21 +2615,26 @@ struct PagedKVCache[
         return self.scales.value().load[width=width](idx)
 
     @always_inline
-    def store_scale(
+    def store_scale[
+        scales_dtype: DType = Self.scale_dtype, width: Int = 1
+    ](
         self,
         bs: Int,
         head_idx: Int,
         tok_idx: Int,
         head_dim_idx: Int,
-        scales: SIMD[Self.scale_dtype, ...],
+        scales: SIMD[scales_dtype, width],
     ):
         """Stores the quantization scales at the given index."""
-
-        comptime if Self.quantization_enabled:
-            comptime assert (
-                Self.scale_dtype != DType.invalid
-            ), "Valid quantization scale data type needed"
-
+        # `scales_dtype`/`width` are inferred from the `scales` argument.
+        # `scales_dtype` is definitionally equal to `Self.scale_dtype` (the
+        # derived `scale_dtype_.or_else(dtype_)` alias) but the compiler cannot
+        # fold the derived alias through the arg->param conversion, so the free
+        # parameter accepts the caller's SIMD and the body rebinds to the
+        # (equal) field element type. Remove once MOCO-4337 is fixed.
+        comptime assert (
+            scales_dtype == Self.scale_dtype
+        ), "scales element dtype must match the cache's scale_dtype"
         var lut_block_idx, tok_in_block_idx = divmod(tok_idx, self.page_size)
         var block_idx = Int(self.lookup_table[bs, lut_block_idx])
         debug_assert(
@@ -2647,7 +2653,9 @@ struct PagedKVCache[
             )
         )
         # Bypass TileTensor.store's `where` constraint by using ptr directly.
-        self.scales.value().store(scale_idx, scales)
+        self.scales.value().store(
+            scale_idx, rebind[SIMD[Self.scale_dtype, width]](scales)
+        )
 
     @always_inline
     def load_quantized[
@@ -2797,7 +2805,7 @@ struct ContinuousBatchingKVCacheCollection[
         Self.cache_lengths_origin,
         Self.lookup_table_origin,
     ]
-    comptime scale_dtype: DType = DType.invalid
+    comptime scale_dtype: DType = Self.CacheType.scale_dtype
 
     # Shape is [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size].
     comptime blocks_shape = IntTuple(
@@ -2944,13 +2952,13 @@ struct PagedKVCacheCollection[
     lookup_table_origin: ImmOrigin,
     scales_origin: MutOrigin,
     *,
-    scale_dtype_: DType = DType.invalid,
+    scale_dtype_: Optional[DType] = None,
     quantization_granularity_: Int = 1,
 ](KVCollectionT):
     comptime name_str = "paged"
     comptime dtype = Self.dtype_
     comptime kv_params = Self.kv_params_
-    comptime scale_dtype = Self.scale_dtype_
+    comptime scale_dtype = Self.scale_dtype_.or_else(Self.dtype_)
     comptime CacheType = PagedKVCache[
         Self.dtype,
         Self.kv_params,
@@ -2959,7 +2967,7 @@ struct PagedKVCacheCollection[
         Self.cache_lengths_origin,
         Self.lookup_table_origin,
         Self.scales_origin,
-        scale_dtype_=Self.scale_dtype,
+        scale_dtype_=Self.scale_dtype_,
         quantization_granularity_=Self.quantization_granularity_,
     ]
 
@@ -3057,7 +3065,9 @@ struct PagedKVCacheCollection[
     var kv_cache_dynamic_shape: IndexList[4]
     var kv_cache_dynamic_strides: IndexList[4]
 
-    def __init__(
+    def __init__[
+        scales_dtype: DType = Self.scale_dtype
+    ](
         out self,
         blocks: LayoutTensor[
             Self.dtype, Layout.row_major[6](), Self.blocks_origin
@@ -3070,18 +3080,27 @@ struct PagedKVCacheCollection[
         ],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
+        # `scales_dtype` is inferred from the `scales` argument's element type;
+        # it is definitionally equal to `Self.scale_dtype` but the compiler
+        # cannot fold the derived alias through the arg->param conversion, so
+        # the free parameter lets any caller pass a real scales tensor and the
+        # body rebinds to the (equal) field type. Remove once MOCO-4337 is
+        # fixed.
         scales: OptionalReg[
             LayoutTensor[
-                Self.scale_dtype, Layout.row_major[6](), Self.scales_origin
+                scales_dtype, Layout.row_major[6](), Self.scales_origin
             ]
         ] = OptionalReg[
             LayoutTensor[
-                Self.scale_dtype, Layout.row_major[6](), MutUntrackedOrigin
+                scales_dtype, Layout.row_major[6](), MutUntrackedOrigin
             ]
         ](),
     ):
         """Construct from LayoutTensor params (MOGG boundary)."""
         comptime assert blocks.rank == 6
+        comptime assert (
+            scales_dtype == Self.scale_dtype
+        ), "scales element dtype must match the collection's scale_dtype"
         self.blocks = lt_to_tt[ResultLayout=Self.blocks_tt_layout](blocks)
         self.cache_lengths = lt_to_tt[
             ResultLayout=Self.CacheType.cache_lengths_tt_layout
@@ -3095,8 +3114,16 @@ struct PagedKVCacheCollection[
             _compute_kv_cache_dynamic_shape_strides[4, (1, 2)](self.blocks)
         )
         if scales is not None:
+            # `scales_dtype == Self.scale_dtype` (asserted above); rebind the
+            # syntactically-distinct-but-equal element type for the field store.
             self.scales = lt_to_tt[ResultLayout=Self.scales_tt_layout](
-                scales.value()
+                rebind[
+                    LayoutTensor[
+                        Self.scale_dtype,
+                        Layout.row_major[6](),
+                        Self.scales_origin,
+                    ]
+                ](scales.value())
             )
             self.kv_cache_scales_dynamic_shape, self.kv_cache_scales_dynamic_strides = _compute_kv_cache_dynamic_shape_strides[
                 4, (1, 2)

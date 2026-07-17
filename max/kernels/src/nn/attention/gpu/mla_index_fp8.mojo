@@ -239,9 +239,6 @@ def mla_indexer_ragged_float8_paged[
     comptime assert (
         CacheType.quantization_enabled
     ), "k_collection must have quantization/scales enabled for MLA k_s values"
-    comptime assert (
-        CacheType.scale_dtype != DType.invalid
-    ), "k_collection must have valid scale_dtype for MLA k_s values"
     comptime assert CacheType.quantization_granularity >= depth, (
         "k_collection.quantization_granularity must be >= depth (head_dim) for"
         " MLA (requires one scale per token per head, i.e. head_dim_granularity"

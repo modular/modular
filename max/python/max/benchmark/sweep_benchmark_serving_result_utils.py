@@ -90,6 +90,27 @@ def _get_percentile(metrics: StandardPercentileMetrics, p: int) -> float:
     return getattr(metrics, f"p{p}")
 
 
+def _mean_or_nan(metrics: StandardPercentileMetrics | None) -> float:
+    """Return ``metrics.mean``, or ``NaN`` when the metric has no samples.
+
+    A metric is ``None`` for an iteration that produced no data (e.g. every
+    request failed, or a prefill-only run has no inter-token latencies).
+    The legacy sweep-upload path historically stored ``NaN`` for that case
+    (metrics were built from ``[float("nan")]``); preserve that exact
+    representation here now that the producer emits ``None`` instead.
+    """
+    return metrics.mean if metrics is not None else float("nan")
+
+
+def _percentiles_or_nan(
+    metrics: StandardPercentileMetrics | None, percentiles: list[int]
+) -> dict[int, float]:
+    """Percentile map for ``metrics``, or all-``NaN`` when it has no samples."""
+    if metrics is None:
+        return {p: float("nan") for p in percentiles}
+    return {p: _get_percentile(metrics, p) for p in percentiles}
+
+
 @dataclass
 class SweepServingBenchmarkResult:
     """Base benchmark result shared by all task types.
@@ -134,20 +155,16 @@ class LLMBenchmarkResult(SweepServingBenchmarkResult):
         return cls(
             duration=t.duration,
             throughput=t.request_throughput,
-            req_latency_mean=t.latency_ms.mean,
+            req_latency_mean=_mean_or_nan(t.latency_ms),
             gpu_utilization=mean_gpu,
-            req_latency_percentiles={
-                p: _get_percentile(t.latency_ms, p) for p in percentiles
-            },
+            req_latency_percentiles=_percentiles_or_nan(
+                t.latency_ms, percentiles
+            ),
             result_filename=result_filename,
-            ttft_mean=t.ttft_ms.mean,
-            itl_mean=t.itl_ms.mean,
-            ttft_percentiles={
-                p: _get_percentile(t.ttft_ms, p) for p in percentiles
-            },
-            itl_percentiles={
-                p: _get_percentile(t.itl_ms, p) for p in percentiles
-            },
+            ttft_mean=_mean_or_nan(t.ttft_ms),
+            itl_mean=_mean_or_nan(t.itl_ms),
+            ttft_percentiles=_percentiles_or_nan(t.ttft_ms, percentiles),
+            itl_percentiles=_percentiles_or_nan(t.itl_ms, percentiles),
             prefill_stats=metrics.prefill_stats,
             decode_stats=metrics.decode_stats,
         )
@@ -204,11 +221,11 @@ class TextToImageBenchmarkResult(SweepServingBenchmarkResult):
         return cls(
             duration=p.duration,
             throughput=p.request_throughput,
-            req_latency_mean=p.latency_ms.mean,
+            req_latency_mean=_mean_or_nan(p.latency_ms),
             gpu_utilization=mean_gpu,
-            req_latency_percentiles={
-                pct: _get_percentile(p.latency_ms, pct) for pct in percentiles
-            },
+            req_latency_percentiles=_percentiles_or_nan(
+                p.latency_ms, percentiles
+            ),
             result_filename=result_filename,
             total_generated_outputs=p.total_generated_outputs,
             prefill_stats=metrics.prefill_stats,

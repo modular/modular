@@ -46,8 +46,8 @@ comptime SM100_RESERVED_SMEM_BYTES = 1024
 struct FA4Config[
     qkv_dtype: DType,
     *,
-    rope_dtype: DType = DType.invalid,
-    scale_dtype: DType = DType.invalid,
+    rope_dtype_: Optional[DType] = None,
+    scale_dtype_: Optional[DType] = None,
 ](TrivialRegisterPassable):
     var MMA_M: Int
     var BM: Int
@@ -102,9 +102,20 @@ struct FA4Config[
     var row_major_v_atoms: Bool
     var row_major_k_atoms: Bool
 
+    # Concrete scale/rope dtypes for `Scalar[...]`/pointer reads. When the
+    # optional param is unset, fall back to `qkv_dtype` so the type is always
+    # well-formed; the "is it present?" signal lives in the `_size` aliases
+    # below (0 when the optional is unset).
+    comptime rope_dtype = Self.rope_dtype_.or_else(Self.qkv_dtype)
+    comptime scale_dtype = Self.scale_dtype_.or_else(Self.qkv_dtype)
+
     comptime qkv_dtype_size: Int = size_of[Self.qkv_dtype]()
-    comptime rope_dtype_size: Int = size_of[Self.rope_dtype]()
-    comptime scale_dtype_size: Int = size_of[Self.scale_dtype]()
+    comptime rope_dtype_size: Int = size_of[
+        Self.rope_dtype_.value()
+    ]() if Self.rope_dtype_ else 0
+    comptime scale_dtype_size: Int = size_of[
+        Self.scale_dtype_.value()
+    ]() if Self.scale_dtype_ else 0
 
     comptime MMA_K: Int = 16 if Self.qkv_dtype.is_half_float() else 32
     comptime sm100_smem_carveout = (

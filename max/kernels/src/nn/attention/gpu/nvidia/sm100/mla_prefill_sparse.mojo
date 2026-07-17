@@ -120,6 +120,7 @@ struct MLASparseConfig[
     num_mbars_: Int = 2,
     q_smem_depth_: Int = 192,
     q_tmem_depth_: Int = 384,
+    cta_group_: Int = 2,
 ]:
     var num_q_heads: Int
     var num_kv_heads: Int
@@ -132,7 +133,8 @@ struct MLASparseConfig[
     # the rightmost q_depth is store in tmem
     # for the leftmost qk_depth mma, we do ss_mma,
     # for the rightmost qk_depth mma, we do ts_mma,
-    comptime cta_group = 2
+    comptime cta_group = Self.cta_group_
+    comptime use_ws = Self.cta_group_ == 1
     comptime q_smem_depth = Self.q_smem_depth_
     comptime q_tmem_depth = Self.q_tmem_depth_
     comptime B_TOPK = Self.b_topk_
@@ -175,15 +177,11 @@ struct MLASparseSharedMemory[config: MLASparseConfig]:
     comptime TOPK_PER_CTA = Self.config.B_TOPK // Self.config.cta_group
     # Per-CTA TMEM cluster N (= MMA_N for one SV atom). Each CTA holds the
     # full cluster N output for its M slice (M-split, N-shared on output).
-    comptime V_DEPTH_PER_CTA = Self.config.v_depth // Self.config.cta_group
-    # Per-atom per-CTA V cols.  SV_MMA's b_bmn = MMA_N / cta_group, so each
-    # CTA contributes MMA_N/cta_group cols of V per atom to the cluster
-    # MMA (B is split across CTAs).
-    comptime V_BMN_PER_ATOM = Self.V_DEPTH_PER_CTA // Self.config.cta_group
-    # V smem holds BOTH SV atoms' worth of V per CTA — 128 cols for atom1
-    # (cluster depths 0..255) followed by 128 cols for atom2 (cluster
-    # depths 256..511), so the full v_depth=512 is covered.
     comptime NUM_SV_ATOMS = 2
+    comptime SV_ATOM_MMA_N = Self.config.v_depth // Self.NUM_SV_ATOMS
+    comptime V_DEPTH_PER_CTA = Self.SV_ATOM_MMA_N
+    comptime V_BMN_PER_ATOM = Self.SV_ATOM_MMA_N // Self.config.cta_group
+    comptime O_ATOM_PHYS_COLS = Self.SV_ATOM_MMA_N // 2
     comptime V_SMEM_COLS_PER_CTA = Self.V_BMN_PER_ATOM * Self.NUM_SV_ATOMS
 
     comptime FULL_Q_SIZE = Self.BH * Self.qk_depth
@@ -398,7 +396,7 @@ struct SVMMAType[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
         Self.dtype,
         Self.accum_dtype,
         MMA_M=Self.config.num_q_heads,
-        MMA_N=Self.config.v_depth // Self.config.cta_group,
+        MMA_N=Self.config.v_depth // 2,
         BK=Self.config.B_TOPK // 2,
         a_tmem=False,
         mma_kind=UMMAKind.KIND_F16,
@@ -411,7 +409,7 @@ struct SVMMAType[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
         Self.dtype,
         Self.accum_dtype,
         MMA_M=Self.config.num_q_heads,
-        MMA_N=Self.config.v_depth // Self.config.cta_group,
+        MMA_N=Self.config.v_depth // 2,
         BK=Self.config.B_TOPK // 2,
         a_tmem=False,
         mma_kind=UMMAKind.KIND_F16,
@@ -458,8 +456,7 @@ struct SVMMAType[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
         ],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
-            BMN=(Self.config.v_depth // Self.config.cta_group)
-            // Self.config.cta_group,
+            BMN=(Self.config.v_depth // 2) // Self.config.cta_group,
             BK=Self.config.B_TOPK // 2,  # 64 K rows per part
             swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
             is_k_major=False,
@@ -480,13 +477,11 @@ struct MLAPrefillSparse[
 
     comptime NUM_Q_HEADS_PER_CTA = Self.config.num_q_heads // Self.config.cta_group
     comptime B_TOPK_PER_CTA = Self.config.B_TOPK // Self.config.cta_group
-    comptime V_DEPTH_PER_CTA = Self.config.v_depth // Self.config.cta_group
-    # SV is split into NUM_SV_ATOMS=2 atoms (each MMA_N=v_depth/cta_group=256,
-    # b_bmn=V_BMN_PER_ATOM=128 per CTA), because MMA_N>504 doesn't fit the
-    # 6-bit N field of the UMMA inst descriptor.  V smem holds both atoms'
-    # cols per CTA: atom1 = cols 0..127, atom2 = cols 128..255.
     comptime NUM_SV_ATOMS = 2
-    comptime V_BMN_PER_ATOM = Self.V_DEPTH_PER_CTA // Self.config.cta_group
+    comptime SV_ATOM_MMA_N = Self.config.v_depth // Self.NUM_SV_ATOMS
+    comptime V_DEPTH_PER_CTA = Self.SV_ATOM_MMA_N
+    comptime V_BMN_PER_ATOM = Self.SV_ATOM_MMA_N // Self.config.cta_group
+    comptime O_ATOM_PHYS_COLS = Self.SV_ATOM_MMA_N // 2
     comptime V_SMEM_COLS_PER_CTA = Self.V_BMN_PER_ATOM * Self.NUM_SV_ATOMS
 
     comptime q_tile_shape = Index(
@@ -579,12 +574,15 @@ struct MLAPrefillSparse[
     ]
 
     comptime O_TMEM_ADDR = 0
-    # SV atom2's O accumulator sits immediately after atom1's.  Each atom
-    # occupies V_BMN_PER_ATOM=128 TMEM cells per lane (MMA_M=128 ×
-    # MMA_N=256 cluster / 128 lanes / 2 cta_group = 128 cells per lane).
-    comptime O_TMEM_ADDR_ATOM2 = Self.O_TMEM_ADDR + Self.V_BMN_PER_ATOM
+    # atom2's O sits right after atom1's, offset by the physical footprint
+    # O_ATOM_PHYS_COLS (not the V-operand width V_BMN_PER_ATOM).
+    comptime O_TMEM_ADDR_ATOM2 = Self.O_TMEM_ADDR + Self.O_ATOM_PHYS_COLS
     comptime P_TMEM_ADDR = 256
     comptime Q_TMEM_ADDR = 512 - Self.q_tmem_depth // 2
+
+    # tcgen05.commit multicast mask for MMA-completion barriers: signal both
+    # CTAs in the pair (0b11) at cta_group=2, only self (0b1) at cta_group=1.
+    comptime CTA_MASK: UInt16 = 0b11 if Self.config.cta_group == 2 else 0b1
 
     @staticmethod
     @__llvm_metadata(
@@ -596,7 +594,11 @@ struct MLAPrefillSparse[
     @__llvm_arg_metadata(k_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(o_tma_op, `nvvm.grid_constant`)
-    @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.config.cta_group), 1, 1
+        )
+    )
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(Self.config.num_threads)
@@ -715,8 +717,12 @@ struct MLAPrefillSparse[
                     k_p1_ready_ptr[i].init(1)
                     v_p0_ready_ptr[i].init(1)
                     v_p1_ready_ptr[i].init(1)
-                    p_free_ptr[i].init(Int32(WARPGROUP_SIZE * 2))
-                    so_ready_ptr[i].init(Int32(WARPGROUP_SIZE * 2))
+                    p_free_ptr[i].init(
+                        Int32(WARPGROUP_SIZE * Self.config.cta_group)
+                    )
+                    so_ready_ptr[i].init(
+                        Int32(WARPGROUP_SIZE * Self.config.cta_group)
+                    )
                     k_valid_ready_ptr[i].init(
                         Int32(Self.SMemType.NUM_KV_VALID_LANES)
                     )
@@ -744,10 +750,10 @@ struct MLAPrefillSparse[
                     ),
                 )
 
-            tcgen05_alloc[Self.config.cta_group](
+            tcgen05_alloc[Int32(Self.config.cta_group)](
                 tmem_addr_ptr, Self.config.sm100_tmem_cols
             )
-            tcgen05_release_allocation_lock[Self.config.cta_group]()
+            tcgen05_release_allocation_lock[Int32(Self.config.cta_group)]()
 
         barrier()
 
@@ -820,7 +826,10 @@ struct MLAPrefillSparse[
                 # `arrive_cluster(0, 1)` to mirror phase1.cuh:180's
                 # `bar_p_free[k%NUM_BUFS].arrive(0u)` (CUTLASS's
                 # ClusterTransactionBarrier targeting cta 0).
-                p_free_ptr[cur_buf].arrive_cluster(UInt32(0), UInt32(1))
+                comptime if Self.config.cta_group == 2:
+                    p_free_ptr[cur_buf].arrive_cluster(UInt32(0), UInt32(1))
+                else:
+                    _ = p_free_ptr[cur_buf].arrive()
 
                 # Mask step (phase1.cuh:182-210): wait on warp-13's
                 # validity bitmask for this k-block, then poison invalid
@@ -1007,7 +1016,10 @@ struct MLAPrefillSparse[
                 # the SV MMA, then release the so_ready slot for this k.
                 # Same cluster-arrive reasoning as p_free above.
                 fence_async_view_proxy()
-                so_ready_ptr[cur_buf].arrive_cluster(UInt32(0), UInt32(1))
+                comptime if Self.config.cta_group == 2:
+                    so_ready_ptr[cur_buf].arrive_cluster(UInt32(0), UInt32(1))
+                else:
+                    _ = so_ready_ptr[cur_buf].arrive()
 
             # ---------------- Epilogue (phase1.cuh:288-386) ----------------
 
@@ -1083,7 +1095,7 @@ struct MLAPrefillSparse[
 
             comptime for atom_idx in range(Self.NUM_SV_ATOMS):
                 comptime atom_o_tmem_addr = (
-                    Self.O_TMEM_ADDR + atom_idx * Self.V_BMN_PER_ATOM
+                    Self.O_TMEM_ADDR + atom_idx * Self.O_ATOM_PHYS_COLS
                 )
 
                 comptime for chunk in range(2):
@@ -1138,7 +1150,7 @@ struct MLAPrefillSparse[
             cp_async_bulk_wait_group[0]()
 
             if warp_idx == 0:
-                tcgen05_dealloc[Self.config.cta_group](
+                tcgen05_dealloc[Int32(Self.config.cta_group)](
                     tmem_addr_ptr[], Self.config.sm100_tmem_cols
                 )
 
@@ -1212,7 +1224,7 @@ struct MLAPrefillSparse[
                 )
                 mma_arrive_multicast[cta_group=Self.config.cta_group](
                     prologue_q_cp_ptr,
-                    0b11,  # arrive at both ctas in the pair
+                    Self.CTA_MASK,
                 )
 
                 for k in range(num_k_blocks + 1):
@@ -1358,7 +1370,7 @@ struct MLAPrefillSparse[
             )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 qk_ss_done[cur_buf].unsafe_ptr(),
-                0b11,  # arrive at both ctas in the pair
+                Self.CTA_MASK,
             )
 
             # wait for k load p1
@@ -1390,7 +1402,7 @@ struct MLAPrefillSparse[
                 )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 qk_ts_done[cur_buf].unsafe_ptr(),
-                0b11,  # arrive at both ctas in the pair
+                Self.CTA_MASK,
             )
         if k > 0:
             # O += S(i-1)V(i-1)
@@ -1471,7 +1483,7 @@ struct MLAPrefillSparse[
             )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 sv_p0_done[curr_buf].unsafe_ptr(),
-                0b11,  # arrive at both ctas in the pair
+                Self.CTA_MASK,
             )
 
             comptime if not fp8_active:
@@ -1504,7 +1516,7 @@ struct MLAPrefillSparse[
             )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 sv_p1_done[curr_buf].unsafe_ptr(),
-                0b11,  # arrive at both ctas in the pair
+                Self.CTA_MASK,
             )
 
     @always_inline
@@ -1538,7 +1550,7 @@ struct MLAPrefillSparse[
                 # 8192 bytes (= 64 rows × 64 BF16 × 2), sub_tile stride
                 # = 16 bytes (= 8 BF16 × 2).
                 tcgen05_cp[
-                    cta_group=Self.config.cta_group,
+                    cta_group=Int32(Self.config.cta_group),
                     datapaths=64,
                     bits=128,
                     multicast="warpx2::02_13",
@@ -2413,8 +2425,6 @@ struct MLAPrefillSparse[
 
         comptime GROUP_SIZE = 4
         comptime NUM_GROUPS = WARPGROUP_SIZE // GROUP_SIZE  # 32
-        # B_TOPK=128 rows / 32 groups = 4 rows per group.
-        comptime ROWS_PER_GROUP = Self.config.B_TOPK // NUM_GROUPS  # 4
         # 256 cols / (4 threads × 16) = 4 col-iterations per group.
         comptime COLS_PER_GROUP = Self.V_SMEM_COLS_PER_CTA // (
             GROUP_SIZE * 16
@@ -2422,10 +2432,11 @@ struct MLAPrefillSparse[
         comptime FP8_ROW_STRIDE = Self.V_SMEM_COLS_PER_CTA  # 256 bytes/row
 
         comptime BN_QK = 64  # cg col width in BF16
-        # 64 rows per key-half (B_TOPK/2 = 64 rows per kh).
         comptime CG_ROWS = Self.config.B_TOPK // 2
-        comptime CG_ELEMS = CG_ROWS * BN_QK  # 4096 BF16 elems per cg block
-        comptime KH_ELEMS = Self.config.B_TOPK // 2 * Self.V_SMEM_COLS_PER_CTA
+        comptime CG_ELEMS = CG_ROWS * BN_QK  # BF16 elems per cg block
+        comptime KH_ELEMS = CG_ROWS * Self.V_SMEM_COLS_PER_CTA
+        # Rows of a key-half one 4-lane group owns: 2 at head128, 1 at head64.
+        comptime ROWS_PER_KH = CG_ROWS // NUM_GROUPS
 
         comptime sw_bf16 = make_swizzle[
             bf16_type, TensorMapSwizzle.SWIZZLE_128B
@@ -2434,205 +2445,81 @@ struct MLAPrefillSparse[
         var lane = UInt32(thread_idx.x) & UInt32(0x7F)
         var group_idx = lane // UInt32(GROUP_SIZE)
         var idx_in_group = lane % UInt32(GROUP_SIZE)
-
-        # 4 rows per thread covering all B_TOPK=128 rows:
-        #   row_0 (0..31):   kh0-lower
-        #   row_1 (32..63):  kh0-upper
-        #   row_2 (64..95):  kh1-lower
-        #   row_3 (96..127): kh1-upper
-        var row_0 = group_idx
-        var row_1 = group_idx + UInt32(NUM_GROUPS)
-        var row_2 = group_idx + UInt32(2 * NUM_GROUPS)
-        var row_3 = group_idx + UInt32(3 * NUM_GROUPS)
-
-        var fp8_base_0 = row_0 * UInt32(FP8_ROW_STRIDE) + idx_in_group * UInt32(
-            16
-        )
-        var fp8_base_1 = row_1 * UInt32(FP8_ROW_STRIDE) + idx_in_group * UInt32(
-            16
-        )
-        var fp8_base_2 = row_2 * UInt32(FP8_ROW_STRIDE) + idx_in_group * UInt32(
-            16
-        )
-        var fp8_base_3 = row_3 * UInt32(FP8_ROW_STRIDE) + idx_in_group * UInt32(
-            16
-        )
-
         var col_bf16 = idx_in_group * UInt32(16)
-        # Rows within kh0 and kh1 share the same relative swizzle indices.
-        var sw_lo_a = Int(sw_bf16(group_idx * UInt32(BN_QK) + col_bf16))
-        var sw_lo_b = Int(
-            sw_bf16(group_idx * UInt32(BN_QK) + col_bf16 + UInt32(8))
-        )
-        var sw_hi_a = Int(
-            sw_bf16((group_idx + UInt32(NUM_GROUPS)) * UInt32(BN_QK) + col_bf16)
-        )
-        var sw_hi_b = Int(
-            sw_bf16(
-                (group_idx + UInt32(NUM_GROUPS)) * UInt32(BN_QK)
-                + col_bf16
-                + UInt32(8)
-            )
-        )
 
         var src_u8 = v_smem_fp8_ptr.bitcast[Scalar[DType.uint8]]()
 
-        # Staging for 2 rows × 4 col-iters × 2 halves × 4 u32 = 64 u32.
-        # Two sequential passes (kh0 then kh1) halve the register footprint.
-        var p0a_all = tt_stack_allocation[
+        # The SWIZZLE_128B BF16 writes clobber the aliased FP8 staging region,
+        # so within a key-half every FP8 read must complete (barrier) before
+        # any BF16 write.
+        var pa_all = tt_stack_allocation[
             dtype=DType.uint32, address_space=AddressSpace.LOCAL
-        ](row_major[4, COLS_PER_GROUP]())
-        var p0b_all = tt_stack_allocation[
+        ](row_major[ROWS_PER_KH * COLS_PER_GROUP, 4]())
+        var pb_all = tt_stack_allocation[
             dtype=DType.uint32, address_space=AddressSpace.LOCAL
-        ](row_major[4, COLS_PER_GROUP]())
-        var p1a_all = tt_stack_allocation[
-            dtype=DType.uint32, address_space=AddressSpace.LOCAL
-        ](row_major[4, COLS_PER_GROUP]())
-        var p1b_all = tt_stack_allocation[
-            dtype=DType.uint32, address_space=AddressSpace.LOCAL
-        ](row_major[4, COLS_PER_GROUP]())
+        ](row_major[ROWS_PER_KH * COLS_PER_GROUP, 4]())
 
-        # --- PASS 1: row_0 (kh0-lower) and row_1 (kh0-upper) → kh0.
-        comptime for c in range(COLS_PER_GROUP):
-            comptime col_byte_off = c * GROUP_SIZE * 16
+        # Convert the two key-halves in sequence to halve register footprint.
+        comptime for kh in range(2):
+            comptime for r in range(ROWS_PER_KH):
+                # abs_row (absolute V smem row) indexes the FP8 read and
+                # per-token scale lookup; rel_row (row within the key-half)
+                # drives the swizzle in the write phase.
+                var rel_row = group_idx + UInt32(r * NUM_GROUPS)
+                var abs_row = rel_row + UInt32(kh * CG_ROWS)
+                var fp8_base = abs_row * UInt32(
+                    FP8_ROW_STRIDE
+                ) + idx_in_group * UInt32(16)
 
-            var q0 = ld_shared_v4_u32(src_u8, Int(fp8_base_0) + col_byte_off)
-            var q1 = ld_shared_v4_u32(src_u8, Int(fp8_base_1) + col_byte_off)
+                comptime for c in range(COLS_PER_GROUP):
+                    comptime col_byte_off = c * GROUP_SIZE * 16
+                    var q = ld_shared_v4_u32(
+                        src_u8, Int(fp8_base) + col_byte_off
+                    )
+                    var pa = cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
+                        fp8_dtype=fp8_type, out_dtype=bf16_type
+                    ](q[0], q[1])
+                    var pb = cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
+                        fp8_dtype=fp8_type, out_dtype=bf16_type
+                    ](q[2], q[3])
 
-            var pa0 = cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
-                fp8_dtype=fp8_type, out_dtype=bf16_type
-            ](q0[0], q0[1])
-            var pb0 = cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
-                fp8_dtype=fp8_type, out_dtype=bf16_type
-            ](q0[2], q0[3])
-            var pa1 = cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
-                fp8_dtype=fp8_type, out_dtype=bf16_type
-            ](q1[0], q1[1])
-            var pb1 = cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
-                fp8_dtype=fp8_type, out_dtype=bf16_type
-            ](q1[2], q1[3])
+                    var abs_col = UInt32(
+                        c * GROUP_SIZE * 16
+                    ) + idx_in_group * UInt32(16)
+                    var block_idx = abs_col // UInt32(scale_block_size)
+                    var s_fp32 = v_scales_smem_ptr[
+                        Int(abs_row) * scales_per_token + Int(block_idx)
+                    ]
+                    var s_bits = UInt32(
+                        bitcast[DType.uint16, 1](s_fp32.cast[bf16_type]())
+                    )
+                    var s_u32 = s_bits | (s_bits << 16)
+                    pa = hmul2_bf16x8_by_scalar[bf16_type](pa, s_u32)
+                    pb = hmul2_bf16x8_by_scalar[bf16_type](pb, s_u32)
 
-            var abs_col = UInt32(c * GROUP_SIZE * 16) + idx_in_group * UInt32(
-                16
-            )
-            var block_idx = abs_col // UInt32(scale_block_size)
-            var s0_fp32 = v_scales_smem_ptr[
-                Int(row_0) * scales_per_token + Int(block_idx)
-            ]
-            var s1_fp32 = v_scales_smem_ptr[
-                Int(row_1) * scales_per_token + Int(block_idx)
-            ]
-            var s0_bits = UInt32(
-                bitcast[DType.uint16, 1](s0_fp32.cast[bf16_type]())
-            )
-            var s1_bits = UInt32(
-                bitcast[DType.uint16, 1](s1_fp32.cast[bf16_type]())
-            )
-            var s0_u32 = s0_bits | (s0_bits << 16)
-            var s1_u32 = s1_bits | (s1_bits << 16)
-            pa0 = hmul2_bf16x8_by_scalar[bf16_type](pa0, s0_u32)
-            pb0 = hmul2_bf16x8_by_scalar[bf16_type](pb0, s0_u32)
-            pa1 = hmul2_bf16x8_by_scalar[bf16_type](pa1, s1_u32)
-            pb1 = hmul2_bf16x8_by_scalar[bf16_type](pb1, s1_u32)
+                    comptime slot = (r * COLS_PER_GROUP + c) * 4
+                    pa_all.ptr.store(slot, pa)
+                    pb_all.ptr.store(slot, pb)
 
-            p0a_all.ptr.store(c * 4, pa0)
-            p0b_all.ptr.store(c * 4, pb0)
-            p1a_all.ptr.store(c * 4, pa1)
-            p1b_all.ptr.store(c * 4, pb1)
+            named_barrier[Int32(WARPGROUP_SIZE)](4)
 
-        named_barrier[Int32(WARPGROUP_SIZE)](4)
-
-        comptime for c in range(COLS_PER_GROUP):
-            var pa0 = p0a_all.ptr.load[width=4](c * 4)
-            var pb0 = p0b_all.ptr.load[width=4](c * 4)
-            var pa1 = p1a_all.ptr.load[width=4](c * 4)
-            var pb1 = p1b_all.ptr.load[width=4](c * 4)
-            var dst_kh0 = v_smem_bf16_ptr + c * CG_ELEMS
-            # kh0-lower (row_0)
-            st_shared_v4_b32_at_bf16_elem_off[out_dtype=bf16_type](
-                dst_kh0, sw_lo_a, pa0
-            )
-            st_shared_v4_b32_at_bf16_elem_off[out_dtype=bf16_type](
-                dst_kh0, sw_lo_b, pb0
-            )
-            # kh0-upper (row_1)
-            st_shared_v4_b32_at_bf16_elem_off[out_dtype=bf16_type](
-                dst_kh0, sw_hi_a, pa1
-            )
-            st_shared_v4_b32_at_bf16_elem_off[out_dtype=bf16_type](
-                dst_kh0, sw_hi_b, pb1
-            )
-
-        # --- PASS 2: row_2 (kh1-lower) and row_3 (kh1-upper) → kh1.
-        comptime for c in range(COLS_PER_GROUP):
-            comptime col_byte_off = c * GROUP_SIZE * 16
-
-            var q2 = ld_shared_v4_u32(src_u8, Int(fp8_base_2) + col_byte_off)
-            var q3 = ld_shared_v4_u32(src_u8, Int(fp8_base_3) + col_byte_off)
-
-            var pa2 = cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
-                fp8_dtype=fp8_type, out_dtype=bf16_type
-            ](q2[0], q2[1])
-            var pb2 = cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
-                fp8_dtype=fp8_type, out_dtype=bf16_type
-            ](q2[2], q2[3])
-            var pa3 = cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
-                fp8_dtype=fp8_type, out_dtype=bf16_type
-            ](q3[0], q3[1])
-            var pb3 = cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
-                fp8_dtype=fp8_type, out_dtype=bf16_type
-            ](q3[2], q3[3])
-
-            var abs_col = UInt32(c * GROUP_SIZE * 16) + idx_in_group * UInt32(
-                16
-            )
-            var block_idx = abs_col // UInt32(scale_block_size)
-            var s2_fp32 = v_scales_smem_ptr[
-                Int(row_2) * scales_per_token + Int(block_idx)
-            ]
-            var s3_fp32 = v_scales_smem_ptr[
-                Int(row_3) * scales_per_token + Int(block_idx)
-            ]
-            var s2_bits = UInt32(
-                bitcast[DType.uint16, 1](s2_fp32.cast[bf16_type]())
-            )
-            var s3_bits = UInt32(
-                bitcast[DType.uint16, 1](s3_fp32.cast[bf16_type]())
-            )
-            var s2_u32 = s2_bits | (s2_bits << 16)
-            var s3_u32 = s3_bits | (s3_bits << 16)
-            pa2 = hmul2_bf16x8_by_scalar[bf16_type](pa2, s2_u32)
-            pb2 = hmul2_bf16x8_by_scalar[bf16_type](pb2, s2_u32)
-            pa3 = hmul2_bf16x8_by_scalar[bf16_type](pa3, s3_u32)
-            pb3 = hmul2_bf16x8_by_scalar[bf16_type](pb3, s3_u32)
-
-            p0a_all.ptr.store(c * 4, pa2)
-            p0b_all.ptr.store(c * 4, pb2)
-            p1a_all.ptr.store(c * 4, pa3)
-            p1b_all.ptr.store(c * 4, pb3)
-
-        named_barrier[Int32(WARPGROUP_SIZE)](4)
-
-        comptime for c in range(COLS_PER_GROUP):
-            var pa2 = p0a_all.ptr.load[width=4](c * 4)
-            var pb2 = p0b_all.ptr.load[width=4](c * 4)
-            var pa3 = p1a_all.ptr.load[width=4](c * 4)
-            var pb3 = p1b_all.ptr.load[width=4](c * 4)
-            var dst_kh1 = v_smem_bf16_ptr + KH_ELEMS + c * CG_ELEMS
-            # kh1-lower (row_2)
-            st_shared_v4_b32_at_bf16_elem_off[out_dtype=bf16_type](
-                dst_kh1, sw_lo_a, pa2
-            )
-            st_shared_v4_b32_at_bf16_elem_off[out_dtype=bf16_type](
-                dst_kh1, sw_lo_b, pb2
-            )
-            # kh1-upper (row_3)
-            st_shared_v4_b32_at_bf16_elem_off[out_dtype=bf16_type](
-                dst_kh1, sw_hi_a, pa3
-            )
-            st_shared_v4_b32_at_bf16_elem_off[out_dtype=bf16_type](
-                dst_kh1, sw_hi_b, pb3
-            )
+            comptime for r in range(ROWS_PER_KH):
+                var rel_row = group_idx + UInt32(r * NUM_GROUPS)
+                var sw_a = Int(sw_bf16(rel_row * UInt32(BN_QK) + col_bf16))
+                var sw_b = Int(
+                    sw_bf16(rel_row * UInt32(BN_QK) + col_bf16 + UInt32(8))
+                )
+                comptime for c in range(COLS_PER_GROUP):
+                    comptime slot = (r * COLS_PER_GROUP + c) * 4
+                    var pa = pa_all.ptr.load[width=4](slot)
+                    var pb = pb_all.ptr.load[width=4](slot)
+                    var dst = v_smem_bf16_ptr + kh * KH_ELEMS + c * CG_ELEMS
+                    st_shared_v4_b32_at_bf16_elem_off[out_dtype=bf16_type](
+                        dst, sw_a, pa
+                    )
+                    st_shared_v4_b32_at_bf16_elem_off[out_dtype=bf16_type](
+                        dst, sw_b, pb
+                    )
 
         fence_async_view_proxy()
 
@@ -2655,7 +2542,11 @@ struct MLAPrefillSparse[
     @__llvm_arg_metadata(k_tma_op_fp8, `nvvm.grid_constant`)
     @__llvm_arg_metadata(v_tma_op_fp8, `nvvm.grid_constant`)
     @__llvm_arg_metadata(o_tma_op, `nvvm.grid_constant`)
-    @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.config.cta_group), 1, 1
+        )
+    )
     @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
     @__name(
         t"mla_prefill_sparse_fp8_{Self.qkv_dtype}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
@@ -2784,8 +2675,12 @@ struct MLAPrefillSparse[
                     k_p1_ready_ptr[i].init(1)
                     v_p0_ready_ptr[i].init(1)
                     v_p1_ready_ptr[i].init(1)
-                    p_free_ptr[i].init(Int32(WARPGROUP_SIZE * 2))
-                    so_ready_ptr[i].init(Int32(WARPGROUP_SIZE * 2))
+                    p_free_ptr[i].init(
+                        Int32(WARPGROUP_SIZE * Self.config.cta_group)
+                    )
+                    so_ready_ptr[i].init(
+                        Int32(WARPGROUP_SIZE * Self.config.cta_group)
+                    )
                     k_valid_ready_ptr[i].init(
                         Int32(Self.SMemType.NUM_KV_VALID_LANES)
                     )
@@ -2816,10 +2711,10 @@ struct MLAPrefillSparse[
                     ),
                 )
 
-            tcgen05_alloc[Self.config.cta_group](
+            tcgen05_alloc[Int32(Self.config.cta_group)](
                 tmem_addr_ptr, Self.config.sm100_tmem_cols
             )
-            tcgen05_release_allocation_lock[Self.config.cta_group]()
+            tcgen05_release_allocation_lock[Int32(Self.config.cta_group)]()
 
         barrier()
 
@@ -2871,7 +2766,10 @@ struct MLAPrefillSparse[
                 ](UInt32(Self.P_TMEM_ADDR))
                 tcgen05_load_wait()
                 tcgen05_fence_before()
-                p_free_ptr[cur_buf].arrive_cluster(UInt32(0), UInt32(1))
+                comptime if Self.config.cta_group == 2:
+                    p_free_ptr[cur_buf].arrive_cluster(UInt32(0), UInt32(1))
+                else:
+                    _ = p_free_ptr[cur_buf].arrive()
 
                 comptime MASK_BYTES_PER_BUF = Self.SMemType.MASK_BYTES_PER_BUF
                 comptime MASK_BYTES_PER_THREAD = MASK_BYTES_PER_BUF // 2
@@ -3024,7 +2922,10 @@ struct MLAPrefillSparse[
                     tcgen05_fence_before()
 
                 fence_async_view_proxy()
-                so_ready_ptr[cur_buf].arrive_cluster(UInt32(0), UInt32(1))
+                comptime if Self.config.cta_group == 2:
+                    so_ready_ptr[cur_buf].arrive_cluster(UInt32(0), UInt32(1))
+                else:
+                    _ = so_ready_ptr[cur_buf].arrive()
 
             if real_mi == Float32(min_or_neg_inf[DType.float32]()):
                 li = 0.0
@@ -3068,7 +2969,7 @@ struct MLAPrefillSparse[
 
             comptime for atom_idx in range(Self.NUM_SV_ATOMS):
                 comptime atom_o_tmem_addr = (
-                    Self.O_TMEM_ADDR + atom_idx * Self.V_BMN_PER_ATOM
+                    Self.O_TMEM_ADDR + atom_idx * Self.O_ATOM_PHYS_COLS
                 )
 
                 comptime for chunk in range(2):
@@ -3123,7 +3024,7 @@ struct MLAPrefillSparse[
             cp_async_bulk_wait_group[0]()
 
             if warp_idx == 0:
-                tcgen05_dealloc[Self.config.cta_group](
+                tcgen05_dealloc[Int32(Self.config.cta_group)](
                     tmem_addr_ptr[], Self.config.sm100_tmem_cols
                 )
 
@@ -3294,7 +3195,7 @@ struct MLAPrefillSparse[
                 )
                 mma_arrive_multicast[cta_group=Self.config.cta_group](
                     prologue_q_cp_ptr,
-                    0b11,
+                    Self.CTA_MASK,
                 )
 
                 for k in range(num_k_blocks + 1):
@@ -3362,7 +3263,7 @@ def mla_prefill_sparse[
     # q_smem_depth=192 / q_tmem_depth=384 summing to 576; other depths would
     # silently mis-stride the TMA copies.
     comptime assert config.qk_depth == 576
-    comptime assert config.num_q_heads == 128
+    comptime assert config.num_q_heads == 128 or config.num_q_heads == 64
     comptime assert config.num_kv_heads == 1
     # The output smem buffer is allocated as `qkv_dtype` (it shares the
     # smem union with Q/K/V). We bitcast it to `output_dtype` at the TMA
@@ -3375,11 +3276,10 @@ def mla_prefill_sparse[
 
     var kv_operand = KVCacheMHAOperand(kv_cache)
 
-    # we do 2CTA MMA for all the heads in each q token
-    # CTA0 loads the upper half of the heads
-    # CTA1 loads the lower half of the heads
+    # CTA pair splits heads at head128 (CTA0 upper, CTA1 lower); a single CTA
+    # loads all heads at head64. Each CTA loads num_q_heads // cta_group.
     q_tma_op = create_tensor_tile[
-        Index(1, config.num_q_heads // 2, q_depth),
+        Index(1, config.num_q_heads // config.cta_group, q_depth),
         swizzle_mode=config.q_swizzle_mode,
     ](ctx, q)
 
@@ -3406,7 +3306,7 @@ def mla_prefill_sparse[
     # slice of V to the cluster MMA, with `col_idx = cta_id *
     # V_SMEM_COLS_PER_CTA` selecting its V col range.
     v_tma_op = kv_operand.create_gather4_tma_tile[
-        tile_width=config.v_depth // config.cta_group // config.cta_group,
+        tile_width=config.v_depth // 2 // config.cta_group,
         tile_stride=config.qk_depth,
         swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         tile_height=config.B_TOPK // 2,
@@ -3483,7 +3383,7 @@ def mla_prefill_sparse_fp8[
 ) raises:
     comptime assert q_depth == config.qk_depth
     comptime assert config.qk_depth == 576
-    comptime assert config.num_q_heads == 128
+    comptime assert config.num_q_heads == 128 or config.num_q_heads == 64
     comptime assert config.num_kv_heads == 1
     comptime assert size_of[output_dtype]() == size_of[q_type]()
     # Only tensorwise scaling (one scale per KV token) is supported.  With
@@ -3496,7 +3396,7 @@ def mla_prefill_sparse_fp8[
     var kv_operand = KVCacheMHAOperand(kv_cache)
 
     q_tma_op = create_tensor_tile[
-        Index(1, config.num_q_heads // 2, q_depth),
+        Index(1, config.num_q_heads // config.cta_group, q_depth),
         swizzle_mode=config.q_swizzle_mode,
     ](ctx, q)
 
@@ -3509,10 +3409,9 @@ def mla_prefill_sparse_fp8[
         tma_dtype=DType.int64,
     ](ctx)
 
-    # FP8 V TMA: INT64-packed, SWIZZLE_NONE.
-    # V_BMN_PER_ATOM = v_depth // cta_group // cta_group = 128; packed = 16 INT64.
+    # FP8 V TMA: INT64-packed, SWIZZLE_NONE.  tile_width = V_BMN_PER_ATOM / 8.
     v_tma_op_fp8 = kv_operand.create_gather4_tma_tile[
-        tile_width=config.v_depth // config.cta_group // config.cta_group // 8,
+        tile_width=config.v_depth // 2 // config.cta_group // 8,
         tile_stride=config.qk_depth // 8,
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         tile_height=config.B_TOPK,

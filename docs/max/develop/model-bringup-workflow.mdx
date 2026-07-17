@@ -441,3 +441,9 @@ numerically against a PyTorch reference. See
 [Logit comparison](/max/develop/logit-comparison) for the full workflow, or use
 the [`debug-model`](/max/develop/model-bringup-skills/#debug-output-divergences)
 skill to run that per-layer comparison with an AI coding agent.
+
+Once the forward pass matches, confirm the model's task accuracy holds across a
+full benchmark with the
+[`eval-model`](https://github.com/modular/skills/blob/main/eval-model/SKILL.md)
+skill, which runs standard datasets against the served model and compares the
+scores against the original model.

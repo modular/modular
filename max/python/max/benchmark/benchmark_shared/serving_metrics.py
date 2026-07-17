@@ -410,9 +410,16 @@ def calculate_metrics(
         completed=measured_count,
         failures=failures,
         request_throughput=measured_count / measured_duration,
+        # A metric is ``None`` when it has no samples (empty data list),
+        # rather than a NaN-filled placeholder: NaN serializes to JSON
+        # ``null`` (both via ``model_dump_json`` and BigQuery ingest),
+        # which strict consumers reject. ``None`` is the honest "no data"
+        # representation and renders as an empty cell downstream.
         latency_ms=StandardPercentileMetrics(
-            latencies or [float("nan")], scale_factor=1000.0, unit="ms"
-        ),
+            latencies, scale_factor=1000.0, unit="ms"
+        )
+        if latencies
+        else None,
         errors=[o.error for o in outputs],
         request_submit_times=[o.request_submit_time for o in outputs],
         request_complete_times=[o.request_complete_time for o in outputs],
@@ -421,26 +428,26 @@ def calculate_metrics(
         nonempty_response_chunks=nonempty_response_chunks,
         max_concurrent_conversations=max_concurrent_conversations,
         # Use specialized metric classes that handle percentile calculations automatically
-        input_throughput=ThroughputMetrics(
-            input_throughputs or [float("nan")], unit="tok/s"
-        ),
-        output_throughput=ThroughputMetrics(
-            output_throughputs or [float("nan")], unit="tok/s"
-        ),
-        ttft_ms=StandardPercentileMetrics(
-            ttfts or [float("nan")], scale_factor=1000.0, unit="ms"
-        ),
-        tpot_ms=StandardPercentileMetrics(
-            tpots or [float("nan")], scale_factor=1000.0, unit="ms"
-        ),
+        input_throughput=ThroughputMetrics(input_throughputs, unit="tok/s")
+        if input_throughputs
+        else None,
+        output_throughput=ThroughputMetrics(output_throughputs, unit="tok/s")
+        if output_throughputs
+        else None,
+        ttft_ms=StandardPercentileMetrics(ttfts, scale_factor=1000.0, unit="ms")
+        if ttfts
+        else None,
+        tpot_ms=StandardPercentileMetrics(tpots, scale_factor=1000.0, unit="ms")
+        if tpots
+        else None,
         step_tpot_ms=StandardPercentileMetrics(
             step_tpots, scale_factor=1000.0, unit="ms"
         )
         if step_tpots
         else None,
-        itl_ms=StandardPercentileMetrics(
-            itls or [float("nan")], scale_factor=1000.0, unit="ms"
-        ),
+        itl_ms=StandardPercentileMetrics(itls, scale_factor=1000.0, unit="ms")
+        if itls
+        else None,
         max_input=max_input,
         max_output=max_output,
         max_total=max_total,
@@ -520,9 +527,12 @@ def calculate_pixel_generation_metrics(
         completed=completed,
         failures=failures,
         request_throughput=completed / measured_duration,
+        # ``None`` when no requests succeeded (see the text-gen path).
         latency_ms=StandardPercentileMetrics(
-            latencies or [float("nan")], scale_factor=1000.0, unit="ms"
-        ),
+            latencies, scale_factor=1000.0, unit="ms"
+        )
+        if latencies
+        else None,
         errors=[o.error for o in outputs],
         request_submit_times=[o.request_submit_time for o in outputs],
         request_complete_times=[o.request_complete_time for o in outputs],

@@ -911,6 +911,11 @@ class DKVConnector:
         hashes to the Rust client's ``touch``, which the server treats as an
         access that bumps recency.
 
+        Touch contract: pass the full root-anchored sequence (full sequence for
+        a full-attention group, full active window for SWA); never a
+        root-omitting slice. See :meth:`KVConnector.touch` and the dKV
+        ``RegionLru::touch`` canonical contract.
+
         Each ``block_hashes`` element follows the same 8-or-32 byte contract as
         :meth:`load` (truncated to its first 8 bytes at the dkv boundary; see
         :func:`_to_dkv_u64`). Best-effort and fire-and-forget: the Rust client

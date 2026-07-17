@@ -1223,9 +1223,9 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         # units, then `rebind` back to the original handle type.
         comptime assert offset_coord.flat_rank == 1
         return (
-            storage.bitcast[Scalar[type_of(storage).type.dtype]]()
+            storage.bitcast[Scalar[type_of(storage).T.dtype]]()
             + offset_coord[0].value()
-        ).bitcast[SIMD[type_of(storage).type.dtype, Self.element_width]]()
+        ).bitcast[SIMD[type_of(storage).T.dtype, Self.element_width]]()
 
     @staticmethod
     def distance[

@@ -528,18 +528,19 @@ struct TestSuite(ImplicitlyDeletable where False, Movable):
         if num_args <= 1:
             return
 
-        if args[1] == "--only":
+        ref first_arg = args[1]
+        if first_arg == "--only":
             self.allow_list = Set[String]()
-        elif args[1] == "--skip-all":
+        elif first_arg == "--skip-all":
             if num_args > 2:
                 raise Error("'--skip-all' does not take any arguments")
             # --skip-all implies an empty allow list.
             self.allow_list = Set[String]()
             return
-        elif args[1] != "--skip":
+        elif first_arg != "--skip":
             raise Error(
                 "invalid argument: ",
-                args[1],
+                first_arg,
                 " (expected '--only' or '--skip')",
             )
 

@@ -35,7 +35,9 @@ comptime kv_params = KVCacheStaticParams(num_heads=16, head_size=16)
 
 
 def do_test[
-    page_size: Int, layout_block_size: Int, scale_dtype: DType = DType.invalid
+    page_size: Int,
+    layout_block_size: Int,
+    scale_dtype: Optional[DType] = None,
 ]() raises:
     comptime batch_size = 16
     comptime max_num_blocks = 100
@@ -76,14 +78,18 @@ def do_test[
     var max_seq_length = UInt32(2048)
     var max_cache_length = UInt32(2048)
 
+    # Concrete scales element type: the real scale dtype when set, else the
+    # block dtype (`float32`). Used for both the `scales` declaration and its
+    # assignment so the compiler folds the types without a rebind.
+    comptime scales_dtype = scale_dtype.or_else(DType.float32)
     var scales: OptionalReg[
-        LayoutTensor[scale_dtype, Layout.row_major[6](), MutUntrackedOrigin]
+        LayoutTensor[scales_dtype, Layout.row_major[6](), MutUntrackedOrigin]
     ] = None
 
     comptime if scale_dtype == DType.float8_e4m3fn:
-        # Use the same shape as the blocks
-        var scales_ptr = alloc[Scalar[scale_dtype]](shape.flattened_length())
-        scales = LayoutTensor[scale_dtype, Layout.row_major[6]()](
+        # Use the same shape as the blocks.
+        var scales_ptr = alloc[Scalar[scales_dtype]](shape.flattened_length())
+        scales = LayoutTensor[scales_dtype, Layout.row_major[6]()](
             scales_ptr,
             RuntimeLayout[Layout.row_major[6]()].row_major(shape),
         ).fill(0)

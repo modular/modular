@@ -271,8 +271,8 @@ def execute_ragged_flash_attention[
                     dest=dest,
                     src=src,
                     count=min(
-                        dest_len // size_of[dest.type](),
-                        src_len // size_of[src.type](),
+                        dest_len // size_of[dest.T](),
+                        src_len // size_of[src.T](),
                         page_size * kv_params.num_heads * kv_params.head_size,
                     ),
                 )

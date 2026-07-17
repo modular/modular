@@ -162,6 +162,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         sparse_topk_lengths: TensorValue | None = None,
         sparse_attn_sink: TensorValue | None = None,
         sparse_indices_stride: int | None = None,
+        index_share: bool = False,
     ) -> TensorValue:
         attn_kwargs: dict[str, Any] = {
             "q": xq,
@@ -242,6 +243,9 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 "sparse_topk_lengths": sparse_topk_lengths,
                 "sparse_attn_sink": sparse_attn_sink,
                 "sparse_indices_stride": sparse_indices_stride,
+                # Read-once shared-KV fold (KERN-3141); only True when the
+                # caller has a shared top-k across folded MTP positions.
+                "index_share": index_share,
             }
 
         if effective_graph_mode == "decode":
@@ -327,6 +331,16 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             (self.n_heads,),
         )
 
+        # Read-once shared-index MTP fold (KERN-3141). Enable the fold only for
+        # a *full* indexer layer (``skip_topk`` is False) that reuses a prior
+        # selection: there the reused list is the single shared MTP top-k
+        # (``index_share_for_mtp_iteration``), so every folded q position
+        # attends one gathered pass. ``skip_topk`` (cross-layer) reuse keeps a
+        # per-position list, so it must stay on the unfolded path. The decode
+        # dispatch additionally self-gates on the fold shape (q_len in [2, 8]);
+        # default-off remains the production behavior (see Phase 8: index_share
+        # is only True at q_len=1 today, where the fold does not fire).
+        index_share = reuse_prev_topk and not self.skip_topk
         attn_out = self._mla_impl(
             xq,
             kv,
@@ -340,6 +354,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             sparse_topk_lengths=sparse_topk_lengths,
             sparse_attn_sink=sparse_attn_sink,
             sparse_indices_stride=self.index_topk,
+            index_share=index_share,
         )
 
         return self.o_proj(attn_out), topk_indices

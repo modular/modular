@@ -68,7 +68,7 @@ def test_vec_add_kernel_node(ctx: DeviceContext) raises:
 
     var func = ctx.compile_function[vec_add]()
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_function(
             func,
             out_dev,
@@ -113,7 +113,7 @@ def test_parameterized_kernel_node(ctx: DeviceContext) raises:
             in1_host[i] = Float32(length - i)
 
     # Pass `vec_add` directly as a parameter; the builder compiles it.
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_function[vec_add](
             out_dev,
             in0_dev,
@@ -157,7 +157,7 @@ def test_closure_node(ctx: DeviceContext) raises:
             return
         out_ptr[tid] = (in0_ptr[tid] + in1_ptr[tid]) * scale
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_function(
             scaled_vec_add,
             grid_dim=ceildiv(length, block_dim),
@@ -184,7 +184,7 @@ def test_add_copy_to_device(ctx: DeviceContext) raises:
         host_src[i] = Float32(i) * 3.0
     var dev_buf = ctx.enqueue_create_buffer[DType.float32](length)
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_copy(dev_buf, host_src)
 
     var graph = DeviceGraph.create(ctx, build)
@@ -210,7 +210,7 @@ def test_add_copy_from_device(ctx: DeviceContext) raises:
     for i in range(length):
         host_dst[i] = 0.0
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_copy(host_dst, dev_buf)
 
     var graph = DeviceGraph.create(ctx, build)
@@ -232,7 +232,7 @@ def test_add_copy_device_to_device(ctx: DeviceContext) raises:
         for i in range(length):
             src_host[i] = Float32(i * i)
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_copy(dst_dev, src_dev)
 
     var graph = DeviceGraph.create(ctx, build)
@@ -253,7 +253,7 @@ def test_add_memset(ctx: DeviceContext) raises:
     var buf_u32 = ctx.enqueue_create_buffer[DType.uint32](length)
     var buf_u64 = ctx.enqueue_create_buffer[DType.uint64](length)
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # The four memsets target disjoint buffers, so each can be an
         # independent graph root.
         _ = builder.add_memset(buf_u8, UInt8(123))
@@ -298,7 +298,7 @@ def test_add_output(ctx: DeviceContext) raises:
             in0_host[i] = Float32(i)
             in1_host[i] = Float32(length - i)
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_function[vec_add](
             out_dev,
             in0_dev,
@@ -337,7 +337,7 @@ def test_add_function_with_dependencies(ctx: DeviceContext) raises:
 
     var func = ctx.compile_function[fill_constant]()
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Sequence A on `buf_a`: write 1, then 2, then 3, internally chained
         # via explicit dependencies. The first node is rooted with an empty
         # deps list; downstream nodes name their predecessor explicitly.
@@ -419,7 +419,7 @@ def test_add_memset_with_dependencies(ctx: DeviceContext) raises:
     var buf_a = ctx.enqueue_create_buffer[DType.uint8](length)
     var buf_b = ctx.enqueue_create_buffer[DType.uint8](length)
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Sequence A on `buf_a`: 0x11 -> 0x22 -> 0x33, internally chained.
         # First node is rooted with an empty deps list; sequences A and B are
         # independent because neither names a predecessor in the other chain.
@@ -467,7 +467,7 @@ def test_add_copy_with_dependencies(ctx: DeviceContext) raises:
         host_b1[i] = UInt32(0xAAAAAAAA)
         host_b2[i] = UInt32(0xBBBBBBBB)
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Sequence A: HtoD(host_a1) -> HtoD(host_a2). Final state of `buf_a`
         # is the second copy's payload (host_a2). First node rooted
         # explicitly.
@@ -504,7 +504,7 @@ def test_region(ctx: DeviceContext) raises:
     var buf_b = ctx.enqueue_create_buffer[DType.uint8](length)
     var buf_c = ctx.enqueue_create_buffer[DType.uint8](length)
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Pre-existing root node added before the scope. It must NOT be a
         # predecessor of the join node returned by the scope.
         var pre_scope = builder.add_memset(buf_a, UInt8(0x01), dependencies=[])
@@ -515,7 +515,7 @@ def test_region(ctx: DeviceContext) raises:
         # callback because the callback is generic over the scope origin, so
         # it is injected as a scope-level predecessor via `dependencies=`
         # instead; every node the callback adds runs after it.
-        def add_producers(mut b: DeviceGraphBuilder) raises {read}:
+        def add_producers(mut b: DeviceGraphBuilder) raises {imm}:
             _ = b.add_memset(buf_a, UInt8(0xAA), dependencies=[])
             _ = b.add_memset(buf_b, UInt8(0xBB), dependencies=[])
 
@@ -554,8 +554,8 @@ def test_region_empty(ctx: DeviceContext) raises:
     comptime length = 64
     var buf = ctx.enqueue_create_buffer[DType.uint8](length)
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
-        def add_nothing(mut b: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        def add_nothing(mut b: DeviceGraphBuilder) raises {imm}:
             return
 
         var join = builder.region(add_nothing)
@@ -587,9 +587,9 @@ def test_region_with_dependencies(ctx: DeviceContext) raises:
     var fill = ctx.compile_function[fill_constant]()
     var incr = ctx.compile_function[add_in_place]()
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Producer scope: fill `buf` with 5 (single kernel node, a graph root).
-        def producer(mut b: DeviceGraphBuilder) raises {read}:
+        def producer(mut b: DeviceGraphBuilder) raises {imm}:
             _ = b.add_function(
                 fill,
                 buf,
@@ -605,7 +605,7 @@ def test_region_with_dependencies(ctx: DeviceContext) raises:
         # Consumer scope: increment `buf` by 10. Passing dependencies=[join_a]
         # injects join_a as an ambient predecessor of the incr node, so it
         # runs strictly after the producer. Final value must be 15, not 10.
-        def consumer(mut b: DeviceGraphBuilder) raises {read}:
+        def consumer(mut b: DeviceGraphBuilder) raises {imm}:
             _ = b.add_function(
                 incr,
                 buf,
@@ -643,9 +643,9 @@ def test_region_passthrough_dependencies(
     var fill = ctx.compile_function[fill_constant]()
     var incr = ctx.compile_function[add_in_place]()
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Producer scope: fill `buf` with 5.
-        def producer(mut b: DeviceGraphBuilder) raises {read}:
+        def producer(mut b: DeviceGraphBuilder) raises {imm}:
             _ = b.add_function(
                 fill,
                 buf,
@@ -661,7 +661,7 @@ def test_region_passthrough_dependencies(
         # Empty scope depending on join_a: adds no nodes, so its returned join
         # falls back to depending on join_a directly (it must chain the
         # barrier).
-        def add_nothing(mut b: DeviceGraphBuilder) raises {read}:
+        def add_nothing(mut b: DeviceGraphBuilder) raises {imm}:
             return
 
         var passthrough = builder.region(add_nothing, dependencies=[join_a])

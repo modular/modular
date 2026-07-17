@@ -68,12 +68,16 @@ struct MLAConfig[
     *,
     rope_gmem_dtype: DType,
     rope_mma_dtype: DType,
-    scale_dtype: DType = DType.invalid,
+    scale_dtype_: Optional[DType] = None,
 ](TrivialRegisterPassable):
+    # Concrete scale dtype for `Scalar[...]`/`TMATensorTile[...]` reads. Falls
+    # back to `qkv_dtype` when unset; presence flows to `FA4Config` via the
+    # optional `scale_dtype_`.
+    comptime scale_dtype = Self.scale_dtype_.or_else(Self.qkv_dtype)
     var fa4_config: FA4Config[
         Self.qkv_dtype,
-        rope_dtype=Self.rope_mma_dtype,
-        scale_dtype=Self.scale_dtype,
+        rope_dtype_=Self.rope_mma_dtype,
+        scale_dtype_=Self.scale_dtype_,
     ]
     var MMA_M: Int
     var BM: Int
@@ -348,7 +352,7 @@ def select_mla_prefill_config[
     *,
     rope_gmem_dtype: DType,
     rope_mma_dtype: DType,
-    scale_dtype: DType = DType.invalid,
+    scale_dtype_: Optional[DType] = None,
 ](
     *,
     num_q_heads: Int,
@@ -360,7 +364,7 @@ def select_mla_prefill_config[
     qkv_dtype,
     rope_gmem_dtype=rope_gmem_dtype,
     rope_mma_dtype=rope_mma_dtype,
-    scale_dtype=scale_dtype,
+    scale_dtype_=scale_dtype_,
 ]:
     """Selects the supported SM100 MLA-prefill config for these dims.
 
@@ -381,7 +385,7 @@ def select_mla_prefill_config[
         qkv_dtype,
         rope_gmem_dtype=rope_gmem_dtype,
         rope_mma_dtype=rope_mma_dtype,
-        scale_dtype=scale_dtype,
+        scale_dtype_=scale_dtype_,
     ]
     # `bn_floor` == the `MLAConfig.supported()` BN floor (`self.BN >= 64`): the
     # largest MMA_K-aligned BN cap that still admits >= 2 KV stages for a wide V.
@@ -521,7 +525,7 @@ struct MLAPositionSummary(TrivialRegisterPassable):
 struct MLAKVLayouts[
     k_nope_dtype: DType,
     k_rope_dtype: DType,
-    kv_scale_dtype: DType,
+    kv_scale_dtype: Optional[DType],
     config: MLAConfig,
 ]:
     """Comptime layout and size metadata for MLA K/V tiles."""

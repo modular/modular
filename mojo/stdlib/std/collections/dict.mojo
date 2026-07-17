@@ -909,7 +909,7 @@ struct Dict[
         """
         self._ensure_capacity()
         var entry = DictEntry[Self.K, Self.V, Self.H](key^, value^)
-        var found, slot_idx = self._table.find_slot(entry.hash, entry.key)
+        var found, slot_idx = self._table.find_slot(entry._hash, entry.key)
 
         if found:
             # Overwrite: move the displaced entry out and return it (never
@@ -919,7 +919,7 @@ struct Dict[
             return displaced^
 
         # New entry.
-        self._table.set_ctrl(slot_idx, h2(entry.hash))
+        self._table.set_ctrl(slot_idx, h2(entry._hash))
         (self._table._slots + slot_idx).unsafe_write(entry^)
         self._order.append(Int32(slot_idx))
         self._table._len += 1
@@ -1750,7 +1750,7 @@ struct Dict[
     ) and conforms_to(Self.V, ImplicitlyDeletable):
         comptime if not safe_context:
             self._ensure_capacity()
-        var found, slot_idx = self._table.find_slot(entry.hash, entry.key)
+        var found, slot_idx = self._table.find_slot(entry._hash, entry.key)
 
         if found:
             # Update existing entry: destroy old, move new in
@@ -1758,7 +1758,7 @@ struct Dict[
             (self._table._slots + slot_idx).unsafe_write(entry^)
         else:
             # New entry
-            self._table.set_ctrl(slot_idx, h2(entry.hash))
+            self._table.set_ctrl(slot_idx, h2(entry._hash))
             (self._table._slots + slot_idx).unsafe_write(entry^)
             self._order.append(Int32(slot_idx))
             self._table._len += 1
@@ -1961,7 +1961,7 @@ struct StringDict[V: Movable](
         # TODO(MOCO-4295): forwarding this *existential* (`Some[def(...)]`)
         # closure straight to `Dict.deinit_with` doesn't compile — its `K`
         # won't bind to `String`. Drop this wrapper once fixed.
-        def forward(var key: String, var value: Self.V) {read deinit_func}:
+        def forward(var key: String, var value: Self.V) {imm deinit_func}:
             deinit_func(key^, value^)
 
         self._dict^.deinit_with(forward)

@@ -25,7 +25,7 @@ from _device_context_hal import (
     HostBuffer,
 )
 from std.memory import alloc, AddressSpace, Span, UnsafePointer
-from std.testing import assert_equal
+from std.testing import assert_equal, assert_true
 from std.gpu.host.dim import Dim
 from _hal.execution_config import (
     ExecutionConfig,
@@ -830,6 +830,18 @@ def test_external_shared_mem_execution_config(ctx: DeviceContext) raises:
     _ = res_device
 
 
+def test_memory_info(ctx: DeviceContext) raises:
+    free_bytes, total_bytes = ctx.get_memory_info()
+    assert_true(total_bytes > 0)
+    assert_true(free_bytes <= total_bytes)
+
+
+def test_push_context(ctx: DeviceContext) raises:
+    ctx.set_as_current()
+    with ctx.push_context() as active_ctx:
+        active_ctx.synchronize()
+
+
 def test_stream_enqueue_function(ctx: DeviceContext) raises:
     comptime length = 128
     var stream = ctx.create_stream()
@@ -897,6 +909,8 @@ def test_stream_enqueue_function_execution_config(ctx: DeviceContext) raises:
 def main() raises:
     with DeviceContext() as ctx:
         test_move(ctx)
+        test_memory_info(ctx)
+        test_push_context(ctx)
         test_id(ctx)
         test_synchronize(ctx)
         test_default_stream(ctx)

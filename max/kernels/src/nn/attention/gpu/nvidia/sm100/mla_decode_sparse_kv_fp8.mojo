@@ -127,6 +127,23 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
     has_attn_sink: Bool = False,
     has_extra_kv: Bool = False,
     has_variable_topk: Bool = False,
+    # Read-once shared-index q-fold (KERN-3141). When True, pack the
+    # q_len_fold * num_q_heads query rows of one MTP decode step into the
+    # BM=64 M tile so grid.y collapses to 1, gather the ONE shared top-k list
+    # once, and let every folded row attend it in a single KV pass (no
+    # per-position re-stream). Exact ONLY when every folded position refers to
+    # the identical index list — the explicit `index_share` op contract,
+    # enforced by the dispatch gate, never inferred here. Default False -> the
+    # unfolded per-position baseline (grid.y = q_max_seq_len), byte-identical.
+    # Unlike the dense native-FP8 kernels, this sparse kernel deliberately does
+    # NOT implement a per-position phase-fold; the only fold is shared-index.
+    #
+    # Implementation approach based on myb/glm_52_mla_opt by Yingbo Ma
+    # (reference commit 86d7d5760ec).
+    fold_shared_index: Bool = False,
+    # Number of q positions folded into the BM tile (the MTP step width);
+    # meaningful only when fold_shared_index=True, else 1.
+    q_len_fold: Int = 1,
 ](TrivialRegisterPassable):
     comptime kv_type = Self.KVLUTType.dtype
     # KV type is FP8 for both nope and rope (all-FP8 KV variant).
@@ -372,6 +389,16 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             " CausalMask. Sliding window is supported only by"
             " MLA_SM100_Decode_QKV_FP8 (native FP8)."
         )
+        # Shared-index fold contract (enforced here so a mis-wired dispatch
+        # fails at comptime rather than silently corrupting output).
+        comptime assert (
+            not Self.fold_shared_index
+            or Self.config.num_q_heads * Self.q_len_fold <= Self.config.BM
+        ), "fold_shared_index requires num_q_heads * q_len_fold <= BM."
+        comptime assert not (Self.fold_shared_index and Self.has_extra_kv), (
+            "fold_shared_index does not support the extra always-attend KV"
+            " cache; dispatch must not fold when extra_k is present."
+        )
         # Softmax now includes the epilogue, so it needs more registers
         # Correction does less work now (no epilogue), so it needs fewer
         comptime num_reg_softmax = 184
@@ -447,13 +474,29 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 extra_topk, Self.config.BN_QK
             )
 
-        # Early exit for split-K: CTAs with no work (num_keys_this_split == 0)
-        # must still write -inf LSE, zero o_accum_split, and call
-        # launch_dependent_grids() to fulfill the PDL contract with the
-        # combine kernel.  Skipping launch_dependent_grids() causes the
-        # combine kernel to hang, leading to CUDA_ERROR_ILLEGAL_ADDRESS.
-        comptime if Self.config.decoding_warp_split_k:
-            if offset_position.num_keys_this_split == 0:
+        # Early-exit PDL helper. The shared-index fold packs all q_len_fold
+        # output/LSE slots into ONE CTA (grid.y=1), so every early-exit path
+        # must write -inf LSE for EACH folded slot or the combine kernel sums
+        # an uninitialised LSE. The unfolded baseline exits the single slot it
+        # owns (block_idx.y). @always_inline + comptime pruning => when
+        # fold_shared_index=False this is byte-identical to the prior inline
+        # call (verified kernel-scoped in Phase 6).
+        @parameter
+        @always_inline
+        def _pdl_early_exit_all_q():
+            comptime if Self.fold_shared_index:
+                comptime for q_local in range(Self.q_len_fold):
+                    Self.Common_MLA_Op.pdl_early_exit[fold_q=True](
+                        offset_position.split_idx,
+                        offset_position.batch_idx,
+                        offset_position.max_seq_len,
+                        offset_position.out_row_offset_at(q_local),
+                        batch_size,
+                        lse_accum_split_ptr,
+                        o_tma,
+                        seq_idx_fold=UInt32(q_local),
+                    )
+            else:
                 Self.Common_MLA_Op.pdl_early_exit(
                     offset_position.split_idx,
                     offset_position.batch_idx,
@@ -463,6 +506,15 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                     lse_accum_split_ptr,
                     o_tma,
                 )
+
+        # Early exit for split-K: CTAs with no work (num_keys_this_split == 0)
+        # must still write -inf LSE, zero o_accum_split, and call
+        # launch_dependent_grids() to fulfill the PDL contract with the
+        # combine kernel.  Skipping launch_dependent_grids() causes the
+        # combine kernel to hang, leading to CUDA_ERROR_ILLEGAL_ADDRESS.
+        comptime if Self.config.decoding_warp_split_k:
+            if offset_position.num_keys_this_split == 0:
+                _pdl_early_exit_all_q()
                 return
 
         # early exit: Skip blocks beyond actual sequence length for this batch
@@ -473,18 +525,15 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         # call launch_dependent_grids) or the combine kernel will hang.
         comptime if Self.ragged:
             # In ragged mode, block_idx.y is the query token index (0 to q_max_seq_len-1)
-            # But this batch might have fewer tokens than q_max_seq_len
+            # But this batch might have fewer tokens than q_max_seq_len.
+            # Under fold_shared_index grid.y == 1, so this only fires for
+            # seq_len == 0 (whole batch empty); _pdl_early_exit_all_q then
+            # fulfils the PDL contract for every folded slot. Per-q_local
+            # ragged fill for 0 < seq_len < q_len_fold is not needed (MTP
+            # decode batches have uniform seq_len == q_len_fold).
             if block_idx.y >= offset_position.seq_len:
                 comptime if Self.config.decoding_warp_split_k:
-                    Self.Common_MLA_Op.pdl_early_exit(
-                        offset_position.split_idx,
-                        offset_position.batch_idx,
-                        offset_position.max_seq_len,
-                        offset_position.out_row_offset,
-                        batch_size,
-                        lse_accum_split_ptr,
-                        o_tma,
-                    )
+                    _pdl_early_exit_all_q()
 
                 return  # This query position doesn't exist for this batch
         q_smem = external_memory[
@@ -713,7 +762,15 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                         head_idx_local
                     ] * Scalar[DType.float32](log2e)
 
-            Self.Common_MLA_Op.Softmax[has_attn_sink=Self.has_attn_sink,](
+            # Shared-index fold: drive the shared utils fold-Q layout — BM=64
+            # packs q_len_fold * num_q_heads rows and each row keeps its own
+            # causal horizon (cache_len + score_row // num_q_heads + 1). There
+            # is no phase-select mask: all rows attend the ONE shared gather.
+            Self.Common_MLA_Op.Softmax[
+                has_attn_sink=Self.has_attn_sink,
+                fold_q=Self.fold_shared_index,
+                q_len_fold=Self.q_len_fold,
+            ](
                 ptr_tmem_addr[0],
                 s_bars,
                 p_bars,
@@ -812,7 +869,12 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                     extra_scales_ptr,
                 )
                 # --- Output store epilogue ---
-                Self.Common_MLA_Op.store(
+                # Shared-index fold: scatter the BM=64 packed rows back to each
+                # folded q position's output row (out_row_offset_at(q_local)).
+                Self.Common_MLA_Op.store[
+                    fold_q=Self.fold_shared_index,
+                    q_len_fold=Self.q_len_fold,
+                ](
                     out_pipeline,
                     out_smem.as_unsafe_any_origin(),
                     o_tma,

@@ -20,13 +20,7 @@ from typing import Any, ClassVar, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import (
-    Buffer,
-    Device,
-    DevicePinnedBuffer,
-    DLPackArray,
-    copy_pinned_to_destinations,
-)
+from max.driver import Buffer, Device, DevicePinnedBuffer, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
@@ -36,12 +30,11 @@ from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
+    MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
-    PipelineModelWithKVCache,
 )
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.pipelines.modeling.types import RequestID
@@ -117,7 +110,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
 
 class Gemma3_MultiModalModel(
     AlwaysSignalBuffersMixin,
-    PipelineModelWithKVCache[Gemma4Context],
+    MultiGraphPipelineModelWithKVCache[Gemma4Context],
 ):
     """Gemma 3 multimodal pipeline model for text generation.
 
@@ -179,10 +172,7 @@ class Gemma3_MultiModalModel(
             return_logits,
         )
 
-        # Cached per-device scatter-index buffers keyed by length. Only regular
-        # DeviceBuffers are cached; the pinned host buffer is freshly allocated
-        # every call (see ``_scatter_to_devices``).
-        self._scatter_buffers: dict[int, list[Buffer]] = {}
+        self._scatter_buffers: dict[int, tuple[Buffer, list[Buffer]]] = {}
 
         # signal_buffers are provided by AlwaysSignalBuffersMixin as a cached_property
         # to avoid GPU memory allocation during compile-only mode (cross-compilation).
@@ -218,74 +208,45 @@ class Gemma3_MultiModalModel(
         """Release vision encoder cache for a completed request."""
         self._ve_cache.release_request(request_id)
 
-    def load_model(
-        self, session: InferenceSession
-    ) -> tuple[Model | None, Model]:
-        """Loads the compiled Gemma3 MultiModal models into the MAX Engine session.
-
-        Returns:
-            A tuple of (vision_model, language_model).
-        """
+    def _load_state_dict(self) -> dict[str, Any]:
         assert self._max_batch_size, "Expected max_batch_size to be set"
 
         # Get processed state dict for language and vision models
         weights_dict = dict(self.weights.items())
-        language_weights_dict = convert_safetensor_language_state_dict(
+        self._language_weights_dict = convert_safetensor_language_state_dict(
             weights_dict
         )
+        self._vision_weights_dict = convert_safetensor_vision_state_dict(
+            weights_dict
+        )
+        return {k: v.data() for k, v in weights_dict.items()}
 
-        vision_weights_dict = convert_safetensor_vision_state_dict(weights_dict)
-
-        raw_state_dict = {k: v.data() for k, v in weights_dict.items()}
+    def _create_model_config(
+        self, state_dict: dict[str, Any]
+    ) -> Gemma4ForConditionalGenerationConfig:
         model_config = Gemma4ForConditionalGenerationConfig.initialize(
             self.pipeline_config
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
-            state_dict=raw_state_dict,
+            state_dict=state_dict,
             return_logits=self.return_logits,
         )
-
         self.config = model_config
 
         # DISTINF-194: pre-fuse gate/up and qkv/qk projections when configured,
         # matching the FusedMLP / stacked qkv layers the graph builds.
         if gemma4_uses_fused_projections(model_config):
-            language_weights_dict = fuse_gemma4_projection_weights(
-                language_weights_dict
+            self._language_weights_dict = fuse_gemma4_projection_weights(
+                self._language_weights_dict
             )
 
-        # Build and compile vision + language model together.
-        with CompilationTimer("vision + language model") as timer:
-            module = Module()
+        return model_config
 
-            vision_graph = None
-            vision_model_state_dict: dict[str, DLPackArray] = {}
-            if model_config.vision_config is not None:
-                vision_graph, vision_model_state_dict = (
-                    self._build_vision_graph(
-                        model_config, vision_weights_dict, module=module
-                    )
-                )
-
-            language_graph, language_model_state_dict = (
-                self._build_language_graph(
-                    model_config, language_weights_dict, module=module
-                )
-            )
-            timer.mark_build_complete()
-
-            combined_weights = {
-                **vision_model_state_dict,
-                **language_model_state_dict,
-            }
-            models = session.load_all(module, weights_registry=combined_weights)
-            vision_model = (
-                models[vision_graph.name] if vision_graph is not None else None
-            )
-            language_model = models[language_graph.name]
-
-        return vision_model, language_model
+    def _include_vision_graph(
+        self, model_config: Gemma4ForConditionalGenerationConfig
+    ) -> bool:
+        return model_config.vision_config is not None
 
     def _language_model_input_types(
         self, config: Gemma4ForConditionalGenerationConfig
@@ -604,29 +565,23 @@ class Gemma3_MultiModalModel(
     def _scatter_to_devices(
         self, scatter_np: npt.NDArray[np.int32]
     ) -> list[Buffer]:
-        """Copy scatter indices to each device.
-
-        Allocates a fresh pinned host buffer every call and never reuses it
-        across calls. Under the overlap scheduler a reused pinned buffer would
-        be clobbered by the next step's host write while the current step's
-        asynchronous H2D copy is still reading it. The per-device destination
-        buffers are cached and reused (never pinned).
-        """
+        """Copy scatter indices to each device using cached pinned buffers."""
         dev = self.devices[0]
         n = len(scatter_np)
-        host_buffer_cls = DevicePinnedBuffer if not dev.is_host else Buffer
-        host: Buffer = host_buffer_cls(
-            dtype=DType.int32, shape=(n,), device=dev
-        )
-
-        buffers = self._scatter_buffers.get(n)
-        if buffers is None:
-            buffers = [
-                Buffer(shape=(n,), dtype=DType.int32, device=d)
-                for d in self.devices
-            ]
-            self._scatter_buffers[n] = buffers
-
+        bufs = self._scatter_buffers.get(n)
+        host: Buffer
+        if bufs is None:
+            if not dev.is_host:
+                host = DevicePinnedBuffer(
+                    dtype=DType.int32, shape=(n,), device=dev
+                )
+            else:
+                host = Buffer(shape=(n,), dtype=DType.int32, device=dev)
+            device = [host.to(d) for d in self.devices]
+            bufs = (host, device)
+            self._scatter_buffers[n] = bufs
+        host, device = bufs
         host.to_numpy()[:] = scatter_np.astype(np.int32)
-        copy_pinned_to_destinations(host, buffers)
-        return buffers
+        for d in device:
+            d.inplace_copy_from(host)
+        return device

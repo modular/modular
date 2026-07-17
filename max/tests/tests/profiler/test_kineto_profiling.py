@@ -20,11 +20,12 @@ expansion ({pid}/{rank}/directory mode), and the ``ProfilingError`` raised by
 
 Tests that require an actual libkineto-written trace file (the path-expansion
 and error-path cases) skip automatically when ``kineto_can_record()`` is
-false — libkineto not compiled into the profiler core, or no CUDA primary
-context bound. Today that means they skip in every configuration (the
-recording path is not yet wired through the libkineto backend), so the file
-runs cleanly under the same ``./bazelw test`` invocation on every developer
-machine; they arm automatically once recording lands.
+false — the libkineto backend not linked (it is opt-in via
+``--config=kineto`` on Linux x86_64, #91288), or no CUDA primary context
+bound on the collecting thread. In default builds and on non-CUDA hosts they
+skip, so the file runs cleanly under the same ``./bazelw test`` invocation
+on every developer machine; ``--config=kineto`` GPU runs exercise them for
+real.
 """
 
 import json
@@ -43,27 +44,26 @@ from max.engine import InferenceSession, ProfilingError
 
 # Tests that assert on the produced trace file (or the absence/contents of
 # ``lastTraceError``) need ``disable()`` to actually exercise the libkineto
-# write path. That path is gated on both the build (``MODULAR_HAVE_KINETO``)
-# and a live CUDA primary context at enable() time, so we skip when either is
-# missing. Today ``kineto_can_record()`` is false in EVERY configuration —
-# the recording path is not yet wired through the libkineto backend (see
-# haveLibkineto() in Support/Profiling/Range.h) — so the gated tests below
-# skip everywhere, including GPU Linux x86_64 hosts, and start running once
-# the wiring lands.
+# write path. That path is gated on both the build (the libkineto backend is
+# linked only in ``--config=kineto`` builds on Linux x86_64, #91288) and a
+# live CUDA primary context at enable() time, so we skip when either is
+# missing — default builds and CUDA-less hosts skip, ``--config=kineto`` GPU
+# runs record for real.
 #
 # The probe itself is side-effect-free: ``kineto_can_record()`` boils down to
 # ``cuCtxGetCurrent`` on the calling thread, and deliberately does NOT
 # manufacture a context (no cuInit / cuDevicePrimaryCtxRetain — see
 # RangeKineto.cpp). Because this decorator is evaluated at module import /
-# collection time, the skip decision is frozen before any session exists:
-# once recording is wired up, running the gated tests will require a CUDA
-# primary context to already be bound on the collecting thread at import
-# time (e.g. by a conftest fixture), or this gate to move inside the tests.
+# collection time, the skip decision is frozen before any session exists: a
+# ``--config=kineto`` GPU run only exercises the gated tests if a CUDA
+# primary context is already bound on the collecting thread at import time
+# (e.g. by a conftest fixture); otherwise move the check inside the test, as
+# test_hta_import.py does.
 _skip_without_recording = pytest.mark.skipif(
     not kineto_can_record(),
     reason=(
-        "libkineto recording path inactive — libkineto is not compiled into "
-        "the profiler core (true of every current build), or no CUDA primary "
+        "libkineto recording path inactive — the backend is not linked "
+        "(requires --config=kineto on Linux x86_64), or no CUDA primary "
         "context is bound on this host."
     ),
 )
@@ -170,20 +170,22 @@ def test_profiling_namespace_is_shared_across_sessions() -> None:
     assert s1.profiling is s2.profiling
     s1.profiling.start()
     assert s2.profiling.is_enabled is True
-    assert s2.profiling.state == "warmup"
+    assert s2.profiling.state == "active"
 
 
-def test_start_transitions_to_warmup() -> None:
-    # enable() lands in "warmup", not "active": the Warmup -> Active
-    # step-count transition is not wired yet (see step()'s TODO, MXTOOLS-190).
-    # When the warmup/active step machine lands, start() will report "warmup"
-    # until the configured warmup steps elapse and then advance to "active".
+def test_start_transitions_to_active() -> None:
+    # enable() jumps straight to "active", not "warmup": the Warmup -> Active
+    # step-count transition is not wired yet (see step()'s TODO,
+    # MXTOOLS-190), so reporting "warmup" would misreport the recording
+    # state. When the warmup/active step machine lands, start() will report
+    # "warmup" until the configured warmup steps elapse and then advance to
+    # "active".
     #
     # The autouse ``_disable_profiler_after_each_test`` fixture restores the
     # profiler to disabled on teardown, so no in-test ``finally`` is needed.
     session = _new_session()
     session.profiling.start()
-    assert session.profiling.state == "warmup"
+    assert session.profiling.state == "active"
     assert session.profiling.is_enabled is True
 
 
@@ -201,7 +203,7 @@ def test_double_start_is_idempotent() -> None:
     session = _new_session()
     session.profiling.start()
     state_after_first = session.profiling.state
-    assert state_after_first == "warmup"
+    assert state_after_first == "active"
     assert session.profiling.is_enabled is True
 
     session.profiling.start()
@@ -240,7 +242,7 @@ def test_context_manager_starts_and_stops() -> None:
     assert session.profiling.is_enabled is False
     with session.profiling:
         assert session.profiling.is_enabled is True
-        assert session.profiling.state == "warmup"
+        assert session.profiling.state == "active"
     assert session.profiling.is_enabled is False
     assert session.profiling.state == "idle"
 

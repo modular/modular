@@ -787,7 +787,7 @@ def mgp_buffer_concat[
     bDevice: StaticString
 ](
     output: OwnedByteBuffer,
-    inputs: StaticTuple[MutByteBuffer, ...],
+    inputs: InlineArray[OwnedByteBuffer, ...],
     call_ctx: DeviceContext,
 ) raises:
     var output_lt = TileTensor(

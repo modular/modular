@@ -59,19 +59,17 @@ def kineto_enable() -> None:
     """
     Enable the libkineto-backed profiler.
 
-    Subscribes to CUPTI activity callbacks. Tracy and libkineto are
-    mutually exclusive at build time: ``--config=tracy`` builds do not
-    link libkineto, so this call is a no-op there. On default builds
-    without libkineto (today: macOS and Linux aarch64) or hosts without
-    a live CUDA primary context, this is also a safe no-op.
+    Subscribes to CUPTI activity callbacks. On builds without libkineto
+    (it is linked only in ``--config=kineto`` builds on Linux x86_64) or
+    hosts without a live CUDA primary context, this is a safe no-op.
     """
 
 def kineto_disable() -> None:
     """
     Disable the profiler.
 
-    Flushes the trace. On ``--config=tracy`` or non-Linux-x86_64 builds
-    where libkineto isn't linked, this is a no-op.
+    Flushes the trace. On builds where libkineto isn't linked, this is
+    a no-op.
     """
 
 def kineto_wait_for_trace() -> None:
@@ -111,27 +109,20 @@ def kineto_last_trace_error() -> str:
 
 def kineto_have_libkineto() -> bool:
     """
-    Return ``True`` iff the profiler was compiled with libkineto support.
+    Return ``True`` iff the libkineto backend is linked into this process.
 
-    Currently returns ``False`` in every build configuration: the
-    function's defining translation unit lives in ``//Support:Profiling``,
-    which does not link libkineto, so the recording paths in ``start()`` /
-    ``stop()`` are compiled out — even in ``--config=kineto`` builds on
-    Linux x86_64, the only configuration that links libkineto into
-    ``max._core`` at all (through the not-yet-wired ``:ProfilingKineto``
-    backend; default builds carry no libkineto).  Starts returning ``True``
-    once the recording path is wired through that backend.  The Python
-    integration
-    tests use this to skip end-to-end file-creation assertions whenever
-    ``stop()`` cannot actually produce a trace.
+    Runtime check on the registered ``:ProfilingKineto`` backend, which is
+    linked into ``max._core`` only in ``--config=kineto`` builds on Linux
+    x86_64 (#91288) — default builds, including the shipped wheels, carry
+    no libkineto and return ``False``, and the recording paths in
+    ``start()`` / ``stop()`` are no-ops there.
     """
 
 def kineto_can_record() -> bool:
     """
     Return ``True`` iff this process can actually record a trace right now.
 
-    Stricter than :func:`kineto_have_libkineto` (and therefore likewise
-    ``False`` in every current build configuration): also requires that a
+    Stricter than :func:`kineto_have_libkineto`: also requires that a
     CUDA primary context is bound on the calling thread.  Without one,
     ``enable()`` skips ``libkineto.prepareTrace`` / ``startTrace`` and
     ``disable()`` symmetrically skips trace serialization, so no file is

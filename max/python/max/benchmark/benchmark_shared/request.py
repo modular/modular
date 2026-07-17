@@ -37,7 +37,12 @@ from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import NotRequired, TypedDict
 
-from .config import PIXEL_GENERATION_TASKS, BenchmarkTask, SamplingConfig
+from .config import (
+    PIXEL_GENERATION_TASKS,
+    Backend,
+    BenchmarkTask,
+    SamplingConfig,
+)
 from .datasets.types import (
     ChatMessage,
     OpenAIImage,
@@ -287,6 +292,7 @@ class RequestDriver(ABC):
         self,
         tokenizer: PreTrainedTokenizerBase | None = None,
         extra_body: Mapping[str, Any] | None = None,
+        backend: Backend | None = None,
     ) -> None:
         """Initialize the request driver.
 
@@ -296,9 +302,14 @@ class RequestDriver(ABC):
                 request payload (last-writer-wins). Consumed by the
                 text-generation drivers (chat completions, completions, and
                 TensorRT-LLM); other drivers ignore it.
+            backend: The inference backend. Used by
+                :class:`OpenAIChatCompletionsRequestDriver` to enable the ATOM
+                server-reported-timing workaround for the ``atom`` backend.
+                TODO(ATOM): remove once ATOM streams chat/completions correctly.
         """
         self.tokenizer = tokenizer
         self.extra_body = extra_body
+        self.backend = backend
 
     @abstractmethod
     async def request(
@@ -685,6 +696,95 @@ class OpenAICompletionsRequestDriver(RequestDriver):
         )
 
 
+async def _run_atom_nonstream_chat_request(
+    *,
+    api_url: str,
+    payload: dict[str, Any],
+    headers: dict[str, str],
+    prompt_len: int,
+) -> RequestFuncOutput:
+    """ATOM workaround: non-streaming chat request using server-reported timing.
+
+    ATOM returns the whole chat completion in one SSE chunk, so client-side
+    stream timing is degenerate. Its non-streaming ``usage`` block reports
+    ``ttft_s``/``tpot_s``/``latency_s`` instead; we use those and set
+    ``generated_text`` so metrics derive TPOT as
+    ``(latency - ttft)/(output_len - 1)`` (== ``usage.tpot_s``).
+
+    TODO(ATOM): remove once ATOM streams chat/completions correctly.
+    """
+    output = RequestFuncOutput()
+    output.prompt_len = prompt_len
+    output.request_submit_time = time.perf_counter()
+
+    async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
+        try:
+            async with session.post(
+                url=api_url, json=payload, headers=headers
+            ) as response:
+                if response.status != 200:
+                    output.error = response.reason or ""
+                    output.success = False
+                    return output
+                body = await response.json()
+        except Exception:
+            output.success = False
+            output.error = "".join(traceback.format_exception(*sys.exc_info()))
+            return output
+
+    try:
+        message = body["choices"][0].get("message") or {}
+    except (KeyError, IndexError, TypeError):
+        output.success = False
+        output.error = f"Malformed chat completion response: {body!r}"
+        return output
+
+    # Merge reasoning/reasoning_content/content (ATOM puts <mm:think> in content).
+    generated_text = (
+        (message.get("reasoning") or "")
+        + (message.get("reasoning_content") or "")
+        + (message.get("content") or "")
+    )
+    usage = body.get("usage") or {}
+    ttft_s = usage.get("ttft_s")
+    tpot_s = usage.get("tpot_s")
+    latency_s = usage.get("latency_s")
+
+    if ttft_s is None or latency_s is None:
+        output.success = False
+        output.error = (
+            "ATOM server-reported timing requested but the response 'usage' is"
+            " missing ttft_s/latency_s; this workaround only applies to an ATOM"
+            " server that reports server-side timing on non-streaming"
+            f" chat/completions. usage={usage!r}"
+        )
+        return output
+    if not generated_text:
+        output.success = False
+        output.error = "No text content in chat completion response."
+        return output
+
+    output.generated_text = generated_text
+    output.ttft = ttft_s
+    # Metrics derive TPOT from (latency - ttft)/(output_len - 1) == usage.tpot_s.
+    output.latency = latency_s
+    prompt_details = usage.get("prompt_tokens_details") or {}
+    completion_tokens = usage.get("completion_tokens")
+    output.server_token_stats = ServerTokenStats(
+        prompt_tokens=usage.get("prompt_tokens"),
+        completion_tokens=completion_tokens,
+        total_tokens=usage.get("total_tokens"),
+        cached_tokens=prompt_details.get("cached_tokens", 0),
+    )
+    # No per-token latencies: synthesize a flat ITL/TPOT series from the mean
+    # tpot_s so itl_ms/step_tpot_ms aren't NaN (headline TPOT still latency-based).
+    if tpot_s is not None and completion_tokens and completion_tokens > 1:
+        output.itl = [tpot_s] * (completion_tokens - 1)
+        output.tpot = [tpot_s] * (completion_tokens - 1)
+    output.success = True
+    return output
+
+
 class OpenAIChatCompletionsRequestDriver(RequestDriver):
     """Request driver for OpenAI-compatible chat completions API."""
 
@@ -747,6 +847,19 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
         }
         if request_func_input.session_id:
             headers["X-Session-ID"] = request_func_input.session_id
+
+        if self.backend == "atom":
+            # ATOM doesn't per-token-stream chat/completions: send non-streaming
+            # and read timing from `usage`. TODO(ATOM): remove once it streams.
+            nonstream_payload = dict(payload)
+            nonstream_payload["stream"] = False
+            nonstream_payload.pop("stream_options", None)
+            return await _run_atom_nonstream_chat_request(
+                api_url=api_url,
+                payload=nonstream_payload,
+                headers=headers,
+                prompt_len=request_func_input.prompt_len,
+            )
 
         return await _run_openai_stream_request(
             api_url=api_url,

@@ -755,7 +755,7 @@ __extension SM100MLA:
         comptime KVPipeType = MLAKVLayouts[
             Self.KVLUTType.dtype,
             Self.KRopeType.dtype,
-            DType.invalid,
+            None,
             Self.config,
         ]
 
@@ -2016,7 +2016,7 @@ def mla_sm100_prefill_per_token_scale[
         q_dtype,
         rope_mma_dtype=rope_dtype,
         rope_gmem_dtype=rope_dtype,
-        scale_dtype=scale_dtype,
+        scale_dtype_=scale_dtype,
     ](
         num_q_heads=config.num_heads,
         group=group,

@@ -1053,14 +1053,14 @@ def fa4_softmax[
     QScaleType: OptionalPointer,
     KScaleType: OptionalPointer,
     qkv_dtype: DType,
-    rope_dtype: DType,
-    scale_dtype: DType,
+    rope_dtype_: Optional[DType],
+    scale_dtype_: Optional[DType],
     output_type: DType,
     MaskType: MHAMask,
     //,
     KVLUTType: MHAOperand,
     config: FA4Config[
-        qkv_dtype, rope_dtype=rope_dtype, scale_dtype=scale_dtype
+        qkv_dtype, rope_dtype_=rope_dtype_, scale_dtype_=scale_dtype_
     ],
     ValidLengthType: OptionalPointer,
     SinkType: OptionalPointer,

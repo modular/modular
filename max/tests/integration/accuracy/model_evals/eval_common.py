@@ -200,6 +200,24 @@ def token_stats(results: list[dict[str, Any]]) -> tuple[float, float]:
     return mean_output_tokens, p50_output_tokens
 
 
+def truncation_stats(
+    results: list[dict[str, Any]],
+) -> tuple[int, float, float]:
+    """Counts cap-truncated rows and token stats over the finished rows.
+
+    A row is truncated when generation hit the token cap
+    (``finish_reason == "length"``). On a reasoning model these are typically
+    runaway-reasoning samples that never emitted a visible answer; they score
+    wrong and dominate the mean token count, so reporting them separately lets
+    a mean-vs-reference gap be attributed to the tail rather than to typical
+    generations.
+    """
+    truncated_rows = [r for r in results if r.get("finish_reason") == "length"]
+    finished = [r for r in results if r.get("finish_reason") != "length"]
+    mean_finished, p50_finished = token_stats(finished)
+    return len(truncated_rows), mean_finished, p50_finished
+
+
 def exact_match_score(
     results: list[dict[str, Any]], total: int, errors: int
 ) -> dict[str, Any]:
@@ -211,6 +229,7 @@ def exact_match_score(
     correct = sum(1 for r in results if r.get("correct"))
     accuracy = correct / total if total else 0.0
     mean_output_tokens, p50_output_tokens = token_stats(results)
+    truncated, mean_finished, p50_finished = truncation_stats(results)
     return {
         "accuracy": accuracy,
         "correct": correct,
@@ -219,6 +238,9 @@ def exact_match_score(
         "errors": errors,
         "mean_output_tokens": mean_output_tokens,
         "p50_output_tokens": p50_output_tokens,
+        "truncated": truncated,
+        "mean_output_tokens_finished": mean_finished,
+        "p50_output_tokens_finished": p50_finished,
     }
 
 

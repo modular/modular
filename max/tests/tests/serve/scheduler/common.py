@@ -176,6 +176,7 @@ def create_paged_scheduler(
     device: Device = CPU(),
     kvcache_ce_watermark: float = 1.0,
     num_speculative_tokens: int = 0,
+    max_pending_requests: int | None = None,
 ) -> tuple[
     TokenGenerationScheduler,
     MAXPushQueue[TextContext],
@@ -222,6 +223,7 @@ def create_paged_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
+        max_pending_requests=max_pending_requests,
     )
 
     return (scheduler, request_queue)

@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import atexit
 import json
 import logging
 import tempfile
@@ -22,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from max.config import ConfigFileModel
 from max.driver import accelerator_api, load_devices
-from max.engine import InferenceSession
+from max.engine import InferenceSession, ProfilingError
 from max.graph.quantization import QuantizationEncoding
 from max.nn.comm import Signals
 from max.nn.kv_cache.cache_params import KVConnectorType
@@ -149,6 +150,46 @@ def _is_disable_parser_sentinel(value: str | None) -> bool:
     disable the parser, overriding any architecture-declared default.
     """
     return isinstance(value, str) and value.lower() == DISABLE_PARSER_SENTINEL
+
+
+# Guards the one-time ``atexit`` registration of
+# ``_finalize_profiling_on_exit``.  The profiling namespace is shared across
+# sessions (it fronts process-global profiler state), so one hook flushes the
+# trace no matter how many sessions were configured — and registering per
+# ``configure_session()`` call would pin every session alive until interpreter
+# exit via the hook's argument reference.
+_profiling_atexit_registered = False
+
+
+def _finalize_profiling_on_exit(session: InferenceSession) -> None:
+    """``atexit`` hook that drains the libkineto trace at process shutdown.
+
+    Auto-enable in :meth:`PipelineConfig.configure_session` has no symmetric
+    point at which to disable because the consumers (``max pipelines
+    generate``, ``LLM``, ``serve``) do not call back into config code
+    when they finish.  Registering this hook from ``configure_session``
+    means the trace gets flushed on a normal interpreter exit even if
+    user code never invokes ``session.profiling.stop()``.
+
+    User code that *does* call ``stop()`` explicitly leaves the profiler
+    in the ``idle`` state, so the ``is_enabled`` guard makes this a no-op
+    on its second visit.  Exceptions during shutdown are intentionally
+    swallowed — interpreter teardown is too unreliable to bubble them up
+    and the trace failure (if any) is already recorded in
+    ``lastTraceError`` for callers that consult it before exit.
+    """
+    try:
+        if session.profiling.is_enabled:
+            session.profiling.stop()
+            session.profiling.wait_for_trace()
+    except ProfilingError:
+        # The only expected failure here is trace serialization, which
+        # wait_for_trace() raises as ProfilingError; it's already recorded in
+        # lastTraceError for callers that consult it, so swallow it at exit.
+        # We intentionally do NOT catch broad Exception: a programming error
+        # (e.g. a renamed attribute) must surface as an atexit traceback
+        # rather than be silently dropped.
+        pass
 
 
 class PipelineConfig(ConfigFileModel):
@@ -352,6 +393,42 @@ class PipelineConfig(ConfigFileModel):
         session._use_experimental_kernels(self.runtime.use_experimental_kernels)
         session._use_vendor_blas(self.runtime.use_vendor_blas)
         session._use_vendor_ccl(self.runtime.use_vendor_ccl)
+
+        # libkineto auto-enable at session construction.  start() must run
+        # before model load: CUPTI cannot retroactively instrument CUDA graphs
+        # instantiated before its subscription (see activatePendingTrace() in
+        # Support/Profiling/internal/Range.h), so a later start() captures
+        # zero GPU activity.  MXTOOLS-211 tracks the MLRT graph-cache
+        # invalidation that lifts this restriction.
+        #
+        # Propagate the remaining ProfilingConfig fields to session.debug
+        # *before* start() so libkineto reads the right output path / step
+        # counts when it primes its CUPTI subscription.
+        if self.profiling.profiling_enabled:
+            if self.profiling.profiling_output_path is not None:
+                session.debug.profiling_output_path = (
+                    self.profiling.profiling_output_path
+                )
+            session.debug.profiling_dynolog_enabled = (
+                self.profiling.profiling_dynolog_enabled
+            )
+            session.debug.profiling_warmup_steps = (
+                self.profiling.profiling_warmup_steps
+            )
+            session.debug.profiling_active_steps = (
+                self.profiling.profiling_active_steps
+            )
+            session.debug.profiling_periodic_flush_seconds = (
+                self.profiling.profiling_periodic_flush_seconds
+            )
+            session.profiling.start()
+            # One hook per process suffices: session.profiling fronts shared
+            # process-global profiler state, so flushing through the first
+            # session flushes for all (see _profiling_atexit_registered).
+            global _profiling_atexit_registered
+            if not _profiling_atexit_registered:
+                atexit.register(_finalize_profiling_on_exit, session)
+                _profiling_atexit_registered = True
 
     def estimate_signal_buffer_memory(
         self, arch_config: ArchConfig | None = None

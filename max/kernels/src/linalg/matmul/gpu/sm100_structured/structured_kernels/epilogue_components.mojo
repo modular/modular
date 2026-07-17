@@ -127,15 +127,18 @@ struct AccumBarrier[cta_group: Int](TrivialRegisterPassable):
         comptime if Self.cta_group == 1:
             from std.gpu.sync import mbarrier_arrive
 
-            _ = mbarrier_arrive(pipeline.consumer_mbar(stage))
+            _ = mbarrier_arrive(rebind[MbarPtr](pipeline.consumer_mbar(stage)))
         else:
             from std.gpu.sync import umma_arrive_leader_cta
 
-            umma_arrive_leader_cta(pipeline.consumer_mbar(stage))
+            umma_arrive_leader_cta(
+                rebind[MbarPtr](pipeline.consumer_mbar(stage))
+            )
 
 
 # Import for AccumBarrier
 from structured_kernels.pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline_backend import MbarPtr
 
 
 # =============================================================================

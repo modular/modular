@@ -21,7 +21,6 @@ The FP8 type is selected at compile time based on the target architecture.
 
 from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext
-from std.gpu.compute.mma import get_amd_fp8_dtype
 from layout import Coord, Idx, TileTensor, row_major
 
 from linalg.mxfp4_dequant import dequant_mxfp4, _cast_bf16_to_fp8

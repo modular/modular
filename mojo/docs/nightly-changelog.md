@@ -10,6 +10,13 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Mojo now support type inference from literals initializer.
+
+  ```mojo
+  var x : List[_] = [1, 2, 3]
+  var x : List[_] = [1.0, 2.0, 3.0]
+  ```
+
 - Mojo now support `==` and `!=` for type equality check, and `_type_is_eq` is
   removed.
 
@@ -697,6 +704,8 @@ This version is still a work in progress.
 - The `Equatable` trait now allows for positional-only implementations, and
   argument on implementers no longer need to match the trait exactly.
 
+- `Pointer` and `UnsafePointer` have had their `type` parameter renamed to `T`.
+
 - `UnsafePointer.init_pointee_move()` and `UnsafePointer.init_pointee_copy()`
   are now deprecated in favor of a single `unsafe_write()` method. Moving a
   value in works the same as before:
@@ -729,6 +738,24 @@ This version is still a work in progress.
   remain gated behind an unsafe pointer type; prefer the `unsafe_`-prefixed
   names going forward. Each method's docstring documents the exact `Safety:`
   requirements the caller must uphold.
+
+- `OwnedDLHandle.get_function` now returns a callable that keeps the owning
+  handle alive while it runs, fixing a crash where the library could be
+  `dlclose`d between symbol lookup and the call. Its parameter is now the
+  return type instead of the full function-pointer type, and it raises if the
+  symbol is missing (previously it aborted the process):
+
+  ```mojo
+  # Before:
+  var sqrt = lib.get_function[def(Float64) abi("C") -> Float64]("sqrt")
+  # After:
+  var sqrt = lib.get_function[Float64]("sqrt")
+  ```
+
+  Arguments are passed using the Mojo calling convention, which is correct
+  for scalar and register-passable arguments. Multi-field struct arguments
+  are rejected at compile time because the Mojo and C conventions can
+  disagree on how aggregates are passed.
 
 ## Tooling changes
 
@@ -866,7 +893,19 @@ This version is still a work in progress.
 - Removed the deprecated `GPUAddressSpace` alias for `AddressSpace`. Use
   `AddressSpace` directly.
 
+- Removed the `DType.invalid` sentinel alias. Code that used it to represent an
+  absent or optional dtype should use `Optional[DType]` instead. Accordingly,
+  `DType._from_str()` now returns an `Optional[DType]` (`None` when the string
+  does not name a dtype) rather than `DType.invalid`.
+
 ## Fixed
+
+- [#6784](https://github.com/modular/modular/issues/6784),
+  [#6434](https://github.com/modular/modular/issues/6434) - `math.sqrt` on
+  `Float64` now works on NVIDIA GPU. It lowers to the IEEE correctly-rounded
+  hardware sqrt (`sqrt.rn.f64`) instead of being rejected at compile time.
+  NVIDIA has no approximate f64 sqrt, so the `Float32` fast path continues to
+  use `sqrt.approx.ftz.f32`.
 
 - [#6755](https://github.com/modular/modular/issues/6755) - Volatile loads are
   no longer removed when their results are unused.

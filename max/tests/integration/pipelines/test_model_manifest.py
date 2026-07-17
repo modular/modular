@@ -457,7 +457,6 @@ class TestWithOverride:
         assert updated["main"] is main_model  # main unchanged
 
 
-DEVICES_EXIST_TARGET = "max.pipelines.lib.config.model_config.devices_exist"
 WEIGHT_PARSE_TARGET = (
     "max.pipelines.lib.config.model_config.WeightPathParser.parse"
 )
@@ -493,10 +492,9 @@ class TestResolve:
         mock_resolve.assert_called_once()
 
     @patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
-    @patch(DEVICES_EXIST_TARGET, return_value=True)
     @patch("max.pipelines.lib.config.model_config.validate_hf_repo_access")
     def test_resolve_flux2_with_overrides(
-        self, _mock_validate: Any, _mock_devices: Any, _mock_validate_hf: Any
+        self, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         """Resolve a FLUX.2-dev manifest with transformer and VAE overrides.
 
@@ -1038,12 +1036,10 @@ class TestCrossRepoSubfolder:
         repo = cfg.huggingface_weight_repo
         assert repo.subfolder == "transformer"
 
-    @patch(DEVICES_EXIST_TARGET, return_value=True)
     @patch("max.pipelines.lib.config.model_config.validate_hf_repo_access")
     def test_resolve_skips_subfolder_prepend_for_cross_repo_weights(
         self,
         _mock_cfg_validate: Any,
-        _mock_devices: Any,
         _mock_validate: Any,
         _mock_validate_hf: Any,
     ) -> None:

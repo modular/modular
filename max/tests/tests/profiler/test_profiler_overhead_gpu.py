@@ -263,22 +263,18 @@ def test_enabled_overhead_within_sanity_ceiling(
     """
     model, a, b = warm_model
 
-    # Dormant until the auto-enable phase of MXTOOLS-190 wires the recording
-    # path through the libkineto backend: ``kineto_can_record()`` is defined
-    # in //Support:Profiling, which is never compiled with
-    # MODULAR_HAVE_KINETO, so it is False in every current build
-    # configuration — even ``--config=kineto`` builds (the only ones that
-    # link libkineto into max._core at all, per #91288) — and this test
-    # self-skips.  Probed at runtime (not in a module-level ``skipif``) so
-    # the skip reflects the state after the fixture has built a session.
-    # Once the wiring lands, recording additionally requires a CUDA primary
-    # context current on *this* thread (the probe is ``cuCtxGetCurrent`` via
-    # the on-demand stub in ``bazel/third-party/libcuda_stub.cpp``) —
-    # wiring that up is part of validating the auto-enable phase, not this
-    # PR.
+    # ``kineto_can_record()`` requires the libkineto backend, which is linked
+    # only in ``--config=kineto`` builds on Linux x86_64 (#91288) — default
+    # builds self-skip here.  Probed at runtime (not in a module-level
+    # ``skipif``) so the skip reflects the state after the fixture has built
+    # a session.  Recording additionally requires a CUDA primary context
+    # current on *this* thread (the probe is ``cuCtxGetCurrent`` via the
+    # on-demand stub in ``bazel/third-party/libcuda_stub.cpp``), so the test
+    # can also skip on kineto builds if the session's context is not bound
+    # on the pytest thread.
     if not kineto_can_record():
         reason = (
-            "the recording path is not compiled into this build"
+            "the libkineto backend is not linked (requires --config=kineto)"
             if not kineto_have_libkineto()
             else "no CUDA primary context is current on the test thread"
         )

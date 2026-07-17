@@ -15,13 +15,12 @@
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field, fields
 from typing import Any, ClassVar, cast
 
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import InferenceSession
 from max.graph import Graph, ops
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer
@@ -163,49 +162,51 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         return model_config
 
     @override
-    def load_model(self, session: InferenceSession) -> Model:
-        """Load the NextN model with the given weights."""
-
-        logger.info("Building DeepseekV3 NextN model...")
-        before = time.perf_counter()
-
-        if self.adapter:
-            state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=self.huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-
+    def _load_state_dict(self) -> dict[str, WeightData]:
+        state_dict = super()._load_state_dict()
         self._apply_shared_weights(state_dict)
-        config = self._create_model_config(state_dict)
+        return state_dict
 
-        self.ep_comm_initializer: EPCommInitializer | None = None
-        if config.ep_config is not None:
-            if self._shared_ep_comm_initializer is not None:
-                # Reuse target model's EP buffers (NVSHMEM symmetric memory).
-                # Target and draft execute sequentially in the EAGLE pipeline,
-                # so sharing is safe and avoids duplicating ~85 GiB of buffers.
-                self.ep_comm_initializer = self._shared_ep_comm_initializer
-                # Propagate node_id from the shared initializer since NextN
-                # constructs its own EPConfig with node_id=-1.
-                config.ep_config.node_id = (
-                    self._shared_ep_comm_initializer.config.node_id
-                )
-                logger.info("Reusing target model's EP communication buffers.")
-            else:
-                self.ep_comm_initializer = EPCommInitializer(config.ep_config)
-                self.ep_comm_initializer.ep_init(session)
-            if config.ep_config.node_id == -1:
-                raise ValueError(
-                    "EP node ID is not set. Please check if the EP initialization is successful."
-                )
+    @override
+    def _init_distributed_runtime(
+        self,
+        session: InferenceSession,
+        model_config: DeepseekV3NextNConfig,
+    ) -> None:
+        self.ep_comm_initializer = None
+        if model_config.ep_config is None:
+            return
+        if self._shared_ep_comm_initializer is not None:
+            # Reuse target model's EP buffers (NVSHMEM symmetric memory).
+            # Target and draft execute sequentially in the EAGLE pipeline,
+            # so sharing is safe and avoids duplicating ~85 GiB of buffers.
+            self.ep_comm_initializer = self._shared_ep_comm_initializer
+            # Propagate node_id from the shared initializer since NextN
+            # constructs its own EPConfig with node_id=-1.
+            model_config.ep_config.node_id = (
+                self._shared_ep_comm_initializer.config.node_id
+            )
+            logger.info("Reusing target model's EP communication buffers.")
+        else:
+            self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
+            self.ep_comm_initializer.ep_init(session)
+        if model_config.ep_config.node_id == -1:
+            raise ValueError(
+                "EP node ID is not set. Please check if the EP initialization is successful."
+            )
 
-        nn_model = DeepseekV3NextN(config)
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, WeightData],
+        model_config: DeepseekV3NextNConfig,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        logger.info("Building DeepseekV3 NextN model...")
+        nn_model = DeepseekV3NextN(model_config)
         nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
+        weights_registry = nn_model.state_dict()
 
         num_devices = len(self.devices)
 
@@ -216,9 +217,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             graph_inputs_iter = iter(graph.inputs)
 
             tokens = next(graph_inputs_iter)
-
             hidden_states = next(graph_inputs_iter)
-
             device_input_row_offsets = next(graph_inputs_iter)
             host_input_row_offsets = next(graph_inputs_iter)
             return_n_logits = next(graph_inputs_iter)
@@ -260,33 +259,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             )
 
             graph.output(*outputs)
-
-        after_build = time.perf_counter()
-        logger.info(
-            f"Building graph took {after_build - before:.6f} seconds. Compiling..."
-        )
-
-        before_compile = time.perf_counter()
-        model = session.load(graph, weights_registry=nn_model.state_dict())
-        after = time.perf_counter()
-
-        logger.info(
-            f"Compiling model took {after - before_compile:.6f} seconds"
-        )
-
-        load_time = after - before
-        logging.info(
-            f"DeepseekV3 NextN model loaded in {load_time:.6f} seconds"
-        )
-
-        if self._batch_processor is not None:
-            bind_ep = getattr(
-                self._batch_processor, "bind_ep_comm_initializer", None
-            )
-            if bind_ep is not None:
-                bind_ep(self.ep_comm_initializer)
-
-        return model
+            return graph, weights_registry
 
     def execute(
         self,

@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -11,6 +11,7 @@ modular_py_test(
     srcs = glob(
         ["*.py"],
         exclude = [
+            "dynolog_harness.py",
             "test_hta_import.py",
             "test_profiler_overhead_gpu.py",
         ],
@@ -70,6 +71,23 @@ modular_py_test(
     },
     tags = ["gpu"],
     target_compatible_with = ["//:nvidia_gpu"],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+# Long-running harness to end-to-end verify the libkineto <-> Dynolog daemon
+# handshake (MXTOOLS-190). Not a test target: it idles running CUDA kernels so
+# an external `dyno gputrace --pids <pid>` on-demand request can drive a
+# capture. See dynolog_harness.py.
+modular_py_binary(
+    name = "dynolog_harness",
+    srcs = ["dynolog_harness.py"],
     deps = [
         "//max/python/max:_core",
         "//max/python/max/driver",

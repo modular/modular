@@ -363,7 +363,7 @@ def _elementwise_impl[
             @always_inline
             def func_wrap_cpu[
                 width: Int, alignment: Int = 1
-            ](coords: Coord) {read}:
+            ](coords: Coord) {imm}:
                 func[width, alignment](coords)
 
             _elementwise_impl_cpu[

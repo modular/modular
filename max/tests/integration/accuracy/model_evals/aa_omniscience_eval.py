@@ -48,6 +48,7 @@ from eval_common import (
     strip_think,
     subsample,
     token_stats,
+    truncation_stats,
 )
 
 # Official AA-Omniscience grader prompt: returns a single letter A/B/C/D for
@@ -180,6 +181,7 @@ def infer(
         "reference": reference,
         "prediction": prediction[:500],
         "verdict": parse_verdict(raw_verdict),
+        "finish_reason": resp.choices[0].finish_reason,
         "completion_tokens": answer_tokens,
     }
 
@@ -202,6 +204,7 @@ def score(results: list[dict[str, Any]]) -> dict[str, Any]:
     hallucination_rate = n_incorrect / total if total else 0.0
     omni_score = (50 + (accuracy - hallucination_rate) * 50) / 100
     mean_output_tokens, p50_output_tokens = token_stats(results)
+    truncated, mean_finished, p50_finished = truncation_stats(results)
     return {
         "omniscience_score": omni_score,
         "accuracy": accuracy,
@@ -214,6 +217,9 @@ def score(results: list[dict[str, Any]]) -> dict[str, Any]:
         "total": total,
         "mean_output_tokens": mean_output_tokens,
         "p50_output_tokens": p50_output_tokens,
+        "truncated": truncated,
+        "mean_output_tokens_finished": mean_finished,
+        "p50_output_tokens_finished": p50_finished,
     }
 
 

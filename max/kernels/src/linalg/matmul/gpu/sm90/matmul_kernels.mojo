@@ -78,6 +78,7 @@ from layout.tile_layout import Layout as _Layout
 from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
+from structured_kernels.pipeline_backend import MbarPtr
 from structured_kernels.pipeline_storage import BarrierPair
 from .tile_loader import (
     TileLoaderTMA,
@@ -520,12 +521,14 @@ struct HopperMatmulSM90Kernel[
         comptime for i in range(Self.adjusted_num_pipeline_stages):
             comptime if Self.cluster_size > 1:
                 if warp_group_thread_idx < Self.cluster_size:
-                    _ = pipeline.empty[i].arrive_cluster(
-                        UInt32(warp_group_thread_idx)
-                    )
+                    _ = rebind[MbarPtr](pipeline.consumer_mbar(UInt32(i)))[
+                        0
+                    ].arrive_cluster(UInt32(warp_group_thread_idx))
             else:
                 if warp_group_thread_idx == 0:
-                    _ = pipeline.empty[i].arrive()
+                    _ = rebind[MbarPtr](pipeline.consumer_mbar(UInt32(i)))[
+                        0
+                    ].arrive()
 
     @staticmethod
     @always_inline

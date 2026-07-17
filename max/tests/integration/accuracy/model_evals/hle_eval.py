@@ -50,6 +50,7 @@ from eval_common import (
     strip_think,
     subsample,
     token_stats,
+    truncation_stats,
 )
 
 # Official HLE format + LLM judge: elicit a marked answer, then have the judge
@@ -121,10 +122,16 @@ def infer(
         "predicted": prediction[:200],
         "verdict": "yes" if correct else "no",
         "correct": correct,
+        "finish_reason": resp.choices[0].finish_reason,
         # Count only the model-under-test's answer call; the judge call is NOT
         # counted toward output-token stats.
         "completion_tokens": (
             resp.usage.completion_tokens if resp.usage else 0
+        ),
+        "reasoning_tokens": (
+            resp.usage.completion_tokens_details.reasoning_tokens
+            if resp.usage and resp.usage.completion_tokens_details
+            else None
         ),
     }
 
@@ -148,12 +155,16 @@ def score(results: list[dict[str, Any]], total: int) -> dict[str, Any]:
     correct = sum(1 for r in results if r.get("correct"))
     accuracy = correct / total if total else 0.0
     mean_output_tokens, p50_output_tokens = token_stats(results)
+    truncated, mean_finished, p50_finished = truncation_stats(results)
     return {
         "accuracy": accuracy,
         "correct": correct,
         "total": total,
         "mean_output_tokens": mean_output_tokens,
         "p50_output_tokens": p50_output_tokens,
+        "truncated": truncated,
+        "mean_output_tokens_finished": mean_finished,
+        "p50_output_tokens_finished": p50_finished,
     }
 
 

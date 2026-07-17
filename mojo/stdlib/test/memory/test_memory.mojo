@@ -659,12 +659,12 @@ def test_address_space_str() raises:
 
 def test_dtypepointer_gather() raises:
     var ptr = alloc[Float32](4)
-    ptr.store(0, SIMD[ptr.type.dtype, 4](0.0, 1.0, 2.0, 3.0))
+    ptr.store(0, SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 3.0))
 
     @parameter
     def _test_gather[
         width: SIMDSize
-    ](offset: SIMD[_, width], desired: SIMD[ptr.type.dtype, width]) raises:
+    ](offset: SIMD[_, width], desired: SIMD[ptr.T.dtype, width]) raises:
         var actual = ptr.gather(offset)
         assert_almost_equal(
             actual, desired, msg="_test_gather", atol=0.0, rtol=0.0
@@ -676,8 +676,8 @@ def test_dtypepointer_gather() raises:
     ](
         offset: SIMD[_, width],
         mask: SIMD[DType.bool, width],
-        default: SIMD[ptr.type.dtype, width],
-        desired: SIMD[ptr.type.dtype, width],
+        default: SIMD[ptr.T.dtype, width],
+        desired: SIMD[ptr.T.dtype, width],
     ) raises:
         var actual = ptr.gather(offset, mask, default)
         assert_almost_equal(
@@ -685,17 +685,15 @@ def test_dtypepointer_gather() raises:
         )
 
     var offset = SIMD[DType.int64, 8](3, 0, 2, 1, 2, 0, 3, 1)
-    var desired = SIMD[ptr.type.dtype, 8](
-        3.0, 0.0, 2.0, 1.0, 2.0, 0.0, 3.0, 1.0
-    )
+    var desired = SIMD[ptr.T.dtype, 8](3.0, 0.0, 2.0, 1.0, 2.0, 0.0, 3.0, 1.0)
 
     _test_gather[1](UInt16(2), 2.0)
     _test_gather(offset.cast[DType.uint32]().slice[2](), desired.slice[2]())
     _test_gather(offset.cast[DType.uint64]().slice[4](), desired.slice[4]())
 
     var mask = offset.ge(0) & offset.lt(3)
-    var default = SIMD[ptr.type.dtype, 8](-1.0)
-    desired = SIMD[ptr.type.dtype, 8](-1.0, 0.0, 2.0, 1.0, 2.0, 0.0, -1.0, 1.0)
+    var default = SIMD[ptr.T.dtype, 8](-1.0)
+    desired = SIMD[ptr.T.dtype, 8](-1.0, 0.0, 2.0, 1.0, 2.0, 0.0, -1.0, 1.0)
 
     _test_masked_gather[1](Int16(2), Scalar[DType.bool](False), -1.0, -1.0)
     _test_masked_gather[1](Int32(2), Scalar[DType.bool](True), -1.0, 2.0)
@@ -706,15 +704,15 @@ def test_dtypepointer_gather() raises:
 
 def test_dtypepointer_scatter() raises:
     var ptr = alloc[Float32](4)
-    ptr.store(0, SIMD[ptr.type.dtype, 4](0.0))
+    ptr.store(0, SIMD[ptr.T.dtype, 4](0.0))
 
     @parameter
     def _test_scatter[
         width: SIMDSize
     ](
         offset: SIMD[_, width],
-        val: SIMD[ptr.type.dtype, width],
-        desired: SIMD[ptr.type.dtype, 4],
+        val: SIMD[ptr.T.dtype, width],
+        desired: SIMD[ptr.T.dtype, 4],
     ) raises:
         ptr.scatter(offset, val)
         var actual = ptr.load[width=4](0)
@@ -727,9 +725,9 @@ def test_dtypepointer_scatter() raises:
         width: SIMDSize
     ](
         offset: SIMD[_, width],
-        val: SIMD[ptr.type.dtype, width],
+        val: SIMD[ptr.T.dtype, width],
         mask: SIMD[DType.bool, width],
-        desired: SIMD[ptr.type.dtype, 4],
+        desired: SIMD[ptr.T.dtype, 4],
     ) raises:
         ptr.scatter(offset, val, mask)
         var actual = ptr.load[width=4](0)
@@ -737,45 +735,43 @@ def test_dtypepointer_scatter() raises:
             actual, desired, msg="_test_masked_scatter", atol=0.0, rtol=0.0
         )
 
-    _test_scatter[1](
-        UInt16(2), 2.0, SIMD[ptr.type.dtype, 4](0.0, 0.0, 2.0, 0.0)
-    )
+    _test_scatter[1](UInt16(2), 2.0, SIMD[ptr.T.dtype, 4](0.0, 0.0, 2.0, 0.0))
     _test_scatter(  # Test with repeated offsets
         SIMD[DType.uint32, 4](1, 1, 1, 1),
-        SIMD[ptr.type.dtype, 4](-1.0, 2.0, -2.0, 1.0),
-        SIMD[ptr.type.dtype, 4](0.0, 1.0, 2.0, 0.0),
+        SIMD[ptr.T.dtype, 4](-1.0, 2.0, -2.0, 1.0),
+        SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 0.0),
     )
     _test_scatter(
         SIMD[DType.uint64, 4](3, 2, 1, 0),
-        SIMD[ptr.type.dtype, 4](0.0, 1.0, 2.0, 3.0),
-        SIMD[ptr.type.dtype, 4](3.0, 2.0, 1.0, 0.0),
+        SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 3.0),
+        SIMD[ptr.T.dtype, 4](3.0, 2.0, 1.0, 0.0),
     )
 
-    ptr.store(0, SIMD[ptr.type.dtype, 4](0.0))
+    ptr.store(0, SIMD[ptr.T.dtype, 4](0.0))
 
     _test_masked_scatter[1](
         Int16(2),
         2.0,
         Scalar[DType.bool](False),
-        SIMD[ptr.type.dtype, 4](0.0, 0.0, 0.0, 0.0),
+        SIMD[ptr.T.dtype, 4](0.0, 0.0, 0.0, 0.0),
     )
     _test_masked_scatter[1](
         Int32(2),
         2.0,
         Scalar[DType.bool](True),
-        SIMD[ptr.type.dtype, 4](0.0, 0.0, 2.0, 0.0),
+        SIMD[ptr.T.dtype, 4](0.0, 0.0, 2.0, 0.0),
     )
     _test_masked_scatter(  # Test with repeated offsets
         SIMD[DType.int64, 4](1, 1, 1, 1),
-        SIMD[ptr.type.dtype, 4](-1.0, 2.0, -2.0, 1.0),
+        SIMD[ptr.T.dtype, 4](-1.0, 2.0, -2.0, 1.0),
         SIMD[DType.bool, 4](True, True, True, False),
-        SIMD[ptr.type.dtype, 4](0.0, -2.0, 2.0, 0.0),
+        SIMD[ptr.T.dtype, 4](0.0, -2.0, 2.0, 0.0),
     )
     _test_masked_scatter(
         SIMD[DType.int, 4](3, 2, 1, 0),
-        SIMD[ptr.type.dtype, 4](0.0, 1.0, 2.0, 3.0),
+        SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 3.0),
         SIMD[DType.bool, 4](True, False, True, True),
-        SIMD[ptr.type.dtype, 4](3.0, 2.0, 2.0, 0.0),
+        SIMD[ptr.T.dtype, 4](3.0, 2.0, 2.0, 0.0),
     )
 
     ptr.free()
