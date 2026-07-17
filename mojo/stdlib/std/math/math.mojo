@@ -1384,6 +1384,11 @@ def mul_no_contraction[
     into a single FMA instruction. Use this when you need separate multiply
     and add operations for numerical precision or symmetry requirements.
 
+    The implementation uses inline assembly on x86_64 (AVX/FMA) and aarch64
+    (NEON) to emit a plain multiply instruction that LLVM cannot contract
+    with a subsequent add. Falls back to regular multiplication on other
+    platforms.
+
     Parameters:
         dtype: The `dtype` of the input SIMD vector.
         width: The width of the input and output SIMD vector.
@@ -1409,7 +1414,118 @@ def mul_no_contraction[
         ```
     """
     comptime assert dtype.is_numeric(), "the SIMD type must be numeric"
-    return a.fma[FastMathFlag.NONE](b, SIMD[dtype, width](0))
+    comptime if dtype == DType.float32 and CompilationTarget.has_fma():
+        return _mul_f32_no_contraction_x86[a, b]()
+    elif dtype == DType.float32 and CompilationTarget.has_neon():
+        return _mul_f32_no_contraction_arm[a, b]()
+    elif dtype == DType.float64 and CompilationTarget.has_fma():
+        return _mul_f64_no_contraction_x86[a, b]()
+    elif dtype == DType.float64 and CompilationTarget.has_neon():
+        return _mul_f64_no_contraction_arm[a, b]()
+    else:
+        return a * b
+
+
+@always_inline("nodebug")
+fn _mul_f32_no_contraction_x86[
+    a: SIMD[DType.float32, _], b: SIMD[DType.float32, _]
+]() -> SIMD[DType.float32, a.size]:
+    comptime if a.size == 1:
+        return inlined_assembly[
+            "vmulss $0, $1, $2",
+            SIMD[DType.float32, 1],
+            constraints="=x,x,x",
+            has_side_effect=False,
+        ](a, b)
+    elif a.size == 4:
+        return inlined_assembly[
+            "vmulps $0, $1, $2",
+            SIMD[DType.float32, 4],
+            constraints="=x,x,x",
+            has_side_effect=False,
+        ](a, b)
+    elif a.size == 8:
+        return inlined_assembly[
+            "vmulps $0, $1, $2",
+            SIMD[DType.float32, 8],
+            constraints="=x,x,x",
+            has_side_effect=False,
+        ](a, b)
+    else:
+        return a * b
+
+
+@always_inline("nodebug")
+fn _mul_f64_no_contraction_x86[
+    a: SIMD[DType.float64, _], b: SIMD[DType.float64, _]
+]() -> SIMD[DType.float64, a.size]:
+    comptime if a.size == 1:
+        return inlined_assembly[
+            "vmulsd $0, $1, $2",
+            SIMD[DType.float64, 1],
+            constraints="=x,x,x",
+            has_side_effect=False,
+        ](a, b)
+    elif a.size == 2:
+        return inlined_assembly[
+            "vmulpd $0, $1, $2",
+            SIMD[DType.float64, 2],
+            constraints="=x,x,x",
+            has_side_effect=False,
+        ](a, b)
+    elif a.size == 4:
+        return inlined_assembly[
+            "vmulpd $0, $1, $2",
+            SIMD[DType.float64, 4],
+            constraints="=x,x,x",
+            has_side_effect=False,
+        ](a, b)
+    else:
+        return a * b
+
+
+@always_inline("nodebug")
+fn _mul_f32_no_contraction_arm[
+    a: SIMD[DType.float32, _], b: SIMD[DType.float32, _]
+]() -> SIMD[DType.float32, a.size]:
+    comptime if a.size == 1:
+        return inlined_assembly[
+            "fmul $0, $1, $2",
+            SIMD[DType.float32, 1],
+            constraints="=w,w,w",
+            has_side_effect=False,
+        ](a, b)
+    elif a.size == 4:
+        return inlined_assembly[
+            "fmul $0.4s, $1.4s, $2.4s",
+            SIMD[DType.float32, 4],
+            constraints="=w,w,w",
+            has_side_effect=False,
+        ](a, b)
+    else:
+        return a * b
+
+
+@always_inline("nodebug")
+fn _mul_f64_no_contraction_arm[
+    a: SIMD[DType.float64, _], b: SIMD[DType.float64, _]
+]() -> SIMD[DType.float64, a.size]:
+    comptime if a.size == 1:
+        return inlined_assembly[
+            "fmul $0, $1, $2",
+            SIMD[DType.float64, 1],
+            constraints="=w,w,w",
+            has_side_effect=False,
+        ](a, b)
+    elif a.size == 2:
+        return inlined_assembly[
+            "fmul $0.2d, $1.2d, $2.2d",
+            SIMD[DType.float64, 2],
+            constraints="=w,w,w",
+            has_side_effect=False,
+        ](a, b)
+    else:
+        return a * b
 
 
 # ===----------------------------------------------------------------------=== #
