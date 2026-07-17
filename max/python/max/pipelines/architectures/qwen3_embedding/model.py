@@ -35,16 +35,16 @@ from max.nn.rotary_embedding import (
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
-    CompilationTimer,
+    GraphPipelineModel,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from transformers import AutoConfig
+from typing_extensions import override
 
 from .batch_processor import Qwen3EmbeddingBatchProcessor
 from .layers import (
@@ -73,7 +73,7 @@ class Qwen3EmbeddingInputs(ModelInputs):
     """Number of logits to return (kept for interface compatibility)"""
 
 
-class Qwen3EmbeddingModel(PipelineModel[TextContext]):
+class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
     """Qwen3 embedding pipeline model without KV caching.
 
     This model is optimized for embedding generation with:
@@ -134,36 +134,24 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             return_logits,
             max_batch_size=max_batch_size,
         )
-        self.session = session
+        self.model = self.load_model(session)
 
-        # Build and compile graph
-        with CompilationTimer("model") as timer:
-            graph = self._build_graph(weights, adapter, session)
-            timer.mark_build_complete()
-            self.model = session.load(graph, weights_registry=self.state_dict)
-
-    def _build_graph(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-        session: InferenceSession | None = None,
-    ) -> Graph:
-        """Build the embedding model graph.
-
-        Args:
-            weights: Model weights
-            adapter: Optional weight adapter
-            session: Optional inference session
-
-        Returns:
-            Compiled graph
-        """
-        # Load weights
-        state_dict = parse_state_dict_from_weights(
-            self.pipeline_config, weights, adapter
+    @override
+    def _load_state_dict(self) -> dict[str, Any]:
+        return parse_state_dict_from_weights(
+            self.pipeline_config,
+            self.weights,
+            self.adapter,
+            hf_config=self._hf_config_for_weights(),
         )
 
-        # Get configuration
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session, model_config
         dtype = self.dtype
         device_refs = [DeviceRef.from_device(d) for d in self.devices]
 
@@ -298,7 +286,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             ),
         )
 
-        self.state_dict = nn_model.state_dict()
+        weights_registry = nn_model.state_dict()
 
         # Build graph
         graph_inputs = nn_model.input_types()
@@ -329,7 +317,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
                 hidden_states_f32 = ops.cast(hidden_states, DType.float32)
                 graph.output(hidden_states_f32)
 
-        return graph
+        return graph, weights_registry
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Execute the model.

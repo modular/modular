@@ -23,23 +23,22 @@ from typing import Any, ClassVar, cast
 
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
-from max.experimental import functional as F
 from max.experimental.nn.common_layers.mlp import MLP
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.nn.embedding import Embedding
 from max.experimental.nn.norm import RMSNorm
-from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
+    ModuleV3PipelineModel,
     PipelineConfig,
-    PipelineModel,
 )
+from max.pipelines.lib.utils import parse_state_dict_from_weights
+from typing_extensions import override
 
 from .batch_processor import Qwen3EmbeddingModuleV3BatchProcessor
 from .layers import (
@@ -67,7 +66,7 @@ class Qwen3EmbeddingInputs(ModelInputs):
     """Number of logits to return (kept for interface compatibility)"""
 
 
-class Qwen3EmbeddingModel(PipelineModel[TextContext]):
+class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
     """Qwen3 embedding pipeline model without KV caching (V3 eager API).
 
     Optimized for embedding generation with:
@@ -107,22 +106,23 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         )
         self.model = self.load_model()
 
-    def load_model(self) -> Callable[..., Any]:
-        """Build and compile the embedding model using V3 eager API."""
-        huggingface_config = self.huggingface_config
+    @override
+    def _load_state_dict(self) -> dict[str, Any]:
+        return parse_state_dict_from_weights(
+            self.pipeline_config,
+            self.weights,
+            self.adapter,
+            hf_config=self._hf_config_for_weights(),
+        )
 
-        # Get state dict
-        if self.adapter:
-            state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
+    def _create_model_config(self, state_dict: dict[str, Any]) -> None:
+        del state_dict
+        return None
 
+    def _prepare_state_dict(
+        self, state_dict: dict[str, Any], model_config: Any
+    ) -> dict[str, Any]:
+        del model_config
         # Remove lm_head weights — embedding model doesn't use them
         state_dict = {k: v for k, v in state_dict.items() if "lm_head" not in k}
 
@@ -133,12 +133,15 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         # "model." prefix to replace, keys pass through unchanged.
         # Ensure every key carries the "language_model." prefix that the
         # compiled module tree expects.
-        state_dict = {
+        return {
             k if k.startswith("language_model.") else f"language_model.{k}": v
             for k, v in state_dict.items()
         }
 
-        # Configuration
+    def _instantiate_module(self, model_config: Any) -> Qwen3Embedding:
+        del model_config
+        huggingface_config = self.huggingface_config
+
         head_dim = huggingface_config.head_dim
         max_seq_len = self.pipeline_config.model.max_length or 32768
         norm_eps = getattr(huggingface_config, "rms_norm_eps", 1e-6)
@@ -148,7 +151,6 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             1.0 / math.sqrt(float(head_dim)),
         )
 
-        # Create RoPE (needs device at construction time for freqs_cis)
         rope = RotaryEmbedding(
             dim=huggingface_config.hidden_size,
             n_heads=huggingface_config.num_attention_heads,
@@ -165,63 +167,49 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             eps=norm_eps,
         )
 
-        with F.lazy():
-            # Create transformer layers
-            layers = []
-            for _layer_idx in range(huggingface_config.num_hidden_layers):
-                attention = Qwen3AttentionNoCache(
-                    rope=rope,
-                    num_attention_heads=huggingface_config.num_attention_heads,
-                    num_key_value_heads=huggingface_config.num_key_value_heads,
-                    hidden_size=huggingface_config.hidden_size,
-                    head_dim=head_dim,
-                    scale=attention_multiplier,
-                    qk_norm_eps=norm_eps,
-                )
-
-                mlp = MLP(
-                    hidden_dim=huggingface_config.hidden_size,
-                    feed_forward_length=huggingface_config.intermediate_size,
-                    bias=False,
-                )
-
-                block = Qwen3EmbeddingTransformerBlock(
-                    attention=attention,
-                    mlp=mlp,
-                    attention_norm=create_norm(),
-                    mlp_norm=create_norm(),
-                    residual_multiplier=1.0,
-                )
-                layers.append(block)
-
-            embedding = Embedding(
-                huggingface_config.vocab_size,
-                dim=huggingface_config.hidden_size,
+        layers = []
+        for _layer_idx in range(huggingface_config.num_hidden_layers):
+            attention = Qwen3AttentionNoCache(
+                rope=rope,
+                num_attention_heads=huggingface_config.num_attention_heads,
+                num_key_value_heads=huggingface_config.num_key_value_heads,
+                hidden_size=huggingface_config.hidden_size,
+                head_dim=head_dim,
+                scale=attention_multiplier,
+                qk_norm_eps=norm_eps,
             )
 
-            transformer = Qwen3EmbeddingTransformer(
-                layers=layers,
-                norm=create_norm(),
-                embedding=embedding,
-                pool_embeddings=self.pipeline_config.model.pool_embeddings,
-                embedding_multiplier=1.0,
+            mlp = MLP(
+                hidden_dim=huggingface_config.hidden_size,
+                feed_forward_length=huggingface_config.intermediate_size,
+                bias=False,
             )
 
-            nn_model = Qwen3Embedding(transformer)
-            nn_model.to(self.devices[0])
+            block = Qwen3EmbeddingTransformerBlock(
+                attention=attention,
+                mlp=mlp,
+                attention_norm=create_norm(),
+                mlp_norm=create_norm(),
+                residual_multiplier=1.0,
+            )
+            layers.append(block)
 
-        assert self.batch_processor is not None
-        compile_input_types = self.batch_processor.get_symbolic_inputs(
-            kv_params=cast(KVCacheParamInterface, None),
-            device_refs=[DeviceRef.from_device(self.devices[0])],
+        embedding = Embedding(
+            huggingface_config.vocab_size,
+            dim=huggingface_config.hidden_size,
         )
 
-        compiled_model = nn_model.compile(
-            *compile_input_types,
-            weights=state_dict,
+        transformer = Qwen3EmbeddingTransformer(
+            layers=layers,
+            norm=create_norm(),
+            embedding=embedding,
+            pool_embeddings=self.pipeline_config.model.pool_embeddings,
+            embedding_multiplier=1.0,
         )
 
-        return compiled_model
+        nn_model = Qwen3Embedding(transformer)
+        nn_model.to(self.devices[0])
+        return nn_model
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Execute the model."""

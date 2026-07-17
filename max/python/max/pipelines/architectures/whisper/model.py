@@ -19,15 +19,14 @@ from typing import Any
 
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef
+from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import (
-    CompilationTimer,
+    GraphPipelineModel,
     KVCacheConfig,
     ModelInputs,
     PipelineConfig,
-    PipelineModel,
 )
 
 from .graph import build_graph
@@ -56,7 +55,9 @@ class WhisperInputs(ModelInputs):
 
 
 # TODO: Need specific Context type, not just this base type.
-class Whisper(PipelineModel[Any]):
+class Whisper(GraphPipelineModel[Any]):
+    model: Model
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -80,24 +81,17 @@ class Whisper(PipelineModel[Any]):
         )
         self.model = self.load_model(session)
 
-    def load_model(self, session: InferenceSession) -> Model:
-        """
-        Load the Whisper speech recognition model.
-        """
-        with CompilationTimer("model") as timer:
-            if self.adapter:
-                state_dict = self.adapter(dict(self.weights.items()))
-            else:
-                state_dict = {
-                    key: value.data() for key, value in self.weights.items()
-                }
-            graph = build_graph(
-                state_dict,
-                self.huggingface_config,
-                self.dtype,
-                DeviceRef.from_device(self.devices[0]),
-            )
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=state_dict)
-
-        return model
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session, model_config
+        graph = build_graph(
+            state_dict,
+            self.huggingface_config,
+            self.dtype,
+            DeviceRef.from_device(self.devices[0]),
+        )
+        return graph, state_dict

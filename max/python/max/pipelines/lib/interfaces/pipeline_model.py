@@ -20,7 +20,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Generic
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast
 
 from max.driver import (
     Buffer,
@@ -568,6 +568,139 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         )
 
 
+class GraphPipelineModel(PipelineModel[BaseContextType]):
+    """Graph-API pipeline model without KV cache.
+
+    Subclasses implement :meth:`_build_graph_for_compile` and optionally
+    :meth:`_create_model_config` and :meth:`_wire_batch_processor`.
+    """
+
+    state_dict: dict[str, Any]
+
+    @traced
+    def load_model(self, session: InferenceSession) -> Model:
+        """Load weights, build the graph, compile, and wire the batch processor."""
+        state_dict = self._load_state_dict()
+        model_config = self._create_model_config(state_dict)
+
+        with CompilationTimer("model") as timer:
+            graph, weights_registry = self._build_graph_for_compile(
+                session, state_dict, model_config
+            )
+            timer.mark_build_complete()
+            self.state_dict = weights_registry
+            model = session.load(graph, weights_registry=weights_registry)
+
+        self._wire_batch_processor(model, model_config)
+        return model
+
+    def _load_state_dict(self) -> dict[str, Any]:
+        """Load and optionally adapt weights from the configured source."""
+        if self.adapter:
+            return self.adapter(dict(self.weights.items()))
+        return {key: value.data() for key, value in self.weights.items()}
+
+    def _hf_config_for_weights(self) -> AutoConfig | None:
+        """Optional HuggingFace config override for weight loading."""
+        return None
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+        """Optional hook; returns ``None`` when no arch config object is needed."""
+        del state_dict
+        return None
+
+    def _wire_batch_processor(
+        self, model: Any = None, model_config: Any = None
+    ) -> None:
+        """Optional hook to construct ``self.batch_processor`` after compile."""
+        del model, model_config
+
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        """Build the graph and return ``(graph, weights_registry)``."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement _build_graph_for_compile"
+        )
+
+
+class ModuleV3PipelineModel(PipelineModel[BaseContextType]):
+    """ModuleV3 eager pipeline model without KV cache.
+
+    Subclasses implement :meth:`_instantiate_module` and optionally
+    :meth:`_create_model_config`, :meth:`_prepare_state_dict`, and
+    :meth:`_module_default_dtype`.
+    """
+
+    @traced
+    def load_model(self) -> Callable[..., Any]:
+        """Build and compile the ModuleV3 callable."""
+        state_dict = self._load_state_dict()
+        model_config = self._create_model_config(state_dict)
+        state_dict = self._prepare_state_dict(state_dict, model_config)
+
+        with CompilationTimer("model") as timer:
+            module_default_dtype = self._module_default_dtype(
+                state_dict, model_config
+            )
+            with F.lazy(), default_dtype(module_default_dtype):
+                nn_model = self._instantiate_module(model_config)
+            compile_input_types = self._get_compile_input_types(model_config)
+            timer.mark_build_complete()
+            return nn_model.compile(*compile_input_types, weights=state_dict)
+
+    def _load_state_dict(self) -> dict[str, Any]:
+        """Load and optionally adapt weights from the configured source."""
+        if self.adapter:
+            return self.adapter(dict(self.weights.items()))
+        return {key: value.data() for key, value in self.weights.items()}
+
+    def _hf_config_for_weights(self) -> AutoConfig | None:
+        """Optional HuggingFace config override for weight loading."""
+        return None
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+        """Builds model config from ``state_dict``."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_create_model_config`."
+        )
+
+    def _prepare_state_dict(
+        self, state_dict: dict[str, Any], model_config: Any
+    ) -> dict[str, Any]:
+        """Optional hook to cast or rewrite weights before ``nn.compile``."""
+        del model_config
+        return state_dict
+
+    def _module_default_dtype(
+        self, state_dict: dict[str, Any], model_config: Any
+    ) -> DType:
+        """Default dtype for the eager module build context."""
+        del state_dict, model_config
+        return self.dtype
+
+    def _instantiate_module(self, model_config: Any) -> Any:
+        """Constructs and places the nn module under ``F.lazy()``."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_instantiate_module`."
+        )
+
+    def _get_compile_input_types(self, model_config: Any) -> tuple[Any, ...]:
+        """Symbolic inputs passed to ``nn_model.compile``."""
+        del model_config
+        batch_processor = self.batch_processor
+        assert batch_processor is not None
+        return tuple(
+            batch_processor.get_symbolic_inputs(
+                kv_params=cast(KVCacheParamInterface, None),
+                device_refs=self.device_refs,
+            )
+        )
+
+
 class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
     """A pipeline model that supports KV cache."""
 
@@ -843,7 +976,8 @@ class ModuleV3PipelineModelWithKVCache(
     duplicating weight loading, timing, and ``nn.compile`` wiring.
 
     Graph-API models should inherit :class:`GraphPipelineModelWithKVCache`
-    instead. Multi-graph VLMs should inherit
+    instead. Encoder models without KV cache should inherit
+    :class:`ModuleV3PipelineModel` instead. Multi-graph VLMs should inherit
     :class:`MultiGraphPipelineModelWithKVCache` (graph API) or
     :class:`ModuleV3MultiGraphPipelineModelWithKVCache` (ModuleV3).
     ``ComponentModel`` types and unified spec-decode pipelines should override

@@ -19,20 +19,20 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
+from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
-    CompilationTimer,
+    GraphPipelineModel,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
 )
 
 from .batch_processor import MPNetBatchProcessor
@@ -57,11 +57,13 @@ class MPNetInputs(ModelInputs):
     attention_mask: Buffer
 
 
-class MPNetPipelineModel(PipelineModel[TextContext]):
+class MPNetPipelineModel(GraphPipelineModel[TextContext]):
     model_config_cls: ClassVar[type[MPNetConfig]] = MPNetConfig
     batch_processor_cls: ClassVar[type[MPNetBatchProcessor]] = (
         MPNetBatchProcessor
     )
+
+    model: Model
 
     def __init__(
         self,
@@ -95,17 +97,17 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
 
         return ModelOutputs(logits=model_outputs[0])
 
-    def load_model(self, session: InferenceSession) -> Model:
-        with CompilationTimer("model") as timer:
-            if self.adapter:
-                state_dict = self.adapter(dict(self.weights.items()))
-            else:
-                state_dict = {
-                    key: value.data() for key, value in self.weights.items()
-                }
-            config = MPNetConfig.initialize(self.pipeline_config)
-            graph = build_graph(config, state_dict)
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=state_dict)
+    def _create_model_config(self, state_dict: dict[str, Any]) -> MPNetConfig:
+        del state_dict
+        return MPNetConfig.initialize(self.pipeline_config)
 
-        return model
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        assert isinstance(model_config, MPNetConfig)
+        graph = build_graph(model_config, state_dict)
+        return graph, state_dict
