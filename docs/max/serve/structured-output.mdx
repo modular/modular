@@ -7,11 +7,10 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 MAX supports the generation of structured output using
-[llguidance](https://github.com/guidance-ai/llguidance) as a backend.
-[Structured output](https://handbook.modular.com/model-interaction/structured-outputs/),
-also sometimes referred to as constrained decoding, allows users to enforce
-specific output formats, ensuring structured and predictable responses from a
-model.
+[llguidance](https://github.com/guidance-ai/llguidance) as a backend. Structured
+output, also sometimes referred to as constrained decoding, allows users to
+enforce specific output formats, ensuring structured and predictable responses
+from a model.
 
 ## When to use structured output
 
@@ -21,6 +20,9 @@ should use a structured output `response_format`.
 If you are connecting a model to tools, functions, data, or other systems, then
 you should use [function calling](/max/serve/function-calling) instead of
 structured outputs.
+
+Learn more in the
+[LLM Inference Handbook](https://handbook.modular.com/model-interaction/structured-outputs/).
 
 ## How structured output works
 

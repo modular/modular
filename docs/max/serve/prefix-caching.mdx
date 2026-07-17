@@ -4,11 +4,10 @@ sidebar_label: Prefix caching
 description: Use prefix caching and PagedAttention when serving a model with the MAX CLI
 ---
 
-[Prefix caching](https://handbook.modular.com/inference-optimization/prefix-caching/)
-is a technique that caches the key-value (KV) cache of existing inference
-requests so that new queries can reuse the context encoded in the KV cache if
-they share the same prefix. This eliminates redundant computations and improves
-performance for workloads with repeated prefixes.
+Prefix caching is a technique that caches the key-value (KV) cache of existing
+inference requests so that new queries can reuse the context encoded in the KV
+cache if they share the same prefix. This eliminates redundant computations and
+improves performance for workloads with repeated prefixes.
 
 Prefix caching is enabled by default when serving a model with the [`max
 serve`](/max/cli/serve) CLI command. It can be disabled using the
@@ -129,3 +128,5 @@ benchmarking, see the
   use our benchmarking script to measure the performance of MAX.
 - [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
   Learn how to deploy MAX pipelines to cloud.
+- [Read the LLM Inference Handbook](https://handbook.modular.com/inference-optimization/prefix-caching/):
+  Learn more about prefix caching.

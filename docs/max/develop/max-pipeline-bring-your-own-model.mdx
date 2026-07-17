@@ -4,10 +4,9 @@ sidebar_label: Custom weights
 description: Serve a fine-tuned model checkpoint with MAX when the base architecture is already supported, with no architecture code required.
 ---
 
-This page covers serving a
-[fine-tune](https://handbook.modular.com/model-preparation/llm-fine-tuning/)
-built on an architecture MAX already supports. To bring up a new architecture,
-see the [model bring-up workflow](/max/develop/model-bringup-workflow).
+This page covers serving a fine-tune built on an architecture MAX already
+supports. To bring up a new architecture, see the
+[model bring-up workflow](/max/develop/model-bringup-workflow).
 
 When you fine-tune a Llama 3, Mistral, or Qwen model, the resulting checkpoint
 runs the same computation as the base: the same attention mechanism, the same
@@ -145,3 +144,5 @@ adapters while the server is running, see
   to serve task-specific, fine-tuned variants of LLMs.
 - [Quantization](/max/graph/quantize): An introduction to the MAX Graph
   quantization API.
+- [LLM fine-tuning](https://handbook.modular.com/model-preparation/llm-fine-tuning/):
+  Learn more in the LLM Inference Handbook.

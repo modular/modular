@@ -14,11 +14,10 @@ documentation.
 
 ## Understanding quantization
 
-[Quantization](https://handbook.modular.com/model-preparation/llm-quantization/)
-reduces the numeric precision of model weights to decrease memory usage and
-increase inference speed. For example, models originally trained with `float32`
-weights can be represented using lower precision types like `int8` or `int4`,
-reducing each scalar value from 32 bits to 8 or 4 bits.
+Quantization reduces the numeric precision of model weights to decrease memory
+usage and increase inference speed. For example, models originally trained with
+`float32` weights can be represented using lower precision types like `int8` or
+`int4`, reducing each scalar value from 32 bits to 8 or 4 bits.
 
 When used properly, quantization does not significantly affect the model
 accuracy. There are several different quantization encodings that provide
@@ -169,3 +168,7 @@ benefits of quantization without having to manage the low-level details.
 If you're building a custom architecture that loads FP8 or FP4 checkpoints, see
 [Map weight names](/max/develop/model-bringup-workflow#fp8-and-fp4-checkpoints)
 in the model bring-up workflow guide.
+
+Read the
+[LLM Inference Handbook](https://handbook.modular.com/model-preparation/llm-quantization/)
+to learn more about quantization.
