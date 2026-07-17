@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Signatures.h"
+#include "ClosureEmitter.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "MojoUtils.h"

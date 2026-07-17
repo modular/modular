@@ -312,21 +312,43 @@ closureParamCapturesIfClosure(ASTDecl *funcIfDirect,
   if (!closureName)
     return {};
 
-  // Look up the captures on the operation that owns the closure definition.
-  // For block arguments (closure parameters), this is the parent op of the
-  // block. For VarDeclOps (closure instances), this is the parent op of the
-  // block containing the VarDeclOp.
+  // Look up the captures registered for the closure. The captures live on the
+  // operation that owns the closure definition:
+  //  - closure instances and closure-typed function parameters register on the
+  //    enclosing function (the closure is called within that function's body);
+  //  - closure-typed struct parameters/fields register on the struct (the
+  //    closure is callable from any of the struct's methods).
+  // Only these two scopes are relevant, so consult exactly the nearest
+  // enclosing function and the nearest enclosing struct
   Value mlirValue = selfCValue.getMlirValue();
   if (!mlirValue)
     return {};
-  Operation *ownerOp = mlirValue.getParentBlock()->getParentOp();
-  ClosureParamCaptures *captures =
-      funcIfDirect->getShared().getClosureParamCapturesForOp(ownerOp);
-  if (!captures)
+  FnOp fnScope;
+  StructDeclOp structScope;
+  for (Operation *op = mlirValue.getParentBlock()->getParentOp();
+       op && !(fnScope && structScope); op = op->getParentOp()) {
+    if (auto fn = dyn_cast<FnOp>(op))
+      fnScope = fnScope ? fnScope : fn;
+    else if (auto structOp = dyn_cast<StructDeclOp>(op))
+      structScope = structScope ? structScope : structOp;
+  }
+
+  SharedState &shared = funcIfDirect->getShared();
+  auto lookup = [&](Operation *op) -> ArrayRef<ClosureParamCapture> {
+    if (ClosureParamCaptures *captures =
+            shared.getClosureParamCapturesForOp(op)) {
+      auto ptr = captures->find(closureName);
+      if (ptr != captures->end())
+        return ptr->second;
+    }
     return {};
-  auto ptr = captures->find(closureName);
-  if (ptr != captures->end())
-    return ptr->second;
+  };
+  if (fnScope)
+    if (ArrayRef<ClosureParamCapture> captures = lookup(fnScope);
+        !captures.empty())
+      return captures;
+  if (structScope)
+    return lookup(structScope);
   return {};
 }
 
@@ -404,10 +426,17 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     size_t contextualParams =
         signature.getInputParamTypes().size() -
         fnOp.getFuncTypeGenerator().getInputParamTypes().size();
+    const CallOperands &paramBindings = callable.paramBindings.getParameters();
     size_t paramIdx = contextualParams;
     for (const auto &[paramName, paramType] : implicitParams) {
-      TypedAttr paramValue = ParamDeclRefAttr::get(paramName, paramType);
-      inference.setInitialInferredValue(paramIdx, paramValue);
+      // These capture slots are inferred parameters, but a user is allowed to
+      // bind them explicitly by keyword. Only seed the captured value when the
+      // user hasn't already provided it
+      StringAttr slotName = signature.getParamName(paramIdx);
+      if (!slotName || !paramBindings.findKwArg(slotName)) {
+        TypedAttr paramValue = ParamDeclRefAttr::get(paramName, paramType);
+        inference.setInitialInferredValue(paramIdx, paramValue);
+      }
       ++paramIdx;
     }
   }
