@@ -168,3 +168,9 @@ def test_vardecl_store_handling(list: MyListInterior[Int]):
     var p: type_of(Pointer(to=list[]))
     p = Pointer(to=list[])
     _ = p
+
+def test_bad_io_concrete[attr: StringLiteral](ptr: UnsafePointer[Int, _]) -> Int:
+    var str = String()
+    # expected-error @+1 {{interior origin name must be a string literal, it cannot be parametric when used}}
+    ref r = ptr._get_ref_with_unsafe_interior_origin[attr](str)
+    return r

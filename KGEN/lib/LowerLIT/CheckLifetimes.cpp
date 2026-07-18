@@ -1680,6 +1680,18 @@ public:
     return originWithInteriorOrigins.count(origin);
   }
 
+  /// Return true if any diagnostics have been emitted for interior origins.
+  bool hadAnyErrors() const { return interiorOriginErrorEmitted.any(); }
+
+  /// Record that a diagnostic is going to be emitted for the given interior
+  /// origin ID. Return true if one has already been emitted.
+  bool markErrorEmittedForInteriorOrigin(size_t id) {
+    if (interiorOriginErrorEmitted.test(id))
+      return true;
+    interiorOriginErrorEmitted.set(id);
+    return false;
+  }
+
   // Given a mutation of an origin "o", invalidate any interior origins derived
   // from it, like "o[]" or "o.field[]".
   void invalidateOnMutation(TypedAttr mutatedOrigin,
@@ -1724,6 +1736,10 @@ private:
   /// inside of them. This allows us to filter out the majority of origins
   /// references that don't.
   SmallPtrSet<Attribute, 8> originWithInteriorOrigins;
+
+  /// Tracks whether we've already emitted a diagnostic for each interior
+  /// origin ID, to avoid redundant errors for the same origin.
+  BitVector interiorOriginErrorEmitted;
 };
 } // namespace
 
@@ -1800,6 +1816,7 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
   if (size_t numInteriorOrigins = getNumInteriorOrigins()) {
     for (auto &bitVector : interiorOriginInvalidationMap)
       bitVector.second.resize(numInteriorOrigins);
+    interiorOriginErrorEmitted.resize(numInteriorOrigins);
   }
 }
 
@@ -2165,9 +2182,23 @@ void UninitializedValueScan::establishInteriorOriginsFromDef(Type type,
   if (!callee || !callee.getDefinesInteriorOrigins())
     return;
 
-  for (InteriorOriginAttr origin : findInteriorOriginsInType(type))
+  for (InteriorOriginAttr origin : findInteriorOriginsInType(type)) {
+    // Interior origins being defined must not have a parametric user name.  We
+    // can't do our analysis before elaboration, so don't know what concrete
+    // parameter values will be substituted in.  Reject them so the user doesn't
+    // misunderstand our capabilities.
+    if (!isa<StringAttr>(origin.getUserName())) {
+      size_t interiorID = interiorOriginTracker.getInteriorOriginID(origin);
+      if (!interiorOriginTracker.markErrorEmittedForInteriorOrigin(interiorID))
+        op.emitError("interior origin name must be a string literal, it cannot "
+                     "be parametric when used");
+
+      return;
+    }
+
     interiorOriginTracker.markInteriorOriginLive(origin, liveness, op,
                                                  valueSet.domInfo);
+  }
 }
 
 void UninitializedValueScan::invalidateInteriorOriginsForOperand(
@@ -2448,8 +2479,8 @@ void UninitializedValueScan::checkInteriorOriginUsage(
 
   // If we know it isn't live because it has never been invalidated, or got
   // invalidated, then it is obviously not live.
-  auto &entry =
-      liveness.interior[interiorOriginTracker.getInteriorOriginID(interior)];
+  size_t interiorID = interiorOriginTracker.getInteriorOriginID(interior);
+  auto &entry = liveness.interior[interiorID];
   if (!entry.getInt()) {
     // If the interior origin is based on something else uninitialized, then
     // complain about the base of the access, not its internals.
@@ -2462,8 +2493,10 @@ void UninitializedValueScan::checkInteriorOriginUsage(
       }
     }
 
-    // TODO: If we get a lot of redundant diagnostics for invalidated origins,
-    // we can add a bitvector to UVS to squelch them.
+    // If we already emitted a diagnostic for this, don't do it again.
+    if (interiorOriginTracker.markErrorEmittedForInteriorOrigin(interiorID))
+      return;
+
     auto diag = emitError(op.getLoc());
     if (Operation *invalidatingOp = entry.getPointer()) {
       diag << "use of invalidated interior reference '" << getOriginStr()
@@ -2474,10 +2507,6 @@ void UninitializedValueScan::checkInteriorOriginUsage(
       diag << "use of a never-initialized interior reference '"
            << getOriginStr() << "'";
     }
-
-    // Mark the liveness sentinel as having an error diagnosed to make sure the
-    // pass fails.
-    valueSet.getValueInfo(0).hasErrorDiagnosed = true;
     return;
   }
 
@@ -2507,6 +2536,9 @@ void UninitializedValueScan::checkInteriorOriginUsage(
 
   // Otherwise, it is valid for some other reference but was reinitialized since
   // this reference was formed.
+  if (interiorOriginTracker.markErrorEmittedForInteriorOrigin(interiorID))
+    return;
+
   auto diag = emitError(op.getLoc(), "use of invalidated interior reference '");
   diag << getOriginStr() << "'";
   // Control-flow parents (e.g. the `if` at a branch join) can be the merged
@@ -2517,10 +2549,6 @@ void UninitializedValueScan::checkInteriorOriginUsage(
   else
     diag.attachNote(definingOp->getLoc())
         << "origin was defined inside this control structure";
-
-  // We mark the liveness sentinel as having an error diagnosed to make sure the
-  // pass fails.
-  valueSet.getValueInfo(0).hasErrorDiagnosed = true;
 }
 
 /// Check any unstructured origins that are accessed by the operation.
@@ -5195,10 +5223,12 @@ LogicalResult CheckLifetimes::processFunction(FunctionLikeOp func,
 
   // Walk #2: Scan the function and identify any uses of values that are not
   // defined, emitting diagnostics as we go.
+  bool hadErrors = false;
   {
     InteriorOriginTracker interiorOriginTracker(perThreadCache, func);
     // interiorOriginTracker.dump();
     UninitializedValueScan(valueSet, interiorOriginTracker).scanFunction(func);
+    hadErrors |= interiorOriginTracker.hadAnyErrors();
   }
 
   // Walk #3: Scan the function bottom-up, inserting destructor calls, inserting
@@ -5244,9 +5274,10 @@ LogicalResult CheckLifetimes::processFunction(FunctionLikeOp func,
   }
 
   // Return failure if we generated errors for any of the tracked values.
-  return failure(llvm::any_of(valueSet.getValueInfos(), [&](ValueInfo &info) {
+  hadErrors |= llvm::any_of(valueSet.getValueInfos(), [&](ValueInfo &info) {
     return info.hasErrorDiagnosed;
-  }));
+  });
+  return failure(hadErrors);
 }
 
 DebugInfo::DISubprogramAttr FunctionLikeOp::getSubprogramScope() const {
