@@ -707,6 +707,7 @@ struct Pointer[
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
+    @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __getitem__(self) -> ref[Self.origin, Self.address_space] Self.T:
         """Return a reference to the underlying data.
@@ -720,6 +721,7 @@ struct Pointer[
             )
         )
 
+    @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __getitem__[
         I: Indexer
@@ -745,6 +747,7 @@ struct Pointer[
         """
         return self.unsafe_offset(unsafe_offset)[]
 
+    @__unsafe_nested_origins_read_only
     @doc_hidden
     @always_inline("nodebug")
     def __getitem__[
@@ -764,6 +767,79 @@ struct Pointer[
             An offset reference.
         """
         return self[unsafe_offset=offset]
+
+    @__defines_interior_origins
+    @always_inline
+    def _get_ref_with_unsafe_interior_origin[
+        name: StringLiteral,
+        base_origin: Origin,
+    ](
+        self,
+    ) -> ref[
+        base_origin._get_owned_interior[name], Self.address_space
+    ] Self.T where Self._is_unsafe:
+        """Returns a reference to the pointee with an interior origin.
+
+        The returned reference uses an interior sub-origin derived from
+        `base_origin` instead of this pointer's origin. Collections use this to
+        vend element references whose lifetimes are tracked against the owning
+        value.
+
+        Parameters:
+            name: A compile-time string that identifies the interior object.
+            base_origin: The origin of the value that owns the interior storage.
+        """
+        comptime res_origin = base_origin._get_owned_interior[name]
+        comptime ref_type = __mlir_type[
+            `!lit.ref<`,
+            Self.T,
+            `, `,
+            res_origin._mlir_origin,
+            `, `,
+            Self.address_space._value._mlir_value,
+            `>`,
+        ]
+        return __get_litref_as_mvalue(
+            __mlir_op.`lit.ref.from_pointer`[_type=ref_type](self._mlir_value)
+        )
+
+    @__defines_interior_origins
+    @always_inline
+    def _get_ref_with_unsafe_interior_origin[
+        name: StringLiteral,
+    ](self, ref base: Some[AnyType]) -> ref[
+        origin_of(base)._get_owned_interior[name], Self.address_space
+    ] Self.T where Self._is_unsafe:
+        """Returns a reference to the pointee with an interior origin.
+
+        The returned reference uses an interior sub-origin derived from
+        `base` instead of this pointer's origin. Collections use this to vend
+        element references whose lifetimes are tracked against the owning
+        value.
+
+        Parameters:
+            name: A compile-time string that identifies the interior object.
+
+        Args:
+            base: The value whose origin the interior reference is derived
+                from.
+
+        Returns:
+            A reference to this pointer's pointee with the interior origin.
+        """
+        comptime res_origin = origin_of(base)._get_owned_interior[name]
+        comptime ref_type = __mlir_type[
+            `!lit.ref<`,
+            Self.T,
+            `, `,
+            res_origin._mlir_origin,
+            `, `,
+            Self.address_space._value._mlir_value,
+            `>`,
+        ]
+        return __get_litref_as_mvalue(
+            __mlir_op.`lit.ref.from_pointer`[_type=ref_type](self._mlir_value)
+        )
 
     @doc_hidden
     @always_inline("nodebug")

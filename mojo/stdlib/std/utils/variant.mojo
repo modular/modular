@@ -545,8 +545,12 @@ struct Variant[*Ts: Movable](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
+    @__defines_interior_origins
+    @__unsafe_nested_origins_read_only
     @always_inline
-    def __getitem_param__[T: AnyType](ref self) -> ref[self] T:
+    def __getitem_param__[
+        T: AnyType
+    ](ref self,) -> ref[origin_of(self)._get_owned_interior["value"]] T:
         """Get the value out of the variant as a type-checked type.
 
         This explicitly check that your value is of that type!
@@ -565,7 +569,9 @@ struct Variant[*Ts: Movable](
         if not self.isa[T]():
             abort("get: wrong variant type", location=call_location())
 
-        return self.unsafe_get[T]()
+        return self._storage.unsafe_ptr[
+            T
+        ]()._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
 
     @always_inline
     def __eq__(

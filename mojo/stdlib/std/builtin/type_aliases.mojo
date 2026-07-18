@@ -245,3 +245,24 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
     Parameters:
         element: The origin to check if it is a subset of Self.
     """
+
+    comptime _get_owned_interior[name: StringLiteral] = Origin[
+        _mlir_origin=__mlir_attr[
+            `#lit.interior.origin<`,
+            Self._mlir_origin,
+            `, `,
+            name.value,
+            `> : `,
+            type_of(Self._mlir_origin),
+        ]
+    ]()
+    """Returns an interior sub-origin of this origin.
+
+    Interior origins are an experimental feature that name storage that is owned
+    by a container, usually reached through a pointer indirection or inlined
+    into it. The base origin governs invalidation of the interior origin.
+
+    Parameters:
+        name: A compile-time string that identifies the interior object in
+            diagnostics and invalidation tracking.
+    """
