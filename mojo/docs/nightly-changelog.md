@@ -360,6 +360,7 @@ This version is still a work in progress.
   ```
 
 ## Library stabilizations
+<!-- rumdl-disable MD013 -->
 
 - `trait ImplicitlyDeletable`
 - `trait Movable`
@@ -370,14 +371,20 @@ This version is still a work in progress.
   - `def __init__(out self)`
   - `def __init__(out self, *, capacity: Int)`
   - `def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):`
+  - `def __init__(out self, *, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable):`
   - `def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):`
+  - `def reserve(mut self, capacity: Int):`
+  - `def resize(mut self, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):`
+  - `def __getitem__[origin: Origin, //](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:`
+  - `def __init__(out self, *, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable):`
+  - `def __iadd__(mut self, var other: Self, /) where conforms_to(Self.T, Copyable):`
 
-  - ```def __getitem__[
-        origin: Origin, //
-      ](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:
-    ```
-
+- Bool
 - Span
+  - `def __init__(out self):`
+  - `def __init__(other: Span, out self: ImmSpan[other.T, other.origin]):`
+
+<!-- rumdl-enable MD013 -->
 
 ## Library changes
 
@@ -437,6 +444,8 @@ This version is still a work in progress.
   `ImplicitlyDeletable`. Consuming iteration (`for entry in dict^` and
   `take_items()`) still requires `ImplicitlyDeletable`, since it drops the
   entries it does not yield.
+
+- `Span` has moved from `std.memory.span` to `std.collections.span`.
 
 - The container backing variadic `**kwargs` has been renamed from
   `OwnedKwargsDict` to `StringDict`. `StringDict` no longer

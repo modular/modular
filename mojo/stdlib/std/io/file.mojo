@@ -40,7 +40,7 @@ from std.sys import size_of
 from std.sys._libc_errno import ErrNo, get_errno
 from std.sys.info import platform_map
 
-from std.memory import Span
+from std.collections import Span
 
 # ===----------------------------------------------------------------------=== #
 # open() syscall flags

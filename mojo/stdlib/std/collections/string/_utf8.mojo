@@ -18,7 +18,7 @@ from std.sys import simd_width_of, simd_byte_width
 from std.sys.intrinsics import likely
 
 from std.bit import count_leading_zeros
-from std.memory import Span
+from std.collections import Span
 
 # ===-----------------------------------------------------------------------===#
 # Validate UTF-8

@@ -13,7 +13,7 @@
 
 from std.hashlib._ahash import AHasher
 from std.hashlib.hasher import Hasher
-from std.memory import Span
+from std.collections import Span
 from std.pathlib import Path
 
 from std.testing import assert_equal

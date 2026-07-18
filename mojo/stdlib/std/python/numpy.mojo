@@ -27,7 +27,8 @@ supported. This targets the common case of handing computed numeric data to a
 library such as `matplotlib`.
 """
 
-from std.memory import Span, unsafe_memcpy
+from std.memory import unsafe_memcpy
+from std.collections import Span
 
 from .python import Python
 from .python_object import PythonObject

@@ -13,7 +13,7 @@
 
 from std.format import Writable, Writer
 from std.format._utils import _hex_digits_to_hex_chars, _write_hex
-from std.memory import Span
+from std.collections import Span
 from std.memory.memory import memset_zero
 from std.testing import assert_equal, TestSuite
 

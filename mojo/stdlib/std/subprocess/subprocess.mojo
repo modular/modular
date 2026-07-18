@@ -24,7 +24,7 @@ from std.sys._libc import FILE_ptr, pclose, popen
 from std.ffi import c_char
 from std.sys.info import CompilationTarget
 
-from std.memory import Span
+from std.collections import Span
 
 
 struct _POpenHandle:

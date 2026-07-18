@@ -15,7 +15,7 @@
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.format_int import _write_int
 from std.reflection import call_location
-from std.collections import check_bounds
+from std.collections import check_bounds, Span
 from std.collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -49,7 +49,6 @@ from std.sys.intrinsics import likely, unlikely
 from std.bit import count_trailing_zeros
 from std.bit.mask import is_negative, splat
 from std.memory import (
-    Span,
     memcmp,
     unsafe_memcpy,
     pack_bits,

@@ -28,7 +28,7 @@ from std.gpu import (
 )
 from std.gpu.primitives import warp
 from std.gpu.memory import AddressSpace, external_memory
-from std.memory import Span
+from std.collections import Span
 
 from extensibility import InputTensor, OutputTensor
 

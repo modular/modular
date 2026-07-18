@@ -27,7 +27,8 @@ from std.sys.defines import get_defined_int
 from std.ffi import CStringSlice
 
 from std.bit import byte_swap
-from std.memory import Span, bitcast, unsafe_memcpy
+from std.memory import bitcast, unsafe_memcpy
+from std.collections import Span
 
 
 def constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():

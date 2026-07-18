@@ -22,7 +22,7 @@ from std.collections.string._unicode_lookups import (
     uppercase_mapping3,
 )
 
-from std.memory import Span
+from std.collections import Span
 
 
 def _uppercase_mapping_index(rune: Codepoint) -> Int:

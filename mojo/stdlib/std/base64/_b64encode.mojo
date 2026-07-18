@@ -28,7 +28,8 @@ from std.bit import rotate_bits_right
 from std.math import iota, ceildiv
 from std.sys import llvm_intrinsic, simd_byte_width
 
-from std.memory import Span, bitcast, unsafe_memcpy
+from std.memory import bitcast, unsafe_memcpy
+from std.collections import Span
 
 from std.utils import IndexList
 

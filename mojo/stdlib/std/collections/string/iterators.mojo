@@ -25,7 +25,7 @@ from std.collections.string._grapheme_break import (
     _reset_grapheme_state_to_other,
     GBP_PREPEND,
 )
-from std.memory.span import _SpanIter
+from std.collections.span import _SpanIter
 
 
 struct CodepointSliceIter[

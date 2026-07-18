@@ -436,6 +436,7 @@ struct List[T: Movable, /](
         self._capacity = capacity
         self._annotate_new()
 
+    @stable(since="1.0")
     def __init__(
         out self, *, length: Int, fill: Self.T
     ) where conforms_to(Self.T, Copyable):
@@ -681,7 +682,10 @@ struct List[T: Movable, /](
         result.extend(other^)
         return result^
 
-    def __iadd__(mut self, var other: Self) where conforms_to(Self.T, Copyable):
+    @stable(since="1.0")
+    def __iadd__(
+        mut self, var other: Self, /
+    ) where conforms_to(Self.T, Copyable):
         """Appends the elements of other into self.
 
         Args:
@@ -1103,27 +1107,29 @@ struct List[T: Movable, /](
         self._annotate_shrink(self._len + 1)
         return ret_val^
 
-    def reserve(mut self, new_capacity: Int):
+    @stable(since="1.0")
+    def reserve(mut self, capacity: Int):
         """Reserves the requested capacity.
 
         Args:
-            new_capacity: The new capacity.
+            capacity: The new capacity.
 
         Notes:
             If the current capacity is greater or equal, this is a no-op.
             Otherwise, the storage is reallocated and the date is moved.
         """
-        if self._capacity >= new_capacity:
+        if self._capacity >= capacity:
             return
-        self._realloc(new_capacity)
+        self._realloc(capacity)
 
+    @stable(since="1.0")
     def resize(
-        mut self, new_length: Int, fill: Self.T
+        mut self, length: Int, fill: Self.T
     ) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):
         """Resizes the list to the given new length.
 
         Args:
-            new_length: The new length.
+            length: The new length.
             fill: The value to use to populate new elements.
 
         Notes:
@@ -1141,10 +1147,10 @@ struct List[T: Movable, /](
         print(list)                  # ['z', 'y', 'x', 'v', 'v', 'v']
         ```
         """
-        if new_length <= self._len:
-            self.shrink(new_length)
+        if length <= self._len:
+            self.shrink(length)
         else:
-            self._unchecked_grow(new_length, fill)
+            self._unchecked_grow(length, fill)
 
     def _unchecked_grow(
         mut self, new_length: Int, fill: Self.T

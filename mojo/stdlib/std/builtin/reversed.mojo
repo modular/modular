@@ -23,7 +23,7 @@ from std.collections.list import _ListIter
 from std.collections.inline_array import _InlineArrayIter
 from std.hashlib import Hasher
 
-from std.memory.span import Span, _SpanIter
+from std.collections.span import Span, _SpanIter
 
 # ===----------------------------------------------------------------------=== #
 #  Reversible

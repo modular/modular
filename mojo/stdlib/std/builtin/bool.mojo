@@ -62,6 +62,7 @@ trait Boolable:
 # ===----------------------------------------------------------------------=== #
 
 
+@stable(since="1.0")
 @lldb_formatter_wrapping_type
 struct Bool(
     Boolable,

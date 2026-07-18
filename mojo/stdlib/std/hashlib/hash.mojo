@@ -26,7 +26,7 @@ There are a few main tools in this module:
 """
 
 from std.builtin.constrained import _field_conforms_to_error
-from std.memory import Span
+from std.collections import Span
 from std.reflection import reflect
 
 from .hasher import Hasher, default_hasher

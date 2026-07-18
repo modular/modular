@@ -24,7 +24,14 @@ default namespace that makes Mojo code immediately usable without explicit
 imports.
 """
 
-from std.collections import Dict, InlineArray, KeyElement, List, Optional
+from std.collections import (
+    Dict,
+    InlineArray,
+    KeyElement,
+    List,
+    Optional,
+    Span,
+)
 from std.collections.string import (
     Codepoint,
     StaticString,
@@ -183,9 +190,6 @@ from std.memory import (
     ImmPointer,
     MutPointer,
     Pointer,
-    ImmSpan,
-    MutSpan,
-    Span,
     ImmUnsafePointer,
     ImmutUnsafePointer,
     MutUnsafePointer,

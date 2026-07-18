@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import InlineArray, List
+from std.collections import InlineArray, List, Span
 from std.sys import size_of
 
 from std.gpu import global_idx, thread_idx
@@ -36,7 +36,7 @@ from _device_context_hal import (
     HostBuffer,
 )
 from std.atomic import Atomic
-from std.memory import alloc, AddressSpace, OpaquePointer, Span, UnsafePointer
+from std.memory import alloc, AddressSpace, OpaquePointer, UnsafePointer
 from std.testing import assert_equal, assert_true
 from std.gpu.host.dim import Dim
 from _hal.execution_config import (

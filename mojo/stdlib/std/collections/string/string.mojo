@@ -13,7 +13,7 @@
 """Implements the core `String` type and related utilities."""
 
 from std.builtin.globals import global_constant
-from std.collections import KeyElement
+from std.collections import KeyElement, Span
 from std.collections.string import CodepointsIter
 from std.collections.string._parsing_numbers.parsing_floats import _atof
 from std.collections.string._utf8 import UTF8Chunks, _is_valid_utf8

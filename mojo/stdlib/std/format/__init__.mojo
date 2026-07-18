@@ -74,7 +74,7 @@ print(repr(p)) # Point: x=1.5, y=2.7
 """
 
 from std.builtin.constrained import _field_conforms_to_error
-from std.memory import Span
+from std.collections import Span
 from std.reflection import reflect
 from std.reflection.type_info import _unqualified_type_name
 

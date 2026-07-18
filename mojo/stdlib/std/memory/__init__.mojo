@@ -51,7 +51,6 @@ from .pointer import (
     MutPointer,
     Pointer,
 )
-from .span import ImmutSpan, ImmSpan, MutSpan, Span
 from .unsafe import bitcast, pack_bits
 from .unsafe_pointer import (
     alloc,
