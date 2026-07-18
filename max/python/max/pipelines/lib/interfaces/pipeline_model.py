@@ -992,16 +992,13 @@ class ModuleV3PipelineModelWithKVCache(
         state_dict = self._load_state_dict()
         model_config = self._create_model_config(state_dict)
         self._init_distributed_runtime(model_config)
-
-        with CompilationTimer("model") as timer:
-            module_default_dtype = self._module_default_dtype(
-                state_dict, model_config
-            )
-            with F.lazy(), default_dtype(module_default_dtype):
-                nn_model = self._instantiate_module(model_config)
-            compile_input_types = self._get_compile_input_types(model_config)
-            timer.mark_build_complete()
-            return nn_model.compile(*compile_input_types, weights=state_dict)
+        module_default_dtype = self._module_default_dtype(
+            state_dict, model_config
+        )
+        with F.lazy(), default_dtype(module_default_dtype):
+            nn_model = self._instantiate_module(model_config)
+        compile_input_types = self._get_compile_input_types(model_config)
+        return nn_model.compile(*compile_input_types, weights=state_dict)
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         """Builds model config from ``state_dict``."""
@@ -1070,14 +1067,12 @@ class ModuleV3MultiGraphPipelineModelWithKVCache(
         model_config = self._create_model_config(state_dict)
         self._init_distributed_runtime(model_config)
 
-        with CompilationTimer("vision + language model") as timer:
-            vision_model = self._compile_vision_model(
-                model_config, self._vision_weights_dict
-            )
-            language_model = self._compile_language_model(
-                model_config, self._language_weights_dict
-            )
-            timer.mark_build_complete()
+        vision_model = self._compile_vision_model(
+            model_config, self._vision_weights_dict
+        )
+        language_model = self._compile_language_model(
+            model_config, self._language_weights_dict
+        )
 
         self._wire_batch_processor(vision_model, model_config)
         return vision_model, language_model
