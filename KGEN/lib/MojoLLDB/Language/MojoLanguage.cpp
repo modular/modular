@@ -579,7 +579,8 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSummary(
       mojoCategorySP, stringSliceSummaryProvider,
       "memory::span::Span[Byte] summary provider (flattened StringSlice)",
-      R"(!lit.struct<(@std::)?@memory::@span::@.Span\[.*ui8.*>)", summaryFlags,
+      R"(!lit.struct<(@std::)?@collections::@span::@.Span\[.*ui8.*>)",
+      summaryFlags,
       /*regex=*/true);
 
   summaryFlags.SetDontShowChildren(false);
