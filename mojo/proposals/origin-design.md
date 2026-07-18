@@ -534,6 +534,82 @@ is why they start with double underscores. Similarly, the utility methods on
 `Origin` and `Pointer` start with underscore to indicate they are still
 evolving rapidly.
 
+### How interior origins work
+
+The Mojo compiler already tracks stack value liveness, including whether
+individual fields are still valid after partial moves:
+
+```mojo
+var p = MyPair("foo", "bar")
+process(p.first^)  # Transfers the first element.
+
+# Error: `p.first` is not valid here.
+use(p.first)
+```
+
+Interior references add a parallel idea for storage that is not a struct field
+you access directly, but lives behind a container. An **interior origin** pairs
+the base value with a compile-time tag (for example `"element"`) that names a
+logical slot inside it. The compiler treats that interior origin as **live**
+when an accessor marked `@__defines_interior_origins` returns it, and as
+**invalidated** when something mutates the base origin the interior hangs off
+of.
+
+Here is a simplified `List` sketch showing how a container wires this up:
+
+```mojo
+struct MyList[T: AnyType]:
+    def __init__(out self): ...
+    def __len__(self) -> Int: ...
+    def append(mut self, var elt: T): ...
+
+    @__defines_interior_origins
+    def __getitem__(
+        ref self, idx: Int
+    ) -> ref[self.data._get_ref_with_unsafe_interior_origin["element"](self)] Self.T:
+        ...
+```
+
+The initializer, `__len__`, and `append` methods are ordinary; `__getitem__` is
+where the interior reference is introduced. The return type uses
+`_get_ref_with_unsafe_interior_origin` to rebase the element reference onto an
+interior origin derived from `self`. The `@__defines_interior_origins`
+annotation tells the compiler that this call **creates** a new, valid interior
+origin - promising that it can be safely dereferenced when the method returns.
+
+Typical client code then looks like this:
+
+```mojo
+var list: MyList = [1, 2, 3]
+ref first_ref = list[0]
+# OK: the interior origin was just defined by `__getitem__`.
+first_ref = 10
+
+# Read-only use of `list`; does not invalidate the interior origin.
+print(len(list))
+
+# Still OK: neither `print` nor `__len__` mutates the list buffer.
+first_ref += 1
+
+# `append` mutates `list` and may reallocate, so the interior origin is
+# invalidated here.
+list.append(4)
+
+# Compile-time error: use of invalidated interior reference `list["element"]`.
+use(first_ref)
+```
+
+In this example, `list[0]` defines a live interior origin named
+`list_origin["element"]`. The compiler tracks its validity alongside ordinary
+liveness state—much like the invalid `p.first` use above, but keyed on the
+interior tag instead of a field offset. Any operation that mutates the base
+origin (`list_origin`, which `list.append` does here) may invalidate the
+interior origin, and later uses are rejected with a diagnostic that points at
+the invalidating call.
+
+Note that methods like `__len__` and `print` in the example do not invalidate
+the origin: this is because the compiler knows they cannot mutate `list`.
+
 ### Interior origins and flow sensitivity
 
 Invalidation is **flow-sensitive**: the compiler tracks, at each point in your
@@ -626,12 +702,12 @@ tracking. Sibling fields of a struct have distinct origins, and interior tags
 are scoped under the path to the container that owns the storage.
 
 ```mojo
-struct Pair:
+struct ListPair:
     var left: List[Int]
     var right: List[Int]
 
 def field_scoped_invalidation():
-    var pair = Pair([1], [10])
+    var pair = ListPair([1], [10])
     ref left_elt = pair.left[0]
     ref right_elt = pair.right[0]
 
@@ -656,3 +732,94 @@ be live at the current program point. That combination is what makes interior
 references practical for standard containers like `List` and `Variant` without
  giving up the ASAP destruction and borrow checking guarantees described
  earlier in this document.
+
+### Future direction: Selective invalidation
+
+Today, interior-origin invalidation is intentionally **conservative**. If a call
+might mutate an origin, the compiler invalidates every interior reference
+derived from that origin. The only way to opt-out of this behavior is to inform
+the compiler that the function is actually read-only using the (temporary hack)
+`@__unsafe_nested_origins_read_only`. However, this hack is only safe to use if
+the function is actually read-only - putting this on a method that mutates
+something else will cause problems.
+
+This is suboptimal when you have a mutating method that doesn't invalidate the
+reference. Consider an expanded version of ListPair with some methods:
+
+```mojo
+struct ListPair:
+    var left: List[Int]
+    var right: List[Int]
+
+    def append_left(mut self, val: Int):
+        self.left.append(val)
+
+    def append_right(mut self, val: Int):
+        self.right.append(val)
+```
+
+A human reader knows `append_left` cannot reallocate `right`, but the compiler
+currently sees a `mut self` call and may treat it as mutating all of `self`.
+That can invalidate interior references into **both** lists even when only one
+buffer changed.
+
+This issue isn't specific to interior origins, same issue appears in smaller
+examples:
+
+```mojo
+struct Pair:
+    var first: Int
+    var second: Int
+
+    def bump_first(mut self):
+        self.first += 1
+```
+
+Field-sensitive origin tracking already keeps `self.first` and `self.second`
+distinct, but without richer method annotations a `mut self` helper can still
+force broader invalidation than the implementation requires.
+
+The planned direction is **selective invalidation**: e.g. a decorator
+that declare which origins or fields a method may mutate,
+so the checker invalidates only the interior references that could actually be
+affected. The string tag on `#lit.interior.origin` (`"element"`, `"value"`,
+and so on) is reserved partly for this purpose—future APIs may group interior
+slots into explicit invalidation sets rather than treating every mutation as
+touching every interior derived from the receiver.
+
+Until that lands, library authors should prefer mutating the specific field
+(`self.left.append`) when preserving sibling interior references matters, and
+use `@__unsafe_nested_origins_read_only` on accessors that only read through
+interior references without invalidating them.
+
+### Cautions and limitations
+
+Interior origins are an **experimental** feature. Decorator names, underscore
+prefixed helpers like `_get_ref_with_unsafe_interior_origin` and other details
+will continue to evolve.
+
+The model applies cleanly when all of the following hold:
+
+- The base value **uniquely owns** the storage the interior reference points
+  into. Shared or reference-counted handles (`Arc`-style types, interior
+  pointers into aliased buffers) need a different story; blindly applying
+  today's rules would either be unsound or reject too much valid code.
+- **Mutation of the owning value** (or the field path that owns the storage) is
+  a reliable signal that existing interior references may be stale. Containers
+  with in-place updates that preserve pointer stability may eventually need
+  narrower invalidation metadata; until then, assume reallocation or overwrite
+  is possible.
+- The accessor that returns the interior reference is correctly marked with
+  `@__defines_interior_origins`. If it is not, the compiler cannot tie the
+  reference back to a tracked interior origin.
+
+Interior origins are an extension of Mojo's existing lifetime tracking behavior.
+They do not help with untracked pointers, manual origin casts used
+unsafely, or code that stores raw addresses past the lifetime of the owning
+container. They also do not solve cross-task or GPU lifetime problems; those
+remain outside the current compile-time dataflow model.
+
+Expect the first wave of stdlib adoption to focus on owning containers such as
+`List` and `Variant`. Broader coverage, selective invalidation for `mut self`
+methods, and shared-ownership containers will follow once the core rules are
+proven in practice.
