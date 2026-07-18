@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides numerically stable softmax kernels for CPU and GPU, including fused and online variants."""
 
 from std.math import align_down, ceildiv, exp, exp2, log
 from std.math.uutils import umod, ufloordiv, udivmod
@@ -89,6 +90,20 @@ def reduce_add_simd[
     """This functions adds val to either the scalar value or the vector value
     depending on the step_simd_width. This is useful when the simd_width varies
     between iterations as in vectorize.
+
+    Parameters:
+        simd_width: The full SIMD width of the `vector` accumulator.
+        step_simd_width: The width of the current step's `val`; when 1,
+            `val` is accumulated into `scalar`, otherwise into `vector`.
+        dtype: The element type of the accumulators and `val`.
+
+    Args:
+        scalar: Scalar accumulator for single-element steps; updated in
+            place when `step_simd_width` is 1.
+        vector: SIMD accumulator for full-width steps; updated in place
+            when `step_simd_width` matches `simd_width`.
+        val: The partial reduction value to accumulate into either
+            `scalar` or `vector`.
     """
 
     comptime if step_simd_width == 1:
@@ -102,21 +117,55 @@ def reduce_add_simd[
 
 @always_inline
 def sub(x: SIMD, y: type_of(x)) -> type_of(x):
+    """Returns the element-wise difference `x - y`.
+
+    Args:
+        x: The minuend SIMD vector.
+        y: The subtrahend SIMD vector; must have the same type as `x`.
+
+    Returns:
+        A SIMD vector with each element equal to `x[i] - y[i]`.
+    """
     return x - y
 
 
 @always_inline
 def mul(x: SIMD, y: type_of(x)) -> type_of(x):
+    """Returns the element-wise product `x * y`.
+
+    Args:
+        x: The first SIMD vector multiplicand.
+        y: The second SIMD vector multiplicand; must have the same type as `x`.
+
+    Returns:
+        A SIMD vector with each element equal to `x[i] * y[i]`.
+    """
     return x * y
 
 
 @always_inline
 def identity(x: SIMD) -> type_of(x):
+    """Returns the input SIMD vector unchanged.
+
+    Args:
+        x: The input SIMD vector.
+
+    Returns:
+        `x` unmodified.
+    """
     return x
 
 
 @always_inline
 def reciprocal(x: SIMD) -> type_of(x):
+    """Returns the element-wise reciprocal `1 / x`.
+
+    Args:
+        x: The input SIMD vector.
+
+    Returns:
+        A SIMD vector with each element equal to `1 / x[i]`.
+    """
     return 1 / x
 
 
@@ -139,10 +188,10 @@ def _exp2_concrete(x: SIMD) -> type_of(x):
     return exp2(x)
 
 
-# Packed f32x2 FMA/add (`fma.rn.ftz.f32x2` / `add.ftz.f32x2`).  Mojo does not
+# Packed f32x2 FMA/add (`fma.rn.ftz.f32x2` / `add.ftz.f32x2`). Mojo does not
 # fold a SIMD[f32,2] mul+add into one FFMA2, so the SM100 softmax folds the
 # scale and pairs the row-sum via these explicit PTX ops -- same idiom the dense
-# FA4 path uses (sm100/attention_utils.mojo).  Gated comptime-OFF for the
+# FA4 path uses (sm100/attention_utils.mojo). Gated comptime-OFF for the
 # generic helpers below; only the MSA single-tile path opts in.
 @always_inline
 def _fma_f32x2(
@@ -593,6 +642,25 @@ def logsoftmax[
     axis: Int,
     context: Optional[DeviceContext] = None,
 ) raises:
+    """Computes log-softmax over the given axis using a caller-supplied input lambda.
+
+    Delegates to `softmax` with `logsoftmax=True`, which applies an elementwise
+    `log` to the normalized outputs.
+
+    Parameters:
+        dtype: The dtype of the input and output buffers.
+        simd_width: The simd_width to use in vectorization.
+        rank: The rank of the input and output tensors.
+        input_fn: The elementwise input lambda.
+        target: The target device ("cpu" or "gpu").
+        has_prologue_fusion: Whether the input lambda supports prologue fusion.
+
+    Args:
+        shape: The shape of the output tensor.
+        output: The output buffer in which to store the log-softmax values.
+        axis: The axis along which to compute the log-softmax.
+        context: Optional device context for GPU execution.
+    """
     softmax[
         dtype,
         simd_width,
@@ -615,6 +683,24 @@ def logsoftmax[
     axis: Int,
     context: Optional[DeviceContext] = None,
 ) raises:
+    """Computes log-softmax over the given axis of `input` and stores the result in `output`.
+
+    Wraps `input` with a load lambda and delegates to `softmax` with
+    `logsoftmax=True`.
+
+    Parameters:
+        dtype: The dtype of the input and output buffers.
+        simd_width: The simd_width to use in vectorization.
+        rank: The rank of the input and output tensors.
+        target: The target device ("cpu" or "gpu").
+
+    Args:
+        input: The input buffer used to compute the log-softmax.
+        output: The output buffer in which to store the log-softmax values.
+        axis: The axis along which to compute the log-softmax.
+        context: Optional device context for GPU execution.
+    """
+
     @parameter
     @always_inline
     def input_fn[_simd_width: Int](coords: Coord) -> SIMD[dtype, _simd_width]:
@@ -708,6 +794,22 @@ def softmax[
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
 ) raises:
+    """Computes softmax over the given axis of `input` and stores the result in `output`.
+
+    Wraps `input` with a load lambda and delegates to the main `softmax` entry
+    point.
+
+    Parameters:
+        dtype: The dtype of the input and output buffers.
+        simd_width: The simd_width to use in vectorization.
+        rank: The rank of the input and output tensors.
+
+    Args:
+        input: The input buffer used to compute the softmax.
+        output: The output buffer in which to store the softmax values.
+        axis: The axis along which to compute the softmax.
+    """
+
     @parameter
     @always_inline
     def input_fn[_simd_width: Int](coords: Coord) -> SIMD[dtype, _simd_width]:
@@ -744,6 +846,31 @@ def softmax_kernel[
     ],
     sink_weights: TileTensor[sink_type, SinkWeightsLayoutType, ImmutAnyOrigin],
 ):
+    """GPU kernel implementing the three-pass softmax with optional sink-attention and logsoftmax variants.
+
+    Each block reduces one row: step 1 finds the row max (optionally clamped
+    with a per-head sink weight), step 2 computes `exp(x - max)` and the row
+    sum, and step 3 normalizes (and applies `log` when `logsoftmax` is set).
+
+    Parameters:
+        BLOCK_SIZE: The number of threads per block.
+        input_fn: The elementwise input lambda.
+        dtype: The dtype of the input and output buffers.
+        sink_type: The dtype of the sink weights.
+        rank: The rank of the input and output tensors.
+        OutputLayoutType: The layout type of the output tensor.
+        output_origin: The origin of the output tensor.
+        OutputStorage: The storage type of the output tensor.
+        SinkWeightsLayoutType: The layout type of the sink weights tensor.
+        accum_type: The accumulation dtype (defaults to the accumulation type for `dtype`).
+        sink: Whether to apply sink-attention bias to the row max.
+        logsoftmax: Enable to apply elementwise log() to outputs after softmax.
+
+    Args:
+        shape: The shape of the tensor as an IndexList.
+        output: The output buffer in which to store the softmax values.
+        sink_weights: Per-head sink weights used when `sink` is True.
+    """
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
     comptime assert (
         accum_type.is_floating_point()
@@ -1113,6 +1240,26 @@ def softmax[
     axis: Int,
     context: Optional[DeviceContext] = None,
 ) raises:
+    """Dispatches softmax (or logsoftmax) to the CPU or GPU target.
+
+    Selects the appropriate CPU or GPU implementation based on `target` and
+    traces the operation. Exits early when the tensor is empty.
+
+    Parameters:
+        dtype: The dtype of the input and output buffers.
+        simd_width: The simd_width to use in vectorization.
+        rank: The rank of the input and output tensors.
+        input_fn: The elementwise input lambda.
+        target: The target device ("cpu" or "gpu").
+        logsoftmax: Enable to apply elementwise log() to outputs after softmax.
+        has_prologue_fusion: Whether the input lambda supports prologue fusion.
+
+    Args:
+        shape: The shape of the output tensor.
+        output: The output buffer in which to store the softmax values.
+        axis: The axis along which to compute the softmax.
+        context: Optional device context for GPU execution.
+    """
     var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
 
     @parameter
@@ -2324,7 +2471,7 @@ def _rowmax_online_softmax[
             Int(num_rowwise_lanes)
         ](score_frag_rowmax[col_tile])
 
-        # Softmax numerator based on mma results.  fold_scale_fma folds the
+        # Softmax numerator based on mma results. fold_scale_fma folds the
         # `*scale_log2e` (dropped from the mask) and the `-m*scale_log2e`
         # subtract into one FFMA2 per pair, matching the MM-Sparse ref
         # scale_subtract_rowmax; the score is RAW S, the rowmax is over raw S.
@@ -2404,7 +2551,7 @@ def _rowsum[
 
     # packed_reduce keeps one f32x2 partial per row, chaining the row_tiles via
     # `add.ftz.f32x2` (one FADD2 each), then folds the pair once -- matching the
-    # MM-Sparse ref fadd_reduce.  Halves the in-fragment FADD count.
+    # MM-Sparse ref fadd_reduce. Halves the in-fragment FADD count.
     comptime if packed_reduce:
         comptime assert (
             dtype == DType.float32 and frag_size == 2 and frag_num_rows == 1

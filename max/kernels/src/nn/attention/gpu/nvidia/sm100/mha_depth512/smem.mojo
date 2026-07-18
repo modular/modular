@@ -164,7 +164,12 @@ struct Depth512AttentionSMem[
     def o_smem[
         output_type: DType,
     ](self) -> SharedMemPointer[Scalar[output_type]]:
-        """Same physical memory as Q, bitcast to the output element type."""
+        """Same physical memory as Q, bitcast to the output element type.
+
+        Parameters:
+            output_type: Element type to reinterpret the Q region memory
+                as when returning the output pointer.
+        """
         return (self.base + Self.q_byte_offset).bitcast[Scalar[output_type]]()
 
     @always_inline

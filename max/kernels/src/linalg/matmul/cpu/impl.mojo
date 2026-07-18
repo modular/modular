@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements tiled CPU matrix multiplication kernels and their dispatcher.
+
+Defines the `InnerMatmulKernel` trait and the `TiledMatmul` struct that drive
+the outer M/N/K tile loops, plus the `matmul` entry point that selects an
+inner microkernel (default, VNNI, NEON, or I8MM) or routes to Apple
+Accelerate and GEMV fast paths.
+"""
 from std.collections import Optional
 from std.math import align_up, ceildiv
 from std.sys.info import align_of, simd_width_of
@@ -59,6 +66,13 @@ from .vnni import Inner_matmul_vnni
 
 
 trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDeletable):
+    """Trait for CPU matmul microkernels operating on pre-packed tiles.
+
+    Conforming types implement `__inner_matmul__`, which accumulates a
+    (kernel_rows × TileN × TileK) block of the output matrix using a
+    packed B tile in cache-friendly layout.
+    """
+
     def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
@@ -88,6 +102,22 @@ def elementwise_epilogue_c_tile[
     tile_len: GemmShape,
     c: TileTensor[mut=False, c_type, address_space=AddressSpace.GENERIC, ...],
 ):
+    """Applies a vectorized epilogue function over a 2D C output tile.
+
+    Iterates column chunks of `tile_len.N` using SIMD width `simd_width`,
+    calling `func` with the global (m, n) coordinates and the loaded values.
+
+    Parameters:
+        simd_width: SIMD vector width for epilogue loads.
+        c_type: Data type of the C matrix.
+        func: Epilogue function called with coordinates and a SIMD value chunk.
+
+    Args:
+        offset: Starting (M, N, K) offset within the global matmul space.
+        tile_len: Number of rows and columns to process.
+        c: Read-only view of the C output tile.
+    """
+
     @always_inline
     def activation_on_col_chunk[col_chunk_size: Int](idx_n: Int) {imm}:
         var n_coord = idx_n + offset.N
@@ -127,6 +157,20 @@ def tiled_matmul_run[
     global_tile_offset: GemmShape,
 ):
     """Interface function to run tiled matmul on a given sub-tile.
+
+    Parameters:
+        config: Kernel configuration controlling tile dimensions and SIMD
+            width.
+        transpose_b: Whether the B operand is transposed.
+        b_packed: Whether B was pre-packed offline in the cache-friendly
+            layout.
+        simd_size: SIMD vector width for the elementwise epilogue.
+        elementwise_epilogue_enabled: Whether to apply the elementwise
+            epilogue on the last K tile.
+        kernel_id: Identifier of the inner microkernel to dispatch.
+        algorithm: Microkernel implementing the inner accumulate loop.
+        ElementwiseEpilogueFnType: Type of the elementwise epilogue function
+            applied to each output tile.
 
     Args:
         alg: InnerMatmulKernel algorithm for microkernel.
@@ -203,8 +247,27 @@ struct TiledMatmul[
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
 
-    TODO: add tag based implementation dispatch.
-    TODO: add fusion hooks.
+    Parameters:
+        config: Kernel configuration controlling tile dimensions and SIMD
+            width.
+        transpose_b: Whether the B operand is transposed.
+        b_packed: Whether B was pre-packed offline in the cache-friendly
+            layout.
+        elementwise_epilogue_enabled: Whether to apply the elementwise
+            epilogue on the last K tile.
+        kernel_id: Identifier of the inner microkernel to dispatch.
+        a_type: Element type of the A operand.
+        a_layout: Memory layout of the A operand.
+        a_origin: Memory origin provenance of the A operand.
+        b_type: Element type of the B operand.
+        b_layout: Memory layout of the B operand.
+        b_origin: Memory origin provenance of the B operand.
+        c_type: Element type of the C output.
+        c_layout: Memory layout of the C output.
+        c_origin: Memory origin provenance of the mutable C output.
+        algorithm: Microkernel implementing the inner accumulate loop.
+        ElementwiseEpilogueFnType: Type of the elementwise epilogue function
+            applied to each output tile.
     """
 
     var alg: Self.algorithm
@@ -576,7 +639,28 @@ def matmul[
     ctx: Optional[DeviceContext] = None,
 ) raises:
     """TileTensor matmul dispatcher. Selects kernel type and delegates to
-    `_matmul_cpu_impl`."""
+    `_matmul_cpu_impl`.
+
+    Parameters:
+        transpose_b: Whether the B operand is transposed (defaults to
+            `False`).
+        b_packed: Whether B was pre-packed offline in the cache-friendly
+            layout (defaults to `False`).
+        elementwise_lambda_fn: Optional elementwise epilogue applied to each
+            output tile (defaults to `None`).
+        saturated_vnni: Whether to use the saturating VNNI variant on x86
+            (defaults to `False`).
+
+    Args:
+        c: Output matrix buffer accumulating the matmul result.
+        a: Left operand of the matmul.
+        b: Right operand of the matmul.
+        kernel_type_m: M dimension used to select the kernel variant, or `0`
+            if unknown.
+        num_threads: Number of worker threads to use (defaults to `-1`,
+            which selects automatically).
+        ctx: Device context governing parallelism (defaults to `None`).
+    """
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"
     comptime assert b.rank == 2, "b must be rank 2"

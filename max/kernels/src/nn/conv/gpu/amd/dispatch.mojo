@@ -16,8 +16,8 @@ Returns True when the input/filter/output shapes + runtime stride / pad
 / dilation are handled by the 4-wave conv kernel; False to fall back to
 the caller's MIOpen path. Acceptance rules:
 
-  - Hardware: MI355X (gfx950) only — the 4-wave kernel inherits the
-    chiplet/L2 swizzle and MFMA shapes specific to CDNA4.
+  - Hardware: MI355X (gfx950) only (the 4-wave kernel inherits the
+    chiplet/L2 swizzle and MFMA shapes specific to CDNA4).
   - Input dtype: float8_e4m3fn, bfloat16, or float16. Output dtype:
     bfloat16 for FP8, otherwise tracks input.
   - All input / filter / output spatial shapes must be **static**
@@ -268,8 +268,43 @@ def dispatch_amd_4wave_conv2d[
     path (`amd_4wave_conv[has_residual=True]`). The source pointer is
     expected to point to an NHWC-contiguous buffer with the same shape
     as `output`. When `has_residual=False` (default), the call is
-    identical to the no-residual variant — no extra ABI overhead beyond
+    identical to the no-residual variant: no extra ABI overhead beyond
     the launch packet's 16 bytes (DCE'd source_ptr / stride / beta).
+
+    Parameters:
+        input_type: `DType` of the input activation tensor; must be
+            `float8_e4m3fn`, `bfloat16`, or `float16`.
+        filter_type: `DType` of the filter tensor; must equal
+            `input_type`.
+        output_type: `DType` of the output tensor; `bfloat16` for FP8
+            inputs, otherwise tracks `input_type`.
+        filter_is_fcrs: `True` when `filter` is in FCRS layout; `False`
+            for RSCF. Selects the transpose path and the R/S dim indices.
+        has_residual: `True` to fuse `D = Conv + beta * source` in-kernel
+            via `source_ptr` (defaults to `False`).
+        elementwise_lambda_fn: Optional fused 2D-coord epilogue lambda
+            wrapping a 4D NHWC `elementwise_simd_epilogue_type`; `None`
+            fuses no epilogue (defaults to `None`).
+
+    Args:
+        input: Input activation `TileTensor`, rank-4 NHWC with static
+            `C_in`; `N`, `H`, `W` may be dynamic.
+        filter: Filter `TileTensor`, rank-4 FCRS or RSCF per
+            `filter_is_fcrs`, with static `R`, `S`, `C_in`, `C_out`.
+        output: Output activation `TileTensor`, rank-4 NHWC, mutable,
+            with static `C_out`.
+        stride: Convolution stride `[stride_h, stride_w]`; must be
+            `(1, 1)` or `(2, 2)` with `stride_h == stride_w`.
+        dilation: Dilation `[dh, dw]`; must be `(1, 1)`.
+        symmetric_padding: Symmetric padding `[ph, pw]`; must be
+            `(0, 0)`, `(1, 1)`, or `(2, 2)` with `ph == pw`.
+        num_groups: Number of convolution groups; must be `1`.
+        ctx: `DeviceContext` for kernel launches and buffer allocation.
+        source_ptr: Optional pointer to an NHWC-contiguous residual
+            source buffer with the same shape as `output`; read only
+            when `has_residual=True` (defaults to `None`).
+        beta: Scale factor for the residual term in
+            `D = Conv + beta * source` (defaults to `0.0`).
     """
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
     comptime assert filter.flat_rank == 4, "filter must be rank 4"

@@ -16,8 +16,8 @@ This module hosts a single device-generic entry point,
 `mla_decode_dispatch_scalars`, that computes the packed 3-int MLA decode
 dispatch metadata `(batch_size, q_max_seq_len, num_partitions)`. It mirrors
 the MHA pattern (`mha_decoding_num_partitions`), which hides the HIP-vs-SM100
-device dispatch behind one function so callers — in particular the
-Mojo->Python binding `mla_dispatch_args_scalar` — stay device-agnostic and
+device dispatch behind one function so callers (in particular the
+Mojo->Python binding `mla_dispatch_args_scalar`) stay device-agnostic and
 carry no `if ctx.api()` branch.
 
 The file sits *above* both per-device heuristics in the dependency graph and
@@ -63,7 +63,7 @@ def mla_decode_dispatch_scalars(
       adjustment.
     - **CUDA (NVIDIA/SM100):** delegate to the SM100 runtime heuristic
       `compute_mla_dispatch_scalars_runtime`, which reads the device SM count.
-    - **Any other api (e.g. Metal):** raise — there is no MLA decode dispatch
+    - **Any other api (e.g. Metal):** raise: there is no MLA decode dispatch
       path for non-HIP/non-CUDA devices, so route them to a clear error rather
       than silently into the SM100 heuristic.
 

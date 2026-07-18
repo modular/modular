@@ -276,6 +276,40 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
 
         Called by MMA warp (lane 0). Copies template descriptors to SMEM.
         Templates must be kernel parameters with nvvm.grid_constant metadata.
+
+        Parameters:
+            a_dtype: Element type of the A matrix tensor.
+            a_rank: Tensor rank of the A matrix TMA descriptor.
+            a_tile_shape: Per-tile shape of the A TMA load in each rank.
+            a_desc_shape: Full tensor shape of the A matrix described by
+                the TMA descriptor.
+            b_dtype: Element type of the B matrix tensor.
+            b_rank: Tensor rank of the B matrix TMA descriptor.
+            b_tile_shape: Per-tile shape of the B TMA load in each rank.
+            b_desc_shape: Full tensor shape of the B matrix described by
+                the TMA descriptor.
+            sfa_dtype: Element type of the A scale-factor tensor.
+            sfa_rank: Tensor rank of the SFA TMA descriptor.
+            sfa_tile_shape: Per-tile shape of the SFA TMA load in each
+                rank.
+            sfa_desc_shape: Full tensor shape of the SFA scale-factor
+                tensor described by the TMA descriptor.
+            sfb_dtype: Element type of the B scale-factor tensor.
+            sfb_rank: Tensor rank of the SFB TMA descriptor.
+            sfb_tile_shape: Per-tile shape of the SFB TMA load in each
+                rank.
+            sfb_desc_shape: Full tensor shape of the SFB scale-factor
+                tensor described by the TMA descriptor.
+
+        Args:
+            template_a: Grid-constant TMA template whose descriptor is
+                copied into the A SMEM tensormap slot.
+            template_b: Grid-constant TMA template whose descriptor is
+                copied into the B SMEM tensormap slot.
+            template_sfa: Grid-constant TMA template whose descriptor is
+                copied into the SFA SMEM tensormap slot.
+            template_sfb: Grid-constant TMA template whose descriptor is
+                copied into the SFB SMEM tensormap slot.
         """
         if lane_id() == 0:
             template_a.smem_tensormap_init(self.smem.desc_a)
@@ -296,6 +330,17 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         """Initialize C tensormap in SMEM from grid-constant template.
 
         Called by epilogue warp (lane 0). Copies template descriptor to SMEM.
+
+        Parameters:
+            c_dtype: Element type of the C output matrix tensor.
+            c_rank: Tensor rank of the C matrix TMA descriptor.
+            c_tile_shape: Per-tile shape of the C TMA store in each rank.
+            c_desc_shape: Full tensor shape of the C matrix described by
+                the TMA descriptor.
+
+        Args:
+            template_c: Grid-constant TMA template whose descriptor is
+                copied into the C SMEM tensormap slot.
         """
         if lane_id() == 0:
             template_c.smem_tensormap_init(self.smem.desc_c)
@@ -347,6 +392,52 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
 
         Called when group_changed=True in TMA load warp.
         TMA pointers must be from TMATensorTileArray[block_idx.x] (GMEM).
+
+        Parameters:
+            a_dtype: Element type of the A matrix tensor.
+            a_rank: Tensor rank of the A matrix TMA descriptor.
+            a_tile_shape: Per-tile shape of the A TMA load in each rank.
+            a_desc_shape: Full tensor shape of the A matrix described by
+                the TMA descriptor.
+            b_dtype: Element type of the B matrix tensor.
+            b_rank: Tensor rank of the B matrix TMA descriptor.
+            b_tile_shape: Per-tile shape of the B TMA load in each rank.
+            b_desc_shape: Full tensor shape of the B matrix described by
+                the TMA descriptor.
+            sfa_dtype: Element type of the A scale-factor tensor.
+            sfa_rank: Tensor rank of the SFA TMA descriptor.
+            sfa_tile_shape: Per-tile shape of the SFA TMA load in each
+                rank.
+            sfa_desc_shape: Full tensor shape of the SFA scale-factor
+                tensor described by the TMA descriptor.
+            sfb_dtype: Element type of the B scale-factor tensor.
+            sfb_rank: Tensor rank of the SFB TMA descriptor.
+            sfb_tile_shape: Per-tile shape of the SFB TMA load in each
+                rank.
+            sfb_desc_shape: Full tensor shape of the SFB scale-factor
+                tensor described by the TMA descriptor.
+            max_groups: Maximum number of GEMM groups in the per-group
+                pointer arrays.
+
+        Args:
+            group_idx: Index of the GEMM group whose tensor base
+                addresses are loaded into the tensormaps.
+            group_a_ptrs: Per-group array of GMEM base addresses for the
+                A matrices.
+            group_b_ptrs: Per-group array of GMEM base addresses for the
+                B matrices.
+            group_sfa_ptrs: Per-group array of GMEM base addresses for
+                the SFA scale-factor tensors.
+            group_sfb_ptrs: Per-group array of GMEM base addresses for
+                the SFB scale-factor tensors.
+            tma_a: Pointer to the per-block A tensormap in GMEM to
+                update.
+            tma_b: Pointer to the per-block B tensormap in GMEM to
+                update.
+            tma_sfa: Pointer to the per-block SFA tensormap in GMEM to
+                update.
+            tma_sfb: Pointer to the per-block SFB tensormap in GMEM to
+                update.
         """
         # Step 1: Acquire fences on GMEM tensormaps
         tma_a[].tensormap_fence_acquire()
@@ -415,6 +506,22 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
 
         Called when group_changed=True in epilogue warp.
         TMA pointer must be from TMATensorTileArray[block_idx.x] (GMEM).
+
+        Parameters:
+            c_dtype: Element type of the C output matrix tensor.
+            c_rank: Tensor rank of the C matrix TMA descriptor.
+            c_tile_shape: Per-tile shape of the C TMA store in each rank.
+            c_desc_shape: Full tensor shape of the C matrix described by
+                the TMA descriptor.
+            max_groups: Maximum number of GEMM groups in the per-group
+                pointer arrays.
+
+        Args:
+            group_idx: Index of the GEMM group whose C tensor base
+                address is loaded into the tensormap.
+            group_c_ptrs: Per-group array of GMEM base addresses for the
+                C output matrices.
+            tma_c: Pointer to the per-block C tensormap in GMEM to update.
         """
         # Step 1: Acquire fence
         tma_c[].tensormap_fence_acquire()
@@ -527,6 +634,20 @@ def is_valid_mma_tiler_and_cluster_shape(
     - Cluster M must be multiple of 2 if MMA tiler M is 256
     - Cluster M/N: Power of 2, <=4 per axis (for SF multicast)
     - Total cluster size: <=16
+
+    Args:
+        mma_tiler_m: MMA tile height in the M dimension; must be 128
+            or 256.
+        mma_tiler_n: MMA tile width in the N dimension; must be 128
+            or 256.
+        cluster_m: Number of CTAs in the cluster along the M dimension;
+            must be a power of 2 and at most 4, and a multiple of 2 when
+            `mma_tiler_m` is 256.
+        cluster_n: Number of CTAs in the cluster along the N dimension;
+            must be a power of 2 and at most 4.
+
+    Returns:
+        True if the combination is valid.
     """
     # Check MMA tiler
     if mma_tiler_m not in (128, 256):
@@ -592,6 +713,20 @@ struct GroupedBlockScaledMatmulKernel[
     - TMA warp: Initializes A/B/SFA/SFB tensormaps, handles group transitions
     - MMA warp: Waits for tensormap init, consumes tiles, performs block-scaled MMA
     - Epilogue warps: Initializes C tensormap, handles C group transitions
+
+    Parameters:
+        a_type: Element type of the A input matrix.
+        b_type: Element type of the B input matrix.
+        c_type: Element type of the C output matrix.
+        sfa_dtype: Element type of the A block scale factors.
+        sfb_dtype: Element type of the B block scale factors.
+        transpose_b: Whether B is stored transposed; must be `True`.
+        config: Tile shapes, pipeline stages, and swizzle configuration.
+        max_groups: Maximum number of GEMM groups supported at runtime.
+        cluster_shape: CTA cluster dimensions as
+            `(cluster_m, cluster_n, cluster_k)` (defaults to `(1, 1, 1)`).
+        elementwise_compute_lambda_fn: Optional epilogue fusion
+            lambda applied to accumulated results (defaults to `None`).
     """
 
     # ========== Derived Constants (from config) ==========
@@ -1096,6 +1231,20 @@ struct GroupedBlockScaledMatmulKernel[
         tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
     ):
         """Initialize barriers and prefetch TMA descriptors (1SM path, no CLC).
+
+        Args:
+            ctx: Kernel context with cluster and CTA election state.
+            a_tma_template: Grid-constant TMA template for A loads.
+            b_tma_template: Grid-constant TMA template for B loads.
+            c_tma_template: Grid-constant TMA template for C stores.
+            sfa_tma_template: Grid-constant TMA template for SFA loads.
+            sfb_tma_template: Grid-constant TMA template for SFB loads.
+            input_barriers: SMEM mbarrier array for input pipeline
+                synchronization.
+            accum_barriers: SMEM mbarrier array for accumulator pipeline
+                synchronization.
+            tmem_dealloc: SMEM barrier for TMEM deallocation
+                synchronization.
         """
         if ctx.elect_one_warp and ctx.elect_one_thread:
             a_tma_template.prefetch_descriptor()
@@ -1141,6 +1290,26 @@ struct GroupedBlockScaledMatmulKernel[
         tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
     ):
         """Initialize barriers and prefetch TMA descriptors (2SM path, with CLC).
+
+        Args:
+            ctx: Kernel context with cluster and CTA elected state.
+            a_tma_template: Grid-constant TMA template for A loads.
+            b_tma_template: Grid-constant TMA template for B loads.
+            c_tma_template: Grid-constant TMA template for C stores.
+            sfa_tma_template: Grid-constant TMA template for SFA loads.
+            sfb_tma_template: Grid-constant TMA template for SFB loads.
+            input_barriers: SMEM mbarrier array for input pipeline
+                synchronization.
+            accum_barriers: SMEM mbarrier array for accumulator pipeline
+                synchronization.
+            clc_throttle: SMEM throttle barriers limiting in-flight CLC
+                work between scheduler and consumer warps.
+            clc_full: SMEM mbarrier array signalling CLC buffer slots
+                are full (producer to consumer).
+            clc_empty: SMEM mbarrier array signalling CLC buffer slots
+                are empty (consumer to producer).
+            tmem_dealloc: SMEM barrier for TMEM deallocation
+                synchronization.
         """
         if ctx.elect_one_warp and ctx.elect_one_thread:
             a_tma_template.prefetch_descriptor()
@@ -1231,6 +1400,41 @@ struct GroupedBlockScaledMatmulKernel[
 
         This kernel processes multiple GEMM problems (groups) with dynamic
         tensormap updates at group boundaries.
+
+        Args:
+            a_tma_template: Grid-constant TMA template for A loads, used
+                to initialize the per-block A tensormap in SMEM.
+            b_tma_template: Grid-constant TMA template for B loads, used
+                to initialize the per-block B tensormap in SMEM.
+            c_tma_template: Grid-constant TMA template for C stores, used
+                to initialize the per-block C tensormap in SMEM.
+            sfa_tma_template: Grid-constant TMA template for SFA loads,
+                used to initialize the per-block SFA tensormap in SMEM.
+            sfb_tma_template: Grid-constant TMA template for SFB loads,
+                used to initialize the per-block SFB tensormap in SMEM.
+            device_tma_a: Per-block updatable TMA descriptor array for A,
+                indexed by `block_idx.x`.
+            device_tma_b: Per-block updatable TMA descriptor array for B,
+                indexed by `block_idx.x`.
+            device_tma_sfa: Per-block updatable TMA descriptor array for
+                SFA, indexed by `block_idx.x`.
+            device_tma_sfb: Per-block updatable TMA descriptor array for
+                SFB, indexed by `block_idx.x`.
+            device_tma_c: Per-block updatable TMA descriptor array for C,
+                indexed by `block_idx.x`.
+            group_a_ptrs_lt: Per-group array of GMEM base addresses for
+                the A matrices.
+            group_b_ptrs_lt: Per-group array of GMEM base addresses for
+                the B matrices.
+            group_c_ptrs_lt: Per-group array of GMEM base addresses for
+                the C matrices.
+            group_sfa_ptrs_lt: Per-group array of GMEM base addresses for
+                the SFA scale-factor tensors.
+            group_sfb_ptrs_lt: Per-group array of GMEM base addresses for
+                the SFB scale-factor tensors.
+            problem_sizes_lt: Per-group problem sizes as a
+                `(max_groups, 4)` tensor with `[M, N, K, L]` per group.
+            num_groups: Number of active GEMM groups to process.
         """
         Self.validate_config()
 
@@ -1524,7 +1728,38 @@ struct GroupedBlockScaledMatmulKernel[
         iter_idx: UInt32,
         elect_one_cta: Bool,
     ):
-        """Load A, B, SFA, SFB tiles using TMA with InputProducerStage."""
+        """Load A, B, SFA, SFB tiles using TMA with InputProducerStage.
+
+        Parameters:
+            tiles_origin: Memory origin tag for the producer tile
+                pipeline SMEM buffers.
+
+        Args:
+            a_tma_op: TMA descriptor used to multicast-load A tiles
+                from GMEM.
+            b_tma_op: TMA descriptor used to multicast-load B tiles
+                from GMEM.
+            sfa_tma_op: TMA descriptor used to copy SFA scale-factor
+                tiles from GMEM.
+            sfb_tma_op: TMA descriptor used to copy SFB scale-factor
+                tiles from GMEM.
+            tiles: Producer pipeline stage providing the SMEM tile
+                slots to fill.
+            peer_cta_coord: `(rank_n, rank_m, m_rank)` coordinates of
+                the peer CTA within the cluster, used to compute
+                per-CTA GMEM source offsets.
+            work_tile_coord: `(m, n, batch)` tile coordinates within
+                the current group, used to compute GMEM source
+                offsets.
+            a_multicast_mask: Bitmask of cluster CTAs receiving the
+                A load.
+            b_multicast_mask: Bitmask of cluster CTAs receiving the
+                B load.
+            iter_idx: K-tile iteration index within the current
+                group's K loop.
+            elect_one_cta: Whether this CTA is the elected CTA for
+                the tile.
+        """
         var peer_rank_n = peer_cta_coord[0]
         var peer_rank_m = peer_cta_coord[1]
         var peer_m_rank = peer_cta_coord[2]
@@ -1629,7 +1864,26 @@ struct GroupedBlockScaledMatmulKernel[
         iter_idx: UInt32,
         k_start: UInt32,
     ):
-        """Execute MMA operations using ConsumerTiles."""
+        """Execute MMA operations using ConsumerTiles.
+
+        Parameters:
+            tiles_origin: Memory origin tag for the consumer tile pipeline
+                SMEM buffers (inferred).
+
+        Args:
+            tiles: Consumer pipeline stage providing the SMEM tile slots to
+                consume.
+            mma_op: Block-scaled MMA operation object that executes the
+                tensor-core multiply-accumulate.
+            tmem_addr: TMEM column address of the accumulator buffer for
+                this output stage.
+            tmem_region: TMEM region holding per-tile scale-factor offsets
+                for SFA and SFB.
+            iter_idx: K-tile iteration index within the current group's K
+                loop.
+            k_start: K-tile index where accumulation begins for the current
+                group; the first iteration initializes the accumulator.
+        """
         if elect_one_sync():
             comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
@@ -1678,7 +1932,19 @@ struct GroupedBlockScaledMatmulKernel[
         N: UInt32,
         alpha: Float32 = Float32(1.0),
     ):
-        """Execute epilogue to store accumulated results."""
+        """Execute epilogue to store accumulated results.
+
+        Args:
+            c_tiles: SMEM tile array holding C output tiles.
+            c_tma_op: TMA descriptor for C store operations.
+            stage: Output pipeline stage with accumulated results to store.
+            work_tile_coord: `(m, n, batch)` tile coordinates within the
+                current group.
+            M: Row extent of the current group's output matrix.
+            N: Column extent of the current group's output matrix.
+            alpha: Scaling factor applied to accumulators before storing
+                (defaults to 1.0).
+        """
         var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
         tile_writer.write_batched(
             c_tiles,
@@ -1740,6 +2006,41 @@ struct GroupedBlockScaledMatmulKernel[
         - TMA warp: Loads tiles with tensormap updates on group change
         - MMA warp: Waits on CLC, executes MMA (elected CTA only)
         - Epilogue warps: Stores results with tensormap updates
+
+        Args:
+            a_tma_template: Grid-constant TMA template for A loads, used
+                to initialize the per-block A tensormap in SMEM.
+            b_tma_template: Grid-constant TMA template for B loads, used
+                to initialize the per-block B tensormap in SMEM.
+            c_tma_template: Grid-constant TMA template for C stores, used
+                to initialize the per-block C tensormap in SMEM.
+            sfa_tma_template: Grid-constant TMA template for SFA loads,
+                used to initialize the per-block SFA tensormap in SMEM.
+            sfb_tma_template: Grid-constant TMA template for SFB loads,
+                used to initialize the per-block SFB tensormap in SMEM.
+            device_tma_a: Per-block updatable TMA descriptor array for A,
+                indexed by `block_idx.x`.
+            device_tma_b: Per-block updatable TMA descriptor array for B,
+                indexed by `block_idx.x`.
+            device_tma_sfa: Per-block updatable TMA descriptor array for
+                SFA, indexed by `block_idx.x`.
+            device_tma_sfb: Per-block updatable TMA descriptor array for
+                SFB, indexed by `block_idx.x`.
+            device_tma_c: Per-block updatable TMA descriptor array for C,
+                indexed by `block_idx.x`.
+            group_a_ptrs_lt: Per-group array of GMEM base addresses for
+                the A matrices.
+            group_b_ptrs_lt: Per-group array of GMEM base addresses for
+                the B matrices.
+            group_c_ptrs_lt: Per-group array of GMEM base addresses for
+                the C matrices.
+            group_sfa_ptrs_lt: Per-group array of GMEM base addresses for
+                the SFA scale-factor tensors.
+            group_sfb_ptrs_lt: Per-group array of GMEM base addresses for
+                the SFB scale-factor tensors.
+            problem_sizes_lt: Per-group problem sizes as a
+                `(max_groups, 4)` tensor with `[M, N, K, L]` per group.
+            num_groups: Number of active GEMM groups to process.
         """
         Self.validate_config()
 

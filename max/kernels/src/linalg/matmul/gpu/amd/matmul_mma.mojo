@@ -158,6 +158,14 @@ struct QuadrantMmaOp[
 
         Tiles a_reg as [quad_m, reg_cols](which, 0) to get the register
         sub-tile for this quadrant, then loads via load_lds_fragment.
+
+        Parameters:
+            which: Quadrant index selecting which half of the A register
+                tile to fill.
+
+        Args:
+            smem_tile: SMEM sub-tile for this A quadrant of shape
+                `quad_WM x BK`.
         """
         comptime assert type_of(smem_tile).static_shape[0] == Self.quad_WM
         comptime assert type_of(smem_tile).static_shape[1] == Self.BK
@@ -170,7 +178,16 @@ struct QuadrantMmaOp[
     def load_b_quadrant[
         which: Int
     ](self, smem_tile: SMemTile[Self.in_type, _, _],):
-        """Load B quadrant `which` from SMEM sub-tile to registers."""
+        """Load B quadrant `which` from SMEM sub-tile to registers.
+
+        Parameters:
+            which: Quadrant index selecting which half of the B register
+                tile to fill.
+
+        Args:
+            smem_tile: SMEM sub-tile for this B quadrant of shape
+                `quad_WN x BK`.
+        """
         comptime assert type_of(smem_tile).static_shape[0] == Self.quad_WN
         comptime assert type_of(smem_tile).static_shape[1] == Self.BK
 
@@ -184,6 +201,12 @@ struct QuadrantMmaOp[
 
         Slices A/B/C register tiles to the quadrant and delegates to
         TiledMma for stateless computation.
+
+        Parameters:
+            which_a: Quadrant index along M selecting the A and C
+                row half.
+            which_b: Quadrant index along N selecting the B and C
+                column half.
         """
         comptime reg_cols = Self.num_k_mmas * Self._mma_frag_width
         comptime c_quad_cols = Self.quad_n * Self.c_frag_size
@@ -225,7 +248,7 @@ struct TiledMma[
 
     Direct TileTensor port of TiledTensorCore.mma. Iterates group_size
     k-steps, indexes A/B register tiles per step, and calls gpu_mma.
-    No register ownership, no SMEM loading — pure computation.
+    No register ownership, no SMEM loading: pure computation.
 
     Parameters:
         out_type: Accumulator data type (typically float32).
@@ -416,8 +439,17 @@ struct MmaOp[
         Expects block-local warp tiles of shape WM x k_tile_size (or
         WN x k_tile_size), where each k-tile block is contiguous in
         SMEM (blocked_product layout). Uses direct distribute with
-        swizzle — correct because each block starts at a
+        swizzle: correct because each block starts at a
         swizzle-aligned offset.
+
+        Parameters:
+            k_tile_idx: Index of the k-tile to load into registers.
+
+        Args:
+            a_smem_warp: Block-local SMEM warp tile for A of shape
+                `WM x k_tile_size`.
+            b_smem_warp: Block-local SMEM warp tile for B of shape
+                `WN x k_tile_size`.
         """
         comptime assert type_of(a_smem_warp).static_shape[0] == Self.WM
         comptime assert type_of(b_smem_warp).static_shape[0] == Self.WN
@@ -456,6 +488,9 @@ struct MmaOp[
 
         Slices A/B registers for this k-tile and delegates to
         TiledMma.mma for stateless computation.
+
+        Parameters:
+            k_tile_idx: Index of the k-tile to compute MMA for.
         """
         var a_slice = self._a_reg.tile[Self.num_m_mmas, Self.simd_width](
             k_tile_idx, 0

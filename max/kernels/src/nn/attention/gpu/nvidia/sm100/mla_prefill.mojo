@@ -10,6 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""SM100 (Blackwell) MLA prefill kernels.
+
+Provides dense and sparse multi-latent attention (MLA) prefill entry points
+for NVIDIA SM100 GPUs, including the generic (non-blockscale), blockwise-scale,
+and sparse (with optional FP8 KV cache) variants.
+"""
 
 from std.memory import UnsafePointer
 
@@ -62,6 +68,46 @@ def mla_sm100_prefill[
     batch_size: Int,
     ctx: DeviceContext,
 ) raises:
+    """Dense MLA prefill dispatcher for SM100 (Blackwell).
+
+    Routes to ``mla_sm100_prefill_generic`` when ``blockwise_scale`` is zero
+    and the query, key, value, and rope dtypes all match, otherwise routes
+    to ``mla_sm100_prefill_blockscale``. Asserts that the output is BF16 and
+    that the key and value share an element dtype.
+
+    Parameters:
+        output_type: Output element type (must be ``DType.bfloat16``).
+        q_type: Query element type.
+        KVType: Key operand type (an ``MHAOperand``).
+        VType: Value operand type (an ``MHAOperand``).
+        KRopeType: Rope key operand type (an ``MHAOperand``).
+        MaskType: Attention mask functor type (an ``MHAMask``).
+        MaxPromptLenType: Maximum prompt length type (an
+            ``OptionallyStaticInt``).
+        config: MHA configuration struct.
+        group: Number of query heads per KV head (GQA group size).
+        q_depth: Per-head query depth.
+        cache_depth: Per-head KV cache depth.
+        _ndbuffer_mha_operand: Whether operands are ND buffers.
+        blockwise_scale: Blockwise quantization scale size; zero disables
+            blockwise scaling and selects the generic path.
+        v_depth: Per-head value depth; ``-1`` resolves to the nope width
+            (DeepSeek convention) inside ``MLAConfig.__init__``.
+
+    Args:
+        output: Output tile tensor with shape
+            ``[total_q_tokens, num_q_heads, v_depth]``.
+        q: Query tile tensor.
+        k: Key operand.
+        v: Value operand.
+        k_rope: Rope-applied key operand.
+        mask_functor: Attention mask functor.
+        valid_length: Per-sequence valid lengths (uint32).
+        max_prompt_len: Maximum prompt length (static or dynamic).
+        scale: Softmax scale.
+        batch_size: Number of sequences in the batch.
+        ctx: GPU device context.
+    """
     comptime assert (
         output_type == DType.bfloat16
     ), "Only support bfloat16 output for SM100 MLA prefill"

@@ -10,6 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Dispatch entry points for SM100 (B200+) structured matmul kernels.
+
+Selects between GEMV, split-K GEMV, small-MN GEMMs, heuristic outlier configs,
+and the warp-specialized TMA/UMMA tile GEMM based on problem shape and dtype,
+falling back to vendor BLAS only for untuned or low-performance shapes.
+"""
 from std.math import align_up, ceildiv
 from std.sys import (
     get_defined_bool,
@@ -89,6 +95,27 @@ def small_MN_gemms[
     b: TileTensor,
     ctx: DeviceContext,
 ) raises:
+    """Launches a small-MN GEMM via the configured split-K GEMV or MMA-CPasync kernel.
+
+    Selects between `gemm_mma_cpasync` (for `GEMM_MMA_CPASYNC` kernel kind) and
+    `gemv_split_k` (otherwise) based on `config.kernel_kind`, then enqueues the
+    chosen kernel with the runtime M, N, K derived from the input tiles.
+
+    Parameters:
+        config: Tuning config selecting the kernel kind
+            (`GEMM_MMA_CPASYNC` or split-K GEMV) and the tile shapes, thread
+            count, and unroll factor for the launched kernel.
+        elementwise_lambda_fn: Optional epilogue applied to each output
+            element (defaults to `None`).
+        pdl_level: Programmatic dependent launch level for the
+            dispatched kernel (defaults to `PDLLevel()`).
+    Args:
+        c: Output matrix as a rank-2 mutable `TileTensor` of shape
+            `[M, N]`.
+        a: LHS input matrix as a rank-2 `TileTensor` of shape `[M, K]`.
+        b: RHS input matrix as a rank-2 `TileTensor` of shape `[K, N]`.
+        ctx: Device context used to enqueue the selected kernel.
+    """
     comptime assert c.rank == 2
     comptime assert a.rank == 2
     comptime assert b.rank == 2
@@ -191,6 +218,30 @@ def dispatch_gemv[
     (N, K) pairs to `SM100_GEMV_SHAPES` as they are identified through benchmarking.
 
     N=1 always routes to GEMV: SM100 TMA requires N * sizeof(c_type) % 16 == 0.
+
+    Parameters:
+        c_type: Output element type (inferred).
+        a_type: Element type of the LHS operand `a` (inferred).
+        b_type: Element type of the RHS operand `b` (inferred).
+        transpose_b: Whether `b` is stored transposed (defaults to
+            `False`).
+        elementwise_lambda_fn: Optional epilogue applied to each output
+            element, passed to the SM100 GEMM path (defaults to `None`).
+        elementwise_lambda_wrapper: Optional epilogue lambda passed to
+            the GEMV path, folding in the compute lambda
+            (defaults to `None`).
+        elementwise_compute_lambda_fn: Optional compute epilogue lambda,
+            for example a static scale, passed to the SM100 GEMM path
+            (defaults to `None`).
+        pdl_level: Programmatic dependent launch level for the
+            dispatched kernel (defaults to `PDLLevel()`).
+    Args:
+        c: Output matrix as a rank-2 mutable `TileTensor` of shape
+            `[M, N]`.
+        a: LHS input matrix as a rank-2 `TileTensor` of shape `[M, K]`.
+        b: RHS input matrix as a rank-2 `TileTensor` of shape `[K, N]`,
+            or `[N, K]` when `transpose_b` is set.
+        ctx: Device context used to enqueue the selected kernel.
     """
     comptime static_N = c.static_shape[1]
     comptime static_K = a.static_shape[1]
@@ -244,6 +295,41 @@ def matmul_dispatch_sm100[
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
+    """Dispatches a 2D matmul to the appropriate SM100 (B200+) kernel.
+
+    Routes the problem to GEMV for M=1 or N=1 shapes, to the IEEE-fp32 split-K
+    GEMV for precise float32, or to the dtype-specific SM100 dispatcher (bf16,
+    fp8, fp32) for general shapes, falling back to vendor BLAS when no Mojo
+    SM100 config applies. In autotuning mode, launches a single
+    compile-time-configured kernel from environment defines.
+
+    Parameters:
+        c_type: Output element type.
+        a_type: Element type of the LHS operand `a`.
+        b_type: Element type of the RHS operand `b`.
+        transpose_b: Whether `b` is stored transposed (defaults to
+            `False`).
+        use_tf32: Whether to allow TF32 (truncated mantissa) multiplies
+            for float32 instead of requiring IEEE-fp32 precision
+            (defaults to `True`).
+        elementwise_lambda_fn: Optional epilogue applied to each output
+            element, passed to the SM100 GEMM path (defaults to `None`).
+        elementwise_lambda_wrapper: Optional epilogue lambda for GEMV and
+            vendor fallback paths, folding in the compute lambda
+            (defaults to `None`).
+        elementwise_compute_lambda_fn: Optional compute epilogue lambda,
+            for example a static scale, passed to the SM100 GEMM path
+            (defaults to `None`).
+        pdl_level: Programmatic dependent launch level for the
+            dispatched kernel (defaults to `PDLLevel()`).
+    Args:
+        c: Output matrix as a rank-2 mutable `TileTensor` of shape
+            `[M, N]`.
+        a: LHS input matrix as a rank-2 `TileTensor` of shape `[M, K]`.
+        b: RHS input matrix as a rank-2 `TileTensor` of shape `[K, N]`,
+            or `[N, K]` when `transpose_b` is set.
+        ctx: Device context used to enqueue the selected kernel.
+    """
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"
@@ -517,6 +603,13 @@ def matmul_dispatch_sm100_fp8[
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
+    """Dispatches an FP8-input SM100 matmul to a tuned or heuristic config.
+
+    For M <= 128, tries the heuristic outlier dispatch first and falls back to
+    the default SM100 config on a miss. For larger M, searches the FP8 tuning
+    table by static M bucket, then falls through to the heuristic outlier
+    dispatch for untuned (N, K) shapes. Only bfloat16 output is supported.
+    """
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"
@@ -734,6 +827,13 @@ def select_and_launch_sm100_config[
         ]
     ] = None,
 ) raises -> Int:
+    """Selects and launches an SM100 matmul config for the given shape.
+
+    Checks the per-dtype outlier tuning list for a matching (N, K, M) config,
+    then falls back to the heuristic config set from `build_sm100_matmul_configs`
+    chosen via `choose_config`. For float8_e4m3fn output, always launches the
+    default config on a miss; other dtypes return `DISPATCH_MISS`.
+    """
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"
@@ -852,6 +952,40 @@ def heuristic_and_outliers_dispatch[
         ]
     ] = None,
 ) raises -> Int:
+    """Dispatches an SM100 matmul through the heuristic outlier config set.
+
+    Wraps `select_and_launch_sm100_config` with a launch callback that invokes
+    `_matmul_dispatch_sm100` (the epilogue-aware SM100 tile GEMM launcher) for
+    each selected config.
+
+    Parameters:
+        c_type: Output element type (inferred).
+        a_type: Element type of the LHS operand `a` (inferred).
+        b_type: Element type of the RHS operand `b` (inferred).
+        transpose_b: Whether `b` is stored transposed (defaults to
+            `True`).
+        elementwise_lambda_fn: Optional epilogue applied to each output
+            element (defaults to `None`).
+        elementwise_compute_lambda_fn: Optional compute epilogue lambda,
+            for example a static scale (defaults to `None`).
+        pdl_level: Programmatic dependent launch level for the
+            dispatched kernel (defaults to `PDLLevel()`).
+        has_epilogue_tensor: Whether an epilogue tensor is supplied for
+            the TMA epilogue load path (defaults to `False`).
+        epilogue_is_1d: Whether the epilogue tensor is treated as
+            1D rather than row-major 2D (defaults to `False`).
+    Args:
+        c: Output matrix as a rank-2 mutable `TileTensor` of shape
+            `[M, N]`.
+        a: LHS input matrix as a rank-2 `TileTensor` of shape `[M, K]`.
+        b: RHS input matrix as a rank-2 `TileTensor` of shape `[K, N]`,
+            or `[N, K]` when `transpose_b` is set.
+        ctx: Device context used to enqueue the selected kernel.
+        epilogue_tensor: Optional row-major epilogue tensor of the
+            same dtype as `c`, consumed by the TMA epilogue load path
+            (defaults to `None`).
+    """
+
     @always_inline
     def launch_callback[
         config: MatmulConfig[...]
@@ -913,6 +1047,36 @@ def matmul_dispatch_sm100_bf16[
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
+    """Dispatches a bfloat16-input SM100 matmul to a tuned or heuristic config.
+
+    Routes known low-performance shapes to vendor BLAS, tries the small-MN GEMM
+    tuning table for matched (N, K), then falls back to the heuristic outlier
+    dispatch and finally the default SM100 config on a miss.
+
+    Parameters:
+        c_type: Output element type (inferred).
+        a_type: Element type of the LHS operand `a` (inferred).
+        b_type: Element type of the RHS operand `b` (inferred).
+        transpose_b: Whether `b` is stored transposed (defaults to
+            `True`).
+        elementwise_lambda_fn: Optional epilogue applied to each output
+            element, passed to the SM100 GEMM path (defaults to `None`).
+        elementwise_lambda_wrapper: Optional epilogue lambda for vendor
+            BLAS and small-MN GEMM paths, folding in the compute lambda
+            (defaults to `None`).
+        elementwise_compute_lambda_fn: Optional compute epilogue lambda,
+            for example a static scale, passed to the SM100 GEMM path
+            (defaults to `None`).
+        pdl_level: Programmatic dependent launch level for the
+            dispatched kernel (defaults to `PDLLevel()`).
+    Args:
+        c: Output matrix as a rank-2 mutable `TileTensor` of shape
+            `[M, N]`.
+        a: LHS input matrix as a rank-2 `TileTensor` of shape `[M, K]`.
+        b: RHS input matrix as a rank-2 `TileTensor` of shape `[K, N]`,
+            or `[N, K]` when `transpose_b` is set.
+        ctx: Device context used to enqueue the selected kernel.
+    """
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"
@@ -1012,6 +1176,31 @@ def matmul_dispatch_sm100_fp32[
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
+    """Dispatches a float32 SM100 matmul via the heuristic outlier dispatch.
+
+    Delegates directly to `sm100_heuristic_and_outliers_dispatch`; only float32
+    input and output are supported.
+
+    Parameters:
+        c_type: Output element type (inferred).
+        a_type: Element type of the LHS operand `a` (inferred).
+        b_type: Element type of the RHS operand `b` (inferred).
+        transpose_b: Whether `b` is stored transposed (defaults to
+            `True`).
+        elementwise_lambda_fn: Optional epilogue applied to each output
+            element (defaults to `None`).
+        elementwise_compute_lambda_fn: Optional compute epilogue lambda,
+            for example a static scale (defaults to `None`).
+        pdl_level: Programmatic dependent launch level for the
+            dispatched kernel (defaults to `PDLLevel()`).
+    Args:
+        c: Output matrix as a rank-2 mutable `TileTensor` of shape
+            `[M, N]`.
+        a: LHS input matrix as a rank-2 `TileTensor` of shape `[M, K]`.
+        b: RHS input matrix as a rank-2 `TileTensor` of shape `[K, N]`,
+            or `[N, K]` when `transpose_b` is set.
+        ctx: Device context used to enqueue the selected kernel.
+    """
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"
@@ -1314,6 +1503,23 @@ def dispatch_sm100_batched_matmul[
 
     First, try to dispatch to a batched matmul config from the tuning table. Then try to find a optimized config for the given shape.
     If not found, then dispatch to a default config.
+
+    Parameters:
+        c_type: Element type of the output tensor `c`.
+        a_type: Element type of the LHS operand `a`.
+        b_type: Element type of the RHS operand `b`.
+        transpose_b: Whether `b` is stored transposed.
+        pdl_level: Programmatic dependent launch level for the dispatched
+            kernel (defaults to `PDLLevel.OFF`).
+    Args:
+        c: Output batched matrix as a rank-3 mutable `TileTensor` of
+            shape `[batch, M, N]`.
+        a: LHS input batched matrix as a rank-3 immutable `TileTensor`
+            of shape `[batch, M, K]`.
+        b: RHS input batched matrix as a rank-3 immutable `TileTensor`
+            of shape `[batch, K, N]`, or `[batch, N, K]` when
+            `transpose_b` is set.
+        ctx: Device context used to enqueue the selected kernel.
     """
 
     comptime MMA_K = 32 // size_of[a_type]()
@@ -1435,6 +1641,40 @@ def sm100_heuristic_and_outliers_dispatch[
         ]
     ] = None,
 ) raises -> Int:
+    """Dispatches an SM100 matmul through the heuristic outlier config set.
+
+    Wraps `select_and_launch_sm100_config` with a launch callback that invokes
+    `blackwell_matmul_tma_umaa_warp_specialized` directly, passing through the
+    elementwise and compute epilogue lambdas.
+
+    Parameters:
+        c_type: Output element type (inferred).
+        a_type: Element type of the LHS operand `a` (inferred).
+        b_type: Element type of the RHS operand `b` (inferred).
+        transpose_b: Whether `b` is stored transposed (defaults to
+            `True`).
+        elementwise_lambda_fn: Optional epilogue applied to each output
+            element (defaults to `None`).
+        elementwise_compute_lambda_fn: Optional compute epilogue lambda,
+            for example a static scale (defaults to `None`).
+        pdl_level: Programmatic dependent launch level for the
+            dispatched kernel (defaults to `PDLLevel()`).
+        has_epilogue_tensor: Whether an epilogue tensor is supplied for
+            the TMA epilogue load path (defaults to `False`).
+        epilogue_is_1d: Whether the epilogue tensor is treated as
+            1D rather than row-major 2D (defaults to `False`).
+    Args:
+        c: Output matrix as a rank-2 mutable `TileTensor` of shape
+            `[M, N]`.
+        a: LHS input matrix as a rank-2 `TileTensor` of shape `[M, K]`.
+        b: RHS input matrix as a rank-2 `TileTensor` of shape `[K, N]`,
+            or `[N, K]` when `transpose_b` is set.
+        ctx: Device context used to enqueue the selected kernel.
+        epilogue_tensor: Optional row-major epilogue tensor of the
+            same dtype as `c`, consumed by the TMA epilogue load path
+            (defaults to `None`).
+    """
+
     @always_inline
     def launch_callback[
         config: MatmulConfig[...]

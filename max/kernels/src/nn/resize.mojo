@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements tensor resize (upsample/downsample) with nearest, bilinear, and other interpolation modes."""
 
 from std.math import ceil, floor
 
@@ -30,6 +31,9 @@ from std.utils import IndexList, StaticTuple
 
 
 struct CoordinateTransformationMode(ImplicitlyCopyable):
+    """Specifies how output coordinates map to input coordinates during resize.
+    """
+
     var value: Int
     comptime HalfPixel = CoordinateTransformationMode(0)
     comptime AlignCorners = CoordinateTransformationMode(1)
@@ -50,6 +54,20 @@ struct CoordinateTransformationMode(ImplicitlyCopyable):
 def coord_transform[
     mode: CoordinateTransformationMode
 ](out_coord: Int, in_dim: Int, out_dim: Int, scale: Float32) -> Float32:
+    """Maps an output coordinate to an input coordinate according to the given transformation mode.
+
+    Parameters:
+        mode: The coordinate transformation mode governing the mapping.
+
+    Args:
+        out_coord: The output coordinate to map.
+        in_dim: The size of the input dimension.
+        out_dim: The size of the output dimension.
+        scale: The ratio of output dimension size to input dimension size.
+
+    Returns:
+        The corresponding input coordinate as a floating-point value.
+    """
     var out_coord_f32 = Float32(out_coord)
 
     comptime if mode == CoordinateTransformationMode.HalfPixel:
@@ -80,6 +98,9 @@ def coord_transform[
 
 
 struct RoundMode(ImplicitlyCopyable):
+    """Specifies how fractional coordinates are rounded to integer indices during nearest-neighbor resize.
+    """
+
     var value: Int
     comptime HalfDown = RoundMode(0)
     comptime HalfUp = RoundMode(1)
@@ -97,6 +118,8 @@ struct RoundMode(ImplicitlyCopyable):
 
 @fieldwise_init
 struct InterpolationMode(ImplicitlyCopyable):
+    """Specifies the interpolation method used during resize."""
+
     var value: Int
     comptime Linear = InterpolationMode(0)
 
@@ -108,6 +131,9 @@ struct InterpolationMode(ImplicitlyCopyable):
 struct Interpolator[mode: InterpolationMode](
     Defaultable, TrivialRegisterPassable
 ):
+    """Holds interpolation filter state and applies the filter for a given interpolation mode.
+    """
+
     var cubic_coeff: Float32
 
     @always_inline
@@ -143,6 +169,18 @@ def resize_nearest_neighbor[
     output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext,
 ) raises:
+    """Resizes input to output shape using nearest-neighbor interpolation.
+
+    Parameters:
+        coordinate_transformation_mode: How to map a coordinate in output to a coordinate in input.
+        round_mode: How to round fractional input coordinates to integer indices.
+        dtype: Type of input and output.
+
+    Args:
+        input: The input to be resized.
+        output: The output containing the resized input.
+        ctx: The device context used to launch the kernel.
+    """
     comptime assert (
         input.rank == output.rank
     ), "input rank must match output rank"
@@ -237,6 +275,23 @@ def interpolate_point_1d[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ):
+    """Computes one-dimensional interpolation for a single output point along a given dimension.
+
+    Parameters:
+        InputLayoutType: The layout type of the input tensor.
+        coordinate_transformation_mode: The coordinate transformation mode to apply.
+        antialias: Whether to stretch the filter to antialias when downsampling.
+        dtype: The element type of the input and output tensors.
+        interpolation_mode: The interpolation mode to use.
+
+    Args:
+        interpolator: The interpolator providing the filter function.
+        dim: The dimension along which to interpolate.
+        out_coords: The multi-dimensional coordinates of the output point.
+        scale: The ratio of output dimension size to input dimension size.
+        input: The input tensor to read from.
+        output: The output tensor to write the interpolated value to.
+    """
     var center = (
         coord_transform[coordinate_transformation_mode](
             out_coords[dim], Int(input.dim(dim)), Int(output.dim(dim)), scale

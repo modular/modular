@@ -107,6 +107,23 @@ struct MmaOpApple[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
 ]:
+    """Apple Silicon simdgroup-level MMA abstraction for tile-based matrix multiply.
+
+    Each simdgroup (32 threads) owns one instance and accumulates a
+    `(num_m_mmas * 16) x (num_n_mmas * 16)` output tile using Apple simdgroup
+    matrix multiply-accumulate instructions. Supports both dense and fused
+    online-im2col A-operand paths.
+
+    Parameters:
+        out_type: Element type for the output accumulator (float32 or float16).
+        in_type: Element type for the A operand.
+        num_m_mmas: Number of 16x16 MMA tiles along the M dimension.
+        num_n_mmas: Number of 16x16 MMA tiles along the N dimension.
+        b_type: Element type for the B operand; defaults to in_type.
+        transpose_a: When True, the A tile is stored in transposed (K, M) layout.
+        transpose_b: When True, the B tile is stored in transposed (N, K) layout.
+    """
+
     comptime MMA_M = 16
     comptime MMA_N = 16
     comptime MMA_K = 16
@@ -350,6 +367,10 @@ struct MmaOpApple[
         is in-bounds. Use mma[bounded=True]() for edge tiles --
         zero-fills OOB elements. The kernel should check once per
         simdgroup, not per load.
+
+        Parameters:
+            bounded: When True, zero-fill out-of-bounds A/B elements
+                instead of reading them (defaults to False).
 
         Args:
             accum: Caller-owned InlineArray of SIMD[out_type, 8]
@@ -652,6 +673,14 @@ struct MmaOpApple[
         Apple M5 has no LDS stage, so the A operand is gathered per fragment
         rather than staged. Design: KB `kernels/apple-conv2d-im2col`.
 
+        Parameters:
+            input_origin: Memory origin of the NHWC input pointer (inferred).
+            bounded: When True, zero-fill out-of-bounds A/B elements
+                instead of reading them (defaults to True).
+            c_aligned: When True, assume `conv.C` is a multiple of 8 so
+                the channel run is contiguous and a single width-8 load
+                suffices (defaults to False).
+
         Args:
             accum: Caller-owned accumulators (one per num_m_mmas * num_n_mmas).
             input_ptr: NHWC input base pointer.
@@ -762,6 +791,12 @@ struct MmaOpApple[
         """Store all accumulators to output tile (unconditional).
 
         Caller guarantees all elements are in-bounds.
+
+        Args:
+            accum: Caller-owned accumulators to write, one per
+                (num_m_mmas * num_n_mmas) tile.
+            d_tile: Output tile of shape (num_m_mmas * 16,
+                num_n_mmas * 16).
         """
         comptime for mi in range(Self.num_m_mmas):
             comptime for ni in range(Self.num_n_mmas):
@@ -779,6 +814,16 @@ struct MmaOpApple[
         """Stores accumulators where `(row < valid_rows) and (col < valid_cols)`.
 
         Assumes row-major `d_tile`; for col-major, mirror `_do_load`'s swap.
+
+        Args:
+            accum: Caller-owned accumulators to write, one per
+                (num_m_mmas * num_n_mmas) tile.
+            d_tile: Row-major output tile of shape (num_m_mmas * 16,
+                num_n_mmas * 16).
+            valid_rows: Valid rows from the tile origin; rows at or past
+                this are skipped.
+            valid_cols: Valid cols from the tile origin; cols at or past
+                this are skipped.
         """
         comptime for mi in range(Self.num_m_mmas):
             comptime for ni in range(Self.num_n_mmas):

@@ -41,6 +41,29 @@ struct Softmax[
     mma_m: Int,
     use_exp2: Bool = False,
 ]:
+    """Maintains online-softmax state and operations for gfx950 attention kernels.
+
+    Keeps per-thread running row-max and row-sum statistics across MMA tiles so
+    that attention can accumulate softmax numerators and rescale previously
+    accumulated outputs as new score tiles arrive. Lane and fragment geometry is
+    derived from `WarpLayoutT` and `FragmentLayoutT`.
+
+    Parameters:
+        dtype: Element type of the score and output tiles.
+        num_m_mmas: Number of MMA unit tiles along the M (colwise)
+            dimension of the score matrix.
+        num_n_mmas: Number of MMA unit tiles along the N (rowwise)
+            dimension of the score matrix.
+        num_warps_m: Number of warps along the colwise (M) dimension of
+            the block's warp grid.
+        num_warps_n: Number of warps along the rowwise (N) dimension of
+            the block's warp grid.
+        mma_m: MMA M extent, 32 or 16 on gfx950, selecting lane and
+            fragment geometry.
+        use_exp2: Use `exp2` instead of `exp` for the exponential
+            (defaults to False).
+    """
+
     # Warp lane layout (col-major (warp_rows, warp_cols)) as a proper
     # TileLayout. `static_shape` / `static_stride` expose geometry; `idx2crd`
     # decomposes a lane index into (lane_row, lane_col).
@@ -332,6 +355,10 @@ struct Softmax[
 
         Must be called after exp_scaled so that score_frag_rowmax is in the
         same units as rowmax_tensor for calculate_correction.
+
+        Args:
+            scale: Scalar multiplier applied to every per-thread row-max
+                value.
         """
         comptime for col_tile in range(Self.num_colwise_tiles):
             comptime for row in range(Self.frag_num_rows):
@@ -352,6 +379,17 @@ struct Softmax[
         the precision gap in exp_fma where fma(score, scale, -scaled_max) can
         produce nonzero results when score == max due to independent rounding
         of scaled_max.
+
+        Parameters:
+            start: Starting row-tile index of the iteration range
+                (defaults to 0).
+            stride: Step between consecutive row-tile indices
+                (defaults to 1).
+
+        Args:
+            score: Score tile in registers to exponentiate in place.
+            scale: Scale factor applied to `(score - max)` before the
+                exponential; use `scale * log2e` for `exp2`-based softmax.
         """
         # gfx950 MFMA fragments are always row-vectors (shape[0]=1).
         comptime assert score.flat_rank == 2
@@ -393,6 +431,18 @@ struct Softmax[
         round to a slightly different value, yielding a tiny epsilon instead
         of exactly 0. `exp2(epsilon) ≈ 1 + epsilon·ln(2)`, well within the
         FP8 softmax tolerance budget (the row-sum normalization absorbs it).
+
+        Parameters:
+            start: Starting row-tile index of the iteration range
+                (defaults to 0).
+            stride: Step between consecutive row-tile indices
+                (defaults to 1).
+
+        Args:
+            score: Score tile in registers to exponentiate in place.
+            scale: Scale factor applied to `score` and `-max` inside the
+                fused multiply-add; use `scale * log2e` for `exp2`-based
+                softmax.
         """
         comptime assert score.flat_rank == 2
         comptime assert Self.frag_is_row_vector

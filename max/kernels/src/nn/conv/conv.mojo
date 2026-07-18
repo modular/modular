@@ -11,6 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Convolution kernels for CPU and GPU targets.
+
+Provides direct (register-tiled) convolution, cuDNN-backed convolution
+(NVIDIA), MIOpen-backed convolution (AMD), and naive GPU reference kernels
+for 1D, 2D, and 3D convolutions in NHWC/NDHWC layouts.
+"""
+
 from std.collections import Optional
 from std.math import align_down, ceildiv
 from std.math.uutils import udivmod
@@ -159,7 +166,16 @@ struct Naive2dConvolution[
     input_type: DType,
     filter_type: DType,
 ](ImplicitlyCopyable):
-    """Struct wrapper for naive 2d convolution implementation."""
+    """Struct wrapper for naive 2d convolution implementation.
+
+    Parameters:
+        output_origin: Mutable memory origin of the output tensor (inferred).
+        input_origin: Immutable memory origin of the input tensor (inferred).
+        filter_origin: Immutable memory origin of the filter tensor (inferred).
+        output_type: Element type of the output tensor.
+        input_type: Element type of the input tensor.
+        filter_type: Element type of the filter tensor.
+    """
 
     # Input params.
     var output: UnsafePointer[Scalar[Self.output_type], Self.output_origin]
@@ -442,6 +458,25 @@ struct ConvDirectNHWC[
     outer most loop with a factor fit in LLC.
 
     Assume F is divisible at least by simd_size.
+
+    Parameters:
+        conv_attr_rank: Number of spatial dimensions in the convolution
+            (1, 2, or 3) (inferred).
+        input_origin: Immutable memory origin of the input tensor (inferred).
+        filter_origin: Immutable memory origin of the filter tensor (inferred).
+        output_origin: Mutable memory origin of the output tensor (inferred).
+        input_layout: Memory layout of the input tensor.
+        filter_layout: Memory layout of the filter tensor.
+        output_layout: Memory layout of the output tensor.
+        input_type: Element type of the input tensor.
+        filter_type: Element type of the filter tensor.
+        output_type: Element type of the output tensor.
+        filter_packed: True when the filter is prepacked for grouped
+            convolution.
+        conv_attr: Statically known convolution attributes including
+            padding, stride, dilation, and group count.
+        elementwise_epilogue: Optional elementwise function applied to
+            the output after the last channel tile (defaults to `None`).
     """
 
     var output: LayoutTensor[
@@ -2115,6 +2150,46 @@ def conv1d_update_wo_tile[
     n: Int,
     wo: Int,
 ):
+    """Updates one micro tile of the 1D convolution output for a given
+    (c, f) tile, accumulating over the S filter window and optionally
+    applying an elementwise epilogue on the last C tile.
+
+    Parameters:
+        micro_kernel_height: Number of output points along WO covered by
+            the micro tile in register tiling.
+        micro_kernel_width: Number of SIMD registers assigned to the F
+            dimension per output point.
+        simd_size: Number of elements in a SIMD register.
+        filter_packed: True when the filter is in packed `FSCf` layout,
+            False for `SCF` layout.
+        effected_by_padding: True when the tile may touch padded input
+            regions, requiring per-point bounds checks.
+        has_residual: True when F is not a multiple of `simd_size`,
+            requiring partial load and store of the trailing SIMD vector.
+        last_c_tile: True when this is the last C tile in the group,
+            triggering the elementwise epilogue.
+        output_dt: Element type of the output tensor.
+        input_dt: Element type of the input tensor.
+        filter_dt: Element type of the filter tensor.
+        elementwise_epilogue: Optional elementwise function applied to
+            the output on the last C tile (defaults to `None`).
+
+    Args:
+        output: Pointer to the first element of the WO micro tile in the
+            output tensor.
+        input: Pointer to the first input element of the WO tile.
+        filter: Pointer to the first filter coefficient in the filter
+            window.
+        first_c_tile: True when this is the first C tile in the group,
+            initializing the accumulator to zero instead of loading.
+        c_tile_size: Number of input channels in the current C tile.
+        f_tile_offset: Offset of the F tile within the current group.
+        f_tile_size: Number of output channels in the F tile.
+        conv_shape: Convolution shape descriptor carrying spatial
+            extents, padding, stride, dilation, and channel counts.
+        n: Batch index of the input image being convolved.
+        wo: Starting output width index of the micro tile.
+    """
     comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     # Input stride when s increments by 1
@@ -2225,6 +2300,48 @@ def accumulate_wo_tile_2d[
     HW: IndexList[2],
     dilation: IndexList[2],
 ):
+    """Accumulates one output row tile for a 2D convolution by iterating over the
+    R and S filter-window dimensions and delegating each row to
+    `accumulate_wo_tile_1d`.
+
+    Parameters:
+        micro_kernel_height: Number of input rows covered by the micro tile
+            in register tiling.
+        micro_kernel_width: Number of SIMD registers assigned to the F
+            dimension per row.
+        simd_size: Number of elements in a SIMD register.
+        partial_load_filter: True when the final filter segment is smaller
+            than a full SIMD vector and must be partially loaded.
+        effected_by_padding: True when the tile may touch padded input
+            regions, requiring per-point bounds checks.
+        input_dt: Element type of the input tensor.
+        filter_dt: Element type of the filter tensor.
+
+    Args:
+        c_tile_size: Number of input channels in the current C tile.
+        RS: Filter window extents as `(R, S)` with R the height and S the
+            width.
+        acc: Register-tile accumulator updated in place with the
+            convolution products.
+        input: Pointer to the first input element of the WO tile.
+        input_stride: Stride between consecutive output points along WO in
+            the input, equal to `C * stride_w` in NHWC layout.
+        input_stride_to_nbr: Strides to the input neighbor for each spatial
+            axis `(R, S)`, i.e. `(stride_to_R_neighbor, stride_to_S_neighbor)`.
+        filter: Pointer to the first filter coefficient in the filter
+            window.
+        filter_stride: Stride between consecutive filter segments of size
+            `micro_kernel_width * simd_size` along the F dimension.
+        filter_stride_to_nbr: Strides to the filter neighbor for each
+            spatial axis `(R, S)`.
+        partial_load_filter_size: Number of valid elements in the final
+            partial filter SIMD vector when F is not a multiple of `simd_size`.
+        hw: Input spatial coordinate `(h, w)` of the tile's first output
+            point before padding adjustment.
+        HW: Input spatial extents `(H, W)` used for padding bounds checks.
+        dilation: Dilation factors `(dilation_h, dilation_w)` applied to
+            the filter window.
+    """
     for r in range(RS[0]):
         # Skip the row if it falls into padding.
         var h_nbr = hw[0] + r * dilation[0]
@@ -2281,6 +2398,54 @@ def conv2d_update_wo_tile[
     n: Int,
     howo: IndexList[2],
 ):
+    """Updates one micro tile of the 2D convolution output for a given
+    (c, f) tile, accumulating over the R x S filter window and optionally
+    applying an elementwise epilogue on the last C tile.
+
+    Parameters:
+        micro_kernel_height: Number of output points along the WO
+            dimension covered by the micro tile in register tiling.
+        micro_kernel_width: Number of SIMD registers assigned to the F
+            dimension per output point.
+        simd_size: Number of elements in a SIMD register.
+        filter_packed: True when the filter is prepacked in `FRSCf`
+            layout for grouped convolution.
+        effected_by_padding: True when the tile may touch padded input
+            regions, requiring per-point bounds checks.
+        has_residual: True when F is not a multiple of `simd_size`. The
+            residual elements are loaded and padded with zero to fit
+            a simd vector.
+        last_c_tile: True when this is the last C tile, enabling the
+            elementwise epilogue after accumulation.
+        output_dt: Element type of the output tensor.
+        input_dt: Element type of the input tensor.
+        filter_dt: Element type of the filter tensor.
+        elementwise_epilogue: Optional elementwise function applied to
+            the output after the last channel tile (defaults to
+            `None`).
+
+    Args:
+        output: Pointer to the start of the output micro tile at
+            `(n, howo[0], howo[1], f_tile_offset)`.
+        input: Pointer to the first input element of the micro tile
+            before padding adjustment.
+        filter: Pointer to the first filter coefficient in the filter
+            window for the current `(c, f)` tile.
+        first_c_tile: True when this is the first C tile,
+            zero-initializing the accumulator instead of loading from
+            the output.
+        c_tile_size: Number of input channels in the current C tile.
+        f_tile_offset: Offset of the current tile along the F (output
+            channel) dimension.
+        f_tile_size: Number of output channels in the current F tile.
+        conv_shape: Convolution dimension description for the 2D
+            convolution.
+        n: Batch index of the current input image.
+        howo: Output spatial coordinates `(ho, wo)` of the tile's
+            first output point, with the micro tile spanning
+            `micro_kernel_height` consecutive `wo` values starting at
+            `howo[1]`.
+    """
     comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     # Input stride to neighbor point in the filter window (R, S).
@@ -2405,6 +2570,50 @@ def accumulate_wo_tile_3d[
     DHW: IndexList[3],
     dilation: IndexList[3],
 ):
+    """Accumulates one output row tile for a 3D convolution by iterating over
+    the Q filter-window depth dimension and delegating each depth slice to
+    `accumulate_wo_tile_2d`.
+
+    Parameters:
+        micro_kernel_height: Number of input rows covered by the micro tile
+            in register tiling.
+        micro_kernel_width: Number of SIMD registers assigned to the F
+            dimension per row.
+        simd_size: Number of elements in a SIMD register.
+        partial_load_filter: True when the final filter segment is smaller
+            than a full SIMD vector and must be partially loaded.
+        effected_by_padding: True when the tile may touch padded input
+            regions, requiring per-point bounds checks.
+        input_dt: Element type of the input tensor.
+        filter_dt: Element type of the filter tensor.
+
+    Args:
+        c_tile_size: Number of input channels in the current C tile.
+        QRS: Filter window extents as `(Q, R, S)` with Q the depth, R the
+            height, and S the width.
+        acc: Register-tile accumulator updated in place with the
+            convolution products.
+        input: Pointer to the first input element of the WO tile.
+        input_stride: Stride between consecutive output points along WO in
+            the input, equal to `C * stride_w` in NDHWC layout.
+        input_stride_to_nbr: Strides to the input neighbor for each spatial
+            axis `(Q, R, S)`.
+        filter: Pointer to the first filter coefficient in the filter
+            window.
+        filter_stride: Stride between consecutive filter segments of size
+            `micro_kernel_width * simd_size` along the F dimension.
+        filter_stride_to_nbr: Strides to the filter neighbor for each
+            spatial axis `(Q, R, S)`.
+        partial_load_filter_size: Number of valid elements in the final
+            partial filter SIMD vector when F is not a multiple of
+            `simd_size`.
+        dhw: Input spatial coordinate `(d, h, w)` of the tile's first
+            output point before padding adjustment.
+        DHW: Input spatial extents `(D, H, W)` used for padding bounds
+            checks.
+        dilation: Dilation factors `(dilation_d, dilation_h, dilation_w)`
+            applied to the filter window.
+    """
     for q in range(QRS[0]):
         var d_nbr = dhw[0] + q * dilation[0]
         if d_nbr < 0 or d_nbr >= DHW[0]:
@@ -2460,6 +2669,48 @@ def conv3d_update_wo_tile[
     n: Int,
     dohowo: IndexList[3],
 ):
+    """Updates one micro tile of the 3D convolution output for a given
+    (c, f) tile, accumulating over the Q x R x S filter window and
+    optionally applying an elementwise epilogue on the last C tile.
+
+    Parameters:
+        micro_kernel_height: Number of output WO positions processed
+            per micro tile along the WO dimension.
+        micro_kernel_width: Number of SIMD vectors along the F
+            dimension per micro tile.
+        simd_size: Width of a SIMD vector in elements.
+        filter_packed: True when the filter uses the packed `FRSCf`
+            layout.
+        effected_by_padding: True when the WO positions in this tile
+            fall within the padding-impacted boundary region.
+        has_residual: True when F per group is not a multiple of
+            `simd_size`, requiring partial SIMD load and store.
+        last_c_tile: True when this is the last tile along the C
+            dimension, triggering the elementwise epilogue.
+        output_dt: Element type of the output tensor (inferred).
+        input_dt: Element type of the input tensor (inferred).
+        filter_dt: Element type of the filter tensor (inferred).
+        elementwise_epilogue: Optional elementwise function applied to
+            the output on the last C tile (defaults to `None`).
+
+    Args:
+        output: Pointer to the start of the output micro tile.
+        input: Pointer to the input data for the current sample at
+            the current C tile offset.
+        filter: Pointer to the filter data at the current (c, f) tile
+            offset.
+        first_c_tile: True when this is the first C tile in the
+            group, zero-initializing the accumulator.
+        c_tile_size: Number of input channels accumulated in this C
+            tile.
+        f_tile_offset: Offset of this tile along the F dimension.
+        f_tile_size: Size of this tile along the F dimension.
+        conv_shape: Statically known 3D convolution shape
+            descriptor.
+        n: Batch index of the current sample.
+        dohowo: Output spatial coordinates `(do, ho, wo)` of the
+            micro tile origin.
+    """
     comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     # Input stride to neighbor point in the filter window (Q, R, S).
@@ -2569,6 +2820,10 @@ def pack_filter_shape_impl[
     Compute the shape of packed filter. The packed layout is FRSCf.
     shape_ref should be allocated with size 5 outside this kernel.
 
+    Parameters:
+        filter_type: Element type of the filter, used to determine the
+            SIMD width for packing.
+
     Args:
         Q: Original Q filter dimension.
         R: Original R filter dimension.
@@ -2652,6 +2907,25 @@ def pack_filter_shape[
     """
     Compute the shape of packed filter. The packed layout is FRSCf.
     shape_ref should be allocated with size 5 outside this kernel.
+
+    Parameters:
+        filter_type: Element type of the filter, used to determine the
+            SIMD width for packing.
+        input_shape: Shape of the convolution input tensor in NHWC
+            layout.
+        filter_shape: Shape of the filter tensor in RSCF or QRSCF layout.
+        output_shape: Shape of the convolution output tensor in NHWC
+            layout.
+        strides: Stride along each spatial dimension of the convolution.
+        dilations: Dilation factor along each spatial dimension of the
+            convolution.
+        paddings: Padding applied before and after each spatial dimension
+            of the input.
+        num_groups: Number of convolution groups for grouped convolution.
+
+    Args:
+        filter: The unpacked filter tensor in RSCF layout whose packed
+            shape is computed.
 
     Returns:
         The output shape.
@@ -2748,7 +3022,14 @@ def pack_filter(
     num_groups: Int,
 ):
     """This packs the filter form RSCF to FRSCf.
-    Use the default micro kernel size for dynamic shapes."""
+    Use the default micro kernel size for dynamic shapes.
+
+    Args:
+        filter: The unpacked filter tensor in RSCF layout.
+        packed_filter: The destination tensor for the packed filter in
+            FRSCf layout.
+        num_groups: Number of convolution groups for grouped convolution.
+    """
 
     comptime assert (
         filter.dtype == packed_filter.dtype
@@ -3092,7 +3373,7 @@ def conv_shape[
         var input_spatial_dim = input_lt.dim(i)
         var filter_spatial_dim = filter_lt.dim(i - 1)
 
-        # Zero input spatial -> zero output spatial.  Strided convs over a
+        # Zero input spatial -> zero output spatial. Strided convs over a
         # zero-spatial input would otherwise compute a negative
         # ``output_spatial_dim`` (e.g. ``1 + (0 + 0 - 3) // 2 = -1`` for a
         # 3x3 stride=2 pad=0 downsample) and trip the positivity check
@@ -3152,6 +3433,44 @@ def conv_nhwc_direct[
     num_groups: Int,
     ctx: Optional[DeviceContext] = None,
 ) raises:
+    """Runs a direct (register-tiled) NHWC convolution on CPU, bridging
+    TileTensor inputs to LayoutTensors and dispatching to
+    `ConvDirectNHWC.run` with optional elementwise epilogue fusion.
+
+    Parameters:
+        conv_info_rank: Number of spatial dimensions in the convolution (1,
+            2, or 3) (inferred).
+        input_layout: Memory layout of the input tensor.
+        filter_layout: Memory layout of the filter tensor.
+        output_layout: Memory layout of the output tensor.
+        input_type: Element type of the input tensor.
+        filter_type: Element type of the filter tensor.
+        output_type: Element type of the output tensor.
+        filter_packed: True when the filter is prepacked for grouped
+            convolution.
+        conv_info_static: Statically known convolution attributes including
+            padding, stride, dilation, and group count.
+        has_epilogue_fusion: True when an elementwise epilogue is fused into
+            the convolution.
+        elementwise_lambda: Elementwise SIMD function applied to each output
+            vector after the convolution.
+
+    Args:
+        input: Input activation TileTensor in NHWC or NDHWC layout.
+        filter: Filter weights TileTensor.
+        output: Output TileTensor in NHWC or NDHWC layout.
+        stride: Stride along each spatial dimension.
+        dilation: Dilation factor along each spatial dimension.
+        pad_d: Padding before and after the depth dimension, stored as
+            `(before, after)`.
+        pad_h: Padding before and after the height dimension, stored as
+            `(before, after)`.
+        pad_w: Padding before and after the width dimension, stored as
+            `(before, after)`.
+        num_groups: Number of convolution groups for grouped convolution.
+        ctx: Optional device context for parallel kernel launch (defaults to
+            `None`).
+    """
     # Construct LayoutTensors with explicit Layouts passed by the caller,
     # using the TileTensor's pointer and runtime shape. The Layouts must come
     # from ManagedTensorSlice.to_layout_tensor() (via the caller) so that
@@ -3298,6 +3617,36 @@ def conv2d_gpu_naive_nhwc_rscf[
     padding: IndexList[2],
     num_groups: Int,
 ):
+    """Naive GPU kernel for 2D NHWC convolution with RSCF filter layout.
+
+    Each thread computes one output pixel across all output channels,
+    iterating over the R x S filter window and the per-group input
+    channels with scalar accumulation.
+
+    Parameters:
+        input_layout: Memory layout of the input tensor.
+        filter_layout: Memory layout of the filter tensor.
+        output_layout: Memory layout of the output tensor.
+        input_type: Element type of the input tensor.
+        filter_type: Element type of the filter tensor.
+        output_type: Element type of the output tensor.
+        block_size: Square thread block extent used for both the x and
+            y block dimensions in the launch grid.
+        maybe_epilogue_func: Optional SIMD elementwise epilogue applied
+            to each output value before storing.
+
+    Args:
+        input: Input tensor in NHWC layout.
+        filter: Filter tensor in RSCF layout.
+        output: Output tensor in NHWC layout.
+        stride: Convolution stride `(stride_h, stride_w)`.
+        dilation: Filter dilation factors
+            `(dilation_h, dilation_w)`.
+        padding: Symmetric zero padding `(pad_h, pad_w)` applied to
+            the input H and W dimensions.
+        num_groups: Number of convolution groups for grouped
+            convolution.
+    """
     var N = input.dim[0]()
     var H = input.dim[1]()
     var W = input.dim[2]()
@@ -3363,11 +3712,20 @@ def conv2d_gpu_naive_nhwc_rscf[
 
 @always_inline
 def check_cudnn_error(stat: cudnnStatus_t) raises:
+    """Raises an error if a cuDNN call returns a non-success status.
+
+    Args:
+        stat: Status code returned by a cuDNN API call.
+    """
     if stat != cudnnStatus_t.CUDNN_STATUS_SUCCESS:
         raise Error(t"cuDNN call failed with status {stat}")
 
 
 struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
+    """Holds a cuDNN handle and the associated input, filter, convolution, and
+    output descriptors for a single device.
+    """
+
     @__allow_legacy_any_origin_fields
     var ptr_handle: UnsafePointer[cudnnContext, AnyOrigin[mut=True]]
 
@@ -3482,6 +3840,9 @@ def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
 
     Support only floating point dtypes for now.
 
+    Parameters:
+        dtype: The Mojo element type to map to a cuDNN data type.
+
     Raises:
         If the dtype is not supported by cuDNN.
     """
@@ -3497,6 +3858,11 @@ def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
 
 
 struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
+    """Caches cuDNN descriptors, selected forward algorithm, and workspace
+    size for a full NHWC 2D convolution, keyed by input/filter/output shapes
+    and convolution parameters.
+    """
+
     @__allow_legacy_any_origin_fields
     var ptr_handle: UnsafePointer[cudnnContext, AnyOrigin[mut=True]]
 
@@ -3836,6 +4202,24 @@ def conv_cudnn[
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
+    """Runs a 2D convolution via cuDNN with NHWC input/output and FCRS filter
+    layout, activating the device context before dispatching.
+
+    Parameters:
+        input_type: Element type of the input tensor (inferred).
+        filter_type: Element type of the filter tensor (inferred).
+        output_type: Element type of the output tensor (inferred).
+
+    Args:
+        input: Input activation tensor in NHWC layout.
+        filter: Filter weights tensor in FCRS layout.
+        output: Output tensor in NHWC layout.
+        stride: Stride along the height and width dimensions.
+        dilation: Dilation factor along the height and width dimensions.
+        padding: Symmetric padding along the height and width dimensions.
+        num_groups: Number of convolution groups for grouped convolution.
+        ctx: Device context for the cuDNN stream.
+    """
     # Set `ctx`'s CUcontext as current to satisfy cudnn's stateful API.
     with ctx.push_context() as ctx:
         _conv_cudnn(
@@ -3849,6 +4233,15 @@ def conv_cudnn[
 
 
 struct CachedMIOpenMeta[conv_rank: Int](Movable):
+    """Caches MIOpen handle, tensor/filter/convolution descriptors, selected
+    forward algorithm, and workspace size for a convolution of the given rank,
+    keyed by input/filter/output shapes and convolution parameters.
+
+    Parameters:
+        conv_rank: Number of spatial dimensions in the convolution (1, 2,
+            or 3).
+    """
+
     comptime tensor_rank = Self.conv_rank + 2
 
     var handle: MIOpenHandle
@@ -4371,6 +4764,29 @@ def conv_miopen[
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
+    """Runs a convolution via MIOpen on AMD GPUs, transposing the filter to
+    FRSC physical layout and dispatching to the cached MIOpen forward
+    convolution path.
+
+    Parameters:
+        conv_rank: Number of spatial dimensions in the convolution (1, 2,
+            or 3) (inferred).
+        input_type: Element type of the input tensor (inferred).
+        filter_type: Element type of the filter tensor (inferred).
+        output_type: Element type of the output tensor (inferred).
+        filter_is_fcrs: True when the filter uses FCRS layout, otherwise RSCF
+            (defaults to `False`).
+
+    Args:
+        input: Input activation tensor in NHWC or NDHWC layout.
+        filter: Filter weights tensor in RSCF, FCRS, or QRSCF layout.
+        output: Output tensor in NHWC or NDHWC layout.
+        stride: Stride along each spatial dimension.
+        dilation: Dilation factor along each spatial dimension.
+        padding: Symmetric padding applied to each spatial dimension.
+        num_groups: Number of convolution groups for grouped convolution.
+        ctx: Device context for kernel launch.
+    """
     _conv_miopen[filter_is_fcrs=filter_is_fcrs](
         input, filter, output, stride, dilation, padding, num_groups, ctx
     )
@@ -4401,6 +4817,40 @@ def conv_gpu[
     ] = None,
     beta: Float32 = 0.0,
 ) raises:
+    """Dispatches a GPU convolution to the best available backend for the
+    current device and shape, including SM100 structured conv, im2col+matmul,
+    AMD 4-wave, Apple M5 fused, cuDNN, MIOpen, and naive reference kernels,
+    with optional asymmetric padding pre-processing and elementwise epilogue
+    fusion.
+
+    Parameters:
+        conv_rank: Number of spatial dimensions in the convolution (1, 2,
+            or 3) (inferred).
+        input_type: Element type of the input tensor.
+        filter_type: Element type of the filter tensor.
+        output_type: Element type of the output tensor.
+        maybe_epilogue_func: Optional elementwise SIMD epilogue applied to
+            the output (defaults to `None`).
+        filter_is_fcrs: True when the filter uses FCRS layout, otherwise
+            RSCF (defaults to `False`).
+        has_residual: True when fusing a residual add of the form
+            `D = Conv(A, B) + beta * C` (defaults to `False`).
+
+    Args:
+        input: Input activation tensor in NHWC or NDHWC layout.
+        filter: Filter weights tensor.
+        output: Output tensor in NHWC or NDHWC layout.
+        stride: Stride along each spatial dimension.
+        dilation: Dilation factor along each spatial dimension.
+        padding: Padding before and after each spatial dimension, stored
+            as interleaved `(before, after)` pairs.
+        num_groups: Number of convolution groups for grouped convolution.
+        ctx: Device context for kernel launch.
+        source_ptr: Pointer to the residual source tensor `C`, used only
+            when `has_residual` is true (defaults to `None`).
+        beta: Residual scale factor in `D = Conv(A, B) + beta * C` (defaults
+            to `0.0`).
+    """
     # Bridge to LayoutTensor for internal GPU kernel dispatch and cuDNN/MIOpen
     # which require Layout type parameters.
     var input_lt = input.to_layout_tensor()
@@ -4415,7 +4865,7 @@ def conv_gpu[
 
     # Zero-sized output (e.g. a ``(B, 0, 0, C)`` input flowing through a
     # diffusion VAE encoder for the text-to-image placeholder): nothing
-    # to compute.  The output buffer is pre-allocated zero-element by
+    # to compute. The output buffer is pre-allocated zero-element by
     # the caller -- an early return produces the correct empty output
     # and skips downstream dispatch paths that would otherwise build
     # zero-extent TMA descriptors or launch zero-grid kernels.
@@ -5339,6 +5789,36 @@ def conv3d_gpu_naive_ndhwc_qrscf[
     padding: IndexList[3],
     num_groups: Int,
 ):
+    """Naive GPU kernel for 3D NDHWC convolution with QRSCF filter layout.
+
+    Each thread computes one output voxel across all output channels,
+    iterating over the Q x R x S filter window with vectorized input
+    loads and scalar filter accumulation.
+
+    Parameters:
+        input_layout: Memory layout of the input tensor (`NDHWC`).
+        filter_layout: Memory layout of the filter tensor (`QRSCF`).
+        output_layout: Memory layout of the output tensor (`NDHWC`).
+        input_type: Element type of the input tensor.
+        filter_type: Element type of the filter tensor.
+        output_type: Element type of the output tensor.
+        block_size: Thread block size used for both `x` and `y` block
+            dimensions.
+        maybe_epilogue_func: Optional elementwise SIMD epilogue applied to
+            each computed output value in place of a direct store.
+
+    Arguments:
+        input: Input activation tensor in `NDHWC` layout.
+        filter: Convolution weight tensor in `QRSCF` layout.
+        output: Output activation tensor in `NDHWC` layout.
+        stride: Per-spatial-axis convolution stride as `(depth, height,
+            width)`.
+        dilation: Per-spatial-axis filter dilation as `(depth, height,
+            width)`.
+        padding: Per-spatial-axis symmetric padding as `(depth, height,
+            width)`.
+        num_groups: Number of convolution groups for grouped convolution.
+    """
     var N = input.dim[0]()
     var D = input.dim[1]()  # depth
     var H = input.dim[2]()
@@ -6163,6 +6643,28 @@ def conv3d_cudnn[
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
+    """Runs a 3D convolution via cuDNN using Nd descriptor APIs, activating
+    the device context before dispatching.
+
+    Parameters:
+        input_type: Element type of the input tensor.
+        filter_type: Element type of the filter tensor.
+        output_type: Element type of the output tensor.
+
+    Arguments:
+        input: Input activation tensor in `NDHWC` layout.
+        filter: Convolution weight tensor in `FCQRS` layout.
+        output: Output activation tensor in `NDHWC` layout.
+        stride: Per-spatial-axis convolution stride as `(depth, height,
+            width)`.
+        dilation: Per-spatial-axis filter dilation as `(depth, height,
+            width)`.
+        padding: Per-spatial-axis symmetric padding as `(depth, height,
+            width)`.
+        num_groups: Number of convolution groups for grouped convolution.
+        ctx: Device context activated and used to dispatch the cuDNN
+            call.
+    """
     # Set `ctx`'s CUcontext as current to satisfy cudnn's stateful API.
     with ctx.push_context() as ctx:
         _conv3d_cudnn(

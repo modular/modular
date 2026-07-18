@@ -11,6 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides the split-K tile scheduler for GPU matmul kernels on SM90.
+
+Partitions the K dimension across thread blocks and reduces partial
+accumulations with semaphore-ordered or atomic strategies for deterministic
+or nondeterministic numeric behavior.
+"""
+
 from std.math import align_up, ceildiv
 from std.math.uutils import umod, ualign_up
 from std.atomic import Atomic
@@ -61,6 +68,13 @@ def _check_scheduler_constraints[
 
 @fieldwise_init
 struct ReductionMode(TrivialRegisterPassable):
+    """Reduction strategy for split-K partial accumulations.
+
+    `Deterministic` serializes CTA reductions using named-barrier semaphores
+    for bit-reproducible results. `Nondeterministic` uses atomic adds for
+    higher throughput at the cost of non-deterministic floating-point output.
+    """
+
     var _value: Int32
 
     # CTAs perform reduction in a serialized fashion so we will have deterministic numeric behavior
@@ -95,6 +109,26 @@ struct SplitKTileScheduler[
     raster_order: RasterOrder,
     reduction_mode: ReductionMode = ReductionMode.Deterministic,
 ](TrivialRegisterPassable):
+    """Tile scheduler for split-K GPU matmul reductions on SM90.
+
+    Partitions the K dimension into `splits` independent chunks, each processed
+    by a separate thread block. Partial results are accumulated into a workspace
+    buffer and reduced using semaphore-based ordering (`Deterministic`) or
+    atomic additions (`Nondeterministic`). Cluster-aware rasterization keeps
+    spatially close tiles on the same set of SMs for L2 reuse.
+
+    Parameters:
+        locks_origin: Memory origin for the synchronization lock buffer.
+        problem_shape_nk: Static (N, K) dimensions of the matmul problem.
+        tile_shape: Static (BM, BN, BK) tile sizes.
+        splits: Number of K-dimension splits.
+        num_consumer: Number of warp groups consuming each output tile.
+        num_pipeline_stages: Number of software-pipeline stages.
+        cluster_shape: (cluster_m, cluster_n) block cluster dimensions.
+        raster_order: Traversal direction for the output tile grid.
+        reduction_mode: Whether reduction is deterministic or non-deterministic.
+    """
+
     var prob_shape: IndexList[3]  # M x N x K
     var block_id_in_cluster: IndexList[2]
     var blocks_per_problem: UInt32

@@ -11,6 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides the persistent tile scheduler for GPU matmul kernels.
+
+Maps thread blocks to output tiles across the launch grid using 1D, 2D-wave,
+or DeepSeek scheduling strategies, and exposes the `TileScheduler`,
+`WorkInfo`, `MatmulSchedule`, and `RasterOrder` types used by persistent
+matmul kernels.
+"""
+
 from std.math import ceildiv
 from std.math.uutils import udivmod
 
@@ -24,6 +32,14 @@ from ...utils_gpu import block_swizzle
 
 @fieldwise_init
 struct RasterOrder(Equatable, Hashable, TrivialRegisterPassable, Writable):
+    """Rasterization order for mapping thread blocks to output tiles.
+
+    Controls the traversal direction of the 2D output tile grid. `AlongN`
+    rasterizes across columns first; `AlongM` rasterizes across rows first.
+    The choice affects L2 cache reuse patterns and should match cluster
+    multicast configuration.
+    """
+
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -47,6 +63,13 @@ struct RasterOrder(Equatable, Hashable, TrivialRegisterPassable, Writable):
 
 @fieldwise_init
 struct WorkInfo(TrivialRegisterPassable, Writable):
+    """Descriptor for one output tile assigned to a thread block.
+
+    Carries the (m, n) tile coordinates in the output matrix, the starting
+    K-tile index for split-K kernels, the number of K tiles to process, and
+    a validity flag indicating whether the tile falls within the problem bounds.
+    """
+
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -99,6 +122,15 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 
 @fieldwise_init
 struct MatmulSchedule(TrivialRegisterPassable):
+    """Tile scheduling strategy for GPU matmul kernels.
+
+    Selects how thread blocks are mapped to output tiles across the grid.
+    `TILE1D` uses a simple linear mapping; `TILE2D` adds wave-level 2D
+    swizzling for better L2 locality; `DS_SCHEDULER` uses the DeepSeek
+    persistent block scheduler; `NONE` disables the scheduler (non-persistent
+    kernels).
+    """
+
     var _value: Int32
 
     comptime NONE = Self(0)
@@ -128,6 +160,21 @@ struct TileScheduler[
     raster_dim: UInt32 = 1,
     schedule: MatmulSchedule = MatmulSchedule.TILE2D,
 ](TrivialRegisterPassable):
+    """Persistent tile scheduler for GPU matmul output tiles.
+
+    Maps thread blocks to (m, n) output tile coordinates using 1D, 2D-wave,
+    or DeepSeek scheduling strategies. Supports block clusters with multicast
+    and advances through tiles in a persistent kernel loop via `fetch_next_work`.
+
+    Parameters:
+        problem_shape: Static (M, N, K) dimensions of the matmul problem.
+        tile_shape: Static (BM, BN, BK) tile sizes.
+        grid_shape: (grid_x, grid_y) number of thread blocks in the launch grid.
+        cluster: Block cluster shape (default 1×1×1 for no clustering).
+        raster_dim: Axis along which to rasterize (0 = M, 1 = N).
+        schedule: Tile scheduling strategy to use.
+    """
+
     # grid_shape[0], [1] map to x, y, to N and M in output matrix.
     # tile_shape[0], [1] map to M and N
     # wave_shape[0], [1] map to M and N

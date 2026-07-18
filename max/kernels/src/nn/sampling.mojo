@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides token-sampling utilities including logit-penalty application and repetition-penalty kernels."""
 
 from std.math import ceildiv, iota
 from std.sys.info import simd_width_of
@@ -49,6 +50,27 @@ def apply_penalties_to_logits[
     array is a 2D array, where:
     - frequency_data[i, 0] is the token id
     - frequency_data[i, 1] is the frequency of the token in the sequence
+
+    Parameters:
+        logit_type: Element type of the `logits` tensor (inferred).
+        penalty_type: Element type of the per-batch penalty tensors (inferred).
+        target: Target device to dispatch the elementwise kernel to.
+
+    Args:
+        logits: 2D logits tensor of shape `[batch, vocab]` updated in place
+            with the applied penalties.
+        compressed_frequency_data: 2D CSR frequency data where column 0 is the
+            token id and column 1 is the token count within the sequence.
+        frequency_offsets: 1D tensor of starting indices into
+            `compressed_frequency_data` for each sequence in the batch.
+        frequency_penalty: Per-batch scalar multiplied by the token count and
+            subtracted from each seen token's logit.
+        presence_penalty: Per-batch scalar subtracted from each seen token's
+            logit.
+        repetition_penalty: Per-batch scalar dividing positive logits and
+            multiplying non-positive logits of seen tokens; must be finite
+            and positive.
+        ctx: Device context used to dispatch the kernel.
     """
 
     comptime assert frequency_offsets.flat_rank == 1
@@ -140,6 +162,28 @@ def update_frequency_data_kernel[
 
     Searches for new tokens in existing frequency data and either increments
     their count or adds them to the first available padding slot.
+
+    Parameters:
+        freq_data_origin: Mutable origin of the `compressed_frequency_data`
+            tensor.
+        FreqDataLayoutType: Layout type of the
+            `compressed_frequency_data` tensor.
+        freq_offsets_origin: Immutable origin of the `frequency_offsets`
+            tensor.
+        FreqOffsetsLayoutType: Layout type of the `frequency_offsets` tensor.
+        new_tokens_origin: Immutable origin of the `new_tokens` tensor.
+        NewTokensLayoutType: Layout type of the `new_tokens` tensor.
+        token_type: Element type of the `new_tokens` tensor.
+        block_size: Number of threads per GPU block used to scan a sequence's
+            frequency entries.
+
+    Args:
+        compressed_frequency_data: 2D CSR frequency data where column 0 is the
+            token id and column 1 is the token count within the sequence,
+            updated in place.
+        frequency_offsets: 1D tensor of starting indices into
+            `compressed_frequency_data` for each sequence in the batch.
+        new_tokens: 1D tensor of new token ids, one per sequence in the batch.
     """
 
     comptime assert frequency_offsets.flat_rank == 1
@@ -220,6 +264,19 @@ def update_frequency_data[
 
     The frequency data is stored in a CSR format. This kernel expects there will be
     enough padding for each sequence to store the new tokens.
+
+    Parameters:
+        token_type: Element type of the `new_tokens` tensor (inferred).
+        target: Target device to dispatch the kernel to.
+
+    Args:
+        compressed_frequency_data: Mutable 2D CSR frequency data where column
+            0 is the token id and column 1 is the token count within the
+            sequence, updated in place.
+        frequency_offsets: 1D tensor of starting indices into
+            `compressed_frequency_data` for each sequence in the batch.
+        new_tokens: 1D tensor of new token ids, one per sequence in the batch.
+        ctx: Device context used to dispatch the kernel.
     """
     comptime assert frequency_offsets.flat_rank == 1
     comptime assert compressed_frequency_data.flat_rank == 2

@@ -550,7 +550,17 @@ struct MatmulConfig[
     c_type: DType,
     transpose_b: Bool = True,
 ](Copyable, Equatable, Hashable, TrivialRegisterPassable, Writable):
-    """Static configuration of GPU matmul."""
+    """Static configuration of GPU matmul.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements; must equal
+            `b_type`.
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements; `float32` input
+            requires `float32` output.
+        transpose_b: Whether the B operand is stored transposed (defaults to
+            `True`).
+    """
 
     # Mandatory parameters
     var cta_group: Int
@@ -829,6 +839,31 @@ def choose_config[
 ](M: Int, N: Int, K: Int, B: Int) -> MatmulConfig[
     a_type, b_type, c_type, transpose_b
 ]:
+    """Select a `MatmulConfig` that minimizes waves per SM for the given problem shape.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements; must equal
+            `b_type`.
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements.
+        transpose_b: Whether the B operand is stored transposed (defaults
+            to `True`).
+        gemm_kind: The `GEMMKind` selecting the kernel variant, for
+            example `GEMM` or `BMM` (defaults to `GEMMKind.GEMM`).
+        has_epilogue_tensor: Whether the kernel uses a TMA epilogue load
+            for an epilogue tensor (defaults to `False`).
+        epilogue_is_1d: Whether the epilogue tensor is 1D, for example a
+            bias vector (defaults to `False`).
+
+    Args:
+        M: The M dimension of the matmul.
+        N: The N dimension of the matmul.
+        K: The K dimension of the matmul.
+        B: The batch dimension of the matmul.
+
+    Returns:
+        A `MatmulConfig` tuned for the given problem dimensions.
+    """
     comptime assert a_type == b_type, "a_type and b_type must be the same"
 
     comptime num_SMs = B200.sm_count
@@ -984,6 +1019,25 @@ def build_sm100_matmul_configs[
     has_epilogue_tensor: Bool = False,
     epilogue_is_1d: Bool = False,
 ]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:
+    """Build a set of `MatmulConfig` instances by sweeping M from 8 to 8192.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements; must equal
+            `b_type`.
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements.
+        N: The N dimension (output columns) of the matmul.
+        K: The K dimension (contraction axis) of the matmul.
+        transpose_b: Whether the B operand is stored transposed (defaults
+            to `True`).
+        has_epilogue_tensor: Whether the kernel uses a TMA epilogue load
+            for an epilogue tensor (defaults to `False`).
+        epilogue_is_1d: Whether the epilogue tensor is 1D, for example a
+            bias vector (defaults to `False`).
+
+    Returns:
+        A set of unique `MatmulConfig` instances covering the swept M range.
+    """
     comptime config_t = MatmulConfig[a_type, b_type, c_type, transpose_b]
 
     var set = Set[config_t]()
@@ -1023,6 +1077,20 @@ def build_sm100_batched_matmul_configs[
     K: Int,
     transpose_b: Bool = True,
 ]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:
+    """Build a set of batched matmul `MatmulConfig` instances by sweeping batch and M.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements.
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements.
+        N: The N dimension (output columns) of the matmul.
+        K: The K dimension (contraction axis) of the matmul.
+        transpose_b: Whether the B operand is stored transposed (defaults to
+            `True`).
+
+    Returns:
+        A set of unique batched `MatmulConfig` instances covering the swept ranges.
+    """
     comptime config_t = MatmulConfig[a_type, b_type, c_type, transpose_b]
 
     var set = Set[config_t]()
@@ -1055,7 +1123,20 @@ struct BlockScaledMatmulConfig[
     sfb_dtype: DType,
     transpose_b: Bool = True,
 ](Copyable, Equatable, Hashable, TrivialRegisterPassable, Writable):
-    """Static configuration of GPU matmul."""
+    """Static configuration of GPU matmul.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements; `uint8` indicates
+            packed FP4; must equal `b_type`.
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements.
+        sfa_dtype: `DType` of the A operand block scaling factors; selects
+            the block-scaled MMA kind.
+        sfb_dtype: `DType` of the B operand block scaling factors; must
+            equal `sfa_dtype`.
+        transpose_b: Whether the B operand is stored transposed (defaults to
+            `True`).
+    """
 
     # Mandatory parameters
     var cta_group: Int
@@ -1332,6 +1413,30 @@ def choose_block_scaled_config[
 ](M: Int, N: Int, K: Int) -> BlockScaledMatmulConfig[
     a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
 ]:
+    """Select a `BlockScaledMatmulConfig` that minimizes waves per SM for the given shape.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements; `uint8`
+            indicates packed FP4; must equal `b_type`.
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements.
+        sfa_dtype: `DType` of the A operand block scaling factors; must
+            equal `sfb_dtype`.
+        sfb_dtype: `DType` of the B operand block scaling factors; must
+            equal `sfa_dtype`.
+        transpose_b: Whether the B operand is stored transposed (defaults
+            to `True`).
+        gemm_kind: The `GEMMKind` selecting the kernel variant (defaults to
+            `GEMMKind.GEMM`).
+
+    Args:
+        M: The M dimension of the matmul.
+        N: The N dimension of the matmul.
+        K: The K dimension of the matmul.
+
+    Returns:
+        A `BlockScaledMatmulConfig` tuned for the given problem dimensions.
+    """
     comptime assert a_type == b_type, "a_type and b_type must be the same"
     comptime assert (
         sfa_dtype == sfb_dtype
@@ -1490,6 +1595,22 @@ def build_block_scaled_configs[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ]
 ]:
+    """Build a set of `BlockScaledMatmulConfig` instances by sweeping M from 8 to 8192.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements.
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements.
+        sfa_dtype: `DType` of the A operand block scaling factors.
+        sfb_dtype: `DType` of the B operand block scaling factors.
+        N: The N dimension (output columns) of the matmul.
+        K: The K dimension (contraction axis) of the matmul.
+        transpose_b: Whether the B operand is stored transposed (defaults to
+            `True`).
+
+    Returns:
+        A set of unique `BlockScaledMatmulConfig` instances covering the swept M range.
+    """
     comptime config_t = BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ]
@@ -1522,6 +1643,25 @@ def default_matmul_config_bf16_fp8[
     gemm_kind: GEMMKind = GEMMKind.GEMM,
     has_epilogue_tensor: Bool = False,
 ]() -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
+    """Return a default `MatmulConfig` for bf16-output FP8 matmul kernels.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements; must equal
+            `b_type`.
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements.
+        transpose_b: Whether the B operand is stored transposed (defaults
+            to `True`).
+        cta_group: CTA group size, 1 or 2, setting the number of CTAs
+            cooperating per MMA (defaults to 2).
+        gemm_kind: The `GEMMKind` selecting the kernel variant (defaults
+            to `GEMMKind.GEMM`).
+        has_epilogue_tensor: Whether the kernel uses a TMA epilogue load
+            for an epilogue tensor (defaults to `False`).
+
+    Returns:
+        A `MatmulConfig` with a 128x128 block tile and default pipeline stages.
+    """
     # Nvidia mma instruction process 32B in K.
     comptime Kbytes_per_mma = 32
 

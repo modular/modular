@@ -12,6 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
+"""Provides dispatch logic for SM100 block-scaled (NVFP4, MXFP4, MXFP8) matmul kernels with optional elementwise epilogue."""
+
+
 from std.math import ceildiv
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives.grid_controls import PDLLevel
@@ -84,6 +87,44 @@ def heuristic_and_outliers_dispatch[
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises -> Int:
+    """Dispatches an SM100 block-scaled matmul by selecting a tuning config from
+    per-format outlier tables for specific M ranges, falling back to a
+    small-BN config for GEMVs (`m == 1`) and a heuristic config table for the
+    remaining cases. Returns `DISPATCH_HIT` when a matching config is found and
+    launched, or `DISPATCH_MISS` when no config matches.
+
+    Parameters:
+        c_type: Element type of the output tensor `c` (inferred).
+        a_type: Element type of the LHS input tensor `a` (inferred).
+        b_type: Element type of the RHS input tensor `b` (inferred).
+        scales_dtype: Element type of the per-block scale tensors
+            `a_scales` and `b_scales` (inferred).
+        SF_VECTOR_SIZE: Number of elements each scale factor covers.
+            Must match the format: 16 for NVFP4, 32 for MXFP4, or 32
+            for MXFP8.
+        transpose_b: Whether `b` is stored transposed. Must be `True`
+            (defaults to `True`).
+        elementwise_lambda_fn: Optional epilogue applied to the matmul
+            result `c` in a separate kernel after the matmul completes
+            (defaults to `None`).
+        elementwise_compute_lambda_fn: Optional compute function fused
+            into the matmul kernel epilogue (defaults to `None`).
+        pdl_level: Programmatic Dependent Launch scheduling level for
+            overlapping this kernel with prior GPU work (defaults to
+            `PDLLevel()`).
+
+    Args:
+        c: Output TileTensor accumulating the matmul result.
+        a: LHS input TileTensor.
+        b: RHS input TileTensor (must be transposed).
+        a_scales: Per-block scales for `a`.
+        b_scales: Per-block scales for `b`.
+        tensor_sf: Global tensor scaling factor applied as `alpha`.
+        ctx: Device context used to launch the kernel.
+
+    Returns:
+        `DISPATCH_HIT` if a config was selected and the kernel launched, otherwise `DISPATCH_MISS`.
+    """
     var m = Int(c.dim[0]())
 
     comptime scaling_kind = get_scaling_kind[

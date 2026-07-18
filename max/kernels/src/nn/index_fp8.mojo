@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements tensor indexing and gather kernels with FP8 quantization support on Blackwell GPUs."""
 from std.math.uutils import ufloordiv, udivmod
 from std.sys import size_of, simd_width_of
 from std.sys.info import _has_blackwell_tcgen05
@@ -46,6 +47,15 @@ struct IndexSmemStorage[
     depth: Int,
     BN: Int,
 ]:
+    """Holds shared-memory buffers for the query, key, and scratch tiles used by the FP8 index kernel.
+
+    Parameters:
+        dtype: Data type of the query and key tiles.
+        num_heads: Number of attention heads stored in the query tile.
+        depth: Per-head feature depth of the query and key tiles.
+        BN: Number of key rows staged in shared memory per block tile.
+    """
+
     var q_smem: InlineArray[Scalar[Self.dtype], Self.num_heads * Self.depth]
     var k_smem: InlineArray[Scalar[Self.dtype], Self.BN * Self.depth]
     var scratch: InlineArray[Scalar[DType.float32], Self.BN * 8]
@@ -78,6 +88,33 @@ def fp8_index_kernel[
     ks_operand: ks_operand_type,
     valid_length_tt: TileTensor[DType.uint32, VLLT, ImmutAnyOrigin],
 ):
+    """Computes the scalar FP8 index/gather score kernel as a Blackwell tensor-core fallback.
+
+    Each block computes a slice of the query sequence against a tile of the
+    paged key cache, accumulating per-head logits in shared memory and writing
+    the scale-weighted row sum to the output tensor.
+
+    Parameters:
+        dtype: Data type of the query and key tiles.
+        OutputLT: Layout type of the output score tensor.
+        QLT: Layout type of the query tensor.
+        QSLT: Layout type of the query scale tensor.
+        k_operand_type: MHAOperand type used to address the paged key cache.
+        ks_operand_type: MHAOperand type used to address the key scales.
+        block_tile_shape: Block tile shape as `[BM, BN]` rows of sequence and keys.
+        VLLT: Layout type of the valid-length (sequence offset) tensor.
+        num_heads: Number of attention heads.
+        depth: Per-head feature depth.
+        _is_cache_length_accurate: When True, `cache_length` already includes new tokens.
+
+    Args:
+        output_tt: Output score tensor of shape `[total_seq_len, num_keys]`.
+        q_tt: Query tensor of shape `[total_seq_len, num_heads, depth]`.
+        q_s_tt: Per-query scale tensor of shape `[total_seq_len, num_heads]`.
+        k_operand: Ragged paged operand providing key rows.
+        ks_operand: Ragged paged operand providing per-key scales.
+        valid_length_tt: Cumulative sequence offsets of shape `[batch_size + 1]`.
+    """
     # Convert TileTensor inputs to LayoutTensor for internal use,
     # which relies on LayoutTensor-specific APIs (tile, indexing).
     # The DRAM->SMEM copy itself is now done natively on TileTensor via
@@ -304,6 +341,33 @@ def fp8_index[
     max_num_keys: Int,
     ctx: DeviceContext,
 ) raises:
+    """Dispatches the FP8 index/gather scorer on the given device context.
+
+    Selects the Blackwell tcgen05/TMA tensor-core scorer when the device and
+    operand layout support it, otherwise falls back to the scalar
+    `fp8_index_kernel` path.
+
+    Parameters:
+        dtype: Data type of the query and key tensors.
+        num_heads: Number of attention heads.
+        depth: Per-head feature depth.
+
+    Args:
+        output: Output score tensor of shape `[total_seq_len, max_num_keys]`.
+        q: Query tensor of shape `[total_seq_len, num_heads, depth]`.
+        q_s: Per-query scale tensor of shape `[total_seq_len, num_heads]`.
+        k: Key tensor of shape `[total_keys, 1, depth]`.
+        k_s: Per-key scale tensor of shape `[total_keys]`.
+        valid_length: Cumulative sequence offsets of shape `[batch_size + 1]`.
+        cache_row_offsets: Per-batch row offsets into the paged key cache.
+        batch_size: Number of sequences in the batch.
+        max_seq_len: Maximum sequence length across the batch.
+        max_num_keys: Maximum key count across the batch.
+        ctx: Device context used to enqueue the selected kernel.
+
+    Raises:
+        When the underlying kernel enqueue reports a device-side error.
+    """
     var total_keys = Int(k.dim[0]())
     var cro_size = Int(cache_row_offsets.dim[0]())
 
@@ -553,6 +617,33 @@ def fp8_index_naive[
     max_num_keys: Int,
     ctx: DeviceContext,
 ) raises:
+    """Computes the FP8 index/gather score via a two-pass matmul-then-reduce reference path.
+
+    Enqueues `_index_matmul_max` to produce per-head logits followed by
+    `_reduce_logits` to sum across heads and apply the per-key scale, serving
+    as a correctness reference for the optimized tensor-core kernels.
+
+    Parameters:
+        dtype: Data type of the query and key tensors.
+        num_heads: Number of attention heads.
+        depth: Per-head feature depth.
+
+    Args:
+        output: Output score tensor of shape `[total_seq_len, max_num_keys]`.
+        q: Query tensor of shape `[total_seq_len, num_heads, depth]`.
+        q_s: Per-query scale tensor of shape `[total_seq_len, num_heads]`.
+        k: Key tensor of shape `[total_keys, 1, depth]`.
+        k_s: Per-key scale tensor of shape `[total_keys]`.
+        valid_length: Cumulative sequence offsets of shape `[batch_size + 1]`.
+        cache_row_offsets: Per-batch row offsets into the paged key cache.
+        batch_size: Number of sequences in the batch.
+        max_seq_len: Maximum sequence length across the batch.
+        max_num_keys: Maximum key count across the batch.
+        ctx: Device context used to enqueue the kernels.
+
+    Raises:
+        When the underlying kernel enqueue reports a device-side error.
+    """
     # Construct LayoutTensors from TileTensor ptr + dimensions for the
     # internal GPU kernels (_index_matmul_max, _reduce_logits) and
     # RaggedMHAOperand, which all require LayoutTensor with specific

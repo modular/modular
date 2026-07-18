@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements tensor concatenation along a specified axis for CPU and GPU targets."""
 
 from std.collections import Optional
 from std.math import align_down, align_up, ceildiv, divmod
@@ -61,6 +62,9 @@ def preferred_simd_width[dtype: DType]() -> Int:
 
     Uses 32-byte global loads on ``sm_100a``; otherwise the target's native
     ``simd_width_of`` for ``dtype`` on the active GPU compilation target.
+
+    Parameters:
+        dtype: Element type used to compute the SIMD scalar width.
     """
     return (
         32
@@ -87,6 +91,29 @@ def memcpy_or_fuse[
     n: Int,
     out_shape: IndexList[rank, ...],
 ) raises:
+    """Copies ``n`` bytes from ``src_data`` into ``dest_data`` at ``out_byte_offset``, applying ``epilogue_fn`` elementwise when present.
+
+    When no epilogue function is supplied, this performs a plain ``memcpy`` of
+    ``n`` bytes. When an epilogue function is supplied, the source bytes are
+    reinterpreted as typed elements and the epilogue is applied scalar-by-scalar
+    so that fused concat can transform values while copying them into the
+    output buffer.
+
+    Parameters:
+        rank: Number of dimensions in the output tensor used for epilogue
+            indexing.
+        dtype: Element type of the tensors being copied.
+        epilogue_fn: Optional elementwise function applied to each copied
+            element; when absent, a plain byte ``memcpy`` is performed.
+
+    Args:
+        dest_data: Destination byte buffer to write into.
+        out_byte_offset: Byte offset into ``dest_data`` where the copy starts.
+        src_data: Source byte buffer to read from.
+        n: Number of bytes to copy.
+        out_shape: Shape of the output tensor used to compute multi-dimensional
+            indices for the epilogue function.
+    """
     comptime if not epilogue_fn:
         unsafe_memcpy(dest=dest_data + out_byte_offset, src=src_data, count=n)
     else:
@@ -598,6 +625,26 @@ def concat[
     ],
     context: DeviceContext,
 ) raises:
+    """Concatenates ``inputs`` along ``axis`` into ``output`` for the given ``target``.
+
+    Dispatches to the CPU or GPU concat implementation based on ``target`` and
+    applies ``epilogue_fn`` elementwise to each copied element when supplied.
+    Returns early when the output tensor is empty.
+
+    Parameters:
+        input_origin: Origin of the input tensors (inferred).
+        InputLayoutType: Layout type of the input tensors (inferred).
+        dtype: Element type of the input and output tensors.
+        target: Target device to dispatch to (defaults to ``"cpu"``).
+        epilogue_fn: Optional elementwise function applied to each copied
+            element (defaults to ``None``).
+
+    Args:
+        output: Destination tensor that receives the concatenated result.
+        axis: Axis along which to concatenate the inputs.
+        inputs: Static tuple of input tensors to concatenate.
+        context: Device context used to schedule the work.
+    """
     comptime assert is_valid_target[target](), "not a valid target"
 
     with Trace[TraceLevel.OP, target=target](
@@ -1664,6 +1711,31 @@ def fused_concat[
     output: TileTensor[mut=True, dtype, output_layout, _, Storage=_],
     ctx: DeviceContext,
 ) raises:
+    """Concatenates inputs produced by ``input_fn`` along ``axis`` into ``output``, applying ``output_0_fn`` to each element.
+
+    Instead of reading from concrete input tensors, the fused variant drives the
+    concat from a caller-supplied ``input_fn`` that produces values on demand,
+    allowing the concat to be fused with preceding elementwise operations.
+    Dispatches to the CPU or GPU fused implementation based on ``target`` and
+    returns early when the output tensor is empty.
+
+    Parameters:
+        dtype: Element type of the input and output tensors.
+        rank: Number of dimensions in the input and output tensors.
+        input_fn: Function that produces input element values on demand,
+            indexed by input position.
+        output_0_fn: Epilogue function applied to each produced element before
+            storing.
+        output_layout: Layout type of the output tensor.
+        axis: Axis along which to concatenate the inputs.
+        target: Target device to dispatch to (defaults to ``"cpu"``).
+
+    Args:
+        input_shapes: Static tuple of per-input shapes describing each logical
+            input that ``input_fn`` produces.
+        output: Destination tensor that receives the concatenated result.
+        ctx: Device context used to schedule the work.
+    """
     comptime assert is_valid_target[target](), "not a valid target"
 
     with Trace[TraceLevel.OP, target=target](

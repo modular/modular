@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides GPU implementations of top-p (nucleus) and min-p sampling for autoregressive token generation."""
 
 
 from std.math import ceildiv
@@ -150,6 +151,12 @@ def topk_wrapper[
 
 @always_inline
 def normalize(value: BFloat16) -> UInt16:
+    """
+    Normalizes a bfloat16 value to an unsigned 16-bit integer for radix sort
+    by flipping the sign bit for positive values and fully inverting negative
+    values.
+    """
+
     @always_inline
     def reinterpret(value: BFloat16) -> UInt16:
         # For unsigned integral types: No conversion needed, return as-is
@@ -169,11 +176,20 @@ def normalize(value: BFloat16) -> UInt16:
 
 @always_inline
 def normalize_u32(value: UInt32) -> UInt32:
+    """
+    Returns a uint32 value unchanged since unsigned integers already sort
+    correctly in radix sort.
+    """
     return value
 
 
 @always_inline
 def normalize(value: Int32) -> UInt32:
+    """
+    Normalizes a signed 32-bit integer to unsigned by flipping the most
+    significant bit so negative values sort before positive ones.
+    """
+
     @always_inline
     def reinterpret(value: Int32) -> UInt32:
         # For signed integral types: Convert to unsigned int to ensure proper
@@ -190,11 +206,20 @@ def normalize(value: Int32) -> UInt32:
 
 @always_inline
 def normalize(value: UInt16) -> UInt16:
+    """
+    Returns a uint16 value unchanged since unsigned integers already sort
+    correctly in radix sort.
+    """
     return value
 
 
 @always_inline
 def normalize(value: Float32) -> UInt32:
+    """
+    Normalizes a float32 value to an unsigned 32-bit integer for radix sort
+    by reinterpreting its bit pattern and flipping bits for negative values.
+    """
+
     @always_inline
     def reinterpret(value: Float32) -> UInt32:
         # For floating-point types: Reinterpret the bit pattern as an unsigned int
@@ -455,6 +480,15 @@ def radix_sort_pairs_kernel[
 
 
 struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
+    """
+    Holds two GPU buffers and alternates between them for double-buffered
+    radix sort passes.
+
+    The struct tracks which buffer is currently active and provides methods to
+    access the current and alternate buffers, plus a swap operation to toggle
+    between them.
+    """
+
     var _d_buffers: InlineArray[
         Optional[UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]], 2
     ]
@@ -524,6 +558,24 @@ def run_radix_sort_pairs_gpu[
     skip_sort: UnsafePointer[mut=True, Scalar[DType.bool], _],
     in_shape: IndexList,
 ) raises:
+    """
+    Runs a multi-pass radix sort on key/index pairs across batches on the GPU
+    using double buffering.
+
+    Parameters:
+        dtype: DType - Data type of the keys to sort.
+        out_idx_type: DType - Data type of the output indices.
+        ascending: Bool - Whether to sort in ascending order (default is descending).
+        BLOCK_SIZE: Int - Number of threads per block (default 256, found empirically).
+        NUM_BITS_PER_PASS: Int - Number of radix bits processed per pass (default 4).
+
+    Args:
+        ctx: DeviceContext - The GPU device context for enqueuing kernels.
+        keys: DoubleBuffer[dtype] - Double buffer holding the keys to sort, swapped each pass.
+        key_ids: DoubleBuffer[out_idx_type] - Double buffer holding the key indices, swapped each pass.
+        skip_sort: UnsafePointer[Scalar[DType.bool]] - Per-batch flag indicating whether sorting is skipped.
+        in_shape: IndexList - Shape of the input tensor as [batch_size, vocab_size].
+    """
     var batch_size = in_shape[0]
     var vocab_size = in_shape[1]
 
@@ -582,6 +634,8 @@ def topp_minp_sampling_kernel[
         sorted_ids_: Sorted token ids in descending order.
         out_token_ids: Output token ids.
         skip_sort: Whether sorting was skipped for this batch.
+        vocab_size: Number of tokens in the vocabulary per batch, used to
+            iterate over the sorted probability and id buffers.
     """
     var tid = thread_idx.x
     var batch_id = block_idx.x

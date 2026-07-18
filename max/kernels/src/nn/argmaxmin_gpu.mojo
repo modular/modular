@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides a GPU argmax/argmin kernel that wraps top-k with K=1 for inner-dimension reductions."""
 
 
 from std.gpu.host import DeviceContext
@@ -33,9 +34,13 @@ def argmaxmin_gpu[
         output_type: DType - The data dtype of the output tensor.
         largest: Bool - Whether to perform argmax or argmin.
     Args:
-        ctx: DeviceContext - The device context.
-        input: TileTensor[dtype] - The input tensor allocated on the device.
-        output: TileTensor[dtype] - The output tensor allocated on the device.
+        ctx: Device context for allocating the intermediate values buffer
+            and launching the reduction kernel.
+        input: Input tensor reduced along its inner-most dimension. Must have
+            positive rank and the same rank as `output`.
+        output: Output tensor receiving the index of the selected extreme
+            value along the inner-most dimension. Must have the same rank as
+            `input`.
     """
     comptime assert input.rank > 0, "Input rank must be positive"
     comptime assert (
@@ -65,6 +70,21 @@ def argmax_gpu[
     input: TileTensor[dtype, ...],
     output: TileTensor[mut=True, output_type, ...],
 ) raises:
+    """
+    Computes the indices of the maximum values along the inner-most dimension of the input tensor on the GPU.
+
+    Parameters:
+        dtype: DType - The data dtype of the input tensor.
+        output_type: DType - The data dtype of the output tensor.
+    Args:
+        ctx: Device context for allocating intermediate buffers and
+            launching the reduction kernel.
+        input: Input tensor whose inner-most dimension is searched for the
+            maximum value. Must have positive rank and the same rank as
+            `output`.
+        output: Output tensor receiving the index of the maximum value along
+            the inner-most dimension. Must have the same rank as `input`.
+    """
     argmaxmin_gpu[largest=True](ctx, input, output)
 
 
@@ -75,4 +95,19 @@ def argmin_gpu[
     input: TileTensor[dtype, ...],
     output: TileTensor[mut=True, output_type, ...],
 ) raises:
+    """
+    Computes the indices of the minimum values along the inner-most dimension of the input tensor on the GPU.
+
+    Parameters:
+        dtype: DType - The data dtype of the input tensor.
+        output_type: DType - The data dtype of the output tensor.
+    Args:
+        ctx: Device context for allocating intermediate buffers and
+            launching the reduction kernel.
+        input: Input tensor whose inner-most dimension is searched for the
+            minimum value. Must have positive rank and the same rank as
+            `output`.
+        output: Output tensor receiving the index of the minimum value along
+            the inner-most dimension. Must have the same rank as `input`.
+    """
     argmaxmin_gpu[largest=False](ctx, input, output)

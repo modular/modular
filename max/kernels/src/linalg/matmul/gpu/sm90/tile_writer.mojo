@@ -260,6 +260,29 @@ struct TileWriterThreadwise[
     half_tile: Bool = False,  # Handle masked x2 case,
     swapAB: Bool = False,
 ](SMemTileWriter, TrivialRegisterPassable):
+    """Writes shared-memory tiles to global memory using per-thread vectorized stores.
+
+    Implements `SMemTileWriter` without hardware TMA: each thread reads a
+    SIMD-width chunk from a swizzled shared-memory tile and writes it directly
+    to the destination global tensor. Supports an optional A/B swap mapping and
+    a half-tile mode for the x2 masked-consumer case.
+
+    Parameters:
+        dtype: Data type of the source and destination tiles (inferred).
+        dst_layout: Layout of the destination global tensor (inferred).
+        dst_origin: Origin type of the destination global tensor (inferred).
+        dst_storage: Storage type of the destination global tensor (inferred).
+        dst_linear_idx_type: Linear index type for the destination tensor
+            (inferred).
+        thread_layout: Layout mapping threads across the tile for vectorized
+            stores.
+        simd_size: SIMD vector width, in elements, used for vectorized stores.
+        half_tile: Whether to write only half the tile for the masked x2
+            consumer case (defaults to False).
+        swapAB: Whether to transpose the A and B matrix mapping (defaults to
+            False).
+    """
+
     comptime _dtype = Self.dtype
 
     comptime DstType = TileTensor[

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""SM100 Fused GEMM+SwiGLU kernel — BF16 matmul with SwiGLU in the epilogue.
+"""SM100 Fused GEMM+SwiGLU kernel: BF16 matmul with SwiGLU in the epilogue.
 
 The caller pre-permutes weight W on its N axis so adjacent output columns
 (2i, 2i+1) carry (gate, up) pairs. The epilogue computes silu(gate)*up in

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides structured sparsity utilities for scatter-gather operations on GPU."""
+
 from std.collections import Optional
 
 from std.gpu.intrinsics import AMDBufferResource
@@ -156,6 +158,15 @@ from structured_kernels.smem_types import (
 
 
 trait SharedMemoryBasePtr:
+    """Defines a base pointer into GPU shared memory with a fixed alignment.
+
+    Implementations provide a statically-aligned pointer to shared memory
+    that a `SharedMemoryManager` allocates tiles and arrays from.
+
+    Parameters:
+        alignment: Required byte alignment of the shared memory base pointer.
+    """
+
     comptime alignment: Int
 
     @always_inline
@@ -172,6 +183,17 @@ struct NVIDIASharedMemoryBasePtr[
     name: StaticString = "extern_ptr_syml",
     memory_alignment: Int = 8,
 ](SharedMemoryBasePtr):
+    """NVIDIA implementation of `SharedMemoryBasePtr` using external memory.
+
+    Exposes a shared memory base pointer backed by NVIDIA's
+    `external_memory` intrinsic, parameterized by a symbolic name and
+    alignment.
+
+    Parameters:
+        name: Symbolic name for the external memory allocation.
+        memory_alignment: Byte alignment of the external memory allocation.
+    """
+
     comptime alignment: Int = 128
 
     @always_inline
@@ -190,6 +212,16 @@ struct NVIDIASharedMemoryBasePtr[
 
 
 struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
+    """Manages bump allocation of tiles and arrays from a shared memory base pointer.
+
+    Allocates `SMemTile`, `SMemTileArray`, and `SMemArray` instances by
+    advancing an offset over a shared memory base pointer provided by the
+    `SMBP` parameter.
+
+    Parameters:
+        SMBP: Shared memory base pointer provider implementing `SharedMemoryBasePtr`.
+    """
+
     comptime Tile[dtype: DType, layout: Layout] = SMemTile[
         dtype, layout, alignment=Self.SMBP.alignment
     ]
@@ -222,6 +254,11 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
     ](mut self) -> T:
         """Allocate a single tile.
 
+        Parameters:
+            dtype: Element type of the allocated tile.
+            layout: Memory layout of the allocated tile.
+            T: The allocated `SMemTile` type (inferred).
+
         Returns:
             Allocated tile.
         """
@@ -243,6 +280,12 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
     ](mut self) -> T:
         """Allocate a tile array.
 
+        Parameters:
+            dtype: Element type of each tile in the array.
+            layout: Memory layout of each tile in the array.
+            num_tiles: Number of tiles in the array.
+            T: The allocated `SMemTileArray` type (inferred).
+
         Returns:
             Allocated tile array.
         """
@@ -260,6 +303,11 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
         T: type_of(Self.Array[type, size]),
     ](mut self) -> T:
         """Allocate a regular array.
+
+        Parameters:
+            type: Element type stored in the array.
+            size: Number of elements in the array.
+            T: The allocated `SMemArray` type (inferred).
 
         Returns:
             Allocated array.

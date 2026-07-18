@@ -275,6 +275,40 @@ def dispatch_im2col_matmul_conv3d[
     Skips on: non-bf16 dtype, grouped conv, dilation != 1, kernel size
     1x1x1 (the vectorized naive kernel wins on tiny shapes), and K too
     small for the matmul fast path.
+
+    Parameters:
+        input_type: Element type of the input tensor; must be
+            `DType.bfloat16`.
+        filter_type: Element type of the filter tensor.
+        output_type: Element type of the output tensor.
+        filter_is_fcrs: True if the filter is in `FCQRS` layout, False if
+            in `QRSCF` layout (inferred, defaults to False).
+        maybe_epilogue_func: Optional elementwise epilogue applied to each
+            output element with 5-D coordinates (inferred, defaults to
+            None).
+        m_tile_byte_budget: Upper bound on bytes allocated for one M-tile
+            of the im2col matrix, controlling scratch memory usage
+            (inferred, defaults to 256 MiB).
+
+    Args:
+        input: Input tensor in `NDHWC` layout with shape
+            `[batch, D, H, W, C]`.
+        filter: Filter tensor with static shape, either `FCQRS` or
+            `QRSCF` depending on `filter_is_fcrs`.
+        output: Output tensor in `NDHWC` layout with shape
+            `[batch, D_out, H_out, W_out, F]`.
+        stride: Spatial strides for the depth, height, and width axes.
+        dilation: Spatial dilation for the depth, height, and width
+            axes; must be 1 for each.
+        symmetric_padding: Symmetric padding for the depth, height, and
+            width axes.
+        num_groups: Number of convolution groups; must be 1.
+        ctx: Device context for enqueueing GPU kernels and allocating
+            scratch buffers.
+
+    Returns:
+        True if the conv was handled, False if the caller should fall
+        back to another implementation.
     """
     comptime assert input.flat_rank == 5, "input must be rank 5 (NDHWC)"
     comptime assert filter.flat_rank == 5, "filter must be rank 5"

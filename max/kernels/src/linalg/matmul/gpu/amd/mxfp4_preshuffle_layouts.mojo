@@ -38,7 +38,7 @@ prep convention).
 
 Layout reference (canonical):
     composable_kernel/example/ck_tile/18_flatmm/mxgemm/mx_flatmm_arch_traits.hpp:73-167
-        — `preShuffleWeight` (B 5D) and `preShuffleScale` (scale 4D).
+        : `preShuffleWeight` (B 5D) and `preShuffleScale` (scale 4D).
 """
 
 from std.gpu import (
@@ -287,7 +287,12 @@ struct Shuffler[E: Int]:
     @staticmethod
     @always_inline
     def scale_padded_mn(MN: Int) -> Int:
-        """Padded MN dim used by the 4D scale layout: MN rounded up to 32."""
+        """Padded MN dim used by the 4D scale layout: MN rounded up to 32.
+
+        Args:
+            MN: Unpadded extent along the scale tensor's MN axis (number of
+                rows) before rounding up to the `S_MN_BLOCK` atom tile.
+        """
         return align_up(MN, Self.S_MN_BLOCK)
 
     # ---- B (weight) preshuffle (GPU) ----
@@ -532,7 +537,7 @@ struct Shuffler[E: Int]:
         Grid: `(total_wg,)`; block: 64 threads (one warp). Each CTA
         grid-strides over the global tile counter, where a tile is one
         `(expert, m_block, k_block)` triple writing 64 i32 cells.
-        `m_blocks` per expert is `uceildiv(num_tokens, S_MN_BLOCK)` —
+        `m_blocks` per expert is `uceildiv(num_tokens, S_MN_BLOCK)`;
         only REAL M is iterated, so pad rows past `align_up(num_tokens,
         32)` are never written.
 
@@ -540,7 +545,7 @@ struct Shuffler[E: Int]:
         with bound `align_up(num_tokens[e], 32) * K_SCALES`, so OOB
         scale reads past real data clamp to 0 in hardware. Avoiding the
         zero-fill on trailing m_blocks is the whole point of this
-        kernel — it's the dominant cost when `max_padded_M >>
+        kernel; it's the dominant cost when `max_padded_M >>
         num_tokens` (worst-case ~256x over-provisioning at decode).
 
         Slot stride remains `max_padded_M * K_SCALES` bytes per expert,

@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Mask types and the `MHAMask` trait for multi-head attention kernels.
+
+Defines the `MHAMask` trait and concrete implementations including
+`CausalMask`, `NullMask`, `SlidingWindowCausalMask`, and `MaterializedMask`.
+Masks encode which query-key pairs are visible and determine per-tile
+iteration strategies used by prefill and decode kernels.
+"""
 
 from std.utils import StaticTuple
 from std.math import align_down, iota, ceildiv
@@ -115,6 +122,15 @@ struct TileMaskStatus(
 
 
 struct MaskStrategy(TrivialRegisterPassable):
+    """Bit-flag enum that selects the masking strategy for a tile iteration set.
+
+    Strategies are combined with bitwise OR. `NO_MASK` skips masking
+    entirely. `COMPUTED` calls the mask functor per element.
+    `OUT_OF_BOUNDS` clips keys at `num_keys`. `BITMASK` reads a 32-bit
+    column-visibility mask from `MHAMask.mask_bits()`, which subsumes the
+    older triangular and OOB strategies for SM100 kernels.
+    """
+
     var _value: Int32
     comptime NO_MASK = Self(0)
     """
@@ -199,11 +215,17 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
     ) -> SIMD[dtype, width]:
         """Return mask vector at given coordinates.
 
-        Arguments:
-          coord is (seq_id, head, q_idx, k_idx)
-          score_vec is at `coord` of the score matrix
-
         The functor could capture an mask tensor and add to the score e.g. Replit.
+
+        Parameters:
+            dtype: The element type of the score vector.
+            width: The SIMD width of the score vector.
+            element_type: The integer type for index coordinates (inferred;
+                defaults to `DType.uint32`).
+
+        Args:
+            coord: The coordinate tuple `(seq_id, head, q_idx, k_idx)`.
+            score_vec: The score vector at `coord` of the score matrix.
         """
         ...
 
@@ -221,6 +243,17 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         used by masks (e.g., `CausalPaddingMask`) whose status depends on
         per-sequence state. Implementations that don't need it should ignore
         it; the unused argument will be DCE'd.
+
+        Parameters:
+            element_type: The integer type for index coordinates (defaults
+                to `DType.uint32`).
+
+        Args:
+            seq_id: The sequence/batch index.
+            tile_offset: The `(row, col)` offset of the tile in the score
+                matrix.
+            tile_size: The `(height, width)` size of the tile in query rows
+                and key columns.
         """
         ...
 
@@ -240,6 +273,16 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         within a kernel that loop over columns need to be in agreement.
         Either they all loop over all columns and check status to skip,
         or they loop using the `masked_set_ends`.
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
+            page_size: The KV cache page size in key columns (0 or 1 if
+                unpaged).
+
+        Args:
+            seq_id: The sequence/batch index.
+            row: The starting query-row index of the current query tile.
         """
         ...
 
@@ -259,6 +302,12 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         equal to `BN`, this is automatic. An implementation whose
         natural alignment doesn't divide `BN` must wrap its return in
         `gcd(..., BN)` itself.
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
+            page_size: The KV cache page size in key columns (0 or 1 if
+                unpaged).
         """
         ...
 
@@ -270,13 +319,27 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         `TileMaskStatus.NO_MASK' or 'TileMaskStatus.PARTIAL_MASK'.
         This is to be used by warp specializations that do not need to
         use `kv_row`.
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
+            page_size: The KV cache page size in key columns (0 or 1 if
+                unpaged).
+
+        Args:
+            seq_id: The sequence/batch index.
+            row: The starting query-row index of the current query tile.
+            num_cols: The exclusive upper bound on key column indices.
         """
         ...
 
     @staticmethod
     def count_nonfull_sets(BM: Int, BN: Int) -> Int:
-        """
-        The number of blocks that are all partial-masks or not masked.
+        """The number of blocks that are all partial-masks or not masked.
+
+        Args:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
         """
         ...
 
@@ -292,14 +355,35 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         `total_iters`, if we have `UNKNOWN_MASK`s.
         In case of `UNKNOWN_MASK`s, `masked_set_ends` with tile-skipping
         must be used to have the correct kv_row values at each iteration.
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
+            page_size: The KV cache page size in key columns (0 or 1 if
+                unpaged).
+
+        Args:
+            seq_id: The sequence/batch index.
+            row: The starting query-row index of the current query tile.
+            num_cols: The exclusive upper bound on key column indices.
         """
         ...
 
     def last_masked_set_end[
         BM: Int, BN: Int, page_size: Int
     ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
-        """
-        Equivalent to `masked_set_ends[BM,BN,page_size](seq_id, row, num_cols)[-1]`.
+        """Equivalent to `masked_set_ends[BM,BN,page_size](seq_id, row, num_cols)[-1]`.
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
+            page_size: The KV cache page size in key columns (0 or 1 if
+                unpaged).
+
+        Args:
+            seq_id: The sequence/batch index.
+            row: The starting query-row index of the current query tile.
+            num_cols: The exclusive upper bound on key column indices.
         """
         ...
 
@@ -316,6 +400,10 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         hint that it's worth checking on each iteration at runtime for
         `FULL_MASK` (in which case we can skip the tile) or `NO_MASK`
         (in which case we can unswitch and avoid masking in an inner loop).
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
         """
         ...
 
@@ -326,6 +414,10 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         """
         For each set of iterations that are either partially masked or not masked,
         this indicates the `MaskStrategy` to use.
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
         """
         ...
 
@@ -634,6 +726,17 @@ struct NullMask(MHAMask, TrivialRegisterPassable):
         """
         The total number of column iterations for which this mask returns either
         `TileMaskStatus.NO_MASK' or 'TileMaskStatus.PARTIAL_MASK'.
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
+            page_size: The KV cache page size in key columns (0 or 1 if
+                unpaged).
+
+        Args:
+            seq_id: The sequence/batch index.
+            row: The starting query-row index of the current query tile.
+            num_cols: The exclusive upper bound on key column indices.
         """
         return ceildiv(num_cols, UInt32(BN))
 
@@ -715,6 +818,10 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
         4 | 0 0 0 0 1 1 1 1 0 0
         5 | 0 0 0 0 0 0 0 0 1 1
         6 | 0 0 0 0 0 0 0 0 1 1
+
+    Parameters:
+        local_window_size: The chunk size in tokens; positions are grouped
+            into contiguous blocks of this width.
     """
 
     comptime apply_log2e_after_mask: Bool = False
@@ -1007,6 +1114,10 @@ struct SlidingWindowCausalMask[window_size: Int](
         4 | 0 0 1 1 1 0 0
         5 | 0 0 0 1 1 1 0
         6 | 0 0 0 0 1 1 1
+
+    Parameters:
+        window_size: The sliding window size in tokens; a query at position `q`
+            attends only to keys in `[q - window_size + 1, q]`.
     """
 
     comptime apply_log2e_after_mask: Bool = False
@@ -1304,6 +1415,11 @@ struct SlidingWindowNonCausalMask[window_size: Int](
         4 | 0 0 1 1 1 1 1
         5 | 0 0 0 1 1 1 1
         6 | 0 0 0 0 1 1 1
+
+    Parameters:
+        window_size: The sliding window size in tokens; a query at position
+            `q` attends only to keys at or after `q - window_size + 1`, with
+            no upper bound (future keys are always visible).
     """
 
     comptime apply_log2e_after_mask: Bool = False
@@ -1715,6 +1831,28 @@ struct CausalPaddingMask[layout_: Layout, origin_: Origin[mut=False]](
 def naively_compute_total_iters[
     MaskType: MHAMask, //, BM: Int, BN: Int
 ](mask: MaskType, seq_id: UInt32, q_row: UInt32, end: UInt32) -> UInt32:
+    """Count the non-fully-masked KV tile iterations for a query row by linear scan.
+
+    Walks every `BN`-wide column tile from `0` to `end`, calling
+    `mask.status()` for each and counting tiles that are not
+    `TileMaskStatus.FULL_MASK`. Intended as a reference fallback for mask
+    types that do not implement a closed-form `total_iters()`.
+
+    Parameters:
+        MaskType: Concrete `MHAMask` implementation to query.
+        BM: Query tile height (number of query rows per block).
+        BN: Key tile width (number of key columns per block).
+
+    Args:
+        mask: The mask instance.
+        seq_id: Sequence/batch index.
+        q_row: Starting query-row index of the current query tile.
+        end: Exclusive upper bound on key column indices.
+
+    Returns:
+        The number of KV tiles in `[0, end)` that are not fully masked.
+    """
+
     var iter_count: UInt32 = 0
     var kv_row: UInt32 = 0
     while kv_row < end:
@@ -1736,6 +1874,28 @@ def naively_compute_total_iters[
 def naively_get_first_nonempty_mask_col[
     MaskType: MHAMask, //, BM: Int, BN: Int
 ](mask: MaskType, seq_id: UInt32, q_row: UInt32) -> UInt32:
+    """Find the first KV tile column whose mask status is not `FULL_MASK`.
+
+    Scans KV column tiles starting at 0 with stride `BN`, calling
+    `mask.status()` until a tile that is not fully masked is found. Used as
+    a fallback `start_column()` implementation for mask types that do not
+    have a closed-form expression.
+
+    Parameters:
+        MaskType: Concrete `MHAMask` implementation to query.
+        BM: Query tile height (number of query rows per block).
+        BN: Key tile width (number of key columns per block).
+
+    Args:
+        mask: The mask instance.
+        seq_id: Sequence/batch index.
+        q_row: Starting query-row index of the current query tile.
+
+    Returns:
+        The column index of the first non-fully-masked KV tile, aligned to
+        a multiple of `BN`.
+    """
+
     var kv_row: UInt32 = 0
     while (
         mask.status(
@@ -1752,7 +1912,14 @@ def naively_get_first_nonempty_mask_col[
 struct MaterializedMask[
     dtype_: DType, layout_: Layout, origin_: Origin[mut=False]
 ](MHAMask, TrivialRegisterPassable):
-    """Mask that's backed by a materialized tensor."""
+    """Mask that's backed by a materialized tensor.
+
+    Parameters:
+        dtype_: Element type of the backing mask tensor.
+        layout_: Memory layout of the backing mask tensor.
+        origin_: Origin (ownership/mutability qualifier) of the backing mask
+            tensor.
+    """
 
     comptime apply_log2e_after_mask: Bool = True
     comptime mask_out_of_bound: Bool = True
@@ -1993,13 +2160,13 @@ def _both_multiset[T: MHAMask, S: MHAMask](BM: Int, BN: Int) -> Bool:
     single-set (`count_nonfull_sets == 1`), so any mask whose
     `count_nonfull_sets >= 2` is a statically-known partition that contains a
     `NO_MASK` set. Hence `_both_multiset` ⟺ "both inners are known AND each has
-    a `NO_MASK` band" — exactly the precondition for an `OrMask` to expose a
+    a `NO_MASK` band", exactly the precondition for an `OrMask` to expose a
     combined `NO_MASK` middle (intersection of two `NO_MASK` bands).
 
     This is callable from `count_nonfull_sets` (whose `BM`/`BN` are runtime
     `Int` arguments) because it takes `BM`/`BN` as arguments and only ever uses
     them in arithmetic / argument-position calls to the inners'
-    `count_nonfull_sets` — never as parameters (which a runtime `Int` cannot
+    `count_nonfull_sets`, never as parameters (which a runtime `Int` cannot
     satisfy).
     """
     return (
@@ -2214,7 +2381,14 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     MHAMask, TrivialRegisterPassable
 ):
     """Mask that's the OR of two masks.
-    If either mask masks off an element, the element is masked off."""
+    If either mask masks off an element, the element is masked off.
+
+    Parameters:
+        T: The type of the first (left) inner mask.
+        S: The type of the second (right) inner mask.
+        lhs: The first (left) inner mask instance.
+        rhs: The second (right) inner mask instance.
+    """
 
     comptime apply_log2e_after_mask: Bool = Self.T.apply_log2e_after_mask or Self.S.apply_log2e_after_mask
     comptime mask_out_of_bound: Bool = Self.T.mask_out_of_bound and Self.S.mask_out_of_bound

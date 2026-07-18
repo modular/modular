@@ -10,6 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Shared configuration types and dispatch helpers for MHA GPU kernels.
+
+Provides `MHAConfig` (tile/pipeline configuration), `FlashAttentionAlgorithm`
+(algorithm variant selector), mask-dispatch helpers, and partition-scheme
+types used by both prefill and decode attention kernels.
+"""
 
 from std.math import align_up, ceildiv
 from std.math.uutils import ufloordiv, ualign_up
@@ -61,9 +67,9 @@ comptime is_sm100 = "sm_100" in _accelerator_arch() or "sm_103" in _accelerator_
 comptime is_sm90or100 = is_sm90 or is_sm100
 
 # Programmatic Dependent Launch level for the split-K decode producer/consumer
-# (the split-K attention kernels and `mha_splitk_reduce`).  On by default so
+# (the split-K attention kernels and `mha_splitk_reduce`). On by default so
 # back-to-back grids in the stream overlap launch/prologue latency; disable
-# with `-D MHA_PDL=false`.  When > OFF, those kernels emit
+# with `-D MHA_PDL=false`. When > OFF, those kernels emit
 # `wait_on_dependent_grids()` / `launch_dependent_grids()` and their dispatches
 # attach the PROGRAMMATIC_STREAM_SERIALIZATION launch attribute.
 comptime MHA_PDL_LEVEL = PDLLevel.OVERLAP_AT_END if get_defined_bool[
@@ -79,6 +85,22 @@ def as_dynamic_row_major_1d[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ) -> LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]:
+    """Reinterprets a generic-address `LayoutTensor` as a 1-D dynamic row-major tensor.
+
+    The pointer and total element count are preserved; the result has an
+    unknown-value row-major layout so it can be passed to routines that
+    require a 1-D runtime-layout tensor without copying data.
+
+    Parameters:
+        dtype: The element data type of the input tensor.
+
+    Args:
+        tensor: The immutable generic-address tensor to reinterpret.
+
+    Returns:
+        A 1-D `LayoutTensor` with a `row_major(UNKNOWN_VALUE)` layout backed
+        by the same storage as `tensor`.
+    """
     return {
         tensor.ptr.as_immutable().as_unsafe_any_origin(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -88,6 +110,14 @@ def as_dynamic_row_major_1d[
 
 
 struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
+    """Identifies which flash-attention algorithm variant to use for a kernel launch.
+
+    The four variants range from a naive reference implementation to the
+    latest warp-specialized FA3 pipeline. The default constructed value is
+    `FLASH_ATTENTION_3`. Use `init()` to resolve an unspecified (`-1`) value
+    to the best algorithm for the target dtype and GPU architecture.
+    """
+
     var _value: Int32
 
     comptime NAIVE = Self(0)
@@ -144,6 +174,17 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
 
 
 struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
+    """Compile-time and runtime tile-shape configuration for MHA GPU kernels.
+
+    Stores the tile dimensions (BM, BN, BK), warp tile dimensions (WM, WN),
+    pipeline depth, and algorithm variant used when launching flash-attention
+    kernels. The constructor auto-selects sensible defaults based on `dtype`
+    and the detected GPU architecture when optional fields are left as `None`.
+
+    Parameters:
+        dtype: The element data type shared by Q, K, V, and the output tensor.
+    """
+
     # Q, K, V, output should have the same type.
     var num_heads: Int
     var depth: Int
@@ -632,6 +673,11 @@ def get_start_and_end_for_partitions[
     `partition_size = max(tile_size, align_up(ceildiv(num_keys, num_partitions),
     tile_size))`; partitions `>= N` are empty (start == end == num_keys).
 
+    Parameters:
+        tile_size: Alignment granularity, in elements, for partition
+            boundaries. Each non-empty partition spans a multiple of
+            `tile_size` keys so that tile-aligned loads cover whole tiles.
+
     Args:
         num_keys: Total number of keys (sequence length).
         num_partitions: Number of partitions to split keys into.
@@ -662,6 +708,27 @@ def dispatch_mask[
     callback_fn: callback_fn_type,
     local_window_size: Int = -1,
 ]() raises -> None:
+    """Instantiate an `MHAMask` by name and invoke a callback with it.
+
+    Resolves the mask string to one of the built-in `MHAMask` implementations
+    at compile time and calls `callback_fn` with a concrete mask instance.
+    This lets callers write mask-agnostic kernels while still specialising the
+    generated code per mask type.
+
+    Parameters:
+        mask_type: Name of the mask (e.g. `"causal"`, `"null"`,
+            `"sliding_window_causal"`). Must match one of the `MaskName`
+            constants.
+        callback_fn: Parametric callback invoked with the resolved mask.
+        local_window_size: Sliding-window or chunk size for masks that
+            require it. Must be `-1` for masks that ignore it and positive
+            for masks that require it.
+
+    Raises:
+        Compile-time assertion error if `mask_type` is unrecognised or if
+        `local_window_size` is inconsistent with the selected mask.
+    """
+
     @always_inline
     @parameter
     def outer_wrapper[mask_t: MHAMask](mask: mask_t) raises:
@@ -710,6 +777,26 @@ def dispatch_materialized_mask[
         ]
     ] = None,
 ) raises -> None:
+    """Wrap a dense mask tensor in a `MaterializedMask` and invoke a callback.
+
+    Constructs a `MaterializedMask` from the provided tensor and optional
+    per-sequence start-position tensor, then calls `callback_fn` with the
+    resulting mask. Use this when the mask is provided as an explicit tensor
+    (e.g. an ALiBi or relative-positional-encoding bias) rather than a
+    compute-on-the-fly strategy.
+
+    Parameters:
+        dtype: Element type of the mask tensor.
+        layout: Layout of the mask tensor.
+        callback_fn: Parametric callback invoked with the `MaterializedMask`.
+
+    Args:
+        mask_nd: The mask values tensor with shape `(batch, heads, q, k)` or
+            compatible broadcast shape.
+        start_pos_nd: Optional per-sequence start positions used to offset the
+            key dimension.
+    """
+
     var mask = MaterializedMask(mask_nd, start_pos_nd)
     return callback_fn(mask)
 
@@ -720,17 +807,35 @@ def dispatch_materialized_mask[
 # That is, we want different specializations of a function to have
 # different numbers of arguments post-compilation.
 trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterPassable):
+    """Trait for integer values that may be statically known at compile time.
+
+    Implementors carry a `comptime static_value` that is `Some` when the
+    integer is a compile-time constant and `None` when it is a runtime value.
+    This lets callers specialise code at compile time (eliminating kernel
+    arguments) while retaining a uniform runtime interface through `__int__`
+    and `as_uint32()`.
+    """
+
     comptime static_value: Optional[Int]
 
     def as_uint32(self) -> UInt32:
         ...
 
 
-# These are used to avoid generating code for passing unused values to kernels.
-# That is, if we have a static int, no argument should be passed.
 struct StaticInt[value: Int](
     Defaultable, OptionallyStaticInt, TrivialRegisterPassable
 ):
+    """A compile-time constant integer that satisfies `OptionallyStaticInt`.
+
+    Because the value is fully known at compile time, no runtime storage is
+    needed and no kernel argument is generated for this type. Use
+    `StaticInt[1]()` to represent the decoding mode without passing an
+    extra argument to GPU kernels.
+
+    Parameters:
+        value: The compile-time integer value.
+    """
+
     comptime static_value: Optional[Int] = Optional[Int](Self.value)
 
     @always_inline("nodebug")
@@ -747,6 +852,13 @@ struct StaticInt[value: Int](
 
 
 struct DynamicInt(OptionallyStaticInt, TrivialRegisterPassable):
+    """A runtime integer value that satisfies `OptionallyStaticInt`.
+
+    Unlike `StaticInt`, the value is not known until runtime and is stored
+    in a `UInt32` field. Use this when the integer must vary between
+    invocations, such as a dynamic sequence length or partition index.
+    """
+
     var value: UInt32
     comptime static_value: Optional[Int] = None
 
@@ -769,6 +881,15 @@ def _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
 
 
 trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):
+    """Trait describing how the key-value sequence is partitioned for split-K decoding.
+
+    Implementations either skip partitioning entirely (`NoPartition`) or
+    divide the key sequence across multiple CTAs and accumulate partial
+    softmax statistics in a separate reduction pass (`SplitKPartition`).
+    The `do_partition` compile-time flag lets the compiler eliminate the
+    reduction kernel when no partitioning is needed.
+    """
+
     comptime do_partition: Bool
     comptime accum_dtype: DType
 
@@ -795,6 +916,16 @@ trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):
 struct NoPartition[dtype: DType](
     Defaultable, MHAPartitionScheme, TrivialRegisterPassable
 ):
+    """A single-partition (non-split-K) scheme for MHA decoding.
+
+    Uses the standard single-pass flash-attention decode without any
+    inter-CTA reduction. `do_partition` is `False`, so the split-K
+    reduction kernel is compiled away entirely.
+
+    Parameters:
+        dtype: The accumulator element type (same as the output type).
+    """
+
     comptime do_partition: Bool = False
     comptime accum_dtype: DType = Self.dtype
 
@@ -822,6 +953,19 @@ struct NoPartition[dtype: DType](
 struct SplitKPartition[dtype: DType](
     MHAPartitionScheme, TrivialRegisterPassable
 ):
+    """A multi-partition split-K scheme for MHA decoding over long sequences.
+
+    Divides the key sequence across `num_partitions` CTAs. Each CTA writes
+    its partial softmax numerator/denominator to the buffer pointed to by
+    `ptr`, and a separate reduction kernel merges the results. Over-launches
+    up to `max_num_partitions` CTAs so the grid shape is stable across
+    varying key lengths (enabling CUDA graph capture).
+
+    Parameters:
+        dtype: The accumulator element type used for the partial statistics
+            buffer and the final output.
+    """
+
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
 

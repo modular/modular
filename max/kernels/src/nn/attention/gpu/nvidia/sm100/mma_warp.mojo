@@ -53,6 +53,23 @@ def fa4_mma[
     num_keys: UInt32,
     mask: MaskType,
 ):
+    """Executes the FA4 MMA warp loop for SM100 Flash Attention.
+
+    Computes Q@K' into score TMEM (S0/S1) and P@V into output TMEM (O0/O1)
+    across the KV tile sequence, coordinating with the load and softmax
+    warps via barrier pipelines. Supports fused-KV and split-KV modes,
+    single-Q and two-Q tile configurations, and partial-K contraction for
+    paged sub-tiles (`page_size` zero disables paging; sub-BN enables
+    partial-K).
+
+    Args:
+        smem: Shared memory allocator holding Q, K, V tiles and barriers.
+        tmem_addr: Base TMEM address for this CTA's S/O accumulators.
+        seq_id: Sequence index for the current query batch.
+        score_row: Row offset of the query tile within the sequence.
+        num_keys: Number of valid key columns to attend to.
+        mask: Attention mask controlling tile iteration and masking bounds.
+    """
     comptime accum_type = DType.float32
     comptime BM = config.BM
     comptime BN = config.BN

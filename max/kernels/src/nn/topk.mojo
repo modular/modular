@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides top-K selection kernels using warp- and block-level reductions for CPU and GPU."""
 
 from std.math import ceildiv, exp, iota
 from std.math.uutils import ufloordiv, udivmod
@@ -647,14 +648,28 @@ def _topk_dead_val[T: DType, largest: Bool = True]() -> Scalar[T]:
 struct TopK_2[T: DType, largest: Bool = True](
     Defaultable, TrivialRegisterPassable
 ):
+    """Tracks the single best (value, index) pair per thread during top-K reductions.
+
+    Parameters:
+        T: Data type of the tracked values.
+        largest: Whether the best value is the maximum (top k) or minimum (bottom k).
+
+    Fields:
+        p: Flattened index of the tracked element.
+        u: Value of the tracked element.
+    """
+
     var p: Int  # flattened index of the element
     var u: Scalar[Self.T]  # value of the element
 
     def __init__(out self):
+        """Initializes the tracker with a dead value and a zero index."""
         self.p = 0  # 0 to solve OOB
         self.u = _topk_dead_val[Self.T, Self.largest]()
 
     def insert(mut self, elem: Scalar[Self.T], elem_id: Int):
+        """Replaces the tracked element when the candidate beats the current best.
+        """
         comptime if Self.largest:
             if elem > self.u:
                 self.u = elem
@@ -2054,6 +2069,21 @@ def apply_gumbel_noise_kernel[
     temperature: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
     seed: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]],
 ):
+    """Adds Gumbel(0,1) noise to logits for sampling via the Gumbel-max trick.
+
+    Parameters:
+        dtype: Data type of the input and output logit buffers.
+        OutputLayoutType: Layout of the output tensor.
+        InputLayoutType: Layout of the input tensor.
+        num_sms: Number of streaming multiprocessors to launch with.
+        num_threads: Number of threads per block.
+
+    Args:
+        output: Output tensor of noised logits.
+        input: Input tensor of logits.
+        temperature: Optional per-token temperature scaling.
+        seed: Optional per-token random seed.
+    """
     comptime EPS = Float32(1e-20)
     comptime LOG2 = Float32(0.6931471806)
     comptime MIN_TEMP = Float32(1e-6)

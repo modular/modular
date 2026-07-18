@@ -11,6 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Defines tuning configurations for SM100 structured matmul kernels.
+
+Holds the `TuningConfigSM100` and `TuningConfigSmallMNGemms` structs that
+bundle kernel launch parameters for specific MxNxK matmul shapes, along with
+the curated tuning lists used by the SM100 structured dispatch tables.
+"""
+
 from ...tile_scheduler import RasterOrder
 from linalg.gemv import GEMVAlgorithm
 from internal_utils import TuningConfig
@@ -18,6 +25,14 @@ from std.utils.index import Index, IndexList
 
 
 struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
+    """Holds SM100 matmul kernel launch parameters for a range of MxNxK shapes.
+
+    Stores the MMA shape, block tile shape, cluster shape, swizzle and
+    rasterization settings, pipeline stage counts, and split-K factor that
+    select an optimized kernel configuration for matmuls whose M dimension
+    falls in the half-open interval `[M, M_end)`.
+    """
+
     # The kernel parameters are optimal for shape in [M:M_end]xNxK.
     var M: Int
     var M_end: Int
@@ -143,6 +158,13 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
 
 
 struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
+    """Holds launch parameters for small-M, small-N GEMM/GEMV kernels.
+
+    Stores the tile dimensions, thread count, unroll factor, K-tile size,
+    and GEMV algorithm kind that select an optimized kernel configuration for
+    matmuls whose M dimension falls in the half-open interval `[M, M_end)`.
+    """
+
     var M: Int
     var M_end: Int
     var N: Int

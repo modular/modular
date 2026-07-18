@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements CPU-based multi-head attention kernels, including flash attention and KV-cache-backed attention variants."""
+
 from std.collections import OptionalReg
 from std.math import align_down, align_up, ceildiv, exp
 
@@ -1094,6 +1096,36 @@ def flash_attention[
     ] = None,
     ctx: Optional[DeviceContext] = None,
 ):
+    """Computes scaled dot-product flash attention on CPU for the given query, key, value, and mask accessors.
+
+    Parameters:
+        dtype: The element type of the query, key, value, and output
+            tensors (inferred).
+        rank: The number of dimensions in the query, key, value, and output
+            tensors, either 3 or 4 (inferred).
+        mask_rank: The number of dimensions in the attention mask tensor
+            (inferred).
+        q_origin: The memory origin of the read-only query tensor
+            (inferred).
+        output_origin: The memory origin of the writable output tensor
+            (inferred).
+        input_k_fn: Compile-time function loading a `SIMD` vector of key
+            elements at a given `IndexList` index.
+        input_v_fn: Compile-time function loading a `SIMD` vector of value
+            elements at a given `IndexList` index.
+        input_mask_fn: Compile-time function loading a `SIMD` vector of
+            additive mask values at a given `IndexList` index.
+
+    Args:
+        q: Query tensor in BSHD or BSD layout.
+        k_shape: Shape of the key tensor.
+        v_shape: Shape of the value tensor.
+        mask_shape: Shape of the attention mask tensor.
+        output: Output tensor to write the attention results into.
+        scale: Scaling factor applied to the query-key dot products.
+        sink_weights: Optional per-head attention sink weights.
+        ctx: Optional device context for controlling parallelism.
+    """
     _flash_attention[input_k_fn, input_v_fn, input_mask_fn](
         q,
         k_shape,
@@ -1148,6 +1180,38 @@ def flash_attention_split_kv[
     So this kernel does an in-place concat fusion by changing the input lambdas
     `input_{k,v}_cache_fn_wrapper` to take previous sequence KV elements from
     the KV cache, and current KV elements from tensors `k` and `v`.
+
+    Parameters:
+        dtype: The element type of the query, key, value, and output
+            tensors (inferred).
+        rank: The number of dimensions in the query, key, value, and output
+            tensors, either 3 or 4 (inferred).
+        mask_rank: The number of dimensions in the attention mask tensor
+            (inferred).
+        input_k_fn: Compile-time function loading a `SIMD` vector of current
+            key elements at a given `IndexList` index.
+        input_v_fn: Compile-time function loading a `SIMD` vector of current
+            value elements at a given `IndexList` index.
+        input_k_cache_fn: Compile-time function loading a `SIMD` vector of
+            cached key elements at a given `IndexList` index.
+        input_v_cache_fn: Compile-time function loading a `SIMD` vector of
+            cached value elements at a given `IndexList` index.
+        input_mask_fn: Compile-time function loading a `SIMD` vector of
+            additive mask values at a given `IndexList` index.
+
+    Args:
+        q: Query tensor in BSHD layout.
+        k_shape: Shape of the current key tensor in BSHD layout.
+        v_shape: Shape of the current value tensor in BSHD layout.
+        k_cache_shape: Shape of the cached key tensor with one extra
+            leading dimension.
+        v_cache_shape: Shape of the cached value tensor with one extra
+            leading dimension.
+        mask_shape: Shape of the attention mask tensor.
+        output: Output tensor to write the attention results into.
+        scale: Scaling factor applied to the query-key dot products.
+        ctx: Optional device context for controlling parallelism
+            (defaults to `None`).
     """
     # This expects the following layouts:
     # q: BSHD
@@ -1443,6 +1507,17 @@ def flash_attention_kv_cache[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ):
+    """Computes flash attention on CPU using a KV cache with an additive LayoutTensor mask.
+
+    Args:
+        q: Query tensor in BSHD layout.
+        k: Key cache.
+        v: Value cache.
+        mask: Additive attention mask tensor.
+        scale: Scaling factor applied to the query-key dot products.
+        output: Output tensor to write the attention results into.
+        sink_weights: Optional per-head attention sink weights."""
+
     @always_inline
     @parameter
     def mask_fn[
@@ -1486,6 +1561,17 @@ def flash_attention_kv_cache[
         ]
     ] = None,
 ):
+    """Computes flash attention on CPU using a KV cache with an MHAMask-based mask.
+
+    Args:
+        q: Query tensor in BSHD layout.
+        k: Key cache.
+        v: Value cache.
+        mask: MHAMask applied to the attention scores.
+        scale: Scaling factor applied to the query-key dot products.
+        output: Output tensor to write the attention results into.
+        sink_weights: Optional per-head attention sink weights."""
+
     @always_inline
     @parameter
     def mask_fn[
@@ -1538,7 +1624,33 @@ def flash_attention_kv_cache[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ):
-    """Entrypoint for ragged tensors."""
+    """Computes flash attention on CPU for ragged tensors using a KV cache with an `MHAMask`-based mask.
+
+    Parameters:
+        dtype: The element type of the query, key, value, and output
+            tensors (inferred).
+        cache_t: The KV cache type storing key and value states (inferred).
+        mask_t: The `MHAMask` type applied to the attention scores
+            (inferred).
+        q_origin: The memory origin of the read-only query tensor
+            (inferred).
+        output_origin: The memory origin of the writable output tensor
+            (inferred).
+
+    Args:
+        q: Flattened query tensor indexed by `(row_offset, head, depth)`.
+        q_input_row_offsets: Per-batch start offsets into the flattened
+            query tensor; batch `b` spans rows `[offsets[b], offsets[b + 1])`.
+        kv_input_row_offsets: Per-batch start offsets into the flattened KV
+            tensors; batch `b` spans rows `[offsets[b], offsets[b + 1])`.
+        k: Key cache storing per-head key states.
+        v: Value cache storing per-head value states.
+        mask: `MHAMask` applied additively to the query-key attention
+            scores.
+        scale: Scaling factor applied to the query-key dot products.
+        output: Output tensor to write the attention results into.
+        sink_weights: Optional per-head attention sink weights.
+    """
 
     @always_inline
     @parameter

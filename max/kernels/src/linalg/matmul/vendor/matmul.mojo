@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Vendor-backed matrix multiplication dispatch for TileTensor operands."""
+
 from std.sys import simd_width_of, size_of, has_nvidia_gpu_accelerator
 
 from std.algorithm import elementwise
@@ -42,7 +44,25 @@ def matmul[
     responsible for allocating `c`; for fp32-accumulate-and-quantize
     patterns, allocate an fp32 scratch buffer at the call site and supply
     an `elementwise_lambda_fn` that reads from it and writes the final
-    quantized output."""
+    quantized output.
+
+    Parameters:
+        transpose_b: Whether to treat `b` as transposed, computing
+            `a @ b.T` instead of `a @ b` (defaults to `False`).
+        elementwise_lambda_fn: Optional elementwise epilogue applied to
+            each output tile after the matmul. When `None`, the raw
+            matmul result is written to `c` unchanged (defaults to
+            `None`).
+
+    Args:
+        c: Output matrix of shape `(m, n)` and rank 2 that receives the
+            matmul result. Caller-allocated and mutable.
+        a: Left-hand input matrix of rank 2.
+        b: Right-hand input matrix of rank 2, transposed when
+            `transpose_b` is `True`.
+        ctx: Device context used to select the vendor dispatch path and
+            query device capabilities.
+    """
     comptime assert c.flat_rank == 2, "c must be of rank 2"
     comptime assert a.flat_rank == 2, "a must be of rank 2"
     comptime assert b.flat_rank == 2, "b must be of rank 2"

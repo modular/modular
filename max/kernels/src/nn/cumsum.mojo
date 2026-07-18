@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the ONNX CumSum operator, computing prefix sums along a specified tensor axis."""
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 

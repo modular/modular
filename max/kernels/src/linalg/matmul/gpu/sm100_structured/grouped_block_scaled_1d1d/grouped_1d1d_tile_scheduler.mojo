@@ -218,6 +218,23 @@ struct GroupedWorkIterator1D1D[
 
     Yields only valid work tiles, skipping invalid ones internally.
 
+    Parameters:
+        static_N: Size of the N dimension, the expert output dimension of
+            the B weight matrix, known at compile time.
+        tile_shape: Block tile shape as `(BM, BN, BK)` controlling the
+            per-CTA output tile and reduction tile sizes.
+        cluster: CTA cluster shape as `(M, N, K)` for threadblock cluster
+            multicast. Only the M component may exceed 1; N and K must be
+            1 (defaults to `Index(1, 1, 1)`).
+        cta_group: Number of CTAs cooperating per work tile. Must equal
+            `cluster[0]` (defaults to 1).
+        swizzle: Whether to swizzle block iteration order for L2 cache
+            reuse across CTAs (defaults to False).
+        AB_swapped: Whether the A and B operands are swapped. When true,
+            the M (token) dimension strides by `BN` and the N (weight)
+            dimension strides by `BM`; otherwise M strides by `BM` and N
+            strides by `BN` (defaults to False).
+
     Usage:
         for ctx in work_iter:
             process_tile(ctx)
@@ -331,7 +348,7 @@ struct GroupedWorkIterator1D1D[
         """Internal method to compute next work tile."""
         self.current_iter += 1
         # Normalize by cta_group so all CTAs in a cluster get the same
-        # work tile.  For cta_group==1 this is a no-op.
+        # work tile. For cta_group==1 this is a no-op.
         var next_block_idx = UInt32(self.current_iter) * UInt32(
             ufloordiv(grid_dim.x, Self.cta_group)
         ) + UInt32(ufloordiv(block_idx.x, Self.cta_group))
@@ -354,7 +371,7 @@ struct GroupedWorkIterator1D1D[
             current_dynamic_dim = end_idx - start_idx
 
             # Fast-skip inactive experts (expert_id < 0) and groups with
-            # zero tokens.  No A, B, or scale-factor loads should happen.
+            # zero tokens. No A, B, or scale-factor loads should happen.
             var group_expert_id = self.expert_ids[Int(self.current_group_idx)]
             if group_expert_id < 0 or current_dynamic_dim <= 0:
                 self.current_group_idx += 1

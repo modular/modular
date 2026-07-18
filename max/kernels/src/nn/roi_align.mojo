@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements RoI Align, which extracts fixed-size feature maps from regions of interest using bilinear interpolation."""
 
 from std.math import ceil
 

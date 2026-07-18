@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Provides general matrix-vector (GEMV) and general vector-matrix (GEVM) kernels for CPU and GPU."""
+
 from std.collections import Optional
 from std.math import align_down, align_up, ceildiv
 from std.math.uutils import umod, ufloordiv
@@ -83,6 +86,13 @@ comptime logger = Logger()
 
 @fieldwise_init
 struct GEMVAlgorithm(Equatable, Hashable, TrivialRegisterPassable, Writable):
+    """Enumerates the GEMV kernel algorithm variants used by the GPU dispatcher.
+
+    Each variant targets a distinct operand shape, memory access pattern, or
+    hardware capability. The dispatcher in `gemv_gpu` selects among these based
+    on runtime shape information and target architecture.
+    """
+
     var _value: Int
 
     comptime GEMV_KERNEL = Self(0)
@@ -139,6 +149,8 @@ struct GEMVAlgorithm(Equatable, Hashable, TrivialRegisterPassable, Writable):
 
 @always_inline
 def reverse_idx[transpose: Bool](x: Int, y: Int) -> IndexList[2]:
+    """Returns an index pair (x, y) or (y, x) depending on the transpose parameter.
+    """
     return Index(y, x) if transpose else Index(x, y)
 
 
@@ -161,6 +173,28 @@ def gemv_kernel[
     n: Int,
     k: Int,
 ):
+    """GPU kernel for matrix-vector multiplication using scalar warp-level reduction.
+
+    Each warp computes one output row by accumulating a dot product over the K
+    dimension with one scalar element per thread, then reducing across the warp.
+
+    Parameters:
+        c_type: Output element type.
+        a_type: A (matrix) element type.
+        b_type: B (vector) element type.
+        transpose_b: When True, writes the result to a transposed output index.
+        elementwise_lambda_fn: Optional epilogue function applied to each output element.
+        accum_type: Accumulation precision type.
+        pdl_level: Programmatic dependent launch level for PDL barriers.
+
+    Args:
+        c: Output pointer of length m.
+        a: Input matrix pointer of shape (m, k).
+        b: Input vector pointer of length k.
+        m: Number of output rows.
+        n: Unused; retained for interface consistency.
+        k: Shared reduction dimension.
+    """
     var tid = global_idx.x
     var global_warp_id = warp.broadcast(ufloordiv(tid, WARP_SIZE))
     var lane_id = lane_id()
@@ -227,6 +261,36 @@ def gemv_kernel_vector[
     n: Int,
     k: Int,
 ):
+    """GPU kernel for matrix-vector multiplication using vectorized warp-level loads.
+
+    Each warp processes one output row. Threads collaborate to load `simd_width`-wide
+    vectors from A and B, accumulate dot products locally, then reduce across the warp.
+
+    Parameters:
+        c_type: Output element type.
+        a_type: A (matrix) element type.
+        b_type: B (vector) element type.
+        c_layout: Layout descriptor for the output tensor.
+        a_layout: Layout descriptor for the A matrix.
+        b_layout: Layout descriptor for the B vector.
+        c_storage: Storage kind for the output tensor.
+        a_storage: Storage kind for A.
+        b_storage: Storage kind for B.
+        simd_width: Number of elements loaded per vectorized access.
+        transpose_b: When True, writes the result transposed.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+        accum_type: Accumulation precision type.
+        check_bounds: When True, bounds-checks the last K iteration.
+        pdl_level: Programmatic dependent launch level.
+
+    Args:
+        c: Rank-2 output TileTensor.
+        a: Rank-2 input matrix TileTensor, shape (m, k).
+        b: Rank-2 input vector TileTensor, shape (1, k).
+        m: Number of output rows.
+        n: Unused; retained for interface consistency.
+        k: Shared reduction dimension.
+    """
     comptime assert c.flat_rank == 2, "c must be of rank 2"
     comptime assert a.flat_rank == 2, "a must be of rank 2"
     comptime assert b.flat_rank == 2, "b must be of rank 2"
@@ -401,6 +465,45 @@ def gemv_split_k[
     is only safe when the launcher guarantees m % tile_m == 0 (m is a runtime
     value, so tile_m == 1 is the usual way to guarantee it), and
     `check_bounds_n=False` is only safe when n % tile_n == 0.
+
+    Parameters:
+        c_type: Output element type.
+        a_type: Activation matrix element type.
+        b_type: Weight matrix element type.
+        c_layout: Layout descriptor for the output tensor.
+        a_layout: Layout descriptor for the activation matrix.
+        b_layout: Layout descriptor for the weight matrix.
+        c_storage: Storage kind for the output tensor.
+        a_storage: Storage kind for the activation matrix.
+        b_storage: Storage kind for the weight matrix.
+        simd_width: Number of elements per vectorized load; sets
+            `tile_k` with `num_threads`.
+        tile_m: Number of output rows each thread accumulates.
+        tile_n: Number of weight rows each thread accumulates.
+        num_threads: Threads per block; sets K-tile width and
+            cross-warp reduction count.
+        unroll_factor: K-loop unroll factor for instruction-level
+            parallelism (defaults to 2).
+        weight_non_temporal: When True, load the weight matrix with
+            non-temporal (streaming) hints to bypass the cache (defaults
+            to True).
+        elementwise_lambda_fn: Optional epilogue applied to each
+            output element.
+        accum_type: Accumulation precision type.
+        check_bounds_m: When True, guards M-tail rows when `m` is
+            not a multiple of `tile_m`.
+        check_bounds_n: When True, guards N-tail columns when `n` is
+            not a multiple of `tile_n`.
+        pdl_level: Programmatic dependent launch level for PDL
+            barriers.
+
+    Args:
+        output: Output tensor, shape (m, n), row-major.
+        act: Activation matrix, shape (m, k).
+        weight: Weight matrix, shape (n, k), row-major transposed B.
+        m: Number of activation rows, output rows.
+        n: Number of weight rows, output columns.
+        k: Reduction dimension shared by activation and weight.
     """
     comptime assert output.flat_rank == 2, "output must be of rank 2"
     comptime assert act.flat_rank == 2, "act must be of rank 2"
@@ -574,6 +677,29 @@ def gevm_kernel[
     n: Int,
     k: Int,
 ):
+    """GPU kernel for row-vector times matrix multiplication (GEVM).
+
+    Each CTA block computes `tile_size // WARP_SIZE` consecutive output elements.
+    Threads in each warp collaboratively accumulate the dot product of the input
+    row vector with columns of the matrix, then reduce through shared memory.
+
+    Parameters:
+        c_type: Output element type.
+        a_type: Input vector (row) element type.
+        b_type: Input matrix element type.
+        tile_size: Total threads per block; must be a multiple of WARP_SIZE.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+        accum_type: Accumulation precision type.
+        pdl_level: Programmatic dependent launch level.
+
+    Args:
+        c: Output pointer of length n.
+        a: Input row vector pointer of length k.
+        b: Input matrix pointer of shape (k, n).
+        m: Unused; retained for interface consistency.
+        n: Number of output columns.
+        k: Shared reduction dimension.
+    """
     comptime warps_per_block = tile_size // WARP_SIZE
 
     var warp_id = warp_id()
@@ -628,7 +754,7 @@ def _amd_gemv_config[
 
     Returns (num_threads, tile_n, unroll_factor).
 
-    Works for both FP8 (simd_width=16) and BF16 (simd_width=8) — all
+    Works for both FP8 (simd_width=16) and BF16 (simd_width=8). All
     thresholds derive from simd_width, WARP_SIZE, and
     max_thread_block_size.
 
@@ -805,6 +931,24 @@ def gemv_gpu_dispatch[
     b: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
+    """Launches the GPU GEMV kernel indicated by kernel_func with appropriate grid and block dims.
+
+    Translates a `GEMVAlgorithm` variant into a concrete kernel call with shape-derived
+    launch parameters, handling input/output layout transformation where needed.
+
+    Parameters:
+        transpose_b: When True, B is treated as transposed (N, K) row-major.
+        elementwise_lambda_fn: Optional epilogue applied element-wise to each output.
+        pdl_level: Programmatic dependent launch level.
+        tile_m: Number of output rows processed per CTA (used by GEMV_SPLIT_K).
+
+    Args:
+        kernel_func: The GEMV algorithm variant to launch.
+        c: Rank-2 output TileTensor.
+        a: Rank-2 input matrix TileTensor.
+        b: Rank-2 input vector or matrix TileTensor.
+        ctx: Device context for kernel launch.
+    """
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"
@@ -1107,6 +1251,18 @@ def gemv_gpu_dispatch[
 def log_shape[
     has_mode_1: Bool, has_mode_2: Bool, name: String
 ](mode_1: Int, mode_2: Int,) -> None:
+    """Logs the shape of a named tensor dimension pair to the info logger.
+
+    Parameters:
+        has_mode_1: When True, prefixes the first dimension value with an underscore
+            to indicate a dynamic dimension.
+        has_mode_2: When True, prefixes the second dimension value with an underscore.
+        name: The label to print before the shape tuple.
+
+    Args:
+        mode_1: Value of the first dimension.
+        mode_2: Value of the second dimension.
+    """
     logger.info(
         name,
         ": (",
@@ -1131,6 +1287,22 @@ def gemv_gpu[
     b: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
+    """Selects and dispatches the appropriate GPU GEMV kernel based on shape and hardware.
+
+    Examines runtime dimensions M, N, K and static shape information to choose among
+    GEMV_KERNEL, GEMV_KERNEL_VECTOR, GEMV_SPLIT_K, GEVM_KERNEL, and MATMUL_NAIVE variants.
+
+    Parameters:
+        transpose_b: When True, B is treated as transposed (N, K) row-major.
+        elementwise_lambda_fn: Optional epilogue applied element-wise to each output.
+        pdl_level: Programmatic dependent launch level for PDL barriers.
+
+    Args:
+        c: Rank-2 output TileTensor.
+        a: Rank-2 input matrix TileTensor.
+        b: Rank-2 input vector or matrix TileTensor.
+        ctx: Device context for kernel launch.
+    """
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"
@@ -1224,6 +1396,20 @@ def gemv[
     a_buf: TileTensor[mut=False, ...],
     b_buf: TileTensor[mut=False, ...],
 ) raises:
+    """Computes a CPU matrix-vector product C = A * b using vectorized element-wise reduction.
+
+    Optionally parallelizes across rows. Accumulates the product of each row of A
+    with the vector b into the corresponding element of c.
+
+    Parameters:
+        parallelize: When True, the reduction runs in parallel across output rows.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+
+    Args:
+        c_buf: Output TileTensor of length M.
+        a_buf: Input matrix TileTensor of shape (M, K).
+        b_buf: Input vector TileTensor of length K.
+    """
     comptime c_type = c_buf.dtype
     comptime simd_width = simd_width_of[c_type]()
 
@@ -1278,6 +1464,16 @@ def naive_gemv(
     a_buf: TileTensor[mut=False, ...],
     b_buf: TileTensor[mut=False, ...],
 ):
+    """Computes a reference matrix-vector product C = A * b using a scalar nested loop.
+
+    Iterates over K then M, accumulating each A[m, k] * b[k] into c[m]. Intended for
+    correctness testing rather than performance-critical paths.
+
+    Args:
+        c_buf: Output TileTensor of length M, zero-filled on entry.
+        a_buf: Input matrix TileTensor of shape (M, K).
+        b_buf: Input vector TileTensor of length K.
+    """
     comptime c_type = c_buf.dtype
     var M = Int(a_buf.dim[0]())
     var K = Int(a_buf.dim[1]())
@@ -1817,6 +2013,38 @@ def gemm_mma_cpasync_kernel[
     gemm_n: Int,
     batch_size: Int,
 ):
+    """SM100 (B200) warp-specialized GEMM kernel using cp.async and m16n8k16 MMA instructions.
+
+    Implements a multi-stage software-pipelining loop: producer warps (0-3) prefetch
+    activation and weight tiles from global memory into shared memory via cp.async,
+    and consumer warps (4+) issue m16n8k16 MMA operations and write results to the
+    output. Requires B200 (sm_100x) hardware.
+
+    Parameters:
+        c_type: Output element type.
+        a_type: Activation (A) element type.
+        b_type: Weight (B) element type.
+        c_layout: TensorLayout for the output.
+        a_layout: TensorLayout for activations.
+        b_layout: TensorLayout for weights.
+        tile_m: Tile size along M; must be 16 for m16n8k16 MMA.
+        tile_n: Tile size along N per warp.
+        tile_k: Tile size along K; determines shared memory allocation.
+        stage_cnt: Number of pipeline stages.
+        accum_type: Accumulator precision; must be float32.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+        pdl_level: Programmatic dependent launch level.
+        swapAB: When True, swaps the A and B operand roles.
+
+    Args:
+        output: Rank-3 output TileTensor of shape (batch, gemm_m, gemm_n).
+        act: Rank-3 activation TileTensor of shape (batch, gemm_m, gemm_k).
+        weight: Rank-3 weight TileTensor of shape (batch, gemm_n, gemm_k).
+        gemm_m: M dimension of the GEMM.
+        gemm_k: K (reduction) dimension of the GEMM.
+        gemm_n: N dimension of the GEMM.
+        batch_size: Number of independent GEMM problems in the batch.
+    """
     comptime assert _is_sm_100x(), "gemm_mma_cpasync requires B200 (sm_100x)"
     comptime assert tile_m == 16, "tile_m must be 16 for m16n8k16 MMA"
     comptime assert tile_n == 8, "tile_n must be 8 for m16n8k16 MMA"
@@ -1972,6 +2200,14 @@ def gemm_mma_cpasync[
     epilogue transposes the store back into the row-major `[M, N]` buffer. This
     makes the large weight the producer-independent operand for PDL overlap at
     small M (decode), while keeping the output layout identical.
+
+    Parameters:
+        pdl_level: Programmatic dependent launch level for PDL barriers.
+        tile_k: K-dimension tile size for the MMA kernel (defaults to 128).
+        elementwise_lambda_fn: Optional epilogue applied to each output
+            element.
+        swapAB: When True, feeds the weight to the A operand slot and the
+            activation to the B slot for PDL overlap at small M.
 
     Args:
         c:          Output, shape (gemm_m, gemm_n) or (batch, gemm_m, gemm_n),

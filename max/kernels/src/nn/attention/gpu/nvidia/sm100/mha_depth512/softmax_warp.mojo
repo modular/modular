@@ -127,6 +127,28 @@ def depth512_scale_write_output[
       physical TMEM cols per phase, with is_lower determining output col base.
     !split_o (d256): Single phase. Each thread processes MMA_M*ov_depth/256
       physical TMEM cols. All threads write to col base 0.
+
+    Parameters:
+        output_type: DType of the output store to global memory.
+        qkv_dtype: DType of the Q/K/V inputs; specializes the config.
+        config: Depth512 SM100 kernel config struct (tile sizes, split_o).
+        tma_bpo: Blocks per batched TMA op; 0 selects the per-block
+            swizzled-output fallback, nonzero selects a full-depth batched
+            copy (defaults to 0).
+
+    Args:
+        tid: Thread ID within the softmax warpgroup.
+        m_row: M-row index within the BM tile (0..BM-1).
+        is_lower: True for the lower half of paired threads in split_o
+            mode; selects the O column base.
+        inv_row_sum: Reciprocal of the total row sum used to normalize O.
+        smem: Shared-memory allocator holding the O buffer.
+        tmem_addr: Base TMEM address for the O accumulator tiles.
+        ragged_tma_store: Ragged TMA descriptor for the output store.
+        num_output_rows: Dynamic output row count for the TMA store; 0
+            skips the store.
+        out_head_idx: Output head index passed to the TMA store.
+        out_row_idx: Output row index passed to the TMA store.
     """
     comptime accum_dtype = DType.float32
     comptime BM = config.BM
@@ -276,6 +298,38 @@ def depth512_softmax[
     out_head_idx: UInt32,
     out_row_idx: UInt32,
 ):
+    """Runs the online softmax warp group for pair-CTA SM100 attention.
+
+    Loads Q@K' scores (S) from TMEM in pipelined batches, applies the causal
+    mask, computes a running row max and exponentiated probabilities P, writes
+    P to SMEM for the P@V SS MMA, accumulates the row sum, and finally scales
+    the O accumulator by the inverse row sum and TMA-stores the result to
+    global memory. For split_o (d512) configs, cross-thread partial max and
+    sum values are combined via correction SMEM; for d256 each thread owns a
+    unique M row and no exchange is needed.
+
+    Parameters:
+        MaskType: Compile-time mask type for causal/attention masking.
+        qkv_dtype: DType of the Q/K/V inputs; specializes the config.
+        output_type: DType of the output store to global memory.
+        config: Depth512 SM100 kernel config struct (tile sizes, split_o).
+        page_size: KV cache page size in tokens, used for paged-attention
+            masking.
+
+    Args:
+        smem: Shared-memory allocator holding S/P/O buffers and barriers.
+        tmem_addr: Base TMEM address for S and O tiles (read once post
+            cluster_sync).
+        seq_id: Sequence index for mask evaluation.
+        score_row: Row offset of the query tile within the sequence.
+        num_keys: Number of valid key columns for masking.
+        mask: Causal/attention mask applied to score batches.
+        scale: Softmax scale factor (applied in the log2 domain).
+        ragged_tma_store: Ragged TMA descriptor for the output store.
+        num_output_rows: Dynamic output row count for the TMA store.
+        out_head_idx: Output head index for the TMA store.
+        out_row_idx: Output row index for the TMA store.
+    """
     comptime accum_dtype = DType.float32
     comptime BM = config.BM
     comptime BN = config.BN

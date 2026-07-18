@@ -144,6 +144,9 @@ def dequant_mxfp4[
 ) raises:
     """Dequantize MXFP4 packed weights to FP8 or BF16.
 
+    Parameters:
+        SF_VECTOR_SIZE: Number of consecutive elements each E8M0 block scale covers (defaults to 32).
+
     Args:
         ctx: Device context for kernel launch.
         output: Output tensor [num_rows, num_cols] of float8_e4m3fn or bfloat16.

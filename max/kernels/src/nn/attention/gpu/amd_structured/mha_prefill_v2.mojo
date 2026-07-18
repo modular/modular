@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MhaPrefillV2 — long-context BF16 MHA prefill for AMD MI355X (gfx950).
+"""MhaPrefillV2: long-context BF16 MHA prefill for AMD MI355X (gfx950).
 
 `run` interleaves QK MFMA, PV MFMA, softmax + rescale, and
 K/V DMA across an explicit cluster schedule so each work class
@@ -39,8 +39,8 @@ so each iter processes two K/V tiles. Each cluster ends in a bare
   fully unmasked.
 
 Whole-tile K is pre-loaded one iteration ahead into the persistent
-`k_reg`, so the QK clusters (C0/C4) contain MFMAs + VALU only — no
-in-cluster `ds_read`. The prologue primes the pipeline and runs
+`k_reg`, so the QK clusters (C0/C4) contain MFMAs + VALU only (no
+in-cluster `ds_read`). The prologue primes the pipeline and runs
 QK[0] + partial softmax; the 13-cluster epilogue drains the final
 four tiles `N-4..N-1`, with whole-V PV (no strip split) and an
 unconditional normalizer rescale before the `o / norm_vec` divide.
@@ -58,18 +58,18 @@ unconditional normalizer rescale before the `o / norm_vec` divide.
 
 - **Lazy rescale (`RESCALE_THRESHOLD=8`).** In C2/C6, when the
   running max grows by more than 8 log2 units, `o_reg *= scale_vec`
-  fires between PV strip 0 and strips 1-3 — strips 1-3 then
+  fires between PV strip 0 and strips 1-3; strips 1-3 then
   contribute at the old scale into an already-rescaled accumulator.
   The 8 log2 cap bounds the inconsistency. When `rv_all_below`
   reports no lane exceeded the threshold, the rescale is skipped
   and `scale_vec` is reset to 1 (so the epilogue's unconditional
-  multiply stays identity — see below). The epilogue's tail softmax
+  multiply stays identity; see below). The epilogue's tail softmax
   applies `norm_vec *= scale_vec` *unconditionally*; the
   initialized-to-1 + reset-to-1-on-skip invariant guarantees this
   is identity unless a rescale fired in the last C2/C6.
 
 - **Mask placement.** Tiles `0` (prologue), `(j - 2)` for each
-  main-loop iter (C1, non-Causal masks only — see below), `(j - 1)`
+  main-loop iter (C1, non-Causal masks only; see below), `(j - 1)`
   (C5, all masks), and `N - 3, N - 2, N - 1` (epilogue). For
   `CausalMask` the `max_num_tiles` cap guarantees odd-numbered K
   tiles in the main-loop range are naturally fully unmasked, so the
@@ -79,11 +79,11 @@ unconditional normalizer rescale before the `o / norm_vec` divide.
   softmax reads it.
 
 - **Output transpose.** `col_l → row_l` is a zero-cost re-tag of the
-  same register storage — no cross-lane permute, no data motion.
+  same register storage: no cross-lane permute, no data motion.
 
 - **GQA-aware head remap.** `head_idx` is `(block_x % GROUP) *
-  NUM_KV_HEADS + (block_x / GROUP)` — the transpose over the
-  `(NUM_KV_HEADS, GROUP)` rectangle — so adjacent blocks visit
+  NUM_KV_HEADS + (block_x / GROUP)` (the transpose over the
+  `(NUM_KV_HEADS, GROUP)` rectangle), so adjacent blocks visit
   different KV heads across CUs/XCDs. Bijective for any
   `NUM_HEADS == GROUP * NUM_KV_HEADS`; reduces to identity at MHA
   (`GROUP=1`) and MQA (`NUM_KV_HEADS=1`).
@@ -170,7 +170,7 @@ def _s_setprio[priority: Int16]():
 
 @always_inline
 def _sched_barrier_zero():
-    """`sched_barrier(0)` — hard reordering barrier that pins
+    """`sched_barrier(0)`: hard reordering barrier that pins
     surrounding instructions to their source order."""
     llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(0))
 
@@ -181,7 +181,7 @@ def _asm_label[asm_str: StaticString]():
     against a reference kernel can be done by grep. Gated on
     `EMIT_ASM_LABELS`; when False this is a no-op. The
     `has_side_effect=True` + `~{memory}` form is a hard reordering
-    barrier, so labels MUST be off when benchmarking — turn on for
+    barrier, so labels MUST be off when benchmarking; turn on for
     asm-level inspection only.
 
     Note on spill investigations: the inline-asm reordering barrier
@@ -189,7 +189,7 @@ def _asm_label[asm_str: StaticString]():
     cluster→spill attribution toward whichever label happens to sit
     next to the high-pressure point. For diagnosing spill locations,
     keep labels OFF and instead count the natural `s_barrier`
-    instructions emitted by `_s_barrier_raw` / `_cluster_barrier` —
+    instructions emitted by `_s_barrier_raw` / `_cluster_barrier`;
     those are real hardware fences and survive reordering, giving an
     unbiased view of which window of source code the spill lives in.
     """
@@ -281,7 +281,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     comptime _PV_A_FRAG = 32 if Self.config.dtype.is_float8() else 8
     """Per-lane PV-A fragment width (= MMA_K * MMA_N / 64). Hoisted as
     a direct conditional on `config.dtype` so it resolves to a literal
-    Int at MhaPrefillV2 instantiation — `Self._PV_A_FRAG`
+    Int at MhaPrefillV2 instantiation; `Self._PV_A_FRAG`
     is the same value but the type checker doesn't fold the
     cross-struct member access at SIMD-width sites."""
 
@@ -304,7 +304,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
 
     Phase 7.1 falsified the BF16 plan via ASM diff (commit
     `70ac6169cfc` measurements + `dump_asm=True` codegen inspection):
-    **gfx950 (CDNA4) has no packed BF16 element-wise arithmetic** —
+    **gfx950 (CDNA4) has no packed BF16 element-wise arithmetic**:
     only `V_PK_*_F32` and `V_PK_*_F16` exist. The CDNA4 ISA exposes
     BF16 ONLY via MFMA dot-products and packed conversion ops. Every
     BF16 SIMD operation lowers to per-element unpack → FP32 scalar
@@ -336,7 +336,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
 
     FP16 wins at KV=128 because the kernel is register-bound there
     (FP32 ATT_LAYOUT = 64 FP32/lane × 2 atts = 128 VGPRs alone) and
-    halving the att_block storage actually frees registers — the
+    halving the att_block storage actually frees registers; the
     conversion overhead is now packed throughput rather than
     scalar serialization. At KV=64 the kernel already fit (Scratch=0
     baseline), so the conversion overhead is pure cost.
@@ -360,7 +360,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     `_full_softmax_unconditional`).
 
     Tuned to the per-kernel MFMA count: BF16 has ~192 MFMA (groups of
-    10); FP8 has ~48 MFMA. FP8 (4, 2) found via sweep — +0.8% over
+    10); FP8 has ~48 MFMA. FP8 (4, 2) found via sweep, +0.8% over
     the initial (3, 1) first-cut; (5, 2) ties (3, 1); (6, 3) and
     (10, 4) regress (softmax-bound, not MFMA-bound). Override via
     `-D iglp_mfma_big=N` for tuning."""
@@ -481,7 +481,16 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         FP8 (d=128, MMA_K=64): 2 K-tiles, but each base tile per lane
         is 32 FP8 = 32 B which exceeds the 16-B buffer_load_lds max.
         Splits each K-tile load into 2 × 16-elt halves (16 B each)
-        targeting the first / second half of the destination cell."""
+        targeting the first / second half of the destination cell.
+
+        Parameters:
+            layout: Layout of `q_warp_2d` (inferred).
+
+        Args:
+            q_warp_2d: Per-warp Q gmem sub-tile of shape
+                `(Q_BLOCK_SIZE, DEPTH)` sliced from the per-head 2D
+                Q view.
+        """
         comptime _BK = Self._MmaOp.MMA_K
         comptime _num_k_tiles = Self.DEPTH // _BK
         comptime _q_thread_layout = col_major[
@@ -569,7 +578,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         The multiply is done per-fragment in FP32 then cast back to the
         input dtype, so only one FP32 fragment is alive at a time. The
         downstream QK MFMA consumes `q_reg` as B in pre-transpose form
-        via `mma[swap_b=True]` — no explicit transpose tile needed.
+        via `mma[swap_b=True]`; no explicit transpose tile needed.
 
         When `Self.prescale_q` is False (FP8 path), `scale_log2e` is
         unused here; the scale lands on the att tile post-QK."""
@@ -953,7 +962,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
 
         FP8 attention path (src is BF16 in sub-step 8): the 2 source
         strips (32 BF16/lane total) cast through FP32 and JOIN into 1
-        sub-tile (32 FP8/lane) — `_NUM_PV_SUBTILES=1`. BF16 → FP32 →
+        sub-tile (32 FP8/lane): `_NUM_PV_SUBTILES=1`. BF16 → FP32 →
         FP8 because gfx950 has no direct BF16→FP8 v_cvt."""
         var src_v = att_block.vectorize[1, 1, 16]()
         comptime if Self.config.dtype == DType.float8_e4m3fn:
@@ -997,7 +1006,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
     ):
         """Whole-V PV MFMA over a pre-cast `att_bf16_full`. No fused
-        softmax — used by the epilogue PV clusters."""
+        softmax; used by the epilogue PV clusters."""
         s_waitcnt[lgkmcnt=UInt32(0)]()
         comptime for i in range(Self._NUM_PV_SUBTILES):
             var v_sub = v_reg.tile[1, Self.DEPTH // 32, Self._PV_A_FRAG](
@@ -1030,7 +1039,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         by `scale_vec` between PV strip 0 and strips 1..3. Strips 1..3
         then consume `att_bf16_full` at the post-rescale scale,
         consistent with the rescaled `o_reg`. Without the `att_bf16_full`
-        rescale, strips 1..3 over-contribute at the OLD scale — a bounded
+        rescale, strips 1..3 over-contribute at the OLD scale: a bounded
         artifact that corrupts wide-dynamic-range attention (FLUX
         NullMask no-QK-norm prefill). Skipped on the `_rv_all_below` path.
 
@@ -1099,7 +1108,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         """Epilogue C2/C6 body: whole-V PV then UNCONDITIONAL rescale +
         partial softmax. Unlike `_pv_strip_with_partial_softmax`, the
         rescale fires AFTER all PV MFMAs so there is no strip-vs-rescale
-        inconsistency — all of V's contribution lands at the old scale
+        inconsistency; all of V's contribution lands at the old scale
         before `o_reg` is rescaled to the new one."""
         s_waitcnt[lgkmcnt=UInt32(0)]()
         _s_setprio[Int16(1)]()
@@ -1149,7 +1158,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         last tile of a sequence whose length isn't a multiple of `BM`,
         callers pass `clamp(seq_len - block_tile_idx * BM - warp_id *
         Q_BLOCK_SIZE, 0, Q_BLOCK_SIZE)`. Stores at
-        `q_in_tile >= valid_q_rows_in_warp` are skipped — RegTileEpilogue
+        `q_in_tile >= valid_q_rows_in_warp` are skipped; RegTileEpilogue
         leaves the M check to the caller (line 1832-1835), and the
         per-row store gate here is what makes the writer correct for
         partial-Q tiles."""
@@ -1189,7 +1198,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         mut softmax: OnlineSoftmax[Self._SOFTMAX_DTYPE],
     ):
         """Epilogue tail softmax: second-half `exp2` + UNCONDITIONAL
-        `norm_vec *= scale_vec` + `col_sum_acc`. No BF16 cast — the
+        `norm_vec *= scale_vec` + `col_sum_acc`. No BF16 cast; the
         consumer PV JIT-casts `att_block` per subtile inline.
 
         The unconditional `norm_vec *= scale_vec` relies on the
@@ -1270,7 +1279,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         mut softmax: OnlineSoftmax[Self._SOFTMAX_DTYPE],
     ):
         """Epilogue full softmax: both halves of `exp2` + UNCONDITIONAL
-        norm rescale + `col_sum`. No cast — the consumer `_pv_whole`
+        norm rescale + `col_sum`. No cast; the consumer `_pv_whole`
         reuses an already-staged `att_block_bf16`."""
         softmax.col_max_acc(att_block)
         softmax.update_scale_unconditional()
@@ -1341,7 +1350,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         Expected layouts / shapes:
 
         - `q`, `o`: `(batch, seq_len, NUM_HEADS, DEPTH)` row-major
-          TileTensor. `o`'s dtype matches `config.output_dtype` — BF16
+          TileTensor. `o`'s dtype matches `config.output_dtype`: BF16
           for the production dispatcher (which holds a BF16 output
           buffer) or FP32 if the caller wants the unnormalized
           accumulator.
@@ -1356,6 +1365,25 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         `NUM_HEADS` must be a multiple of `NUM_KV_HEADS`
         (GROUP = `NUM_HEADS // NUM_KV_HEADS`).
 
+        Parameters:
+            k_t: K operand type (inferred); any `MHAOperand` whose
+                `block_paged_tile` returns `(KV_BLOCK, DEPTH)` tiles.
+            v_t: V operand type (inferred); same tile contract as
+                `k_t`.
+            mask_t: Mask functor type (inferred); selects the
+                per-tile masking strategy (causal, sliding-window,
+                null, etc.).
+            q_dtype: Element dtype of `q` (inferred); must equal
+                `config.dtype`.
+            output_dtype: Element dtype of `o` (inferred); must
+                equal `config.output_dtype`.
+            q_layout: Layout of the `q` TileTensor (inferred).
+            o_layout: Layout of the `o` TileTensor (inferred).
+            ragged: Whether `q` is a per-sequence slice in a packed
+                ragged batch (defaults to False).
+            sink: Whether to seed the online softmax with
+                attention-sink weights (defaults to False).
+
         Args:
             q: Q tile tensor.
             k: K operand (MHAOperand).
@@ -1365,10 +1393,10 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             mask_functor: Per-tile mask predicate (causal, sliding-window,
                 etc.). Evaluated inside the QK→softmax cluster; identity
                 for unmasked attention.
-            scale: Softmax scale (typically `1 / sqrt(DEPTH)`).
+            scale: Softmax scale (`1/sqrt(DEPTH)`).
             num_keys: Runtime length of the K/V sequence.
-            start_pos: Position of the first Q row in the global sequence
-                — non-zero for prefill chunks of a longer generation.
+            start_pos: Position of the first Q row in the global sequence:
+                non-zero for prefill chunks of a longer generation.
                 Used by the mask functor to compute the causal cutoff.
             sink_weights_ptr: Per-q-head attention-sink scalar weights.
                 Read only when the comptime `sink` parameter is True;
@@ -2254,6 +2282,40 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         `cross_attention=True`: encoder-decoder style. K/V lengths come
         from `kv_input_row_offsets_ptr`, independent of the Q-side
         offsets. Mirrors the FA2 contract at `mha.mojo:1755-1762`.
+
+        Parameters:
+            k_t: K operand type (inferred); any `MHAOperand` whose
+                `block_paged_tile` returns `(KV_BLOCK, DEPTH)` tiles.
+            v_t: V operand type (inferred); same tile contract as
+                `k_t`.
+            mask_t: Mask functor type (inferred); selects the
+                per-tile masking strategy.
+            qkv_dtype: Element dtype of Q, K, and V (inferred);
+                must equal `config.dtype`.
+            output_dtype: Element dtype of the output buffer
+                (inferred); must equal `config.output_dtype`.
+            cross_attention: Whether K/V length is independent of Q
+                (encoder-decoder style) (defaults to False).
+            sink: Whether to seed the online softmax with
+                attention-sink weights (defaults to False).
+
+        Args:
+            q_ptr: Pointer to the packed Q buffer, pre-offset per
+                sequence by `input_row_offsets_ptr`.
+            k: K operand (`MHAOperand`).
+            v: V operand (`MHAOperand`).
+            output_ptr: Pointer to the output buffer, same packing
+                as `q_ptr`.
+            mask_functor: Per-tile mask predicate (causal,
+                sliding-window, etc.).
+            scale: Softmax scale (`1/sqrt(DEPTH)`).
+            input_row_offsets_ptr: Cumulative uint32 row offsets for
+                Q sequences, length `batch_size + 1`.
+            kv_input_row_offsets_ptr: Cumulative uint32 row offsets
+                for K/V sequences; read only when `cross_attention`
+                is True.
+            sink_weights_ptr: Per-q-head attention-sink scalar
+                weights; read only when `sink` is True.
         """
         # Wave-uniform prologue. Values are uniform by construction
         # (one read per block, broadcast). The uniformity hint that
@@ -2363,7 +2425,7 @@ def mha_prefill_v2_ragged[
     Mirrors `mha_prefill_v2` for non-ragged, but each block does the
     per-sequence ragged setup (start_of_seq / q_batch_offset / seq_len /
     num_keys / start_pos) and constructs its rank-4 BSHD Q/O view
-    internally — so the caller doesn't have to pre-slice per sequence.
+    internally, so the caller doesn't have to pre-slice per sequence.
 
     `cross_attention=False` (default): self-attention. K/V length per
     batch derives from `start_pos + (end_of_seq - start_of_seq)`.
@@ -2378,6 +2440,48 @@ def mha_prefill_v2_ragged[
     where `block_idx.y * BM >= seq_len` for this sequence early-return.
     Partial-Q-tile (`seq_len % BM != 0`) is handled internally via
     lane-gated `_store_o_to_gmem`.
+
+    Parameters:
+        k_t: K operand type (inferred); any `MHAOperand` whose
+            `block_paged_tile` returns `(KV_BLOCK, DEPTH)` tiles.
+        v_t: V operand type (inferred); same tile contract as `k_t`.
+        mask_t: Mask functor type (inferred); selects the per-tile
+            masking strategy (causal, sliding-window, null, etc.).
+        qkv_dtype: Element dtype of Q, K, and V (inferred); must equal
+            `config.dtype`.
+        output_dtype: Element dtype of the output buffer (inferred);
+            must equal `config.output_dtype`.
+        config: Shape configuration (`MhaConfigV2`).
+        cross_attention: Whether K/V length is independent of Q
+            (encoder-decoder style) (defaults to False).
+        sink: Whether to seed the online softmax with attention-sink
+            weights (defaults to False).
+        compile_options: LLVM compile options string forwarded to
+            `ctx.compile_function` (defaults to the device's
+            `default_compile_options`).
+
+    Args:
+        q_ptr: Pointer to the packed Q buffer, pre-offset per sequence
+            by `input_row_offsets_ptr`.
+        k: K operand (`MHAOperand`).
+        v: V operand (`MHAOperand`).
+        output_ptr: Pointer to the output buffer, same packing as
+            `q_ptr`.
+        mask_functor: Per-tile mask predicate (causal, sliding-window,
+            etc.).
+        scale: Softmax scale (`1/sqrt(DEPTH)`).
+        input_row_offsets_ptr: Cumulative uint32 row offsets for Q
+            sequences, length `batch_size + 1`.
+        kv_input_row_offsets_ptr: Cumulative uint32 row offsets for
+            K/V sequences; read only when `cross_attention` is True.
+        max_prompt_len: Maximum sequence length across the batch;
+            sizes the grid's `block_idx.y` dimension.
+        batch_size: Number of sequences in the packed batch; sizes the
+            grid's `block_idx.z` dimension.
+        ctx: Device context used to compile and enqueue the kernel.
+        sink_weights_ptr: Per-q-head attention-sink scalar weights;
+            read only when `sink` is True. Callers may pass
+            `unsafe_dangling()` when `sink=False`.
     """
     comptime assert (
         qkv_dtype == config.dtype
@@ -2442,7 +2546,7 @@ def mha_prefill_v2[
     benchmarks), and enqueues it.
 
     - `q`, `o`: `(batch, seq_len, num_heads, depth)` TileTensor.
-      `o`'s dtype matches `config.output_dtype` — BF16 for production
+      `o`'s dtype matches `config.output_dtype`: BF16 for production
       inference (which the dispatcher uses) or FP32 if the caller wants
       the unnormalized accumulator.
     - `k`, `v`: any `MHAOperand` (`LayoutTensorMHAOperand` for tests/
@@ -2451,6 +2555,37 @@ def mha_prefill_v2[
 
     `batch` and `seq_len` / `num_keys` may be dynamic; the head and
     depth dims must be static.
+
+    Parameters:
+        k_t: K operand type (inferred); any `MHAOperand` whose
+            `block_paged_tile` returns `(KV_BLOCK, DEPTH)` tiles.
+        v_t: V operand type (inferred); same tile contract as `k_t`.
+        mask_t: Mask functor type (inferred); selects the per-tile
+            masking strategy (causal, sliding-window, null, etc.).
+        config: Shape configuration (`MhaConfigV2`).
+        sink: Whether to seed the online softmax with attention-sink
+            weights (defaults to False).
+        compile_options: LLVM compile options string forwarded to
+            `ctx.compile_function` (defaults to the device's
+            `default_compile_options`).
+
+    Args:
+        q: Q tile tensor of shape `(batch, seq_len, num_heads, depth)`;
+            dtype must equal `config.dtype`.
+        k: K operand (`MHAOperand`).
+        v: V operand (`MHAOperand`).
+        o: Output tile tensor of shape `(batch, seq_len, num_heads,
+            depth)`; dtype must equal `config.output_dtype`.
+        mask_functor: Per-tile mask predicate (causal, sliding-window,
+            etc.).
+        scale: Softmax scale (`1/sqrt(DEPTH)`).
+        num_keys: Runtime length of the K/V sequence.
+        start_pos: Position of the first Q row in the global sequence;
+            non-zero for prefill chunks of a longer generation.
+        ctx: Device context used to compile and enqueue the kernel.
+        sink_weights_ptr: Per-q-head attention-sink scalar weights;
+            read only when `sink` is True. Callers may pass
+            `unsafe_dangling()` when `sink=False`.
     """
     # Operand dtypes are taken dtype-generic at the launcher boundary
     # because Mojo doesn't unify a caller-site literal (e.g.

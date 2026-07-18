@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides QR factorization of matrices using Householder reflections."""
+
 from std.math import copysign, sqrt
 from std.os import abort
 
@@ -31,6 +33,17 @@ def qr_factorization[
     Householder reflections. The result is stored directly in the input matrix
     `A`, with scaling factors in `sigma`. The implementation follows the LAPACK
     algorithm for generating Householder reflectors in-place.
+
+    Parameters:
+        dtype: Element type of the matrix `A` and the scaling vector `sigma`.
+        element_layout: Memory layout of the `LayoutTensor` inputs.
+
+    Args:
+        sigma: Vector of length `n` holding the Householder scaling factor
+            `ξ/ν` for each column. Written in-place during factorization.
+        A: `m×n` matrix to factorize. Modified in-place: the strictly-lower
+            triangle stores the Householder vectors and the upper triangle
+            (including the diagonal) stores the `R` factor.
 
     Algorithm:
         The Householder reflector is defined as:
@@ -101,6 +114,18 @@ def apply_q[
 
     See `qr_factorization` for more details on the construction of the
     Householder reflector.
+
+    Parameters:
+        dtype: Element type of the matrices.
+        element_layout: Memory layout of the `LayoutTensor` inputs.
+
+    Args:
+        sigma: Vector of length `n` holding the Householder scaling factors
+            produced by `qr_factorization`.
+        A: `m×n` matrix containing the implicit `Q` factor as produced by
+            `qr_factorization`.
+        X: `m×q_n` matrix to multiply by `Q`. Must have the same number of
+            rows as `A`. Overwritten with `Q·X` in-place.
     """
     m, n = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
     q_m, q_n = Int(X.runtime_layout.shape[0]), Int(X.runtime_layout.shape[1])
@@ -129,6 +154,18 @@ def form_q[
 ):
     """Forms the Q factor from the implicit Q factor stored in `A` and `sigma`
     after calling `qr_factorization` and stores the result in `Q`.
+
+    Parameters:
+        dtype: Element type of the matrices.
+        element_layout: Memory layout of the `LayoutTensor` inputs.
+
+    Args:
+        sigma: Vector of length `n` holding the Householder scaling factors
+            produced by `qr_factorization`.
+        A: `m×n` matrix containing the implicit `Q` factor as produced by
+            `qr_factorization`.
+        Q: `q_m×q_n` output matrix initialized to the identity and
+            overwritten with the explicit `Q` factor.
     """
     q_m, q_n = Int(Q.runtime_layout.shape[0]), Int(Q.runtime_layout.shape[1])
     min_mn = min(q_m, q_n)

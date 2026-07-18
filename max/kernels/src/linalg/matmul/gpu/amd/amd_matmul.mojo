@@ -87,7 +87,18 @@ struct AMDMatmul[
     """Pure TileTensor structured matmul for AMD GPUs.
 
     Schedule-driven single-buffer pipeline. All data movement uses
-    TileTensor — no LayoutTensor anywhere.
+    TileTensor: no LayoutTensor anywhere.
+
+    Parameters:
+        a_type: Element type of the A input matrix.
+        b_type: Element type of the B input matrix.
+        c_type: Element type of the C output matrix.
+        transpose_b: Whether B is stored transposed as `[N, K]`; must be
+            `True`.
+        config: Tile and warp shapes, MMA shape, and thread count for the
+            kernel.
+        elementwise_lambda_fn: Optional epilogue applied elementwise to the
+            output (defaults to `None`).
     """
 
     comptime accum_type = get_accum_type[Self.a_type]()
@@ -163,6 +174,18 @@ struct AMDMatmul[
 
         Uses StructuredMmaOp with per-k-tile load_frag/mma dispatch,
         original warp index order, and schedule-driven pipeline.
+
+        Parameters:
+            c_layout: Tensor layout of the output C tile.
+            a_layout: Tensor layout of the input A tile.
+            b_layout: Tensor layout of the input B tile.
+
+        Args:
+            c: Output tile of shape `[M, N]` accumulating the matmul
+                result.
+            a: Input A tile of shape `[M, K]` in row-major block layout.
+            b: Input B tile of shape `[N, K]` (transposed, `transpose_b`
+                is `True`).
         """
         comptime assert Self.transpose_b, "transpose_b must be True"
         comptime assert Self.a_type == Self.b_type, "a/b must match"

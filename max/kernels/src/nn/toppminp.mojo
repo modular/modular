@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides CPU implementations of top-p (nucleus) and min-p sampling for autoregressive token generation."""
 
 
 from std.math import iota
@@ -39,6 +40,22 @@ def top_p_sampling[
     Naive CPU implementation of Top-P sampling for token selection.
     This function applies temperature scaling, softmax, a merge sort, and then
     samples tokens based on the cumulative probability mass (Top-P).
+
+    Parameters:
+        dtype: Element type of `input_logits`, `top_ps`, and `temperature`
+            (inferred).
+        out_idx_type: Element type of the `out_token_ids` tensor (inferred).
+        _test_sort: When true, copies the sorted probabilities back into
+            `input_logits` to verify descending order (defaults to false).
+    Args:
+        top_ps: Per-batch cumulative probability mass thresholds in the
+            range (0, 1].
+        input_logits: Rank-2 logits tensor of shape (batch, vocab) read
+            for temperature scaling and softmax.
+        out_token_ids: Rank-2 output tensor receiving the sampled token
+            index at column 0 of each batch row.
+        temperature: Positive scalar divisor applied to logits before the
+            softmax (defaults to 1).
     """
     # TODO: Implement rank generalization
     comptime assert input_logits.rank == 2, "Only rank 2 tensors are supported"
@@ -63,6 +80,22 @@ def min_p_sampling[
     Naive CPU implementation of Min-P sampling for token selection.
     This function applies temperature scaling, softmax, a merge sort, and then
     samples tokens based on the calculated probability threshold (Min-P).
+
+    Parameters:
+        dtype: Element type of `input_logits`, `min_ps`, and `temperature`
+            (inferred).
+        out_idx_type: Element type of the `out_token_ids` tensor (inferred).
+        _test_sort: When true, copies the sorted probabilities back into
+            `input_logits` to verify descending order (defaults to false).
+    Args:
+        min_ps: Per-batch minimum probability thresholds in the range
+            (0, 1).
+        input_logits: Rank-2 logits tensor of shape (batch, vocab) read
+            for temperature scaling and softmax.
+        out_token_ids: Rank-2 output tensor receiving the sampled token
+            index at column 0 of each batch row.
+        temperature: Positive scalar divisor applied to logits before the
+            softmax (defaults to 1).
     """
     _topp_minp_sampling[is_top_p=False, _test_sort=_test_sort](
         min_ps, input_logits, out_token_ids, temperature
@@ -213,6 +246,17 @@ def sort_buf_descending[
     vocab_size: Int,
 ):
     """Sort each batch separately in descending order using parallel merge sort.
+
+    Parameters:
+        dtype: Element type of `buf_keys` (inferred).
+        out_idx_type: Element type of `buf_ids` (inferred).
+    Args:
+        buf_keys: Rank-2 keys sorted in place in descending order, one
+            row per batch.
+        buf_ids: Rank-2 indices carried alongside `buf_keys` so each key
+            retains its original position.
+        vocab_size: Number of elements per batch row; the total element
+            count divided by this gives the batch count.
     """
     comptime assert buf_keys.rank == 2, "rank must be 2"
     var batch_size = buf_keys.num_elements() // vocab_size
@@ -232,7 +276,22 @@ def merge_sort_recursive[
     start: Int,
     end: Int,
 ):
-    """Recursive merge sort implementation."""
+    """
+    Recursive merge sort implementation.
+
+    Parameters:
+        dtype: Element type of `buf_keys` (inferred).
+        out_idx_type: Element type of `buf_ids` (inferred).
+    Args:
+        buf_keys: Rank-2 keys sorted in place in descending order, one
+            row per batch.
+        buf_ids: Rank-2 indices carried alongside `buf_keys` so each key
+            retains its original position.
+        start: Inclusive start index of the contiguous range to sort
+            within the flattened buffer.
+        end: Exclusive end index of the contiguous range to sort within
+            the flattened buffer.
+    """
     if end - start > 1:
         var mid = start + (end - start) // 2
         merge_sort_recursive(buf_keys, buf_ids, start, mid)
@@ -250,7 +309,22 @@ def merge[
     mid: Int,
     end: Int,
 ):
-    """Merge two sorted subarrays into one sorted array."""
+    """
+    Merge two sorted subarrays into one sorted array.
+
+    Parameters:
+        dtype: Element type of `buf_keys` (inferred).
+        out_idx_type: Element type of `buf_ids` (inferred).
+    Args:
+        buf_keys: Rank-2 keys holding two adjacent sorted subranges that
+            are merged in place in descending order.
+        buf_ids: Rank-2 indices carried alongside `buf_keys` so each key
+            retains its original position.
+        start: Inclusive start index of the left sorted subrange.
+        mid: Exclusive end of the left subrange and inclusive start of
+            the right subrange.
+        end: Exclusive end index of the right sorted subrange.
+    """
     var left_size = mid - start
     var right_size = end - mid
 

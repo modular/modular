@@ -187,7 +187,39 @@ def gemm_kernel_apple_8x8[
     n: Int,
     k: Int,
 ):
-    """Launchable wrapper for the 8x8 simdgroup-matrix GEMM (bench/test)."""
+    """Launchable wrapper for the 8x8 simdgroup-matrix GEMM (bench/test).
+
+    Parameters:
+        c_type: Element type of the output `C` tile.
+        a_type: Element type of the input `A` tile.
+        b_type: Element type of the input `B` tile.
+        c_layout: Memory layout of the output `C` tile.
+        a_layout: Memory layout of the input `A` tile.
+        b_layout: Memory layout of the input `B` tile.
+        c_storage: Storage kind of the output `C` tile.
+        a_storage: Storage kind of the input `A` tile.
+        b_storage: Storage kind of the input `B` tile.
+        transpose_b: Whether `B` is stored as `(N, K)` rather than `(K, N)`
+            (defaults to `False`).
+        elementwise_lambda_fn: Optional epilogue applied to each output
+            element before store (defaults to `None`).
+        s_type: Accumulator element type (defaults to the accumulator type
+            of `c_type`).
+        BLOCK_M: M-dimension block tile size (defaults to 64).
+        BLOCK_N: N-dimension block tile size (defaults to 64).
+        BLOCK_K: K-dimension block tile size (defaults to 16).
+        NUM_SIMDGROUPS: Simdgroups per threadgroup, each owning a 32x32
+            subtile (defaults to 4).
+
+    Args:
+        c: Output `TileTensor` of shape `(m, n)`.
+        a: Input `TileTensor` of shape `(m, k)`.
+        b: Input `TileTensor` of shape `(k, n)`, or `(n, k)` when
+            `transpose_b` is set.
+        m: Number of rows in `C` and `A`.
+        n: Number of columns in `C` and `B`.
+        k: Contraction dimension shared by `A` and `B`.
+    """
     _simdgroup8x8_matmul_kernel[
         c_type,
         a_type,

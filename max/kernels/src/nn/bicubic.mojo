@@ -204,6 +204,13 @@ def gpu_bicubic_kernel[
 ) -> None:
     """Perform bicubic interpolation using GPU.
 
+    Parameters:
+        dtype: Element type of the input and output tensors.
+        OutputLayoutType: `TensorLayout` of the output tensor.
+        output_origin: Mutable `Origin` of the output tensor.
+        InputLayoutType: `TensorLayout` of the input tensor.
+        input_origin: Immutable `Origin` of the input tensor.
+
     Args:
         output: Output tensor with desired dimensions on the device.
         input: Input tensor of shape [B, C, H, W] on the device.
@@ -290,6 +297,11 @@ def resize_bicubic[
     ctx: DeviceContext,
 ) raises:
     """Perform bicubic interpolation.
+
+    Parameters:
+        dtype: Element type of the input and output tensors (inferred).
+        target: `StaticString` identifying the execution platform, used to
+            select between the GPU and CPU code paths.
 
     Args:
         output: Output tensor with desired dimensions on host or device.

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements KV-cache kernels for ragged (variable-length) sequences used in continuous batching."""
 
 from std.sys.info import _current_target, simd_width_of
 from std.math import ceildiv
@@ -112,9 +113,20 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged[
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
 
+    Parameters:
+        dtype: Element type of the `hidden_state` input and `output` tensors.
+        weight_dtype: Element type of the `weight` tensor.
+        target: Compilation target string used to dispatch GPU versus CPU
+            paths (defaults to "cpu").
+        group_size: Block size for GPTQ-style quantization of `weight`; when
+            set, `weight` must be `uint8` (defaults to `None` for no
+            quantization).
+        has_zp: Whether the weight quantization uses a zero point; currently
+            must be falsy when `group_size` is set (defaults to `None`).
+
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
-        input_row_offsets: Tensor with shape (batch_size + 1,).
+        input_row_offsets: Tensor with shape (batch_size + 1).
             The value at each index is the start_idx of the corresponding batch in hidden_state.
         weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
         kv_collection: The object storing the KVCache for this layer.
@@ -197,9 +209,20 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
 
+    Parameters:
+        dtype: Element type of the `hidden_state` input and `output` tensors.
+        weight_dtype: Element type of the `weight` tensor.
+        target: Compilation target string used to dispatch GPU versus CPU
+            paths (defaults to "cpu").
+        group_size: Block size for GPTQ-style quantization of `weight`; when
+            set, `weight` must be `uint8` (defaults to `None` for no
+            quantization).
+        has_zp: Whether the weight quantization uses a zero point; currently
+            must be falsy when `group_size` is set (defaults to `None`).
+
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
-        input_row_offsets: Tensor with shape (batch_size + 1,).
+        input_row_offsets: Tensor with shape (batch_size + 1).
             The value at each index is the start_idx of the corresponding batch in hidden_state.
         weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
         kv_collection: The object storing the KVCache for this layer.
@@ -295,6 +318,20 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
+
+    Parameters:
+        dtype: Element type of the `hidden_state` input tensor.
+        weight_dtype: Element type of the `weight` tensor.
+        output_dtype: Element type of the `output` tensor and of the Q
+            projection written to it.
+        scale_dtype: Element type of the `input_scale` and `weight_scale`
+            tensors.
+        scales_granularity_mnk: Block sizes along the M, N, and K matmul
+            dimensions used to tile the scale application; `-1` selects
+            per-tensor scaling, `1` selects per-channel scaling, and any
+            other value selects blockwise scaling.
+        target: Compilation target string used to dispatch GPU versus CPU
+            paths (defaults to "cpu").
 
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
@@ -405,6 +442,22 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
+
+    Parameters:
+        dtype: Element type of the `hidden_state` input tensor.
+        weight_dtype: Element type of the `weight` tensor.
+        output_dtype: Element type of the `output` tensor and of the Q
+            projection written to it.
+        scale_dtype: Element type of the `input_scale` and `weight_scale`
+            tensors.
+        a_layout: Memory layout of the `hidden_state` input tensor.
+        b_layout: Memory layout of the `weight` tensor.
+        sfa_layout: Memory layout of the `input_scale` tensor.
+        sfb_layout: Memory layout of the `weight_scale` tensor.
+        SF_VECTOR_SIZE: Number of scale elements packed per scaling-factor
+            vector; `32` for MXFP8 E8M0 scaling and `16` for NVFP4 scaling.
+        target: Compilation target string used to dispatch GPU versus CPU
+            paths (defaults to "cpu").
 
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size // 2).
@@ -1454,6 +1507,23 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
     combined `output` buffer; K/V are scattered into the MAIN `kv_collection`
     and IndexK into the INDEX `index_kv_collection`.
 
+    Parameters:
+        dtype: Element type of the `hidden_state` input tensor.
+        weight_dtype: Element type of the `weight` tensor.
+        output_dtype: Element type of the `output` tensor.
+        scale_dtype: Element type of the `input_scale` and `weight_scale`
+            tensors.
+        a_layout: Memory layout of the `hidden_state` (matmul A operand) tensor.
+        b_layout: Memory layout of the `weight` (matmul B operand) tensor.
+        sfa_layout: Memory layout of the `input_scale` (scale-factor for A)
+            tensor.
+        sfb_layout: Memory layout of the `weight_scale` (scale-factor for B)
+            tensor.
+        SF_VECTOR_SIZE: Scale-factor vector size of the block-scaled format:
+            32 for MXFP8 or 16 for NVFP4.
+        target: Compilation target string used to dispatch GPU versus CPU
+            paths (defaults to "cpu").
+
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), hidden).
         input_row_offsets: Tensor with shape (batch_size + 1,). The value at
@@ -2076,6 +2146,15 @@ def kv_matmul_ragged_paged[
 ) raises:
     """Performs a matmul, writing the output into a mutable ContinuousBatchingKVCacheCollection object.
 
+    Parameters:
+        dtype: Element type of the `hidden_state` and `weight` tensors and of
+            the KV cache entries (inferred).
+        params: Static shape parameters of the paged KV cache, including the
+            attention-head count, per-head size, and MLA flag (inferred).
+        page_size: Number of tokens stored per cache page (inferred).
+        target: Compilation target string used to dispatch GPU versus CPU
+            paths.
+
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
         input_row_offsets: Tensor with shape (batch_size + 1,)
@@ -2315,6 +2394,16 @@ def k_matmul_ragged_paged[
 ) raises:
     """Performs a matmul, writing the output into a mutable PagedKVCacheCollection object.
 
+    Parameters:
+        dtype: Element type of the `hidden_state` input, the `weight` tensor,
+            and the KV cache entries (inferred).
+        params: Static `KVCacheStaticParams` describing the cache layout, such
+            as head count and head dimension (inferred).
+        page_size: Number of tokens stored per cache page in the paged KV
+            cache (inferred).
+        target: Compilation target string used to dispatch GPU versus CPU
+            paths.
+
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
         input_row_offsets: Tensor with shape (batch_size + 1,)
@@ -2510,6 +2599,19 @@ def k_matmul_ragged_paged_scale[
 ) raises:
     """Performs a matmul, writing the output into a mutable
     PagedKVCacheCollection object.
+
+    Parameters:
+        dtype: Element type of the `hidden_state` input tensor and of the
+            key entries written to the KV cache.
+        weight_dtype: Element type of the `weight` tensor; must match
+            `dtype`.
+        scale_dtype: Element type of the `input_scale` and `weight_scale`
+            tensors.
+        target: Compilation target string; must be a GPU target.
+        scales_granularity_mnk: Block sizes along the M, N, and K matmul
+            dimensions used to tile the scale application; `-1` selects
+            per-tensor scaling, `1` selects per-channel scaling, and any
+            other value selects blockwise scaling.
 
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
@@ -2720,6 +2822,18 @@ def unfused_qkv_matmul_ragged_paged_gguf_quantized[
     quantization encodings.
 
     This is only supported on CPU.
+
+    Parameters:
+        dtype: Element type of the KV cache collection entries (inferred).
+        params: Static shape parameters of the paged KV cache, including the
+            attention-head count, per-head size, and MLA flag (inferred).
+        page_size: Number of tokens stored per cache page (inferred).
+        quantization_encoding_q: GGUF quantization encoding name applied to
+            the `q_weight` tensor.
+        quantization_encoding_k: GGUF quantization encoding name applied to
+            the `k_weight` tensor.
+        quantization_encoding_v: GGUF quantization encoding name applied to
+            the `v_weight` tensor.
 
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
@@ -3112,6 +3226,37 @@ def generic_fused_qk_rope_bshd_paged_ragged[
     because the graph compiler doesn't know about the dependency between these
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only executed after QKV completes.
+
+    Parameters:
+        dtype: Data type of the `q_proj` and `output` tensors (inferred).
+        freq_dtype: Data type of the `freqs_cis` RoPE frequency table
+            (inferred).
+        interleaved: Whether RoPE applies interleaved (GPT-NeoX style) rotation
+            to adjacent element pairs.
+        has_position_ids: Whether per-token `position_ids` are provided; when
+            `False`, `position_ids` is unused.
+        target: Target device string for kernel dispatch.
+        mrope_types: TypeList of coordinate element types constraining
+            `mrope_section` for multimodal RoPE.
+        mrope_section: Optional section sizes splitting the head dimension into
+            temporal, height, and width spans for multimodal RoPE (defaults to
+            `None`).
+
+    Args:
+        q_proj: Query projection tile tensor with shape (sum(seq_lens),
+            num_heads, head_size).
+        input_row_offsets: Tile tensor with shape (batch_size + 1,) denoting
+            the start of each sequence along the ragged sequence dimension.
+        kv_collection: The paged KV cache collection storing the K cache for
+            this layer, retrieved via `layer_idx`.
+        freqs_cis: Precomputed RoPE frequency table applied to Q and K.
+        position_ids: Per-token position indices used to index into
+            `freqs_cis`; ignored when `has_position_ids` is `False`.
+        layer_idx: The index of the layer being executed, used to retrieve the
+            K cache from `kv_collection`.
+        output: The pre-allocated output tile tensor receiving the rotated Q
+            projection.
+        context: The call context pointer, passed by the graph compiler.
     """
 
     @always_inline
@@ -3213,6 +3358,36 @@ def generic_flash_attention_kv_cache_ragged[
     context: DeviceContext,
     decode_dispatch_metadata: MHADecodeDispatchMetadata,
 ) raises:
+    """Dispatches flash attention over a ragged batch against a paged KV cache.
+
+    Parameters:
+        collection_t: The KV cache collection type storing the K and V caches
+            for this layer (inferred).
+        dtype: Data type of the query tensor (inferred).
+        target: Target device string for kernel dispatch.
+        mask_str: Attention mask name selecting the masking strategy, such as
+            "causal", "null", or "sliding_window_causal".
+        local_window_size: Sliding-window size in tokens for windowed masks;
+            -1 for masks that ignore it (defaults to -1).
+        output_dtype: Data type of the `output` tensor (defaults to `dtype`).
+
+    Args:
+        q: Query tensor with shape (sum(seq_lens), num_heads, head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
+            start of each sequence along the ragged sequence dimension.
+        kv_collection: The collection storing the KVCache entries for this
+            layer, retrieved via layer_idx.
+        layer_idx: The index of the layer being executed, used to retrieve the
+            KVCache objects from kv_collection.
+        scale: The scaling factor in scaled dot-product attention, usually
+            rsqrt(head_size).
+        output: The pre-allocated output buffer to write results to, with shape
+            (sum(seq_lens), num_heads, head_size).
+        context: The call context pointer, passed by the graph compiler.
+        decode_dispatch_metadata: Precomputed dispatch metadata used to select
+            decode kernels for the GPU target.
+    """
+
     @always_inline
     @parameter
     def description_fn() -> String:
@@ -3365,6 +3540,38 @@ def generic_flash_attention_kv_cache_ragged_sink[
     ],
     decode_dispatch_metadata: MHADecodeDispatchMetadata,
 ) raises:
+    """Dispatches flash attention over a ragged batch with attention sink weights.
+
+    Parameters:
+        collection_t: The KV cache collection type storing the K and V caches
+            for this layer (inferred).
+        dtype: Data type of the query tensor (inferred).
+        target: Target device string for kernel dispatch.
+        mask_str: Attention mask name selecting the masking strategy, such as
+            "causal", "null", or "sliding_window_causal".
+        local_window_size: Sliding-window size in tokens for windowed masks;
+            -1 for masks that ignore it (defaults to -1).
+        output_dtype: Data type of the `output` tensor (defaults to `dtype`).
+
+    Args:
+        q: Query tensor with shape (sum(seq_lens), num_heads, head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
+            start of each sequence along the ragged sequence dimension.
+        kv_collection: The collection storing the KVCache entries for this
+            layer, retrieved via layer_idx.
+        layer_idx: The index of the layer being executed, used to retrieve the
+            KVCache objects from kv_collection.
+        scale: The scaling factor in scaled dot-product attention, usually
+            rsqrt(head_size).
+        output: The pre-allocated output buffer to write results to, with shape
+            (sum(seq_lens), num_heads, head_size).
+        context: The call context pointer, passed by the graph compiler.
+        sink_weights: Per-batch attention sink weights applied to the leading
+            cache slots.
+        decode_dispatch_metadata: Precomputed dispatch metadata used to select
+            decode kernels for the GPU target.
+    """
+
     @always_inline
     @parameter
     def description_fn() -> String:
@@ -3461,6 +3668,55 @@ def generic_flare_mla_decode_kv_cache_ragged[
     # sizing matches the kernel's divmod on scalar_args_buf[2].
     num_partitions_in: Optional[Int] = None,
 ) raises:
+    """Dispatches MLA decode attention over a ragged batch against a paged KV cache.
+
+    Parameters:
+        collection_t: The KV cache collection type storing the K cache for this
+            layer (inferred).
+        q_dtype: Data type of the query tensor (inferred).
+        mask_str: Attention mask name selecting the masking strategy, such as
+            "causal", "null", or "sliding_window_causal".
+        target: Target device string for kernel dispatch; must be a GPU
+            target.
+        local_window_size: Sliding-window size in tokens for windowed masks;
+            -1 for masks that ignore it (defaults to -1).
+        per_token_scale_rope_aware: Whether `q` and the KV cache use the
+            interleaved FP8+BF16 rope-aware layout (defaults to `False`).
+        sparse_mla: Whether to use sparse attention with pre-computed
+            physical KV row indices via gather4 TMA (defaults to `False`).
+        fold_shared_index: Whether to use the read-once shared-index MTP
+            fold threaded to `flare_mla_decoding` (defaults to `False`).
+
+    Args:
+        q: Query tile tensor with shape (batch_size, num_heads, q_head_size).
+        input_row_offsets: Tile tensor with shape (batch_size + 1,) denoting
+            the start of each Q entry in the batch.
+        kv_collection: The collection storing the KVCache entries for this
+            layer, retrieved via layer_idx.
+        layer_idx: The index of the layer being executed, used to retrieve the
+            KVCache objects from kv_collection.
+        scale: The scaling factor in scaled dot-product attention, usually
+            rsqrt(head_size).
+        output: The pre-allocated output tile tensor to write results to.
+        scalar_args_buf: Packed MLA dispatch metadata buffer.
+        context: The call context pointer, passed by the graph compiler.
+        q_scale_ptr: Per-token Q scale pointer (float32 array, one per Q
+            token); defaults to null (sigma_Q = 1.0).
+        d_indices: Optional device pointer to packed int32 physical KV row
+            indices for sparse decode.
+        indices_stride: Stride between batch rows in d_indices (e.g. max
+            top-k).
+        topk_lengths: Optional per-batch valid top-k counts.
+        attn_sink_ptr: Optional per-batch attention sink weights.
+        extra_k: Optional second KV cache operand for the extra stream.
+        extra_d_indices: Optional extra KV stream sparse indices.
+        extra_indices_stride: Stride for extra_d_indices.
+        extra_topk_lengths: Optional per-batch lengths for the extra stream.
+        extra_scales_ptr: Optional extra stream scales.
+        num_partitions_in: Capturable-graph num_partitions override forwarded
+            from the MoGG op so SM100 grid sizing matches the kernel.
+    """
+
     @always_inline
     @parameter
     def description_fn() -> String:
@@ -3706,6 +3962,42 @@ def generic_flare_mla_prefill_kv_cache_ragged[
     ],
     context: DeviceContext,
 ) raises:
+    """Dispatches MLA prefill attention over a ragged batch against a paged KV cache.
+
+    Parameters:
+        collection_t: The KV cache collection type storing the K cache for this
+            layer (inferred).
+        input_dtype: Data type of the input `q`, `k`, and `v` tile tensors
+            (inferred).
+        dtype: Data type of the output tile tensor (inferred).
+        mask_str: Attention mask name selecting the masking strategy, such as
+            "causal", "null", or "sliding_window_causal".
+        target: Target device string for kernel dispatch; must be a GPU
+            target.
+        local_window_size: Sliding-window size in tokens for windowed masks;
+            -1 for masks that ignore it (defaults to -1).
+
+    Args:
+        q: Query tile tensor with shape (total_seq_len, num_heads, q_head_size).
+        k: Key tile tensor with shape (total_seq_len, num_heads, kv_head_size).
+        v: Value tile tensor with shape (total_seq_len, num_heads, kv_head_size).
+        buffer_row_offsets: Tile tensor denoting the start and end position of
+            each K entry in the ragged K/V tensor.
+        cache_offsets: Mutable tile tensor denoting the start position of each
+            K entry in the PagedKVCacheCollection.
+        input_row_offsets: Tile tensor denoting the start and end position of
+            each Q entry in the batch.
+        kv_collection: The collection storing the KVCache entries for this
+            layer, retrieved via layer_idx.
+        layer_idx: The index of the layer being executed, used to retrieve the
+            KVCache objects from kv_collection.
+        scale: The scaling factor in scaled dot-product attention, usually
+            rsqrt(head_size).
+        output: The pre-allocated output tile tensor to write results to, with
+            shape (total_seq_len, num_heads, kv_head_size).
+        context: The call context pointer, passed by the graph compiler.
+    """
+
     @always_inline
     @parameter
     def description_fn() -> String:
@@ -3900,6 +4192,32 @@ def generic_flare_mla_prefill_ragged_paged_plan[
     ],
     context: DeviceContext,
 ) raises:
+    """Computes the MLA prefill plan for a ragged paged KV cache.
+
+    Populates buffer_row_offsets, cache_offsets, and buffer_lengths from the
+    input row offsets and paged key cache so the subsequent MLA prefill kernel
+    can gather K/V entries into a contiguous buffer.
+
+    Parameters:
+        target: Target device string for kernel dispatch; must be a GPU
+            target.
+
+    Args:
+        input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
+            start of each sequence along the ragged sequence dimension.
+        kv_collection: The collection storing the KVCache entries for this
+            layer, retrieved via layer_idx.
+        layer_idx: The index of the layer being executed, used to retrieve the
+            KVCache objects from kv_collection.
+        buffer_token_size: Token capacity of each prefill buffer row.
+        buffer_row_offsets: Mutable output tensor receiving the start and end
+            position of each K entry in the ragged K/V buffer.
+        cache_offsets: Mutable output tensor receiving the start position of
+            each K entry in the PagedKVCacheCollection.
+        buffer_lengths: Mutable output tensor receiving the number of valid
+            tokens per buffer row.
+        context: The call context pointer, passed by the graph compiler.
+    """
     comptime assert is_gpu[target](), "Planning MLA is only supported on GPU"
 
     var layer_idx_cast = Int(layer_idx)
@@ -3935,7 +4253,20 @@ def kv_cache_row_offsets_ragged_paged[
     ],
     ctx: DeviceContext,
 ) raises:
-    """Builds cumulative valid-cache row offsets for a ragged prefill batch."""
+    """Builds cumulative valid-cache row offsets for a ragged prefill batch.
+
+    Parameters:
+        target: Compilation target string; must be a GPU target.
+
+    Args:
+        cache_row_offsets: Output tensor of shape (batch_size + 1) receiving
+            the cumulative valid-cache row offsets.
+        input_row_offsets: Tensor of shape (batch_size + 1) denoting the
+            start of each sequence in the ragged batch.
+        cache_lengths: Tensor of shape (batch_size,) holding the valid cache
+            length for each batch.
+        ctx: The call context pointer, passed by the graph compiler.
+    """
     comptime assert is_gpu[
         target
     ](), "Building cache row offsets is only supported on GPU"
@@ -3977,6 +4308,27 @@ def kv_cache_row_offsets_ragged_paged_kernel[
         ImmUntrackedOrigin,
     ],
 ):
+    """Computes cumulative valid-cache row offsets for one batch index in a ragged prefill batch.
+
+    Each thread accumulates the running sum of valid cache lengths plus the
+    ragged sequence deltas for all batches before its output index and writes
+    the result to cache_row_offsets.
+
+    Parameters:
+        CacheRowOffsetsLayoutType: Memory layout of the `cache_row_offsets`
+            output tensor.
+        InputRowOffsetsLayoutType: Memory layout of the `input_row_offsets`
+            tensor.
+        CacheLengthsLayoutType: Memory layout of the `cache_lengths` tensor.
+
+    Args:
+        cache_row_offsets: Output tensor receiving the cumulative valid-cache
+            row offsets, with shape (batch_size + 1,).
+        input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
+            start of each sequence along the ragged sequence dimension.
+        cache_lengths: Tensor with shape (batch_size,) giving the number of
+            valid cached tokens per batch.
+    """
     comptime assert cache_row_offsets.flat_rank == 1
     comptime assert input_row_offsets.flat_rank == 1
     comptime assert cache_lengths.flat_rank == 1
@@ -4022,6 +4374,33 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
     ],
     context: DeviceContext,
 ) raises:
+    """Decompresses MLA latent K cache rows into a full K buffer via a matmul.
+
+    Gathers compressed latent K vectors from the paged KV cache into
+    k_latent_buffer using buffer_row_offsets and cache_offsets, then multiplies
+    by the down-projection weight to produce the decompressed K buffer.
+
+    Parameters:
+        target: Target device string for kernel dispatch; must be a GPU
+            target.
+        dtype: Data type of the weight and K buffers (inferred).
+
+    Args:
+        buffer_row_offsets_1d: Tensor denoting the start and end position of
+            each K entry in the ragged buffer.
+        cache_offsets_1d: Tensor denoting the start position of each K entry in
+            the PagedKVCacheCollection.
+        buffer_length: Number of K rows to decompress.
+        weight: Down-projection weight tensor applied to the latent K vectors.
+        kv_collection: The collection storing the KVCache entries for this
+            layer, retrieved via layer_idx.
+        layer_idx: The index of the layer being executed, used to retrieve the
+            KVCache objects from kv_collection.
+        k_latent_buffer: Mutable output buffer receiving the gathered latent K
+            vectors.
+        k_buffer: Mutable output buffer receiving the decompressed K vectors.
+        context: The call context pointer, passed by the graph compiler.
+    """
     comptime assert is_gpu[target](), "MLA is only supported on GPU"
 
     var buffer_length_int = Int(buffer_length)
@@ -4192,6 +4571,40 @@ def generic_cross_attention_kv_cache[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
+    """Dispatches cross-attention flash attention over a ragged batch against a paged KV cache.
+
+    Parameters:
+        collection_t: The KV cache collection type storing the K and V caches
+            for this layer (inferred).
+        dtype: Data type of the query tensor (inferred).
+        target: Target device string for kernel dispatch, such as "cpu" or
+            "gpu".
+        mask_str: Attention mask name selecting the masking strategy, such as
+            "causal", "null", or "sliding_window_causal".
+        local_window_size: Sliding-window size in tokens for windowed masks;
+            -1 for masks that ignore it (defaults to -1).
+        output_dtype: Data type of the output tensor; defaults to `dtype`.
+
+    Args:
+        q: Query tensor with shape (sum(q_seq_lens), num_heads, head_size).
+        q_input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
+            start of each query sequence along the ragged sequence dimension.
+        q_max_seq_len: Scalar tensor holding the maximum query sequence length.
+        kv_input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
+            start of each KV sequence along the ragged sequence dimension.
+        kv_collection: The collection storing the KVCache entries for this
+            layer, retrieved via layer_idx.
+        layer_idx: The index of the layer being executed, used to retrieve the
+            KVCache objects from kv_collection.
+        scale: The scaling factor in scaled dot-product attention, usually
+            rsqrt(head_size).
+        output: The pre-allocated output buffer to write results to, with shape
+            (sum(q_seq_lens), num_heads, head_size).
+        context: The call context pointer, passed by the graph compiler.
+        sink_weights: Optional per-batch attention sink weights applied to the
+            leading cache slots.
+    """
+
     @always_inline
     @parameter
     def description_fn() -> String:
@@ -4266,6 +4679,34 @@ def generic_kv_cache_radd_dispatch[
     layer_idx: UInt32,
     ctx: DeviceContext,
 ) raises:
+    """Adds an input tensor elementwise into the paged KV cache in-place.
+
+    Splits the input tensor's last dimension into key and value halves and
+    accumulates each half into the corresponding K or V cache slot, applying
+    the batch offset and per-batch cache lengths to locate the target rows.
+
+    Parameters:
+        dtype: Element type of the input tensor `a` and the KV cache entries
+            (inferred).
+        collection_t: Concrete `KVCollectionT` type of the `cache` argument,
+            used to recover the cache's static parameters and cache type
+            (inferred).
+        target: Compilation target string used to dispatch GPU versus CPU
+            paths.
+
+    Args:
+        a: Input tensor with shape (sum(seq_lens), 2 * hidden_size) where the
+            first hidden_size columns target K and the rest target V.
+        cache: The collection storing the KVCache entries for this layer,
+            retrieved via layer_idx.
+        input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
+            start of each sequence along the ragged sequence dimension.
+        batch_offset: Offset added to the computed batch index to support
+            batch slicing.
+        layer_idx: The index of the layer being executed, used to retrieve the
+            KVCache objects from cache.
+        ctx: The call context pointer, passed by the graph compiler.
+    """
     comptime hidden_size = collection_t.kv_params.head_size * collection_t.kv_params.num_heads
 
     comptime assert (
@@ -4366,6 +4807,28 @@ def kv_cache_store_ragged[
     ],
     context: DeviceContext,
 ) raises:
+    """Stores ragged input values into a paged KV cache via an elementwise kernel.
+
+    Invokes the supplied input_fn to load values and writes them into the cache
+    at positions determined by the per-batch cache lengths and input row
+    offsets.
+
+    Parameters:
+        cache_t: The KV cache type used to store key or value entries
+            (inferred).
+        target: Compilation target string used to dispatch GPU versus CPU
+            paths.
+        input_fn: Compile-time callback that loads a SIMD vector of
+            cache-typed elements at the given 3D index.
+
+    Args:
+        cache: The KVCache object to write key or value entries into.
+        input_shape: Shape of the input as a 3D index list (tokens, heads,
+            head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
+            start of each sequence along the ragged sequence dimension.
+        context: The call context pointer, passed by the graph compiler.
+    """
     comptime assert input_row_offsets.layout.rank() == 1, (
         "Expected input_row_offsets to be a 1D tensor of shape `(batch_size"
         " + 1,)`"
@@ -4431,6 +4894,28 @@ def kv_cache_store_padded[
     ],
     context: DeviceContext,
 ) raises:
+    """Stores padded input values into a paged KV cache via an elementwise kernel.
+
+    Invokes the supplied input_fn to load values and writes them into the cache
+    at positions determined by the per-batch cache lengths, skipping tokens
+    beyond each batch's valid length.
+
+    Parameters:
+        cache_t: The KV cache type used to store key or value entries
+            (inferred).
+        target: Compilation target string used to dispatch GPU versus CPU
+            paths.
+        input_fn: Compile-time callback that loads a SIMD vector of
+            cache-typed elements at the given 4D index.
+
+    Args:
+        cache: The KVCache object to write key or value entries into.
+        input_shape: Shape of the input as a 4D index list (batch, tokens,
+            heads, head_size).
+        valid_lengths: Tensor with shape (batch_size,) giving the number of
+            valid tokens per batch; rows beyond this are skipped.
+        context: The call context pointer, passed by the graph compiler.
+    """
     comptime assert (
         valid_lengths.layout.rank() == 1
     ), "Expected valid_lengths to be a 1D tensor of shape `(batch_size,)`"
@@ -4515,6 +5000,30 @@ def kv_cache_2m_iadd_dispatch[
     of tokens. We use the `lora_end_idx` to index into the K or V tensor.
     We call this value `m` since this value will be a subset of the
     total tokens in the batch. We write tokens to K as [0, m) and V as [m, 2m).
+
+    Parameters:
+        dtype: Element type of the `kv` input tensor and the KV cache entries
+            (inferred).
+        collection_t: The KV cache collection type (inferred).
+        target: Compilation target string used to dispatch GPU versus CPU
+            paths.
+
+    Args:
+        kv: Input tensor with concatenated K/V layout of shape
+            (2m, num_heads * head_size), where rows [0, m) hold keys and rows
+            [m, 2m) hold values.
+        cache: The KV cache collection storing the key and value caches for
+            this layer, retrieved via `layer_idx`.
+        input_row_offsets: Tensor with shape (batch_size + 1) denoting the
+            start of each sequence along the ragged sequence dimension.
+        lora_end_idx: Single-element tensor holding `m`, the number of LoRA
+            tokens to add; keys occupy rows [0, m) and values occupy rows
+            [m, 2m) of `kv`.
+        batch_seq_len: Single-element tensor holding the total number of
+            tokens in the batch.
+        layer_idx: The index of the layer being executed, used to retrieve the
+            K and V caches from `cache`.
+        ctx: The call context pointer, passed by the graph compiler.
     """
     comptime hidden_size = collection_t.kv_params.head_size * collection_t.kv_params.num_heads
     var kv_shape = kv.runtime_layout.shape.value.canonicalize()

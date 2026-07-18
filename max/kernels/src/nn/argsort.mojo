@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides CPU and GPU implementations of argsort that return indices permuting a tensor into sorted order."""
 
 
 from std.math import ceildiv, iota

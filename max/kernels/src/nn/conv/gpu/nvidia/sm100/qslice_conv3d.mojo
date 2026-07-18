@@ -52,7 +52,7 @@ matching what a single all-at-once 3-D conv would produce internally.
 Gate:
 - bf16 input/filter/output dtype.
 - SM100 device (`_is_sm10x_gpu`).
-- `filter_is_fcrs=False` (QRSCF only — the per-q slab is a
+- `filter_is_fcrs=False` (QRSCF only: the per-q slab is a
   contiguous RSCF view at offset `q*R*S*C*F`; FCQRS would need a
   separate extraction kernel because a fixed-q FCQRS slice is
   non-contiguous).
@@ -95,7 +95,7 @@ def _accum_bf16_to_fp32_kernel[
 ):
     """Elementwise `accum_fp32[i] += src_bf16[i].cast[fp32]()`.
 
-    One thread per element; no atomics — each thread owns its slot.
+    One thread per element; no atomics. Each thread owns its slot.
     """
     comptime bf16_alignment = align_of[SIMD[dtype, output_simd_width]]()
     comptime fp32_alignment = align_of[SIMD[DType.float32, output_simd_width]]()
@@ -198,6 +198,35 @@ def dispatch_qslice_conv3d_sm100[
 ) raises -> Bool:
     """Try to dispatch a 3-D conv as Q × SM100 2-D conv calls with a
     dedicated fp32 accumulator.
+
+    Parameters:
+        input_type: The element type of `input` (inferred). The gate
+            requires `DType.bfloat16`.
+        filter_type: The element type of `filter` (inferred).
+        output_type: The element type of `output` (inferred). The
+            gate requires `DType.bfloat16`.
+        filter_is_fcrs: Whether `filter` is laid out as FCQRS rather
+            than QRSCF (defaults to `False`). The gate requires
+            `False` because a fixed-`q` FCQRS slab is non-contiguous.
+        maybe_epilogue_func: Optional 5-D elementwise epilogue fused
+            into the final fp32-to-`output_type` write (defaults to
+            `None`).
+
+    Args:
+        input: Rank-5 input tensor in NDHWC layout.
+        filter: Rank-5 filter tensor in QRSCF layout, shaped
+            `[Q, R, S, C_in, C_out]`.
+        output: Rank-5 mutable output tensor in NDHWC layout.
+        stride: Per-axis stride for the `(D, H, W)` dimensions.
+            The gate requires `(1, 1, 1)`.
+        dilation: Per-axis dilation for the `(D, H, W)` dimensions.
+            The gate requires `(1, 1, 1)`.
+        symmetric_padding: Symmetric padding for the `(D, H, W)`
+            dimensions. Temporal (`D`) padding must be zero.
+        num_groups: Number of convolution groups. The gate
+            requires `1`.
+        ctx: Device context used for buffer allocation and kernel
+            launches.
     """
     comptime assert input.flat_rank == 5, "input must be rank 5 (NDHWC)"
     comptime assert filter.flat_rank == 5, "filter must be rank 5"

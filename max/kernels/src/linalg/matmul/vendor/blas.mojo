@@ -11,6 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Vendor BLAS matmul wrappers for cuBLAS, cuBLASLt, rocBLAS, and hipBLASLt.
+
+Exposes a backend-agnostic `matmul` entry point plus `Backend` and `Handle`
+types that abstract over the NVIDIA and AMD vendor libraries so callers can
+dispatch GEMM operations without binding to a specific vendor API.
+"""
+
 from std.sys import has_amd_gpu_accelerator, size_of
 from std.math import ceildiv
 from std.ffi import _get_global_or_null, external_call
@@ -124,6 +131,13 @@ from linalg.fp4_utils import (
 
 
 struct Backend(Equatable, TrivialRegisterPassable, Writable):
+    """Identifies which vendor BLAS library backs a matmul operation.
+
+    Acts as a comptime-selectable tag (`AUTOMATIC`, `CUBLAS`, `CUBLASLT`,
+    `ROCBLAS`, `HIPBLASLT`) used to parameterize `Handle` and dispatch to the
+    matching vendor implementation.
+    """
+
     var _value: Int32
 
     comptime AUTOMATIC = Self(0)
@@ -189,6 +203,14 @@ def _resolve_backend[
 struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
     ImplicitlyCopyable
 ):
+    """Owns a vendor BLAS library handle for a resolved `Backend`.
+
+    Parameterized by a `Backend` (defaulting to the automatically resolved
+    backend) and stores the underlying cuBLAS, rocBLAS, or hipBLASLt handle in
+    a `Variant`. Construction creates the vendor handle and `__exit__` destroys
+    it, so instances should be used as context managers.
+    """
+
     comptime resolved_backend = _resolve_backend[Self.backend]()
     comptime _cublas_type = Optional[OpaquePointer[AnyOrigin[mut=True]]]
     comptime _rocblas_type = _rocblas.Handle

@@ -31,7 +31,7 @@ back to the caller's im2col / cuDNN path. Acceptance rules:
   - `stride[0] == stride[1] == stride[2]` and stride ∈ {1, 2}.
   - `symmetric_padding[i] ∈ {0, 1, 2}` for each axis, with the
     further constraint that `pad_h == pad_w` (the kernel takes a
-    single (stride, pad) tuple) and `pad_d` may differ — but for now
+    single (stride, pad) tuple) and `pad_d` may differ, but for now
     we require all three pads equal so the static-launch enumeration
     stays bounded.
 
@@ -174,6 +174,41 @@ def dispatch_amd_4wave_conv3d[
     """Try to dispatch a Conv3D to `amd_4wave_conv` on MI355X. Returns
     True if handled; False if the caller should fall through (typically
     to `dispatch_im2col_matmul_conv3d`).
+
+    Parameters:
+        input_type: `DType` of the input tensor; must be
+            `float8_e4m3fn`, `bfloat16`, or `float16`.
+        filter_type: `DType` of the filter tensor; must equal
+            `input_type`.
+        output_type: `DType` of the output tensor; `bfloat16` for
+            FP8 input, otherwise tracks `input_type`.
+        filter_is_fcqrs: `True` if the filter is laid out as FCQRS
+            `[F, C, Q, R, S]`; `False` if QRSCF `[Q*R*S*C, F]`.
+        elementwise_lambda_fn: Optional epilogue applied to the conv
+            output (defaults to `None`).
+        block_m_override: Override for the BM tile size, 0 uses the
+            heuristic (defaults to 0).
+        block_n_override: Override for the BN tile size, 0 uses the
+            heuristic (defaults to 0).
+        block_k_override: Override for the BK tile size, 0 uses the
+            heuristic (defaults to 0).
+
+    Args:
+        input: Input NDHWC tensor of shape `[N, D, H, W, C_in]`;
+            all spatial dims must be static.
+        filter: Filter tensor; FCQRS `[F, C, Q, R, S]` when
+            `filter_is_fcqrs` else QRSCF `[Q, R, S, C, F]`.
+        output: Output NDHWC tensor of shape
+            `[N, D_out, H_out, W_out, C_out]`.
+        stride: Per-axis stride `[stride_d, stride_h, stride_w]`;
+            all three must be equal and in `{1, 2}`.
+        dilation: Per-axis dilation; must be `(1, 1, 1)`.
+        symmetric_padding: Per-axis symmetric padding
+            `[pad_d, pad_h, pad_w]`; each in `{0, 1, 2}` and
+            `pad_h` must equal `pad_w`.
+        num_groups: Convolution group count; must be 1.
+        ctx: `DeviceContext` used to enqueue the transpose and
+            conv kernels.
     """
     comptime assert input.flat_rank == 5, "input must be rank 5 (NDHWC)"
     comptime assert filter.flat_rank == 5, "filter must be rank 5"

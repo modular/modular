@@ -18,7 +18,7 @@ delegated to `MaskTileOp` (see `mask_op.mojo`), which uses
 TileTensor.vectorize with local SIMD read/modify/write for per-element edits.
 
 Inlines `AMDStructuredConfig` directly (no `AttentionConfig` trait indirection).
-Prefill kernels handle MMA inline — there is no `_dma_loop`/`mma_qk`/`mma_pv`
+Prefill kernels handle MMA inline; there is no `_dma_loop`/`mma_qk`/`mma_pv`
 helper on the struct.
 """
 
@@ -90,6 +90,43 @@ struct Attention[
     # gfx950 / AMD MLA decode only.
     q_seq_len: Int = 1,
 ]:
+    """Holds the per-warp register, SMEM, and softmax state for a gfx950 MHA/MLA attention tile.
+
+    Owns the Q/K/V shared-memory buffers, the P (QK score) and output register
+    buffers, the online softmax accumulator, and the per-warp mask offsets used
+    by `MaskTileOp`. Parameterized by the query/key/value operand types, mask
+    type, and an `MHAConfig` that fixes the block/warp geometry; the
+    `AMDStructuredConfig` inlined as `amd_structured_config` supplies the
+    gfx950-specific MMA shape, head indexing, and shared-KV aliasing decisions.
+
+    The struct is shared across MHA/GQA prefill, MHA/GQA decode, and AMD MLA
+    decode (token-fold) paths; the `token_gen`, `mla_mode`, and `q_seq_len`
+    parameters select which path is active and fold the query-row geometry
+    accordingly.
+
+    Parameters:
+        output_type: The `DType` of the output tile (inferred).
+        q_type: The `DType` of the query and score registers (inferred).
+        k_t: The `MHAOperand` type of the key cache (inferred).
+        v_t: The `MHAOperand` type of the value cache (inferred).
+        mask_t: The `MHAMask` applied to attention scores (inferred).
+        config: The `MHAConfig` fixing block, warp, and head geometry.
+        group: GQA group size, `num_heads` divided by KV-head count.
+        sink: Whether to seed the softmax with attention-sink weights.
+        token_gen: Whether this is a decode (token-generation) kernel
+            (defaults to `False`).
+        q_depth: Per-head depth of the query (defaults to `config.depth`).
+        cache_depth: Per-head depth of the KV cache entries (defaults to
+            `config.depth`).
+        output_depth: Per-head depth of the output (defaults to
+            `config.depth`).
+        mla_mode: Whether AMD MLA decode is active (defaults to `False`).
+        mla_kv_alias: Whether V aliases onto K's SMEM, skipping the V DMA
+            (defaults to `False`; requires `shared_kv=True`).
+        q_seq_len: Number of query tokens folded into the MMA M dimension
+            for MLA decode (defaults to 1, single-token decode).
+    """
+
     # Block/warp dimensions from MHAConfig.
     comptime BM = Self.config.block_m()
     comptime BN = Self.config.block_n()
@@ -269,13 +306,13 @@ struct Attention[
     comptime _smem_alignment = align_of[
         SIMD[Self.q_type, simd_width_of[Self.q_type]()]
     ]()
-    # SMEM physical block width for K/V.  When the MMA strip width (BK)
+    # SMEM physical block width for K/V. When the MMA strip width (BK)
     # doesn't divide depth, fall back to a finer-grain BK_SMEM=64 layout
     # so the K SMEM stride matches `depth` exactly (no zero-pad block).
     # `_bk_smem` only diverges from `BK` for the FP8 MLA-decode case
     # (BK=128, depth=576, depth%64==0): K SMEM stride becomes 64, and
     # each MMA K=128 strip is composed of two adjacent BN×64 blocks (see
-    # `KVMmaOp.load_prefill_split`).  All other paths (BK%depth==0,
+    # `KVMmaOp.load_prefill_split`). All other paths (BK%depth==0,
     # BF16, prefill) keep `_bk_smem == BK` and use the single-block MMA
     # load.
     comptime _bk_smem = 64 if (
@@ -785,7 +822,13 @@ struct Attention[
 
     @always_inline
     def online_softmax_step_0[stage: Int, mask: Bool = True](mut self):
-        """Step 0: mask + max + exp(even tiles)."""
+        """Step 0: mask + max + exp(even tiles).
+
+        Parameters:
+            stage: The P register buffer stage to operate on.
+            mask: Whether to apply the attention mask before computing max
+                and exp (defaults to `True`).
+        """
         comptime if mask:
             self.apply_mask[stage]()
         var warp_scratch = self.warp_scratch_tile().tile[
@@ -797,7 +840,11 @@ struct Attention[
 
     @always_inline
     def online_softmax_step_1[stage: Int](mut self):
-        """Step 1: exp(odd tiles) + sum + correction + update max/sum."""
+        """Step 1: exp(odd tiles) + sum + correction + update max/sum.
+
+        Parameters:
+            stage: The P register buffer stage to operate on.
+        """
         var warp_scratch = self.warp_scratch_tile().tile[
             2 * Int(Self.num_warps_n), Int(Self.WM)
         ](0, 0)
@@ -815,8 +862,13 @@ struct Attention[
         Avoids pre-scaling all scores by deferring the scale multiply into the
         exp computation. Uses exp_scaled which subtracts the unscaled max
         first (exact for the maximum element), then scales inside exp2.
-        score_frag_rowmax remains unscaled after this call — scale_rowmax is
+        score_frag_rowmax remains unscaled after this call; scale_rowmax is
         deferred to step_1_fma (before calculate_correction needs it).
+
+        Parameters:
+            stage: The P register buffer stage to operate on.
+            mask: Whether to apply the attention mask (without score scaling)
+                before max and exp (defaults to `True`).
         """
         comptime if mask:
             self.apply_mask[stage, scale=False]()
@@ -834,6 +886,9 @@ struct Attention[
         Processes remaining score tiles with exp_scaled, then scales the
         rowmax before calculate_correction (which compares against the
         previous iteration's scaled rowmax_tensor).
+
+        Parameters:
+            stage: The P register buffer stage to operate on.
         """
         var warp_scratch = self.warp_scratch_tile().tile[
             2 * Int(Self.num_warps_n), Int(Self.WM)
@@ -855,6 +910,11 @@ struct Attention[
         pair (matches aiter's softmax inner loop). Has the small FMA
         precision gap noted on `exp_pkfma`; safe under the FP8 tolerance
         envelope where the row-sum normalization absorbs it.
+
+        Parameters:
+            stage: The P register buffer stage to operate on.
+            mask: Whether to apply the attention mask (without score scaling)
+                before max and exp (defaults to `True`).
         """
         comptime if mask:
             self.apply_mask[stage, scale=False]()
@@ -867,7 +927,11 @@ struct Attention[
 
     @always_inline
     def online_softmax_step_1_pkfma[stage: Int](mut self):
-        """Step 1 pkfma counterpart of `_fma` step 1."""
+        """Step 1 pkfma counterpart of `_fma` step 1.
+
+        Parameters:
+            stage: The P register buffer stage to operate on.
+        """
         var warp_scratch = self.warp_scratch_tile().tile[
             2 * Int(Self.num_warps_n), Int(Self.WM)
         ](0, 0)
@@ -887,6 +951,11 @@ struct Attention[
 
         When Q is pre-multiplied by (scale * log2e), the QK matmul already
         produces scaled scores. We just need mask + max + exp2(score - max).
+
+        Parameters:
+            stage: The P register buffer stage to operate on.
+            mask: Whether to apply the attention mask (without score scaling)
+                before max and exp (defaults to `True`).
         """
         comptime if mask:
             self.apply_mask[stage, scale=False]()
@@ -899,7 +968,11 @@ struct Attention[
 
     @always_inline
     def online_softmax_step_1_prescaled[stage: Int](mut self):
-        """Softmax step 1 for pre-scaled Q: no scale needed on scores."""
+        """Softmax step 1 for pre-scaled Q: no scale needed on scores.
+
+        Parameters:
+            stage: The P register buffer stage to operate on.
+        """
         var warp_scratch = self.warp_scratch_tile().tile[
             2 * Int(Self.num_warps_n), Int(Self.WM)
         ](0, 0)
@@ -987,6 +1060,14 @@ struct Attention[
         stats live in `softmax.rowsum_tensor[m_mma, 0]` per tile. Filter
         to lane_col=0 of warp 0 (the only lanes that hold reduced row
         stats post-softmax) and write one entry per m_mma.
+
+        Args:
+            num_partitions: Number of split-K partitions the softmax is
+                reduced across; skipped when 1 or fewer.
+            exp_sum_ptr: Destination buffer for per-row softmax exp-sum
+                (rowsum) stats consumed by the split-K reducer.
+            qk_max_ptr: Destination buffer for per-row QK max (rowmax) stats
+                consumed by the split-K reducer.
         """
         comptime if not Self.token_gen:
             return

@@ -156,6 +156,12 @@ struct DenseALoader[
     Lifetime: the `a_slab` view is held with `UntrackedOrigin` (struct fields
     cannot expose an `AnyOrigin`); the kernel arg it derives from outlives the
     K-loop, so this is the explicit-lifetime case the field-origin rule allows.
+
+    Parameters:
+        dtype: Element type of the A operand (fp16, bf16, fp32).
+        a_layout: `TensorLayout` of the pre-tiled A slab held by the loader.
+        b_dtype: Element type of the B/weight operand fed to the MMA
+            (defaults to `dtype`, the dense case).
     """
 
     # Satisfy the trait's associated `in_type` from the struct's `dtype` param.
@@ -228,6 +234,16 @@ struct Im2colALoader[
 
     Lifetime: `input_ptr` uses `UntrackedOrigin` (struct fields cannot expose
     `AnyOrigin`); the NHWC input kernel arg outlives the K-loop gather.
+
+    Parameters:
+        dtype: Element type of the NHWC input operand (bf16 for now).
+        BK: K-strip depth per accumulate step; must match the body's `BK`
+            tiling (defaults to 16).
+        num_m: M MMA-fragment count per simdgroup, `SG_M / 16` (defaults to 2).
+        num_n: N MMA-fragment count per simdgroup, `SG_N / 16` (defaults to 2).
+        c_aligned: When True, assume `conv.C` is a multiple of 8 so the
+            channel run is contiguous and a single width-8 load suffices
+            (defaults to False).
     """
 
     comptime in_type = Self.dtype
@@ -265,6 +281,19 @@ struct Im2colALoader[
         pixel `row_base + (ri//2)*16 + (ri%2)*8 + rb`. The K-state is decomposed
         once here for the lane's first strip (`k0base = 2*cb`); every later strip
         advances it incrementally in `accumulate_strip`.
+
+        Args:
+            input_ptr: Pointer to the 4-D NHWC input tensor; the im2col gather
+                reads A MMA-fragments from it.
+            row_base: Simdgroup's absolute M-row base (`_sg_row_base`); anchors
+                this lane's output pixels.
+            rb: This lane's MMA-fragment row offset within the simdgroup
+                (matches `MmaOpApple.rb`).
+            cb: This lane's MMA-fragment column offset within the simdgroup
+                (matches `MmaOpApple.cb`); seeds the K-state at `k0base = 2*cb`.
+            conv: Conv geometry for the im2col gather; threaded as a value arg,
+                not a struct field (see the struct docstring for the Metal
+                addrspace reason).
         """
         self.input_ptr = input_ptr
         self.h_base = InlineArray[Int32, Self.NUM_ROWS](uninitialized=True)
@@ -502,6 +531,10 @@ struct AppleM5MatMul[
         interleave directly, replacing the hand-rolled bit-scatter below. A
         Gilbert-curve dispatch order was also explored for better locality,
         but it needs a per-shape predispatch kernel to generate the order.
+
+        Args:
+            flat_idx: The linear threadgroup index to split into interleaved
+                Z-order bits; even bits form `tile_n`, odd bits form `tile_m`.
         """
         var x = flat_idx & 0x55555555
         var y = (flat_idx >> 1) & 0x55555555
@@ -528,6 +561,14 @@ struct AppleM5MatMul[
 
         Z-order covers a `min(side_m, side_n)` square core; remaining bits sweep
         the longer axis. Reduces to `morton_decode_2d` when `log2_m == log2_n`.
+
+        Args:
+            flat_idx: The linear threadgroup index to decode into a 2-D tile
+                coordinate.
+            log2_m: Base-2 logarithm of the grid's M extent; the decoded
+                `tile_m` ranges over `[0, 1<<log2_m)`.
+            log2_n: Base-2 logarithm of the grid's N extent; the decoded
+                `tile_n` ranges over `[0, 1<<log2_n)`.
         """
         var log2_lo = min(log2_m, log2_n)
         var lo_mask = (UInt32(1) << (UInt32(2) * log2_lo)) - UInt32(1)
@@ -953,6 +994,26 @@ struct AppleM5MatMul[
         Thin wrapper over `_run_gemm_body`: derives `K`, pre-tiles this
         simdgroup's `(SG_M, K)` A slab, and constructs the `DenseALoader` that
         reads it.
+
+        Parameters:
+            c_layout: `TensorLayout` of the output `C` operand.
+            a_layout: `TensorLayout` of the A operand.
+            b_layout: `TensorLayout` of the B operand.
+            c_storage: `TensorStorage` of the output `C` operand.
+            a_storage: `TensorStorage` of the A operand.
+            b_storage: `TensorStorage` of the B operand.
+
+        Args:
+            c: Output matrix `(M, N)` row-major; `M` and `N` derive from its
+                dims.
+            a: A operand matrix `(M, K)` row-major; `K` derives from
+                `a.dim[1]`.
+            b: B operand matrix, `(K, N)` for `transpose_b=False` or `(N, K)`
+                for `transpose_b=True`.
+            log2_grid_m: Base-2 logarithm of the M-axis grid extent; the grid
+                spans `1<<log2_grid_m` threadgroups along M.
+            log2_grid_n: Base-2 logarithm of the N-axis grid extent; the grid
+                spans `1<<log2_grid_n` threadgroups along N.
         """
         var m = Int(c.dim[0]())
         var k = Int(a.dim[1]())
@@ -1035,6 +1096,30 @@ struct AppleM5MatMul[
         `Im2colALoader` over `input` (no slab -- the gather reads NHWC directly).
         `conv` is threaded to the body as a value arg (NOT held in the loader --
         see `Im2colALoader` for the Metal addrspace reason), then runs the body.
+
+        Parameters:
+            c_layout: `TensorLayout` of the output `C` operand.
+            input_layout: `TensorLayout` of the NHWC `input` operand.
+            b_layout: `TensorLayout` of the filter `B` operand.
+            c_storage: `TensorStorage` of the output `C` operand.
+            input_storage: `TensorStorage` of the NHWC `input` operand.
+            b_storage: `TensorStorage` of the filter `B` operand.
+            c_aligned: When True, assume `conv.C` is a multiple of 8 so the
+                channel run is contiguous and a single width-8 load suffices
+                (defaults to False).
+
+        Args:
+            c: Output matrix `(M, N)` row-major with `M = N_batch*H_out*W_out`
+                and `N = C_out`.
+            input: 4-D NHWC source tensor; its flat pointer drives the im2col
+                gather.
+            b: Filter operand `(N, K)` with `transpose_b=True` (NK layout).
+            conv: Conv geometry for the im2col gather; threaded to the body as
+                a value arg.
+            log2_grid_m: Base-2 logarithm of the M-axis grid extent; the grid
+                spans `1<<log2_grid_m` threadgroups along M.
+            log2_grid_n: Base-2 logarithm of the N-axis grid extent; the grid
+                spans `1<<log2_grid_n` threadgroups along N.
         """
         comptime assert (
             Self.transpose_b
@@ -1106,6 +1191,26 @@ struct AppleM5MatMul[
         `run`. `k_per_split` is a multiple of `BK`, so every split but the last
         is full BK strips; the last may carry a partial-BK tail. No cast, no
         epilogue -- raw fp32 accumulator out.
+
+        Parameters:
+            a_layout: `TensorLayout` of the A operand.
+            b_layout: `TensorLayout` of the B operand.
+            a_storage: `TensorStorage` of the A operand.
+            b_storage: `TensorStorage` of the B operand.
+
+        Args:
+            partials_ptr: Pointer to the fp32 partials workspace; split `s`
+                writes its partial at offset `s * M * N`.
+            a: A operand matrix `(M, K)` row-major; `M` and `K` derive from
+                its dims.
+            b: B operand matrix, `(K, N)` for `transpose_b=False` or `(N, K)`
+                for `transpose_b=True`.
+            log2_grid_m: Base-2 logarithm of the M-axis grid extent; the grid
+                spans `1<<log2_grid_m` threadgroups along M.
+            log2_grid_n: Base-2 logarithm of the N-axis grid extent; the grid
+                spans `1<<log2_grid_n` threadgroups along N.
+            k_per_split: K extent per split, a multiple of `BK`; split `s`
+                owns `[s*k_per_split, min(K, (s+1)*k_per_split))`.
         """
         var a_ptr = a.ptr
         var b_ptr = b.ptr
@@ -1245,6 +1350,17 @@ struct AppleM5MatMul[
         One thread per output element; `idx = block_idx.x * block_dim.x +
         thread_idx.x`. The fused `elementwise_lambda_fn` (if any) sees the
         absolute (row, col) and the final `SIMD[c_type, 1]`.
+
+        Parameters:
+            c_layout: `TensorLayout` of the output `C` operand.
+            c_storage: `TensorStorage` of the output `C` operand.
+
+        Args:
+            c: Output matrix `(M, N)` row-major; `M` and `N` derive from its
+                dims.
+            partials_ptr: Pointer to the fp32 partials workspace; split `s`
+                partial is at offset `s * M * N`.
+            num_splits: Number of K splits to sum per output element.
         """
         # `c_type` / `elementwise_lambda_fn` are struct params -- use `Self.x`.
         var c_ptr = c.ptr
@@ -1295,6 +1411,28 @@ def enqueue_apple_matmul[
     `force_split_k` picks the K-reduction strategy: `None` (default) auto-routes
     under-occupied shapes (few output tiles, deep K) to split-K; `True` always
     uses split-K; `False` always uses the single-pass kernel.
+
+    Parameters:
+        in_type: A/B element type (fp16, bf16, fp32).
+        c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32
+            (defaults to `float32`).
+        transpose_b: If True, B is `(N, K)` row-major (viewed as
+            `col_major(K, N)`); otherwise B is `(K, N)` row-major (defaults to
+            False).
+        elementwise_lambda_fn: Optional fused epilogue; receives
+            `SIMD[c_type, width]` at absolute `(row, col)` (AMD's contract)
+            (defaults to None).
+
+    Args:
+        c: Output matrix `(M, N)` row-major; `M` and `N` derive from its dims.
+        a: A operand matrix `(M, K)` row-major; `K` derives from `a.dim[1]`.
+        b: B operand matrix, `(K, N)` for `transpose_b=False` or `(N, K)` for
+            `transpose_b=True`.
+        ctx: Device context to enqueue the kernel on; must be Apple M5
+            (`compute_capability == 5`).
+        force_split_k: K-reduction strategy override; `None` auto-routes
+            under-occupied shapes to split-K, `True` always uses split-K,
+            `False` always uses the single-pass kernel (defaults to None).
 
     Raises:
         If the attached GPU is not Apple M5 (`compute_capability != 5`).
@@ -1437,6 +1575,26 @@ def enqueue_apple_conv2d[
     view of the NHWC output). Grid mirrors `enqueue_apple_matmul` (single-pass;
     no split-K for conv yet).
 
+    Parameters:
+        in_type: Element type of the NHWC `input` and `filter_nk` operands (bf16
+            for now).
+        c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32
+            (defaults to `float32`).
+        elementwise_lambda_fn: Optional fused epilogue; receives
+            `SIMD[c_type, width]` at absolute `(row, col)` (AMD's contract)
+            (defaults to None).
+
+    Args:
+        c: Output matrix `(M, N)` row-major with `M = N_batch*H_out*W_out` and
+            `N = C_out` (a flat view of the NHWC output).
+        input: 4-D NHWC source tensor; its flat pointer drives the im2col
+            gather.
+        filter_nk: Filter pre-transposed to `(C_out, K=R*S*C_in)` row-major
+            (the NK layout); used with `transpose_b=True`.
+        conv: Conv geometry for the im2col gather.
+        ctx: Device context to enqueue the kernel on; must be Apple M5
+            (`compute_capability == 5`).
+
     Raises:
         If the attached GPU is not Apple M5 (`compute_capability != 5`).
     """
@@ -1567,6 +1725,27 @@ def enqueue_apple_matmul_split_k[
     split is empty (`actual_splits = ceil(num_strips / strips_per_split)` where
     `strips_per_split = ceil(num_strips / num_splits_hint)`). Best for large-K,
     small-M*N shapes where the single-pass kernel under-occupies the GPU.
+
+    Parameters:
+        in_type: A/B element type (fp16, bf16, fp32).
+        c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32
+            (defaults to `float32`).
+        transpose_b: If True, B is `(N, K)` row-major (viewed as
+            `col_major(K, N)`); otherwise B is `(K, N)` row-major (defaults to
+            False).
+        elementwise_lambda_fn: Optional fused epilogue; receives
+            `SIMD[c_type, width]` at absolute `(row, col)` (AMD's contract)
+            (defaults to None).
+
+    Args:
+        c: Output matrix `(M, N)` row-major; `M` and `N` derive from its dims.
+        a: A operand matrix `(M, K)` row-major; `K` derives from `a.dim[1]`.
+        b: B operand matrix, `(K, N)` for `transpose_b=False` or `(N, K)` for
+            `transpose_b=True`.
+        ctx: Device context to enqueue the kernels on; must be Apple M5
+            (`compute_capability == 5`).
+        num_splits_hint: Upper bound on the K-axis split count; the actual
+            split count is capped so no split is empty (defaults to 4).
 
     Raises:
         If the attached GPU is not Apple M5 (`compute_capability != 5`).

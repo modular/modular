@@ -108,6 +108,53 @@ def depth512_load[
     ],
     kv_lut: KVLUTType,
 ):
+    """Issues TMA loads for one pair-CTA attention tile's Q, K, and V data.
+
+    Drives the producer side of the staged KV pipeline for a single
+    attention tile, loading Q (per-CTA), K (per-CTA half of BN), and V
+    (depth-split sub-tiles) into SMEM via non-multicast TMA copies.
+    The peeled-first iteration co-arrives Q with the first K depth stage
+    on a shared barrier so the MMA can start immediately; the main loop
+    issues full-tile K/V loads; the peeled-last iteration handles
+    partial pages when `page_size < BN`. Mask checks use `PairBM` so both
+    CTAs make identical skip decisions and pipeline barriers stay
+    synchronized.
+
+    Parameters:
+        KVLUTType: Paged key-value lookup table type supplying the element
+            `dtype`, `page_size`, and row-to-page mappings used by `kv_lut`.
+        MaskType: Attention mask type driving per-tile skip and load
+            decisions via `start_column`, `last_masked_set_end`, and
+            `status` queries.
+        qkv_dtype: Element `DType` of the Q, K, and V tensors; must match
+            `KVLUTType.dtype` and `config.qkv_dtype`.
+        config: Depth-512 SM100 pair-CTA attention configuration providing
+            tile sizes (`BM`, `BN`, `BK0`, `BK1`), stage counts, swizzle
+            mode, GQA grouping, and `split_o` controls.
+        ValidLengthType: Optional pointer type for per-sequence valid
+            lengths; `is_null` is `False` for ragged variable-length
+            sequences.
+        _is_cache_length_accurate: Whether the reported KV cache length
+            exactly matches the count of valid tokens.
+        MaxSeqLenType: Type of the maximum sequence length, either a
+            comptime static `Int` or a runtime value; selects the decoding
+            vs. prefill path via `_is_decoding`.
+        is_leader: Whether this CTA is the leader (even-ranked) CTA in
+            the pair-CTA cluster; the leader issues `expect_bytes` and
+            selects the first half of K/V rows.
+
+    Args:
+        smem: Shared-memory allocator and stage buffers for the kernel.
+        score_row: Starting row of the Q tile within the current sequence.
+        num_keys: Number of valid KV keys for the current sequence.
+        seq_info: Per-sequence metadata (prompt index, head index, etc.).
+        max_seq_len: Maximum sequence length (static or dynamic).
+        mask: Attention mask driving per-tile skip/load decisions.
+        q_tma_op: TMA descriptor for Q tile loads.
+        k_tma_op: TMA descriptor for K tile loads (per-CTA half).
+        v_tma_op: TMA descriptor for V tile loads (per-sub-tile).
+        kv_lut: Paged key-value lookup table supplying row-to-page mappings.
+    """
     comptime assert KVLUTType.dtype == config.qkv_dtype
     comptime qkv_type = KVLUTType.dtype
     comptime BM = config.BM
@@ -371,7 +418,7 @@ def depth512_load[
         prevents `0 * non-finite = NaN` propagation in `O += P * V`
         when masked V rows would otherwise contain stale or
         uninitialized SMEM (most common when this is the very first
-        write to the SMEM slot — typically the only iter is partial,
+        write to the SMEM slot, typically the only iter is partial,
         i.e. `seq_len <= BN`). Because each OOB TMA still arrives at
         `mbar` with its byte count, we always set the full
         `v_expect_bytes` regardless of `v_needs_partial`.
@@ -416,7 +463,7 @@ def depth512_load[
         `with_q`: True only at the peeled-first iteration where Q
             co-arrives on the same mbar. Implies (a) Q stage bytes
             bundle into `expect_bytes_pred`, and (b) `producer_acquire()`
-            is skipped (init pre-acquired this slot — calling acquire
+            is skipped (init pre-acquired this slot; calling acquire
             here would phase-mismatch). The Q TMA itself stays at the
             call site since `fuse_gqa` branching is per-call.
 
@@ -427,7 +474,7 @@ def depth512_load[
         `kv_nvp_0`, `kv_nvp_1`: per-CTA-half valid-page counts. Used for
             `expect_bytes_pred` when partial=True (sum) and for the
             per-CTA `k_num_valid_pages` (selected by `is_leader`).
-            Defaults to 0 — fine for partial=False since both are unused
+            Defaults to 0, fine for partial=False since both are unused
             (full-tile bytes from `k_expect_bytes`; TMA loop is
             comptime-unrolled).
         """

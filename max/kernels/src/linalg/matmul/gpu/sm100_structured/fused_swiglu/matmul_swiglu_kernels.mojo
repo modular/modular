@@ -212,6 +212,52 @@ def load_AB[
     iter_idx: UInt32,
     elect_one_cta: Bool,
 ):
+    """TMA producer phase that loads A and B tiles from GMEM into SMEM via multicast.
+
+    Parameters:
+        a_type: DType of the A operand elements.
+        b_type: DType of the B operand elements.
+        a_rank: Number of dimensions in the A TMA tensor map.
+        a_tile_shape: Shape of each A tile loaded by TMA, in elements.
+        a_desc_shape: Shape of the A TMA descriptor, in elements.
+        b_rank: Number of dimensions in the B TMA tensor map.
+        b_tile_shape: Shape of each B tile loaded by TMA, in elements.
+        b_desc_shape: Shape of the B TMA descriptor, in elements.
+        a_dim0: Row extent of each A SMEM tile, in elements.
+        a_dim1: Column extent of each A SMEM tile, in elements.
+        a_num_tiles: Number of A SMEM tiles in the pipeline buffer.
+        a_swizzle_bytes: SMEM swizzle granularity for A tiles, in bytes.
+        b_dim0: Row extent of each B SMEM tile, in elements.
+        b_dim1: Column extent of each B SMEM tile, in elements.
+        b_num_tiles: Number of B SMEM tiles in the pipeline buffer.
+        b_swizzle_bytes: SMEM swizzle granularity for B tiles, in bytes.
+        num_pipeline_stages: Number of stages in the load-to-MMA pipeline.
+        block_tile_shape: Block tile shape as (BM, BN, BK).
+        mma_shape: MMA instruction shape as (MMA_M, MMA_N, MMA_K).
+        cta_group: Number of cooperating CTAs per multicast load
+            (defaults to 1).
+        k_group_size: Number of K tiles loaded per pipeline stage
+            (defaults to 1).
+
+    Args:
+        a_tma_op: TMA tensor map descriptor for the A operand.
+        b_tma_op: TMA tensor map descriptor for the B operand.
+        a_smem_tiles: Pipeline buffer of A SMEM tiles.
+        b_smem_tiles: Pipeline buffer of B SMEM tiles.
+        load_mma_pipeline: Producer/consumer pipeline between TMA load and
+            MMA stages.
+        peer_cta_coord: Coordinate of the peer CTA within the cluster,
+            used to offset GMEM read and SMEM write addresses.
+        work_tile_coord: (M, N, batch) tile coordinate assigned to this
+            CTA by the tile scheduler.
+        a_multicast_mask: Multicast mask selecting CTAs that receive the
+            A tile.
+        b_multicast_mask: Multicast mask selecting CTAs that receive the
+            B tile.
+        iter_idx: Current K iteration index for this pipeline stage.
+        elect_one_cta: Whether this CTA sets up the TMA barrier byte
+            expectation.
+    """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -341,7 +387,44 @@ def consumer_main_loop[
     iter_idx: UInt32,
     k_start: UInt32,
 ):
-    """Consumer main loop for BF16 MMA on SM100."""
+    """Consumer main loop for BF16 MMA on SM100.
+
+    Parameters:
+        accum_type: DType of the MMA accumulator elements.
+        c_type: DType of the C output elements.
+        a_type: DType of the A operand elements.
+        b_type: DType of the B operand elements.
+        a_dim0: Row extent of each A SMEM tile, in elements.
+        a_dim1: Column extent of each A SMEM tile, in elements.
+        a_num_tiles: Number of A SMEM tiles in the pipeline buffer.
+        a_swizzle_bytes: SMEM swizzle granularity for A tiles, in bytes.
+        b_dim0: Row extent of each B SMEM tile, in elements.
+        b_dim1: Column extent of each B SMEM tile, in elements.
+        b_num_tiles: Number of B SMEM tiles in the pipeline buffer.
+        b_swizzle_bytes: SMEM swizzle granularity for B tiles, in bytes.
+        a_swizzle: TMA tensor map swizzle mode for the A operand.
+        b_swizzle: TMA tensor map swizzle mode for the B operand.
+        transpose_b: Whether the B operand is stored transposed.
+        pipeline_stages: Number of stages in the load-to-MMA pipeline.
+        block_tile_shape: Block tile shape as (BM, BN, BK).
+        mma_shape: MMA instruction shape as (MMA_M, MMA_N, MMA_K).
+        cta_group: Number of cooperating CTAs per MMA (defaults to 1).
+        cluster_shape: CTA cluster shape as (M, N, K) (defaults to
+            (1, 1, 1)).
+        k_group_size: Number of K tiles consumed per pipeline stage
+            (defaults to 1).
+
+    Args:
+        tmem_addr: TMEM accumulator address to write MMA results into.
+        a_smem_tiles: Pipeline buffer of A SMEM tiles.
+        b_smem_tiles: Pipeline buffer of B SMEM tiles.
+        load_mma_pipeline: Producer/consumer pipeline between TMA load and
+            MMA stages.
+        mma_op: SM100 SS MMA operation descriptor.
+        elect_one_warp: Whether this warp is the elected warp (warp 0).
+        iter_idx: Current K iteration index for this pipeline stage.
+        k_start: K iteration index at which to initialize the accumulator.
+    """
     var stage = load_mma_pipeline.consumer_stage()
 
     load_mma_pipeline.wait_producer()
@@ -888,7 +971,7 @@ def _swiglu_epilogue_smem_tma[
         var bias_stage_offset: Int = stage * stageN
         # For cg2 MMA_M=128 non-swap, warps 0-1 write the top SMEM half (→ H-cols
         # c_h_base .. c_h_base+stageN/2-1) while warps 2-3 write the bot SMEM half
-        # (→ H-cols c_h_base+MMA_N/2 .. ).  Fragment column indices are identical
+        # (→ H-cols c_h_base+MMA_N/2 .. ). Fragment column indices are identical
         # across warp groups, so add the per-warp-group bias offset explicitly.
         # (For MMA_M=256 cg2, all warps write the same H-columns — no extra offset.)
         comptime if cta_group == 2 and MMA_M == 128 and not AB_swapped:
@@ -1280,7 +1363,16 @@ struct SwiGLUKernelConstants[
     transpose_b: Bool,
     config: FusedSwiGLUMatmulConfig[a_type, b_type, c_type, transpose_b],
 ]:
-    """Compile-time constants for TMA descriptor creation and kernel launch."""
+    """Compile-time constants for TMA descriptor creation and kernel launch.
+
+    Parameters:
+        a_type: Element data type of the A operand.
+        b_type: Element data type of the B operand.
+        c_type: Element data type of the C output.
+        transpose_b: Whether B is transposed (always True for SwiGLU).
+        config: Fused SwiGLU matmul config carrying tile shapes and pipeline
+            stages.
+    """
 
     comptime BM = Self.config.block_tile_shape[0]
     comptime BN = Self.config.block_tile_shape[1]
@@ -1416,6 +1508,41 @@ def blackwell_swiglu_warp_specialized_kernel[
       - MMA:            executes UMMA and signals epilogue.
       - Epilogue:       reads TMEM, applies bias+SwiGLU, stores to GMEM.
       - EpilogueLoad:   async-loads the 1D bias tile from GMEM to SMEM (warp 7).
+
+    Parameters:
+        a_type: Element data type of the A operand.
+        b_type: Element data type of the B operand.
+        c_type: Element data type of the C output.
+        a_rank: Rank of the A TMA tile and descriptor shapes.
+        a_tile_shape: A TMA tile shape as an ``IndexList``.
+        a_desc_shape: A TMA descriptor shape as an ``IndexList``.
+        b_rank: Rank of the B TMA tile and descriptor shapes.
+        b_tile_shape: B TMA tile shape as an ``IndexList``.
+        b_desc_shape: B TMA descriptor shape as an ``IndexList``.
+        c_rank: Rank of the C TMA tile and descriptor shapes.
+        c_tile_shape: C TMA tile shape as an ``IndexList``.
+        c_desc_shape: C TMA descriptor shape as an ``IndexList``.
+        transpose_b: Whether B is transposed (always True for SwiGLU).
+        config: Fused SwiGLU matmul config carrying tile shapes and pipeline
+            stages.
+        cluster_shape: CTA cluster shape as an (M, N, K) ``StaticTuple``
+            (defaults to a singleton cluster).
+        pdl_level: Programmatic dependency level for grid launch (defaults to
+            ``PDLLevel.OFF``).
+
+    Args:
+        a_tma_op: TMA tensor tile for loading A from GMEM into SMEM.
+        b_tma_op: TMA tensor tile for loading B from GMEM into SMEM.
+        c_tma_op: TMA tensor tile for storing C to GMEM (SMEM to TMA path
+            only).
+        c_gmem_ptr: Base pointer to the C output tensor in GMEM (register to
+            GMEM path).
+        c_gmem_stride: Row stride of the C output tensor in GMEM, in elements.
+        bias_1d_tile: 1D bias tile in GMEM loaded by the epilogue load warp.
+        cluster_dim: CTA cluster dimensions used by the tile scheduler.
+        mnk: Kernel-frame (M, N, K) dimensions; N is the pre-SwiGLU width,
+            equal to twice the output H.
+        workspace: Scratch workspace memory provided by the kernel launcher.
     """
     # ===== Compile-time constants =====
     comptime BM = config.block_tile_shape[0]

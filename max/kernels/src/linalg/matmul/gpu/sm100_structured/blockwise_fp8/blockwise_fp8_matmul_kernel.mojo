@@ -127,6 +127,20 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     1. Load warp: TMA loads A, B, A-scales to SMEM
     2. MMA warp: Standard MMA (partial to TMEM)
     3. Epilogue warp: TMEM read → scale → register accumulate → output
+
+    Parameters:
+        a_type: Element type of the A matrix tiles.
+        b_type: Element type of the B matrix tiles.
+        c_type: Element type of the C output matrix tiles.
+        a_scales_type: A-scales element type (must equal `b_scales_type`).
+        b_scales_type: B-scales element type (must equal `a_scales_type`).
+        b_scales_layout: Memory layout of the B-scales tensor.
+        transpose_b: Whether B is stored transposed (must be `True`).
+        config: Matmul tile, MMA, pipeline, and cluster configuration.
+        cluster_shape: CTA cluster shape `(x, y, z)` for LLVM metadata
+            (defaults to `(1, 1, 1)`).
+        n_scale_granularity: B-scales N-direction block size in elements
+            (defaults to 128).
     """
 
     # ========== Derived Constants (from config) ==========
@@ -465,6 +479,13 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     ):
         """Load A, B, and A-scales tiles using TMA.
 
+        Parameters:
+            a_tma_origin: Immutable origin of the A TMA descriptor (inferred).
+            b_tma_origin: Immutable origin of the B TMA descriptor (inferred).
+            a_scales_tma_origin: Immutable origin of A-scales TMA descriptor
+                (inferred).
+            tiles_origin: Mutable origin of the producer tiles (inferred).
+
         Args:
             a_loader: TileLoader for A matrix.
             b_loader: TileLoader for B matrix.
@@ -553,6 +574,9 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         The epilogue accumulates across K in registers, not TMEM.
         Therefore init_c is always True (unlike standard matmul).
 
+        Parameters:
+            tiles_origin: Mutable origin of the consumer tiles (inferred).
+
         Args:
             tiles: Input consumer stage with A, B, A-scales tiles.
             mma_op: The MMA operator.
@@ -609,7 +633,21 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         clc_empty: Self.SmemType.Pipelines.ClcBarriers,
         tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
     ):
-        """Initialize barriers and prefetch TMA descriptors."""
+        """Initialize barriers and prefetch TMA descriptors.
+
+        Args:
+            ctx: Kernel context with warp and CTA role and multicast masks.
+            a_tma_op: TMA descriptor op for A matrix tiles.
+            b_tma_op: TMA descriptor op for B matrix tiles.
+            c_tma_op: TMA descriptor op for C output tiles.
+            a_scales_tma_op: TMA descriptor op for A-scales tiles.
+            input_barriers: Input pipeline barriers for producer and consumer.
+            accum_barriers: Accumulator barriers for MMA to epilogue sync.
+            clc_throttle: CLC throttle barriers for scheduler backpressure.
+            clc_full: CLC full barriers signalling tile availability.
+            clc_empty: CLC empty barriers signalling tile consumption.
+            tmem_dealloc: TMEM deallocation barrier for accumulator slot reuse.
+        """
         if ctx.elect_one_warp and ctx.elect_one_thread:
             a_tma_op.prefetch_descriptor()
             b_tma_op.prefetch_descriptor()
@@ -675,7 +713,18 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         b_scales: Self.BScalesTile,
         problem_shape: StaticTuple[Int32, 3],
     ):
-        """Kernel entry point for blockwise FP8 matmul."""
+        """Kernel entry point for blockwise FP8 matmul.
+
+        Args:
+            a_tma_op: TMA descriptor op for the A matrix tiles.
+            b_tma_op: TMA descriptor op for the B matrix tiles.
+            c_tma_op: TMA descriptor op for the C output tiles.
+            a_scales_tma_op: TMA descriptor op for the A-scales tiles.
+            cluster_dim: CTA cluster shape `(x, y, z)` for the tile scheduler.
+            num_iters: Number of K iterations per work tile.
+            b_scales: B-scales `TileTensor` for epilogue per-K scaling.
+            problem_shape: Full matmul shape `(M, N, K)` used by the epilogue.
+        """
         Self.validate_config()
 
         # ===== Shared Memory Setup =====

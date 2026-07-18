@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Native FP8 MLA decode kernel for SM100 (B200) — Layout G fold path.
+"""Native FP8 MLA decode kernel for SM100 (B200): Layout G fold path.
 
 qkv=fp8 / BM=32 / MMA_M=32 / 1x4 datapath
 specialisations (softmax, correction, output store, TMA/MMA descriptor
@@ -129,7 +129,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
     # Layout G handles BOTH fold (fold_q==True, q_len_fold > 1) and non-fold
-    # (fold_q==False, q_len_fold==1, num_heads <= 32) cases.  The kernel body
+    # (fold_q==False, q_len_fold==1, num_heads <= 32) cases. The kernel body
     # has full `comptime if Self.fold_q ... else ...` branching for both.
     # The dispatcher is responsible for picking a (fold_q, q_len_fold) pair
     # that satisfies `num_heads * q_len_fold <= BM_G(32)`.
@@ -137,6 +137,40 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     # Number of q_tokens folded into the BM=32 M tile under fold_q==True.
     q_len_fold: Int = 1,
 ](TrivialRegisterPassable):
+    """Implements the native FP8 MLA decode kernel for SM100 (B200) using the Layout G fold path.
+
+    Uses a BM=32, MMA_M=32, 1x4 datapath with five KV pipeline stages where all
+    of Q, K, V, and P reside in shared memory as FP8. Handles both the
+    query-fold (`fold_q==True`, `q_len_fold > 1`) and non-fold (`fold_q==False`,
+    `q_len_fold==1`, `num_heads <= 32`) cases, with the dispatcher selecting a
+    `(fold_q, q_len_fold)` pair satisfying `num_heads * q_len_fold <= 32`.
+
+    Parameters:
+        q_type: Element dtype of the query operand; also selects the MMA
+            accumulator type via `get_accum_type`.
+        KVLUTType: `MHAOperand` describing the KV cache lookup table; its
+            `dtype` is `float8_e4m3fn` for this FP8 kernel.
+        output_type: Element dtype of the output tensor; must be `bfloat16`.
+        SplitAccumType: `OptionalPointer` type for the split-K LSE
+            accumulation buffer written under `decoding_warp_split_k`.
+        MaskType: `MHAMask` variant selecting the attention mask; supports
+            `NullMask`, `CausalMask`, and `SlidingWindowCausalMask`.
+        config: `MLA_SM100_Decode_Config` holding tile sizes, pipeline
+            stage counts, head counts, and TMEM/SMEM layout.
+        ValidLengthType: `OptionalPointer` type for the per-sequence valid
+            length buffer consumed under ragged batching.
+        _is_cache_length_accurate: Whether the supplied cache length is
+            exact rather than `cache_length + seq_len` (defaults to `False`).
+        ragged: Whether the batch contains variable-length sequences,
+            enabling early exit for blocks past the sequence length
+            (defaults to `False`).
+        fold_q: Whether to fold multiple query tokens into the BM=32 M
+            tile (defaults to `False`).
+        q_len_fold: Number of query tokens packed into the BM=32 M tile
+            when `fold_q` is `True`; must satisfy
+            `num_q_heads * q_len_fold <= 32` (defaults to 1).
+    """
+
     comptime kv_type = Self.KVLUTType.dtype  # float8_e4m3fn
     comptime fp8_type = DType.float8_e4m3fn
     comptime AccumType = get_accum_type[Self.q_type]()

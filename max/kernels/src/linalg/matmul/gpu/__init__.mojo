@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides the GPU matmul dispatch entry point and hardware-specific kernel selection."""
 from std.math import align_down, ceildiv
 from std.sys import (
     align_of,
@@ -120,6 +121,26 @@ def matmul_kernel[
     thread is mapped one element in C. The grid should have shape
     (N/tile_size, M/tile_size, 1). N is the first dimension for coalesced
     access.
+
+    Parameters:
+        c_type: DType of the output matrix C elements.
+        a_type: DType of the input matrix A elements.
+        b_type: DType of the input matrix B elements.
+        tile_size: Side length, in elements, of the square shared-memory
+            tile loaded from A and B and written to C.
+        elementwise_lambda_fn: Optional epilogue applied to the accumulated
+            value before it is stored to C (defaults to `None`, which
+            stores the raw accumulation).
+        s_type: DType used for the inner accumulation (defaults to the
+            accumulator type for `c_type`).
+
+    Args:
+        c_ptr: Pointer to the row-major output matrix C of shape `(m, n)`.
+        a_ptr: Pointer to the row-major input matrix A of shape `(m, k)`.
+        b_ptr: Pointer to the row-major input matrix B of shape `(k, n)`.
+        m: Number of rows of A and C.
+        n: Number of columns of B and C.
+        k: Contraction dimension: columns of A and rows of B.
     """
     comptime a_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     comptime b_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
@@ -246,6 +267,44 @@ def matmul_kernel_naive[
     n: Int,
     k: Int,
 ):
+    """Computes one output element of a matrix multiply per thread by iterating over the K dimension.
+
+    Each thread maps to a single `(x, y)` coordinate of `c` and accumulates the
+    dot product of the corresponding row of `a` and column of `b` (or row of
+    `b` when `transpose_b` is set). When `elementwise_lambda_fn` is supplied the
+    accumulated value is passed through it instead of being stored directly.
+
+    Parameters:
+        c_type: DType of the output tile `c` elements.
+        a_type: DType of the input tile `a` elements.
+        b_type: DType of the input tile `b` elements.
+        c_layout_type: Tensor layout of the output tile `c`.
+        a_layout_type: Tensor layout of the input tile `a`.
+        b_layout_type: Tensor layout of the input tile `b`.
+        BLOCK_DIM: Thread-block dimension used when launching the kernel.
+        transpose_b: Whether `b` is accessed transposed, so its row `y` is
+            read as `b[y, i]` instead of `b[i, y]` (defaults to `False`).
+        elementwise_lambda_fn: Optional epilogue applied to the accumulated
+            value before it is stored to `c` (defaults to `None`, which
+            stores the raw accumulation).
+        s_type: DType used for the inner accumulation (defaults to the
+            accumulator type for `c_type`).
+        c_storage: Storage type of the output tile `c` (defaults to
+            `PointerStorage[element_width=1]`).
+        a_storage: Storage type of the input tile `a` (defaults to
+            `PointerStorage[element_width=1]`).
+        b_storage: Storage type of the input tile `b` (defaults to
+            `PointerStorage[element_width=1]`).
+
+    Args:
+        c: Output tile of shape `(m, n)`.
+        a: Input tile of shape `(m, k)`.
+        b: Input tile of shape `(k, n)`, or `(n, k)` when `transpose_b`
+            is set.
+        m: Number of rows of `a` and `c`.
+        n: Number of columns of `c`.
+        k: Contraction dimension shared by `a` and `b`.
+    """
     comptime assert c.flat_rank == 2, "expected 2D tensor for c"
     comptime assert a.flat_rank == 2, "expected 2D tensor for a"
     comptime assert b.flat_rank == 2, "expected 2D tensor for b"
@@ -549,8 +608,8 @@ def _matmul_gpu[
     )
     var amdgpu_matmul_cond = has_amd_gpu_accelerator() and n % 4 == 0
     # AMD matmul kernels require K % BK == 0 and K >= 2*BK due to the
-    # 2-deep software pipeline prologue.  BK = _bk_base (128 for FP8,
-    # 64 for BF16 on AMD).  Use that as the minimum alignment/size gate
+    # 2-deep software pipeline prologue. BK = _bk_base (128 for FP8,
+    # 64 for BF16 on AMD). Use that as the minimum alignment/size gate
     # so unsupported K values fall through to vendor BLAS.
     comptime amd_bk = _bk_base[
         a_type, True
@@ -1496,6 +1555,23 @@ def split_k_reduce[
     work_space: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
+    """Reduces a split-K workspace into the output tensor by summing across K partitions.
+
+    Loads each `(m, n)` element from every partition in `work_space`, accumulates
+    them, and stores the result into `c` (or passes it through
+    `elementwise_lambda_fn` when supplied).
+
+    Parameters:
+        elementwise_lambda_fn: Optional epilogue applied to the reduced
+            value before it is stored to `c` (defaults to `None`, which
+            stores the raw sum).
+
+    Args:
+        c: Output tile of shape `(M, N)` that receives the reduced sum.
+        work_space: Read-only tile of shape `(num_partitions, M, N)`
+            holding the per-partition partial sums to be reduced.
+        ctx: Device context used to launch the reduction kernel.
+    """
     comptime c_type = c.dtype
     comptime simd_width = simd_width_of[c_type, target=get_gpu_target()]()
     var num_partitions = Int(work_space.dim[0]())
@@ -1543,7 +1619,27 @@ def multistage_gemm[
     ctx: DeviceContext,
 ) raises:
     """TileTensor overload of `multistage_gemm`. Converts to LayoutTensor and
-    dispatches to the appropriate GEMM kernel."""
+    dispatches to a GEMM kernel.
+
+    Parameters:
+        c_type: DType of the output tile `c` elements (inferred).
+        a_type: DType of the input tile `a` elements (inferred).
+        b_type: DType of the input tile `b` elements (inferred).
+        transpose_b: Whether `b` is accessed transposed, so its row `y`
+            is read as `b[y, i]` instead of `b[i, y]`.
+        config: Compile-time `MatmulConfig` selecting the block tile,
+            warp tile, MMA shape, and pipeline stages for the kernel.
+        elementwise_lambda_fn: Optional epilogue applied to the
+            accumulated value before it is stored to `c` (defaults to
+            `None`, which stores the raw accumulation).
+
+    Args:
+        c: Output tile of shape `(M, N)` receiving the matmul result.
+        a: Input tile of shape `(M, K)`.
+        b: Input tile of shape `(K, N)`, or `(N, K)` when `transpose_b`
+            is set.
+        ctx: Device context used to enqueue the kernel.
+    """
     var tensor_c = c.to_layout_tensor()
     var tensor_a = a.to_layout_tensor()
     var tensor_b = b.to_layout_tensor()
@@ -1732,7 +1828,34 @@ def multistage_gemm[
 ) raises:
     """TileTensor overload of `multistage_gemm` with runtime config.
     Constrains c to mut=True because `split_k_reduce` requires a mutable
-    output tensor."""
+    output tensor.
+
+    Parameters:
+        c_type: DType of the output tile `c` elements (inferred).
+        a_type: DType of the input tile `a` elements (inferred).
+        b_type: DType of the input tile `b` elements (inferred).
+        transpose_b: Whether `b` is accessed transposed, so its row `y`
+            is read as `b[y, i]` instead of `b[i, y]`.
+        config: Compile-time `MatmulConfig` selecting the block tile,
+            warp tile, MMA shape, and pipeline stages for the kernel.
+        elementwise_lambda_fn: Optional epilogue applied to the
+            accumulated value before it is stored to `c` (defaults to
+            `None`, which stores the raw accumulation).
+
+    Args:
+        c: Output tile of shape `(M, N)` receiving the matmul result;
+            must be mutable because `split_k_reduce` writes the reduced
+            sum back into it.
+        a: Input tile of shape `(M, K)`.
+        b: Input tile of shape `(K, N)`, or `(N, K)` when `transpose_b`
+            is set.
+        runtime_config: Runtime `MatmulConfig` carrying the number of
+            K partitions used for the split-K reduction path; when
+            `num_k_partitions` is greater than 1 the kernel writes
+            partial sums to a workspace and reduces them into `c`.
+        ctx: Device context used to enqueue the kernel and allocate the
+            split-K workspace.
+    """
     var tensor_c = c.to_layout_tensor()
     var tensor_a = a.to_layout_tensor()
     var tensor_b = b.to_layout_tensor()

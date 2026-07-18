@@ -82,6 +82,17 @@ struct KVCacheIterator[
     When cache_depth != depth, the DRAM stride uses cache_depth (e.g., MLA
     K_rope reads 64 columns from a 576-wide cache row). head_dim_offset
     shifts the column start (e.g., skip to rope portion at column 512).
+
+    Parameters:
+        cache_t: MHA operand wrapping the KV cache pointer and dtype.
+        tile_size: Number of rows loaded per DRAM tile.
+        kv_num_heads: Number of KV heads in the cache.
+        depth: Per-head depth read from each cache row (head dimension).
+        cache_depth: Row stride of the paged KV cache in elements
+            (defaults to `depth`).
+        head_dim_offset: Column offset within each cache row, used to
+            skip to a sub-region such as the rope portion (defaults to
+            `0`).
     """
 
     comptime GmemTileLayout = MixedLayout[
@@ -154,19 +165,19 @@ def _get_k_swizzle[mma_m: Int, bk: Int]() -> Optional[Swizzle]:
     XORs upper row bits into lower address bits to spread different rows
     across LDS bank groups in the col_major thread distribution. `bk`
     here is the SMEM physical block width (`_bk_smem`), NOT the MMA strip
-    width — the swizzle math operates on per-block addresses.
+    width; the swizzle math operates on per-block addresses.
 
     Two shapes, by MFMA M-dim:
 
-    - `mma_m == 16` (16x16x{32,64,128}): `Swizzle(3, 0, 3)`.  At
+    - `mma_m == 16` (16x16x{32,64,128}): `Swizzle(3, 0, 3)`. At
       bk=128 (8 vecs/row at simd_w=16B) this XORs vec_idx[3:6]
       (= 8 consecutive rows) into vec_idx[0:3] (= col-in-row).
       At bk=64 (4 vecs/row) the same `S=3` shift XORs row bits
       m[1..3] (skipping m[0]) into vec_idx[0..2], reaching all 8
       distinct bank values across the 16 lanes per col_vec AND
       simultaneously spreading V's `ds_read_tr8_b64` accesses to
-      V's structural conflict floor.  A shallower `Swizzle(2, 0, 2)`
-      is not enough — `S=2` only XORs `m[0..1]`, the LSBs that
+      V's structural conflict floor. A shallower `Swizzle(2, 0, 2)`
+      is not enough: `S=2` only XORs `m[0..1]`, the LSBs that
       least-distinguish 16 rows, leaving 2-way conflicts behind.
       At bk=32 (BF16 16x16x32 decode) the same swizzle applies.
     - `mma_m == 32` (32x32x{16,64}): `Swizzle(3, 0, 4)` matches the
@@ -195,13 +206,13 @@ struct KVBuffer[
     reg_chunk_depth: Int = depth,
     reg_chunk_keys: Int = WN,
     smem_depth: Int = depth,
-    # SMEM physical block width.  When `bk_smem < BK`, the SMEM stride is
+    # SMEM physical block width. When `bk_smem < BK`, the SMEM stride is
     # `bk_smem` and each MMA K=BK strip is composed of `BK / bk_smem`
-    # adjacent SMEM blocks.  Used by MLA decode at depth=576 (BK=128,
+    # adjacent SMEM blocks. Used by MLA decode at depth=576 (BK=128,
     # bk_smem=64) to avoid wasting an 8 KB pad on a partial block.
     bk_smem: Int = BK,
-    # Number of SMEM stages (double-buffer depth).  Defaults to 2, so every
-    # existing caller is byte-identical.  A single-block consumer with no KV
+    # Number of SMEM stages (double-buffer depth). Defaults to 2, so every
+    # existing caller is byte-identical. A single-block consumer with no KV
     # streaming loop (e.g. MSA prefill: one `load_from_dram[0]`/
     # `load_from_shared(0)`) never touches the 2nd stage, so it can pass 1 to
     # halve the SMEM allocation.
@@ -214,12 +225,12 @@ struct KVBuffer[
     SMEM is navigated via `.tile()` on a strided parent TileTensor whose
     (BK, BN) strides encode the blocked layout (num_repeats contiguous
     BN×BK blocks per stage, two stages). Stage selection and in-stage
-    block selection both happen via the tile column index — no pointer
+    block selection both happen via the tile column index, no pointer
     arithmetic required. smem_mma_subtile is still used for V-operand
     MMA sub-tiles which have mma_cols != BK.
 
     When full_kv=True (depth<=256), each SMEM stage holds BN x smem_depth
-    elements — the full tile. When full_kv=False (depth=512), each stage
+    elements: the full tile. When full_kv=False (depth=512), each stage
     holds only BN x BK elements, and the caller iterates over BK blocks.
 
     `smem_depth` defaults to `depth`. It exists for per-warp V buffers
@@ -230,6 +241,48 @@ struct KVBuffer[
 
     MMA register tiles (mma_tile) are TileTensor in LOCAL address space.
     TiledMmaOp (mma.mojo) handles SMEM→register loads and MMA dispatch.
+
+    Parameters:
+        kv_t: MHA operand wrapping the KV cache pointer and dtype
+            (inferred).
+        mma_shape: MFMA instruction shape `[M, N, K]` used for register
+            tiling.
+        swizzle: LDS bank-conflict swizzle for SMEM loads and stores, or
+            `None`.
+        BN: Number of keys per DRAM tile (block tile extent along the
+            key axis).
+        WN: Number of keys per warp tile (warp tile extent along the key
+            axis).
+        BK: Strip width along the MMA K dimension of one DRAM-to-SMEM
+            load.
+        num_threads: Number of threads in the block driving DMA and
+            register distribution.
+        depth: Per-head depth of the KV cache (head dimension).
+        kv_num_heads: Number of KV heads in the cache.
+        transpose: `True` for the K operand (column strips from `BN x
+            depth`), `False` for V.
+        full_kv: When `True`, each SMEM stage holds the full `BN x
+            smem_depth` tile; when `False`, each stage holds only `BN x
+            BK` and the caller iterates over BK blocks (defaults to
+            `True`).
+        cache_depth: Row stride of the paged KV cache in elements
+            (defaults to `depth`).
+        head_dim_offset: Column offset within each cache row, used to
+            skip to a sub-region such as the rope portion (defaults to
+            `0`).
+        reg_chunk_depth: Cap on the K (transpose) register tile depth
+            coverage, in elements (defaults to `depth`).
+        reg_chunk_keys: Cap on the V (non-transpose) register tile key
+            coverage, in keys (defaults to `WN`).
+        smem_depth: Depth extent of one SMEM stage; larger than `depth`
+            for per-warp V buffers whose `depth` is smaller than `BK`
+            (defaults to `depth`).
+        bk_smem: SMEM physical block width; when less than `BK`, each MMA
+            K strip is composed of `BK / bk_smem` adjacent SMEM blocks
+            (defaults to `BK`).
+        num_smem_stages: Number of SMEM stages (double-buffer depth); a
+            single-block consumer with no streaming loop may pass `1` to
+            halve the SMEM allocation (defaults to `2`).
     """
 
     comptime MMA_N = Self.mma_shape[1]
@@ -239,7 +292,7 @@ struct KVBuffer[
     )
     comptime num_k_mmas2 = ceildiv(Self.BK, Self.MMA_K)
     # B-operand fragment size: `num_matrix_reg[MMA_K, MMA_N]`.
-    # For BF16 [32,32,16]: 8.  For FP8 [32,32,64]: 32.
+    # For BF16 [32,32,16]: 8. For FP8 [32,32,64]: 32.
     comptime input_frag_size = (Self.MMA_K * Self.MMA_N) // WARP_SIZE
     comptime simd_width = simd_width_of[Self.kv_t.dtype]()
     comptime num_k_tiles = ceildiv(
@@ -364,6 +417,14 @@ struct KVBuffer[
         tile_row indexes along BN (rows within a BN×bk_smem block),
         block_col indexes linearly across all BN×bk_smem blocks in both
         stages.
+
+        Parameters:
+            tile_rows: Number of rows in the returned sub-tile.
+
+        Args:
+            tile_row: Row index along `BN` within a `BN x bk_smem` block.
+            block_col: Linear index across all `BN x bk_smem` blocks in
+                both stages.
         """
         return self._smem_view().tile[
             tile_rows,
@@ -510,7 +571,14 @@ struct KVBuffer[
         MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
-        """Alias for get_mma_tile, kept for decode-call-site symmetry."""
+        """Alias for get_mma_tile, kept for decode-call-site symmetry.
+
+        Parameters:
+            k_mma_tile_idx: Index of the MFMA tile along the K dimension
+                within one BK strip.
+            bk_tile_idx: Index of the BK strip along the depth (transpose)
+                or key (non-transpose) axis.
+        """
         return self.get_mma_tile[k_mma_tile_idx, bk_tile_idx]()
 
     @always_inline
@@ -526,7 +594,7 @@ struct KVBuffer[
         `valid_per_lane = input_frag_size * valid_cols / BK` elements
         correspond to the valid K-range and the UPPER
         `input_frag_size - valid_per_lane` elements correspond to the
-        pad.  Zero the upper portion per lane.
+        pad. Zero the upper portion per lane.
 
         The reference pre-zeros half of the partial-tile K-fragment dwords
         once and reuses; we re-zero each K LDS load because the LDS loader
@@ -535,7 +603,7 @@ struct KVBuffer[
         A no-op when `depth % BK == 0`.
 
         NOTE: keep in sync with `QRegisterBuffer.__init__`'s partial-tile
-        zero in `buffers.mojo`.  Both sites share the upper-half-is-pad
+        zero in `buffers.mojo`. Both sites share the upper-half-is-pad
         assumption (asserted below); a future config that violates it
         (`valid_cols > BK/2`) needs a different zero pattern in both.
         """
@@ -547,7 +615,7 @@ struct KVBuffer[
             # Upper-half-is-pad invariant: today (depth=576, BK=128)
             # `valid_cols` is exactly BK/2, so the lo half of each
             # lane's per-tile fragment covers the valid K-range and the
-            # hi half is pad.  A future config with `valid_cols > BK/2`
+            # hi half is pad. A future config with `valid_cols > BK/2`
             # would split the valid range across both halves and need a
             # different zero pattern.
             comptime assert valid_cols_in_partial <= Self.BK // 2, (
@@ -573,7 +641,7 @@ struct KVBuffer[
 
     @always_inline
     def load_from_shared(self, buffer: Int):
-        # The no-index form loads every strip into the reg tile.  When the
+        # The no-index form loads every strip into the reg tile. When the
         # reg tile is chunked (_reg_num_k_tiles < num_k_tiles) slots alias,
         # so the caller must drive the chunk loop explicitly via the
         # indexed overload.
@@ -599,7 +667,7 @@ struct KVBuffer[
             # arithmetic; per-lane output: V[key=g*32..g*32+31,
             # depth=butterfly(lid%16) + dt*16] where butterfly is the
             # natural depth permutation of `ds_read_tr8_b64`'s two
-            # interleaved 8x8 transposes.  The MFMA A-operand consumes
+            # interleaved 8x8 transposes. The MFMA A-operand consumes
             # this permuted layout directly (the 16x16x128 m_h lane
             # mapping IS the butterfly).
             comptime MMA_M_ = Self.mma_shape[0]
@@ -634,16 +702,16 @@ struct KVBuffer[
                     ](joined)
         elif not Self.transpose and Self.kv_t.dtype.is_float8():
             # FP8 V vector load using ds_read_tr8_b64 with paired-lane
-            # addressing.  Replaces ~128 scalar LDS reads with ~16 vector
+            # addressing. Replaces ~128 scalar LDS reads with ~16 vector
             # reads (8x fewer instructions).
             #
             # Paired lanes (even/odd) access the same key at depth offsets
-            # differing by 8.  After the hardware 8x8 transpose, each lane
+            # differing by 8. After the hardware 8x8 transpose, each lane
             # holds 8 different keys at ONE depth (NOT 8 contiguous depths
-            # per lane — that's the pre-transpose source layout).  The 16
+            # per lane — that's the pre-transpose source layout). The 16
             # lanes in a row collectively cover 16 unique depths; the
             # depth-per-lane mapping is `depth_in_block = lane_in_row +
-            # (row_in_warp % 2) * 16`.  Two rows within hw0 (depth_base 0
+            # (row_in_warp % 2) * 16`. Two rows within hw0 (depth_base 0
             # and 16) give 32 depths; hw1 shifts keys by +4 for the
             # complementary MFMA C-output column pattern, covering all
             # 64 BN keys per MFMA tile. The per-strip load lives in
@@ -690,13 +758,13 @@ struct KVBuffer[
 
             comptime if Self.bk_smem < Self.BK:
                 # bk_smem-split path: each MMA K=BK strip is composed of
-                # `BK / bk_smem` adjacent BN×bk_smem SMEM blocks.  For the
+                # `BK / bk_smem` adjacent BN×bk_smem SMEM blocks. For the
                 # FP8 16x16x128 case (BK=128, bk_smem=64), that's two
-                # blocks per strip.  The final strip may be partial when
+                # blocks per strip. The final strip may be partial when
                 # depth % BK != 0 — no hi block, register-zero the upper
                 # half of the MMA fragment.
                 # The K-split path uses `load_prefill_split` (two 64-wide
-                # blocks per 128-wide MMA strip).  Generalizing to other
+                # blocks per 128-wide MMA strip). Generalizing to other
                 # ratios would need a `BK / bk_smem`-arity load helper;
                 # not implemented today since the only shipping config
                 # is depth=576, BK=128, bk_smem=64.
@@ -778,6 +846,26 @@ struct DecodeStreamingKVBuffer[
 
     K (transpose=True): BN x BK SMEM, column strips from BN x depth.
     V (transpose=False): BK x depth SMEM (blocked BK x BK), row strips.
+
+    Parameters:
+        kv_t: MHA operand wrapping the KV cache pointer and dtype
+            (inferred).
+        mma_shape: MFMA instruction shape `[M, N, K]` used for register
+            tiling.
+        swizzle: LDS bank-conflict swizzle for SMEM loads and stores, or
+            `None`.
+        BN: Number of keys per DRAM tile (block tile extent along the
+            key axis).
+        WN: Number of keys per warp tile (warp tile extent along the key
+            axis).
+        BK: Strip width along the MMA K dimension of one per-iteration
+            DRAM-to-SMEM load.
+        num_threads: Number of threads in the block driving DMA and
+            register distribution.
+        depth: Per-head depth of the KV cache (head dimension).
+        kv_num_heads: Number of KV heads in the cache.
+        transpose: `True` for the K operand (column strips from `BN x
+            depth`), `False` for V (row strips).
     """
 
     comptime MMA_N = Self.mma_shape[1]
@@ -901,6 +989,13 @@ struct DecodeStreamingKVBuffer[
 
         Single-stage K SMEM has one BN×BK block, so only the row index
         along BN varies.
+
+        Parameters:
+            tile_rows: Number of rows in the sub-tile.
+
+        Args:
+            tile_row: Row index along `BN` within the `BN x BK` SMEM
+                block.
         """
         return self._k_smem_view().tile[
             tile_rows,
@@ -916,6 +1011,13 @@ struct DecodeStreamingKVBuffer[
 
         K (transpose=True): columns [strip*BK, (strip+1)*BK] from BN x depth.
         V (transpose=False): rows [strip*BK, (strip+1)*BK] from BN x depth.
+
+        Parameters:
+            strip_idx: Strip index along the K dimension (transpose) or
+                the row axis (non-transpose) of the DRAM tile.
+
+        Args:
+            gmem_tile: External DRAM tile to load the strip from.
         """
         comptime if Self.transpose:
             comptime if Self.kv_t.dtype.is_float8():
@@ -1133,7 +1235,12 @@ struct DecodeStreamingKVBuffer[
         MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
-        """Get register tile for one k_mma group within the single strip."""
+        """Get register tile for one k_mma group within the single strip.
+
+        Parameters:
+            k_mma_idx: Index of the MFMA tile along the K dimension
+                within the strip.
+        """
         return self.kv_mma_op.mma_tile_at[0, k_mma_idx]()
 
 
@@ -1143,6 +1250,13 @@ struct DecodeStreamingKVBuffer[
 
 
 trait KVBufferConfig:
+    """Tiling configuration shared by the K and V decode buffer roles.
+
+    Defines the warp-tile and block-tile dimensions, the MMA iteration
+    axis used to walk the DRAM tile, and the warp-tile coordinate lookup
+    that `DecodeKVBuffer` uses to select its SMEM sub-view per warp.
+    """
+
     comptime wsize: Int
     comptime wtile_dim0: Int
     comptime wtile_dim1: Int
@@ -1160,6 +1274,18 @@ trait KVBufferConfig:
 
 @fieldwise_init
 struct KBufferConfig[BN: Int, BK: Int, WN: Int](KVBufferConfig):
+    """K-role decode buffer config that iterates DRAM along the column axis.
+
+    The warp tile is `[WN, BK]` (key-block width by strip width), the block
+    tile is `[BN, BK]`, and `iterator_axis = 1` advances `tile_idx` across
+    column strips of the DRAM tile.
+
+    Parameters:
+        BN: Number of keys per block tile (extent along the key axis).
+        BK: Strip width along the MMA K dimension.
+        WN: Number of keys per warp tile.
+    """
+
     comptime wsize = Self.wtile_dim0
     comptime wtile_dim0 = Self.WN
     comptime wtile_dim1 = Self.BK
@@ -1178,6 +1304,19 @@ struct KBufferConfig[BN: Int, BK: Int, WN: Int](KVBufferConfig):
 
 @fieldwise_init
 struct VBufferConfig[BN: Int, BK: Int, WN: Int, depth: Int](KVBufferConfig):
+    """V-role decode buffer config that iterates DRAM along the row axis.
+
+    The warp tile is `[BK, depth // num_warps_n]` (strip width by per-warp
+    depth slice), the block tile is `[BK, depth]`, and `iterator_axis = 0`
+    advances `tile_idx` across row strips of the DRAM tile.
+
+    Parameters:
+        BN: Number of keys per block tile (extent along the key axis).
+        BK: Strip width along the MMA K dimension.
+        WN: Number of keys per warp tile.
+        depth: Per-head depth of the KV cache (head dimension).
+    """
+
     comptime wsize = Self.wtile_dim1
     comptime wtile_dim0 = Self.BK
     comptime wtile_dim1 = Self.depth // (Self.BN // Self.WN)
@@ -1209,6 +1348,39 @@ struct DecodeKVBuffer[
     num_stages: Int = 1,
     token_gen: Bool = False,
 ]:
+    """Double-buffered register-staged KV buffer for the AMD decode mirror path.
+
+    Stages DRAM tiles through a register `load_tile` (optionally multi-stage)
+    before copying to SMEM and loading into the MFMA `mma_tile`. The
+    `KVBufferConfig` parameter selects the K (transpose) or V
+    (non-transpose) tiling, iterator axis, and warp-tile coordinate so a
+    single implementation serves both operands.
+
+    Parameters:
+        dtype: Element type of the KV cache tiles (inferred).
+        kv_tile_layout: Runtime layout of the DRAM KV tile used to build
+            `gmem_tile` (inferred).
+        config: K or V role config selecting warp tile, block tile,
+            iterator axis, and warp-tile coordinate.
+        tensor_core_mma: MFMA descriptor (shape, group size, transpose_b,
+            out type) driving SMEM-to-register loads.
+        swizzle: LDS bank-conflict swizzle for SMEM loads and stores, or
+            `None`.
+        BN: Number of keys per DRAM tile (block tile extent along the
+            key axis).
+        WN: Number of keys per warp tile (warp tile extent along the key
+            axis).
+        BK: Strip width along the MMA K dimension of one DRAM-to-SMEM
+            load.
+        depth: Per-head depth of the KV cache (head dimension).
+        num_threads: Number of threads in the block driving DMA and
+            register distribution.
+        num_stages: Number of register buffer stages for double buffering
+            (defaults to 1).
+        token_gen: Selects the token-generation thread layout for DMA
+            distribution (defaults to `False`).
+    """
+
     comptime _dtype = Self.dtype
     comptime _num_stages = Self.num_stages
     comptime MMA_N = Self.tensor_core_mma.shape[1]

@@ -65,7 +65,26 @@ def apply_mask_kernel[
     mask: mask_t,
     max_num_keys: Int,
 ):
-    """Apply causal mask to the output scores."""
+    """Apply causal mask to the output scores.
+
+    Parameters:
+        mask_t: The `MHAMask` type applied to each score coordinate.
+        ScoresLayoutType: Layout of the `output` scores tensor.
+        scores_origin: Origin of the `output` scores tensor.
+        VLLayoutType: Layout of the `valid_length` tensor.
+        vl_origin: Origin of the `valid_length` tensor.
+        CLLayoutType: Layout of the `cache_lengths` tensor.
+
+    Args:
+        output: Score matrix with row stride `max_num_keys`, indexed as
+            `[global_seq_idx, key_idx]`.
+        valid_length: Row offsets into `output` per batch, length
+            `batch_size + 1`.
+        cache_lengths: Per-batch cached-prefix length used to map a local
+            query index to an absolute position.
+        mask: The mask instance applied to each score coordinate.
+        max_num_keys: Row stride of `output` and maximum keys per token.
+    """
     var batch_idx = block_idx.x
     var seq_idx = block_idx.y * 16 + thread_idx.x
     var key_idx = block_idx.z * 16 + thread_idx.y
@@ -126,6 +145,28 @@ def fill_invalid_topk_kernel[
         num_keys = cache_len + local_seq_idx + 1
     Without causal masking, each token can see all keys in the batch:
         num_keys = cache_len + seq_len
+
+    Parameters:
+        IROLayoutType: Layout of the `input_row_offsets` tensor.
+        iro_origin: Origin of the `input_row_offsets` tensor.
+        cache_lengths_layout: Layout of the `cache_lengths` tensor.
+        use_causal_mask: Whether each token is restricted to keys up to
+            its own position.
+
+    Args:
+        output_indices: Output buffer of shape `[total_seq_len, top_k]`
+            with invalid positions set to -1.
+        topk_indices: Compact top-k index buffer of shape
+            `[total_seq_len, effective_k]` produced by `topk_gpu`.
+        input_row_offsets: Ragged row offsets per batch, length
+            `batch_size + 1`.
+        cache_lengths: Per-batch cached-prefix length used to compute the
+            number of keys each token may attend to.
+        total_seq_len: Number of token rows in `output_indices`.
+        top_k: Row stride of `output_indices` and the requested number of
+            selections per token.
+        effective_k: Row stride of `topk_indices` and the actual number of
+            computed selections, `min(top_k, max_num_keys)`.
     """
     comptime assert cache_lengths.flat_rank == 1
 
@@ -219,6 +260,17 @@ def mla_indexer_ragged_float8_paged[
     1. Computes FP8 matmul between q and cached k (with scales), aggregated across heads
     2. Applies the specified mask (causal, etc.)
     3. Computes top-k indices per token (scores are summed across all heads)
+
+    Parameters:
+        dtype: Element type of the `q` query tensor, an FP8 dtype.
+        KCollectionT: Type of the KV collection holding cached K values and
+            K scales.
+        num_heads: Number of attention heads per token.
+        depth: Per-head key dimension (head size) in elements.
+        top_k: Requested number of top-scoring key indices to select per
+            token.
+        mask_str: Name of the mask to apply, either `MaskName.NULL` or
+            `MaskName.CAUSAL`.
 
     Args:
         output_indices: Dense output tensor for top-k indices [total_seq_len, top_k].
@@ -354,7 +406,7 @@ def mla_indexer_ragged_float8_paged[
             ),
         )
 
-    # Per-batch KV cache lengths (cached-prefix length).  Needed both by the
+    # Per-batch KV cache lengths (cached-prefix length). Needed both by the
     # causal mask below (to map local query index → absolute position) and by
     # fill_invalid_topk below.
     var cache_lengths = k_cache.cache_lengths_nd()

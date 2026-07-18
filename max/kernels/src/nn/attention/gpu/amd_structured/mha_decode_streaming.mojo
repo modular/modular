@@ -16,7 +16,7 @@ Per-tile loop: K strips from DRAM→LDS→REG for QK MMA,
 P scores through SMEM for PV MMA, split-K partitioning.
 
 Uses DecodeStreamingKVBuffer for single-buffer, per-strip DRAM→SMEM staging
-(no KVCacheIterator — strips are sub-tiled from an external DRAM tile).
+(no KVCacheIterator; strips are sub-tiled from an external DRAM tile).
 """
 
 from std.math import ceildiv
@@ -47,7 +47,7 @@ __extension Attention:
         ],
         num_partitions: Int,
     ):
-        """MHA decode — streams K strips DRAM→LDS→REG per QK MMA.
+        """MHA decode: streams K strips DRAM→LDS→REG per QK MMA.
 
         Trades higher per-launch overhead for better throughput at
         batch ≥ 128 with long keys. Selected via `MHA_STREAMING_DECODE=True`.

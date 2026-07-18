@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements the warp-specialized block-scaled matmul kernel for SM100 (B200) GPUs, supporting MXFP8, MXFP4, and NVFP4 block-scaled formats with TMA-based loads and UMMA tensor core operations."""
+
 from std.math import align_up, ceildiv
 from std.math.uutils import umod, ufloordiv
 from std.sys import size_of
@@ -118,6 +120,9 @@ struct B200BlockScaledMatmulSmem[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ],
 ]:
+    """Defines the shared memory layout for the B200 block-scaled matmul kernel, including A/B/C tiles, scale factor tiles, and pipeline barriers for TMA-MMA, accumulator, CLC, and TMEM deallocation.
+    """
+
     comptime BM = Self.config.block_tile_shape[0]
     comptime BN = Self.config.block_tile_shape[1]
     comptime BK = Self.config.block_tile_shape[2]
@@ -250,6 +255,85 @@ def load_AB_SFA_SFB[
     iter_idx: UInt32,
     elect_one_cta: Bool,
 ):
+    """Issues multicast TMA loads for A, B, and their scale factors (SFA, SFB) into a pipeline stage of shared memory.
+
+    Parameters:
+        a_type: Element dtype of the A operand matrix (inferred).
+        b_type: Element dtype of the B operand matrix (inferred).
+        sfa_dtype: Element dtype of the A scale factors (inferred).
+        sfb_dtype: Element dtype of the B scale factors (inferred).
+        sfa_tma_dtype: Element dtype used for the SFA TMA descriptor; may
+            differ from `sfa_dtype` (for example `uint16` for 4D TMA)
+            (inferred).
+        sfb_tma_dtype: Element dtype used for the SFB TMA descriptor; may
+            differ from `sfb_dtype` (for example `uint16` for 4D TMA)
+            (inferred).
+        a_rank: Tensor rank of the A operand TMA descriptor (inferred).
+        a_tile_shape: Per-tile shape of the A TMA load (inferred).
+        a_desc_shape: Full descriptor shape of the A TMA load (inferred).
+        b_rank: Tensor rank of the B operand TMA descriptor (inferred).
+        b_tile_shape: Per-tile shape of the B TMA load (inferred).
+        b_desc_shape: Full descriptor shape of the B TMA load (inferred).
+        sfa_rank: Tensor rank of the SFA TMA descriptor (inferred).
+        sfa_tile_shape: Per-tile shape of the SFA TMA load (inferred).
+        sfa_desc_shape: Full descriptor shape of the SFA TMA load
+            (inferred).
+        sfb_rank: Tensor rank of the SFB TMA descriptor (inferred).
+        sfb_tile_shape: Per-tile shape of the SFB TMA load (inferred).
+        sfb_desc_shape: Full descriptor shape of the SFB TMA load
+            (inferred).
+        a_dim0: Row count of each A SMEM tile (inferred).
+        a_dim1: Column count of each A SMEM tile (inferred).
+        a_num_tiles: Total number of A SMEM tiles across all pipeline
+            stages (inferred).
+        a_swizzle_bytes: Swizzle stride in bytes for the A SMEM tiles
+            (inferred).
+        b_dim0: Row count of each B SMEM tile (inferred).
+        b_dim1: Column count of each B SMEM tile (inferred).
+        b_num_tiles: Total number of B SMEM tiles across all pipeline
+            stages (inferred).
+        b_swizzle_bytes: Swizzle stride in bytes for the B SMEM tiles
+            (inferred).
+        num_pipeline_stages: Number of producer/consumer stages in the
+            A/B/SFA/SFB load and MMA pipeline (inferred).
+        block_tile_shape: Block tile shape as `(BM, BN, BK)` in elements.
+        mma_shape: MMA atom shape as `(MMA_M, MMA_N, MMA_K)` in elements.
+        num_sf_k_tiles: Number of scale-factor K-tiles loaded per
+            K-group iteration.
+        cta_group: Number of CTAs cooperating per MMA group (defaults
+            to 1).
+        k_group_size: Number of K-tiles loaded per pipeline stage
+            (defaults to 1).
+
+    Args:
+        a_tma_op: TMA tensor tile descriptor for loading A from global
+            memory.
+        b_tma_op: TMA tensor tile descriptor for loading B from global
+            memory.
+        sfa_tma_op: TMA tensor tile descriptor for loading SFA (A scale
+            factors) from global memory.
+        sfb_tma_op: TMA tensor tile descriptor for loading SFB (B scale
+            factors) from global memory.
+        a_smem_tiles: SMEM tile array holding the A operand tiles.
+        b_smem_tiles: SMEM tile array holding the B operand tiles.
+        sfa_smem_tiles: SMEM tile array holding the A scale-factor tiles.
+        sfb_smem_tiles: SMEM tile array holding the B scale-factor tiles.
+        load_mma_pipeline: Producer/consumer pipeline synchronizing
+            A/B/SFA/SFB loads with MMA consumption.
+        peer_cta_coord: `(v, m, n)` coordinates of this CTA within the
+            cluster, used to compute SMEM slice offsets for multicast
+            distribution.
+        work_tile_coord: `(M, N, batch)` coordinates of the output tile
+            being computed.
+        a_multicast_mask: Multicast bitmask selecting which CTAs receive
+            the A TMA load.
+        b_multicast_mask: Multicast bitmask selecting which CTAs receive
+            the B TMA load.
+        iter_idx: Current K-iteration index within the tile loop, in
+            units of individual K-tiles.
+        elect_one_cta: Whether this CTA is elected as the leader for
+            mbarrier byte-count programming.
+    """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -660,7 +744,7 @@ def _complete_activation_tiles[
 ):
     """Phase 2 of PDL weight prefetch: issues activation-side TMA loads into
     the barrier established by _prefetch_weight_tiles. Call after
-    wait_on_dependent_grids(). No pipeline operations — caller owns step().
+    wait_on_dependent_grids(). No pipeline operations: caller owns step().
     AB_swapped=False: activation = A + SFA. AB_swapped=True: activation = B + SFB.
     """
     comptime BM = block_tile_shape[0]
@@ -948,6 +1032,8 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     workspace: Span[UInt64, MutAnyOrigin],
     alpha: Float32 = 1.0,
 ):
+    """Implements the warp-specialized block-scaled matmul kernel for SM100 GPUs using TMA for global-to-shared loads and UMMA for tensor core MMA.
+    """
     comptime assert c_type != DType.float32, "c_type cannot be float32"
     comptime assert transpose_b, "only support k-major B"
 

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements the CPU int8 matmul microkernel using x86 VNNI or ARM NEON dot-product instructions."""
+
 from std.math import align_down
 from std.sys import prefetch
 from std.sys.info import CompilationTarget, align_of
@@ -37,6 +39,18 @@ from .impl import InnerMatmulKernel
 # implements the VNNI microkernel.
 @fieldwise_init
 struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
+    """Int8 microkernel for CPU matmul using x86 VNNI or ARM NEON dot-product.
+
+    Implements `InnerMatmulKernel` using 4-element int8 dot-product instructions
+    (`vpdpbusd` on x86, `_neon_dotprod` on ARM) to accumulate int32 partial
+    products. Handles K tails (remainder < 4) by packing A into a local buffer
+    or using AVX-512 masked loads. When `saturated_vnni` is `True`, uses the
+    saturated x86 variant (`dot_i8_to_i32_saturated_x86`) to prevent overflow.
+
+    Parameters:
+        saturated_vnni: Whether to use the saturating VNNI variant on x86.
+    """
+
     # Parameters for global reference.
 
     @always_inline
@@ -60,13 +74,13 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         local accumulation buffer while processing a single column of A.
 
         Args:
-            a: TODO.
-            b_packed: TODO.
+            a: Input A matrix tile being processed.
+            b_packed: Packed B matrix tile in cache-friendly layout.
             c_local: Pre-allocated local buffer for c partial sums.
-            global_offset: TODO.
+            global_offset: Global (M, N, K) coordinate offset for this tile.
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
-            tile_n_k: TODO
+            tile_n_k: Dynamic tile sizes along the N and K dimensions.
         """
         comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
 
@@ -180,6 +194,25 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
     ):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows, TileN, TileK) tile.
+
+        Parameters:
+            kernel_rows: Number of rows processed per inner kernel iteration
+                along the M dimension.
+            kernel_cols: Number of columns processed per inner kernel
+                iteration along the N dimension.
+            simd_size: SIMD vector width used for the int8 dot-product
+                instructions.
+
+        Args:
+            c: Output matrix tile accumulating the matmul partial sums.
+            a: Input A matrix tile being processed.
+            b_packed: Packed B matrix tile in cache-friendly layout.
+            global_offset: Global (M, N, K) coordinate offset for this tile.
+            global_bound: Global (M, N, K) bound of the matrices, used for
+                boundary checks.
+            tile_n_k: Dynamic tile sizes along the N and K dimensions.
+            skip_boundary_check: Whether to skip boundary checks when storing
+                results.
         """
         comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
 

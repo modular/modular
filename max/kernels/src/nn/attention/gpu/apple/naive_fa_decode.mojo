@@ -20,14 +20,14 @@ for one `(batch, head)`. Lane `L` owns the contiguous head-dim chunk
 `[L*EPL, L*EPL+EPL)` where `EPL = head_dim // WARP_SIZE`; the query and running
 output stay in registers, `Q.K^T` is reduced across lanes with one `air.simd_sum`
 per key, and `P.V` is reduction-free. The inner loop has **no `barrier()` and no
-threadgroup memory** — the two levers Apple silicon is most sensitive to.
+    threadgroup memory** (the two levers Apple silicon is most sensitive to).
 
 Two kernels:
-  * `naive_fa_decode_apple_core`  — producer. Grid `(num_partitions,
+  * `naive_fa_decode_apple_core`: producer. Grid `(num_partitions,
     batch_size, num_heads)`, block = `WARP_SIZE` (one simdgroup). Each block
     writes per-partition partials `(o_partial, m_partial, l_partial)` via online
     softmax over `BN`-wide KV tiles.
-  * `naive_fa_decode_apple_stitch` — stitch. Grid `(num_heads, batch_size)`,
+  * `naive_fa_decode_apple_stitch`: stitch. Grid `(num_heads, batch_size)`,
     block `depth`. One thread per depth element; combines the contiguous
     per-partition partials into the final `output` with a log-sum-exp (LSE)
     reduction.
@@ -162,8 +162,63 @@ def naive_fa_decode_apple_core[
     `air.simd_sum` per key; `P.V` is reduction-free. No barriers, no shared
     memory.
 
+    Parameters:
+        q_type: Element type of the query tensor (inferred).
+        output_type: Unused; mirrors `mha_gpu_naive` for dispatch
+            uniformity (inferred).
+        p_type: Accumulation and partials element type (inferred).
+        k_t: `MHAOperand` type of the key cache operand (inferred).
+        v_t: `MHAOperand` type of the value cache operand (inferred).
+        mask_t: `MHAMask` functor type applied to attention scores
+            (inferred).
+        p_layout: `TensorLayout` of the partials buffers (inferred).
+        q_layout: `TensorLayout` of the query tensor (inferred).
+        valid_length_layout: `TensorLayout` of the `valid_length` tensor
+            (inferred).
+        sink_layout: `TensorLayout` of the sink weights tensor (inferred).
+        ragged: Whether sequences are ragged with variable lengths and
+            row offsets in `valid_length` (defaults to `False`).
+        sink: Whether attention sink is enabled, pre-seeding split 0
+            with per-head sink weights (defaults to `False`).
+        _use_valid_length: Whether to use `valid_length` for KVCache
+            decode as per-sequence query lengths (defaults to `False`).
+        _is_cache_length_accurate: Whether the cache length equals the
+            query length, so no new-token KV is added (defaults to
+            `False`).
+        Depth: Compile-time head dimension; must be a multiple of
+            `WARP_SIZE`.
+        SplitSize: Per-partition KV span in keys.
+
+    Args:
+        o_partial: Flat 1D partial output buffer; one accumulator per
+            `(batch, head, depth, split)`.
+        m_partial: Flat 1D partial row-max buffer; one running max per
+            `(batch, head, split)`.
+        l_partial: Flat 1D partial row-sum buffer; one running
+            denominator per `(batch, head, split)`.
+        q: Flat 1D query tensor; one token per sequence (decode).
+        k: Key cache operand implementing the `MHAOperand` contract.
+        v: Value cache operand implementing the `MHAOperand` contract.
+        mask_functor: Mask functor applied to each attention score.
+        valid_length: Per-sequence row offsets or query lengths
+            (`uint32`); meaning depends on `ragged` and
+            `_use_valid_length`.
+        sink_weights: Optional per-head attention sink weights; when
+            `sink` is enabled, pre-seeds split 0 before KV attention.
+        scale: Softmax scale factor applied to `Q.K^T` scores.
+        batch_size: Number of sequences in the batch.
+        max_prompt_len: Maximum prompt length; the dense decode path's
+            query length.
+        max_cache_size: Full key count for the dense decode path (the K
+            tensor's seq dim).
+        num_heads: Number of query attention heads.
+        depth: Runtime head dimension; must equal the compile-time
+            `Depth`.
+        group: Number of query heads per KV head (GQA group size).
+        num_partitions: Number of KV splits; the grid X dimension.
+
     Constraints:
-        `Depth % WARP_SIZE == 0` — the head dim must split evenly across lanes.
+        `Depth % WARP_SIZE == 0`: the head dim must split evenly across lanes.
     """
     comptime assert (
         Depth % WARP_SIZE == 0
@@ -382,6 +437,67 @@ def naive_fa_decode_apple_stitch[
     depth: Int,
     num_partitions: Int,
 ):
+    """Combines per-partition partials into the final decode attention output.
+
+    Grid `(num_heads, batch_size)`, block `depth`: one thread per head-dim
+    element. Reads the contiguous per-split `(o_partial, m_partial, l_partial)`
+    buffers written by `naive_fa_decode_apple_core` and merges them with a
+    log-sum-exp (LSE) reduction in FP32, then writes the normalized
+    `acc / l` row back into `output`. The active split count mirrors the
+    producer's `cur_cache_len` so only the partials actually written are
+    combined.
+
+    Parameters:
+        output_type: Element type of the `output` tensor (inferred).
+        p_type: Accumulation and partials element type (inferred).
+        k_t: `MHAOperand` type of the key cache operand (inferred).
+        v_t: Unused; mirrors `mha_gpu_naive` for dispatch uniformity
+            (inferred).
+        mask_t: Unused; mirrors `mha_gpu_naive` for dispatch uniformity
+            (inferred).
+        output_layout: `TensorLayout` of the `output` tensor (inferred).
+        p_layout: `TensorLayout` of the partials buffers (inferred).
+        valid_length_layout: `TensorLayout` of the `valid_length` tensor
+            (inferred).
+        ragged: Whether sequences are ragged with variable lengths and
+            row offsets in `valid_length` (defaults to `False`).
+        sink: Whether attention sink is enabled; the producer already
+            bakes the sink contribution into split 0 partials, so the
+            stitch does not act on this flag (defaults to `False`).
+        _use_valid_length: Whether to use `valid_length` for KVCache
+            decode as per-sequence query lengths (defaults to `False`).
+        _is_cache_length_accurate: Whether the cache length equals the
+            query length, so no new-token KV is added (defaults to
+            `False`).
+        SplitSize: Per-partition KV span in keys; must match the
+            producer's `SplitSize`.
+
+    Args:
+        output: Flat 1D output tensor; written with the normalized
+            attention output per `(batch, head, depth)`.
+        o_partial: Flat 1D partial output buffer from the producer;
+            one accumulator per `(batch, head, depth, split)`.
+        m_partial: Flat 1D partial row-max buffer from the producer;
+            one running max per `(batch, head, split)`.
+        l_partial: Flat 1D partial row-sum buffer from the producer;
+            one running denominator per `(batch, head, split)`.
+        k: Key cache operand implementing the `MHAOperand` contract;
+            used for `cache_length` in the ragged and KVCache paths.
+        valid_length: Per-sequence row offsets or query lengths
+            (`uint32`); meaning depends on `ragged` and
+            `_use_valid_length`.
+        max_prompt_len: Maximum prompt length; the dense decode path's
+            query length.
+        max_cache_size: Full key count for the dense decode path (the K
+            tensor's seq dim).
+        num_heads: Number of query attention heads.
+        depth: Runtime head dimension.
+        num_partitions: Number of KV splits; must match the producer's
+            partition count.
+
+    Constraints:
+        `o_partial`, `m_partial`, and `output` must be flat 1D TileTensors.
+    """
     comptime assert (
         o_partial.flat_rank == 1
         and m_partial.flat_rank == 1
@@ -494,6 +610,50 @@ def naive_fa_decode_apple[
     ] = None,
 ) raises:
     """Host launcher for the Apple split-K decode attention pair (decode-only).
+
+    Parameters:
+        output_type: The element type of the `output` tensor (inferred).
+            Unused by the kernels; mirrors `mha_gpu_naive` for dispatch
+            uniformity.
+        k_t: The `MHAOperand` type of the key cache operand (inferred).
+        v_t: The `MHAOperand` type of the value cache operand (inferred).
+        mask_t: The `MHAMask` functor type applied to attention scores
+            (inferred).
+        ragged: Whether sequences are ragged with variable lengths and
+            row offsets in `valid_length` (defaults to `False`).
+        sink: Whether attention sink is enabled, pre-seeding split 0
+            with per-head sink weights (defaults to `False`).
+        _use_valid_length: Whether to use `valid_length` for KVCache
+            decode as per-sequence query lengths (defaults to `False`).
+        _is_cache_length_accurate: Whether the cache length equals the
+            query length, so no new-token KV is added (defaults to
+            `False`).
+
+    Args:
+        q: The query tensor; one token per sequence (decode).
+        k: The key cache operand implementing the `MHAOperand` contract.
+        v: The value cache operand implementing the `MHAOperand`
+            contract.
+        mask_functor: The mask functor applied to each attention score.
+        output: The output tensor; written by the stitch kernel with
+            the normalized attention output.
+        valid_length: Per-sequence row offsets or query lengths
+            (`uint32`); meaning depends on `ragged` and
+            `_use_valid_length`.
+        scale: The softmax scale factor applied to `Q.K^T` scores.
+        batch_size: Number of sequences in the batch.
+        max_prompt_len: Maximum prompt length; the dense decode path's
+            query length.
+        max_cache_size: Full key count for the dense decode path (the K
+            tensor's seq dim).
+        num_heads: Number of query attention heads.
+        depth: Head dimension; must be a multiple of `WARP_SIZE` and
+            at most `NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM`.
+        group: Number of query heads per KV head (GQA group size).
+        ctx: The device context used to enqueue kernels and allocate
+            partial buffers.
+        sink_weights: Per-head sink weights (shape `[num_heads]`); read
+            only when `sink` is `True` (defaults to `None`).
     """
     # No `is_apple_gpu()` assert here — this launcher compiles for the host
     # target, where that target-query is always False. The Apple gate is the

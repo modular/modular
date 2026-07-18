@@ -10,32 +10,48 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# Persistent-scheduling MLA-prefill metadata builder (S1) — host/CPU.
-#
-# Faithful port of the reference's `kn_generate_ps_metadata`
-# (`v1_2_host.cuh:61-241`) + `WorkInfo`/`QTile` (`ps.h`). Copies the
-# reference exactly; does not invent.
-#
-# Even-division-of-split-units load balancer (the prefill-ps batch-flatness
-# lever): query tiles (qlen_granularity tokens x all heads) are built per batch
-# with causal effective-KV, counted in kvlen_granularity units, and total units
-# are split evenly across `available_tgs` persistent workgroups, splitting a
-# tile's KV across TGs when one TG's quota is exceeded (-> partials + reduce).
-#
-# This is a pure host/CPU module (no GPU): the persistent kernel (S2) builds
-# the work partition on the host, uploads `work_indptr`/`work_info` to device
-# buffers, and the persistent grid consumes them. Tested standalone by
-# `test/gpu/structured_kernels/test_ps_metadata.mojo`.
-# ===----------------------------------------------------------------------=== #
+"""Builds persistent-scheduling work-partition metadata for MLA-prefill on the host.
+
+Faithful port of the reference's `kn_generate_ps_metadata`
+(`v1_2_host.cuh:61-241`) + `WorkInfo`/`QTile` (`ps.h`). Copies the reference
+exactly; does not invent.
+
+Even-division-of-split-units load balancer (the prefill-ps batch-flatness
+lever): query tiles (qlen_granularity tokens x all heads) are built per batch
+with causal effective-KV, counted in kvlen_granularity units, and total units
+are split evenly across `available_tgs` persistent workgroups, splitting a
+tile's KV across TGs when one TG's quota is exceeded (-> partials + reduce).
+
+This is a pure host/CPU module (no GPU): the persistent kernel (S2) builds
+the work partition on the host, uploads `work_indptr`/`work_info` to device
+buffers, and the persistent grid consumes them. Tested standalone by
+`test/gpu/structured_kernels/test_ps_metadata.mojo`.
+"""
 
 from std.collections import List
 
 
 def ceil_div(x: Int32, y: Int32) -> Int32:
+    """Computes the ceiling of `x` divided by `y` for signed 32-bit integers.
+
+    Args:
+        x: The numerator of the division.
+        y: The denominator of the division; must be nonzero.
+    """
     return (x + y - 1) // y
 
 
 def pack_dword(low_part: Int32, high_part: Int32) -> Int32:
+    """Packs two 16-bit halves into one 32-bit word as `(high<<16) | (low & 0xFFFF)`.
+
+    Mirrors `ps.h:10-14` from the reference implementation.
+
+    Args:
+        low_part: Value occupying the low 16 bits of the packed word; masked
+            with `0xFFFF` before packing.
+        high_part: Value occupying the high 16 bits of the packed word;
+            shifted left by 16 before packing.
+    """
     # ps.h:10-14 -- (high<<16) | (low & 0xFFFF)
     return (high_part << 16) | (low_part & 0xFFFF)
 
@@ -57,6 +73,13 @@ comptime WORKINFO_DW = 8
 
 
 struct PsMetadata(Copyable, Movable):
+    """Holds the persistent-scheduling work partition built on the host.
+
+    Stores `work_indptr` (prefix-sum of work counts per thread-group, length
+    `available_tgs+1`) and `work_info` (flat `WorkInfo` records, 8 int32 each)
+    that the persistent GPU kernel (S2) consumes to drive its grid.
+    """
+
     var work_indptr: List[Int32]  # [available_tgs+1], prefix-sum of work counts
     var work_info: List[Int32]  # [num_works * 8], flat WorkInfo
     var num_works: Int
@@ -102,7 +125,33 @@ def kn_generate_ps_metadata(
     cluster_id: Int32,
 ) -> PsMetadata:
     """Faithful port of v1_2_host.cuh:61-241 (single-cluster: cluster_id=0,
-    current_work_idx=0 -- the nkv=1 prefill case)."""
+    current_work_idx=0 -- the nkv=1 prefill case).
+
+    Args:
+        seqlens_qo_indptr: Prefix-sum array of length `batch+1`; entry `i`
+            is the global query-token offset where batch `i` begins.
+        pages_kv_indptr: Prefix-sum of KV block counts per batch, length
+            `batch+1`; entry `i` is the block offset where batch `i`'s KV
+            pages begin.
+        context_lens: Per-batch KV token lengths, length `batch`; the number
+            of cached KV tokens for each sequence.
+        num_heads_k: Number of KV heads assigned to this cluster; each head
+            receives an identical work split.
+        qhead_granularity: Number of query heads packed per work-item; sets
+            the stride used to build `q_head_range`.
+        qlen_granularity: Query tile width in tokens; one work-item covers
+            this many tokens of a single head.
+        kvlen_granularity: KV split unit width in tokens; must be a multiple
+            of `block_size`. Drives the even split across thread-groups.
+        block_size: Paged-attention block size in tokens; the granularity of
+            `pages_kv_indptr` and the KV block count.
+        is_causal: When true, each query tile's effective KV length is masked
+            to the causal boundary; when false, the full KV length is used.
+        available_tgs: Number of persistent thread-groups to split the total
+            KV units across evenly.
+        cluster_id: Index of this cluster; offsets the KV head index used to
+            build `q_head_range`.
+    """
     var batch_size = len(seqlens_qo_indptr) - 1
     debug_assert(
         kvlen_granularity % block_size == 0,
@@ -290,6 +339,30 @@ def build_ps_metadata(
     work-item Q tile is `qlen_granularity = tile_q // gqa_ratio` TOKENS of ONE
     head (token-major; the 256 MMA rows are 256 tokens, NOT 16 tok x 16 head),
     and `q_head_range`'s low 16 bits = the head index (= cluster_id).
+
+    Args:
+        seqlens_qo_indptr: Prefix-sum array of length `batch+1`; entry `i`
+            is the global query-token offset where batch `i` begins.
+        pages_kv_indptr: Prefix-sum of KV block counts per batch, length
+            `batch+1`; entry `i` is the block offset where batch `i`'s KV
+            pages begin.
+        context_lens: Per-batch KV token lengths, length `batch`; the number
+            of cached KV tokens for each sequence.
+        num_heads_k: Total number of KV heads; GCD-clustered across
+            `available_tgs` thread-groups.
+        gqa_ratio: Ratio of query heads to KV heads; for MLA-prefill MHA
+            this is 1. Sets `qhead_granularity` and divides `tile_q` for
+            `qlen_granularity`.
+        tile_q: Query tile size in tokens before head division; one work-item
+            covers `tile_q // gqa_ratio` tokens of one head.
+        tile_kv: KV tile size in blocks; sets `kvlen_granularity` via
+            `max(tile_kv, block_size)`.
+        block_size: Paged-attention block size in tokens; the granularity of
+            `pages_kv_indptr`.
+        is_causal: When true, each query tile's effective KV length is masked
+            to the causal boundary.
+        available_tgs: Number of persistent thread-groups; GCD-clustered with
+            `num_heads_k` to form clusters.
     """
     var qhead_granularity = gqa_ratio
     var qlen_granularity = tile_q // gqa_ratio
@@ -343,7 +416,15 @@ def build_uniform(
 
     `available_tgs` = number of persistent thread-groups (= grid_dim.x = device
     CU count, 256 on MI355X). Set it to `num_q_heads` for a split-free partition
-    at any seq (1 TG per head — useful for correctness gating).
+    at any seq (1 TG per head, useful for correctness gating).
+
+    Args:
+        batch: Number of sequences in the batch; all sequences have length
+            `seq`.
+        seq: Token length of every sequence in the batch.
+        num_q_heads: Number of query heads (MHA, gqa=1) (defaults to 16).
+        available_tgs: Number of persistent thread-groups; set to
+            `num_q_heads` for a split-free partition (defaults to 256).
     """
     var qo_indptr = List[Int32]()
     var kv_indptr = List[Int32]()

@@ -11,6 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides manually fused GPU graph kernels for Multi-head Latent Attention (MLA).
+
+Defines the fused RoPE and RMSNorm kernel, the FP8 prefill and decode branches,
+and the combined prefill-decode graph that up-projects the latent KV cache and
+performs MLA attention with dynamic FP8 scaling.
+"""
+
 
 from std.collections import Optional, OptionalReg
 from std.math import align_up, ceildiv
@@ -933,6 +940,29 @@ def quantize_and_bmm_fp8_helper[
     """
     Helper function to quantize and perform a batched matrix multiplication.
     This function uses the transposed view of the input tensor `a`.
+
+    Parameters:
+        dtype: Data type of the input tensor `a` and output tensor `c`.
+        fp8_dtype: Data type of the FP8 quantized tensors.
+        fp8_scale_dtype: Data type of the FP8 scale tensors.
+        m_scale_granularity: Granularity of the scale for the M dimension of
+            the batched matrix multiplication.
+        n_scale_granularity: Granularity of the scale for the N dimension of
+            the batched matrix multiplication.
+        k_scale_granularity: Granularity of the scale for the K dimension of
+            the batched matrix multiplication, also the quantization group
+            size for `a`.
+        target: Target device for the batched matrix multiplication (defaults
+            to "cpu").
+
+    Args:
+        c: Output tensor for the batched matrix multiplication result. Shape:
+            [batch, m, n].
+        a: Input tensor to quantize to FP8 and use as the left operand, loaded
+            via a transposed view. Shape: [m, batch, k].
+        b: FP8 weight tensor used as the right operand. Shape: [batch, n, k].
+        b_scales: Scale tensor for `b`.
+        ctx: Device context for buffer allocation and kernel execution.
     """
 
     # Evidence assert for TileTensor load Coord constraint.
@@ -1576,6 +1606,80 @@ def mla_prefill_decode_graph_fp8[
     """
     This is a manually fused kernel that performs the following operations:
     - Perform MLA prefill or decode based on the maximum sequence length.
+
+    Parameters:
+        dtype: Data type of the input and output tensors (inferred).
+        fp8_dtype: Data type of the fp8 input and output tensors (inferred).
+        fp8_scale_dtype: Data type of the fp8 scale input and output tensors
+            (inferred).
+        collection_t: Type of the KV collection (inferred).
+        m_scale_granularity: Granularity of the scale for M dimension of the
+            matrix multiplication.
+        n_scale_granularity: Granularity of the scale for N dimension of the
+            matrix multiplication.
+        k_scale_granularity: Granularity of the scale for K dimension of the
+            matrix multiplication.
+        mask_str: Mask variant.
+        kv_input_fn: Input lambda function to load the KV latent values. Shape:
+            [tot_seq_len, cache_head_dim]. Where cache_head_dim = kv_lora_rank
+            + qk_rope_head_dim.
+        target: Target device (defaults to "cpu").
+        sparse_mla: Whether to use sparse MLA (defaults to False).
+        sparse_indices_stride: Row stride of the sparse decode index buffer
+            (defaults to 0).
+        fold_shared_index: Whether to use the read-once shared-index MTP
+            fold threaded to `flare_mla_decoding` (defaults to False).
+
+    Args:
+        output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
+        q: Combined query tensor containing both nope and rope parts. Shape:
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
+        input_row_offsets: Indicates where each request starts and ends in
+            `q`. Shape: [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values for rotary position
+            embeddings. Shape: [max_seq_len, qk_rope_head_dim].
+        kv_norm_gamma: RMSNorm gamma weights for normalizing the KV cache.
+            Shape: [kv_lora_rank].
+        kv_collection: Paged KV Cache object.
+        layer_idx: Layer index.
+        scale: Scale for the attention calculation.
+        epsilon: Small constant for numerical stability in RMSNorm.
+        buffer_row_offsets: Indicates where each request's KV latent values
+            should be stored in the contiguous K buffer. This is a 1D tensor
+            of shape [num_batches + 1].
+        cache_offsets: Indicates the starting token position in the KV cache
+            from which to copy KV latent values for each request. This is a 1D
+            tensor of shape [num_batches + 1].
+        buffer_length: The total number of tokens in the KV cache. Scalar.
+        max_seq_len: Maximum sequence length in the batch, used to select
+            prefill versus decode.
+        w_k: Weight matrix for up-projecting the latent cache to full K. Shape:
+            [num_heads * qk_nope_head_dim, kv_latent_dim].
+        w_k_scale: Scale tensor for `w_k`.
+        w_uk: Weight matrix for projecting the non-rope part of each query head
+            to KV latent space. Shape: [num_heads, kv_latent_dim,
+            qk_nope_head_dim].
+        w_uk_scale: The scale for the `w_uk` weight matrix. Shape varies
+            depending on the float8_config.
+        w_uv: Weight tensor for projecting latent values to V. Shape:
+            [num_heads, v_head_dim, kv_latent_dim].
+        w_uv_scale: Scale tensor for `w_uv`.
+        scalar_args_buf: Packed MLA dispatch metadata buffer.
+        ctx: Device context.
+        d_indices: Sparse decode packed indices (null when dense, defaults to
+            None).
+        indices_stride: Row stride in `d_indices` (defaults to 0).
+        topk_lengths: Per-batch valid top-k counts (defaults to None).
+        attn_sink_ptr: Optional per-batch attention sink weights (defaults to
+            None).
+        extra_k: Optional second key cache operand (see
+            `flare_mla_decoding`, defaults to None).
+        extra_d_indices: Extra-stream sparse indices (defaults to None).
+        extra_indices_stride: Stride for `extra_d_indices` (defaults to 0).
+        extra_topk_lengths: Extra-stream per-batch lengths (defaults to None).
+        extra_scales_ptr: Extra-stream scales (defaults to None).
+        num_partitions_in: Capturable-graph num_partitions override (defaults
+            to None).
     """
 
     var seq_len = q.dim(0)
@@ -1798,6 +1902,41 @@ def mla_prefill_branch_bf16[
 
     Applies RoPE and RMSNorm, up-projects latent KV to full K and V, then runs
     prefill attention.
+
+    Parameters:
+        collection_t: Type of the KV collection (inferred).
+        mask_str: Mask variant.
+        kv_input_fn: Input lambda function to load the KV latent values. Shape:
+            [tot_seq_len, cache_head_dim]. Where cache_head_dim = kv_lora_rank
+            + qk_rope_head_dim.
+        target: Target device (defaults to "cpu").
+
+    Args:
+        output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
+        q: Combined query tensor containing both nope and rope parts. Shape:
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
+        input_row_offsets: Indicates where each request starts and ends in
+            `q`. Shape: [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values for rotary position
+            embeddings. Shape: [max_seq_len, qk_rope_head_dim].
+        kv_norm_gamma: RMSNorm gamma weights for normalizing the KV cache.
+            Shape: [kv_lora_rank].
+        kv_collection: Paged KV Cache object.
+        layer_idx: Layer index.
+        scale: Scale for the attention calculation.
+        epsilon: Small constant for numerical stability in RMSNorm.
+        buffer_row_offsets: Indicates where each request's KV latent values
+            should be stored in the contiguous K buffer. This is a 1D tensor
+            of shape [num_batches + 1].
+        cache_offsets: Indicates the starting token position in the KV cache
+            from which to copy KV latent values for each request. This is a 1D
+            tensor of shape [num_batches + 1].
+        buffer_length: The total number of tokens in the KV cache. Scalar.
+        w_k: Weight matrix for up-projecting the latent cache to full K. Shape:
+            [num_heads * qk_nope_head_dim, kv_latent_dim].
+        w_uv: Weight tensor for projecting latent values to V. Shape:
+            [num_heads, v_head_dim, kv_latent_dim].
+        ctx: Device context.
     """
     comptime kv_params = collection_t.kv_params
     comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
@@ -2078,6 +2217,43 @@ def mla_decode_branch_bf16[
 
     Applies RoPE and RMSNorm, projects q_nope to latent space, concatenates with
     q_rope, and runs decode.
+
+    Parameters:
+        collection_t: Type of the KV collection (inferred).
+        mask_str: Mask variant.
+        kv_input_fn: Input lambda function to load the KV latent values. Shape:
+            [tot_seq_len, cache_head_dim]. Where cache_head_dim = kv_lora_rank
+            + qk_rope_head_dim.
+        target: Target device (defaults to "cpu").
+        sparse_mla: Whether to use sparse MLA (defaults to False).
+
+    Args:
+        output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
+        q: Combined query tensor containing both nope and rope parts. Shape:
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
+        input_row_offsets: Indicates where each request starts and ends in
+            `q`. Shape: [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values for rotary position
+            embeddings. Shape: [max_seq_len, qk_rope_head_dim].
+        kv_norm_gamma: RMSNorm gamma weights for normalizing the KV cache.
+            Shape: [kv_lora_rank].
+        kv_collection: Paged KV Cache object.
+        layer_idx: Layer index.
+        scale: Scale for the attention calculation.
+        epsilon: Small constant for numerical stability in RMSNorm.
+        w_uk: Weight matrix for projecting the non-rope part of each query head
+            to KV latent space. Shape: [num_heads, kv_latent_dim,
+            qk_nope_head_dim].
+        w_uv: Weight matrix for projecting the output of the attention back to
+            each head's original space. Shape: [num_heads, v_head_dim,
+            kv_latent_dim].
+        scalar_args_buf: Packed MLA dispatch metadata buffer.
+        ctx: Device context.
+        d_indices: Sparse decode packed indices (null when dense).
+        indices_stride: Row stride in `d_indices` (defaults to 0).
+        topk_lengths: Per-batch valid top-k counts.
+        attn_sink_ptr: Optional per-batch attention sink weights.
+        num_partitions_in: Capturable-graph num_partitions override.
     """
     comptime kv_params = collection_t.kv_params
     comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
@@ -2486,6 +2662,61 @@ def mla_prefill_decode_graph_bf16[
     """BF16 MLA prefill/decode graph.
 
     Dispatches to prefill or decode based on max sequence length in the batch.
+
+    Parameters:
+        collection_t: Type of the KV collection (inferred).
+        mask_str: Mask variant.
+        kv_input_fn: Input lambda function to load the KV latent values. Shape:
+            [tot_seq_len, cache_head_dim]. Where cache_head_dim = kv_lora_rank
+            + qk_rope_head_dim.
+        target: Target device (defaults to "cpu").
+        sparse_mla: Whether to use sparse MLA (defaults to False).
+        sparse_indices_stride: Row stride of the sparse decode index buffer
+            (defaults to 0).
+
+    Args:
+        output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
+        q: Combined query tensor containing both nope and rope parts. Shape:
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
+        input_row_offsets: Indicates where each request starts and ends in
+            `q`. Shape: [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values for rotary position
+            embeddings. Shape: [max_seq_len, qk_rope_head_dim].
+        kv_norm_gamma: RMSNorm gamma weights for normalizing the KV cache.
+            Shape: [kv_lora_rank].
+        kv_collection: Paged KV Cache object.
+        layer_idx: Layer index.
+        scale: Scale for the attention calculation.
+        epsilon: Small constant for numerical stability in RMSNorm.
+        buffer_row_offsets: Indicates where each request's KV latent values
+            should be stored in the contiguous K buffer. This is a 1D tensor
+            of shape [num_batches + 1].
+        cache_offsets: Indicates the starting token position in the KV cache
+            from which to copy KV latent values for each request. This is a 1D
+            tensor of shape [num_batches + 1].
+        buffer_length: The total number of tokens in the KV cache. Scalar.
+        max_seq_len: Maximum sequence length in the batch, used to select
+            prefill versus decode.
+        w_k: Weight matrix for up-projecting the latent cache to full K. Shape:
+            [num_heads * qk_nope_head_dim, kv_latent_dim].
+        w_uk: Weight matrix for projecting the non-rope part of each query head
+            to KV latent space. Shape: [num_heads, kv_latent_dim,
+            qk_nope_head_dim].
+        w_uv: Weight matrix for projecting the output of the attention back to
+            each head's original space. Shape: [num_heads, v_head_dim,
+            kv_latent_dim].
+        scalar_args_buf: Packed MLA dispatch metadata buffer.
+        ctx: Device context.
+        d_indices: Optional device pointer to packed int32 physical KV row
+            indices for sparse decode (defaults to None).
+        indices_stride: Stride between batch rows in `d_indices` (defaults
+            to 0).
+        topk_lengths: Optional per-batch valid top-k counts (defaults to
+            None).
+        attn_sink_ptr: Optional per-batch attention sink weights (defaults
+            to None).
+        num_partitions_in: Capturable-graph num_partitions override (defaults
+            to None).
     """
     var seq_len = q.dim(0)
 

@@ -11,6 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""
+Implements single-query (decode) multi-head attention for NVIDIA SM100 (Blackwell) GPUs using warp-specialized UMMA and tensor-memory (TMEM) accumulators.
+"""
+
 from std.math import ceildiv, exp2, recip, align_up
 from std.math.uutils import umod
 from std.math.constants import log2e
@@ -119,6 +123,10 @@ comptime logger = Logger()
 
 
 struct RegisterAccumulatorDescription:
+    """
+    Holds the number of MMA fragments and the per-thread fragment size for a register-resident accumulator tile.
+    """
+
     var num_mmas: Int
     var frag_size: Int
 
@@ -140,6 +148,18 @@ struct RegisterAccumulatorLayout[
     *,
     frag_simdwidth: Int = 2,
 ](TrivialRegisterPassable):
+    """
+    Describes how UMMA accumulator fragments are distributed across the threads of a consumer warp group.
+
+    Parameters:
+        MMA_M: The M dimension of a single UMMA instruction tile.
+        MMA_N: The N dimension of a single UMMA instruction tile.
+        num_m_mmas: Number of UMMA tiles along the M dimension.
+        num_n_mmas: Number of UMMA tiles along the N dimension.
+        consumer_group_size: Number of threads in the consumer warp group.
+        frag_simdwidth: SIMD width of each accumulator fragment (defaults to 2).
+    """
+
     comptime frag_size: Int = Self.MMA_M * Self.MMA_N // Self.consumer_group_size
     comptime num_row_blocks_per_mma = 2
     comptime element_layout: Layout = Layout.row_major(1, Self.frag_simdwidth)
@@ -185,6 +205,19 @@ struct MMAOperandOffsetFn[
     WMMA_MN: Int,
     WMMA_K: Int,
 ](TrivialRegisterPassable):
+    """
+    Computes the shared-memory layout and byte offsets for MMA operand tiles, bridging typed tile layouts to legacy MMA descriptors.
+
+    Parameters:
+        dtype: The element type of the operand tile.
+        BMN: The non-K dimension of the operand tile in elements.
+        BK: The K dimension of the operand tile in elements.
+        swizzle: The shared-memory swizzle mode applied to the operand layout.
+        is_k_major: Whether the operand is stored K-major versus M/N-major.
+        WMMA_MN: The M or N dimension of a single warp-level MMA tile.
+        WMMA_K: The K dimension of a single warp-level MMA tile.
+    """
+
     # Use typed layouts as source of truth; bridge to legacy Layout for
     # LayoutTensor and MMA descriptor pipeline.
     comptime layout = tile_layout_k_major_typed[
@@ -211,6 +244,10 @@ struct MMAOperandOffsetFn[
 
 
 trait DescriptorPair(TrivialRegisterPassable):
+    """
+    Provides access to the A and B operand descriptors for a shared-shared (SS) UMMA operation.
+    """
+
     comptime a_t: MMAOperandDescriptor
     comptime b_t: MMAOperandDescriptor
 
@@ -224,6 +261,10 @@ trait DescriptorPair(TrivialRegisterPassable):
 
 
 trait WriteableMMAOperandDescriptor(TrivialRegisterPassable):
+    """
+    Describes an MMA operand whose source data can be written from a local LayoutTensor into the operand's backing store (e.g. tensor memory).
+    """
+
     @always_inline
     def copy_from[
         src_type: DType, src_layout: Layout, src_element_layout: Layout, //
@@ -241,6 +282,10 @@ trait WriteableMMAOperandDescriptor(TrivialRegisterPassable):
 
 
 trait DescriptorPairTS(TrivialRegisterPassable):
+    """
+    Provides access to the A (tensor-memory) and B (shared-memory) operand descriptors for a tensor-shared (TS) UMMA operation.
+    """
+
     comptime a_t: WriteableMMAOperandDescriptor
     comptime b_t: MMAOperandDescriptor
 
@@ -264,10 +309,22 @@ def local_tensor_type[
         element_layout=element_layout,
     ]
 ):
+    """
+    Returns an uninitialized local-address-space LayoutTensor used for compile-time type inference of register tiles.
+
+    Parameters:
+        dtype: The element type of the inferred `LayoutTensor`.
+        layout: The outer layout of the inferred `LayoutTensor`.
+        element_layout: The element layout of the inferred `LayoutTensor`.
+    """
     dummy_arg = {None}
 
 
 trait AccumulatorTile(TrivialRegisterPassable):
+    """
+    Describes a UMMA accumulator tile that can be allocated, copied to and from, and viewed as rows of fragments.
+    """
+
     comptime dtype: DType
     comptime element_layout: Layout
     comptime vec_output_layout: Layout
@@ -322,6 +379,13 @@ trait AccumulatorTile(TrivialRegisterPassable):
 struct UMMADescriptorSS[operand_type: DType](
     DescriptorPair, TrivialRegisterPassable
 ):
+    """
+    Holds two shared-memory descriptors for the A and B operands of a shared-shared (SS) UMMA.
+
+    Parameters:
+        operand_type: The element type of the A and B operands.
+    """
+
     comptime operand_t = Self.operand_type
     comptime a_t = MMASmemDescriptor
     comptime b_t = MMASmemDescriptor
@@ -366,6 +430,18 @@ struct TMemAccumulator[
     num_n_mmas: Int,
     num_softmax_threads: Int,
 ](AccumulatorTile, TrivialRegisterPassable):
+    """
+    Implements an `AccumulatorTile` backed by tensor memory (TMEM), storing UMMA results at a given TMEM address.
+
+    Parameters:
+        dtype_: The element type of the accumulator tile.
+        MMA_M: The M dimension of a single UMMA instruction tile.
+        MMA_N: The N dimension of a single UMMA instruction tile.
+        num_m_mmas: Number of UMMA tiles along the M dimension.
+        num_n_mmas: Number of UMMA tiles along the N dimension.
+        num_softmax_threads: Number of threads in the consumer warp group.
+    """
+
     comptime dtype: DType = Self.dtype_
     comptime layout_t = RegisterAccumulatorLayout[
         Self.MMA_M,
@@ -622,6 +698,19 @@ struct TMemOperand[
     MMA_K: Int,
     num_softmax_threads: Int,
 ](TrivialRegisterPassable, WriteableMMAOperandDescriptor):
+    """
+    Implements a `WriteableMMAOperandDescriptor` backed by tensor memory (TMEM), used as the A operand of a tensor-shared (TS) UMMA.
+
+    Parameters:
+        dtype: The element type of the operand tile.
+        num_m_mmas: Number of UMMA tiles along the M dimension.
+        num_n_mmas: Number of UMMA tiles along the N dimension.
+        MMA_M: The M dimension of a single UMMA instruction tile.
+        MMA_N: The N dimension of a single UMMA instruction tile.
+        MMA_K: The K dimension of a single UMMA instruction tile.
+        num_softmax_threads: Number of threads in the consumer warp group.
+    """
+
     var tmem_addr: UInt32
 
     comptime reg_layout = RegisterAccumulatorLayout[
@@ -895,6 +984,19 @@ struct UMMADescriptorTS[
     MMA_K: Int,
     consumer_group_size: Int,
 ](DescriptorPairTS, TrivialRegisterPassable):
+    """
+    Pairs a TMEM A-operand descriptor with a shared-memory B-operand descriptor for a tensor-shared (TS) UMMA.
+
+    Parameters:
+        operand_type: The element type of the A and B operands.
+        num_m_mmas: Number of UMMA tiles along the M dimension.
+        num_n_mmas: Number of UMMA tiles along the N dimension.
+        MMA_M: The M dimension of a single UMMA instruction tile.
+        MMA_N: The N dimension of a single UMMA instruction tile.
+        MMA_K: The K dimension of a single UMMA instruction tile.
+        consumer_group_size: Number of threads in the consumer warp group.
+    """
+
     comptime operand_t = Self.operand_type
     comptime a_t = TMemOperand[
         Self.operand_type,
@@ -941,6 +1043,30 @@ struct SM100TensorAccumulatorSS[
     cta_group: Int = 1,
     pipeline_stages: Int = 1,
 ](TrivialRegisterPassable):
+    """
+    Manages a shared-shared (SS) UMMA accumulator pipeline for SM100, coordinating MMA, TMEM, and barrier synchronization between producer and consumer warps.
+
+    Parameters:
+        operand_type: The element type of the A and B operands.
+        accum_type: The element type of the accumulator.
+        MMA_M: The M dimension of a single UMMA instruction tile.
+        MMA_N: The N dimension of a single UMMA instruction tile.
+        BM: The M dimension of the accumulator block tile in elements.
+        BN: The N dimension of the accumulator block tile in elements.
+        BK: The K dimension of the operand block tile in elements.
+        compute_BK: The K dimension used for the compute loop in elements.
+        num_softmax_threads: Number of threads in the softmax consumer warp group.
+        swizzle_a: The shared-memory swizzle mode for the A operand
+            (defaults to `SWIZZLE_128B`).
+        swizzle_b: The shared-memory swizzle mode for the B operand
+            (defaults to `SWIZZLE_128B`).
+        transpose_b: Whether the B operand is stored transposed
+            (defaults to `True`).
+        cta_group: The CTA group index used to dispatch the MMA (defaults to 1).
+        pipeline_stages: Number of double-buffered pipeline stages
+            (defaults to 1).
+    """
+
     comptime operand_t: DType = Self.operand_type
     comptime accum_t: DType = Self.accum_type
 
@@ -1149,6 +1275,9 @@ struct SM100TensorAccumulatorSS[
     def wait_for_mma(self, c_base: Self.c_t) -> Self.c_t:
         """
         Wait for the accumulator tmem to finish being read.
+
+        Args:
+            c_base: The accumulator tile base indexed by pipeline stage.
         """
         var idx: UInt32 = self.pipeline.index()
         self.mbar[idx].wait(self.pipeline.phase())
@@ -1183,6 +1312,27 @@ struct SM100TensorAccumulatorTS[
     transpose_b: Bool = True,
     cta_group: Int = 1,
 ](TrivialRegisterPassable):
+    """
+    Manages a tensor-shared (TS) UMMA accumulator pipeline for SM100, coordinating MMA between a TMEM A-operand and a shared-memory B-operand.
+
+    Parameters:
+        operand_type: The element type of the A and B operands.
+        accum_type: The element type of the accumulator.
+        MMA_M: The M dimension of a single UMMA instruction tile.
+        MMA_N: The N dimension of a single UMMA instruction tile.
+        BM: The M dimension of the accumulator block tile in elements.
+        BN: The N dimension of the accumulator block tile in elements.
+        BK: The K dimension of the operand block tile in elements.
+        num_softmax_threads: Number of threads in the softmax consumer warp
+            group.
+        swizzle_b: The shared-memory swizzle mode for the B operand
+            (defaults to `SWIZZLE_128B`).
+        transpose_b: Whether the B operand is stored transposed
+            (defaults to `True`).
+        cta_group: The CTA group index used to dispatch the MMA
+            (defaults to 1).
+    """
+
     comptime operand_t: DType = Self.operand_type
     comptime accum_t: DType = Self.accum_type
 
@@ -1410,6 +1560,46 @@ def mha_sm100_dispatch[
     ctx: DeviceContext,
     sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
 ) raises:
+    """
+    Dispatches single-query (decode) multi-head attention to the SM100 kernel, selecting TMA tiles, scheduler, and partition configuration.
+
+    Parameters:
+        q_type: The element type of the query tensor.
+        KVType: The operand type describing the key and value memory
+            layout (for example, paged or ragged).
+        MaskType: The mask type applied to the attention scores.
+        output_type: The element type of the output tensor.
+        MaxPromptLenType: The type representing the maximum prompt
+            length, which may be statically or dynamically known.
+        PartitionType: The scheme for partitioning work across CTAs.
+        config: The MHA configuration holding tile sizes, depth, and head
+            count.
+        group: The group-query attention group size, equal to the number
+            of query heads sharing each KV head.
+        ragged: Whether the input sequences have variable lengths.
+        sink: Whether attention sink weights are applied.
+        _is_cache_length_accurate: Whether the reported cache length is
+            exact, affecting position computation.
+
+    Args:
+        output: The output buffer for the attention results.
+        q_arg: The query tensor buffer.
+        k: The key operand, with layout described by `KVType`.
+        v: The value operand, with layout described by `KVType`.
+        num_rows_q: Number of query rows in the batch.
+        mask: The attention mask instance.
+        valid_length: The per-sequence valid length buffer.
+        max_prompt_len_arg: The maximum prompt length across the batch.
+        max_cache_valid_length_arg: The maximum valid cache length.
+        scale: The scaling factor applied to the query-key dot product.
+        kv_input_row_offsets: Optional row offsets into the KV input.
+            for ragged layouts.
+        batch_size_arg: The number of sequences in the batch.
+        partition: The partition descriptor for splitting work across
+            CTAs.
+        ctx: The device context used to launch the kernel.
+        sink_weights: Optional sink weights for attention sinks.
+    """
     comptime assert _is_decoding[MaxPromptLenType](), "mha_1q is decode-only"
     comptime new_config = MHAConfig[config.dtype](
         config.num_heads,
@@ -2043,7 +2233,7 @@ def _mha_sm100[
 
     The general data layout and steps conform to flash attention. Two exceptions:
 
-    1 Partition across B, H, and num_keys (TODO).  The last one is split-K and
+    1 Partition across B, H, and num_keys (TODO). The last one is split-K and
       will need a separate reduction kernel at the end.
 
     2 First bmm becomes gemv and second bmm becomes gevm.
@@ -2457,13 +2647,13 @@ def _mha_sm100[
 
     barrier()
 
-    # Programmatic Dependent Launch.  This barrier is the last point every CTA
+    # Programmatic Dependent Launch. This barrier is the last point every CTA
     # reaches before the warp-specialized `do_partition` early-returns below,
     # so it is the divergence-free place to honor the launch-dependents
     # contract for every CTA (a producer CTA that skipped it would hang a
-    # waiting consumer such as `mha_splitk_reduce`).  `wait` overlaps this
+    # waiting consumer such as `mha_splitk_reduce`). `wait` overlaps this
     # grid's prologue with its predecessor's tail; `launch` lets the dependent
-    # reduce grid be admitted early.  No-op on non-SM90+ / when MHA_PDL=off.
+    # reduce grid be admitted early. No-op on non-SM90+ / when MHA_PDL=off.
     comptime if MHA_PDL_LEVEL > PDLLevel.OFF:
         wait_on_dependent_grids()
         launch_dependent_grids()

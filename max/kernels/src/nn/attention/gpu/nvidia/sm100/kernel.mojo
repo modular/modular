@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements the SM100 (Blackwell) warp-specialized FlashAttention-4 multi-head attention kernel with the two-query (2Q) variant.
+"""
+
 from std.math import align_up
 from std.sys import simd_width_of, size_of
 from std.gpu import (
@@ -87,6 +90,24 @@ struct SM100MHA2Q[
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
 ](TrivialRegisterPassable):
+    """Implements the two-query (2Q) FlashAttention-4 forward attention kernel for NVIDIA SM100 GPUs.
+
+    Bundles the comptime tile configuration, TMA operand types, and warp-specialized dispatch (softmax, correction, load, and MMA warps) that together compute scaled dot-product attention over a KV cache. When the configuration admits a type-compatible one-query (1Q) variant, short sequences are routed to the cheaper 1Q body at runtime.
+
+    Parameters:
+        KVLUTType: MHA operand describing the KV cache lookup table and dtype.
+        output_type: Output dtype of the attention result.
+        MaskType: Causal or unmasked attention mask type.
+        SchedulerType: Tile scheduler controlling iteration over KV tiles.
+        config: Comptime FA4 tile and pipeline configuration.
+        ValidLengthType: Optional pointer type for valid sequence lengths.
+        SinkType: Optional pointer type for attention sink weights.
+        KVRowOffsetsType: Optional pointer type for KV input row offsets.
+        _is_cache_length_accurate: Whether the cache length is known to be accurate.
+        MaxSeqLenType: Optionally-static maximum sequence length type.
+        PartitionType: KV cache partition scheme.
+    """
+
     comptime qkv_type = Self.KVLUTType.dtype
     comptime accum_type = DType.float32
     comptime simd_size: Int = simd_width_of[Self.qkv_type]()

@@ -49,11 +49,18 @@ from .mma import TiledMmaOp
 
 @always_inline
 def barrier():
+    """Emits the AMD GPU `s.barrier` instruction to synchronize all waves in the workgroup.
+    """
     llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
 
 
 @always_inline
 def block_sync_lds_direct_load[*, vmcnt: UInt32 = 0]():
+    """Waits for outstanding vector-memory instructions to complete before a direct LDS load.
+
+    Parameters:
+        vmcnt: The count of vector-memory instructions to wait on; zero waits for all outstanding VM operations.
+    """
     s_waitcnt[vmcnt=vmcnt]()
 
 
@@ -64,7 +71,7 @@ def block_sync_lds_direct_load[*, vmcnt: UInt32 = 0]():
 
 __extension Attention:
     def mha_prefill(mut self):
-        """Unified gfx950 MHA prefill — BF16+FP8, any mask, depth∈{64,128,256,512}.
+        """Unified gfx950 MHA prefill: BF16+FP8, any mask, depth∈{64,128,256,512}.
 
         See module docstring for the recipe.
         """

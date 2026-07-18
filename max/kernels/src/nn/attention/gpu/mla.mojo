@@ -11,6 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""GPU kernels for Multi-head Latent Attention (MLA) decoding and prefill.
+
+Provides the `flare_mla_decoding` and `flare_mla_prefill` entrypoints plus
+their platform-specific dispatch and kernel implementations targeting NVIDIA
+(SM80/SM100) and AMD (gfx950) GPUs, including split-K reduction, multi-token
+prediction (MTP) query folding, per-token scale, and sparse-attention support.
+"""
+
 from std.collections import InlineArray, OptionalReg
 from std.math import align_up, ceildiv, recip
 from std.math.uutils import umod, ufloordiv, udivmod
@@ -168,6 +176,12 @@ def mla_decode_max_seq_len[dtype: DType, num_heads: Int]() -> Int:
     routes S>1 to MLA prefill; NVIDIA folds up to `MLA_DECODE_MAX_SEQ_LEN` for both.
     Mirrors the host-side fold gate in `flare_mla_decoding_dispatch` so the router
     never hands the gate an S>1 batch it would reject.
+
+    Parameters:
+        dtype: Element type of the query tensor. On AMD the S>1 fold is
+            FP8-only, so non-FP8 routes S>1 to MLA prefill.
+        num_heads: Number of query attention heads. On AMD the S>1 fold
+            requires `num_heads <= AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS`.
     """
     return 1 if (
         has_amd_gpu_accelerator()
@@ -291,6 +305,88 @@ def flare_mla_decoding[
 
     This kernel handles batches with different valid lengths (i.e., before the
     padding). Such lengths are passed in valid_length argument.
+
+    Parameters:
+        rank: Tensor rank of `q` and `output` (inferred). Must be 4 for
+            padded inputs or 3 for `ragged` inputs.
+        cache_t: Paged KV cache type backing `k` (inferred). Carries the
+            KV layout, dtype, and head geometry.
+        mask_t: Mask functor type applied to attention scores (inferred).
+        dtype: Element type of `q` (inferred). Must be a half-float or
+            `float8_e4m3fn`.
+        config: MLA attention config carrying `num_heads` and `depth`
+            (576 for DeepSeek V2/3).
+        ragged: Whether `q` is a ragged rank-3 tensor with batch offsets
+            in `valid_length` instead of a padded rank-4 tensor (defaults
+            to `False`).
+        decoding_warp_split_k: Whether to use warp-level split-K
+            reduction within the decode kernel (defaults to `False`).
+        per_token_scale_rope_aware: Whether `q` and the KV cache use the
+            interleaved FP8+BF16 rope-aware layout (640 bytes/row, 576
+            logical dims) (defaults to `False`).
+        sparse: Whether to use sparse attention with pre-computed
+            physical KV row indices via gather4 TMA (defaults to
+            `False`).
+        rope_aware_kv_sparse: Sparse-only routing flag: `True` selects
+            the BF16-rope sparse kernel (split FP8 nope + BF16 rope);
+            `False` selects the all-FP8 sparse kernel (defaults to
+            `False`).
+        fold_shared_index: Whether to use the read-once shared-index fold
+            that packs folded output/LSE slots into one CTA (defaults to
+            `False`).
+
+    Args:
+        output: Output tensor with shape `[batch, num_heads, depth_v]`
+            (or ragged equivalent). Dtype is `bfloat16` when `q` is
+            `float8_e4m3fn`, else matches `q`.
+        q: Query tensor. Padded rank-4 shape
+            `[batch, q_seq_len, num_heads, depth]` (or rank-3 ragged).
+            For `per_token_scale_rope_aware`, the last dim is 640 FP8
+            elements representing 576 logical dims.
+        k: Paged KV cache operand. V is derived as `K[:, :, :depth_v]`,
+            so V is not loaded separately.
+        mask_functor: Mask functor instance applied to attention scores.
+        valid_length: Per-batch `uint32` tensor of valid (pre-padding)
+            sequence lengths. For ragged inputs, carries cumulative row
+            offsets.
+        scale: Softmax scale factor applied to QK^T.
+        ctx: Device context used to enqueue the kernel.
+        scalar_args_buf: Optional GPU buffer of pre-computed scalar
+            dispatch args for capturable graph launches; null for the
+            legacy host-computed path.
+        q_max_seq_len: Maximum query sequence length (query tokens per
+            batch). Defaults to the cache's `max_prompt_length` when
+            `None`.
+        kv_input_row_offsets: Optional per-batch row offsets into a
+            ragged KV layout; `None` for non-ragged inputs.
+        num_partitions: Optional explicit split-K partition count;
+            `None` selects via heuristic.
+        q_scale_ptr: Optional per-token Q scale array (`float32`); folded
+            into the softmax as `sigma_Q[token_idx]`. `None` means scale
+            1.0.
+        d_indices: Optional sparse indices: `d_indices[batch *
+            indices_stride + token]` gives the physical KV row index.
+            `None` for non-sparse.
+        indices_stride: Allocation stride (max topk across all batches)
+            for `d_indices` (defaults to 0).
+        topk_lengths: Optional per-batch array of actual valid sparse
+            index counts; `None` for non-sparse.
+        attn_sink_ptr: Optional attention-sink scale pointer
+            (`float32`); `None` to disable.
+        extra_k: Optional separate always-attend KV cache operand,
+            appended after the topk tokens in the attention loop; `None`
+            to disable.
+        extra_d_indices: Optional sparse indices for `extra_k`, same
+            layout as `d_indices`; `None` for non-sparse extra KV.
+        extra_indices_stride: Allocation stride for `extra_d_indices`
+            (defaults to 0).
+        extra_topk_lengths: Optional per-batch valid index counts for
+            `extra_k`; `None` for non-sparse extra KV.
+        extra_scales_ptr: Optional per-token scale pointer for
+            `extra_k`; `None` to disable.
+        num_partitions_in: Optional capturable-graph scalar from the
+            Python resolver; when set, the SM100 dispatcher uses it
+            instead of recomputing `num_partitions` at grid time.
     """
     comptime assert (
         ragged or rank == 4
@@ -560,6 +656,105 @@ def flare_mla_decoding_dispatch[
     # dispatch matches the kernel's device-side divmod.
     num_partitions_in: Optional[Int] = None,
 ) raises:
+    """Dispatches an MLA decoding request to the platform-specific kernel.
+
+    Routes to the SM100 (`mla_decode_sm100_dispatch`), AMD, or legacy NVIDIA
+    decode path based on the target GPU, selects the block-M tile geometry
+    (including the AMD MTP token-fold and BM=32/64 heuristic), and launches the
+    `mla_decoding` kernel with optional split-K reduction via
+    `mla_splitk_reduce`.
+
+    Parameters:
+        k_t: KV cache operand type backing `k` (inferred). Either
+            `KVCacheMHAOperand` (paged cache) or
+            `LayoutTensorMHAOperand` (TileTensor input).
+        mask_t: Mask functor type applied to attention scores (inferred).
+        dtype: Element type of `q` (inferred). Must be a half-float or
+            `float8_e4m3fn`.
+        kv_num_heads: Number of KV attention heads. Must be 1 for MLA.
+        config: MLA attention config carrying `num_heads` and `depth`
+            (576 for DeepSeek V2/3).
+        ragged: Whether `q` is a ragged rank-3 tensor with batch offsets
+            in `valid_length` instead of a padded rank-4 tensor (defaults
+            to `False`).
+        _is_cache_length_accurate: Workaround unifying KVCache and
+            TileTensor inputs: `True` when `max_cache_valid_length` is the
+            accurate latest length (TileTensor case); `False` when it
+            precedes the latest tokens, for example zero for continuous
+            execution (KV cache case) (defaults to `False`).
+        _use_valid_length: Whether `valid_length` is needed for masking;
+            `False` skips it for TileTensor inputs to avoid benchmark
+            overhead (defaults to `True`).
+        decoding_warp_split_k: Whether to use warp-level split-K
+            reduction within the decode kernel (defaults to `False`).
+        per_token_scale_rope_aware: Whether `q` and the KV cache use the
+            interleaved FP8+BF16 rope-aware layout (640 bytes/row, 576
+            logical dims) (defaults to `False`).
+        sparse: Whether to use sparse attention with pre-computed
+            physical KV row indices via gather4 TMA (defaults to
+            `False`).
+        rope_aware_kv_sparse: Sparse-only routing flag: `True` selects
+            the BF16-rope sparse kernel (split FP8 nope + BF16 rope);
+            `False` selects the all-FP8 sparse kernel (defaults to
+            `False`).
+        fold_shared_index: Whether to use the read-once shared-index fold
+            that packs folded output/LSE slots into one CTA (defaults to
+            `False`).
+
+    Args:
+        output: Output tensor with shape `[batch, num_heads, depth_v]`
+            (or ragged equivalent). Dtype is `bfloat16` when `q` is
+            `float8_e4m3fn`, else matches `q`.
+        q: Query tensor. Padded rank-4 shape
+            `[batch, q_seq_len, num_heads, depth]` (or rank-3 ragged).
+            For `per_token_scale_rope_aware`, the last dim is 640 FP8
+            elements representing 576 logical dims.
+        k: KV cache operand. V is derived as `K[:, :, :depth_v]`, so V is
+            not loaded separately.
+        mask_functor: Mask functor instance applied to attention scores.
+        valid_length: Per-batch `uint32` tensor of valid (pre-padding)
+            sequence lengths. For ragged inputs, carries cumulative row
+            offsets.
+        max_prompt_len: Maximum query sequence length (query tokens per
+            batch); the MTP token-fold ceiling.
+        max_cache_valid_length: Total number of cached KV entries (the
+            cache context length).
+        scale: Softmax scale factor applied to QK^T.
+        ctx: Device context used to enqueue the kernel.
+        scalar_args_buf: Optional GPU buffer of pre-computed scalar
+            dispatch args for capturable graph launches; null for the
+            legacy host-computed path.
+        kv_input_row_offsets: Optional per-batch row offsets into a
+            ragged KV layout; `None` for non-ragged inputs.
+        num_partitions: Optional explicit split-K partition count;
+            `None` selects via heuristic.
+        q_scale_ptr: Optional per-token Q scale array (`float32`); folded
+            into the softmax as `sigma_Q[token_idx]`. `None` means scale
+            1.0.
+        d_indices: Optional sparse indices: `d_indices[batch *
+            indices_stride + token]` gives the physical KV row index.
+            `None` for non-sparse.
+        indices_stride: Allocation stride (max topk across all batches)
+            for `d_indices` (defaults to 0).
+        topk_lengths: Optional per-batch array of actual valid sparse
+            index counts; `None` for non-sparse.
+        attn_sink_ptr: Optional attention-sink scale pointer
+            (`float32`); `None` to disable.
+        extra_k: Optional separate always-attend KV cache operand,
+            appended after the topk tokens in the attention loop; `None`
+            to disable.
+        extra_d_indices: Optional sparse indices for `extra_k`, same
+            layout as `d_indices`; `None` for non-sparse extra KV.
+        extra_indices_stride: Allocation stride for `extra_d_indices`
+            (defaults to 0).
+        extra_topk_lengths: Optional per-batch valid index counts for
+            `extra_k`; `None` for non-sparse extra KV.
+        extra_scales_ptr: Optional per-token scale pointer for
+            `extra_k`; `None` to disable.
+        num_partitions_in: Optional capturable-graph scalar from the
+            Python resolver; when set, the SM100 dispatcher uses it
+            instead of recomputing `num_partitions` at grid time.
+    """
     comptime num_heads = config.num_heads
     comptime depth = config.depth
     comptime group = config.num_heads // kv_num_heads
@@ -1136,7 +1331,7 @@ def flare_mla_decoding_dispatch[
             # `num_heads <= 16` triggers the 16x16x128 MFMA shape (see
             # `AMDStructuredConfig.get_mma_shape`); pair it with BM=WM=16
             # so each warp packs one MFMA tile of valid heads (no m_mma=1
-            # doing wasted work on OOB rows).  Without this, BM=32 with
+            # doing wasted work on OOB rows). Without this, BM=32 with
             # mma_shape[0]=16 gives num_m_mmas=2 and the second m_mma is
             # wasted for any num_heads <= 16.
             comptime if num_heads <= 16:
@@ -1249,6 +1444,58 @@ def mla_splitk_reduce[
     # a zero-length placeholder otherwise.
     valid_length_tt: TileTensor[DType.uint32, ValidLT, ImmutAnyOrigin],
 ):
+    """Combines per-partition MLA decode partial outputs into the final result.
+
+    Performs the split-K reduction for MLA decoding by merging per-partition
+    intermediate outputs and softmax statistics (exp-sum and qk-max) across the
+    partition axis using `W_PARTS` warps per CTA and `D_TILES` CTAs over the
+    depth axis, then stores the rescaled output to global memory.
+
+    Parameters:
+        intermediate_type: Element type of the per-partition
+            intermediate output buffer.
+        output_type: Element type of the final reduced output.
+        ValidLT: Layout type of the `valid_length_tt` tensor (inferred).
+        depth: Per-head attention head dimension. Must be positive and
+            divisible by `D_TILES * WARP_SIZE`; 576 for DeepSeek V2/3.
+        num_heads: Number of query attention heads. The folded
+            query-row count is `num_heads * q_seq_len`.
+        D_TILES: Number of CTAs the kernel launches along the depth
+            axis; each CTA owns `depth / D_TILES` elements.
+        W_PARTS: Number of warps per CTA, each handling
+            `MAX_PARTITIONS / W_PARTS` partitions.
+        MAX_PARTITIONS: Upper bound on the partition count this
+            specialization handles; must be a multiple of `WARP_SIZE`
+            and `W_PARTS`.
+        use_exp2: Whether the softmax rescale uses `exp2` instead of
+            `exp` (defaults to `False`). AMD uses `exp2`.
+        q_seq_len: Query tokens per batch (the MTP token-fold ceiling);
+            the MMA M dimension is `num_heads * q_seq_len` (defaults
+            to 1).
+        ragged: Whether the final store is remapped through
+            `valid_length_tt` to the ragged
+            `[total_q_tokens, num_heads, depth]` layout (defaults to
+            `False`).
+
+    Args:
+        intermediate_ptr: Pointer to the per-partition intermediate
+            output with shape
+            `[num_partitions, batch_size, num_rows, depth]` where
+            `num_rows = num_heads * q_seq_len`.
+        output_ptr: Pointer to the final output buffer with shape
+            `[batch_size * num_rows, depth]`.
+        exp_sum_ptr: Pointer to per-partition exp-sum statistics with
+            shape `[num_partitions, batch_size, num_rows]`.
+        qk_max_ptr: Pointer to per-partition qk-max statistics with
+            shape `[num_partitions, batch_size, num_rows]`.
+        batch_size: Number of sequences in the batch.
+        num_partitions: Number of split-K partitions actually used.
+            Must be positive and at most `MAX_PARTITIONS`.
+        valid_length_tt: `uint32` tensor of input row offsets of shape
+            `[batch_size + 1]`. Read only on the
+            `ragged and q_seq_len > 1` path to remap the final store;
+            a zero-length placeholder otherwise.
+    """
     comptime assert depth > 0, "depth must be positive"
     comptime assert (
         depth % (D_TILES * WARP_SIZE) == 0
@@ -1521,6 +1768,73 @@ def mla_decoding[
     ],  # valid length per batch
     mask: mask_t,
 ):
+    """MLA decoding kernel that computes single-batch attention per CTA.
+
+    Sets up split-K offsets, batch indexing, and ragged or dense query strides,
+    then delegates to `mla_decoding_single_batch` on NVIDIA or
+    `Attention.mla_decode` on AMD to perform the actual QK and PV computation
+    for one decode step (with optional MTP query folding on AMD).
+
+    Parameters:
+        q_type: Element type of the query tensor `q_ptr`. Must be a
+            half-float or `float8_e4m3fn`.
+        k_t: KV cache operand type backing `k`. Carries the KV layout,
+            dtype, and head geometry.
+        output_type: Element type of the output tensor `output_ptr`.
+            `bfloat16` when `q_type` is `float8_e4m3fn`, else matches
+            `q_type`.
+        mask_t: Mask functor type applied to attention scores.
+        ValidLT: Compile-time layout of the `valid_length_tt` tensor.
+        BM: Number of query rows per block (the M-tile height).
+        BN: Number of key rows per block (the N-tile width).
+        BK: Tile size in the depth (head) dimension.
+        WM: Warp tile height in the M dimension.
+        WN: Warp tile width in the N dimension.
+        depth: Total head dimension of Q and K (576 for DeepSeek V2/3).
+        depth_v: V head dimension; V is derived as `K[:, :, :depth_v]`
+            (512 for DeepSeek V2/3).
+        num_heads: Number of query attention heads.
+        num_threads: Number of threads per CTA, derived from the warp
+            tile geometry.
+        num_pipeline_stages: Number of software-pipelined MMA stages.
+        group: GQA group size (`num_heads // kv_num_heads`); for MLA
+            `kv_num_heads == 1` so `group == num_heads` (defaults to 1).
+        ragged: Whether `q_ptr` is a ragged tensor with batch offsets in
+            `valid_length_tt` instead of a padded tensor (defaults to
+            `False`).
+        _use_valid_length: Whether to read `valid_length_tt` for per-batch
+            sequence lengths; `False` treats all sequences as `q_seq_len`
+            long (defaults to `False`).
+        _is_cache_length_accurate: Whether `max_cache_valid_length` is the
+            accurate latest length; `False` adds `seq_len` for continuous
+            execution (defaults to `False`).
+        decoding_warp_split_k: Whether to use warp-level split-K
+            reduction within the decode kernel (defaults to `False`).
+        q_seq_len: Number of query tokens (S) folded into the MMA M
+            dimension for MTP; 1 for single-token decode (defaults to 1).
+
+    Args:
+        q_ptr: Pointer to the query tensor with shape `[batch,
+            q_seq_len, num_heads, depth]` (or ragged equivalent).
+        k: KV cache operand. V is derived as `K[:, :, :depth_v]`, so V
+            is not loaded separately.
+        output_ptr: Pointer to the output tensor with shape `[batch,
+            q_seq_len, num_heads, depth_v]` (or ragged equivalent).
+        exp_sum_ptr: Pointer to the per-row softmax exp-sum stats
+            buffer, used for split-K reduction.
+        qk_max_ptr: Pointer to the per-row softmax max stats buffer,
+            used for split-K reduction.
+        scale: Softmax scale factor applied to QK^T.
+        batch_size: Number of sequences in the batch.
+        num_partitions: Split-K partition count; 1 disables split-K
+            reduction.
+        max_cache_valid_length: Total number of cached KV entries (the
+            cache context length).
+        valid_length_tt: Per-batch `uint32` tensor of valid (pre-padding)
+            sequence lengths. For ragged inputs, carries cumulative row
+            offsets.
+        mask: Mask functor instance applied to attention scores.
+    """
     var valid_length = valid_length_tt.to_layout_tensor()
     var batch_idx = block_idx.z
 
@@ -1688,7 +2002,58 @@ def mla_decoding_single_batch[
     mask: mask_t,
     batch_idx: Int,
 ):
-    """Flash attention v2 algorithm."""
+    """Flash attention v2 algorithm.
+
+    Computes single-batch MLA attention for one decode step on NVIDIA
+    GPUs: Q @ K^T with online softmax, then P @ V where V is derived as
+    `K[:, :depth_v]`. Split-K partitions the key range across
+    `block_idx.x`; `block_idx.y` selects the query head group.
+
+    Parameters:
+        q_type: Element type of the query tensor `q_ptr` (inferred).
+            Must be a half-float or `float8_e4m3fn`.
+        k_t: KV cache operand type backing `k` (inferred). Carries the
+            KV layout, dtype, and head geometry.
+        output_type: Element type of the output tensor `output_ptr`
+            (inferred). `bfloat16` when `q_type` is `float8_e4m3fn`,
+            else matches `q_type`.
+        mask_t: Mask functor type applied to attention scores
+            (inferred).
+        BM: Number of query rows per block (the M-tile height).
+        BN: Number of key rows per block (the N-tile width).
+        BK: Tile size in the depth (head) dimension.
+        WM: Warp tile height in the M dimension.
+        WN: Warp tile width in the N dimension.
+        depth: Total head dimension of Q and K (576 for DeepSeek V2/3).
+        depth_v: V head dimension; V is derived as `K[:, :, :depth_v]`
+            (512 for DeepSeek V2/3).
+        num_threads: Number of threads per CTA, derived from the warp
+            tile geometry.
+        num_pipeline_stages: Number of software-pipelined MMA stages.
+        decoding_warp_split_k: Whether to use warp-level split-K
+            reduction within the decode kernel (defaults to `False`).
+            Currently unsupported; must be `False`.
+
+    Args:
+        q_ptr: Pointer to the query tensor for this batch, with
+            `num_heads` rows of `depth` elements each, indexed by
+            `block_idx.y` in `BM`-row blocks.
+        k: KV cache operand. V is derived as `K[:, :, :depth_v]`, so V
+            is not loaded separately.
+        output_ptr: Pointer to the output tensor for this batch, with
+            `num_heads` rows of `depth_v` elements each, indexed by
+            `block_idx.y` in `BM`-row blocks.
+        exp_sum_ptr: Pointer to the per-row softmax exp-sum stats
+            buffer, used for split-K reduction.
+        qk_max_ptr: Pointer to the per-row softmax max stats buffer,
+            used for split-K reduction.
+        scale: Softmax scale factor applied to QK^T.
+        num_keys: Total number of cached KV entries for this batch.
+        num_partitions: Split-K partition count; 1 disables split-K
+            reduction.
+        mask: Mask functor instance applied to attention scores.
+        batch_idx: Batch index into the paged KV cache.
+    """
     comptime k_type = k_t.dtype
     comptime assert q_type == k_type
 
@@ -2349,6 +2714,47 @@ def flare_mla_prefill[
 
     This kernel handles batches with different valid lengths (i.e., before the
     padding). Such lengths are passed in valid_length argument.
+
+    Parameters:
+        rank: Tensor rank of `q` and `output` (inferred). Must be 3 for
+            ragged inputs.
+        cache_t: Paged KV cache type backing `k_rope` (inferred).
+            Carries the KV layout, dtype, and head geometry.
+        mask_t: Mask functor type applied to attention scores (inferred).
+        dtype: Element type of `q` (inferred). Must be `bfloat16` or
+            `float8_e4m3fn`.
+        output_type: Element type of `output` (inferred). `bfloat16` when
+            `q` is `float8_e4m3fn`, else matches `q`.
+
+    Args:
+        output: Output tensor with ragged rank-3 shape
+            `[total_q_tokens, num_heads, depth]`. Dtype is `bfloat16`
+            when `q` is `float8_e4m3fn`, else matches `q`.
+        q: Query tensor with ragged rank-3 shape
+            `[total_q_tokens, num_heads, q_depth]`. For DeepSeek V2/3,
+            `q_depth` is 192.
+        k: Key tensor (nope part) with shape
+            `[cache_len, num_heads, depth]`. For DeepSeek V2/3, `depth`
+            is 128.
+        v: Value tensor with shape `[cache_len, num_heads, depth]`.
+            Same `depth` as `k`.
+        k_rope: Paged KV cache operand providing the rope part of K,
+            with shape `[cache_len, 1, q_depth - depth]`. For DeepSeek
+            V2/3, the last dim is 64.
+        mask_functor: Mask functor instance applied to attention scores.
+        valid_length: Per-batch `uint32` tensor of cumulative row offsets
+            into the ragged Q layout; `offsets[b]` to `offsets[b+1]`
+            gives batch `b`'s token range.
+        cache_row_offsets: Per-batch `uint32` tensor of row offsets into
+            the ragged KV layout, used to build the ragged K/V operands.
+        scale: Softmax scale factor applied to QK^T.
+        ctx: Device context used to enqueue the kernel.
+        q_max_seq_len: Optional maximum query sequence length (tokens per
+            batch); defaults to the cache's `max_prompt_length` when
+            `None`.
+        cache_offsets: Optional per-batch `uint32` tensor of starting
+            offsets into the paged KV cache; `None` when the cache is
+            contiguous.
     """
     comptime assert rank == 3, "only support ragged inputs"
 
@@ -3032,6 +3438,58 @@ def flare_mla_prefill_dispatch[
         ]
     ] = None,
 ) raises:
+    """Dispatches an MLA prefill request to the platform-specific kernel.
+
+    Routes to `mla_sm100_prefill` on SM100 GPUs or enqueues the generic
+    `mla_prefill` kernel on other NVIDIA and AMD targets, computing the grid
+    and shared-memory layout from the MHA config.
+
+    Parameters:
+        k_t: Key operand type backing `k` (inferred). Either
+            `RaggedMHAOperand` or `LayoutTensorMHAOperand`.
+        v_t: Value operand type backing `v` (inferred). Either
+            `RaggedMHAOperand` or `LayoutTensorMHAOperand`.
+        k_rope_t: KV cache operand type backing `k_rope` (inferred).
+            Either `KVCacheMHAOperand` or `LayoutTensorMHAOperand`.
+        mask_t: Mask functor type applied to attention scores (inferred).
+        dtype: Element type of `q` (inferred). Must be `bfloat16` or
+            `float8_e4m3fn`.
+        output_type: Element type of `output` (inferred). `bfloat16`
+            when `q` is `float8_e4m3fn`, else matches `q`.
+        kv_num_heads: Number of KV attention heads. Must be 1 for MLA.
+        config: MLA attention config carrying `num_heads`, `depth`, and
+            tile geometry (`block_m`, `block_n`, `block_k`).
+        q_depth: Q head dimension in elements (defaults to 192). For
+            DeepSeek V2/3, 192 = 128 nope + 64 rope.
+        cache_depth: KV cache head dimension in elements (defaults to
+            576). The absorbed-latent width of the paged MLA cache.
+        _ndbuffer_mha_operand: Whether the K/V/`k_rope` operands use
+            ND-buffer layout instead of the default TileTensor layout
+            (defaults to `False`).
+
+    Args:
+        output: Output tensor with ragged rank-3 shape
+            `[total_q_tokens, num_heads, v_depth]`. Dtype is
+            `bfloat16` when `q` is `float8_e4m3fn`, else matches `q`.
+        q: Query tensor with ragged rank-3 shape
+            `[total_q_tokens, num_heads, q_depth]`.
+        k: Key operand (nope part). Carries the ragged K tensor and
+            row offsets.
+        v: Value operand. Carries the ragged V tensor and row offsets.
+        k_rope: KV cache operand providing the rope part of K, with
+            shape `[cache_len, 1, q_depth - depth]`.
+        mask_functor: Mask functor instance applied to attention scores.
+        valid_length: Per-batch `uint32` tensor of cumulative row offsets
+            with `batch_size + 1` entries; `offsets[b]` to
+            `offsets[b+1]` gives batch `b`'s token range.
+        max_prompt_len: Maximum query sequence length (tokens per batch
+            across all batches); drives the grid's M dimension.
+        scale: Softmax scale factor applied to QK^T.
+        ctx: Device context used to enqueue the kernel.
+        cache_offsets: Optional per-batch `uint32` tensor of starting
+            offsets into the paged KV cache; `None` when the cache is
+            contiguous.
+    """
     comptime num_heads = config.num_heads
     comptime depth = config.depth
     comptime group = config.num_heads // kv_num_heads
@@ -3197,6 +3655,65 @@ def mla_prefill[
     ],
     mask: mask_t,
 ):
+    """MLA prefill kernel that computes attention for sequences longer than one token.
+
+    Resolves per-batch sequence lengths from the ragged row-offsets, then
+    delegates to `mla_prefill_single_batch` on NVIDIA or
+    `Attention.mla_prefill` on AMD to compute the QK and PV matmuls with
+    online softmax over the full prompt plus cached KV.
+
+    Parameters:
+        q_type: Element type of the query tensor `q_ptr` (inferred).
+            Must be a half-float or `float8_e4m3fn`.
+        k_t: Key operand type backing `k` (inferred). Provides the
+            nope part of K.
+        v_t: Value operand type backing `v` (inferred).
+        k_rope_t: KV cache operand type backing `k_rope` (inferred).
+            Provides the rope part of K and the per-batch cache
+            length.
+        output_type: Element type of `output_ptr` (inferred).
+            `bfloat16` when `q_type` is `float8_e4m3fn`, else matches
+            `q_type`.
+        mask_t: Mask functor type applied to attention scores
+            (inferred).
+        valid_layout: Compile-time layout of `valid_length_tt`
+            (inferred).
+        config: MLA attention config carrying `num_heads`, `depth`,
+            and tile geometry (`block_m`, `block_n`, `block_k`).
+        group: GQA group size, `num_heads // num_kv_heads` (defaults
+            to 128).
+        q_depth: Q head dimension in elements (defaults to 192). For
+            DeepSeek V2/3, 192 = 128 nope + 64 rope.
+        cache_depth: KV cache head dimension in elements (defaults
+            to 576). The absorbed-latent width of the paged MLA
+            cache.
+        _ndbuffer_mha_operand: Whether the K/V/`k_rope` operands use
+            ND-buffer layout instead of the default TileTensor
+            layout (defaults to `False`).
+
+    Args:
+        q_ptr: Pointer to the query tensor with shape
+            `[total_q_tokens, num_heads, q_depth]`.
+        k: Key operand (nope part).
+        v: Value operand.
+        k_rope: KV cache operand providing the rope part of K;
+            `k_rope.cache_length(batch_idx)` gives the cached
+            length.
+        output_ptr: Pointer to the output tensor with shape
+            `[total_q_tokens, num_heads, depth]`.
+        scale: Softmax scale factor applied to QK^T.
+        batch_size: Number of batches in the request; drives the
+            grid's z dimension.
+        seq_len_arg: Maximum query sequence length (padding ceiling
+            across all batches).
+        valid_length_tt: Per-batch `uint32` tensor of cumulative row
+            offsets with `batch_size + 1` entries; `offsets[b]` to
+            `offsets[b+1]` gives batch `b`'s token range.
+        cache_offsets: Optional per-batch `uint32` tensor of starting
+            offsets into the paged KV cache; `None` when the cache
+            is contiguous.
+        mask: Mask functor instance applied to attention scores.
+    """
     var valid_length = valid_length_tt.to_layout_tensor()
     comptime depth = config.depth
     var batch_idx = block_idx.z
@@ -3312,7 +3829,56 @@ def mla_prefill_single_batch[
     mask: mask_t,
     batch_idx: Int,
 ):
-    """MLA for encoding where seqlen > 1."""
+    """MLA for encoding where seqlen > 1.
+
+    Parameters:
+        q_type: Element type of the query tensor `q_ptr` (inferred).
+            Must be a half-float or `float8_e4m3fn`.
+        k_t: Key operand type backing `k` (inferred). Provides the
+            nope part of K.
+        v_t: Value operand type backing `v` (inferred).
+        k_rope_t: KV cache operand type backing `k_rope` (inferred).
+            Provides the rope part of K and the per-batch cache
+            length.
+        output_type: Element type of `output_ptr` (inferred).
+            `bfloat16` when `q_type` is `float8_e4m3fn`, else matches
+            `q_type`.
+        mask_t: Mask functor type applied to attention scores
+            (inferred).
+        config: MLA attention config carrying `num_heads`, `depth`,
+            and tile geometry (`block_m`, `block_n`, `block_k`).
+        group: GQA group size, `num_heads // num_kv_heads` (defaults
+            to 1).
+        q_depth: Q head dimension in elements (defaults to 192). For
+            DeepSeek V2/3, 192 = 128 nope + 64 rope.
+        cache_depth: KV cache head dimension in elements (defaults
+            to 576). The absorbed-latent width of the paged MLA
+            cache.
+
+    Args:
+        q_ptr: Pointer to this batch's query rows with shape
+            `[seq_len, num_heads, q_depth]`.
+        k: Key operand providing the nope (latent) part of K.
+        v: Value operand.
+        k_rope: KV cache operand providing the rope part of K;
+            `k_rope.cache_length(batch_idx)` gives the cached
+            length.
+        output_ptr: Pointer to this batch's output rows with shape
+            `[seq_len, num_heads, depth]` where `depth` is
+            `config.depth`.
+        scale: Softmax scale factor applied to QK^T.
+        seq_len: Valid sequence length (without padding) for this
+            batch.
+        max_seq_len: Padded sequence length ceiling for this batch.
+        start_pos: Starting position of the query within the
+            sequence (the cached length before this prefill).
+        cache_start_pos: Starting offset into the paged KV cache for
+            this batch.
+        num_keys: Total number of KV keys (cached plus new tokens)
+            for this batch.
+        mask: Mask functor instance applied to attention scores.
+        batch_idx: Index of the current batch in the request.
+    """
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
     comptime k_rope_type = k_rope_t.dtype
@@ -4064,6 +4630,19 @@ def set_buffer_lengths_to_zero[
         mut=True, DType.int32, BufferLengthsLayoutType, MutUntrackedOrigin
     ],
 ):
+    """Zeroes out every element of a 1D buffer-lengths tensor.
+
+    Used as the empty-batch fallback in `mla_prefill_plan` so downstream
+    prefill iterations see no work to process.
+
+    Parameters:
+        BufferLengthsLayoutType: Layout type of the `buffer_lengths`
+            tensor (inferred).
+
+    Args:
+        buffer_lengths: 1D `int32` tensor of per-chunk buffer lengths
+            to be zeroed. Must have `flat_rank == 1`.
+    """
     comptime assert buffer_lengths.flat_rank == 1
     comptime MAX_CHUNKS = buffer_lengths.static_shape[0]
 
@@ -4094,6 +4673,32 @@ def mla_prefill_plan[
         1. Buffer offsets for each sequence in each chunk
         2. Cache offsets for each sequence in each chunk
         3. Total buffer lengths for each processing iteration
+
+    Parameters:
+        cache_t: Paged KV cache type backing `k_cache` (inferred).
+            Carries the KV layout, dtype, and page size.
+
+    Args:
+        buffer_row_offsets: Output `[MAX_CHUNKS, batch_size + 1]`
+            tensor of per-chunk buffer row offsets.
+            `buffer_row_offsets[chunk_idx, seq_idx]` is the starting
+            row offset within the buffer for sequence `seq_idx` in
+            chunk `chunk_idx`.
+        cache_offsets: Output `[MAX_CHUNKS, batch_size]` tensor of
+            per-chunk cache offsets. `cache_offsets[chunk_idx,
+            seq_idx]` is the starting offset into the paged KV cache
+            for sequence `seq_idx` in chunk `chunk_idx`.
+        buffer_lengths: Output `[MAX_CHUNKS]` tensor of per-chunk
+            total buffer lengths. `buffer_lengths[chunk_idx]` is the
+            total number of valid rows across all sequences in
+            chunk `chunk_idx`; -1 marks unused chunks.
+        input_row_offsets: Input `[batch_size + 1]` tensor of
+            cumulative row offsets; `offsets[b]` to `offsets[b+1]`
+            gives batch `b`'s new token range.
+        k_cache: Paged KV cache providing per-sequence cache lengths.
+        buffer_token_size: Fixed buffer size in tokens; each chunk
+            processes at most this many tokens per sequence.
+        ctx: Device context used to enqueue the kernel.
     """
     var batch_size: Int = Int(input_row_offsets.dim[0]()) - 1
 
@@ -4157,6 +4762,46 @@ def mla_prefill_plan_kernel[
     k_cache: cache_t,
     buffer_token_size: UInt32,
 ):
+    """Plans how to process a batch of varying-length sequences through a fixed-size buffer.
+
+    For each sequence, computes the per-chunk buffer row offsets, cache offsets,
+    and total buffer lengths needed to divide the cached plus new tokens into
+    fixed-size chunks aligned to the page size, enabling the MLA prefill kernel
+    to process sequences that exceed the buffer in multiple iterations.
+
+    Parameters:
+        BufferRowOffsetsLayoutType: Compile-time layout of
+            `buffer_row_offsets` (inferred).
+        CacheOffsetsLayoutType: Compile-time layout of `cache_offsets`
+            (inferred).
+        BufferLengthsLayoutType: Compile-time layout of `buffer_lengths`
+            (inferred).
+        InputRowOffsetsLayoutType: Compile-time layout of
+            `input_row_offsets` (inferred).
+        cache_t: Paged KV cache type backing `k_cache` (inferred).
+            Carries the KV layout, dtype, and page size.
+
+    Args:
+        buffer_row_offsets: Output `[MAX_CHUNKS, batch_size + 1]`
+            tensor of per-chunk buffer row offsets.
+            `buffer_row_offsets[chunk_idx, seq_idx]` is the starting
+            row offset within the buffer for sequence `seq_idx` in
+            chunk `chunk_idx`.
+        cache_offsets: Output `[MAX_CHUNKS, batch_size]` tensor of
+            per-chunk cache offsets. `cache_offsets[chunk_idx,
+            seq_idx]` is the starting offset into the paged KV cache
+            for sequence `seq_idx` in chunk `chunk_idx`.
+        buffer_lengths: Output `[MAX_CHUNKS]` tensor of per-chunk
+            total buffer lengths. `buffer_lengths[chunk_idx]` is the
+            total number of valid rows across all sequences in
+            chunk `chunk_idx`; -1 marks unused chunks.
+        input_row_offsets: Input `[batch_size + 1]` tensor of
+            cumulative row offsets; `offsets[b]` to `offsets[b+1]`
+            gives batch `b`'s new token range.
+        k_cache: Paged KV cache providing per-sequence cache lengths.
+        buffer_token_size: Fixed buffer size in tokens; each chunk
+            processes at most this many tokens per sequence.
+    """
     comptime assert buffer_row_offsets.flat_rank == 2
     comptime assert cache_offsets.flat_rank == 2
     comptime assert buffer_lengths.flat_rank == 1

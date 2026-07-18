@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides wrappers around ARM NEON dot-product and matrix-multiply-accumulate intrinsics."""
+
 from std.sys import llvm_intrinsic
 
 from std.memory.unsafe import bitcast

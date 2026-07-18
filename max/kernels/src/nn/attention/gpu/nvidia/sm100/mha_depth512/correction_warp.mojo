@@ -62,6 +62,24 @@ def depth512_correction[
     num_keys: UInt32,
     mask: MaskType,
 ):
+    """Rescales the O accumulator in TMEM when the per-row softmax maximum changes.
+
+    Parameters:
+        MaskType: Attention mask type used to compute the per-iteration loop count.
+        qkv_dtype: The data type of the query, key, and value tensors.
+        config: The depth-512 SM100 attention configuration holding tile
+            sizes, TMEM layout, and pipeline stage counts.
+        page_size: KV cache page size in tokens passed to the mask iteration
+            counter.
+
+    Args:
+        smem: Shared-memory scratch holding the correction factor and mbarriers.
+        tmem_addr: Base TMEM address for this CTA's accumulators.
+        seq_id: Sequence identifier forwarded to the mask iteration counter.
+        score_row: Starting row offset forwarded to the mask iteration counter.
+        num_keys: Number of valid keys forwarded to the mask iteration counter.
+        mask: Attention mask used to compute the per-iteration loop count.
+    """
     comptime accum_type = DType.float32
     comptime assert size_of[accum_type]() == 4
     comptime BM = config.BM
@@ -108,7 +126,7 @@ def depth512_correction[
     )
 
     # ---- Double-buffer constants for the TMEM rescale loop -------------------
-    # Each phase processes o_cols columns.  Follows the FA4 pattern:
+    # Each phase processes o_cols columns. Follows the FA4 pattern:
     # alternate between o_b0 and o_b1 loads so masking overlaps TMEM access.
     comptime batch_size = 16 if o_cols % 16 == 0 else 8
     comptime assert o_cols % batch_size == 0

@@ -34,6 +34,20 @@ struct AMDStructuredConfig[
     token_gen: Bool = False,
     mla_mode: Bool = False,
 ](ImplicitlyCopyable):
+    """Holds the tile layout and indexing helpers for GFX950 structured attention.
+
+    Wraps an `MHAConfig` with group-query and MLA metadata, deriving the
+    comptime shared-memory decisions (`shared_kv`, `full_kv`,
+    `depth_padded`, `double_buffer`) and exposing query/key-value head and
+    tile index helpers used by the attention kernels.
+
+    Parameters:
+        config: The base multi-head attention configuration.
+        group: Number of query heads sharing one key-value head.
+        token_gen: Selects decode (`True`) versus prefill (`False`) tiling.
+        mla_mode: Enables multi-latent attention tiling when `True`.
+    """
+
     comptime shared_kv = Self.token_gen and Self.config.depth > 256
     comptime full_kv = True
     comptime depth_padded = False

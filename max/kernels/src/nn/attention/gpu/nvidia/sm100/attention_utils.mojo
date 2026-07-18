@@ -74,7 +74,7 @@ from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 
 
-# IEEE-754 FP32 exponent bias.  Clamping `exp2` inputs at
+# IEEE-754 FP32 exponent bias. Clamping `exp2` inputs at
 # `-FP32_EXP_BIAS` keeps the result within FP32's representable range
 # (the smallest normal positive float32 is `2^-126`, and going much
 # more negative just underflows to zero).
@@ -125,6 +125,8 @@ comptime MBarType = SharedMemPointer[SharedMemBarrier]
 
 
 def extract_power_of_two(N: Int, i: Int) -> Int:
+    """Returns the `i`-th power-of-two component when decomposing `N` into decreasing powers of two.
+    """
     pt = prev_power_of_two(N)
     rem = N
     for _ in range(i):
@@ -134,6 +136,8 @@ def extract_power_of_two(N: Int, i: Int) -> Int:
 
 
 def cumulative_power_of_two(N: Int, i: Int) -> Int:
+    """Returns the cumulative sum of the first `i` power-of-two components of `N`.
+    """
     acc = 0
     rem = N
     for _ in range(i):
@@ -154,6 +158,16 @@ def break_into_powers_of_two[
     *,
     max_value: Int = 128,
 ]():
+    """Calls `func` for each power-of-two-sized chunk of `N`, plus a final `pow_two=0` call for pipeline cleanup.
+
+    Parameters:
+        origins: Origin set captured by the callback (inferred).
+        func: Callback invoked once per power-of-two chunk with the chunk
+            size and starting offset, plus a final `pow_two=0` cleanup call.
+        N: Total size to decompose into power-of-two chunks.
+        max_value: Upper bound on the largest power-of-two chunk size
+            (defaults to 128).
+    """
     comptime power_of_two = prev_power_of_two(min(max_value, N))
 
     comptime for offset in range(0, N, power_of_two):
@@ -181,6 +195,16 @@ struct STMatrixLayout[
 ](TrivialRegisterPassable):
     """
     Layout for using `st_matrix` for writing the final accumulator to smem.
+
+    Parameters:
+        BM: Number of rows in the `BM` x `BN` output tile written via
+            `st_matrix`.
+        BN: Number of columns in the `BM` x `BN` output tile written via
+            `st_matrix`.
+        num_threads: Number of threads participating in the `st_matrix`
+            store, used to derive the warp-group count.
+        accum_dtype_size: Size in bytes of the accumulator element dtype,
+            used to compute the per-store bit width.
     """
 
     # We have a BM x BN tile
@@ -252,6 +276,26 @@ struct STMatrixOffsets[
     cumulative_repeat: Int,
     m_mma: Int,
 ](TrivialRegisterPassable):
+    """Precomputed TMEM and local-fragment offsets for one `st_matrix` repeat column.
+
+    Parameters:
+        BM: Number of rows in the `BM` x `BN` output tile (forwarded to
+            `STMatrixLayout`).
+        BN: Number of columns in the `BM` x `BN` output tile (forwarded to
+            `STMatrixLayout`).
+        num_threads: Number of threads participating in the `st_matrix` store
+            (forwarded to `STMatrixLayout`).
+        accum_dtype_size: Size in bytes of the accumulator element dtype
+            (forwarded to `STMatrixLayout`).
+        curr_repeat: Number of repeat columns in this power-of-two chunk of
+            the `st_matrix` store.
+        cumulative_repeat: Number of repeat columns already stored before
+            this chunk, used as the TMEM column and local-fragment base
+            offset.
+        m_mma: M-tile index of the `st_matrix` store within the `BM`-row
+            tile, selecting the 16-row TMEM quadrant.
+    """
+
     comptime STLayout = STMatrixLayout[
         Self.BM,
         Self.BN,
@@ -332,6 +376,19 @@ def pack_row[
     u32 is built from an `SIMD[f32, per_u32]` chunk (f32x2 for bf16 -- wider SIMD
     scalarizes; f32x4 for fp8, mirroring the MLA fp8 store path); only the packed
     u32 store register is built wide.
+
+    Parameters:
+        n: Total number of f32 O lanes in `o_vals` (inferred).
+        output_type: Target dtype to cast the f32 lanes to; must be a
+            1-byte (`fp8`) or 2-byte (`bf16`/`f16`) dtype.
+        w: Number of f32 lanes to pack; must equal `4 * per_u32` (8 for
+            `bf16`/`f16`, 16 for `fp8`) to fill one 16 B block.
+        start: Starting index into `o_vals` for the window (defaults to
+            0).
+
+    Args:
+        o_vals: `tcgen05_ld` or accumulator result holding the f32 O
+            lanes; the window `[start, start + w)` is packed.
     """
     comptime assert (
         size_of[output_type]() == 1 or size_of[output_type]() == 2
@@ -367,6 +424,21 @@ def scale_pack_o_row[
     wider SIMD here; only the packed u32 store register is built wide. Shared by
     the SM100 O-store writeback helpers (`fa4_scale_write_output`,
     `depth512_scale_write_output`).
+
+    Parameters:
+        n: Total number of f32 O lanes in `o_vals` (inferred).
+        output_type: Target 2-byte dtype (`bf16`/`f16`) to cast the
+            scaled lanes to.
+        w: Number of f32 lanes to scale and pack; must equal the width
+            of one 16 B SWIZZLE_NONE block.
+        start: Starting index into `o_vals` for the window (defaults to
+            0).
+
+    Args:
+        o_vals: `tcgen05_ld` result holding the f32 O lanes; the window
+            `[start, start + w)` is scaled and packed.
+        inv_row_sum: Inverse of the softmax row sum, multiplied into
+            each lane to normalize the output.
     """
     comptime assert size_of[output_type]() == 2
     var packed = SIMD[DType.uint32, w // 2]()
@@ -436,6 +508,16 @@ def st_shared_v4_b32[
     16 B (four u32) for every `dtype`: `pack_row` folds the per-u32 element count
     (2 for bf16, 4 for fp8) into that width, so one call stores one SWIZZLE_NONE
     block.
+
+    Parameters:
+        dtype: Element dtype of the shared buffer; any 1-byte (`fp8`) or
+            2-byte (`bf16`/`f16`) output dtype (inferred).
+
+    Args:
+        dst: Shared-memory pointer to the store target.
+        elem_off: Element offset into `dst` in `dtype`-element units.
+        packed: Four `u32` words forming one 16 B SWIZZLE_NONE block to
+            store.
     """
     var dst_ptr = dst + elem_off
     _ = inlined_assembly[
@@ -466,6 +548,15 @@ struct TMemTile[
     BM: Int,
     BN: Int,
 ](TrivialRegisterPassable):
+    """Represents a tile in SM100 tensor memory (TMEM) and provides async load/store helpers.
+
+    Parameters:
+        dtype_: Element dtype of the TMEM tile.
+        BM: Number of rows in the tile, in elements; must be a multiple
+            of 64.
+        BN: Number of columns in the tile, in elements.
+    """
+
     comptime dtype: DType = Self.dtype_
     comptime dtype_size = size_of[Self.dtype]()
     comptime num_m_tiles = Self.BM // 64
@@ -851,6 +942,34 @@ struct SM100TensorAccumulator[
     num_stages: Int = 1,
     b_page_dense: Bool = False,
 ](TrivialRegisterPassable):
+    """Performs the `C = A @ B` tensor contraction on SM100 using `tcgen05.mma` instructions.
+
+    The A operand is either an SMEM tile (`a_tmem=False`, the "SS" contraction) or a TMEM tile (`a_tmem=True`, the "TS" contraction); B is always an SMEM descriptor. When `cta_group == 1 and MMA_M <= 64`, the warp-specialized `.ws` datapath is used.
+
+    Parameters:
+        operand_type: Element dtype of the A and B input operands.
+        accum_dtype: Element dtype of the output accumulator `C`.
+        MMA_M: M dimension (rows) of the output tile in MMA units.
+        MMA_N: N dimension (columns) of the output tile in MMA units.
+        BK: K dimension (contraction axis) tile size in elements.
+        a_tmem: Whether the A operand resides in TMEM (`True`, the TS
+            contraction) or SMEM (`False`, the SS contraction).
+        mma_kind: `UMMAKind` selecting the `tcgen05.mma` instruction variant
+            (defaults to `UMMAKind.KIND_F16`).
+        swizzle_a: SMEM swizzle mode for the A tile (defaults to
+            `SWIZZLE_128B`); meaningful only when `a_tmem` is `False`.
+        swizzle_b: SMEM swizzle mode for the B tile (defaults to
+            `SWIZZLE_128B`).
+        transpose_b: Whether B is stored k-major (`True`) or mn-major
+            (`False`) (defaults to `True`).
+        cta_group: Number of cooperating CTAs, 1 or 2 (defaults to 1). When
+            1 and `MMA_M <= 64`, the `.ws` datapath is used.
+        num_stages: Number of K-dimension pipeline stages for latency
+            hiding (defaults to 1).
+        b_page_dense: Whether B uses the row-major page-fold layout
+            (defaults to `False`).
+    """
+
     # This performs C = A @ B
     # where A is BM x BK and B is BN x BK if k major, else BK x BN.
     # `BK` is broken into `num_stages` and pipelined.
@@ -904,7 +1023,7 @@ struct SM100TensorAccumulator[
     )
 
     # With cta_group > 1, each CTA's SMEM holds MMA_M/cta_group rows (A)
-    # and MMA_N/cta_group columns (B).  The K-offset arithmetic in
+    # and MMA_N/cta_group columns (B). The K-offset arithmetic in
     # `_build_mma` (SS path) uses these layouts, so BMN must match per-CTA
     # dimensions to keep addresses within each CTA's SMEM tile.
     #
@@ -1450,6 +1569,31 @@ def bulk_mma[
     c_scale: UInt32,
     elect: Int32,
 ):
+    """Issues a full-tile SS (both operands in SMEM) non-warp-specialized `tcgen05.mma` contraction.
+
+    Parameters:
+        kind: `UMMAKind` selecting the `tcgen05.mma` instruction variant.
+        layout_a: SMEM layout of the A operand tile, used to compute
+            per-K-block A descriptor offsets.
+        layout_b: SMEM layout of the B operand tile, used to compute
+            per-K-block B descriptor offsets.
+        num_k_mmas: Number of `mma_k`-sized K-dimension blocks to
+            contract over.
+        mma_k: K-dimension tile size per MMA block, in elements.
+        operand_size: Size in bytes of the A and B operand elements.
+        cta_group: Number of cooperating CTAs, 1 or 2 (defaults to 1).
+
+    Args:
+        idesc: UMMA instruction descriptor encoding the accumulator and
+            operand dtypes and the output tile shape.
+        a: SMEM descriptor pair for the A operand.
+        b: SMEM descriptor pair for the B operand.
+        c_tmem: TMEM base address of the output accumulator `C`.
+        c_scale: Accumulator init/accumulate scale; nonzero on the first
+            block to initialize the accumulator, zero to accumulate.
+        elect: `elect()` result selecting the single thread that issues
+            the MMA.
+    """
     # Full-tile SS (both operands SMEM descriptors), non-ws contraction.
     comptime assert cta_group in (1, 2)
     comptime mma_string = _build_mma[a_tmem=False, ws=False, partial=False](
@@ -1485,6 +1629,29 @@ def bulk_mma[
     c_scale: UInt32,
     elect: Int32,
 ):
+    """Issues a full-tile TS (A in TMEM, B in SMEM) non-warp-specialized `tcgen05.mma` contraction.
+
+    Parameters:
+        kind: `UMMAKind` selecting the `tcgen05.mma` instruction variant.
+        layout_b: SMEM layout of the B operand tile, used to compute
+            per-K-block B descriptor offsets.
+        mma_k: K-dimension tile size per MMA block, in elements.
+        num_k_mmas: Number of `mma_k`-sized K-dimension blocks to
+            contract over.
+        operand_size: Size in bytes of the A and B operand elements.
+        cta_group: Number of cooperating CTAs, 1 or 2 (defaults to 1).
+
+    Args:
+        idesc: UMMA instruction descriptor encoding the accumulator and
+            operand dtypes and the output tile shape.
+        a: TMEM base address of the A operand.
+        b: SMEM descriptor pair for the B operand.
+        c_tmem: TMEM base address of the output accumulator `C`.
+        c_scale: Accumulator init/accumulate scale; nonzero on the first
+            block to initialize the accumulator, zero to accumulate.
+        elect: `elect()` result selecting the single thread that issues
+            the MMA.
+    """
     # Full-tile TS (A in TMEM, B an SMEM descriptor), non-ws contraction.
     # `_build_mma` ignores `layout_a` for TS, so `layout_b` fills that slot.
     comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
@@ -1524,6 +1691,36 @@ def bulk_mma_partial[
     elect: Int32,
     valid_k_mmas: UInt32,
 ):
+    """Issues a partial-K TS contraction for a partially-loaded last KV tile, non-warp-specialized.
+
+    Each block's MMA carries a warp-uniform validity guard derived from `valid_k_mmas`, kept separate from the `elect` predicate to preserve identical elect codegen.
+
+    Parameters:
+        kind: `UMMAKind` selecting the `tcgen05.mma` instruction variant.
+        layout_b: SMEM layout of the B operand tile, used to compute
+            per-K-block B descriptor offsets.
+        mma_k: K-dimension tile size per MMA block, in elements.
+        num_k_mmas: Number of `mma_k`-sized K-dimension blocks to
+            contract over in this stage.
+        operand_size: Size in bytes of the A and B operand elements.
+        k_start: Absolute K-block index of the first block in this
+            stage (defaults to 0).
+        cta_group: Number of cooperating CTAs, 1 or 2 (defaults to 1).
+
+    Args:
+        idesc: UMMA instruction descriptor encoding the accumulator and
+            operand dtypes and the output tile shape.
+        a: Un-offset (stage-0) TMEM base address of the A operand.
+        b: Un-offset (stage-0) SMEM descriptor pair for the B operand.
+        c_tmem: TMEM base address of the output accumulator `C`.
+        c_scale: Accumulator init/accumulate scale; nonzero on the first
+            block to initialize the accumulator, zero to accumulate.
+        elect: `elect()` result selecting the single thread that issues
+            the MMA.
+        valid_k_mmas: Count of loaded `mma_k`-sized blocks; blocks whose
+            absolute index reaches or exceeds this count are predicated
+            off.
+    """
     # P@V contraction for a partially-loaded last KV tile (TS, non-ws). Issues
     # this stage's `num_k_mmas` k-blocks (absolute indices
     # `k_start ..< k_start + num_k_mmas`) as a SINGLE fused inline-asm sequence.
@@ -1571,6 +1768,38 @@ def bulk_mma_ss_partial[
     elect: Int32,
     valid_k_mmas: UInt32,
 ):
+    """Issues a partial-K SS contraction for a partially-loaded last KV tile, non-warp-specialized.
+
+    Both A and B come from SMEM descriptors; each block's MMA carries a warp-uniform validity guard derived from `valid_k_mmas`, kept separate from `elect`.
+
+    Parameters:
+        kind: `UMMAKind` selecting the `tcgen05.mma` instruction variant.
+        layout_a: SMEM layout of the A operand tile, used to compute
+            per-K-block A descriptor offsets.
+        layout_b: SMEM layout of the B operand tile, used to compute
+            per-K-block B descriptor offsets.
+        num_k_mmas: Number of `mma_k`-sized K-dimension blocks to
+            contract over in this stage.
+        mma_k: K-dimension tile size per MMA block, in elements.
+        operand_size: Size in bytes of the A and B operand elements.
+        k_start: Absolute K-block index of the first block in this
+            stage (defaults to 0).
+        cta_group: Number of cooperating CTAs, 1 or 2 (defaults to 1).
+
+    Args:
+        idesc: UMMA instruction descriptor encoding the accumulator and
+            operand dtypes and the output tile shape.
+        a: Un-offset (stage-0) SMEM descriptor pair for the A operand.
+        b: Un-offset (stage-0) SMEM descriptor pair for the B operand.
+        c_tmem: TMEM base address of the output accumulator `C`.
+        c_scale: Accumulator init/accumulate scale; nonzero on the first
+            block to initialize the accumulator, zero to accumulate.
+        elect: `elect()` result selecting the single thread that issues
+            the MMA.
+        valid_k_mmas: Count of loaded `mma_k`-sized blocks; blocks whose
+            absolute index reaches or exceeds this count are predicated
+            off.
+    """
     # Contraction over a partially-loaded last KV tile, SS (non-ws) variant:
     # both A and B come from SMEM descriptors. Each block's MMA carries a
     # warp-uniform validity guard derived from `valid_k_mmas` kept entirely
@@ -1636,6 +1865,52 @@ def bulk_mma_ws[
     c_scale: UInt32,
     elect: Int32,
 ):
+    """Issues a full-tile SS (both operands in SMEM) warp-specialized `tcgen05.mma.ws` contraction.
+
+    Parameters:
+        kind: `UMMAKind` selecting the `tcgen05.mma.ws` instruction
+            variant.
+        a_dtype: Element dtype of the A operand, used to derive the A
+            SMEM tile layout.
+        b_dtype: Element dtype of the B operand, used to derive the B
+            SMEM tile layout.
+        a_BMN: M (or N) dimension of the A operand tile in elements,
+            used to derive the A layout.
+        a_BK: K dimension of the A operand tile in elements, used to
+            derive the A layout.
+        a_swizzle: SMEM swizzle mode for the A tile.
+        a_is_k_major: Whether A is stored k-major (`True`) or
+            mn-major (`False`).
+        b_BMN: M (or N) dimension of the B operand tile in elements,
+            used to derive the B layout.
+        b_BK: K dimension of the B operand tile in elements, used to
+            derive the B layout.
+        b_swizzle: SMEM swizzle mode for the B tile.
+        b_is_k_major: Whether B is stored k-major (`True`) or
+            mn-major (`False`).
+        num_k_mmas: Number of `mma_k`-sized K-dimension blocks to
+            contract over.
+        operand_size: Size in bytes of the A and B operand elements.
+        tcgen05_mma_type: `tcgen05.mma.ws` instruction string prefix,
+            including the CTA-group selector.
+        mma_k: K-dimension tile size per MMA block, in elements
+            (defaults to 16).
+        b_page_dense: Whether B uses the row-major page-fold layout
+            (defaults to `False`).
+        k_start: Absolute K-block index of the first block in this tile
+            (defaults to 0).
+
+    Args:
+        idesc: UMMA instruction descriptor encoding the accumulator and
+            operand dtypes and the output tile shape.
+        a: SMEM descriptor pair for the A operand.
+        b: SMEM descriptor pair for the B operand.
+        c_tmem: TMEM base address of the output accumulator `C`.
+        c_scale: Accumulator init/accumulate scale; nonzero on the first
+            block to initialize the accumulator, zero to accumulate.
+        elect: `elect()` result selecting the single thread that issues
+            the MMA.
+    """
     # Full-tile SS, warp-specialized. The tile layouts are computed from the
     # dtype/tile params (`_build_mma` takes `Layout` directly). `b_page_dense`
     # selects the row-major page-fold layout for the B operand (K / Q@K' is
@@ -1695,6 +1970,42 @@ def bulk_mma_ws_ts[
     c_scale: UInt32,
     elect: Int32,
 ):
+    """Issues a full-tile TS (A in TMEM, B in SMEM) warp-specialized `tcgen05.mma.ws` contraction.
+
+    Parameters:
+        kind: `UMMAKind` selecting the `tcgen05.mma.ws` instruction
+            variant.
+        b_dtype: Element dtype of the B operand, used to derive the B
+            SMEM tile layout.
+        b_BMN: M (or N) dimension of the B operand tile in elements,
+            used to derive the B layout.
+        b_BK: K dimension of the B operand tile in elements, used to
+            derive the B layout.
+        b_swizzle: SMEM swizzle mode for the B tile.
+        b_is_k_major: Whether B is stored k-major (`True`) or
+            mn-major (`False`).
+        num_k_mmas: Number of `mma_k`-sized K-dimension blocks to
+            contract over.
+        operand_size: Size in bytes of the A and B operand elements.
+        tcgen05_mma_type: `tcgen05.mma.ws` instruction string prefix,
+            including the CTA-group selector.
+        mma_k: K-dimension tile size per MMA block, in elements
+            (defaults to 16).
+        b_page_dense: Whether B uses the row-major page-fold layout
+            (defaults to `False`).
+
+    Args:
+        idesc: UMMA instruction descriptor encoding the accumulator
+            and operand dtypes and the output tile shape.
+        a: TMEM base address of the A operand.
+        b: SMEM descriptor pair for the B operand.
+        c_tmem: TMEM base address of the output accumulator `C`.
+        c_scale: Accumulator init/accumulate scale; nonzero on the
+            first block to initialize the accumulator, zero to
+            accumulate.
+        elect: `elect()` result selecting the single thread that issues
+            the MMA.
+    """
     # Full-tile TS, warp-specialized. `a` is a single TMEM base ($7); `_build_mma`
     # computes each k-tile's column offset in-PTX (`add.s32 %ra, $7, k*stride`),
     # so the old per-tile operand ladder is gone.
@@ -1751,6 +2062,57 @@ def bulk_mma_ws_partial[
     elect: Int32,
     valid_k_mmas: UInt32,
 ):
+    """Issues a partial-K SS warp-specialized contraction for a partially-loaded last KV tile.
+
+    Both A and B come from SMEM descriptors; each block's MMA carries a warp-uniform validity guard derived from `valid_k_mmas`, kept separate from `elect`.
+
+    Parameters:
+        kind: `UMMAKind` selecting the `tcgen05.mma.ws` instruction
+            variant.
+        a_dtype: Element dtype of the A operand, used to derive the A
+            SMEM tile layout.
+        b_dtype: Element dtype of the B operand, used to derive the B
+            SMEM tile layout.
+        a_BMN: M (or N) dimension of the A operand tile in elements,
+            used to derive the A layout.
+        a_BK: K dimension of the A operand tile in elements, used to
+            derive the A layout.
+        a_swizzle: SMEM swizzle mode for the A tile.
+        a_is_k_major: Whether A is stored k-major (`True`) or
+            mn-major (`False`).
+        b_BMN: M (or N) dimension of the B operand tile in elements,
+            used to derive the B layout.
+        b_BK: K dimension of the B operand tile in elements, used to
+            derive the B layout.
+        b_swizzle: SMEM swizzle mode for the B tile.
+        b_is_k_major: Whether B is stored k-major (`True`) or
+            mn-major (`False`).
+        num_k_mmas: Number of `mma_k`-sized K-dimension blocks to
+            contract over in this stage.
+        operand_size: Size in bytes of the A and B operand elements.
+        tcgen05_mma_type: `tcgen05.mma.ws` instruction string prefix,
+            including the CTA-group selector.
+        mma_k: K-dimension tile size per MMA block, in elements
+            (defaults to 16).
+        k_start: Absolute K-block index of the first block in this
+            stage (defaults to 0).
+        b_page_dense: Whether B uses the row-major page-fold layout
+            (defaults to `False`).
+
+    Args:
+        idesc: UMMA instruction descriptor encoding the accumulator and
+            operand dtypes and the output tile shape.
+        a: Un-offset (stage-0) SMEM descriptor pair for the A operand.
+        b: Un-offset (stage-0) SMEM descriptor pair for the B operand.
+        c_tmem: TMEM base address of the output accumulator `C`.
+        c_scale: Accumulator init/accumulate scale; nonzero on the first
+            block to initialize the accumulator, zero to accumulate.
+        elect: `elect()` result selecting the single thread that issues
+            the MMA.
+        valid_k_mmas: Count of loaded `mma_k`-sized blocks; blocks whose
+            absolute index reaches or exceeds this count are predicated
+            off.
+    """
     # P@V contraction for a partially-loaded last KV tile, SS warp-specialized:
     # both A and B come from SMEM descriptors. Each block's MMA carries a
     # warp-uniform validity guard derived from `valid_k_mmas` kept entirely
@@ -1815,6 +2177,49 @@ def bulk_mma_ws_ts_partial[
     elect: Int32,
     valid_k_mmas: UInt32,
 ):
+    """Issues a partial-K TS warp-specialized contraction for a partially-loaded last KV tile.
+
+    `a` is the un-offset TMEM base; each block's absolute column offset is computed in-PTX, and a `%pv` validity guard is kept separate from `elect`.
+
+    Parameters:
+        kind: `UMMAKind` selecting the `tcgen05.mma.ws` instruction
+            variant.
+        b_dtype: Element dtype of the B operand, used to derive the B
+            SMEM tile layout.
+        b_BMN: M (or N) dimension of the B operand tile in elements,
+            used to derive the B layout.
+        b_BK: K dimension of the B operand tile in elements, used to
+            derive the B layout.
+        b_swizzle: SMEM swizzle mode for the B tile.
+        b_is_k_major: Whether B is stored k-major (`True`) or
+            mn-major (`False`).
+        num_k_mmas: Number of `mma_k`-sized K-dimension blocks to
+            contract over in this stage.
+        operand_size: Size in bytes of the A and B operand elements.
+        tcgen05_mma_type: `tcgen05.mma.ws` instruction string prefix,
+            including the CTA-group selector.
+        mma_k: K-dimension tile size per MMA block, in elements
+            (defaults to 16).
+        k_start: Absolute K-block index of the first block in this
+            stage (defaults to 0).
+        b_page_dense: Whether B uses the row-major page-fold layout
+            (defaults to `False`).
+
+    Args:
+        idesc: UMMA instruction descriptor encoding the accumulator
+            and operand dtypes and the output tile shape.
+        a: Un-offset (stage-0) TMEM base address of the A operand.
+        b: Un-offset (stage-0) SMEM descriptor pair for the B operand.
+        c_tmem: TMEM base address of the output accumulator `C`.
+        c_scale: Accumulator init/accumulate scale; nonzero on the
+            first block to initialize the accumulator, zero to
+            accumulate.
+        elect: `elect()` result selecting the single thread that issues
+            the MMA.
+        valid_k_mmas: Count of loaded `mma_k`-sized blocks; blocks
+            whose absolute index reaches or exceeds this count are
+            predicated off.
+    """
     # P@V contraction for a partially-loaded last KV tile, TS warp-specialized.
     # `a` is the un-offset (stage-0) TMEM base ($7); `_build_mma` computes each
     # block's ABSOLUTE column offset (`a_stride * (k_start + k)`) in-PTX, so the
@@ -1845,6 +2250,8 @@ def bulk_mma_ws_ts_partial[
 
 @always_inline
 def llvm_opaque_tid() -> UInt32:
+    """Returns the opaque thread ID via the `llvm.nvvm.read.ptx.sreg.tid.x` intrinsic.
+    """
     return llvm_intrinsic[
         "llvm.nvvm.read.ptx.sreg.tid.x", UInt32, has_side_effect=True
     ]()
@@ -1852,6 +2259,7 @@ def llvm_opaque_tid() -> UInt32:
 
 @always_inline
 def intrin_ftz[intrin: String](a: Float32, b: Float32) -> Float32:
+    """Wraps a flush-to-zero (FTZ) binary float32 PTX intrinsic."""
     return inlined_assembly[
         String(intrin, ".ftz.f32 $0, $1, $2;"),
         Float32,
@@ -1862,6 +2270,7 @@ def intrin_ftz[intrin: String](a: Float32, b: Float32) -> Float32:
 
 @always_inline
 def intrin[intrin: String](a: Float32, b: Float32, c: Float32) -> Float32:
+    """Wraps a ternary float32 PTX intrinsic (e.g. `max.f32`)."""
     return inlined_assembly[
         String(intrin, ".f32 $0, $1, $2, $3;"),
         Float32,
@@ -1876,6 +2285,7 @@ def intrin_ftz_x2[
 ](a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]) -> SIMD[
     DType.float32, 2
 ]:
+    """Wraps a flush-to-zero (FTZ) binary `f32x2` PTX intrinsic."""
     return inlined_assembly[
         String(intrin, ".ftz.f32x2 $0, $1, $2;"),
         SIMD[DType.float32, 2],
@@ -1886,26 +2296,41 @@ def intrin_ftz_x2[
 
 @always_inline
 def add_ftz(a: Float32, b: Float32) -> Float32:
+    """Returns the flush-to-zero sum of two float32 values.
+
+    Args:
+        a: First float32 addend.
+        b: Second float32 addend.
+    """
     return intrin_ftz["add"](a, b)
 
 
 @always_inline
 def sub_ftz(a: Float32, b: Float32) -> Float32:
+    """Returns the flush-to-zero difference of two float32 values.
+
+    Args:
+        a: The minuend float32 value.
+        b: The subtrahend float32 value.
+    """
     return intrin_ftz["sub"](a, b)
 
 
 @always_inline
 def mul_ftz(a: Float32, b: Float32) -> Float32:
+    """Returns the flush-to-zero product of two float32 values."""
     return intrin_ftz["mul"](a, b)
 
 
 @always_inline
 def max_ftz(a: Float32, b: Float32) -> Float32:
+    """Returns the flush-to-zero maximum of two float32 values."""
     return intrin_ftz["max"](a, b)
 
 
 @always_inline
 def max_ftz(a: Float32, b: Float32, c: Float32) -> Float32:
+    """Returns the flush-to-zero maximum of three float32 values."""
     return intrin["max.ftz"](a, b, c)
 
 
@@ -1913,6 +2338,12 @@ def max_ftz(a: Float32, b: Float32, c: Float32) -> Float32:
 def add_ftz(
     a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
 ) -> SIMD[DType.float32, 2]:
+    """Returns the flush-to-zero sum of two `f32x2` vectors.
+
+    Args:
+        a: First `f32x2` addend vector.
+        b: Second `f32x2` addend vector.
+    """
     return intrin_ftz_x2["add"](a, b)
 
 
@@ -1920,6 +2351,12 @@ def add_ftz(
 def sub_ftz(
     a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
 ) -> SIMD[DType.float32, 2]:
+    """Returns the flush-to-zero difference of two `f32x2` vectors.
+
+    Args:
+        a: First `f32x2` minuend vector.
+        b: Second `f32x2` subtrahend vector.
+    """
     return intrin_ftz_x2["sub"](a, b)
 
 
@@ -1927,6 +2364,7 @@ def sub_ftz(
 def mul_ftz(
     a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
 ) -> SIMD[DType.float32, 2]:
+    """Returns the flush-to-zero product of two `f32x2` vectors."""
     return intrin_ftz_x2["mul"](a, b)
 
 
@@ -1934,6 +2372,12 @@ def mul_ftz(
 def add_ftz_rm(
     a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
 ) -> SIMD[DType.float32, 2]:
+    """Returns the round-to-nearest-even flush-to-zero sum of two `f32x2` vectors.
+
+    Args:
+        a: First `f32x2` addend vector.
+        b: Second `f32x2` addend vector.
+    """
     return intrin_ftz_x2["add.rm"](a, b)
 
 
@@ -1943,6 +2387,8 @@ def fma_ftz(
     b: SIMD[DType.float32, 2],
     c: SIMD[DType.float32, 2],
 ) -> SIMD[DType.float32, 2]:
+    """Returns the flush-to-zero fused multiply-add `a * b + c` for `f32x2` vectors.
+    """
     return inlined_assembly[
         "fma.rn.ftz.f32x2 $0, $1, $2, $3;",
         SIMD[DType.float32, 2],
@@ -1955,7 +2401,7 @@ def _mask_select8_asm[byte_idx: Int]() -> String:
     """Builds the PTX body for `mask_select8`.
 
     Emits bits 0-6 as 7 `and.b32` + `setp.eq.u32 ...,0` followed by 7
-    `selp.f32`, then bit 7 as a separate `and`/`setp`/`selp` that reuses %p0 — so
+    `selp.f32`, then bit 7 as a separate `and`/`setp`/`selp` that reuses %p0, so
     at most 7 predicates (the full P0-P6 file) are ever live, never 8. Everything
     stays inside one `{ ... }` block so the bit-extraction is adjacent to the
     selects. This mirrors the cold region ptxas already emits for this mask:
@@ -2073,6 +2519,10 @@ def mask_select8[
 def exp2_emulation[
     use_exp2_emulation: Bool = True
 ](x: SIMD[DType.float32, 2]) -> SIMD[DType.float32, 2]:
+    """Computes `2^x` for an `f32x2` vector via a degree-3 polynomial approximation.
+
+    When `use_exp2_emulation` is False, falls back to the standard `exp2` intrinsic.
+    """
     comptime if use_exp2_emulation:
         comptime fp32_round_int = SIMD[DType.float32, 2]((1 << 23) + (1 << 22))
         clamped = max(x, -FP32_EXP_BIAS)
@@ -2160,7 +2610,7 @@ def expect_bytes_pred(
             mbar_ptr[].expect_bytes(bytes)
 
     but folds the runtime branch into a single PTX `@%p` predicate
-    on the `mbarrier.arrive.expect_tx` instruction — no Mojo-level
+    on the `mbarrier.arrive.expect_tx` instruction: no Mojo-level
     `if`, no SASS branch, no warp divergence.
 
     Args:
@@ -2193,6 +2643,7 @@ def maximum[
     x: InlineArray[Scalar[DType.float32], BN],
     out res: StaticTuple[Float32, width],
 ):
+    """Reduces `BN` float32 scores into `width` lane-maxima using FTZ max."""
     res = {}
 
     comptime for w in range(width):
@@ -2238,6 +2689,8 @@ def maximum[
     init: StaticTuple[Float32, width],
     out res: StaticTuple[Float32, width],
 ):
+    """Reduces `BN` float32 scores into `width` lane-maxima, seeded from `init`.
+    """
     res = init
 
     # unroll (using SIMD) to break up dependency chain
@@ -2264,16 +2717,19 @@ def maximum[
 
 @always_inline
 def maximum(x: StaticTuple[Float32, 4]) -> Float32:
+    """Returns the maximum of four float32 values packed in a `StaticTuple`."""
     return max_ftz(max_ftz(x[0], x[1], x[2]), x[3])
 
 
 @always_inline
 def maximum(x: StaticTuple[Float32, 4], init: Float32) -> Float32:
+    """Returns the FTZ maximum of a `StaticTuple[4]` and an initial value."""
     return max_ftz(max_ftz(x[0], x[1], x[2]), x[3], init)
 
 
 @always_inline
 def maximum(x: StaticTuple[Float32, 8]) -> Float32:
+    """Returns the maximum of eight float32 values packed in a `StaticTuple`."""
     var a = max_ftz(x[0], x[1], x[2])
     var b = max_ftz(x[3], x[4], x[5])
     var c = max_ftz(x[6], x[7])
@@ -2282,6 +2738,7 @@ def maximum(x: StaticTuple[Float32, 8]) -> Float32:
 
 @always_inline
 def maximum(x: StaticTuple[Float32, 8], init: Float32) -> Float32:
+    """Returns the FTZ maximum of a `StaticTuple[8]` and an initial value."""
     var a = max_ftz(init, x[0], x[1])
     var b = max_ftz(x[2], x[3], x[4])
     var c = max_ftz(x[5], x[6], x[7])
@@ -2292,6 +2749,17 @@ def maximum(x: StaticTuple[Float32, 8], init: Float32) -> Float32:
 def sum[
     dtype: DType, BN: Int, //, *, width: Int = 8
 ](x: LocalTensor[dtype, row_major[BN]()]) -> SIMD[dtype, 2]:
+    """Reduces a `BN`-element local tensor into a width-2 SIMD vector via vectorized accumulation.
+
+    Parameters:
+        dtype: Element dtype of the input tensor (inferred).
+        BN: Number of elements in the input tensor; must be divisible by
+            `width` (inferred).
+        width: Vectorization width for the accumulation (defaults to 8).
+
+    Args:
+        x: Local tensor of `BN` elements to reduce.
+    """
     comptime assert BN % width == 0
     vx = x.vectorize[width]()
     acc = vx[0]
@@ -2316,6 +2784,12 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
       - V always uses qk_stages=1 (complete tile required)
 
     Total stages = num_kv_stages * num_qk_stages.
+
+    Parameters:
+        num_kv_stages: Number of double-buffered KV tile buffers used for
+            pipelining.
+        num_qk_stages: Number of K-loading sub-stages per KV stage for Q@K'
+            MMA staging; V always uses 1 (defaults to 1).
     """
 
     comptime num_stages: Int = Self.num_kv_stages * Self.num_qk_stages
@@ -2346,19 +2820,38 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
 
     @always_inline("nodebug")
     def producer_acquire[qk_stage: Int = Self.num_qk_stages - 1](self):
-        """Wait until consumer has released the buffer for this stage."""
+        """Wait until consumer has released the buffer for this stage.
+
+        Parameters:
+            qk_stage: K-loading sub-stage to acquire (defaults to the last
+                sub-stage).
+        """
         self.consumer_mbar[qk_stage]()[].wait(self.state.phase())
 
     @always_inline("nodebug")
     def consumer_wait[qk_stage: Int = Self.num_qk_stages - 1](self):
-        """Wait for producer to complete this stage."""
+        """Wait for producer to complete this stage.
+
+        Parameters:
+            qk_stage: K-loading sub-stage to wait on (defaults to the last
+                sub-stage).
+        """
         self.producer_mbar[qk_stage]()[].wait(self.state.phase())
 
     @always_inline("nodebug")
     def consumer_release[
         qk_stage: Int = Self.num_qk_stages - 1
     ](mut self, e: Int32):
-        """Release the buffer after consuming this stage."""
+        """Release the buffer after consuming this stage.
+
+        Parameters:
+            qk_stage: K-loading sub-stage to release (defaults to the last
+                sub-stage).
+
+        Args:
+            e: `elect()` result selecting the single thread that arrives on
+                the mbarrier.
+        """
         elect_mma_arrive(self.consumer_mbar[qk_stage](), e)
 
         comptime if qk_stage == Self.num_qk_stages - 1:
@@ -2370,6 +2863,11 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
 
         Used for deferred V release in fused KV mode: V_{n-1} must be
         released while holding K_n, which is at a different pipeline index.
+
+        Args:
+            idx: Pipeline index of the stage to release.
+            e: `elect()` result selecting the single thread that arrives
+                on the mbarrier.
         """
         comptime qk_stage = Self.num_qk_stages - 1
         comptime const_offset = qk_stage + Self.num_stages
@@ -2391,8 +2889,13 @@ comptime KVPipeline = StagedPipeline
 struct TMADestination[dtype: DType, smem_elems: Int](TrivialRegisterPassable):
     """Pairs a shared memory TileTensor with a barrier for TMA operations.
 
-    The stored TileTensor uses a flat `row_major[smem_elems]()` layout —
+    The stored TileTensor uses a flat `row_major[smem_elems]()` layout.
     TMA only uses `.ptr`.
+
+    Parameters:
+        dtype: Element dtype of the shared memory tile.
+        smem_elems: Number of elements in the flat shared memory buffer
+            used by the TileTensor.
     """
 
     comptime SmemType = TileTensor[
@@ -2425,6 +2928,14 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
 
     K loading (is_k=True): Can be staged (num_qk_stages chunks), uses k_major layout.
     V loading (is_k=False): Always complete (qk_stage=0), uses mn_major layout.
+
+    Parameters:
+        dtype: Element dtype of the K or V tile being loaded via TMA.
+        config: FlashAttention-4 configuration providing tile sizes,
+            swizzle mode, and stage counts.
+        is_k: Whether this pipeline loads the K operand (`True`, k-major
+            layout with staged `qk_stages`) or the V operand (`False`,
+            mn-major layout with `qk_stage=0`); defaults to `True`.
     """
 
     # Compute layout first using comptime, then use it in type.
@@ -2487,7 +2998,12 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
 
     @always_inline
     def get_smem[*, qk_stage: Int = 0](self) -> Self.SMemType:
-        """Get smem pointer for current stage."""
+        """Get smem pointer for current stage.
+
+        Parameters:
+            qk_stage: K-loading sub-stage whose smem offset to return
+                (defaults to 0).
+        """
 
         comptime if Self.is_k:
             comptime stage_offset = qk_stage * Self.elements
@@ -2503,7 +3019,12 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
 
     @always_inline
     def get_tile[*, qk_stage: Int = 0](self) -> Self.PairType:
-        """Get TMA destination for this stage."""
+        """Get TMA destination for this stage.
+
+        Parameters:
+            qk_stage: K-loading sub-stage whose TMA destination to return
+                (defaults to 0).
+        """
         p_mbar = self.pipeline.producer_mbar[qk_stage]()
         var smem = Self.PairType.SmemType(
             self.get_smem[qk_stage=qk_stage](),
@@ -2513,7 +3034,16 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
 
     @always_inline
     def get_tile[*, qk_stage: Int = 0](self, e: Int32) -> Self.PairType:
-        """Get TMA destination with optional expect_bytes."""
+        """Get TMA destination with optional expect_bytes.
+
+        Parameters:
+            qk_stage: K-loading sub-stage whose TMA destination to return
+                (defaults to 0).
+
+        Args:
+            e: `elect()` result; when nonzero, issues `expect_bytes` on
+                the producer mbarrier before returning.
+        """
         p_mbar = self.pipeline.producer_mbar[qk_stage]()
         if e != 0:
             p_mbar[].expect_bytes(Int32(Self.tile_bytes))
@@ -2525,7 +3055,11 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
 
     @always_inline
     def acquire[*, qk_stage: Int = 0](self):
-        """Wait for consumer to release the buffer."""
+        """Wait for consumer to release the buffer.
+
+        Parameters:
+            qk_stage: K-loading sub-stage to acquire (defaults to 0).
+        """
         self.pipeline.producer_acquire[qk_stage]()
 
     @always_inline
@@ -2589,6 +3123,14 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
 
     Note that we have two MMA between calculating Si and consuming Pi,
     maximizing the overlap between MMAs and softmax calculation.
+
+    Parameters:
+        dtype: Element dtype of the consumed K or V tile.
+        config: FlashAttention-4 configuration providing tile sizes, swizzle
+            mode, and stage counts.
+        is_k: Whether this pipeline consumes the K operand (`True`, k-major
+            layout with staged `qk_stages`) or the V operand (`False`,
+            mn-major layout with `qk_stage=0`).
     """
 
     # K stage stride uses the K_nope width (`padded_nope_depth`), not the
@@ -2663,12 +3205,24 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
 
     @always_inline("nodebug")
     def wait[*, qk_stage: Int = 0](self):
-        """Wait for tile from producer."""
+        """Wait for tile from producer.
+
+        Parameters:
+            qk_stage: K-loading sub-stage to wait on (defaults to 0).
+        """
         self.pipeline.consumer_wait[qk_stage]()
 
     @always_inline("nodebug")
     def release[*, qk_stage: Int = 0](mut self, e: Int32):
-        """Release buffer after consuming."""
+        """Release buffer after consuming.
+
+        Parameters:
+            qk_stage: K-loading sub-stage to release (defaults to 0).
+
+        Args:
+            e: `elect()` result selecting the single thread that arrives
+                on the mbarrier.
+        """
         self.pipeline.consumer_release[qk_stage](e)
 
     # Backward-compatible K methods (for KConsumerPipeline)
@@ -2678,14 +3232,28 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
 
     @always_inline("nodebug")
     def wait_k[*, qk_stage: Int = Self.config.num_qk_stages - 1](mut self):
-        """Wait on K stage from the producer."""
+        """Wait on K stage from the producer.
+
+        Parameters:
+            qk_stage: K-loading sub-stage to wait on (defaults to the last
+                sub-stage).
+        """
         self.wait[qk_stage=qk_stage]()
 
     @always_inline("nodebug")
     def release_k[
         *, qk_stage: Int = Self.config.num_qk_stages - 1
     ](mut self, e: Int32):
-        """Release K buffer after consuming this stage."""
+        """Release K buffer after consuming this stage.
+
+        Parameters:
+            qk_stage: K-loading sub-stage to release (defaults to the last
+                sub-stage).
+
+        Args:
+            e: `elect()` result selecting the single thread that arrives
+                on the mbarrier.
+        """
         self.release[qk_stage=qk_stage](e)
 
     # Backward-compatible V methods (for VConsumerPipeline)
@@ -2700,7 +3268,12 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
 
     @always_inline("nodebug")
     def release_v(mut self, e: Int32):
-        """Release V buffer after consuming."""
+        """Release V buffer after consuming.
+
+        Args:
+            e: `elect()` result selecting the single thread that arrives
+                on the mbarrier.
+        """
         self.release[qk_stage=0](e)
 
 
@@ -2740,6 +3313,17 @@ struct RolePipeline[
     c1. consumer.release()           # consumer_mbar.phase=1
     c2. step()                       # phase = 1
     ...
+
+    Parameters:
+        number_of_stages: Number of double-buffered pipeline stages.
+        is_producer: Whether this instance is the producer role (defaults
+            to `True`).
+        producer_sub_stages: Number of producer mbarriers per stage
+            (defaults to 1).
+        consumer_sub_stages: Number of consumer mbarriers per stage
+            (defaults to 1).
+        cta_group: Number of cooperating CTAs for MMA commit arrivals
+            (defaults to 1).
     """
 
     comptime num_stages: Int = Self.number_of_stages
@@ -2798,7 +3382,12 @@ struct RolePipeline[
     # Producer methods
     @always_inline("nodebug")
     def acquire[sub_stage_idx: Int = 0](self):
-        """Wait until consumer has released the buffer. Producer-only."""
+        """Wait until consumer has released the buffer. Producer-only.
+
+        Parameters:
+            sub_stage_idx: Consumer sub-stage barrier to wait on (defaults
+                to 0).
+        """
         self.consumer_mbar[sub_stage_idx]()[].wait(self.state.phase())
 
     @always_inline("nodebug")
@@ -2815,7 +3404,11 @@ struct RolePipeline[
 
     @always_inline("nodebug")
     def commit_mma(self, elect: Int32):
-        """Commit via MMA arrive with explicit elect value. Producer-only."""
+        """Commit via MMA arrive with explicit elect value. Producer-only.
+
+        Args:
+            elect: `elect()` result selecting the single arriving thread.
+        """
         mbar = self.producer_mbar()
         elect_mma_arrive[cta_group=Self.cta_group](mbar, elect)
 
@@ -2827,13 +3420,23 @@ struct RolePipeline[
 
     @always_inline("nodebug")
     def release[sub_stage_idx: Int = 0](mut self):
-        """Release buffer at sub-stage and step. Consumer-only."""
+        """Release buffer at sub-stage and step. Consumer-only.
+
+        Parameters:
+            sub_stage_idx: Consumer sub-stage barrier to arrive on
+                (defaults to 0).
+        """
         _ = self.consumer_mbar[sub_stage_idx]()[].arrive()
         self.state.step()
 
     @always_inline("nodebug")
     def release_no_step[sub_stage_idx: Int = 0](self):
-        """Release buffer without stepping. For multi-sub-stage release."""
+        """Release buffer without stepping. For multi-sub-stage release.
+
+        Parameters:
+            sub_stage_idx: Consumer sub-stage barrier to arrive on
+                (defaults to 0).
+        """
         _ = self.consumer_mbar[sub_stage_idx]()[].arrive()
 
     # Shared method
@@ -2848,6 +3451,13 @@ comptime ConsumerPipeline = RolePipeline[_, False, _, _, _]
 
 
 struct MBarPipeline[number_of_stages: Int](TrivialRegisterPassable):
+    """Manages a paired set of producer/consumer mbarriers for pipeline synchronization.
+
+    Parameters:
+        number_of_stages: Number of double-buffered pipeline stages, each
+            with one producer and one consumer mbarrier.
+    """
+
     comptime num_stages: Int = Self.number_of_stages
 
     # mbars are ordered in {producer, consumer} pairs
@@ -2890,6 +3500,30 @@ def apply_oob_mask[
     score_row: Int32,
     score_col: Int32,
 ) -> SIMD[DType.float32, 2]:
+    """Applies the out-of-bounds key mask to a pair of attention scores.
+
+    Scores for columns at or beyond `num_keys` are replaced with `MASK_VALUE`; optionally scales by `log2e` before masking.
+
+    Parameters:
+        mask_strategy: `MaskStrategy` bitset selecting which masking
+            strategies to apply; the out-of-bounds clip runs only when
+            `OUT_OF_BOUNDS` is set.
+        apply_log2e_after_mask: Whether to multiply the scores by `log2e`
+            before masking.
+
+    Args:
+        s_arg: Pair of attention scores to mask.
+        prompt_idx: Index of the prompt in the batch.
+        q_head_idx: Index of the query head.
+        kv_tile_start_row: Starting row of the KV tile in the key
+            dimension.
+        max_seq_len: Maximum sequence length.
+        num_keys: Number of valid keys; columns at or beyond this index
+            are masked with `MASK_VALUE`.
+        score_row: Row index of the score in the query dimension.
+        score_col: Starting column index of the score pair; columns from
+            this index onward are compared to `num_keys`.
+    """
     s: SIMD[DType.float32, 2] = s_arg
 
     comptime if apply_log2e_after_mask:
@@ -2926,6 +3560,35 @@ def apply_mask[
     num_keys: Int32,
     score_row: Int32,
 ):
+    """Applies bitmask, computed, and out-of-bounds masking strategies to a row of `BN` attention scores.
+
+    Scales by `scale_log2e` (unless `skip_scale`), then applies the mask strategy: the bitmask path uses `mask_select8` per 32-column batch, the computed path calls `mask.mask`, and both paths apply the out-of-bounds clip via `apply_oob_mask`.
+
+    Parameters:
+        BN: Number of scores in the row; must be a multiple of 32 for
+            the bitmask path.
+        MaskType: `MHAMask` type providing the `apply_log2e_after_mask`
+            flag and the `mask_bits` or `mask` masking primitives.
+        mask_strategy: `MaskStrategy` bitset selecting which masking
+            strategies to apply (BITMASK, COMPUTED, OUT_OF_BOUNDS).
+        skip_scale: Whether to skip the `scale_log2e` pre-scaling
+            (defaults to `False`).
+
+    Args:
+        srow: Row of `BN` attention scores to mask in place.
+        mask: Mask object providing bitmask or computed mask values.
+        scale_log2e: Softmax scale factor in log2 base, applied to
+            scores before masking unless `skip_scale` is set.
+        prompt_idx: Index of the prompt in the batch.
+        q_head_idx: Index of the query head.
+        kv_tile_start_row: Starting row of the KV tile in the key
+            dimension, the absolute column offset of the first key in
+            this tile.
+        max_seq_len: Maximum sequence length.
+        num_keys: Number of valid keys; columns at or beyond this index
+            are out of bounds.
+        score_row: Row index of the score in the query dimension.
+    """
     comptime simd_size = 2
     comptime F32x2 = SIMD[DType.float32, simd_size]
 
@@ -3099,6 +3762,10 @@ def splitk_partition_idx(splitk_partitions: UInt32) -> UInt32:
     co-residency. (M4's DSMEM combine will additionally require a real
     cluster; that is where `block_rank_in_cluster()` / cluster co-residency
     re-enters.)
+
+    Args:
+        splitk_partitions: Number of split-K partitions (`P`); the
+            partition index is `block_idx.x % splitk_partitions`.
     """
     return UInt32(block_idx.x) % splitk_partitions
 
@@ -3128,6 +3795,11 @@ def splitk_window(
     `T` is a tile count (small) and `num_partitions <= 16`, so the products
     cannot overflow `UInt32`. `num_partitions` is comptime at every call
     site, so the `//`/`%` lower to multiply-shift, not real divides.
+
+    Args:
+        T: Total number of K-tiles to divide across partitions.
+        num_partitions: Number of split-K partitions (`P`).
+        partition_idx: This CTA's partition index `[0, num_partitions)`.
     """
     var q, r = divmod(T, num_partitions)
     var cb: UInt32 = partition_idx * q + min(partition_idx, r)
@@ -3159,7 +3831,7 @@ def cluster_remote_smem_addr(local_addr: UInt32, peer_rank: UInt32) -> UInt32:
     Wraps `mapa.shared::cluster.u32`. `local_addr` is the 32-bit shared-state-space
     address of an object in *this* CTA's shared memory (e.g. `UInt32(Int(ptr))`); the
     result is the corresponding `.shared::cluster` address of the same object in CTA
-    `peer_rank`'s shared memory. Pure address arithmetic — no memory access.
+    `peer_rank`'s shared memory. Pure address arithmetic; no memory access.
     """
     return inlined_assembly[
         "mapa.shared::cluster.u32 $0, $1, $2;",
@@ -3268,6 +3940,19 @@ def store_cluster_smem[
     Symmetric to `load_cluster_smem`: writes the `width` elements into the same
     shared object as it exists in CTA `peer_rank`. Bracket cross-CTA writes with
     `cluster_sync()` so the peer observes them. 32-bit element dtypes only.
+
+    Parameters:
+        dtype: Element dtype of the shared buffer; must be a 32-bit dtype
+            (inferred).
+        width: Number of elements in `val` to store (inferred).
+
+    Args:
+        local_ptr: Pointer into this CTA's shared memory identifying the
+            shared object to write.
+        peer_rank: Target CTA rank whose copy of the shared object
+            receives the write.
+        val: Vector of `width` elements to store into the peer's shared
+            memory.
     """
     comptime assert (
         size_of[dtype]() == 4
@@ -3340,6 +4025,20 @@ def peel_mask[
     calls load_fn with the corresponding strategy, and decrements the counter.
     Prevents UInt32 underflow when early sets are empty (e.g.
     SlidingWindowCausalMask with num_sets=3 and small sequences).
+
+    Parameters:
+        num_sets: Number of mask sets to walk through (inferred).
+        mask_strategies: `MaskStrategy` per set, in evaluation order;
+            the first set with remaining iterations supplies the
+            strategy.
+        load_fn: Callback invoked as
+            `load_fn[strategy](kv_row)` to load the mask value for the
+            selected strategy.
+
+    Args:
+        mask_iters: Remaining iteration count per set; the selected
+            set's count is decremented in place.
+        kv_row: KV row index forwarded to `load_fn`.
     """
     comptime assert num_sets in (1, 2, 3)
     comptime if num_sets == 1:
@@ -3545,7 +4244,12 @@ struct FA4MiscMBars[
 
     @always_inline
     def consumer_s(self, wg_idx: UInt32) -> Self.SPipelineConsumer:
-        """Get S consumer for given warp group."""
+        """Get S consumer for given warp group.
+
+        Args:
+            wg_idx: Warp group index (0 or 1) selecting the S consumer
+                pipeline.
+        """
         return {
             self.mbar_base + Self.S0_producer_offset + wg_idx,
             self.mbar_base + UInt32(Self.num_pv_stages) * wg_idx,
@@ -3608,6 +4312,10 @@ struct FA4MiscMBars[
 
         Arrived at by BOTH softmax (P ready) and correction (O rescaled).
         Returns S_consumer[0] for wg_idx=0 or wg_idx=1.
+
+        Args:
+            wg_idx: Warp group index (0 or 1) selecting the consumer
+                barrier slot.
         """
         return self.mbar_base + UInt32(Self.num_pv_stages) * wg_idx
 
@@ -3635,7 +4343,7 @@ struct FA4MiscMBars[
         for WG0, `+1` for WG1). The single-O path runs a single warp group
         (WG0) that accumulates ALL K-tiles into the single (aliased) O0, so
         the correction warp must wait on ONLY `O_producer_offset+0` with an
-        incrementing phase — never the never-produced `+1` (which would
+        incrementing phase, never the never-produced `+1` (which would
         deadlock). Release side is WG0's combined P+O consumer barrier, as
         in `producer_o0`.
         """

@@ -91,6 +91,52 @@ def fa4_load[
     ],
     kv_lut: KVLUTType,
 ):
+    """Issues the TMA loads for the Q, K, and V tiles consumed by one FA4
+    attention warp group on SM100.
+
+    Drives the producer side of the K/V pipeline across both fused-KV and
+    split-KV modes, handling pair-CTA half-tile offsets, split-K windowing,
+    partial-page bounds for sub-page KV tiles, and mask-driven iteration.
+    Q is issued on the K barriers (fused with the first K stage) and on a
+    separate Q1 barrier in two-Q mode. K and V TMA coordinates are produced
+    from a shared `kv_lut.populate` so V reuses K's paged-row indices without
+    a second LUT lookup.
+
+    Parameters:
+        KVLUTType: Paged KV-cache lookup table type supplying the element
+            `dtype`, `page_size`, and row-to-page mappings used by
+            `kv_lut` (inferred).
+        MaxSeqLenType: Type of the maximum sequence length, either a comptime
+            static `Int` or a runtime value; selects the decoding vs.
+            prefill path via `_is_decoding` (inferred).
+        MaskType: Attention mask type driving per-tile skip and load
+            decisions via `start_column`, `last_masked_set_end`, and
+            `status` queries (inferred).
+        config: SM100 FA4 attention configuration providing tile sizes
+            (`BM`, `BN`, `BK0`), stage counts, swizzle mode, GQA
+            grouping, and split-K controls.
+        ValidLengthType: Optional pointer type for per-sequence valid
+            lengths; `is_null` is `False` for ragged variable-length
+            sequences.
+        _is_cache_length_accurate: Whether the reported KV cache length
+            exactly matches the count of valid tokens.
+        is_leader: Whether this CTA is the leader (even-ranked) CTA in a
+            pair-CTA cluster, or always `True` in single-CTA mode; the
+            leader issues `expect_bytes` and selects the first half of
+            K/V rows.
+
+    Args:
+        smem: Shared-memory allocator for Q, K, V, and barrier storage.
+        score_row: Row index of this tile within the score matrix.
+        num_keys: Number of valid KV keys in the sequence.
+        seq_info: Per-sequence metadata (prompt index, head index, etc.).
+        max_seq_len: Maximum sequence length, optionally a compile-time constant.
+        mask: Attention mask governing which KV tiles are skipped.
+        q_tma_op: TMA descriptor for the Q tile load.
+        k_tma_op: TMA descriptor for the K tile load.
+        v_tma_op: TMA descriptor for the V tile load.
+        kv_lut: Paged KV-cache lookup table producing per-tile row indices.
+    """
     comptime assert KVLUTType.dtype == config.qkv_dtype
     comptime qkv_type = KVLUTType.dtype
     comptime BM = config.BM
@@ -210,7 +256,7 @@ def fa4_load[
         depth_idx: UInt32 = 0,
     ):
         """Issue Q TMA elect-predicated on `e`. Caller no longer needs
-        `if e != 0:` around the call — the TMA fires only on the elected
+        `if e != 0:` around the call; the TMA fires only on the elected
         lane via the PTX predicate inside `_elect`."""
         comptime if fuse_gqa:
             q_tma_op.async_copy_elect[

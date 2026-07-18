@@ -13,7 +13,7 @@
 """MLA (Multi-Latent Attention) prefill kernel for gfx950.
 
 Double-buffered MLA prefill with K_rope support. Uses TileTensor
-throughout — no LayoutTensor in the public or internal API.
+throughout; no LayoutTensor in the public or internal API.
 
 Two-phase QK matmul per tile:
   Phase 1 (nope): Q[:,:depth] @ K^T

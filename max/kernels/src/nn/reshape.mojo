@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the reshape operation that reinterprets a contiguous tensor's data under a new shape."""
 
 from layout import Coord, TileTensor
 from layout.coord import DynamicCoord
@@ -37,6 +38,26 @@ def reshape[
     input.origin,
     address_space=input.address_space,
 ]:
+    """Returns a view of the contiguous `input` tensor reinterpreted under `new_shape` with matching element count.
+
+    Computes row-major (contiguous) strides for the requested shape and
+    constructs a new `TileTensor` that shares the input's underlying buffer,
+    origin, and address space. The caller is responsible for ensuring the
+    input is contiguous.
+
+    Parameters:
+        dtype: Element type of the input tensor.
+        output_rank: Rank of the requested output shape.
+
+    Args:
+        input: Contiguous source tensor whose data is reinterpreted.
+        new_shape: Desired output shape, whose element product must match
+            the number of elements in `input`.
+
+    Returns:
+        A `TileTensor` view over the same buffer with the new shape and
+        contiguous strides.
+    """
     var stride_tuple = type_of(new_shape)()
     var stride: Int = 1
 
@@ -62,6 +83,32 @@ def reshape_shape[
     input_buf: TileTensor[input_type, ...],
     target_shape_buf: TileTensor[target_shape_type, ...],
 ) raises -> IndexList[output_rank]:
+    """Reads a target shape from a buffer and returns it as a static `IndexList`, inferring any single `-1` dimension.
+
+    Copies the rank-1 `target_shape_buf` into a static `IndexList[output_rank]`,
+    allowing at most one dimension to be specified as `-1`, which is then inferred
+    from the input's element count. Raises an error if the constraints are
+    violated or the inferred shape does not match the input's number of elements.
+
+    Parameters:
+        output_rank: Expected rank of the target shape.
+        input_type: Element type of the input buffer.
+        target_shape_type: Element type of the target shape buffer.
+
+    Args:
+        input_buf: Source tensor whose element count constrains the inferred shape.
+        target_shape_buf: Rank-1 tensor holding the desired output dimensions,
+            where at most one entry may be `-1`.
+
+    Returns:
+        A static `IndexList[output_rank]` with any `-1` dimension resolved.
+
+    Raises:
+        Error: If `target_shape_buf` is not rank 1, the rank does not match
+            `output_rank`, more than one `-1` is present, a negative value
+            other than `-1` appears, or the resulting element count does not
+            match the input.
+    """
     comptime assert (
         target_shape_buf.flat_rank == 1
     ), "target_shape_buf must be rank 1"

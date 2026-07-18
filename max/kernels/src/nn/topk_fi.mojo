@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements a float-integer packed top-K kernel that jointly tracks values and indices in a single register."""
 
 from std.bit import log2_floor
 from std.gpu import (
@@ -230,6 +231,31 @@ def TopKMaskLogitsKernel[
     top_k_val: Int,
     d: Int,
 ):
+    """Masks logits to retain only the top-k values per row, setting the rest to negative infinity.
+
+    Each block processes one row. A ternary search over the logit range finds
+    the k-th largest value (the pivot), then every element greater than the
+    pivot is kept while the rest are replaced with the dtype's minimum value.
+
+    Parameters:
+        block_size: Number of threads per block.
+        vec_size: Number of elements each thread loads per vectorized access.
+        dtype: Element type of the `logits` and `masked_logits` tiles.
+        out_idx_type: Index type used for per-row top-k override values.
+        LogitsLayoutType: Memory layout of the input `logits` tile.
+        logits_origin: Origin tag for the immutable input `logits` tile.
+        MaskedLogitsLayoutType: Memory layout of the output `masked_logits`
+            tile.
+        masked_logits_origin: Origin tag for the mutable output
+            `masked_logits` tile.
+
+    Args:
+        logits: Input logits tile [batch_size, d].
+        masked_logits: Output buffer for masked logits, same shape as logits.
+        top_k_arr: Optional per-row top-k values; overrides top_k_val when present.
+        top_k_val: Default number of largest logits to retain per row.
+        d: Row length (vocabulary size).
+    """
     var bx = block_idx.x
     var tx = thread_idx.x
     var row_idx = bx
@@ -376,6 +402,29 @@ def topk_mask_logits[
         TileTensor[out_idx_type, TopKArrLayoutType, MutUntrackedOrigin]
     ] = None,
 ) raises:
+    """Masks logits to keep only the top-k largest values per row.
+
+    Launches `TopKMaskLogitsKernel` with one block per batch row. Elements below
+    the k-th largest logit are set to the dtype's minimum value so downstream
+    sampling ignores them.
+
+    Parameters:
+        dtype: Element type of the `logits` and `masked_logits` tensors.
+        out_idx_type: Index type used for per-row top-k override values in
+            `top_k_arr`.
+        block_size: Number of threads per block (defaults to 1024).
+        TopKArrLayoutType: Memory layout of the optional `top_k_arr` tensor.
+
+    Args:
+        ctx: Device context for kernel execution.
+        logits: Input logits tensor [batch_size, d].
+        masked_logits: Output buffer for masked logits, same shape as logits.
+        top_k_val: Default number of largest logits to retain per row.
+        top_k_arr: Optional per-row top-k values that override top_k_val.
+
+    Raises:
+        Error: If masked_logits shape does not match logits shape.
+    """
     comptime assert logits.rank == 2, "logits rank must be 2"
     comptime assert (
         logits.rank == masked_logits.rank
@@ -464,6 +513,28 @@ def device_sampling_from_prob[
     ],
 ) -> Tuple[Float32, Int]:
     """Device-level sampling from probability distribution with atomic operations.
+
+    Parameters:
+        vec_size: Number of elements each thread loads per vectorized
+            access.
+        block_size: Number of threads per block.
+        dtype: Element type of the probability distribution.
+        deterministic: If True, use deterministic sampling (defaults to
+            False).
+
+    Args:
+        i: Chunk iteration index used to compute element offsets within
+            the row.
+        d: Total number of elements in the row (vocabulary size).
+        low: Lower-bound threshold; only probabilities greater than this
+            value participate in sampling.
+        u: Target cumulative probability to locate, scaled by the
+            remaining mass `q`.
+        prob_vec: Vector of probabilities for the current chunk.
+        aggregate: Running sum of filtered probabilities from previously
+            processed chunks.
+        sampled_id_sram: Shared-memory slot holding the sampled index,
+            updated via atomic minimum.
 
     Returns:
         Tuple of (new_aggregate, thread_local_max_valid_idx).
@@ -715,6 +786,18 @@ def TopKSamplingFromProbKernel[
     1. Using ternary search to find a pivot threshold.
     2. Rejecting samples iteratively until acceptance criteria is met.
     3. Sampling an index using uniform random numbers from Random generator.
+
+    Parameters:
+        ProbsLayoutType: Memory layout of the input `probs` tile.
+        probs_origin: Origin tag for the immutable input `probs` tile.
+        OutputLayoutType: Memory layout of the output `output` tile.
+        output_origin: Origin tag for the mutable output `output` tile.
+        block_size: Number of threads per block.
+        vec_size: Number of elements each thread loads per vectorized
+            access.
+        dtype: Element type of the `probs` tensor.
+        out_idx_type: Index type used for the sampled output indices.
+        deterministic: If True, use deterministic sampling.
 
     Args:
         probs: Input probability distribution [batch_size, d].
@@ -1055,6 +1138,13 @@ def topk_sampling_from_prob[
     the top-k most probable tokens. Uses rejection sampling with ternary search
     to efficiently find appropriate samples.
 
+    Parameters:
+        dtype: Element type of the `probs` tensor.
+        out_idx_type: Index type used for the sampled output indices.
+        block_size: Number of threads per block (defaults to 1024).
+        TopKArrLayoutType: Memory layout of the optional `top_k_arr` tensor.
+        IndicesLayoutType: Memory layout of the optional `indices` tensor.
+
     Args:
         ctx: Device context for kernel execution.
         probs: Input probability distribution [batch_size, d].
@@ -1171,6 +1261,10 @@ def apply_min_p_mask_kernel[
     row-wise max probability via a block reduction, compute the threshold
     as ``min_p * max_prob``, and then zero any element below it.
 
+    Parameters:
+        dtype: Element type of the `probs` buffer.
+        block_size: Number of threads per block.
+
     Args:
         probs: Probability buffer [batch_size * d], modified in-place.
         min_p_arr: Per-row min_p values [batch_size].
@@ -1250,6 +1344,21 @@ def TopKTopPSamplingFromProbKernel[
     (in this domain the max "probability" is 1.0, so the mask threshold is
     simply `min_p`), matching `apply_min_p_mask_kernel` semantics in the
     normalized domain.
+
+    Parameters:
+        ProbsLayoutType: Memory layout of the input `probs` tile.
+        probs_origin: Origin tag for the immutable input `probs` tile.
+        OutputLayoutType: Memory layout of the output `output` tile.
+        output_origin: Origin tag for the mutable output `output` tile.
+        block_size: Number of threads per block.
+        vec_size: Number of elements each thread loads per vectorized
+            access.
+        dtype: Element type of the `probs` tensor.
+        out_idx_type: Index type used for the sampled output indices.
+        deterministic: If True, use deterministic sampling.
+        from_logits: If True, `probs` holds raw logits and softmax with
+            per-row temperature scaling and min-p masking is fused into the
+            kernel (defaults to False).
 
     Args:
         probs: Input probability distribution [batch_size, d], or raw logits
@@ -1680,6 +1789,21 @@ def topk_topp_sampling_from_prob[
     the sampling kernel, avoiding the [batch_size, d] probability round-trip
     through global memory and the separate softmax / mask kernel launches.
 
+    Parameters:
+        dtype: Element type of the `probs` tensor.
+        out_idx_type: Index type used for the sampled output indices.
+        block_size: Number of threads per block (defaults to 1024).
+        from_logits: If True, `probs` holds raw logits and softmax with
+            per-row temperature scaling and min-p masking is fused into
+            the kernel (defaults to False).
+        TopKArrLayoutType: Memory layout of the optional `top_k_arr` tensor.
+        IndicesLayoutType: Memory layout of the optional `indices` tensor.
+        TopPArrLayoutType: Memory layout of the optional `top_p_arr` tensor.
+        SeedLayoutType: Memory layout of the optional `rng_seed` tensor.
+        TemperatureLayoutType: Memory layout of the optional `temperature`
+            tensor.
+        MinPLayoutType: Memory layout of the optional `min_p` tensor.
+
     Args:
         ctx: Device context for kernel execution.
         probs: Input probability distribution [batch_size, d], or raw logits
@@ -1836,6 +1960,36 @@ def topk_softmax_sample_kernel[
     seed: Optional[UnsafePointer[UInt64, MutUntrackedOrigin]],
     d: Int,
 ):
+    """Samples a token index from the top-k logits using softmax probabilities in a single kernel.
+
+    Each block processes one row. The kernel finds the k-th largest logit via
+    ternary search, computes softmax over the top-k elements cached in shared
+    memory, then draws a single categorical sample on thread 0.
+
+    Parameters:
+        block_size: Number of threads per block.
+        vec_size: Number of elements each thread loads per vectorized
+            access.
+        dtype: Element type of the `logits` tile.
+        out_idx_type: Index type used for the sampled output indices.
+        LogitsLayoutType: Memory layout of the input `logits` tile.
+        logits_origin: Origin tag for the immutable input `logits` tile.
+        SampledLayoutType: Memory layout of the output `sampled_indices`
+            tile.
+        sampled_origin: Origin tag for the mutable output
+            `sampled_indices` tile.
+
+    Args:
+        logits: Input logits tile [batch_size, d].
+        sampled_indices: Output buffer for sampled token indices [batch_size].
+        top_k_arr: Optional per-row top-k values; overrides top_k_val when present.
+        top_k_val: Default number of largest logits to consider per row.
+        temperature_val: Default softmax temperature scaling factor.
+        temperature: Optional per-row temperature values; overrides temperature_val.
+        seed_val: Default random seed for the generator.
+        seed: Optional per-row seed values; overrides seed_val.
+        d: Row length (vocabulary size).
+    """
     comptime assert sampled_indices.flat_rank == 1
 
     var bx = block_idx.x

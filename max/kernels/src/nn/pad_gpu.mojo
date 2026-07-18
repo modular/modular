@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements GPU-specific tensor padding kernels with constant or edge-fill strategies."""
 
 from std.algorithm.functional import vectorize
 from std.gpu import block_dim, block_idx, thread_idx
@@ -118,6 +119,33 @@ def padded_copy_kernel[
     total_rows: Int,
     row_length: Int,
 ):
+    """Copies rows from `input_tensor` into the unpadded region of
+    `output_tensor` using a cooperatively vectorized, coalesced row copy.
+
+    Each block processes `rows_per_sm` rows (clamped to `total_rows`), and
+    threads along the x-dimension cooperate on a single row via
+    `_vectorized_copy_row`, advancing through rows in steps of `block_dim.y`.
+    The input is treated as a flat row-major buffer of `total_rows` rows each
+    of length `row_length`, while the output offset for each row is derived
+    from `output_tensor`'s layout so the copy lands in the correct position
+    within the padded output.
+
+    Parameters:
+        InputLayoutType: Layout type of the input `TileTensor`.
+        input_origin: Origin (mutability) of the input `TileTensor`.
+        OutputLayoutType: Layout type of the output `TileTensor`.
+        output_origin: Origin (mutability) of the output `TileTensor`.
+        dtype: Element type of the tensors.
+        simd_width: SIMD vector width used for the coalesced row copy.
+
+    Args:
+        input_tensor: Source `TileTensor` of contiguous row-major data.
+        output_tensor: Destination `TileTensor` whose layout maps each row
+            to its padded output position.
+        rows_per_sm: Maximum rows assigned to a single thread block.
+        total_rows: Total number of rows to copy.
+        row_length: Number of elements in each row.
+    """
     var start_row = block_idx.x * rows_per_sm
     var threads_per_row = block_dim.x
 
@@ -290,6 +318,21 @@ def get_padding_output_shape[
     input_shape: IndexList[rank],
     paddings: TileTensor[mut=False, DType.int, ...],
 ) -> IndexList[rank]:
+    """Computes the output shape produced by padding `input_shape` with the
+    before/after amounts given in `paddings`.
+
+    `paddings` is a flat one-dimensional tensor of length `2 * rank` ordered
+    as `(before_axis0, after_axis0, before_axis1, after_axis1, ...)`, and the
+    returned shape has each axis `i` set to `before[i] + input_shape[i] +
+    after[i]`.
+
+    Args:
+        input_shape: Shape of the tensor before padding.
+        paddings: Flat `(before, after)` padding sizes for each axis.
+
+    Returns:
+        The padded output shape with the same rank as `input_shape`.
+    """
     comptime assert (
         paddings.flat_rank == 1 and paddings.static_shape[0] == 2 * rank
     )

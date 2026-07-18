@@ -11,6 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""
+Provides the SM100 (Blackwell) flash-attention host-side dispatch entry point
+that selects a 1Q or 2Q FA4 kernel configuration, builds the Q/K/V/O TMA
+descriptors and tile scheduler, and enqueues the kernel onto the device.
+"""
+
 from std.collections import OptionalReg
 from std.math import ceildiv
 from std.gpu.primitives.grid_controls import pdl_launch_attributes
@@ -85,6 +91,48 @@ def mha_sm100_dispatch[
     ctx: DeviceContext,
     sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
 ) raises:
+    """Dispatches the SM100 FA4 flash-attention kernel for a prefill workload.
+
+    Selects between the 1Q split-K and 2Q FA4 configurations based on a
+    occupancy and prompt-length heuristic, constructs the Q/K/V/O TMA tile
+    descriptors and transient tile scheduler, threads optional ragged
+    valid-length, KV-row-offset, and sink-attention arguments through to the
+    compiled kernel, and enqueues the launch onto the supplied device context.
+
+    Parameters:
+        q_type: Element type of the query tensor (inferred).
+        KVType: Key/value operand descriptor with dtype and page size
+            (inferred).
+        MaskType: Attention mask scheme applied to the Q@K' scores (inferred).
+        output_type: Element type of the attention output buffer (inferred).
+        MaxPromptLenType: Optionally-static type encoding the maximum prompt
+            length (inferred).
+        config: MHA configuration supplying dtype, head count, depth, and
+            swizzle mode.
+        group: Number of query heads per KV head (GQA group size).
+        ragged: Whether to dispatch the variable-length valid-length path.
+        sink: Whether to thread sink-attention weights into the kernel.
+        _is_cache_length_accurate: Whether the supplied cache length is
+            accurate, threaded to the compiled kernel.
+        pair_cta: Whether to launch the pair-CTA configuration with a cluster
+            size of 2.
+
+    Args:
+        output: Device buffer that receives the attention output rows.
+        q_arg: Pointer to the query tensor data.
+        k: Key operand descriptor.
+        v: Value operand descriptor.
+        num_rows_q: Number of query rows to attend over.
+        mask: Attention mask applied to the Q@K' scores.
+        valid_length: Per-row valid KV length pointer, used when `ragged` is set.
+        max_prompt_len_arg: Maximum prompt length, optionally static.
+        max_cache_valid_length_arg: Maximum valid KV cache length across the batch.
+        scale: Scalar applied to the Q@K' product before softmax.
+        kv_input_row_offsets: Optional per-row KV input offsets for ragged layouts.
+        batch_size_arg: Number of sequences in the batch.
+        ctx: Device context used to build TMA descriptors and enqueue the kernel.
+        sink_weights: Optional sink-attention weights used when `sink` is set.
+    """
     comptime PartitionType = NoPartition[DType.float32]
     comptime partition: PartitionType = PartitionType()
     comptime assert (

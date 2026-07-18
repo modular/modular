@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements spatial merge, which compresses vision token grids by merging spatial blocks before attention."""
 
 from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
@@ -40,6 +41,16 @@ def spatial_merge_kernel[
 
     Grid: 1D over all output patches (one block per output patch).
     Threads: loop over channels (hidden_size x merge_size^2).
+
+    Parameters:
+        dtype: Element type of the input and output tensors.
+        InputLayoutType: Compile-time `TensorLayout` of the input tensor.
+        input_origin: Immutable origin of the input tensor.
+        OutputLayoutType: Compile-time `TensorLayout` of the output tensor.
+        output_origin: Mutable origin of the output tensor.
+        GridThwLayoutType: Compile-time `TensorLayout` of the `grid_thw`
+            tensor.
+        grid_thw_origin: Immutable origin of the `grid_thw` tensor.
 
     Args:
         output: Output tensor.
@@ -175,6 +186,20 @@ def spatial_merge[
     merge_size: Int,
     ctx: DeviceContext,
 ) raises:
+    """
+    Launches the spatial merge kernel that compresses vision token grids by merging spatial blocks before attention.
+
+    Parameters:
+        dtype: Element type of the input and output tensors.
+
+    Args:
+        output: Output tensor holding the merged patches.
+        input: Input tensor holding the original patch grid.
+        grid_thw: Grid dimensions tensor of shape `(batch_size, 3)` with `[t, h, w]` per item.
+        hidden_size: Hidden dimension size of each patch.
+        merge_size: Size of the spatial merge blocks.
+        ctx: Device context used to enqueue the kernel.
+    """
     comptime threads_per_block = 256
     var batch_size = Int(grid_thw.dim[0]())
     # One block per merged output patch: each block writes

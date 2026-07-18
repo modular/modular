@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides FP8 quantization kernels supporting static, dynamic, and blockwise scaling."""
+
 from std.collections.string.string_slice import get_static_string
 from std.math import ceildiv
 from std.math.uutils import ufloordiv
@@ -142,6 +144,15 @@ def quantize_static_scaled_fp8[
 def zero_scale_global_kernel(
     scale_global: UnsafePointer[Float32, MutAnyOrigin]
 ):
+    """Zeros the global FP8 scale factor in a single thread.
+
+    Writes ``0`` to ``scale_global[0]`` directly rather than using
+    ``enqueue_fill``, which can deadlock under CUDA graph replay when the GPU
+    is already spinning inside a collectives kernel.
+
+    Args:
+        scale_global: Pointer to the single FP32 global scale to zero.
+    """
     # GENAI-512: Avoid using `enqueue_fill` for this operation as this can
     # deadlock when using CUDA graphs. The graph node for the async memset
     # could try to load a CUDA kernel, but if the GPU is spinning inside a
@@ -213,7 +224,36 @@ def quantize_tensor_dynamic_scaled_fp8[
     ctx: DeviceContext,
     num_rows: Int,
 ) raises:
-    """TileTensor primary implementation of dynamic scaled FP8 quantization."""
+    """TileTensor primary implementation of dynamic scaled FP8 quantization.
+
+    Parameters:
+        out_dtype: FP8 dtype of the quantized output; must be
+            `float8_e4m3fn`.
+        in_dtype: Dtype of the input values loaded by `input_fn`.
+        scales_dtype: Dtype of the per-group scale factors written
+            to `scales`; one of `bfloat16`, `float16`, or `float32`.
+        InputFnType: Compile-time callable type that loads
+            `SIMD[in_dtype, width]` tiles for a given `(row, col)`
+            (inferred).
+        group_size_or_per_token: Number of columns per quantization
+            group; `-1` selects per-tensor scaling over all
+            `num_cols`.
+        num_cols: Number of columns in the input; the hidden
+            dimension size.
+        pdl_level: Programmatic dependent launch level for the
+            kernels (defaults to `PDLLevel.ON`).
+
+    Args:
+        input_fn: Callable that loads input tiles for a given
+            `(row, col)` pair.
+        scaled_output: Rank-2 output `TileTensor` of FP8-quantized
+            values.
+        scales: Rank-2 output `TileTensor` of per-group scale
+            factors.
+        scale_ub: Upper bound for the dynamic scale factor.
+        ctx: Device context used to enqueue the kernels.
+        num_rows: Number of rows to quantize; `0` skips the launch.
+    """
     comptime assert scaled_output.rank == 2, "expected rank-2 output"
     comptime assert scales.rank == 2, "expected rank-2 scales"
 
@@ -578,7 +618,7 @@ struct _ComputeScalesFp8Kernel[
         """Compute per-group FP8 scale factors without quantizing.
 
         Each block scans its (row, group) tile via ``input_fn``, computes the
-        scale factor, and writes it to ``scales[group_idx, row]``.  This is
+        scale factor, and writes it to ``scales[group_idx, row]``. This is
         the first half of the per-tensor path, so `_QuantizeFp8KernelPerTensor`
         can find the tensor-wide max scale.
         """
@@ -1319,6 +1359,20 @@ def naive_blockwise_scaled_fp8_matmul[
     ],
     ctx: DeviceContext,
 ) raises:
+    """Dispatches the naive blockwise scaled FP8 matmul kernel on the GPU.
+
+    Converts the ``LayoutTensor`` operands to ``TileTensor`` views and enqueues
+    ``naive_blockwise_scaled_fp8_matmul_kernel`` with a 2D grid of
+    ``BLOCK_DIM``-sized tiles covering the ``M`` x ``N`` output.
+
+    Args:
+        c: Rank-2 output accumulator tensor.
+        a: Rank-2 FP8 input matrix in K-major format.
+        b: Rank-2 FP8 weight matrix; K-major when ``transpose_b`` is True, otherwise N-major.
+        a_scales: Rank-2 per-block scales for ``a`` in M-major format.
+        b_scales: Rank-2 per-block scales for ``b``; K-major when ``transpose_b`` is True, otherwise N-major.
+        ctx: Device context used to enqueue the kernel.
+    """
     comptime assert a_type == b_type == DType.float8_e4m3fn, (
         "Only float8_e4m3fn is supported for input dtype for blockwise"
         " scaled fp8 matmul"
@@ -1432,6 +1486,25 @@ def naive_blockwise_scaled_fp8_matmul_kernel[
     a_scales: TileTensor[a_scales_type, a_scale_layout, ImmutAnyOrigin],
     b_scales: TileTensor[b_scales_type, b_scale_layout, ImmutAnyOrigin],
 ):
+    """Computes one output element per thread for the naive blockwise scaled FP8 matmul GPU kernel.
+
+    Each thread accumulates the scaled dot product for a single ``(row, col)``
+    output element by looping over the K dimension, loading the corresponding
+    ``a`` and ``b`` values and their per-block scale factors, and applying the
+    optional elementwise epilogue before storing the result.
+
+    Supports two scaling modes: inferred per-group scale sizes from the input
+    and scale tensor shapes (when ``scales_granularity_mnk`` is ``None``), or
+    explicit ``(M, N, K)`` scale granularities provided via
+    ``scales_granularity_mnk``.
+
+    Args:
+        c: Rank-2 output accumulator tensor.
+        a: Rank-2 FP8 input matrix in K-major format.
+        b: Rank-2 FP8 weight matrix; K-major when ``transpose_b`` is True, otherwise N-major.
+        a_scales: Rank-2 per-block scales for ``a`` in M-major format.
+        b_scales: Rank-2 per-block scales for ``b``; K-major when ``transpose_b`` is True, otherwise N-major.
+    """
     # Note: This is a naive kernel that supports a generalized blockwise scaled
     # fp8 matmul.
     # Currently, it supports two modes:
@@ -1586,6 +1659,24 @@ def naive_blockwise_scaled_fp8_grouped_matmul[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
+    """Dispatches the naive blockwise scaled FP8 grouped matmul kernel on the GPU.
+
+    Enqueues ``naive_blockwise_scaled_fp8_grouped_matmul_kernel`` with one
+    expert per grid-Z slice, tiling the per-expert ``M_local`` x ``N`` output
+    with ``BLOCK_DIM_M`` x ``BLOCK_DIM_N`` thread blocks.
+
+    Args:
+        c: Rank-2 output accumulator tensor holding all expert outputs.
+        a: Rank-2 FP8 input matrix in K-major format.
+        b: Rank-3 FP8 weight tensor indexed by expert, in K-major format.
+        a_scales: Per-block scales for ``a`` in M-major format.
+        b_scales: Per-block scales for ``b`` indexed by expert.
+        a_offsets: Prefix-sum offsets delimiting each expert's rows in ``a``.
+        expert_ids: Expert id (or ``-1`` to skip) for each grid-Z slice.
+        max_num_tokens_per_expert: Maximum row count assigned to any single expert.
+        num_active_experts: Number of active experts to dispatch.
+        ctx: Device context used to enqueue the kernel.
+    """
     comptime accum_type = get_accum_type[a_type]()
 
     comptime assert (
@@ -1681,6 +1772,24 @@ def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     a_scales: LayoutTensor[a_scales_type, a_scale_layout, ImmutAnyOrigin],
     b_scales: LayoutTensor[b_scales_type, b_scale_layout, ImmutAnyOrigin],
 ):
+    """Computes one output element per thread for the naive blockwise scaled FP8 grouped matmul GPU kernel.
+
+    Each thread handles a single ``(m_local, n)`` output element within one
+    expert's tile, determined by ``block_idx.z`` and the ``a_offsets`` prefix
+    sum. The thread loops over the K dimension, loading the expert's ``a`` row
+    and ``b`` slice along with their per-block scale factors, accumulates the
+    scaled product, and applies the optional elementwise epilogue before
+    storing the result.
+
+    Args:
+        c: Rank-2 output accumulator tensor holding all expert outputs.
+        a: Rank-2 FP8 input matrix in K-major format.
+        b: Rank-3 FP8 weight tensor indexed by expert, in K-major format.
+        a_offsets: Prefix-sum offsets delimiting each expert's rows in ``a``.
+        expert_ids: Expert id (or ``-1`` to skip) for each grid-Z slice.
+        a_scales: Per-block scales for ``a`` in M-major format.
+        b_scales: Per-block scales for ``b`` indexed by expert.
+    """
     comptime assert (
         accum_type == DType.float32
     ), "Only float32 is supported for accumulation for scaled matmul"

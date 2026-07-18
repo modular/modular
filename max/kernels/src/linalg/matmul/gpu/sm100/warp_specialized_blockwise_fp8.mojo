@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements a warp-specialized blockwise FP8 matrix multiplication kernel for NVIDIA SM100 (Blackwell) GPUs."""
+
 from std.math import align_up, ceildiv, gcd
 from std.math.uutils import umod, ufloordiv
 from std.sys import size_of
@@ -164,6 +166,71 @@ def load_AB[
     iter_idx: Int,
     elect_one_cta: Bool,
 ):
+    """Loads A, B, and A-scales tiles into shared memory via multicast TMA for one pipeline stage.
+
+    Parameters:
+        a_type: FP8 element type of the A operand matrix.
+        b_type: FP8 element type of the B operand matrix.
+        a_scales_type: Element type of the A blockwise scales (`float32`).
+        a_rank: Number of dimensions in the A TMA descriptor.
+        a_tile_shape: Shared-memory tile shape for each A TMA load.
+        a_desc_shape: Copy box shape governing bytes per A TMA load.
+        b_rank: Number of dimensions in the B TMA descriptor.
+        b_tile_shape: Shared-memory tile shape for each B TMA load.
+        b_desc_shape: Copy box shape governing bytes per B TMA load.
+        a_scales_rank: Number of dimensions in the A scales TMA descriptor.
+        a_scales_tile_shape: Shared-memory tile shape for each A scales
+            TMA load.
+        a_scales_desc_shape: Copy box shape governing bytes per A scales
+            TMA load.
+        a_dim0: Row extent of each A shared-memory tile.
+        a_dim1: Column extent of each A shared-memory tile.
+        a_num_tiles: Number of A tiles in the shared-memory tile array.
+        a_swizzle_bytes: Swizzle stride in bytes for the A shared-memory
+            tile.
+        b_dim0: Row extent of each B shared-memory tile.
+        b_dim1: Column extent of each B shared-memory tile.
+        b_num_tiles: Number of B tiles in the shared-memory tile array.
+        b_swizzle_bytes: Swizzle stride in bytes for the B shared-memory
+            tile.
+        a_scales_dim0: Row extent of each A scales shared-memory tile.
+        a_scales_dim1: Column extent of each A scales shared-memory tile.
+        a_scales_num_tiles: Number of A scales tiles in the shared-memory
+            tile array.
+        num_pipeline_stages: Number of double-buffered stages for A, B,
+            and A scales TMA loads.
+        block_tile_shape: GEMM block tile shape `(BM, BN, BK)`.
+        mma_shape: Tensor-core MMA shape `(MMA_M, MMA_N, MMA_K)`.
+        cta_group: Number of CTAs cooperating per MMA group (defaults to
+            1).
+
+    Args:
+        a_tma_op: TMA descriptor for async multicast loads of A tiles
+            from global memory.
+        b_tma_op: TMA descriptor for async multicast loads of B tiles
+            from global memory.
+        a_scales_tma_op: TMA descriptor for async loads of A blockwise
+            scales from global memory.
+        a_smem_tiles: Shared-memory tile array holding A tiles across
+            pipeline stages.
+        b_smem_tiles: Shared-memory tile array holding B tiles across
+            pipeline stages.
+        a_scales_smem_tiles: Shared-memory tile array holding A blockwise
+            scales across pipeline stages.
+        load_mma_pipeline: Producer/consumer pipeline synchronizing TMA
+            loads with MMA consumption.
+        peer_cta_coord: Peer CTA coordinate `(peer_id, m_coord, n_coord)`
+            within the cluster.
+        work_tile_coord: Work tile coordinate `(m, n)` of the current
+            output tile.
+        a_multicast_mask: Multicast mask selecting CTAs that receive A
+            tile broadcasts.
+        b_multicast_mask: Multicast mask selecting CTAs that receive B
+            tile broadcasts.
+        iter_idx: K-dimension iteration index for the current TMA load.
+        elect_one_cta: Whether this CTA is the elected leader for
+            multicast TMA setup.
+    """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -278,6 +345,38 @@ def multi_stage_reg_epilogue[
     c_coord: Tuple[Int, Int],
     elect_one_warp: Bool,
 ):
+    """Casts register accumulators to the output type and stores each stage to global memory via TMA.
+
+    Parameters:
+        c_rank: Number of dimensions in the C TMA descriptor.
+        c_tile_shape: Shared-memory tile shape for each C TMA store.
+        c_desc_shape: Copy box shape governing bytes per C TMA store.
+        accum_type: Element type of the register accumulators before
+            casting.
+        accum_layout: Memory layout of the accumulator `TileTensor`.
+        c_type: Element type of the C output matrix.
+        block_tile_shape: GEMM block tile shape `(BM, BN, BK)`.
+        mma_shape: Tensor-core MMA shape `(MMA_M, MMA_N, MMA_K)`.
+        is_lower_frag_required: Whether the lower accumulator fragment must
+            be processed and stored.
+        cta_group: Number of CTAs cooperating per MMA group.
+        num_output_warps: Number of warps participating in the epilogue
+            store.
+        c_swizzle: Swizzle mode for the C shared-memory tile.
+
+    Args:
+        c_upper_main_tile: Upper accumulator fragment holding scaled MMA
+            results to be cast and stored.
+        c_lower_main_tile: Lower accumulator fragment holding scaled MMA
+            results to be cast and stored.
+        c_tiles: Shared-memory tile array for staging C output tiles before
+            TMA store.
+        c_tma_op: TMA descriptor for async stores of C tiles to global
+            memory.
+        c_coord: Work tile coordinate `(m, n)` of the current output tile.
+        elect_one_warp: Whether this warp is the elected leader for issuing
+            TMA stores.
+    """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -459,6 +558,50 @@ def promote_accumulators[
     k_iter: Int,
     problem_shape: StaticTuple[Int32, 3],
 ):
+    """Promotes FP8 MMA partial products by applying blockwise A and B scales to the tensor-memory accumulators.
+
+    Parameters:
+        pipeline_stages: Number of double-buffered stages in the load-MMA
+            pipeline.
+        num_accum_pipeline_stages: Number of double-buffered stages in the
+            MMA-output pipeline.
+        accum_type: Element type of the accumulators (`float32`).
+        accum_layout: Memory layout of the accumulator `TileTensor`.
+        a_scales_type: Element type of the A blockwise scales (`float32`).
+        b_scales_type: Element type of the B blockwise scales (`float32`).
+        b_scales_layout: Memory layout of the B scales `TileTensor`.
+        block_tile_shape: GEMM block tile shape `(BM, BN, BK)`.
+        mma_shape: Tensor-core MMA shape `(MMA_M, MMA_N, MMA_K)`.
+        cta_group: Number of CTAs cooperating per MMA group.
+        CLUSTER_SIZE: Total number of CTAs in the cluster.
+        is_lower_frag_required: Whether the lower accumulator fragment must
+            be processed.
+        num_output_warps: Number of warps participating in the epilogue.
+
+    Args:
+        b_scales: B blockwise scales used to rescale FP8 partial products.
+        a_scales_smem_tiles: Shared-memory tile array holding A blockwise
+            scales loaded for the current pipeline stage.
+        c_upper_main_tile: Upper accumulator fragment to accumulate scaled
+            results into.
+        c_lower_main_tile: Lower accumulator fragment to accumulate scaled
+            results into.
+        mma_output_pipeline: Producer/consumer pipeline synchronizing MMA
+            production with accumulator consumption.
+        tmem_addr: Base tensor-memory address for loading accumulator
+            fragments.
+        load_mma_pipeline: Producer/consumer pipeline synchronizing TMA
+            loads with MMA consumption.
+        work_tile_coord: Work tile coordinate `(m, n)` of the current
+            output tile.
+        elect_one_warp: Whether this warp is the elected leader for
+            barrier signaling.
+        stage_stride_cols: Column stride between accumulator pipeline
+            stages in tensor memory.
+        k_iter: K-dimension iteration index for the current scale
+            application.
+        problem_shape: Full GEMM problem dimensions `(M, N, K)`.
+    """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -786,6 +929,50 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     problem_shape: StaticTuple[Int32, 3],
 ):
+    """Implements the warp-specialized blockwise FP8 GEMM kernel for SM100 using TMA loads, UMMA tensor-core MMA, and a CLC tile scheduler.
+
+    Parameters:
+        a_type: FP8 element type of the A operand matrix.
+        b_type: FP8 element type of the B operand matrix.
+        c_type: Element type of the C output matrix.
+        a_rank: Number of dimensions in the A TMA descriptor.
+        a_tile_shape: Shared-memory tile shape for each A TMA load.
+        a_desc_shape: Copy box shape governing bytes per A TMA load.
+        b_rank: Number of dimensions in the B TMA descriptor.
+        b_tile_shape: Shared-memory tile shape for each B TMA load.
+        b_desc_shape: Copy box shape governing bytes per B TMA load.
+        c_rank: Number of dimensions in the C TMA descriptor.
+        c_tile_shape: Shared-memory tile shape for each C TMA store.
+        c_desc_shape: Copy box shape governing bytes per C TMA store.
+        a_scales_rank: Number of dimensions in the A scales TMA descriptor.
+        a_scales_tile_shape: Shared-memory tile shape for each A scales TMA
+            load.
+        a_scales_desc_shape: Copy box shape governing bytes per A scales TMA
+            load.
+        a_scales_type: Element type of the A blockwise scales (`float32`).
+        b_scales_type: Element type of the B blockwise scales (`float32`).
+        b_scales_layout: Memory layout of the B scales `TileTensor`.
+        transpose_b: Whether B is k-major (transposed); must be `True`.
+        config: Static GEMM configuration holding tile, MMA, cluster,
+            pipeline, and swizzle parameters.
+        num_pipeline_stages: Number of double-buffered stages for A, B, and
+            A scales TMA loads.
+        cluster_shape: Thread cluster shape `(x, y, z)` for the launch.
+
+    Args:
+        a_tma_op: TMA descriptor for async multicast loads of A tiles from
+            global memory.
+        b_tma_op: TMA descriptor for async multicast loads of B tiles from
+            global memory.
+        c_tma_op: TMA descriptor for async stores of C tiles to global
+            memory.
+        a_scales_tma_op: TMA descriptor for async loads of A blockwise
+            scales from global memory.
+        cluster_dim: Number of clusters along each grid axis `(x, y, z)`.
+        num_iters: Number of K-dimension iterations, equal to `ceil(K, BK)`.
+        b_scales: B blockwise scales used to rescale FP8 partial products.
+        problem_shape: Full GEMM problem dimensions `(M, N, K)`.
+    """
     comptime num_output_warps = 4
 
     comptime accum_type = get_accum_type[a_type]()
@@ -1311,6 +1498,8 @@ def sm100_warp_specialized_blockwise_fp8[
     b_scales: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
+    """Sets up TMA descriptors, shared-memory layouts, and pipeline barriers, then launches the blockwise FP8 GEMM kernel on SM100.
+    """
     comptime a_type = config.a_type
     comptime b_type = config.b_type
     comptime c_type = config.c_type

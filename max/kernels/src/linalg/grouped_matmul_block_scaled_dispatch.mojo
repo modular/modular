@@ -47,8 +47,26 @@ def grouped_matmul_block_scaled_dispatch[
 ) raises:
     """Dispatch grouped block-scaled matmul to format-specific implementation.
 
-    Currently NVFP4, MXFP4, and MXFP8 on SM100 are supported. See
-    `grouped_matmul_block_scaled_sm100_dispatch` for parameter documentation.
+    Currently NVFP4, MXFP4, and MXFP8 on SM100 are supported.
+
+    Parameters:
+        transpose_b: Whether B is transposed (must be True).
+        target: Target device (unused, for MOGG interface compatibility).
+        pdl_level: Programmatic dependent launch level.
+
+    Args:
+        c: Output tensor (total_tokens, N).
+        a: Input A tensor (total_tokens, K//2 packed).
+        b: Weight tensor B (num_experts, N, K//2 packed).
+        a_scales: Scale factors for A (5D).
+        b_scales: Scale factors for B (6D).
+        a_offsets: Per-expert token offsets (num_active_experts + 1).
+        a_scale_offsets: Per-expert scale offsets (num_active_experts).
+        expert_ids: Active expert IDs (num_active_experts).
+        expert_scales: Per-expert output scaling (num_experts).
+        num_active_experts: Number of active experts.
+        estimated_total_m: Estimated number of total non-padded tokens.
+        ctx: Device context.
     """
     comptime assert _is_sm10x_gpu(
         ctx.default_device_info
