@@ -53,7 +53,13 @@ from std.logger import Logger
 from std.memory import stack_allocation
 from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type
-from ...gemv import gemv_gpu, gemm_mma_cpasync
+from ...gemv import (
+    GEMVAlgorithm,
+    gemm_mma_cpasync,
+    gemv_gpu,
+    gemv_gpu_dispatch,
+    is_minimax_router_gemm,
+)
 from ...utils import (
     GemmShape,
     elementwise_compute_lambda_type,
@@ -751,6 +757,20 @@ def _matmul_gpu[
                         pdl_level=pdl_level,
                     )
                     return _multistage_gemm[config]()
+
+                comptime if (
+                    transpose_b
+                    and is_minimax_router_gemm[
+                        c_type, a_type, b_type, static_N, static_K
+                    ]()
+                ):
+                    if m <= 16:
+                        return gemv_gpu_dispatch[
+                            transpose_b=True,
+                            elementwise_lambda_fn=elementwise_lambda_wrapper,
+                            pdl_level=PDLLevel.OFF,
+                            tile_m=1,
+                        ](GEMVAlgorithm.GEMV_SPLIT_K, c, a, b, ctx)
 
                 if m == 1:
                     return _gemv_dispatch()

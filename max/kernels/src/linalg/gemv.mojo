@@ -375,6 +375,7 @@ def gemv_split_k[
     tile_n: Int,
     num_threads: Int,
     unroll_factor: Int = 2,
+    weight_non_temporal: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
     check_bounds_m: Bool = True,
@@ -437,16 +438,17 @@ def gemv_split_k[
         var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
 
         # Load weights into tile_w.
-        # On AMD, use non-temporal loads to avoid L1/L2 cache pollution
-        # (weights are read exactly once).
+        # Streaming is best when each weight is read once. Tiny-M router GEMV
+        # launches one row block per M value, so those blocks should retain and
+        # reuse the same weight rows instead.
         comptime for i in range(tile_n):
             comptime if check_bounds_n:
                 if i + tile_id_n >= n:
                     continue
             comptime if is_amd_gpu():
-                var b_vec = weight_tile.load[simd_width, non_temporal=True](
-                    Coord(i, thread_idx.x * simd_width)
-                )
+                var b_vec = weight_tile.load[
+                    simd_width, non_temporal=weight_non_temporal
+                ](Coord(i, thread_idx.x * simd_width))
                 tile_w.store(Coord(i, Idx[0]), b_vec)
             else:
                 var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
@@ -773,6 +775,24 @@ def _nvidia_gemv_config[
 
 
 @always_inline
+def is_minimax_router_gemm[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    static_N: Int,
+    static_K: Int,
+]() -> Bool:
+    """Returns whether a GEMM has the MiniMax-M3 fp32 router signature."""
+    return (
+        a_type == DType.float32
+        and b_type == DType.float32
+        and c_type == DType.float32
+        and static_N == 128
+        and static_K == 6144
+    )
+
+
+@always_inline
 def gemv_gpu_dispatch[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
@@ -812,6 +832,7 @@ def gemv_gpu_dispatch[
             num_threads: Int,
             tile_n: Int,
             unroll_factor: Int = 2,
+            weight_non_temporal: Bool = True,
         ]() raises:
             comptime kernel = gemv_split_k[
                 c_type,
@@ -828,6 +849,7 @@ def gemv_gpu_dispatch[
                 tile_n=tile_n,
                 num_threads=num_threads,
                 unroll_factor=unroll_factor,
+                weight_non_temporal=weight_non_temporal,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 check_bounds_m=tile_m > 1,
                 check_bounds_n=static_N % tile_n != 0,
@@ -846,18 +868,25 @@ def gemv_gpu_dispatch[
             )
 
         comptime if has_amd_gpu_accelerator():
-            comptime config = _amd_gemv_config[
-                simd_width,
-                ctx.default_device_info.max_thread_block_size,
-                static_K,
-                has_N,
-                static_N,
-            ]()
-            _gemv_split_k_dispatch[
-                config[0],
-                config[1],
-                config[2],
-            ]()
+            comptime if is_minimax_router_gemm[
+                c_type, a_type, b_type, static_N, static_K
+            ]():
+                # MiniMax-M3 router gate: M row blocks reread the same 3 MB
+                # weight. Cached loads turn those rereads into L2/MALL hits.
+                _gemv_split_k_dispatch[128, 2, 2, False]()
+            else:
+                comptime config = _amd_gemv_config[
+                    simd_width,
+                    ctx.default_device_info.max_thread_block_size,
+                    static_K,
+                    has_N,
+                    static_N,
+                ]()
+                _gemv_split_k_dispatch[
+                    config[0],
+                    config[1],
+                    config[2],
+                ]()
         else:
             # NVIDIA B200: shape-dependent dispatch for FP8 and BF16.
             comptime config = _nvidia_gemv_config[
@@ -1107,6 +1136,8 @@ def gemv_gpu[
     comptime assert b.rank == 2, "b must be of rank 2"
 
     comptime a_type = a.dtype
+    comptime b_type = b.dtype
+    comptime c_type = c.dtype
 
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
@@ -1117,6 +1148,8 @@ def gemv_gpu[
     comptime has_M = c.static_shape[0] > -1
     comptime has_N = c.static_shape[1] > -1
     comptime has_K = a.static_shape[1] > -1
+    comptime static_N = c.static_shape[1] if has_N else UNKNOWN_VALUE
+    comptime static_K = a.static_shape[1] if has_K else UNKNOWN_VALUE
 
     logger.info("------ Dispatching to GEMV ------")
 
@@ -1137,7 +1170,17 @@ def gemv_gpu[
         else:
             kernel_func = GEMVAlgorithm.GEMV_KERNEL
 
-    elif m == 1 and transpose_b == True:
+    elif (
+        m == 1
+        or (
+            has_N
+            and has_K
+            and is_minimax_router_gemm[
+                c_type, a_type, b_type, static_N, static_K
+            ]()
+            and m <= 16
+        )
+    ) and transpose_b == True:
         comptime if a_type in (
             DType.float32,
             DType.bfloat16,
