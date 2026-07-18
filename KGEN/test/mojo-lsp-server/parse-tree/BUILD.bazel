@@ -157,7 +157,6 @@ _KERNEL_PACKAGES = [
     "layout",
     "linalg",
     "nn",
-    "nvml",
     "pipeline",
     "profiling_range",
     "quantization",
