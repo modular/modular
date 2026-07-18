@@ -44,11 +44,7 @@ def run_case[
 ]() raises:
     comptime HO = 1
     comptime WO = (
-        W
-        + pad_left
-        + pad_right
-        - dilation_w * (K - 1)
-        - 1
+        W + pad_left + pad_right - dilation_w * (K - 1) - 1
     ) // stride_w + 1
     comptime conv_attr = ConvInfoStatic[2](
         IntTuple(0, pad_left, 0, pad_right),
@@ -62,9 +58,7 @@ def run_case[
     comptime micro_kernel_f_size = micro_kernel_shape[1] * simd_size
     comptime num_micro_tiles = ceildiv(F, micro_kernel_f_size)
 
-    var input_storage = InlineArray[Scalar[value_type], N * H * W * C](
-        fill=1.0
-    )
+    var input_storage = InlineArray[Scalar[value_type], N * H * W * C](fill=1.0)
     var filter_storage = InlineArray[
         Scalar[value_type],
         num_micro_tiles * R * K * C * micro_kernel_f_size,
@@ -72,25 +66,23 @@ def run_case[
     var unpacked_filter_storage = InlineArray[
         Scalar[value_type], R * K * C * F
     ](fill=1.0)
-    var output_storage = InlineArray[
-        Scalar[value_type], N * HO * WO * F
-    ](fill=0.0)
+    var output_storage = InlineArray[Scalar[value_type], N * HO * WO * F](
+        fill=0.0
+    )
 
-    var input = LayoutTensor[
-        value_type, Layout.row_major(N, H, W, C)
-    ](input_storage)
+    var input = LayoutTensor[value_type, Layout.row_major(N, H, W, C)](
+        input_storage
+    )
     var filter = LayoutTensor[
         value_type,
-        Layout.row_major(
-            num_micro_tiles, R, K, C, micro_kernel_f_size
-        ),
+        Layout.row_major(num_micro_tiles, R, K, C, micro_kernel_f_size),
     ](filter_storage)
     var unpacked_filter = LayoutTensor[
         value_type, Layout.row_major(R, K, C, F)
     ](unpacked_filter_storage)
-    var output = LayoutTensor[
-        value_type, Layout.row_major(N, HO, WO, F)
-    ](output_storage)
+    var output = LayoutTensor[value_type, Layout.row_major(N, HO, WO, F)](
+        output_storage
+    )
     var conv_shape = ConvShape[2](
         n=N,
         input_dims=Index(H, W),
@@ -106,15 +98,11 @@ def run_case[
         num_groups=1,
     )
 
-    pack_filter_lt[simd_size, micro_kernel_f_size](
-        unpacked_filter, filter, 1
-    )
+    pack_filter_lt[simd_size, micro_kernel_f_size](unpacked_filter, filter, 1)
 
     ConvDirectNHWC[
         Layout.row_major(N, H, W, C),
-        Layout.row_major(
-            num_micro_tiles, R, K, C, micro_kernel_f_size
-        ),
+        Layout.row_major(num_micro_tiles, R, K, C, micro_kernel_f_size),
         Layout.row_major(N, HO, WO, F),
         value_type,
         value_type,
