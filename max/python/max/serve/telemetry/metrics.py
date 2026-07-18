@@ -1044,7 +1044,6 @@ class _AsyncMetrics:
                 pct,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
-            MetricLevel.BASIC,
         )
 
     def batch_terminated_reqs(self, value: int, batch_type: str) -> None:
