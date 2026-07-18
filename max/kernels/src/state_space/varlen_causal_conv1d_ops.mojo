@@ -406,6 +406,25 @@ def causal_conv1d_varlen_update_shape[
     cache_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
     conv_state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
 ) -> IndexList[3]:
+    """Returns the output shape for the `causal_conv1d_varlen_update` op.
+
+    The output shape equals the input shape `(batch, dim, seqlen)`.
+
+    Parameters:
+        dtype: Element type of the `x`, `weight`, and `bias` input tensors.
+
+    Args:
+        x: Input tensor with shape `(batch, dim, seqlen)`.
+        weight: Convolution weights with shape `(dim, width)`.
+        bias: Per-channel bias with shape `(dim,)`.
+        cache_seqlens: Current sequence lengths per batch entry with shape
+            `(batch,)`.
+        conv_state_indices: Indices into the conv state buffer with shape
+            `(batch,)`.
+
+    Returns:
+        The output tensor shape, equal to `x.shape()`.
+    """
     return x.shape()
 
 
@@ -517,6 +536,24 @@ def causal_conv1d_varlen_states_shape[
     x: InputTensor[dtype=dtype, rank=2, ...],
     cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
 ) -> IndexList[3]:
+    """Returns the output shape for the `causal_conv1d_varlen_states` op.
+
+    The output is a state buffer with one entry per sequence: shape
+    `(batch, dim, state_len)`. The `state_len` dimension is determined by
+    the output allocation at runtime; this function returns 0 for that
+    dimension as a placeholder.
+
+    Parameters:
+        dtype: Element type of the packed input tensor `x`.
+
+    Args:
+        x: Packed input tensor with shape `(total_tokens, dim)`.
+        cu_seqlens: Cumulative sequence lengths with shape `(batch + 1,)`.
+
+    Returns:
+        The output state shape `(batch, dim, 0)` where `batch` is inferred
+        from `cu_seqlens` and `state_len` is filled at runtime.
+    """
     var batch = cu_seqlens.dim_size(0) - 1
     var dim = x.dim_size(1)
     # state_len is derived from the output tensor shape at runtime

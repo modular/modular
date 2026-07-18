@@ -10,18 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-"""Mojo `Range` context manager (MXTOOLS-190).
+"""Mojo `Range` context manager for libkineto activity spans.
 
 `Range` wraps the `KGEN_CompilerRT_Range{Begin,End,IsEnabled}` FFI bridge from
 `KGEN/lib/CompilerRT/RangeBridge.cpp`. Use it as a context manager to emit a
 libkineto activity span: `__enter__` opens the span and `__exit__` closes it.
-The follow-up `mo.profile.range` MLIR op (tracked in MXTOOLS-190) will lower to
-this struct.
 
 `Range` mirrors `std.runtime.tracing.Trace`: the span is opened in `__enter__`
 and closed in `__exit__` rather than in `__init__`/`__del__`. This sidesteps
-Mojo's ASAP destruction — a `var span = Range(...)` whose handle is never read
+Mojo's ASAP destruction: a `var span = Range(...)` whose handle is never read
 again would otherwise be destroyed immediately after construction, closing the
 span before any work inside it ran. The `with` statement keeps the object alive
 for the full block, so begin/end pair with block entry/exit.
@@ -77,10 +74,9 @@ struct Range(ImplicitlyCopyable):
             ...  # graph build code runs inside the span
     ```
 
-    TODO(MXTOOLS-190): once the `mo.profile.range` MLIR op lands, add a
-    `category` parameter (mirroring `std.runtime.tracing.Trace[level,
-    category]`) and a `StringSlice` name overload for dynamically-built names
-    (e.g. `Range("kernel_" + variant)`).
+    A future update will add a `category` parameter (mirroring
+    `std.runtime.tracing.Trace[level, category]`) and a `StringSlice` name
+    overload for dynamically-built names (e.g. `Range("kernel_" + variant)`).
     """
 
     var _name: StaticString
@@ -95,7 +91,7 @@ struct Range(ImplicitlyCopyable):
 
     Captured in `__enter__` so `__exit__` pairs the begin/end calls
     symmetrically even if `M::Profiling::disable()` runs on another thread
-    mid-scope. The underscore prefix marks this as private — direct mutation by
+    mid-scope. The underscore prefix marks this as private; direct mutation by
     external code would unbalance libkineto's bookkeeping.
     """
 

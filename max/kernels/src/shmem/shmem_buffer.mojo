@@ -11,6 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Symmetric heap buffer type for OpenSHMEM-backed multi-GPU memory.
+
+Provides `SHMEMBuffer`, a typed buffer allocated from the SHMEM symmetric heap
+so that it is directly addressable by all GPUs in the job.
+"""
+
 from std.sys import (
     CompilationTarget,
     has_nvidia_gpu_accelerator,
@@ -27,6 +33,17 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
+    """A typed buffer allocated from the OpenSHMEM symmetric heap.
+
+    Provides a `DevicePassable` typed buffer backed by `shmem_malloc` so that
+    every GPU in the SHMEM job can directly address the allocation. Use
+    `SHMEMBuffer` as the storage backing for cross-node collective operations
+    where `DeviceBuffer` cannot be used because the memory must be symmetric.
+
+    Parameters:
+        dtype: The element data type of the buffer.
+    """
+
     var _data: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
     var _ctx_ptr: _DeviceContextPtr[mut=True]
     var _size: Int

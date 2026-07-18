@@ -932,7 +932,7 @@ struct TMATensorTile[
 
         Each unrolled `cp_async_bulk_tensor_shared_cluster_global` issue is
         predicated in-PTX on `elect`: the TMA fires only on the elected lane.
-        All lanes follow the same PTX control flow — no warp-divergent
+        All lanes follow the same PTX control flow; no warp-divergent
         `if elect != 0:` is needed at the call site.
 
         Parameters:
@@ -1136,7 +1136,7 @@ struct TMATensorTile[
 
         Parameters:
             cta_group: If set to 2, the TMA emits `cta_group::2` PTX so the
-                mbarrier arrival routes to the leader CTA's barrier — required
+                mbarrier arrival routes to the leader CTA's barrier, required
                 for pair-CTA kernels that share one barrier across the pair.
                 Defaults to 1.
             eviction_policy: Optional cache eviction policy that controls how the data is handled
@@ -1214,7 +1214,7 @@ struct TMATensorTile[
     ):
         """Elect-predicated overload of `async_copy_3d`.
 
-        See `async_copy_elect` for semantics — each unrolled TMA issue is
+        See `async_copy_elect` for semantics: each unrolled TMA issue is
         predicated in-PTX on `elect`.
 
         Parameters:
@@ -1296,7 +1296,7 @@ struct TMATensorTile[
 
         Parameters:
             cta_group: If set to 2, the TMA emits `cta_group::2` PTX so the
-                mbarrier arrival routes to the leader CTA's barrier — required
+                mbarrier arrival routes to the leader CTA's barrier, required
                 for pair-CTA kernels that share one barrier across the pair.
                 Defaults to 1.
             eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
@@ -1518,7 +1518,7 @@ struct TMATensorTile[
     ):
         """Elect-predicated overload of `async_copy_4d`.
 
-        See `async_copy_elect` for semantics — each unrolled TMA issue is
+        See `async_copy_elect` for semantics: each unrolled TMA issue is
         predicated in-PTX on `elect`.
 
         Parameters:
@@ -1842,7 +1842,7 @@ struct TMATensorTile[
     ):
         """Elect-predicated overload of `async_copy_5d`.
 
-        See `async_copy_elect` for semantics — each unrolled TMA issue is
+        See `async_copy_elect` for semantics: each unrolled TMA issue is
         predicated in-PTX on `elect`.
 
         Parameters:
@@ -4963,7 +4963,7 @@ def _create_split_tma_folded[
 
     `row_major=False` (default) builds the rank-4 **chunk-outer** box
     `[gran, box_rows, fold_chunks, 1]` (CUDA fast->slow): all `box_rows` of chunk 0,
-    then chunk 1, ... — byte-equivalent to the per-chunk loop only for a single page
+    then chunk 1, ..., byte-equivalent to the per-chunk loop only for a single page
     (`box_rows == smem_j_stride_rows`, `pages_per_iter == 1`).
 
     `row_major=True` builds the rank-5 **chunk-inner** (row-major-atoms) box
@@ -5152,13 +5152,13 @@ def create_split_tma[
     of the tensor into multiples of swizzle granularity. This functionality is currently
     disabled because it was not found to improve performance.
 
-    When `fold_chunks >= 2`, the contiguous innermost (depth) dimension — which the
-    swizzle hardware forces to be split into `swizzle_granularity`-sized chunks — is
+    When `fold_chunks >= 2`, the contiguous innermost (depth) dimension, which the
+    swizzle hardware forces to be split into `swizzle_granularity`-sized chunks, is
     folded into an extra, non-innermost box dimension so that a *single* rank-4
     `cp.async.bulk.tensor` copies all `fold_chunks` depth chunks at once instead of one
     TMA per chunk. The PUBLIC return type stays rank-3 (`SplitLastDimTMATensorTile`);
     the rank-4 CUDA descriptor is built internally and its opaque 128 B
-    `TMADescriptor` blob (which is rank-agnostic — see `TMADescriptor`) is wrapped into
+    `TMADescriptor` blob (which is rank-agnostic; see `TMADescriptor`) is wrapped into
     the rank-3 tile via its `@implicit` constructor. The issue site
     (`PagedRowIndices._tma_copy_kv_impl`) must agree by issuing rank-4 coords; the
     shared `kv_tma_fold_chunks` predicate is the single source of truth that keeps the
@@ -5167,8 +5167,8 @@ def create_split_tma[
 
     Folding is byte-equivalent to the per-chunk loop ONLY when the box's per-chunk SMEM
     stride (`box_rows * swizzle_granularity`) equals the consumer/producer chunk stride
-    (`smem_j_stride_rows * swizzle_granularity`) — i.e. `box_rows == smem_j_stride_rows`
-    — and the tile occupies a single page (`pages_per_iter == 1`). The caller is
+    (`smem_j_stride_rows * swizzle_granularity`), i.e. `box_rows == smem_j_stride_rows`,
+    and the tile occupies a single page (`pages_per_iter == 1`). The caller is
     responsible for only passing `fold_chunks >= 2` when those hold; here `box_rows`
     equals `smem_shape[0]`.
 
@@ -7021,7 +7021,7 @@ def create_tensor_tile_im2col[
 ) raises -> TMATensorTileIm2col[dtype, 2, __tile_shape, __desc_shape]:
     """Creates a TMA tensor tile with im2col transformation for 2D convolution.
 
-    TileTensor overload — delegates to the shared `_build_im2col_descriptor`
+    TileTensor overload: delegates to the shared `_build_im2col_descriptor`
     helper. See the LayoutTensor overload for full background.
 
     Parameters:

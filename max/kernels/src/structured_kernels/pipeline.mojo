@@ -370,6 +370,9 @@ struct ProducerConsumerPipeline[
                 # stage.mbar() gives barrier for signaling
                 # __exit__ calls producer_step()
 
+        Parameters:
+            origin: Origin of the mutable borrow of `self` (inferred).
+
         Returns:
             Context that waits for consumer on enter, advances on exit.
         """
@@ -387,6 +390,9 @@ struct ProducerConsumerPipeline[
             with pipeline.consume() as stage:
                 # stage.index() gives current stage
                 # __exit__ signals consumer done and advances
+
+        Parameters:
+            origin: Origin of the mutable borrow of `self` (inferred).
 
         Returns:
             Context that waits for producer on enter, signals+advances on exit.
@@ -417,6 +423,9 @@ struct ProducerConsumerPipeline[
                 else:
                     umma_arrive_leader_cta(stage.mbar())
 
+        Parameters:
+            origin: Origin of the mutable borrow of `self` (inferred).
+
         Returns:
             Context that waits for producer on enter, advances only on exit.
         """
@@ -439,6 +448,9 @@ struct ProducerConsumerPipeline[
             var stage = pipeline.acquire_producer()
             # ... produce data, signal via stage.mbar() ...
             stage^.release()  # Advances to next stage
+
+        Parameters:
+            origin: Origin of the mutable borrow of `self` (inferred).
 
         Returns:
             A ProducerStage handle that must be released.
@@ -466,6 +478,9 @@ struct ProducerConsumerPipeline[
             if lane_id() < CLUSTER_SIZE:
                 stage.arrive()
             stage^.release_without_signal()
+
+        Parameters:
+            origin: Origin of the mutable borrow of `self` (inferred).
 
         Returns:
             A ConsumerStage handle that must be released.
@@ -567,6 +582,12 @@ struct ProduceContext[
 
     Note: The actual production signal (mma_arrive) is kernel-specific
     and must be called by the user before exiting the context.
+
+    Parameters:
+        pipeline_origin: Origin of the pipeline reference.
+        num_stages: Number of pipeline stages.
+        Backend: Pipeline synchronization backend (defaults to
+            `NvidiaMbarBackend`).
     """
 
     var pipeline: Pointer[
@@ -705,6 +726,12 @@ struct ConsumeContext[
 
     - __enter__: Waits for producer to be ready, returns ref to stage
     - __exit__: Releases the stage (signals consumption + advances)
+
+    Parameters:
+        pipeline_origin: Origin of the pipeline reference.
+        num_stages: Number of pipeline stages.
+        Backend: Pipeline synchronization backend (defaults to
+            `NvidiaMbarBackend`).
     """
 
     var pipeline: Pointer[
@@ -763,6 +790,12 @@ struct ExplicitConsumeContext[
             if lane_id() < CLUSTER_SIZE:
                 stage.arrive()
         # __exit__ only calls consumer_step(), not arrive()
+
+    Parameters:
+        pipeline_origin: Origin of the pipeline reference.
+        num_stages: Number of pipeline stages.
+        Backend: Pipeline synchronization backend (defaults to
+            `NvidiaMbarBackend`).
     """
 
     var pipeline: Pointer[

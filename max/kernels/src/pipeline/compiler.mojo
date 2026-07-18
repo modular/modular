@@ -145,7 +145,7 @@ trait PipelineSchedule:
         values are derived from cumulative prefetch `vm_cost`.
 
         Use for kernels whose first main-loop iter expects same-stage
-        leading-quadrant frags pre-loaded — e.g. cross-stage rotation
+        leading-quadrant frags pre-loaded: e.g. cross-stage rotation
         patterns where the body's sub=0 frags read the *cross* stage,
         so the same-stage versions need explicit bootstrap.
 
@@ -165,7 +165,7 @@ struct ScheduleCompiler(Movable):
 
     Orchestrates schedule construction by calling PipelineSchedule trait
     methods in order. All kernel-specific logic lives in trait implementations.
-    All intermediate state is List — sizes are discovered, not prescribed.
+    All intermediate state is List; sizes are discovered, not prescribed.
 
     Usage:
 
@@ -286,7 +286,7 @@ def compile_schedule[
 
     This is the compile-time entry point. The returned compiler holds
     all phases as Lists (prologue, kernel, epilogue, kernel_deps).
-    Use as a comptime value — the kernel reads entries via comptime for.
+    Use as a comptime value; the kernel reads entries via comptime for.
 
     Parameters:
         S: The PipelineSchedule implementation type.

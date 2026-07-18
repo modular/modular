@@ -15,21 +15,21 @@
 The pipeline framework consumes four kernel-derived counts that live in
 two different configs today:
 
-  - `PipelineConfig.vm_per_load_a` / `vm_per_load_b` — vmcnt entries
+  - `PipelineConfig.vm_per_load_a` / `vm_per_load_b`: vmcnt entries
     consumed by one channel-A or channel-B prefetch (drives `wait_vm`
     derivation).
-  - `ScheduleConfig.lgkm_per_load_a` / `lgkm_per_load_b` — lgkmcnt
+  - `ScheduleConfig.lgkm_per_load_a` / `lgkm_per_load_b`: lgkmcnt
     entries consumed by one channel-A or channel-B fragment load
     (drives `wait_lgkm` derivation).
 
-Both are kernel-geometry properties — they fall out of BM/BN/BK,
-warp count, MMA shape, dtype size — but every kernel computes them
+Both are kernel-geometry properties (they fall out of BM/BN/BK,
+warp count, MMA shape, dtype size), but every kernel computes them
 from its own warp-grid + MMA-pattern assumptions. `KernelGeometry`
 captures the result once and exposes the derived counts as fields;
 each kernel layout (4-wave, ping-pong, ...) provides its own factory
 that does the layout-specific math and returns a `KernelGeometry`.
 
-Existing kernels that pass the four values directly continue to work —
+Existing kernels that pass the four values directly continue to work;
 this struct is purely additive consolidation of the API surface.
 """
 

@@ -454,13 +454,13 @@ def _default_edge_rule() -> EdgeRule:
 def double_buffer_edge_rules() -> List[EdgeRule]:
     """5 rules encoding the 4 phases of double-buffer edge derivation.
 
-    Phase 1: Register FLOW — fragment_load → compute (same-stage half,
+    Phase 1: Register FLOW: fragment_load → compute (same-stage half,
              config match key).
-    Phase 2a: Accumulator forward — compute half 0 → compute half 1 (d=0).
-    Phase 2b: Accumulator backward — compute half 1 → compute half 0 (d=1).
-    Phase 3: LDS FLOW — global_load → fragment_load (same channel+stage,
+    Phase 2a: Accumulator forward: compute half 0 → compute half 1 (d=0).
+    Phase 2b: Accumulator backward: compute half 1 → compute half 0 (d=1).
+    Phase 3: LDS FLOW: global_load → fragment_load (same channel+stage,
              distance derived from k_offset).
-    Phase 4: LDS ANTI — fragment_load → global_load (same channel+stage,
+    Phase 4: LDS ANTI: fragment_load → global_load (same channel+stage,
              consumer non-K_PREV only).
     """
     var rules = List[EdgeRule]()
@@ -777,7 +777,7 @@ def derive_edges_from_ops(
 
     Delegates to `apply_edge_rules()` with the appropriate declarative rule
     table.  Edge predicates are derived from role, channel, and stage
-    metadata — no kernel-specific tag knowledge.
+    metadata (no kernel-specific tag knowledge).
 
       depth=1 (single-buffer): 8 structural rules via role-based matching
         (sync chains, loop-carried fragments, subtile-matched frag→compute)
@@ -797,7 +797,7 @@ def derive_cross_stage_rotation_edges(body: List[OpDesc]) -> List[DepEdge]:
     """Returns cross-partition FRAG→MMA + same-partition MMA→FRAG ANTI
     edges for cross-stage rotation patterns.
 
-    The default `Phase 1` edge rule is `same_half=True` — it models
+    The default `Phase 1` edge rule is `same_half=True`: it models
     only same-partition frag→MMA flows. For schedules that use cross-
     stage rotation (the body's sub=0 frag-loads read from the *other*
     K-partition's SMEM stage to preload that partition's leading
@@ -887,7 +887,7 @@ def filter_spurious_cross_stage_flow(
     partition ANTI edge creates a circular dep that deadlocks
     greedy/CSP. Drop it.
 
-    Pairs with `derive_cross_stage_rotation_edges` — schedules that
+    Pairs with `derive_cross_stage_rotation_edges`: schedules that
     use cross-stage rotation should run their default-derived edges
     through this filter, then append the cross-stage edges.
 
@@ -952,7 +952,7 @@ def derive_prologue_from_program(
       stage-0 loads at K0 → wait_vm(0) → barrier → stage-1 loads at K1 → wait_vm(0)
 
     When `sched.partial_prologue_drain` is True, the inter-stage
-    `wait_vm(0)` + barrier and the trailing `wait_vm(0)` are skipped —
+    `wait_vm(0)` + barrier and the trailing `wait_vm(0)` are skipped:
     all prefetches issue continuously, and the framework instead
     appends the schedule's `bootstrap_frags()` paired with partial
     `wait_vm(N) + barrier` drains so each bootstrap frag-load fires

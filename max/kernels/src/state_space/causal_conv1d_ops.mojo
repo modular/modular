@@ -332,6 +332,23 @@ def causal_conv1d_shape[
     weight: InputTensor[dtype=dtype, rank=2, ...],
     bias: InputTensor[dtype=dtype, rank=1, ...],
 ) -> IndexList[rank]:
+    """Returns the output shape for the `causal_conv1d` op.
+
+    Causal 1D convolution preserves the input shape: output has the same
+    `(batch, channels, seqlen)` as `input`.
+
+    Parameters:
+        dtype: Element type of the input, weight, and bias tensors.
+        rank: Tensor rank of the input and output, expected to be 3.
+
+    Args:
+        input: Input tensor with shape `(batch, channels, seqlen)`.
+        weight: Convolution weights with shape `(channels, width)`.
+        bias: Per-channel bias with shape `(channels,)`.
+
+    Returns:
+        The output tensor shape, equal to `input.shape()`.
+    """
     return input.shape()
 
 
@@ -349,7 +366,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
     graph semantics (no in-place mutation).
 
     Parameters:
-        activation: "none" or "silu" - activation function to apply.
+        activation: Activation function to apply: `"none"` or `"silu"`.
 
     Tensor Shapes:
         Outputs:
@@ -516,4 +533,26 @@ def causal_conv1d_update_shape[
     weight: InputTensor[dtype=dtype, rank=2, ...],
     bias: InputTensor[dtype=dtype, rank=1, ...],
 ) -> Tuple[IndexList[rank], IndexList[rank]]:
+    """Returns the output shapes for the `causal_conv1d_update` op.
+
+    The update produces two tensors: the convolution output for the new
+    token(s) and the updated convolution state.
+
+    Parameters:
+        dtype: Element type of the input, conv state, weight, and bias
+            tensors.
+        rank: Tensor rank of the input and conv state, expected to be 3.
+
+    Args:
+        input: New input tokens with shape `(batch, channels, seqlen)`.
+        conv_state_in: Previous convolution state with shape
+            `(batch, channels, state_len)`.
+        weight: Convolution weights with shape `(channels, width)`.
+        bias: Per-channel bias with shape `(channels,)`.
+
+    Returns:
+        A tuple `(output_shape, conv_state_shape)` where `output_shape`
+        matches `input.shape()` and `conv_state_shape` matches
+        `conv_state_in.shape()`.
+    """
     return (input.shape(), conv_state_in.shape())

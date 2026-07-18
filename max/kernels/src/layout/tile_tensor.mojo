@@ -172,7 +172,7 @@ struct TileTensor[
         address_space=Self.address_space,
     ]
     """Result type of `.tile[]`. Per outer mode, the result stride is
-    parent's innermost sub-stride (CuTe `local_tile`) — identity for
+    parent's innermost sub-stride (CuTe `local_tile`): identity for
     scalar parent strides, last-sub-element for tuple parent strides.
 
     Trade-off: the `_NestedTileResultStrideTypes[Self.LayoutType]` wrap
@@ -436,8 +436,8 @@ struct TileTensor[
 
         Like the `DeviceBuffer` constructor, this produces a
         `DevicePointerStorage`-backed tile that carries the full `DevicePointer`
-        — its non-owning reference to the owning `DeviceBuffer` plus an element
-        offset and size — to the kernel boundary, where
+        (its non-owning reference to the owning `DeviceBuffer` plus an element
+        offset and size) to the kernel boundary, where
         `DevicePointer._to_device_type` encodes it to a bare device pointer.
         Use this overload when you already hold a `DevicePointer` (for example
         an offset one); construct it with `TileTensor(buffer.device_ptr(),
@@ -681,7 +681,7 @@ struct TileTensor[
                 Use `_All` (via the `All` alias) for dimensions to keep.
 
         Args:
-            indices: One argument per dimension — either a concrete index or
+            indices: One argument per dimension: either a concrete index or
                 `All`.
 
         Returns:
@@ -1503,7 +1503,7 @@ struct TileTensor[
         _IntToComptimeInt[*tile_sizes], linear_idx_type=Self.linear_idx_type
     ]:
         """Variadic-`Int`-coords form of `.tile[]`. Works on both flat
-        and nested parents — see the `Coord`-arg sibling above.
+        and nested parents: see the `Coord`-arg sibling above.
 
         Parameters:
             tile_sizes: The dimensions of each tile along each axis.
@@ -1708,7 +1708,7 @@ struct TileTensor[
 
         For a flat layout this is `shape[i]`. For a nested layout (where
         `shape[i]` is itself a `Coord`) this is the product of all leaf
-        dims under outer-mode `i` — the i-th mode's extent under CuTe
+        dims under outer-mode `i`: the i-th mode's extent under CuTe
         Layout Algebra. For shape `((a, b), (c, d))`: `dim[0] = a*b`,
         `dim[1] = c*d`.
 
@@ -3086,7 +3086,7 @@ struct NullableTileTensor[
 
         For a flat layout this is `shape[i]`. For a nested layout (where
         `shape[i]` is itself a `Coord`) this is the product of all leaf
-        dims under outer-mode `i` — the i-th mode's extent under CuTe
+        dims under outer-mode `i`: the i-th mode's extent under CuTe
         Layout Algebra. For shape `((a, b), (c, d))`: `dim[0] = a*b`,
         `dim[1] = c*d`.
 
@@ -3530,7 +3530,7 @@ comptime _NestedTileResultStrideTypes[
     ParentLayoutType._stride_types.size,
     _TileResultStrideTabulator[ParentLayoutType, _],
 ]()
-"""Result stride `TypeList` for `.tile[]` — each outer mode contributes
+"""Result stride `TypeList` for `.tile[]`: each outer mode contributes
 its innermost sub-stride. Identity-equivalent to parent's
 `_stride_types` for flat parents; innermost-extracted for nested
 parents."""

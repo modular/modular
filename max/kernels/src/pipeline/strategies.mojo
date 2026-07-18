@@ -36,7 +36,7 @@ var sc = ScheduleConfig.from_strategies(
 ```
 
 Strategy methods named `default()` return the framework's default
-(ping-pong) behaviour — passing only `scheduling` to
+(ping-pong) behaviour, passing only `scheduling` to
 `from_strategies` reproduces `ScheduleConfig()` exactly.
 """
 
@@ -202,7 +202,7 @@ struct LoadStrategy(Copyable, Movable):
     See `ScheduleConfig.global_before_frag`."""
     var lgkm_per_load_a: Int
     """`lgkmcnt` entries per channel-A frag-load (for wait derivation;
-    auto-derived from kernel geometry — see
+    auto-derived from kernel geometry; see
     `pipeline.geometry.KernelGeometry`)."""
     var lgkm_per_load_b: Int
     """`lgkmcnt` entries per channel-B frag-load."""

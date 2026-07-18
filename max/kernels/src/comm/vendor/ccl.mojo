@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides Mojo FFI bindings for NCCL (NVIDIA) and RCCL (AMD) collective operations.
+
+Selects and loads the correct vendor library at runtime: `librccl.so` on AMD
+systems and `libnccl.so` on NVIDIA systems. Exposes allreduce, allgather, and
+broadcast collectives, along with communicator initialization helpers and
+availability probes.
+"""
 
 from std.sys import has_amd_gpu_accelerator, simd_width_of, size_of
 from std.pathlib import Path
@@ -36,6 +43,12 @@ comptime ncclComm_t = _CPointer[NoneType, MutUntrackedOrigin]
 
 @fieldwise_init
 struct ncclResult_t(Equatable, TrivialRegisterPassable, Writable):
+    """Status code returned by NCCL/RCCL collective operations.
+
+    Wraps the integer error code from the NCCL/RCCL C API. Use
+    `ncclResult_t.ncclSuccess` (value 0) to check for a successful call.
+    """
+
     var _value: Int32
     comptime ncclSuccess = Self(0)
 
@@ -51,6 +64,12 @@ struct ncclResult_t(Equatable, TrivialRegisterPassable, Writable):
 
 @fieldwise_init
 struct ncclRedOp_t(TrivialRegisterPassable):
+    """Reduction operation selector for NCCL/RCCL collective calls.
+
+    Wraps the `ncclRedOp_t` C enum. Only `ncclSum` (value 0) is currently
+    used; other operations from the NCCL API may be added in the future.
+    """
+
     var _value: Int32
     comptime ncclSum = Self(0)
 
@@ -60,6 +79,13 @@ struct ncclRedOp_t(TrivialRegisterPassable):
 
 @fieldwise_init
 struct ncclDataType_t(TrivialRegisterPassable):
+    """Data-type selector for NCCL/RCCL collective calls.
+
+    Wraps the `ncclDataType_t` C enum for the floating-point types supported by
+    the collective bridge. Supported aliases: `ncclFloat16`, `ncclFloat32`, and
+    `ncclBfloat16`.
+    """
+
     var _value: Int32
     comptime ncclFloat16 = Self(6)
     comptime ncclFloat32 = Self(7)
@@ -120,6 +146,16 @@ struct _Group:
 
 
 def group() -> _Group:
+    """Returns a context manager that groups NCCL/RCCL collective calls.
+
+    Use as a `with` statement to bracket a series of collective API calls
+    between `ncclGroupStart` and `ncclGroupEnd`, enabling the NCCL/RCCL
+    library to fuse or pipeline them for better performance.
+
+    Returns:
+        A `_Group` context manager that calls `ncclGroupStart` on entry and
+        `ncclGroupEnd` on exit.
+    """
     return _Group()
 
 
@@ -128,6 +164,25 @@ def ncclCommInitAll(
     ndev: Int,
     devlist: UnsafePointer[Int32, _],
 ) raises -> ncclResult_t:
+    """Initializes NCCL/RCCL communicators for a set of GPUs.
+
+    Thin FFI wrapper around `ncclCommInitAll`. Allocates one communicator per
+    device in `devlist` and stores the handles in `comms`. Must be called from
+    a single thread; concurrent calls for the same device set cause undefined
+    behavior in the NCCL library.
+
+    Args:
+        comms: Output array of communicator handles; must have room for `ndev`
+            entries.
+        ndev: Number of GPUs to include in the communicator group.
+        devlist: Array of CUDA/ROCm device IDs to include.
+
+    Returns:
+        `ncclResult_t.ncclSuccess` on success; a non-zero status on failure.
+
+    Raises:
+        If the CCL function symbol cannot be resolved from the vendor library.
+    """
     return _get_ccl_function[
         "ncclCommInitAll",
         def(type_of(comms), Int, type_of(devlist)) thin -> ncclResult_t,
@@ -229,8 +284,19 @@ def _ccl_stream_ptr(
 
 @fieldwise_init
 struct Communicators(ImplicitlyCopyable):
+    """Holds NCCL/RCCL communicator handles for a fixed set of GPUs.
+
+    Stores one `ncclComm_t` handle per GPU (up to `MAX_GPUS`). Instances are
+    initialized lazily by `_get_global_comms` and cached process-wide; call
+    `init_comms()` from a single thread before using multi-threaded collectives
+    to avoid the check-then-create race in `_get_global_comms`.
+    """
+
     var ngpus: Int
+    """The number of GPUs participating in the communicator group."""
+
     var comms: InlineArray[ncclComm_t, MAX_GPUS]
+    """Per-GPU communicator handles, valid for indices `0..ngpus-1`."""
 
     def __init__(out self, *, copy: Self):
         self.ngpus = copy.ngpus
@@ -393,14 +459,41 @@ def _is_ccl_symbol_available[name: StaticString]() -> Bool:
 
 
 def is_allreduce_available() -> Bool:
+    """Reports whether the vendor CCL allreduce symbol is loadable at runtime.
+
+    Probes the NCCL/RCCL shared library for the `ncclAllReduce` symbol without
+    calling it. Returns `False` if the library is absent or the symbol cannot
+    be resolved.
+
+    Returns:
+        `True` if `ncclAllReduce` is available, `False` otherwise.
+    """
     return _is_ccl_symbol_available["ncclAllReduce"]()
 
 
 def is_allgather_available() -> Bool:
+    """Reports whether the vendor CCL allgather symbol is loadable at runtime.
+
+    Probes the NCCL/RCCL shared library for the `ncclAllGather` symbol without
+    calling it. Returns `False` if the library is absent or the symbol cannot
+    be resolved.
+
+    Returns:
+        `True` if `ncclAllGather` is available, `False` otherwise.
+    """
     return _is_ccl_symbol_available["ncclAllGather"]()
 
 
 def is_broadcast_available() -> Bool:
+    """Reports whether the vendor CCL broadcast symbol is loadable at runtime.
+
+    Probes the NCCL/RCCL shared library for the `ncclBroadcast` symbol without
+    calling it. Returns `False` if the library is absent or the symbol cannot
+    be resolved.
+
+    Returns:
+        `True` if `ncclBroadcast` is available, `False` otherwise.
+    """
     return _is_ccl_symbol_available["ncclBroadcast"]()
 
 
@@ -420,6 +513,35 @@ def allgather[
     ],
     list_of_ctx: List[DeviceContext],
 ) raises:
+    """Performs an allgather across all GPUs via the vendor CCL library.
+
+    Each GPU contributes its local `inputs[i]` chunk; after the call every
+    output slot `outputs[dev * ngpus + src]` on device `dev` holds a copy of
+    the input from device `src`. Uses `ncclAllGather` (NVIDIA) or
+    `rcclAllGather` (AMD) internally, wrapped inside an NCCL group for
+    correct pipelining.
+
+    Parameters:
+        dtype: Element data type of all input and output tensors.
+        in_layout: `TensorLayout` of each per-GPU input.
+        in_origin: Origin tag for the input tensors.
+        out_layout: `TensorLayout` of each per-GPU output slot.
+        out_origin: Mutable origin tag for the output tensors.
+        ngpus: Number of participating GPUs.
+
+    Args:
+        inputs: Per-GPU input `TileTensor`s; must all have the same element
+            count.
+        outputs: Flat array of `ngpus * ngpus` output `TileTensor`s. Slot
+            `i * ngpus + j` on device `i` receives device `j`'s input.
+        list_of_ctx: Device context for each GPU; length must equal `ngpus`.
+
+    Raises:
+        If `ngpus < 1` or `ngpus > MAX_GPUS`.
+        If `len(list_of_ctx) != ngpus`.
+        If any input element count differs from `inputs[0]`'s count.
+        If the CCL collective call fails.
+    """
     if ngpus < 1:
         raise Error("ngpus must be >= 1")
     if ngpus > MAX_GPUS:

@@ -24,7 +24,7 @@ from .types import DepEdge, OpDesc, ResourceKind
 struct OpNode(ImplicitlyCopyable, Movable):
     """An operation in the Loop Dependency Graph (LDG).
 
-    Enriches OpDesc with resource assignment and latency — the information
+    Enriches OpDesc with resource assignment and latency, the information
     needed for modulo scheduling (GAG96). Each OpNode represents one vertex
     in the LDG.
 

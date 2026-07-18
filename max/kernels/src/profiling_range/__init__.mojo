@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Mojo wrappers for MAX's libkineto-backed range profiler (MXTOOLS-190).
+"""Provides Mojo wrappers for MAX's libkineto-backed range profiler.
 
-See `range.mojo` for the `Range` context manager and `is_enabled()` query.
-Consumers do:
+Provides the `Range` context manager and the `is_enabled()` query for
+instrumenting GPU and CPU code with named activity spans visible in profiling
+tools such as Nsight and the Kineto-based trace viewer.
 
 ```mojo
 from profiling_range import Range
@@ -23,7 +24,7 @@ with Range("my_span"):
     ...  # work to profile
 ```
 
-The module is named `profiling_range` to avoid shadowing Mojo's built-in
+The package is named `profiling_range` to avoid shadowing Mojo's built-in
 `range()` iterator.
 """
 

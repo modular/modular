@@ -694,6 +694,9 @@ struct SMemTileArrayWithLayout[
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
 
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
+
         Args:
             index: The tile index.
 
@@ -844,6 +847,9 @@ struct SMemTileArray[
     @always_inline
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
+
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
 
         Args:
             index: The tile index.
@@ -1017,6 +1023,9 @@ struct SMemTileArray2D[
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
 
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
+
         Args:
             index: The tile index.
 
@@ -1183,6 +1192,9 @@ struct SMemTileArray2DRowMajor[
     @always_inline
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
+
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
 
         Args:
             index: The tile index.

@@ -428,7 +428,7 @@ struct PipelineConfig(ImplicitlyCopyable, Movable):
     K-partition's leading-quadrant fragments from the *other* SMEM
     stage (4-wave's mini-3/4 register rotation). Relaxes the
     "fragment loads in half h must use stage h" invariant in
-    `program_builder._verify_stage_consistency` — same-stage and
+    `program_builder._verify_stage_consistency`: same-stage and
     cross-stage frags coexist by design when this is True. Default
     False keeps the strict check active for ping-pong and other
     schedules that don't rotate."""
@@ -623,7 +623,7 @@ struct TargetProfile(ImplicitlyCopyable, Movable):
     The algorithm declares WHAT ops exist (logical op table). The
     `TargetProfile` describes HOW the hardware executes them. Platform-
     specific factories (e.g., `mi355x_target()` in `amd_target.mojo`) provide
-    both from a single call — no redundant configuration.
+    both from a single call (no redundant configuration).
 
     Usage:
 

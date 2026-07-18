@@ -149,6 +149,27 @@ def paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
     Each flattened slot ``tid`` maps to row ``r = tid // indices_stride`` in the logical
     sparse matrix; batch index is found by scanning ``input_row_offsets``. Logical loads
     use ``(logical_stride0, logical_stride1)`` like MOGG graph tensors.
+
+    Parameters:
+        target: StaticString identifying the dispatch target, used to select CPU versus GPU.
+        page_size: Number of tokens per KV cache page.
+
+    Args:
+        physical_out: Output buffer of physical row indices, one per sparse slot.
+        logical: Pointer to the flattened logical sparse index tensor.
+        input_row_offsets: Pointer to per-batch row offsets of length
+            ``num_batches + 1``.
+        lut: Pointer to the paged KV cache lookup table.
+        num_indices: Total number of sparse slots to remap.
+        lut_cols: Number of columns in the lookup table (logical pages per batch).
+        lut_rows: Number of rows in the lookup table (number of batches).
+        indices_stride: Stride used to split a flat slot index into row and column.
+        invalid_block_id: Sentinel block id marking invalid LUT entries; slots
+            referencing it are written ``-1``.
+        num_batches: Number of batches in the ragged batch dimension.
+        logical_stride0: Row stride for indexing the logical tensor.
+        logical_stride1: Column stride for indexing the logical tensor.
+        ctx: Device context used to enqueue the GPU kernel.
     """
     comptime if is_cpu[target]():
         for i in range(num_indices):
@@ -212,6 +233,22 @@ def paged_sparse_kv_index_remap[
     Unpacks graph tensors, sets ``invalid_block_id`` from ``kv_blocks.dim_size(0)``,
     derives batch count from row offsets, and dispatches
     ``paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch``.
+
+    Parameters:
+        target: StaticString identifying the dispatch target, used to select CPU versus GPU.
+        page_size: Number of tokens per KV cache page.
+        indices_stride: Stride used to split a flat slot index into row and column.
+        cache_dtype: DType of the ``kv_blocks`` tensor.
+
+    Args:
+        physical_out: Output buffer of physical row indices, one per sparse slot.
+        sparse_indices: Rank-2 ``int32`` tensor of logical sparse token positions.
+        input_row_offsets: Rank-1 ``uint32`` tensor of per-batch row offsets.
+        kv_lookup_table: Rank-2 ``uint32`` lookup table mapping logical page index
+            to physical block id.
+        kv_blocks: Rank-6 KV cache blocks; ``dim_size(0)`` supplies the invalid
+            block id sentinel.
+        ctx: Device context used to enqueue the GPU kernel.
     """
     var si_lt = sparse_indices.to_layout_tensor()
     var num_batches = input_row_offsets.dim_size(0) - 1

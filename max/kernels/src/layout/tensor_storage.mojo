@@ -2083,7 +2083,7 @@ def _device_leaf_ptr[
     with disjoint address spaces such as Metal: there `GENERIC` is the default
     space (not device memory), and the Metal AIR address-space pass only
     promotes kernel-argument pointers and ptr-bearing *aggregate* blob reloads
-    to the device space — not the *scalar* pointer reinterpreted out of the
+    to the device space, not the *scalar* pointer reinterpreted out of the
     handle here. A `GENERIC` leaf would therefore stay in the default space and
     a load/store through it would silently miss device memory.
 
@@ -2126,7 +2126,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
     into the first bytes of the handle's slot, so the memory operations here
     reinterpret those bytes (`_device_leaf_ptr`) on device. They abort on host:
     device memory is not guaranteed to be host-dereferenceable. The operations
-    that don't dereference storage — `offset`, `distance`, `unsafe_cast` — work
+    that don't dereference storage (`offset`, `distance`, `unsafe_cast`) work
     on both host and device using `DevicePointer` arithmetic or pure
     reinterprets.
 

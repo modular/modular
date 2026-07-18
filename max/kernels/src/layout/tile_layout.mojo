@@ -290,7 +290,7 @@ comptime RowMajorNestedLayout[*shape_types: CoordLike] = Layout[
 ]
 """A `Layout` with row-major strides for a nested shape (CuTe semantics).
 
-For shape `((a, b), (c, d))` the strides are `((b*c*d, c*d), (d, 1))` —
+For shape `((a, b), (c, d))` the strides are `((b*c*d, c*d), (d, 1))`:
 row-major over the flattened shape, re-nested.
 
 Parameters:
@@ -1106,7 +1106,7 @@ def row_major_nested(
     """Creates a row-major layout from a nested shape `Coord`.
 
     For a nested shape `((a, b), (c, d))` the result has nested strides
-    `((b*c*d, c*d), (d, 1))` — row-major over the flattened shape, re-nested.
+    `((b*c*d, c*d), (d, 1))`: row-major over the flattened shape, re-nested.
 
     Currently restricted to all-static (compile-time) leaf dimensions
     and one level of nesting. For flat shapes use `row_major`.
@@ -1153,7 +1153,7 @@ comptime ColMajorNestedLayout[
 ] = Layout[shape_types, _ColMajorNested[*shape_types]]
 """A `Layout` with column-major strides for a nested shape (CuTe semantics).
 
-For shape `((a, b), (c, d))` the strides are `((1, a), (a*b, a*b*c))` —
+For shape `((a, b), (c, d))` the strides are `((1, a), (a*b, a*b*c))`:
 col-major over the flattened shape, re-nested.
 
 Parameters:
@@ -1321,7 +1321,7 @@ def col_major_nested(
     """Creates a column-major layout from a nested shape `Coord`.
 
     For a nested shape `((a, b), (c, d))` the result has nested strides
-    `((1, a), (a*b, a*b*c))` — col-major over the flattened shape, re-nested.
+    `((1, a), (a*b, a*b*c))`: col-major over the flattened shape, re-nested.
 
     Currently restricted to all-static (compile-time) leaf dimensions
     and one level of nesting. For flat shapes use `col_major`.

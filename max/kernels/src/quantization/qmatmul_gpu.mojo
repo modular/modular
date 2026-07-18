@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides GPU kernels for block-wise quantized int4 matrix multiplication."""
 
 from std.math import ceildiv
 from std.math.uutils import umod, ufloordiv, udivmod, uceildiv
@@ -68,6 +69,18 @@ from std.utils.numerics import get_accum_type
 
 @always_inline
 def args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
+    """Returns the two integer arguments as a tuple, swapping their order when `swap` is set.
+
+    Parameters:
+        swap: Whether to swap the order of the two arguments.
+
+    Args:
+        arg_0: The first integer argument.
+        arg_1: The second integer argument.
+
+    Returns:
+        A tuple of the two arguments in the requested order.
+    """
     comptime if swap:
         return (arg_1, arg_0)
     else:
@@ -140,6 +153,54 @@ def multistage_mma_q[
     *,
     num_b_rows: Optional[Int] = None,
 ):
+    """Performs the multi-stage tensor-core MMA loop for a quantized matrix multiplication tile.
+
+    Iterates over the K dimension, prefetching A, B, and per-group scale
+    tiles into shared memory across `num_pipeline_stages` stages while issuing
+    tensor-core MMA instructions, with optional swizzling of the A-tile copy.
+
+    Parameters:
+        BM: The block tile size along the M dimension.
+        BN: The block tile size along the N dimension.
+        BK: The block tile size along the K dimension.
+        WM: The warp tile size along the M dimension.
+        WN: The warp tile size along the N dimension.
+        num_threads: The number of threads per thread block.
+        num_pipeline_stages: The number of software-pipelined prefetch stages.
+        transpose_b: Whether the B matrix is stored transposed.
+        group_size: The number of K elements sharing a single scale.
+        pack_factor: The number of 4-bit elements packed into one `uint32`.
+        c_type: The dtype of the output accumulator tile.
+        c_layout: The layout of the output accumulator tile.
+        a_type: The dtype of the A matrix elements.
+        a_layout: The layout of the A matrix in global memory.
+        a_smem_layout: The layout of the A tile in shared memory.
+        b_type: The dtype of the unpacked B matrix elements.
+        b_layout: The layout of the B matrix in global memory.
+        b_smem_layout: The layout of the B tile in shared memory.
+        scales_type: The dtype of the per-group scales.
+        scales_layout: The layout of the scales in global memory.
+        scales_smem_layout: The layout of the scales tile in shared memory.
+        swizzle_a: Whether to apply an ldmatrix swizzle to the A-tile copy.
+        static_num_iters: The compile-time-known iteration count, if known.
+        prefetch_init: Whether to issue the initial prefetch of leading stages.
+        continue_prefetch_b: Whether to continue prefetching B tiles across iterations.
+        transpose_b_next: Whether the next op's B matrix is stored transposed.
+        b_next_gmem_layout: The global-memory layout of the next op's B matrix.
+        b_next_smem_layout: The shared-memory layout of the next op's B matrix.
+        next_op_b_iter_alignment: The required alignment for the next op's B iterator.
+
+    Args:
+        c: The local accumulator tile receiving the MMA results.
+        a_iter_arg: The global-memory iterator over A tiles.
+        b_iter_arg: The global-memory iterator over B tiles.
+        a_smem_iter_arg: The shared-memory iterator over A prefetch buffers.
+        b_smem_iter: The shared-memory iterator over B prefetch buffers.
+        scales_smem_iter_arg: The shared-memory iterator over scale prefetch buffers.
+        scales_iter_arg: The global-memory iterator over scale tiles.
+        num_iters: The number of K-tile iterations to execute.
+        num_b_rows: The runtime row count of the B matrix, if known.
+    """
     comptime simd_size = simd_width_of[a_type]()
     comptime simd_b_size = simd_width_of[b_type]()
     comptime num_scales_stages = ceildiv(
@@ -592,6 +653,31 @@ def multistage_qgemm_kernel[
     a: LayoutTensor[mut=False, a_type, a_layout, ImmutAnyOrigin],
     b_packed: LayoutTensor[mut=False, b_packed_type, b_layout, ImmutAnyOrigin],
 ):
+    """Implements the GPU kernel for a multi-stage quantized GEMM with per-group scales.
+
+    Unpacks the quantized B weights and scales from the packed buffer, sets up
+    the circular shared-memory prefetch buffers, drives the `multistage_mma_q`
+    MMA loop, performs the warp split-K reduction, and stores the accumulator
+    to global memory with an optional elementwise epilogue.
+
+    Parameters:
+        c_type: The dtype of the output matrix.
+        c_layout: The layout of the output matrix.
+        a_type: The dtype of the A matrix elements.
+        a_layout: The layout of the A matrix.
+        b_packed_type: The dtype of the packed B weight buffer.
+        b_layout: The layout of the packed B weight buffer.
+        group_size: The number of K elements sharing a single scale.
+        pack_factor: The number of 4-bit elements packed into one `uint32`.
+        transpose_b: Whether the B matrix is stored transposed.
+        config: The matmul configuration describing tile and warp shapes.
+        elementwise_lambda_fn: An optional elementwise epilogue applied per output element.
+
+    Args:
+        c: The output accumulator matrix in global memory.
+        a: The left-hand (activation) matrix in global memory.
+        b_packed: The packed quantized weight buffer in global memory.
+    """
     comptime assert (
         is_nvidia_gpu()
     ), "Quantized gemm only supports NVIDIA hardwares for now."
@@ -1021,6 +1107,14 @@ def multistage_qgemm_kernel[
 # and stride = IntTuple(IntTuple(2, TK * 128),IntTuple(1, 128))
 @always_inline
 def pack_Q_tile(input: SIMD[DType.uint8, 16]) -> SIMD[DType.uint32, 4]:
+    """Packs sixteen bytes (thirty-two 4-bit weights, two per byte) into four `uint32` lanes for the repacked weight layout.
+
+    Args:
+        input: A SIMD vector of sixteen `uint8` values; both nibbles of each byte hold a 4-bit weight.
+
+    Returns:
+        A SIMD vector of four `uint32` values with the nibbles interleaved into the repacked layout.
+    """
     # Q-tile is the smallest indivisible unit when performing gemm
     # operations with quantized matrices.
 
@@ -1042,6 +1136,15 @@ def pack_Q_tile(input: SIMD[DType.uint8, 16]) -> SIMD[DType.uint32, 4]:
 
 @always_inline
 def unpack_4bit_int(val: SIMD[DType.uint32, _], idx: Int) -> UInt8:
+    """Extracts a single 4-bit value from the packed `uint32` lane at the given nibble index.
+
+    Args:
+        val: The packed `uint32` SIMD value.
+        idx: The nibble index of the 4-bit element to extract.
+
+    Returns:
+        The extracted 4-bit value as a `UInt8`.
+    """
     var u32_val = rebind[UInt32](val)
     return (u32_val >> UInt32(idx * 4)).cast[DType.uint8]() & 0x0F
 
@@ -1058,6 +1161,17 @@ def repack_Q4_0_for_sm8x[
         mut=True, DType.uint8, repack_layout, MutAnyOrigin
     ],
 ):
+    """Repacks Q4_0 quantized weights into the tiled layout expected by the SM8x quantized GEMM kernel.
+
+    Parameters:
+        q_layout: The layout of the input Q4_0 weight buffer.
+        repack_layout: The layout of the output repacked weight buffer.
+        scales_type: The dtype to cast the per-group scales to.
+
+    Args:
+        q_weight: The input Q4_0 quantized weight tensor in global memory.
+        q_packed_weight: The output repacked weight tensor in global memory.
+    """
     comptime group_size = 32
     comptime group_bytes = size_of[DType.float16]() + (group_size // 2)
     comptime pack_factor = 8
@@ -1249,6 +1363,21 @@ def repack_GPTQ_for_sm8x[
     out_tensor: LayoutTensor[mut=True, DType.uint8, out_layout, MutAnyOrigin],
     perm_idx: LayoutTensor[mut=False, DType.int32, perm_layout, ImmutAnyOrigin],
 ):
+    """Repacks GPTQ quantized weights into the tiled layout expected by the SM8x quantized GEMM kernel.
+
+    Parameters:
+        in_layout: The layout of the input GPTQ weight buffer.
+        out_layout: The layout of the output repacked weight buffer.
+        scales_type: The dtype to cast the per-group scales to.
+        group_size: The number of K elements sharing a single scale.
+        has_perm: Whether a permutation index is applied to the K dimension.
+        perm_layout: The layout of the permutation index tensor.
+
+    Args:
+        in_tensor: The input GPTQ quantized weight tensor in global memory.
+        out_tensor: The output repacked weight tensor in global memory.
+        perm_idx: The permutation index tensor, or a null tensor when `has_perm` is False.
+    """
     comptime raw_scales_type = DType.float16
     comptime weights_bytes_per_group = group_size // 2
     comptime group_bytes = size_of[DType.float16]() + weights_bytes_per_group
@@ -1475,6 +1604,15 @@ def repack_GPTQ_for_sm8x[
 
 @always_inline
 def q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
+    """Computes the shared memory footprint in bytes for the quantized GEMM kernel under the given configuration.
+
+    Parameters:
+        config: The matmul configuration describing tile and warp shapes.
+        group_size: The number of K elements sharing a single scale.
+
+    Returns:
+        The maximum shared memory in bytes needed across A, B, scales, accumulator, and split-K reduction buffers.
+    """
     comptime num_warp_k_partitions = config.num_warp_k_partitions
     comptime block_mnk = config.block_tile_shape
     comptime num_pipeline_stages = config.num_pipeline_stages
@@ -1512,6 +1650,27 @@ def multistage_gemm_q[
     runtime_config: MatmulConfig[a_type, b_type, c_type, True],
     ctx: DeviceContext,
 ) raises:
+    """Enqueues the multi-stage quantized GEMM kernel, reducing pipeline stages or warp partitions when the shared memory budget is exceeded.
+
+    Parameters:
+        c_type: The dtype of the output matrix.
+        a_type: The dtype of the A matrix elements.
+        b_type: The dtype of the packed B weight buffer.
+        group_size: The number of K elements sharing a single scale.
+        pack_factor: The number of 4-bit elements packed into one `uint32`.
+        config: The matmul configuration describing tile and warp shapes.
+        elementwise_lambda_fn: An optional elementwise epilogue applied per output element.
+
+    Args:
+        c: The output matrix in global memory.
+        a: The left-hand (activation) matrix in global memory.
+        b: The packed quantized weight buffer in global memory.
+        runtime_config: The runtime matmul configuration used for grid and block dimensions.
+        ctx: The device context used to enqueue the kernel.
+
+    Raises:
+        An error if the input tensors are not rank-2.
+    """
     comptime assert c.rank == 2
     comptime assert a.rank == 2
     comptime assert b.rank == 2
@@ -1621,6 +1780,24 @@ def matmul_gpu_qint4[
     ],
     ctx: Optional[DeviceContext] = None,
 ) raises:
+    """Launches a GPU int4 quantized matrix multiplication for the given tile tensors.
+
+    Parameters:
+        c_type: The dtype of the output matrix.
+        a_type: The dtype of the A matrix elements.
+        group_size: The number of K elements sharing a single scale.
+        target: The target platform string, which must identify a GPU.
+        elementwise_lambda_fn: An optional elementwise epilogue applied per output element.
+
+    Args:
+        c_tt: The output tile tensor in global memory.
+        a_tt: The left-hand (activation) tile tensor in global memory.
+        b_tt: The packed quantized weight tile tensor in global memory.
+        ctx: The device context used to enqueue the kernel.
+
+    Raises:
+        An error if the input tensors are not rank-2 or the target is not a GPU.
+    """
     var c = c_tt.to_layout_tensor()
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
@@ -1651,6 +1828,27 @@ def matmul_gpu_qint4_impl[
     ],
     ctx: Optional[DeviceContext],
 ) raises:
+    """Dispatches a GPU int4 quantized matrix multiplication to the tuned kernel configuration for the runtime M dimension.
+
+    Selects a `MatmulConfig` specialized for the static K and N dimensions and
+    the runtime M value, then delegates to `multistage_gemm_q`.
+
+    Parameters:
+        c_type: The dtype of the output matrix.
+        a_type: The dtype of the A matrix elements.
+        group_size: The number of K elements sharing a single scale.
+        target: The target platform string, which must identify a GPU.
+        elementwise_lambda_fn: An optional elementwise epilogue applied per output element.
+
+    Args:
+        c: The output matrix in global memory.
+        a: The left-hand (activation) matrix in global memory.
+        b: The packed quantized weight buffer in global memory.
+        ctx: The device context used to enqueue the kernel.
+
+    Raises:
+        An error if the input tensors are not rank-2.
+    """
     comptime assert c.rank == 2
     comptime assert a.rank == 2
     comptime assert b.rank == 2
@@ -2147,6 +2345,19 @@ def gpu_qint4_repack_Q4_0[
     ],
     ctx: Optional[DeviceContext] = None,
 ) raises:
+    """Launches the GPU kernel that repacks Q4_0 quantized weights for the SM8x quantized GEMM.
+
+    Parameters:
+        target: The target platform string, which must identify a GPU.
+
+    Args:
+        b_tt: The input Q4_0 quantized weight tile tensor in global memory.
+        b_packed_tt: The output repacked weight tile tensor in global memory.
+        ctx: The device context used to enqueue the kernel.
+
+    Raises:
+        An error if the input tensors are not rank-2 or the target is not a GPU.
+    """
     # Host signature accepts TileTensor; bridge inward to LayoutTensor for the
     # downstream `enqueue_function` whose kernel params are still LayoutTensor.
     # Mirrors `matmul_gpu_qint4` above. Per
@@ -2207,6 +2418,21 @@ def gpu_qint4_repack_GPTQ[
     ] = None,
     ctx: Optional[DeviceContext] = None,
 ) raises:
+    """Launches the GPU kernel that repacks GPTQ quantized weights for the SM8x quantized GEMM.
+
+    Parameters:
+        group_size: The number of K elements sharing a single scale.
+        target: The target platform string, which must identify a GPU.
+
+    Args:
+        b_tt: The input GPTQ quantized weight tile tensor in global memory.
+        b_packed_tt: The output repacked weight tile tensor in global memory.
+        perm_idx: An optional permutation index tensor for the K dimension.
+        ctx: The device context used to enqueue the kernel.
+
+    Raises:
+        An error if the input tensors are not rank-2, the target is not a GPU, or the input and output dimensions are mismatched.
+    """
     # `b`/`b_packed` host params accept TileTensor and bridge inward to
     # LayoutTensor for `enqueue_function` (same pattern as `matmul_gpu_qint4`).
     # `perm_idx` stays LayoutTensor: the caller builds a bespoke immutable

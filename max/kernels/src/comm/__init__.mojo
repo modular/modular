@@ -10,10 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides communication primitives for GPUs.
+"""Provides communication primitives for multi-GPU workloads.
 
-This package includes functions for sending and receiving data between GPUs,
-as well as for synchronizing threads across GPUs.
+This package implements collective operations: allreduce, allgather,
+reducescatter, broadcast, and scatter, along with the low-level
+synchronization signals and Lamport-protocol primitives on which they are built.
+Both NVIDIA and AMD GPU targets are supported.
+
+These APIs are consumed by the model-serving layer when running distributed
+inference across multiple GPUs within a node.
 """
 
 from .lamport import (

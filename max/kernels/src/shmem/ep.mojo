@@ -45,6 +45,18 @@ from shmem.ep_comm import (
 
 @always_inline
 def global_cache_insert(key: String, value: OpaquePointer[mut=True, _]):
+    """Inserts a pointer into the process-wide compiler runtime global cache.
+
+    Stores `value` under `key` in the KGEN compiler runtime's global
+    dictionary. Subsequent calls with the same `key` can retrieve the pointer
+    via `_get_global_or_null`. Used to cache lazily-initialized resources
+    (such as EP communicator handles) across kernel invocations without
+    re-initialization overhead.
+
+    Args:
+        key: The string key to store `value` under.
+        value: An opaque pointer to the resource to cache.
+    """
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(key),
         value,
@@ -103,7 +115,26 @@ def pack_ptrs_array[
         UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin], n_gpus_per_node
     ],
 ):
-    """Pack the pointers into an inline array."""
+    """Pack the pointers into an inline array.
+
+    Reads device addresses from `_ptrs` and produces an `InlineArray` of
+    `UnsafePointer[Scalar[ptr_type]]` entries to pass to an EP kernel. When
+    `local_rank_only` is set, every entry is filled with the address at
+    `my_rank` instead of one address per rank.
+
+    Parameters:
+        ptrs_layout: Layout of the `_ptrs` input tensor (inferred).
+        ptr_type: Element `DType` the packed pointers point to.
+        local_rank_only: Whether to replicate only the local rank's pointer
+            across all entries (defaults to `False`).
+        n_gpus_per_node: Number of entries in the output array, one per local
+            GPU (defaults to `1` when `local_rank_only` is set, otherwise
+            `ptrs_layout.static_shape[0]`).
+
+    Args:
+        _ptrs: 1D `uint64` tensor of device addresses, one per rank.
+        my_rank: Rank index of the calling device within the communicator.
+    """
     comptime assert _ptrs.flat_rank == 1, "Pointers must be a 1D tensor."
     var ptr_arr = InlineArray[
         UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin], n_gpus_per_node
@@ -327,9 +358,9 @@ def ep_dispatch_wait_kernel_api[
         row_offsets: Cumulative token counts for grouped matmul.
         expert_ids: Local expert IDs for grouped matmul.
         src_info: Source routing information for combine phase.
-        atomic_counters: EP kernel synchronization counters.
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
+        atomic_counters: EP kernel synchronization counters.
         context: Device context pointer.
         num_input_tokens: Per-rank input token count for this layer. When >= 0
             enables the decode-fast-path grid sizing. Default `-1` keeps the
@@ -854,6 +885,9 @@ def ep_combine_wait_kernel_api[
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
         context: Device context pointer.
+        num_input_tokens: Per-rank input token count for this layer. When
+            >= 0 enables the decode-fast-path grid sizing. Default `-1`
+            keeps the full-`sm_count` grid for backwards compatibility.
     """
 
     # Ensure this kernel only runs on GPU targets

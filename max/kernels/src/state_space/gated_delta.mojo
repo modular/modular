@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Gated DeltaNet recurrence kernel for Qwen3.5 — Pass 2 of two-pass prefill.
+"""Gated DeltaNet recurrence kernel for Qwen3.5: Pass 2 of two-pass prefill.
 
 Implements the gated delta rule recurrence over a ragged (variable-length)
-batch of sequences.  This is Pass 2 of the prefill path; it consumes the
+batch of sequences. This is Pass 2 of the prefill path; it consumes the
 conv1d output produced by Pass 1 (gated_delta_conv1d_fwd).
 
 The five steps of the gated delta rule at each token t for value-dim element
@@ -39,11 +39,11 @@ vd_i and value head h are:
 Thread mapping (GPU)
 --------------------
 One CTA owns one (batch_item, value_head); the block has VALUE_HEAD_DIM
-threads.  Thread `tid == vd_element` owns the KD-element state column
+threads. Thread `tid == vd_element` owns the KD-element state column
 
     state_col[k] = recurrent_state[slot_idx[batch_item], value_head, k, tid]
 
-in registers and iterates over its sequence sequentially.  KEY_HEAD_DIM is a
+in registers and iterates over its sequence sequentially. KEY_HEAD_DIM is a
 compile-time constant, so the inner k-loop is fully unrolled and the state
 column lives in registers (no spill to local memory) across the whole
 sequence.
@@ -54,7 +54,7 @@ sequence.
 The per-token raw Q and K vectors for this value head's key head are loaded
 once per block into shared memory (one element per thread, coalesced), so the
 KD reduction reads them from shared memory instead of every vd-thread
-re-reading the same KD elements from global memory.  L2 normalisation and the
+re-reading the same KD elements from global memory. L2 normalisation and the
 1/sqrt(KD) query scale are folded in as scalars factored out of the KD
 reductions, so no normalised Q/K array is materialised.
 
@@ -68,7 +68,7 @@ Tensor shapes
 -------------
 Inputs:
   qkv_conv_output    : [total_seq_len, conv_dim]              float32
-      Conv1d output from Pass 1.  Channel layout:
+      Conv1d output from Pass 1. Channel layout:
         Q: channels [0, key_dim)
         K: channels [key_dim, 2*key_dim)
         V: channels [2*key_dim, 2*key_dim + value_dim)
@@ -80,11 +80,11 @@ Inputs:
   beta_per_token     : [total_seq_len, num_value_heads]        float32
       Per-token, per-head beta gate (sigmoid pre-applied).
   recurrent_state    : [max_slots, num_value_heads, key_head_dim, value_head_dim]
-      Mutable recurrent-state pool.  The kernel reads/writes slot
+      Mutable recurrent-state pool. The kernel reads/writes slot
       `slot_idx[batch_item]` in place; all other slots are untouched.
       Pool dtype is independent of the working dtype, so the caller can
       keep per-token tensors at float32 while storing the pool at the
-      model's native dtype (typically bfloat16).
+      model's native dtype (bfloat16).
   slot_idx           : [batch_size]                            uint32
       Pool slot index for each batch item.
   input_row_offsets  : [batch_size + 1]                        uint32
@@ -93,7 +93,7 @@ Inputs:
 
 Outputs:
   recurrence_output  : [total_seq_len, value_dim]              float32
-      Flat output for all tokens.  Indexed as
+      Flat output for all tokens. Indexed as
       output[flat_t, value_head_idx * value_head_dim + vd_element_idx].
   (recurrent_state is mutated in place; there is no separate state-out
    tensor.)
@@ -117,8 +117,8 @@ from layout import TensorLayout, TileTensor
 
 
 def gated_delta_recurrence_fwd_gpu[
-    work_dtype: DType,  # for qkv/decay/beta/recurrence_output (typically fp32)
-    state_dtype: DType,  # for the recurrent_state pool (typically bf16)
+    work_dtype: DType,  # for qkv/decay/beta/recurrence_output (fp32)
+    state_dtype: DType,  # for the recurrent_state pool (bf16)
     KEY_HEAD_DIM: Int,  # key_head_dim, compile-time (e.g. 128 for Qwen3.5)
     VALUE_HEAD_DIM: Int,  # value_head_dim, compile-time (e.g. 128 for Qwen3.5)
     recurrence_output_LT: TensorLayout,
@@ -171,12 +171,78 @@ def gated_delta_recurrence_fwd_gpu[
 
     One CTA owns one (batch_item, value_head); thread `tid == vd_element` owns
     the KD-element state column ``recurrent_state[slot, value_head, :, tid]`` in
-    registers for the whole sequence.  The per-token raw Q/K for this value
+    registers for the whole sequence. The per-token raw Q/K for this value
     head's key head are staged once per block in shared memory (one element per
     thread, coalesced) so the KD reductions read them from shared memory rather
     than every vd-thread re-reading the same KD elements from global memory;
     L2 normalisation and the 1/sqrt(KD) query scale are folded in as scalars
     factored out of the reductions.
+
+    Parameters:
+        work_dtype: `DType` for the per-token input and output tensors
+            (`qkv_conv_output`, `decay_per_token`, `beta_per_token`,
+            `recurrence_output`), `float32`.
+        state_dtype: `DType` for the `recurrent_state` pool (`bfloat16`).
+        KEY_HEAD_DIM: Compile-time key head dimension (e.g. 128 for
+            Qwen3.5).
+        VALUE_HEAD_DIM: Compile-time value head dimension; must equal
+            `KEY_HEAD_DIM`.
+        recurrence_output_LT: `TensorLayout` for `recurrence_output`.
+        qkv_conv_output_LT: `TensorLayout` for `qkv_conv_output`.
+        decay_per_token_LT: `TensorLayout` for `decay_per_token`.
+        beta_per_token_LT: `TensorLayout` for `beta_per_token`.
+        recurrent_state_LT: `TensorLayout` for `recurrent_state`.
+        slot_idx_LT: `TensorLayout` for `slot_idx`.
+        input_row_offsets_LT: `TensorLayout` for
+            `input_row_offsets`.
+
+    Args:
+        batch_size: Number of sequences in the ragged batch.
+        num_value_heads: Number of value heads (`nv`).
+        num_key_heads: Number of key heads (`nk`); the GQA expansion
+            ratio is `num_value_heads / num_key_heads`.
+        key_dim: Total key dimension, equal to
+            `num_key_heads * KEY_HEAD_DIM`.
+        recurrence_output: Flat output of shape
+            `[total_seq_len, value_dim]` holding the recurrence result
+            for every token.
+        recurrent_state: Mutable state pool of shape
+            `[max_slots, num_value_heads, KEY_HEAD_DIM, VALUE_HEAD_DIM]`;
+            the kernel reads and writes slot `slot_idx[batch_item]` in
+            place.
+        slot_idx: Pool slot index for each batch item, shape
+            `[batch_size]`, `uint32`.
+        qkv_conv_output: Conv1d output from Pass 1, shape
+            `[total_seq_len, conv_dim]`, with Q in channels
+            `[0, key_dim)`, K in `[key_dim, 2*key_dim)`, V in
+            `[2*key_dim, 2*key_dim + value_dim)`.
+        decay_per_token: Per-token per-head scalar decay factor, shape
+            `[total_seq_len, num_value_heads]`.
+        beta_per_token: Per-token per-head beta gate, shape
+            `[total_seq_len, num_value_heads]`.
+        input_row_offsets: Ragged offsets of shape `[batch_size + 1]`;
+            sequence `b` spans flat indices
+            `[input_row_offsets[b], input_row_offsets[b+1])`.
+        qkv_conv_output_seqlen_stride: Stride between consecutive
+            sequence positions in `qkv_conv_output`.
+        qkv_conv_output_channel_stride: Stride between consecutive
+            channels in `qkv_conv_output`.
+        per_token_seqlen_stride: Stride between consecutive sequence
+            positions in `decay_per_token` and `beta_per_token`.
+        per_token_head_stride: Stride between consecutive heads in
+            `decay_per_token` and `beta_per_token`.
+        recurrent_state_slot_stride: Stride between consecutive slots
+            in `recurrent_state`.
+        recurrent_state_value_head_stride: Stride between consecutive
+            value heads in `recurrent_state`.
+        recurrent_state_key_dim_stride: Stride between consecutive
+            key-dim elements in `recurrent_state`.
+        recurrent_state_value_dim_stride: Stride between consecutive
+            value-dim elements in `recurrent_state`.
+        recurrence_output_seqlen_stride: Stride between consecutive
+            sequence positions in `recurrence_output`.
+        recurrence_output_valuedim_stride: Stride between consecutive
+            value-dim elements in `recurrence_output`.
     """
     comptime assert (
         KEY_HEAD_DIM == VALUE_HEAD_DIM

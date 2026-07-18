@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides CPU kernels for K-quant block-wise quantized matrix multiplication."""
+
 from std.collections import Optional
 from std.math import ceildiv
 from std.sys import CompilationTarget, align_of, simd_width_of, size_of
@@ -560,6 +562,12 @@ def matmul_Q4_K_pack_b(
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
 ):
+    """Packs Q4_K quantized weights into the blocked layout consumed by the compute kernel.
+
+    Args:
+        b_tt: Source tensor holding the unpacked Q4_K quantized weights.
+        b_packed_tt: Destination tensor for the packed weights.
+    """
     var b = b_tt.to_layout_tensor()
     var b_packed = b_packed_tt.to_layout_tensor()
     comptime assert b.rank == 2
@@ -594,6 +602,12 @@ def matmul_Q6_K_pack_b(
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
 ):
+    """Packs Q6_K quantized weights into the blocked layout consumed by the compute kernel.
+
+    Args:
+        b_tt: Source tensor holding the unpacked Q6_K quantized weights.
+        b_packed_tt: Destination tensor for the packed weights.
+    """
     var b = b_tt.to_layout_tensor()
     var b_packed = b_packed_tt.to_layout_tensor()
     comptime assert b.rank == 2
@@ -1541,6 +1555,17 @@ def matmul_Q4_K[
     ],
     ctx: Optional[DeviceContext] = None,
 ):
+    """Computes a matrix multiplication with Q4_K block-quantized weights.
+
+    Parameters:
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+
+    Args:
+        a_tt: Left-hand operand tensor in float32.
+        b_tt: Right-hand operand tensor holding Q4_K quantized uint8 weights.
+        c_tt: Output tensor in float32.
+        ctx: Optional device context for parallel execution.
+    """
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
     var c = c_tt.to_layout_tensor()
@@ -1571,6 +1596,17 @@ def matmul_Q6_K[
     ],
     ctx: Optional[DeviceContext] = None,
 ):
+    """Computes a matrix multiplication with Q6_K block-quantized weights.
+
+    Parameters:
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+
+    Args:
+        a_tt: Left-hand operand tensor in float32.
+        b_tt: Right-hand operand tensor holding Q6_K quantized uint8 weights.
+        c_tt: Output tensor in float32.
+        ctx: Optional device context for parallel execution.
+    """
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
     var c = c_tt.to_layout_tensor()

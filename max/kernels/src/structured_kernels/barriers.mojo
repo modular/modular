@@ -132,6 +132,10 @@ struct WarpGroupBarrier[num_threads: Int, barrier_id: Int = 0](
 
     Wraps `named_barrier` and `named_barrier_arrive` with compile-time
     thread count and barrier ID for type-safe synchronization.
+
+    Parameters:
+        num_threads: Number of threads participating in the barrier.
+        barrier_id: Hardware named-barrier ID to use (defaults to 0).
     """
 
     @staticmethod
