@@ -19,7 +19,6 @@ _MAX_PACKAGES = {
     "layout": "kernels/src/layout",
     "linalg": "kernels/src/linalg",
     "nn": "kernels/src/nn",
-    "nvml": "kernels/src/nvml",
     "profiling_range": "kernels/src/profiling_range",
     "shmem": "kernels/src/shmem",
     "quantization": "kernels/src/quantization",
