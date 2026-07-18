@@ -81,20 +81,12 @@ def test_implicit_subscript[
         print("subscript:", pair[0].greet(), pair[1].greet())
 
 
-# `enumerate`: index + element unpack (value iteration).
-def test_enumerate_bind[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
-](items: List[T]) where conforms_to(T, Greetable):
-    for i, item in enumerate(items):
-        print("enum:", i, item.greet())
-
-
-# `enumerate` with `var` index and element bindings.
-def test_enumerate_var[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
-](items: List[T]) where conforms_to(T, Greetable):
-    for var idx, var item in enumerate(items):
-        print("enum_var:", idx, item.greet())
+# NOTE: The `enumerate` refinement cases moved to
+# `type_refinement_tuple_enumerate_xfail.mojo`. They no longer compile now that
+# `Tuple` is conditionally `ImplicitlyDeletable`: `enumerate` yields
+# `Tuple[Int, Iterator.Element]`, and `Iterator.Element: Movable` erases the
+# element's `ImplicitlyDeletable` refinement in a generic context. See
+# MOCO-4361.
 
 
 # `ref` to each zip pair; subscript reads the two tuple elements.
@@ -111,14 +103,6 @@ def test_var_subscript[
 ](items1: List[T], items2: List[T]) where conforms_to(T, Greetable):
     for var pair in zip(items1, items2):
         print("var_sub:", pair[0].greet(), pair[1].greet())
-
-
-# `ref` enumerate pair: mixed index (value) and `ref` subscript on item.
-def test_enumerate_ref_subscript[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
-](items: List[T]) where conforms_to(T, Greetable):
-    for ref pair in enumerate(items):
-        print("enum_ref:", pair[0], pair[1].greet())
 
 
 # Single-column `for`: default element binding is an immutable ref.
@@ -242,18 +226,6 @@ def main():
     var dogs3 = List[Dog]()
     dogs3.append(Dog("Rex"))
     dogs3.append(Dog("Bella"))
-
-    # CHECK: enum: 0 Woof! I'm Rex
-    # CHECK: enum: 1 Woof! I'm Bella
-    test_enumerate_bind(dogs3)
-
-    # CHECK: enum_var: 0 Woof! I'm Rex
-    # CHECK: enum_var: 1 Woof! I'm Bella
-    test_enumerate_var(dogs3)
-
-    # CHECK: enum_ref: 0 Woof! I'm Rex
-    # CHECK: enum_ref: 1 Woof! I'm Bella
-    test_enumerate_ref_subscript(dogs3)
 
     # CHECK: single_ref: Woof! I'm Rex
     # CHECK: single_ref: Woof! I'm Bella
