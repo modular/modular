@@ -1557,6 +1557,9 @@ def matmul_Q4_K[
 ):
     """Computes a matrix multiplication with Q4_K block-quantized weights.
 
+    Dispatches to an x86 or ARM NEON implementation at compile time; other
+    targets fail to compile.
+
     Parameters:
         elementwise_lambda_fn: Optional epilogue applied to each output element.
 
@@ -1597,6 +1600,9 @@ def matmul_Q6_K[
     ctx: Optional[DeviceContext] = None,
 ):
     """Computes a matrix multiplication with Q6_K block-quantized weights.
+
+    Dispatches to an x86 or ARM NEON implementation at compile time; other
+    targets fail to compile.
 
     Parameters:
         elementwise_lambda_fn: Optional epilogue applied to each output element.

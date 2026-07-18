@@ -10,7 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides GPU kernels for block-wise quantized int4 matrix multiplication."""
+"""Provides GPU kernels for block-wise quantized int4 matrix multiplication.
+
+Computes `C = A @ B` on the GPU, where `B` holds 4-bit quantized integer
+weights packed eight values per 32-bit word and `A` and `C` are `bfloat16`.
+The weights are dequantized in shared memory and fed through a multistage,
+software-pipelined tensor-core GEMM.
+
+## Limitations
+
+- Requires an NVIDIA GPU target.
+- `B` must be repacked before the matmul: use `gpu_qint4_repack_Q4_0` for GGUF
+  Q4_0 weights or `gpu_qint4_repack_GPTQ` for GPTQ weights (with optional
+  activation-order permutation).
+"""
 
 from std.math import ceildiv
 from std.math.uutils import umod, ufloordiv, udivmod, uceildiv
@@ -68,6 +81,7 @@ from std.utils.numerics import get_accum_type
 
 
 @always_inline
+@doc_hidden
 def args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
     """Returns the two integer arguments as a tuple, swapping their order when `swap` is set.
 
@@ -88,6 +102,7 @@ def args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
 
 
 @always_inline
+@doc_hidden
 def multistage_mma_q[
     BM: Int,
     BN: Int,
@@ -636,6 +651,7 @@ def multistage_mma_q[
 @__name(
     t"multistage_qgemm_{a_type}_{b_packed_type}_{c_type}_g{group_size}",
 )
+@doc_hidden
 def multistage_qgemm_kernel[
     c_type: DType,
     c_layout: Layout,
@@ -1106,6 +1122,7 @@ def multistage_qgemm_kernel[
 # with shape = IntTuple(IntTuple(64, TN),IntTuple(2, TK))
 # and stride = IntTuple(IntTuple(2, TK * 128),IntTuple(1, 128))
 @always_inline
+@doc_hidden
 def pack_Q_tile(input: SIMD[DType.uint8, 16]) -> SIMD[DType.uint32, 4]:
     """Packs sixteen bytes (thirty-two 4-bit weights, two per byte) into four `uint32` lanes for the repacked weight layout.
 
@@ -1135,6 +1152,7 @@ def pack_Q_tile(input: SIMD[DType.uint8, 16]) -> SIMD[DType.uint32, 4]:
 
 
 @always_inline
+@doc_hidden
 def unpack_4bit_int(val: SIMD[DType.uint32, _], idx: Int) -> UInt8:
     """Extracts a single 4-bit value from the packed `uint32` lane at the given nibble index.
 
@@ -1151,6 +1169,7 @@ def unpack_4bit_int(val: SIMD[DType.uint32, _], idx: Int) -> UInt8:
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
 @__name(t"repack_Q4_0_for_sm8x_{scales_type}")
+@doc_hidden
 def repack_Q4_0_for_sm8x[
     q_layout: Layout,
     repack_layout: Layout,
@@ -1350,6 +1369,7 @@ def repack_Q4_0_for_sm8x[
 # [K_groups * group_bytes, N].
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
 @__name(t"repack_GPTQ_for_sm8x_{scales_type}_g{group_size}_{has_perm}")
+@doc_hidden
 def repack_GPTQ_for_sm8x[
     in_layout: Layout,
     out_layout: Layout,
@@ -1603,6 +1623,7 @@ def repack_GPTQ_for_sm8x[
 
 
 @always_inline
+@doc_hidden
 def q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     """Computes the shared memory footprint in bytes for the quantized GEMM kernel under the given configuration.
 
@@ -1633,6 +1654,7 @@ def q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     return max(c_usage, smem_usage, slice_k_reduction)
 
 
+@doc_hidden
 def multistage_gemm_q[
     c_type: DType,
     a_type: DType,
@@ -1797,6 +1819,10 @@ def matmul_gpu_qint4[
 
     Raises:
         An error if the input tensors are not rank-2 or the target is not a GPU.
+
+    Constraints:
+        Requires an NVIDIA GPU target. `a_type` and `c_type` must both be
+        `bfloat16`.
     """
     var c = c_tt.to_layout_tensor()
     var a = a_tt.to_layout_tensor()
@@ -2345,7 +2371,7 @@ def gpu_qint4_repack_Q4_0[
     ],
     ctx: Optional[DeviceContext] = None,
 ) raises:
-    """Launches the GPU kernel that repacks Q4_0 quantized weights for the SM8x quantized GEMM.
+    """Launches the GPU kernel that repacks Q4_0 weights into the packed GEMM layout.
 
     Parameters:
         target: The target platform string, which must identify a GPU.
@@ -2418,7 +2444,7 @@ def gpu_qint4_repack_GPTQ[
     ] = None,
     ctx: Optional[DeviceContext] = None,
 ) raises:
-    """Launches the GPU kernel that repacks GPTQ quantized weights for the SM8x quantized GEMM.
+    """Launches the GPU kernel that repacks GPTQ weights into the packed GEMM layout.
 
     Parameters:
         group_size: The number of K elements sharing a single scale.

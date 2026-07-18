@@ -369,8 +369,8 @@ struct Q4sym[
         output_shape: IndexList[output_rank],
     ):
         """
-        Encodes the floating point numbers in `input_tt` along the
-        inner-most dimension and writes the result to output_tt.
+        Dequantizes the block-quantized values in `input_tt` along the
+        inner-most dimension and writes the decoded result to `output_tt`.
 
         Parameters:
             output_rank: The rank of the output tensor.
