@@ -15,7 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from std.builtin.constrained import _constrained_conforms_to
 from std.format._utils import (
     write_sequence_to,
     TypeNames,
@@ -33,6 +32,10 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 
 
 @lldb_formatter_wrapping_type
+@explicit_destroy(
+    "Use `deinit_with()` to explicitly destroy a `Tuple` with"
+    " non-`ImplicitlyDeletable` elements"
+)
 struct Tuple[*element_types: Movable](
     Comparable where element_types.all_conforms_to[Comparable](),
     Copyable where element_types.all_conforms_to[Copyable](),
@@ -42,9 +45,9 @@ struct Tuple[*element_types: Movable](
     ImplicitlyCopyable where element_types.all_conforms_to[
         ImplicitlyCopyable
     ](),
-    # ImplicitlyDeletable and Movable are listed explicitly because
-    # conditional conformances require all conformances to be stated.
-    ImplicitlyDeletable,
+    ImplicitlyDeletable where element_types.all_conforms_to[
+        ImplicitlyDeletable
+    ](),
     Movable,
     RegisterPassable where element_types.all_conforms_to[RegisterPassable](),
     Sized,
@@ -116,21 +119,34 @@ struct Tuple[*element_types: Movable](
 
         args^.consume_elements[init_elt]()
 
-    def __del__(deinit self):
-        """Destructor that destroys all of the elements."""
+    def __del__(
+        deinit self,
+    ) where Self.element_types.all_conforms_to[ImplicitlyDeletable]():
+        """Destructor that destroys all of the elements.
 
+        Constraints:
+            All `element_types` must be `ImplicitlyDeletable`. When any element
+            is not, the tuple has no implicit destructor and must be torn down
+            with `deinit_with()`.
+        """
         # Run the destructor on each member, the destructor of !kgen.struct is
         # trivial and won't do anything.
         comptime for i in range(Self.__len__()):
-            comptime TUnknown = Self.element_types[i]
-            _constrained_conforms_to[
-                conforms_to(TUnknown, ImplicitlyDeletable),
-                Parent=Self,
-                Element=TUnknown,
-                ParentConformsTo="ImplicitlyDeletable",
-            ]()
-            comptime assert conforms_to(TUnknown, ImplicitlyDeletable)
             UnsafePointer(to=self[i]).unsafe_deinit_pointee()
+
+    def deinit_with[
+        deinit_func: def[idx: Int](var elt: Self.element_types[idx]) capturing
+    ](deinit self):
+        """Consume the tuple, deinitializing each element with a closure.
+
+        Use this to tear down a `Tuple` whose elements are not
+        `ImplicitlyDeletable`. Elements are visited in index order.
+
+        Parameters:
+            deinit_func: A closure called once per element, receiving ownership
+                of the element at that index so it can destroy it.
+        """
+        self^.consume_elements[deinit_func]()
 
     @always_inline("nodebug")
     def __init__(out self, *, copy: Self):

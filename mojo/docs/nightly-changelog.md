@@ -575,7 +575,7 @@ This version is still a work in progress.
   conforming only when their element type does. This lets a collection hold
   non-`ImplicitlyDeletable` elements at all (previously such a collection failed
   to compile); a collection of non-deletable elements is itself linear and must
-  be drained explicitly with the new `destroy_with()` method, which calls a
+  be drained explicitly with the new `deinit_with()` method, which calls a
   closure on each element:
 
   ```mojo
@@ -609,7 +609,7 @@ This version is still a work in progress.
       `setdefault`, `fromkeys`, `update`, `__or__`, `__ior__`, `pop`, `clear`)
       still require the `K` key and `V` value types to be `ImplicitlyDeletable`,
       so a `Dict` with non-`ImplicitlyDeletable` keys or values can currently be
-      constructed and torn down with `destroy_with()` but not populated or
+      constructed and torn down with `deinit_with()` but not populated or
       mutated. For deletable key/value types (the common case) this is
       transparent.
     - Consuming iteration (`for entry in dict^`) is likewise conditional,
@@ -617,7 +617,7 @@ This version is still a work in progress.
   - `LinkedList[ElementType]`
     - Unlike `Dict`, a `LinkedList` with non-`ImplicitlyDeletable` elements can
       be populated (`append`, `prepend`, `insert`, `extend`) and then torn down
-      with `destroy_with()`.
+      with `deinit_with()`.
     - Only `clear` still requires `ElementType` to be `ImplicitlyDeletable`. For
       deletable element types (the common case) this is transparent.
     - `LinkedList.insert()` no longer raises on an out-of-range index; like
@@ -625,6 +625,14 @@ This version is still a work in progress.
     - Consuming iteration (`for x in list^`, the `IterableOwned` conformance)
       is likewise conditional, requiring `ElementType` to be
       `ImplicitlyDeletable`.
+  - `Tuple[*element_types]`
+    - A tuple is now `ImplicitlyDeletable` only when every element type is. A
+      tuple with a non-`ImplicitlyDeletable` element is linear and must be torn
+      down with the new `deinit_with()` method (or fully consumed with
+      `consume_elements()`). For deletable element types (the common case) this
+      is transparent. Generic code that stores a `Tuple[*Ts]` with an unbounded
+      pack may need `& ImplicitlyDeletable` on the pack bound to keep dropping
+      the tuple implicitly.
 
 - Is is now possible to iterate over owned elements in
   `List`, `Dict`, `InlineArray`, `LinkedList`, and `Set`

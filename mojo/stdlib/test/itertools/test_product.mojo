@@ -20,7 +20,7 @@ from std.testing import (
     assert_true,
     assert_raises,
 )
-from test_utils import Observable
+from test_utils import Observable, CopyCounter
 
 
 def test_product2() raises:
@@ -454,6 +454,39 @@ def test_product4_owned() raises:
         count += 1
 
     assert_equal(count, 16)
+
+
+# The `_Product{3,4}` iterators flatten a right-nested tuple on each `next()`.
+# That flatten moves elements out rather than copying them, so a yielded element
+# carries only the copies the product machinery makes while replaying the inner
+# iterators, plus none from the flatten. These tests pin those counts so a
+# regression that reintroduces a per-element copy in the flatten path is caught.
+
+
+def test_product3_element_copies() raises:
+    var l1 = [CopyCounter(1), CopyCounter(2)]
+    var l2 = [CopyCounter(10), CopyCounter(20)]
+    var l3 = [CopyCounter(100), CopyCounter(200)]
+
+    for a, b, c in product(l1, l2, l3):
+        assert_equal(a.copy_count, 2)
+        assert_equal(b.copy_count, 2)
+        # The fastest-varying (rightmost) element is copied once.
+        assert_equal(c.copy_count, 1)
+
+
+def test_product4_element_copies() raises:
+    var l1 = [CopyCounter(1), CopyCounter(2)]
+    var l2 = [CopyCounter(3), CopyCounter(4)]
+    var l3 = [CopyCounter(5), CopyCounter(6)]
+    var l4 = [CopyCounter(7), CopyCounter(8)]
+
+    for a, b, c, d in product(l1, l2, l3, l4):
+        assert_equal(a.copy_count, 2)
+        assert_equal(b.copy_count, 2)
+        assert_equal(c.copy_count, 2)
+        # The fastest-varying (rightmost) element is copied once.
+        assert_equal(d.copy_count, 1)
 
 
 def main() raises:

@@ -19,7 +19,12 @@ from std.testing import (
     assert_raises,
     TestSuite,
 )
-from test_utils import CopyCounter, MoveOnly, ObservableMoveOnly
+from test_utils import (
+    CopyCounter,
+    ExplicitDestroy,
+    MoveOnly,
+    ObservableMoveOnly,
+)
 
 
 def test_tuple_contains() raises:
@@ -347,6 +352,21 @@ def test_tuple_conditional_conformances() raises:
     assert_true(conforms_to(Tuple[Int], Hashable))
     assert_true(conforms_to(Tuple[Int, String], Hashable))
 
+    # ImplicitlyDeletable conformance is conditional on all element types being
+    # ImplicitlyDeletable.
+    assert_true(conforms_to(Tuple[], ImplicitlyDeletable))
+    assert_true(conforms_to(Tuple[Int], ImplicitlyDeletable))
+    assert_true(conforms_to(Tuple[Int, String], ImplicitlyDeletable))
+    assert_true(
+        conforms_to(Tuple[Int, Tuple[Int, Float32]], ImplicitlyDeletable)
+    )
+    assert_false(conforms_to(Tuple[ExplicitDestroy], ImplicitlyDeletable))
+    assert_false(conforms_to(Tuple[Int, ExplicitDestroy], ImplicitlyDeletable))
+    # A tuple nesting a linear tuple is itself linear.
+    assert_false(
+        conforms_to(Tuple[Tuple[ExplicitDestroy]], ImplicitlyDeletable)
+    )
+
     # conforms_to correctly returns False for non-conforming element types.
     assert_false(conforms_to(Tuple[MoveOnly[Int]], Copyable))
     assert_false(conforms_to(Tuple[MoveOnly[Int]], Defaultable))
@@ -479,6 +499,42 @@ def _count_consumed[
 def test_tuple_consume_elements_empty() raises:
     assert_equal(_count_consumed(Tuple[]()), 0)
     assert_equal(_count_consumed((1, 2, 3)), 3)
+
+
+def test_tuple_deinit_with() raises:
+    # A `Tuple` with a linear (non-`ImplicitlyDeletable`) element must be torn
+    # down explicitly with `deinit_with()`.
+    var t = (ExplicitDestroy(0), ExplicitDestroy(1), ExplicitDestroy(2))
+    var destroyed = List[Int]()
+
+    @parameter
+    def dispose[idx: Int](var elt: ExplicitDestroy):
+        destroyed.append(elt.value)
+        elt^.destroy()
+
+    t^.deinit_with[dispose]()
+    assert_equal(destroyed, [0, 1, 2])
+
+
+def test_tuple_deinit_with_heterogeneous() raises:
+    # `deinit_with` also works when only some elements are linear; the closure
+    # is handed each element by value and destroys it however is appropriate.
+    var t = (String("hello"), ExplicitDestroy(42))
+    var got_str = String()
+    var got_val = 0
+
+    @parameter
+    def dispose[idx: Int](var elt: t.element_types[idx]):
+        comptime if idx == 0:
+            got_str = rebind_var[String](elt^)
+        else:
+            var e = rebind_var[ExplicitDestroy](elt^)
+            got_val = e.value
+            e^.destroy()
+
+    t^.deinit_with[dispose]()
+    assert_equal(got_str, "hello")
+    assert_equal(got_val, 42)
 
 
 def main() raises:

@@ -1215,7 +1215,7 @@ def coord_to_index_list[
 
 @always_inline
 def dyn_coord[
-    dtype: DType, *element_types: Movable
+    dtype: DType, *element_types: Movable & ImplicitlyDeletable
 ](
     var values: Tuple[*element_types],
     out result: Coord[
