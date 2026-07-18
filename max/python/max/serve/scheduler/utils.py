@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from max.driver import Buffer
@@ -44,6 +45,35 @@ def _to_human_readable_throughput(tps: float) -> str:
     if tps >= 1_000:
         return f"{tps / 1e3:.1f}K tok/s"
     return f"{tps:.1f} tok/s"
+
+
+def _dp_token_occupancy_pct(
+    batches: list[list[TextContext]],
+    num_replicas: int,
+    token_length: Callable[[TextContext], int],
+) -> float | None:
+    """Mean/max of per-rank token sums as a percentage.
+
+    Ranks step together, so the heaviest rank sets the step cost; mean/max
+    is the fraction of that synchronized capacity doing useful work (100 =
+    perfectly balanced; the floor is 100/DP-degree). Padding dummies are
+    excluded (measure the constructor's placement, not the padded shapes);
+    replicas missing from ``batches`` scheduled zero tokens. ``None`` when
+    every rank sums to zero.
+    """
+    per_rank = [
+        sum(
+            token_length(ctx)
+            for ctx in replica_batch
+            if not ctx._is_padding_ctx
+        )
+        for replica_batch in batches
+    ]
+    per_rank.extend([0] * (num_replicas - len(per_rank)))
+    max_rank_tokens = max(per_rank, default=0)
+    if max_rank_tokens == 0:
+        return None
+    return 100.0 * sum(per_rank) / (num_replicas * max_rank_tokens)
 
 
 @dataclass
@@ -103,6 +133,13 @@ class BatchMetrics:
     # the batch is empty. DP padding dummies are excluded so this reflects the
     # batch constructor's placement decisions, not the padded shapes.
     dp_active_token_occupancy_pct: float | None = None
+
+    # Data-parallel balance of this batch's context-token (KV / attention)
+    # load: mean/max of per-rank processed-length sums as a percentage. Same
+    # convention as ``dp_active_token_occupancy_pct``; ``None`` when
+    # data_parallel_degree == 1 or no rank has processed tokens yet (e.g. a
+    # fresh prefill batch).
+    dp_context_token_occupancy_pct: float | None = None
 
     # Per-request KV cache hit rates for requests admitted in this batch
     # (cached_prefix_length / prompt_length). Empty for non-CE batches and
@@ -169,29 +206,22 @@ class BatchMetrics:
         nixl_write_gib_per_s = 0.0
         num_replicas = sch_config.data_parallel_degree
 
-        # Data-parallel balance: ranks step together, so the heaviest rank
-        # sets the step cost; mean/max is the fraction of that synchronized
-        # capacity doing useful work. Padding dummies are excluded (measure
-        # the constructor's placement, not the padded shapes); replicas
-        # missing from ``batches`` scheduled zero tokens.
+        # Data-parallel balance, along two axes: active tokens (compute load
+        # this step) and context tokens (KV / attention load). See
+        # ``_dp_token_occupancy_pct`` for the mean/max convention.
         dp_active_token_occupancy_pct: float | None = None
+        dp_context_token_occupancy_pct: float | None = None
         if num_replicas > 1:
-            per_rank_active = [
-                sum(
-                    ctx.tokens.active_length
-                    for ctx in replica_batch
-                    if not ctx._is_padding_ctx
-                )
-                for replica_batch in inputs.batches
-            ]
-            per_rank_active.extend([0] * (num_replicas - len(per_rank_active)))
-            max_rank_tokens = max(per_rank_active, default=0)
-            if max_rank_tokens > 0:
-                dp_active_token_occupancy_pct = (
-                    100.0
-                    * sum(per_rank_active)
-                    / (num_replicas * max_rank_tokens)
-                )
+            dp_active_token_occupancy_pct = _dp_token_occupancy_pct(
+                inputs.batches,
+                num_replicas,
+                lambda ctx: ctx.tokens.active_length,
+            )
+            dp_context_token_occupancy_pct = _dp_token_occupancy_pct(
+                inputs.batches,
+                num_replicas,
+                lambda ctx: ctx.tokens.processed_length,
+            )
 
         if kv_cache is not None:
             # TODO SERVOPT-939: Add some sugar
@@ -351,6 +381,7 @@ class BatchMetrics:
             nixl_write_gib_per_s=nixl_write_gib_per_s,
             batch_execution_time_is_previous=batch_execution_time_is_previous,
             dp_active_token_occupancy_pct=dp_active_token_occupancy_pct,
+            dp_context_token_occupancy_pct=dp_context_token_occupancy_pct,
             per_request_hit_rates=per_request_hit_rates,
             num_new_admissions=len(per_request_hit_rates),
             vision_metrics=batch_vision_metrics,
@@ -449,11 +480,17 @@ class BatchMetrics:
             else "Execution"
         )
 
+        # One occupancy clause, matched to the batch's dominant load: active
+        # tokens for CE (compute) and context tokens for TG (KV / attention).
+        # The published metrics keep the full active/context split.
+        dp_occupancy_pct = (
+            self.dp_active_token_occupancy_pct
+            if self.batch_type == BatchType.CE
+            else self.dp_context_token_occupancy_pct
+        )
         dp_str = ""
-        if self.dp_active_token_occupancy_pct is not None:
-            dp_str = (
-                f"DP Occupancy: {self.dp_active_token_occupancy_pct:.1f}% | "
-            )
+        if dp_occupancy_pct is not None:
+            dp_str = f"DP Occupancy: {dp_occupancy_pct:.1f}% | "
 
         return (
             f"Executed {self.batch_type.value} batch with {self.batch_size} reqs | "
@@ -503,6 +540,11 @@ class BatchMetrics:
         if self.dp_active_token_occupancy_pct is not None:
             extra["dp_active_token_occupancy_pct"] = (
                 self.dp_active_token_occupancy_pct
+            )
+
+        if self.dp_context_token_occupancy_pct is not None:
+            extra["dp_context_token_occupancy_pct"] = (
+                self.dp_context_token_occupancy_pct
             )
 
         if self.total_kv_blocks != 0:
@@ -609,6 +651,10 @@ class BatchMetrics:
         if self.dp_active_token_occupancy_pct is not None:
             METRICS.dp_active_token_occupancy(
                 self.dp_active_token_occupancy_pct, batch_type=bt
+            )
+        if self.dp_context_token_occupancy_pct is not None:
+            METRICS.dp_context_token_occupancy(
+                self.dp_context_token_occupancy_pct, batch_type=bt
             )
 
         METRICS.cache_num_used_blocks(

@@ -933,13 +933,16 @@ def test_scheduler_overlap_attributes_execution_metrics_to_completed_batch() -> 
 
 
 # ---------------------------------------------------------------------------
-# DP active-token occupancy tests
+# DP active-token / context-token occupancy tests
 # ---------------------------------------------------------------------------
 
 
-def _mock_ctx(active_length: int, padding: bool = False) -> MagicMock:
+def _mock_ctx(
+    active_length: int, padding: bool = False, processed_length: int = 0
+) -> MagicMock:
     ctx = MagicMock()
     ctx.tokens.active_length = active_length
+    ctx.tokens.processed_length = processed_length
     # Explicit False: an auto-created Mock attribute would be truthy and the
     # context would be skipped as a padding dummy.
     ctx._is_padding_ctx = padding
@@ -956,7 +959,9 @@ def _mock_dp_inputs(
     inputs.input_tokens = sum(
         ctx.tokens.active_length for ctx in inputs.flat_batch
     )
-    inputs.context_tokens = 0
+    inputs.context_tokens = sum(
+        ctx.tokens.processed_length for ctx in inputs.flat_batch
+    )
     inputs.batch_type = batch_type
     return inputs
 
@@ -1032,12 +1037,118 @@ def test_publish_metrics_dp_occupancy_skipped_when_unset() -> None:
 
 
 def test_dp_occupancy_in_log_line_and_extra() -> None:
-    metrics = _make_metrics(dp_active_token_occupancy_pct=50.0)
+    # A CE log line shows the active-token occupancy; the context value is
+    # still carried in the structured extra.
+    metrics = _make_metrics(
+        dp_active_token_occupancy_pct=50.0,
+        dp_context_token_occupancy_pct=75.0,
+    )
     assert "DP Occupancy: 50.0% | " in metrics.pretty_format()
     extra = metrics.to_log_extra()
     assert extra["dp_active_token_occupancy_pct"] == 50.0
+    assert extra["dp_context_token_occupancy_pct"] == 75.0
 
     # Absent at DP1 (field defaults to None).
     plain = _make_metrics()
     assert "DP Occupancy" not in plain.pretty_format()
     assert "dp_active_token_occupancy_pct" not in plain.to_log_extra()
+
+
+def test_dp_context_occupancy_imbalanced_tg() -> None:
+    """The motivating case: decode ranks with even request counts but wildly
+    uneven context lengths -> uneven KV/attention load. Active occupancy is
+    100% (one token per request) while context occupancy shows the skew."""
+    inputs = _mock_dp_inputs(
+        [
+            [_mock_ctx(1, processed_length=8000)],
+            [_mock_ctx(1, processed_length=8)],
+        ],
+        batch_type=BatchType.TG,
+    )
+    metrics = _create_dp_metrics(inputs, dp=2)
+    assert metrics.dp_active_token_occupancy_pct == 100.0
+    assert metrics.dp_context_token_occupancy_pct == 100.0 * 8008 / 16000
+
+
+def test_dp_context_occupancy_balanced() -> None:
+    inputs = _mock_dp_inputs(
+        [
+            [_mock_ctx(1, processed_length=4000)],
+            [
+                _mock_ctx(1, processed_length=2000),
+                _mock_ctx(1, processed_length=2000),
+            ],
+        ],
+        batch_type=BatchType.TG,
+    )
+    metrics = _create_dp_metrics(inputs, dp=2)
+    assert metrics.dp_context_token_occupancy_pct == 100.0
+
+
+def test_dp_context_occupancy_skipped_at_dp1() -> None:
+    inputs = _mock_dp_inputs([[_mock_ctx(1, processed_length=8000)]])
+    metrics = _create_dp_metrics(inputs, dp=1)
+    assert metrics.dp_context_token_occupancy_pct is None
+
+
+def test_dp_context_occupancy_skipped_on_fresh_prefill() -> None:
+    """A fresh prefill batch has no processed tokens on any rank, so there
+    is no context load to balance; the active-token metric still reports."""
+    inputs = _mock_dp_inputs([[_mock_ctx(8000)], [_mock_ctx(8)]])
+    metrics = _create_dp_metrics(inputs, dp=2)
+    assert metrics.dp_active_token_occupancy_pct is not None
+    assert metrics.dp_context_token_occupancy_pct is None
+
+
+def test_dp_context_occupancy_excludes_padding_dummies() -> None:
+    inputs = _mock_dp_inputs(
+        [
+            [_mock_ctx(1, processed_length=8000)],
+            [_mock_ctx(1, padding=True, processed_length=8000)],
+        ],
+        batch_type=BatchType.TG,
+    )
+    metrics = _create_dp_metrics(inputs, dp=2)
+    assert metrics.dp_context_token_occupancy_pct == 50.0
+
+
+def test_dp_context_occupancy_missing_replicas_count_as_zero() -> None:
+    inputs = _mock_dp_inputs(
+        [[_mock_ctx(1, processed_length=8000)]], batch_type=BatchType.TG
+    )
+    metrics = _create_dp_metrics(inputs, dp=2)
+    assert metrics.dp_context_token_occupancy_pct == 50.0
+
+
+def test_publish_metrics_dp_context_occupancy() -> None:
+    metrics = _make_metrics(dp_context_token_occupancy_pct=50.0)
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+    mock_metrics.dp_context_token_occupancy.assert_called_once_with(
+        50.0, batch_type="CE"
+    )
+
+
+def test_publish_metrics_dp_context_occupancy_skipped_when_unset() -> None:
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        _make_metrics().publish_metrics()
+    mock_metrics.dp_context_token_occupancy.assert_not_called()
+
+
+def test_dp_context_occupancy_in_log_line_and_extra() -> None:
+    # A TG log line shows the context-token occupancy under the same
+    # "DP Occupancy" label; the active value stays in the structured extra.
+    metrics = _make_metrics(
+        batch_type=BatchType.TG,
+        dp_active_token_occupancy_pct=100.0,
+        dp_context_token_occupancy_pct=50.0,
+    )
+    assert "DP Occupancy: 50.0% | " in metrics.pretty_format()
+    extra = metrics.to_log_extra()
+    assert extra["dp_active_token_occupancy_pct"] == 100.0
+    assert extra["dp_context_token_occupancy_pct"] == 50.0
+
+    # Absent at DP1 (field defaults to None).
+    plain = _make_metrics(batch_type=BatchType.TG)
+    assert "DP Occupancy" not in plain.pretty_format()
+    assert "dp_context_token_occupancy_pct" not in plain.to_log_extra()
