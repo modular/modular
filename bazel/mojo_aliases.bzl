@@ -34,7 +34,6 @@ _MAX_PACKAGES = {
     "testdata": "kernels/test/testdata",
     "_cublas": "kernels/src/_cublas",
     "_cufft": "kernels/src/_cufft",
-    "_curand": "kernels/src/_curand",
     "_cudnn": "kernels/src/_cudnn",
     "_rocblas": "kernels/src/_rocblas",
     "_miopen": "kernels/src/_miopen",
