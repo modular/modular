@@ -573,6 +573,122 @@ class CompositeMatmulAddOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
 
+class CompositeGroupedMatmulBlockScaledOp(max._core.Operation):
+    """
+    The down leg of an NVFP4 MoE FFN: a per-expert (ragged) block-scaled grouped
+    matmul of the packed-NVFP4 activations by the down weights, producing the
+    bf16 hidden-state output.
+
+    Composite form of the `mo.composite.grouped_matmul_block_scaled` kernel;
+    lowers 1:1.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: TensorType,
+        hidden_states: max._core.Value[TensorType],
+        weight: max._core.Value[TensorType],
+        a_scales: max._core.Value[TensorType],
+        b_scales: max._core.Value[TensorType],
+        expert_start_indices: max._core.Value[TensorType],
+        expert_ids: max._core.Value[TensorType],
+        a_scale_offsets: max._core.Value[TensorType],
+        expert_scales: max._core.Value[TensorType],
+        estimated_total_m: max._core.Value[TensorType],
+        num_active_experts: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def hidden_states(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight(self) -> max._core.Value[TensorType]: ...
+    @property
+    def a_scales(self) -> max._core.Value[TensorType]: ...
+    @property
+    def b_scales(self) -> max._core.Value[TensorType]: ...
+    @property
+    def expert_start_indices(self) -> max._core.Value[TensorType]: ...
+    @property
+    def expert_ids(self) -> max._core.Value[TensorType]: ...
+    @property
+    def a_scale_offsets(self) -> max._core.Value[TensorType]: ...
+    @property
+    def expert_scales(self) -> max._core.Value[TensorType]: ...
+    @property
+    def estimated_total_m(self) -> max._core.Value[TensorType]: ...
+    @property
+    def num_active_experts(self) -> max._core.Value[TensorType]: ...
+
+class CompositeGroupedMatmulSwigluNvfp4Op(max._core.Operation):
+    """
+    The gate-up leg of an NVFP4 MoE FFN: a per-expert (ragged) grouped matmul of
+    the packed-NVFP4 activations by the gate-up weights, followed by a SwiGLU
+    activation and a bf16->nvfp4 quantization of the result. Returns the packed
+    NVFP4 activations for the down leg (`c_packed`) and their per-expert SwiGLU
+    scale tile (`c_swiglu_scales`).
+
+    `swiglu_alpha`/`swiglu_limit` are host scalars parameterizing the clamped
+    SwiGLU (swigluoai) activation, enabled by the `clamp_activation` attribute.
+
+    Composite form of the `mo.composite.grouped_matmul_swiglu_nvfp4` kernel;
+    lowers 1:1.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        c_packed: TensorType,
+        c_swiglu_scales: TensorType,
+        hidden_states: max._core.Value[TensorType],
+        weight: max._core.Value[TensorType],
+        a_scales: max._core.Value[TensorType],
+        b_scales: max._core.Value[TensorType],
+        expert_start_indices: max._core.Value[TensorType],
+        expert_ids: max._core.Value[TensorType],
+        a_scale_offsets: max._core.Value[TensorType],
+        expert_scales: max._core.Value[TensorType],
+        c_input_scales: max._core.Value[TensorType],
+        estimated_total_m: max._core.Value[TensorType],
+        num_active_experts: max._core.Value[TensorType],
+        swiglu_alpha: max._core.Value[TensorType],
+        swiglu_limit: max._core.Value[TensorType],
+        clamp_activation: max._core.dialects.builtin.BoolAttr,
+    ) -> None: ...
+    @property
+    def hidden_states(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight(self) -> max._core.Value[TensorType]: ...
+    @property
+    def a_scales(self) -> max._core.Value[TensorType]: ...
+    @property
+    def b_scales(self) -> max._core.Value[TensorType]: ...
+    @property
+    def expert_start_indices(self) -> max._core.Value[TensorType]: ...
+    @property
+    def expert_ids(self) -> max._core.Value[TensorType]: ...
+    @property
+    def a_scale_offsets(self) -> max._core.Value[TensorType]: ...
+    @property
+    def expert_scales(self) -> max._core.Value[TensorType]: ...
+    @property
+    def c_input_scales(self) -> max._core.Value[TensorType]: ...
+    @property
+    def estimated_total_m(self) -> max._core.Value[TensorType]: ...
+    @property
+    def num_active_experts(self) -> max._core.Value[TensorType]: ...
+    @property
+    def swiglu_alpha(self) -> max._core.Value[TensorType]: ...
+    @property
+    def swiglu_limit(self) -> max._core.Value[TensorType]: ...
+    @property
+    def clamp_activation(self) -> bool: ...
+    @clamp_activation.setter
+    def clamp_activation(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+
 class CompositeMaskedFlashAttentionCpuOp(max._core.Operation):
     """
     Fused scaled-dot-product attention (`softmax(Q @ K^T * scale + mask) @ V`)
@@ -666,6 +782,100 @@ class CompositeMatmulFusedPartialRmsNormOp(max._core.Operation):
     def epsilon(self) -> max._core.Value[TensorType]: ...
     @property
     def weight_offset(self) -> max._core.Value[TensorType]: ...
+
+class CompositeMegaFfnNvfp4Op(max._core.Operation):
+    """
+    Single-kernel NVFP4 MoE FFN: collapses the gate-up GEMM + SwiGLU +
+    bf16->nvfp4 quantize leg (`mo.composite.grouped_matmul_swiglu_nvfp4`) and the
+    block-scaled down GEMM leg (`mo.composite.grouped_matmul_block_scaled`) into
+    one launch with an in-kernel cross-CTA hand-off between the two legs.
+    Produced by the MegaFFN fusion pattern; the intermediate packed activations
+    and SwiGLU scales are kept entirely on-chip and are not graph values.
+
+    B200 (SM100) only. The fusion pattern fires on SM100 targets when enabled;
+    on any other target the unfused two-composite chain is preserved.
+
+    Operands are the union of the two legs' inputs (minus the dead intermediate):
+    the gate-up leg's `hidden_states`/`weight`/`a_scales`/`b_scales`/
+    `expert_scales`/`c_input_scales`, the down leg's `weight`/`b_scales`/
+    `expert_scales`, the shared routing tensors (`expert_start_indices`,
+    `expert_ids`, `a_scale_offsets`, `estimated_total_m`), and each leg's
+    `num_active_experts`.
+
+    The `arrival_count` buffer holds the cross-CTA pool-slot arrival counters
+    the kernel uses to hand off between the two legs. It is a PERSISTENT device
+    buffer minted once by the fusion pattern (`mo.buffer.create` with a zero
+    `initValue`) and initialized once at model load; under the kernel's
+    `POST_SELF_CLEAN_UP` policy every touched slot is reset in band, so the
+    buffer is all-zero at every launch boundary (correct under single-stream
+    serialization). `inChain`/`outChain` sequence the in-place write (required
+    for any op with an `mo.buffer` operand; the chain is GC-internal and is
+    dropped before the kernel-arg binding, so `arrival_count` binds to the
+    registration's `MutableInputTensor` arg).
+
+    The clamped-SwiGLU (`swigluoai`) activation is selected by the discardable
+    `clamp_activation` attribute; the kernel supplies the canonical swigluoai
+    alpha/limit constants when it is set.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: TensorType,
+        out_chain: ChainType,
+        hidden_states: max._core.Value[TensorType],
+        gate_up_weight: max._core.Value[TensorType],
+        gate_up_a_scales: max._core.Value[TensorType],
+        gate_up_b_scales: max._core.Value[TensorType],
+        down_weight: max._core.Value[TensorType],
+        down_b_scales: max._core.Value[TensorType],
+        expert_start_indices: max._core.Value[TensorType],
+        expert_ids: max._core.Value[TensorType],
+        a_scale_offsets: max._core.Value[TensorType],
+        gate_up_expert_scales: max._core.Value[TensorType],
+        down_expert_scales: max._core.Value[TensorType],
+        c_input_scales: max._core.Value[TensorType],
+        estimated_total_m: max._core.Value[TensorType],
+        gate_up_num_active_experts: max._core.Value[TensorType],
+        down_num_active_experts: max._core.Value[TensorType],
+        arrival_count: max._core.Value[BufferType],
+        in_chain: max._core.Value[ChainType],
+    ) -> None: ...
+    @property
+    def hidden_states(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gate_up_weight(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gate_up_a_scales(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gate_up_b_scales(self) -> max._core.Value[TensorType]: ...
+    @property
+    def down_weight(self) -> max._core.Value[TensorType]: ...
+    @property
+    def down_b_scales(self) -> max._core.Value[TensorType]: ...
+    @property
+    def expert_start_indices(self) -> max._core.Value[TensorType]: ...
+    @property
+    def expert_ids(self) -> max._core.Value[TensorType]: ...
+    @property
+    def a_scale_offsets(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gate_up_expert_scales(self) -> max._core.Value[TensorType]: ...
+    @property
+    def down_expert_scales(self) -> max._core.Value[TensorType]: ...
+    @property
+    def c_input_scales(self) -> max._core.Value[TensorType]: ...
+    @property
+    def estimated_total_m(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gate_up_num_active_experts(self) -> max._core.Value[TensorType]: ...
+    @property
+    def down_num_active_experts(self) -> max._core.Value[TensorType]: ...
+    @property
+    def arrival_count(self) -> max._core.Value[BufferType]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
 
 class CompositeNoMaskFlashAttentionCpuOp(max._core.Operation):
     """

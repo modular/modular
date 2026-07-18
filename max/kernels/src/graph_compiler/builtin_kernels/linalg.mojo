@@ -497,7 +497,7 @@ struct Struct_grouped_matmul_ragged:
         )
 
 
-@extensibility.register("mo.grouped.matmul.block.scaled")
+@extensibility.register("mo.composite.grouped_matmul_block_scaled")
 struct Struct_grouped_matmul_block_scaled:
     """MOGG wrapper for grouped block-scaled matrix multiplication.
 
@@ -576,8 +576,8 @@ struct Struct_grouped_matmul_block_scaled:
         )
 
 
-@extensibility.register("mo.grouped.matmul.block.scaled.swiglu")
-struct Struct_grouped_matmul_block_scaled_swiglu:
+@extensibility.register("mo.composite.grouped_matmul_swiglu_nvfp4")
+struct Struct_grouped_matmul_swiglu_nvfp4:
     """MOGG wrapper for fused grouped NVFP4 matmul + SwiGLU + NVFP4 quant.
 
     Fuses the MoE gate/up grouped matmul, SwiGLU activation, and per-block

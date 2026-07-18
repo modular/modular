@@ -41,6 +41,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_graph_telemetry.py",
     "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
+    "test_mega_ffn_nvfp4_fusion_gpu.py",
     "test_rowwise_reductions.py",
     "test_runtime_source_notes.py",
     "test_scatter.py",
@@ -396,6 +397,33 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mega_ffn_nvfp4_fusion",
+    size = "large",
+    srcs = [
+        "test_mega_ffn_nvfp4_fusion_gpu.py",
+    ],
+    # Disable the MEF compile cache so the `*_fires_in_mo_ir` tests always run
+    # the MO pipeline (and emit the IR dump they grep): the cache key is
+    # structural, so their graph would otherwise be a cache hit off the
+    # compiles-and-runs test's identical graph and skip the pipeline (no dump).
+    env = {"MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false"},
+    # B200-only: the fused MegaFFN NVFP4 kernel the fusion lowers to is SM100a
+    # (Blackwell) specific. Off SM100 the pattern does not fire and the legs
+    # run as standalone kernels, so there is nothing to exercise.
+    tags = ["gpu"],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 

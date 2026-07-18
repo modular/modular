@@ -8,6 +8,12 @@ load(":modular_py_binary.bzl", "modular_py_binary")
 MOJO_DEPS = [
     "//Kernels/lib/matmul_rs",
     "//Kernels/lib/msa",
+    # Internal-only MegaFFN kernel package: its graph-op registration in
+    # //max:builtin_kernels imports the `mega_ffn` package, so its .mojopkg
+    # must be on the graph compiler's runtime import path (mirrors msa /
+    # matmul_rs). The open-source build has no mega_ffn package, so the OSS
+    # `mef` wrapper in //oss/modular/bazel:api.bzl drops this entry.
+    "//Kernels/src/mega_ffn",
     "//max:builtin_kernels",
     "//max:builtin_primitives",
     "//max:_cublas",

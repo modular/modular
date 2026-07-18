@@ -11,6 +11,7 @@ mojo_library(
     deps = [
         "//Kernels/lib/matmul_rs",
         "//Kernels/lib/msa",
+        "//Kernels/src/mega_ffn",
         "//max:builtin_primitives",
         "//max:comm",
         "//max:extensibility",

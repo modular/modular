@@ -18,7 +18,7 @@ from collections.abc import MutableSequence
 from typing import Any
 
 import numpy as np
-from max._core.dialects import mo
+from max._core.dialects import builtin, mo
 from max.driver import accelerator_api, accelerator_architecture_name
 from max.dtype import DType
 from max.graph import (
@@ -5173,28 +5173,27 @@ def grouped_matmul_block_scaled(
             f" but got {b_scales.shape}"
         )
 
-    output = ops.custom(
-        "mo.grouped.matmul.block.scaled",
+    output_type = TensorType(
+        dtype=out_type,
+        shape=[hidden_states.shape[0], weight.shape[1]],
         device=hidden_states.device,
-        values=[
-            hidden_states,
-            weight,
-            a_scales,
-            b_scales,
-            expert_start_indices,
-            expert_ids,
-            a_scale_offsets,
-            expert_scales,
-            estimated_total_m or expert_usage_stats_host[0],
-            expert_usage_stats_host[1],
-        ],
-        out_types=[
-            TensorType(
-                dtype=out_type,
-                shape=[hidden_states.shape[0], weight.shape[1]],
-                device=hidden_states.device,
-            ),
-        ],
+    )
+    # Emitted as a first-class composite op (lowers 1:1 to the
+    # `mo.composite.grouped_matmul_block_scaled` kernel) so the MegaFFN fusion
+    # can match a typed op rather than a string-keyed `mo.custom`.
+    output = Graph.current._add_op_generated(
+        mo.CompositeGroupedMatmulBlockScaledOp,
+        output_type,
+        hidden_states,
+        weight,
+        a_scales,
+        b_scales,
+        expert_start_indices,
+        expert_ids,
+        a_scale_offsets,
+        expert_scales,
+        estimated_total_m or expert_usage_stats_host[0],
+        expert_usage_stats_host[1],
     )[0].tensor
 
     return output
@@ -5355,28 +5354,29 @@ def grouped_matmul_blocked_swiglu(
         device=hidden_states.device,
     )
 
-    results = ops.custom(
-        "mo.grouped.matmul.block.scaled.swiglu",
-        device=hidden_states.device,
-        parameters={
-            "clamp_activation": clamp_activation,
-        },
-        values=[
-            hidden_states,
-            weight,
-            a_scales,
-            b_scales,
-            expert_start_indices,
-            expert_ids,
-            a_scale_offsets,
-            expert_scales,
-            c_input_scales,
-            estimated_total_m or expert_usage_stats_host[0],
-            expert_usage_stats_host[1],
-            ops.constant(swiglu_alpha, DType.float32, device=DeviceRef.CPU()),
-            ops.constant(swiglu_limit, DType.float32, device=DeviceRef.CPU()),
-        ],
-        out_types=[c_packed_type, c_swiglu_scales_type],
+    # Emitted as a first-class composite op (lowers 1:1 to the
+    # `mo.composite.grouped_matmul_swiglu_nvfp4` kernel) so the MegaFFN fusion
+    # can match a typed op rather than a string-keyed `mo.custom`. The SwiGLU
+    # clamp params (`swiglu_alpha`/`swiglu_limit`) are host-scalar operands and
+    # `clamp_activation` a comptime attribute, matching the kernel signature.
+    results = Graph.current._add_op_generated(
+        mo.CompositeGroupedMatmulSwigluNvfp4Op,
+        c_packed_type,
+        c_swiglu_scales_type,
+        hidden_states,
+        weight,
+        a_scales,
+        b_scales,
+        expert_start_indices,
+        expert_ids,
+        a_scale_offsets,
+        expert_scales,
+        c_input_scales,
+        estimated_total_m or expert_usage_stats_host[0],
+        expert_usage_stats_host[1],
+        ops.constant(swiglu_alpha, DType.float32, device=DeviceRef.CPU()),
+        ops.constant(swiglu_limit, DType.float32, device=DeviceRef.CPU()),
+        clamp_activation=builtin.BoolAttr(clamp_activation),
     )
 
     return results[0].tensor, results[1].tensor

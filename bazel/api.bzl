@@ -109,6 +109,11 @@ def _process_cc_deps(data, deps):
         elif dep == "//Kernels/lib/matmul_rs":
             new_deps.append("@modular_wheel//:matmul_rs_lib")
             needs_wheel = True
+        elif dep == "//Kernels/src/mega_ffn":
+            # Internal-only MegaFFN kernel package: it has no OSS wheel lib and
+            # its graph-op registration is excluded from the public export, so
+            # drop it for open-source builds (mirrors the mef + copybara drops).
+            pass
         else:
             new_deps.append(dep)
 
@@ -217,6 +222,10 @@ def mef(**kwargs):
             new_deps.append("@modular_wheel//:msa_lib")
         elif dep == "//Kernels/lib/matmul_rs":
             new_deps.append("@modular_wheel//:matmul_rs_lib")
+        elif dep == "//Kernels/src/mega_ffn":
+            # Internal-only MegaFFN kernel package: dropped for open-source
+            # builds (see _process_cc_deps).
+            pass
         else:
             new_deps.append(dep)
     _mef(mojo_deps = new_deps, **kwargs)
