@@ -219,7 +219,7 @@ _KERNELS_NO_RUN_LIST = [
 _KERNEL_MOJOPKGS = [
     dep
     for dep in ALL_MOJOPKGS
-    if not dep.startswith("//Kernels/lib/")
+    if not dep.startswith("//Kernels/")
 ]
 
 # Same `kgen -lsp` mechanism as lsp-parse-smoke-stdlib, scanning
