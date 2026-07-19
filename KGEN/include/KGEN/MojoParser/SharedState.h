@@ -610,24 +610,16 @@ private:
   /// the parse cursor (valid for an already-open module, invalid for a deferred
   /// one) and is responsible for importing builtins (eagerly, or at
   /// materialization for a deferred module).
-  ///
-  /// When `registerScope` is false the created state is owned but not
-  /// registered under `declName` for name lookup; used for the compilation
-  /// root.
   ModuleState &createFileModuleState(StringAttr declName,
                                      ModuleState &parentState,
                                      FileLineColLoc loc, llvm::SMLoc declLoc,
                                      LexerCursor cursor, LexerCursor endCursor,
-                                     StringRef sourcePath,
-                                     bool registerScope = true);
+                                     StringRef sourcePath);
 
-  /// Create a new module state with the given name, location, and body. When
-  /// `registerScope` is false the state is not registered for name lookup (see
-  /// createFileModuleState).
+  /// Create a new module state with the given name, location, and body.
   ModuleState &createModuleState(StringAttr declName,
                                  const llvm::MemoryBuffer *moduleBuffer,
-                                 ModuleState &parentState, FileLineColLoc loc,
-                                 bool registerScope = true);
+                                 ModuleState &parentState, FileLineColLoc loc);
 
   /// Create a module state for a source module whose file has not been opened.
   ModuleState &createDeferredModuleState(StringAttr declName,
@@ -640,7 +632,7 @@ private:
   /// pulled the package in.
   ModuleState &createPackageState(StringAttr declName, StringRef packagePath,
                                   ModuleState &parentState, FileLineColLoc loc,
-                                  SMLoc importLoc, bool registerScope = true);
+                                  SMLoc importLoc);
 
   /// Create a new module state for a binary package with the given name.
   ModuleState &createBinaryPackageState(SMLoc loc, StringAttr declName,
