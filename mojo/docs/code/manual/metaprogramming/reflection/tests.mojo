@@ -353,7 +353,7 @@ def test_type_of() raises:
 # --- Capturing types and origins: origin_of ---
 
 
-def first_ref[T: Copyable](ref list: List[T]) -> ref[origin_of(list)] T:
+def first_ref[T: Copyable](ref list: List[T]) -> ref[list[0]] T:
     return list[0]
 
 

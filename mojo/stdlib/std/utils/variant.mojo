@@ -549,7 +549,7 @@ struct Variant[*Ts: Movable](
     @always_inline
     def __getitem_param__[
         T: AnyType
-    ](ref self,) -> ref[origin_of(self)._get_owned_interior["value"]] T:
+    ](ref self) -> ref[origin_of(self)._get_owned_interior["value"]] T:
         """Get the value out of the variant as a type-checked type.
 
         This explicitly check that your value is of that type!

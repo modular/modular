@@ -43,7 +43,7 @@ def take_var(var b: Box) -> Int:  # var = owns the value
     return b.v
 
 
-def first[T: Movable](ref xs: List[T]) -> ref[origin_of(xs)] T:
+def first[T: Movable](ref xs: List[T]) -> ref[xs[0]] T:
     return xs[0]  # len(xs) known to be > 0
 
 

@@ -273,7 +273,7 @@ def test_out() raises:
 
 def get_first[
     T: Copyable
-](ref data: List[T],) -> ref[origin_of(data)] T:
+](ref data: List[T],) -> ref[data[0]] T:
     return data[0]
 
 
