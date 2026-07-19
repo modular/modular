@@ -111,6 +111,11 @@ public:
     return getBodyFnType().getIsNestedOriginsReadOnly();
   }
 
+  /// Get whether the function establishes new interior origins.
+  bool getDefinesInteriorOrigins() {
+    return getBodyFnType().getDefinesInteriorOrigins();
+  }
+
   /// Get the number of implicit origin decls this function type carries.
   size_t getNumImplicitOriginDecls() {
     return getBodyFnType().getNumImplicitOriginDecls();

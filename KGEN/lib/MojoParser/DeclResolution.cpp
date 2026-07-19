@@ -756,7 +756,7 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
                       [&]() { tcSignature.isNestedOriginsReadOnly = true; });
   } else if (spelling == "__defines_interior_origins") {
     applyArgumentless(spelling, callNode,
-                      [&]() { funcOp.setDefinesInteriorOrigins(true); });
+                      [&]() { tcSignature.definesInteriorOrigins = true; });
   } else if (spelling == "implicit") {
     applyImplicitDecorator(decorator->getLoc(), callNode);
   } else if (spelling == "extern") {

@@ -174,3 +174,8 @@ def test_bad_io_concrete[attr: StringLiteral](ptr: UnsafePointer[Int, _]) -> Int
     # expected-error @+1 {{interior origin name must be a string literal, it cannot be parametric when used}}
     ref r = ptr._get_ref_with_unsafe_interior_origin[attr](str)
     return r
+
+def ret_invalid_ref(mut list: MyListInterior[Int]) -> ref[list[]] Int:
+    ref r = list[]
+    list.mutate()  # expected-note {{origin was invalidated here}}
+    return r # expected-error {{use of invalidated interior reference 'list["element"]'}}

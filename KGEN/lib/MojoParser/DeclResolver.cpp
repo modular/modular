@@ -1682,7 +1682,8 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   auto strippedMainWrapperFnMeta = FnMetadataAttr::get(
       getContext(), mainWrapperFnMeta.getNumImplicitOriginDecls(),
       mainWrapperFnMeta.getCaptureOrigins(),
-      mainWrapperFnMeta.getIsNestedOriginsReadOnly());
+      mainWrapperFnMeta.getIsNestedOriginsReadOnly(),
+      mainWrapperFnMeta.getDefinesInteriorOrigins());
   auto strippedMainWrapperSig = FuncType::get(
       mainWrapperSig.getValues(), mainWrapperSig.getArgConventions(),
       mainWrapperSig.getFnEffects(), strippedMainWrapperFnMeta,

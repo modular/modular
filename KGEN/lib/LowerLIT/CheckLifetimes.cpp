@@ -2171,16 +2171,15 @@ void UninitializedValueScan::establishInteriorOriginsFromDef(Type type,
   // when they use the `@__defines_interior_origins` decorator.  Other functions
   // (e.g. Pointer.getitem) can produce something with an interior origin, but
   // that doesn't mean they guarantee it is live!
-  auto call = dyn_cast<LIT::CallOp>(op);
-  if (!call)
+  if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
+    if (!call.getCalleeType().getBody().getDefinesInteriorOrigins())
+      return;
+  } else if (auto call = dyn_cast<LIT::CallIndirectOp>(op)) {
+    if (!call.getCalleeType().getDefinesInteriorOrigins())
+      return;
+  } else {
     return;
-  // TODO: For now we only support direct calls defining interior origins, we'll
-  // likely have to move this to SignatureType (eg as an effect) so indirect
-  // calls can participate.
-  FnOp callee =
-      valueSet.getTypeDeclInfo().getFuncForSymbol(call.getDirectCallee());
-  if (!callee || !callee.getDefinesInteriorOrigins())
-    return;
+  }
 
   for (InteriorOriginAttr origin : findInteriorOriginsInType(type)) {
     // Interior origins being defined must not have a parametric user name.  We

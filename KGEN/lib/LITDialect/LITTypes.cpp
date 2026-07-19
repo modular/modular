@@ -1295,6 +1295,8 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   }
   bool isNestedOriginsReadOnly =
       succeeded(p.parseOptionalKeyword("no_nested_origin_exclusivity"));
+  bool definesInteriorOrigins =
+      succeeded(p.parseOptionalKeyword("defines_interior_origins"));
 
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> defaultValues;
@@ -1347,8 +1349,9 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   auto pogList = PogListAttr::get(ctx, argNames, argPassingKinds, argVariadics,
                                   defaultValues, origVariadicConvention,
                                   /*bodyConstraints=*/{});
-  auto metadata = FnMetadataAttr::get(ctx, numOriginDecls, captureOrigins,
-                                      isNestedOriginsReadOnly);
+  auto metadata =
+      FnMetadataAttr::get(ctx, numOriginDecls, captureOrigins,
+                          isNestedOriginsReadOnly, definesInteriorOrigins);
   signature =
       FuncType::getChecked([&] { return p.emitError(startLoc); }, functionType,
                            argConventions, effects, metadata, pogList);
@@ -1432,6 +1435,10 @@ bool FuncType::getIsNestedOriginsReadOnly() {
   return ::cast<FnMetadataAttr>(getMetadata()).getIsNestedOriginsReadOnly();
 }
 
+bool FuncType::getDefinesInteriorOrigins() {
+  return ::cast<FnMetadataAttr>(getMetadata()).getDefinesInteriorOrigins();
+}
+
 size_t FuncType::getNumImplicitOriginDecls() {
   return ::cast<FnMetadataAttr>(getMetadata()).getNumImplicitOriginDecls();
 }
@@ -1490,7 +1497,8 @@ FunctionType FuncType::substituteImplicitOriginsIntoValues(
 FuncType FuncType::getWithCaptureOrigins(TypedAttr origins) {
   return getWithMetadata(
       FnMetadataAttr::get(getContext(), getNumImplicitOriginDecls(), origins,
-                          getIsNestedOriginsReadOnly()),
+                          getIsNestedOriginsReadOnly(),
+                          getDefinesInteriorOrigins()),
       getArgListAttrs());
 }
 

@@ -3530,7 +3530,8 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   auto pogList = PogListAttr::get(ctx, argPogs);
   auto metadata = FnMetadataAttr::get(ctx, /*numImplicitOriginDecls=*/0,
                                       OriginSetAttr::get(ctx, {}),
-                                      /*nestedOriginFlag=*/false);
+                                      /*isNestedOriginsReadOnly=*/false,
+                                      /*definesInteriorOrigins=*/false);
   auto funcSig = FuncType::get(valueTypes, metadata, pogList);
   FnTypeGeneratorType signatureType = GeneratorType::get(
       /*inputParamTypes=*/{}, funcSig, PogListAttr::get(ctx));

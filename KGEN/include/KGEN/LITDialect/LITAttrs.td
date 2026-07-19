@@ -91,12 +91,13 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     "TypedAttr":$captureOrigins,
     // TODO: Generalize this to a set of origin parameters that are guaranteed
     // to not be dereferenced.
-    OptionalParameter<"bool">:$isNestedOriginsReadOnly
+    OptionalParameter<"bool">:$isNestedOriginsReadOnly,
+    OptionalParameter<"bool">:$definesInteriorOrigins
   );
   let assemblyFormat = [{
     `<` $numImplicitOriginDecls
     `` custom<FnMetadataOrigins>($captureOrigins)
-    (`,` $isNestedOriginsReadOnly^)? `>`
+    (`,` $isNestedOriginsReadOnly^ (`,` $definesInteriorOrigins^)?)? `>`
   }];
 
   let skipDefaultBuilders = 1;
@@ -104,7 +105,8 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     AttrBuilder<(ins)>,
     AttrBuilder<(ins "size_t":$numImplicitOriginDecls,
                      "TypedAttr":$captureOrigins,
-                     "bool":$nestedOriginFlag)>,
+                     "bool":$isNestedOriginsReadOnly,
+                     "bool":$definesInteriorOrigins)>,
   ];
 
   let extraClassDeclaration = [{

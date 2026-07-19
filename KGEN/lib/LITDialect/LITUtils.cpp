@@ -407,6 +407,11 @@ void LIT::printFnType(AsmPrinter &p, FuncType signature) {
   }
   if (signature.getIsNestedOriginsReadOnly())
     p << "no_nested_origin_exclusivity";
+  if (signature.getDefinesInteriorOrigins()) {
+    if (signature.getIsNestedOriginsReadOnly())
+      p << ' ';
+    p << "defines_interior_origins";
+  }
 
   PogListAttr argListAttr = signature.getArgListAttrs();
   PassingKindPrinter passingKindPrinter(p, argListAttr, '|');

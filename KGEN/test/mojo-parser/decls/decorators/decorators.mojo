@@ -444,13 +444,13 @@ struct RaisingFieldwiseInit(ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 # CHECK-LABEL: lit.fn @"with_interior_origins()"
-# CHECK-SAME: definesInteriorOrigins
+# CHECK-SAME: defines_interior_origins
 @__defines_interior_origins
 def with_interior_origins():
     pass
 
 
 # CHECK-LABEL: lit.fn @"without_interior_origins()"
-# CHECK-NOT: definesInteriorOrigins
+# CHECK-NOT: defines_interior_origins
 def without_interior_origins():
     pass

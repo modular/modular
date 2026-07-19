@@ -59,17 +59,19 @@ static void printFnMetadataOrigins(AsmPrinter &p, TypedAttr origins) {
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *context) {
   return FnMetadataAttr::get(context, /*numImplicitOriginDecls=*/0,
                              /*captureOrigins=*/OriginSetAttr::get(context, {}),
-                             /*isNestedOriginsReadOnly=*/false);
+                             /*isNestedOriginsReadOnly=*/false,
+                             /*definesInteriorOrigins=*/false);
 }
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx,
                                    size_t numImplicitOriginDecls,
                                    TypedAttr captureOrigins,
-                                   bool nestedOriginFlag) {
+                                   bool isNestedOriginsReadOnly,
+                                   bool definesInteriorOrigins) {
   if (!captureOrigins)
     captureOrigins = OriginSetAttr::get(ctx, {});
   return Base::get(ctx, numImplicitOriginDecls, captureOrigins,
-                   nestedOriginFlag);
+                   isNestedOriginsReadOnly, definesInteriorOrigins);
 }
 
 SmallVector<VariadicKind>
@@ -132,7 +134,7 @@ FnMetadataAttr FnMetadataAttr::addCaptureOrigins(TypedAttr origins) {
       OriginSetUnionAttr::get(origins, type)};
   return get(getContext(), getNumImplicitOriginDecls(),
              OriginSetAttr::get(getContext(), originUnion),
-             getIsNestedOriginsReadOnly());
+             getIsNestedOriginsReadOnly(), getDefinesInteriorOrigins());
 }
 
 void FnMetadataAttr::printFuncTypeBody(AsmPrinter &p, FuncType sig) const {
@@ -158,7 +160,8 @@ bool FnMetadataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
 
   return getNumImplicitOriginDecls() == other.getNumImplicitOriginDecls() &&
          getCaptureOrigins() == other.getCaptureOrigins() &&
-         getIsNestedOriginsReadOnly() == other.getIsNestedOriginsReadOnly();
+         getIsNestedOriginsReadOnly() == other.getIsNestedOriginsReadOnly() &&
+         getDefinesInteriorOrigins() == other.getDefinesInteriorOrigins();
 }
 
 //===----------------------------------------------------------------------===//
