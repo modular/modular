@@ -13,10 +13,10 @@
 def use_any[*Ts: AnyType](*args: *Ts): pass
 
 # ===----------------------------------------------------------------------=== #
-# Interior Origin Handling
+# Test Type
 # ===----------------------------------------------------------------------=== #
 
-struct MyListInterior[T: AnyType]:
+struct MyList[T: AnyType]:
     var data: UnsafePointer[Self.T, UntrackedOrigin[mut=True]]
 
     def __init__(out self):
@@ -37,9 +37,13 @@ struct MyListInterior[T: AnyType]:
     ) -> ref[self.data._get_ref_with_unsafe_interior_origin["element"](self)] Self.T:
         return self.data._get_ref_with_unsafe_interior_origin["element"](self)
 
+# ===----------------------------------------------------------------------=== #
+# Basic Tests
+# ===----------------------------------------------------------------------=== #
+
 def test_invalidate_base():
     # expected-note @+1 {{'list' declared here}}
-    var list = MyListInterior[Int]()
+    var list = MyList[Int]()
 
     ref elt_ref1 = list[]
     elt_ref1 += 4
@@ -50,7 +54,7 @@ def test_invalidate_base():
     elt_ref1 += 4
 
 def test_invalidate_interior():
-    var list = MyListInterior[Int]()
+    var list = MyList[Int]()
     ref elt_ref2 = list[]
     elt_ref2 += 4
     list.mutate()   # expected-note {{origin was invalidated here}}
@@ -59,7 +63,7 @@ def test_invalidate_interior():
 
 # simple control flow test.
 def test_if(cond: Bool):
-    var list = MyListInterior[Int]()
+    var list = MyList[Int]()
     ref elt_ref2 = list[]
     elt_ref2 += 4
     if cond:
@@ -68,16 +72,16 @@ def test_if(cond: Bool):
     elt_ref2 += 4
 
 struct TwoIntLists:
-   var first: MyListInterior[Int]
-   var second: MyListInterior[Int]
+   var first: MyList[Int]
+   var second: MyList[Int]
 
    def __init__(out self):
-      self.first = MyListInterior[Int]()
-      self.second = MyListInterior[Int]()
+      self.first = MyList[Int]()
+      self.second = MyList[Int]()
 
 # Test that we can handle nested field sensitivity correctly.
 def test_field_sensitive_nested_invalidation():
-    var list_of_two_intlists = MyListInterior[TwoIntLists]()
+    var list_of_two_intlists = MyList[TwoIntLists]()
     ref first_list = list_of_two_intlists[].first
     ref second_list = list_of_two_intlists[].second
 
@@ -99,7 +103,7 @@ def test_field_sensitive_nested_invalidation():
     first_list_elt += 4
 
 def test_dominance_lifetime():
-    var list = MyListInterior[Int]()
+    var list = MyList[Int]()
     ref elt_ref2 = list[]
     elt_ref2 += 4 # This works
     list.mutate()
@@ -112,7 +116,7 @@ def test_dominance_lifetime():
     elt_ref2 += 4
 
 def test_dominance_lifetime2(cond: Bool):
-    var list = MyListInterior[Int]()
+    var list = MyList[Int]()
     ref elt_ref = list[]
     elt_ref += 4 # This works
 
@@ -141,14 +145,13 @@ def test_dominance_lifetime2(cond: Bool):
     # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
     elt_ref += 4
 
-
 # This verifies we're handling hlcf.elif dominance correctly.
-def test_rederive_in_controlled_block(list: MyListInterior[Int]) -> Int:
+def test_rederive_in_controlled_block(list: MyList[Int]) -> Int:
     if list[] > 0:
         return list[]
     return 0
 
-def test_rederive_after_mutation_in_block(cond: Bool, mut list: MyListInterior[Int]):
+def test_rederive_after_mutation_in_block(cond: Bool, mut list: MyList[Int]):
     ref r = list[]
     if cond:
         list.mutate() # expected-note {{origin was invalidated here}}
@@ -156,14 +159,14 @@ def test_rederive_after_mutation_in_block(cond: Bool, mut list: MyListInterior[I
         r += 1
 
 # MOCO-4344 - Variadic packs + interior origins.
-def test_rederive_interior_in_variadic_pack(list: MyListInterior[Int]):
+def test_rederive_interior_in_variadic_pack(list: MyList[Int]):
     var n = 0
     ref k = n
     use_any(list[])
     use_any(k, list[])
 
 # MOCO-4345 - vardecl store handling
-def test_vardecl_store_handling(list: MyListInterior[Int]):
+def test_vardecl_store_handling(list: MyList[Int]):
     var p: type_of(Pointer(to=list[]))
     p = Pointer(to=list[])
     _ = p
@@ -174,14 +177,68 @@ def test_bad_io_concrete[attr: StringLiteral](ptr: UnsafePointer[Int, _]) -> Int
     ref r = ptr._get_ref_with_unsafe_interior_origin[attr](str)
     return r
 
-def ret_invalid_ref(mut list: MyListInterior[Int]) -> ref[list[]] Int:
+def ret_invalid_ref(mut list: MyList[Int]) -> ref[list[]] Int:
     ref r = list[]
     list.mutate()  # expected-note {{origin was invalidated here}}
     return r # expected-error {{use of invalidated interior reference 'list["element"]'}}
 
 # This shouldn't crash.
-def throwing_function(ref values: MyListInterior[String]) raises -> ref[values[]] String:
+def throwing_function(ref values: MyList[String]) raises -> ref[values[]] String:
     return values[]
 
-def call_throwing_fn(list: MyListInterior[String]) raises:
+def call_throwing_fn(list: MyList[String]) raises:
     _ = throwing_function(list)
+
+
+# ===----------------------------------------------------------------------=== #
+# Closures
+# ===----------------------------------------------------------------------=== #
+
+def test_nested_fn1():
+    var base = MyList[Int]()
+    var p = Pointer(to=base[])
+
+    @__copy_capture(p)
+    @parameter
+    def inner():
+        _ = p == p  # Should be fine.
+    inner()
+
+def test_nested_fn2():
+    var base = MyList[Int]()
+    var p = Pointer(to=base[])
+
+    @__copy_capture(p)
+    @parameter
+    def inner():
+        _ = p == p  # Should be fine.
+        # expected-error @+1 {{incorrect invalidation of interior origin in closure 'base["element"]'}}
+        base.mutate()
+    inner()
+
+def test_nested_fn3():
+    var base = MyList[Int]()
+    var p = Pointer(to=base[])
+
+    @__copy_capture(p)
+    @parameter
+    def inner():
+        _ = p == p  # Should be fine.
+
+    base.mutate() # expected-note {{origin was invalidated here}}
+    inner() # expected-error {{use of invalidated interior reference 'base["element"]'}}
+
+def test_nested_fn4():
+    var base = MyList[Int]()
+    var p = Pointer(to=base[])
+
+    @__copy_capture(p)
+    @parameter
+    def inner():
+        _ = p == p  # Should be fine.
+
+    base.mutate()
+    _ = base[] # attempt to refresh.
+    # FIXME: This should be an error; we should make sure we have the same
+    # version of the reference as when the closure was created.
+    inner()
