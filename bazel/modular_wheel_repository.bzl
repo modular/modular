@@ -138,7 +138,7 @@ cc_import(
 [
     mojo_import(
         name = lib.split("/")[-1],
-        mojodeps = ["platlib/modular/lib/mojo/" + lib.split("/")[-1] + ".mojoc"],
+        mojodeps = ["modular/lib/mojo/" + lib.split("/")[-1] + ".mojoc"],
         visibility = ["//visibility:public"],
     )
     for lib in INTERNAL_PACKAGES
