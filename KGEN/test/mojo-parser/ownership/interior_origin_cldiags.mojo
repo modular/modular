@@ -189,6 +189,14 @@ def throwing_function(ref values: MyList[String]) raises -> ref[values[]] String
 def call_throwing_fn(list: MyList[String]) raises:
     _ = throwing_function(list)
 
+struct StructWithList:
+    var data: MyList[String]
+
+    def add_type(mut self) -> ref[self.data[]] String:
+        return self.data[]
+
+def test_struct_with_list(var thing: StructWithList):
+    _ = thing.add_type()
 
 # ===----------------------------------------------------------------------=== #
 # Closures
