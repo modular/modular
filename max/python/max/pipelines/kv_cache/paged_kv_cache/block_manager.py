@@ -28,6 +28,7 @@ import logging
 import os
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 
 from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
@@ -116,6 +117,31 @@ def _resolve_only_use_kv_connector_last_level_cache() -> bool:
             "Detected MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE flag, only using KVConnector prefix cache."
         )
     return enabled
+
+
+@dataclass(frozen=True)
+class PrefixCacheHits:
+    """Per-tier counts of a request's contiguous cached prefix on one replica.
+
+    Counts are blocks, not tokens, and describe one contiguous run from the
+    start of the request's block hash chain: the leading ``device_blocks``
+    are resident in the device prefix cache, and ``host_blocks`` plus
+    ``disk_blocks`` continue that run from the connector's external tiers.
+    """
+
+    device_blocks: int = 0
+    """Leading blocks resident in the device prefix cache."""
+
+    host_blocks: int = 0
+    """Blocks continuing the run that are resident in the host tier."""
+
+    disk_blocks: int = 0
+    """Blocks continuing the run that are resident in the disk tier."""
+
+    @property
+    def total_blocks(self) -> int:
+        """Total contiguous cached blocks across all tiers."""
+        return self.device_blocks + self.host_blocks + self.disk_blocks
 
 
 class BlockManager:
@@ -301,19 +327,44 @@ class BlockManager:
     ) -> None:
         """Computes the block hashes for the request."""
         hashes = self.req_to_hashes[ctx.request_id]
+        new_hashes = self.compute_block_hashes(ctx, hashes)
+        hashes.extend(new_hashes)  # type: ignore[arg-type]
 
-        num_hashed_tokens = len(hashes) * self.block_size
+    @traced
+    def compute_block_hashes(
+        self,
+        ctx: TextContext,
+        existing_hashes: Sequence[int] | Sequence[bytes],
+    ) -> list[int] | list[bytes]:
+        """Computes block hashes for the request beyond ``existing_hashes``.
+
+        Unlike :meth:`compute_hashes_for_request`, this reads and writes no
+        per-request state, so it is safe to call for requests that are not
+        (and may never be) claimed on this replica — e.g. when computing
+        prefix-cache overlap for data-parallel routing.
+
+        Args:
+            ctx: The request context.
+            existing_hashes: Hashes already computed for the request's leading
+                blocks; new hashes chain onto the last entry. Pass an empty
+                sequence to hash from the start of the prompt.
+
+        Returns:
+            Hashes for the newly hashed full blocks; empty if no additional
+            full block is hashable.
+        """
+        num_hashed_tokens = len(existing_hashes) * self.block_size
         # We do not compute the hash for the last token because it is ineligible
         # for prefix caching. This is because 100% prefix cache hit is illegal
         # and will result in a 0 input tokens for the request. Hence the minus 1.
         num_hashable_tokens = len(ctx.tokens) - 1
         num_unhashed_tokens = num_hashable_tokens - num_hashed_tokens
         if num_unhashed_tokens < self.block_size:
-            return
+            return []
 
         parent_hash_value: int | bytes | None = None
-        if len(hashes) > 0:
-            parent_hash_value = hashes[-1]
+        if len(existing_hashes) > 0:
+            parent_hash_value = existing_hashes[-1]
 
         unhashed_tokens = ctx.tokens[num_hashed_tokens:num_hashable_tokens]
 
@@ -345,7 +396,7 @@ class BlockManager:
                 self._salt_dropped_warned = True
             cache_salt = None
 
-        new_hashes = hash_request_tokens(
+        return hash_request_tokens(
             token_ids=unhashed_tokens,
             block_size=self.block_size,
             parent_hash=parent_hash_value,
@@ -355,7 +406,6 @@ class BlockManager:
             seed=self.kv_hash_seed,
             salt=cache_salt,
         )
-        hashes.extend(new_hashes)  # type: ignore[arg-type]
 
     @traced
     def reuse_blocks_from_prefix_cache(
@@ -653,6 +703,57 @@ class BlockManager:
 
         return self._count_full_blocks_from_prefix_cache(
             uncommitted_hashes, replica_idx
+        )
+
+    @traced
+    def count_cached_prefix_blocks(
+        self, block_hashes: Sequence[int] | Sequence[bytes]
+    ) -> PrefixCacheHits:
+        """Counts contiguous leading blocks resident in this replica's caches.
+
+        Walks ``block_hashes`` in prefix order through the device prefix
+        cache and then the connector's external tiers (host, then disk per
+        block), mirroring the reuse order of
+        :meth:`get_full_blocks_from_prefix_cache`, and stops at the first
+        block found in no tier.
+
+        Unlike the reuse path this is strictly read-only: no blocks are
+        allocated or onboarded, no LRU state is touched, and no per-request
+        state is created, so it is safe to call for requests that are not
+        (and may never be) claimed on this replica — e.g. for prefix-aware
+        data-parallel routing. Counts reflect index presence only and ignore
+        transient staging constraints the reuse path enforces (e.g. free
+        device blocks to load into).
+
+        Args:
+            block_hashes: The request's block hash chain, in prefix order.
+
+        Returns:
+            Per-tier counts of the contiguous cached prefix.
+        """
+        if not self.enable_prefix_caching:
+            return PrefixCacheHits()
+
+        num_device_hits = 0
+        if not self._only_use_kv_connector_last_level_cache:
+            device_prefix_cache = self.device_block_pool.prefix_cache
+            for block_hash in block_hashes:
+                if block_hash not in device_prefix_cache:
+                    break
+                num_device_hits += 1
+
+        remaining = block_hashes[num_device_hits:]
+        num_host_hits = 0
+        num_disk_hits = 0
+        if len(remaining) > 0 and self.connector.num_host_blocks > 0:
+            num_host_hits, num_disk_hits = self.connector.count_cached_prefix(
+                [to_block_hash_bytes(h) for h in remaining]
+            )
+
+        return PrefixCacheHits(
+            device_blocks=num_device_hits,
+            host_blocks=num_host_hits,
+            disk_blocks=num_disk_hits,
         )
 
     @traced

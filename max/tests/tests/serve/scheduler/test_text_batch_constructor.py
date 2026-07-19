@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import time
 from unittest.mock import Mock
 
 import numpy as np
@@ -22,6 +23,7 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.kv_cache import InsufficientBlocksError
+from max.pipelines.kv_cache.paged_kv_cache import PrefixCacheHits
 from max.pipelines.modeling.types import (
     Pipeline,
     RequestID,
@@ -1601,3 +1603,164 @@ def test_batch_scheduling_strategy__all_replicas_empty() -> None:
         # All batches should be empty
         assert len(inputs.batches) == data_parallel_degree
         assert all(len(batch) == 0 for batch in inputs.batches)
+
+
+# ---------------------------------------------------------------------------
+# DP-balanced CE scheduling (_plan_ce_step) tests
+# ---------------------------------------------------------------------------
+
+
+def create_dp_balance_constructor(
+    dp: int = 2,
+    timeout_ms: float = 10_000.0,
+    threshold: float = 0.8,
+    hit_counts: list[PrefixCacheHits] | None = None,
+) -> TextBatchConstructor:
+    """A DP constructor with the CE balancer on and a stubbed cache probe."""
+    pipeline = Mock(spec=["release"])
+    pipeline.release = Mock()
+    kv_cache = create_mock_kv_cache()
+    kv_cache.params.page_size = 16
+    kv_cache.get_prefix_cache_hit_counts = Mock(
+        return_value=(
+            hit_counts if hit_counts is not None else [PrefixCacheHits()] * dp
+        )
+    )
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size=10,
+        target_tokens_per_batch_ce=100,
+        data_parallel_degree=dp,
+        dp_ce_balance_timeout_ms=timeout_ms,
+        dp_ce_balance_threshold=threshold,
+    )
+    return TextBatchConstructor(
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+
+
+def test_dp_ce_balance__disabled_binds_on_arrival() -> None:
+    """timeout_ms=-1 (default) disables pooling: arrival binds immediately."""
+    batch_constructor = create_dp_balance_constructor(timeout_ms=-1.0)
+    ctx = create_lora_context()
+    batch_constructor.enqueue_new_request(ctx)
+    assert not batch_constructor._ce_pending
+    assert any(
+        ctx.request_id in replica.ce_reqs
+        for replica in batch_constructor.replicas
+    )
+
+
+def test_dp_ce_balance__pools_new_requests_and_binds_when_fleet_idle() -> None:
+    batch_constructor = create_dp_balance_constructor()
+    ctx = create_lora_context()
+    batch_constructor.enqueue_new_request(ctx)
+
+    # Pooled: tracked by the constructor but bound to no replica queue.
+    assert batch_constructor.contains(ctx.request_id)
+    assert ctx.request_id in batch_constructor._ce_pending
+    assert all(not replica.ce_reqs for replica in batch_constructor.replicas)
+
+    # The fleet has nothing else to run, so the planner must not defer: the
+    # request binds and is scheduled this very step.
+    inputs = batch_constructor.construct_batch()
+    assert has_request(inputs.batches[0] + inputs.batches[1], ctx.request_id)
+    assert not batch_constructor._ce_pending
+
+
+def test_dp_ce_balance__pooled_request_prefers_replica_with_cached_prefix() -> (
+    None
+):
+    hit_counts = [PrefixCacheHits(), PrefixCacheHits(device_blocks=4)]
+    batch_constructor = create_dp_balance_constructor(hit_counts=hit_counts)
+    ctx = create_lora_context(seq_len=96)
+    batch_constructor.enqueue_new_request(ctx)
+
+    # Weighted at post-prefix-cache length: 96 tokens raw, minus 4 blocks
+    # (x 16-token pages) resident on replica 1.
+    assert batch_constructor._ce_pending[ctx.request_id].weights == [96, 32]
+
+    inputs = batch_constructor.construct_batch()
+    assert has_request(inputs.batches[1], ctx.request_id)
+
+
+def test_dp_ce_balance__defers_lone_unexpired_ce_when_tg_available() -> None:
+    batch_constructor = create_dp_balance_constructor(threshold=0.8)
+    tg_ctx = create_lora_context(is_tg=True)
+    batch_constructor.enqueue_new_request(tg_ctx, replica_idx=0)
+    ce_ctx = create_lora_context(seq_len=50)
+    batch_constructor.enqueue_new_request(ce_ctx, replica_idx=0)
+    # Deadline budget left, as if the request had been pooled on arrival.
+    batch_constructor._ce_arrival[ce_ctx.request_id] = time.monotonic()
+
+    # Occupancy would be 50/(2*50) = 0.5 < 0.8 with no partner CE anywhere,
+    # so replica 0's CE work is held and it runs TG instead.
+    inputs = batch_constructor.construct_batch()
+    assert batch_constructor._ce_deferred_replicas == {0}
+    assert has_request(inputs.batches[0], tg_ctx.request_id)
+    assert not has_request(inputs.batches[0], ce_ctx.request_id)
+
+
+def test_dp_ce_balance__expired_ce_runs_despite_imbalance() -> None:
+    batch_constructor = create_dp_balance_constructor(timeout_ms=10_000.0)
+    tg_ctx = create_lora_context(is_tg=True)
+    batch_constructor.enqueue_new_request(tg_ctx, replica_idx=0)
+    ce_ctx = create_lora_context(seq_len=50)
+    batch_constructor.enqueue_new_request(ce_ctx, replica_idx=0)
+    batch_constructor._ce_arrival[ce_ctx.request_id] = time.monotonic() - 60.0
+
+    # Same imbalance as the deferral test, but the deadline is blown: the CE
+    # work joins the floor and runs.
+    inputs = batch_constructor.construct_batch()
+    assert batch_constructor._ce_deferred_replicas == set()
+    assert has_request(inputs.batches[0], ce_ctx.request_id)
+
+
+def test_dp_ce_balance__no_deferral_without_tg_work() -> None:
+    batch_constructor = create_dp_balance_constructor()
+    ce_ctx = create_lora_context(seq_len=50)
+    batch_constructor.enqueue_new_request(ce_ctx, replica_idx=0)
+    batch_constructor._ce_arrival[ce_ctx.request_id] = time.monotonic()
+
+    # Replica 0 has no TG to run instead; deferring would idle it, so its CE
+    # work is not deferrable even with deadline budget left.
+    inputs = batch_constructor.construct_batch()
+    assert batch_constructor._ce_deferred_replicas == set()
+    assert has_request(inputs.batches[0], ce_ctx.request_id)
+
+
+def test_dp_ce_balance__balanced_ce_across_replicas_schedules() -> None:
+    batch_constructor = create_dp_balance_constructor(threshold=0.8)
+    ce_ctxs = []
+    for replica_idx in range(2):
+        tg_ctx = create_lora_context(is_tg=True)
+        batch_constructor.enqueue_new_request(tg_ctx, replica_idx=replica_idx)
+        ce_ctx = create_lora_context(seq_len=50)
+        batch_constructor.enqueue_new_request(ce_ctx, replica_idx=replica_idx)
+        batch_constructor._ce_arrival[ce_ctx.request_id] = time.monotonic()
+        ce_ctxs.append(ce_ctx)
+
+    # 50 tokens on each rank is a perfectly balanced step: occupancy 1.0
+    # meets the threshold and everything runs, nothing is deferred.
+    inputs = batch_constructor.construct_batch()
+    assert batch_constructor._ce_deferred_replicas == set()
+    assert has_request(inputs.batches[0], ce_ctxs[0].request_id)
+    assert has_request(inputs.batches[1], ce_ctxs[1].request_id)
+
+
+def test_dp_ce_balance__release_pooled_request() -> None:
+    batch_constructor = create_dp_balance_constructor()
+    ctx = create_lora_context()
+    batch_constructor.enqueue_new_request(ctx)
+    assert batch_constructor.contains(ctx.request_id)
+
+    # Releasing a pooled request (e.g. client cancellation) must work even
+    # though it was never bound to a replica or claimed in the KV cache.
+    batch_constructor.release_request(ctx.request_id)
+    assert not batch_constructor.contains(ctx.request_id)
+    assert isinstance(batch_constructor.pipeline, Mock)
+    batch_constructor.pipeline.release.assert_called_once_with(ctx.request_id)
+
+    inputs = batch_constructor.construct_batch()
+    assert all(len(batch) == 0 for batch in inputs.batches)

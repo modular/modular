@@ -944,6 +944,16 @@ class DKVConnector:
         except Exception as exc:
             _logger.debug("dKV touch skipped: %s", exc)
 
+    def count_cached_prefix(
+        self, block_hashes: Sequence[bytes]
+    ) -> tuple[int, int]:
+        """Returns ``(0, 0)``: block presence is tracked by the remote dKV
+        service, so there is no cheap local index to consult synchronously.
+        Callers treat dKV-resident blocks as misses for counting purposes;
+        the ``load`` path still fetches them normally.
+        """
+        return (0, 0)
+
     def wait_for_loads(self) -> None:
         for client in self._clients:
             client.wait_for_loads()

@@ -67,6 +67,20 @@ class TokenGenerationSchedulerConfig:
     client) so a stuck PD pipeline does not force the stall watchdog to
     kill the whole engine. ``None`` disables eviction."""
 
+    dp_ce_balance_timeout_ms: float = -1.0
+    """Max time (ms) a CE request's work may be deferred, from arrival,
+    while awaiting token-balanced scheduling across DP replicas. -1 disables
+    the balancer entirely (requests bind to a replica on arrival; current
+    behavior). 0 enables post-cache-weighted placement with late binding but
+    never defers work. > 0 additionally defers unbalanced CE work (unbound
+    requests and mid-prefill tails) until ``dp_ce_balance_threshold`` is
+    met, the deadline expires, or there is nothing else to run."""
+
+    dp_ce_balance_threshold: float = 0.8
+    """Per-step CE active-token occupancy across DP replicas (mean/max,
+    0-1) at or above which CE work is scheduled without further deferral.
+    Only consulted when ``dp_ce_balance_timeout_ms`` > 0."""
+
     def __post_init__(self) -> None:
         if self.max_batch_size <= 0:
             raise ValueError(
@@ -95,6 +109,11 @@ class TokenGenerationSchedulerConfig:
             raise ValueError(
                 f"`max_batch_size` must be less than or equal to `target_tokens_per_batch_ce`, found {self.max_batch_size} > {self.target_tokens_per_batch_ce}"
             )
+        if not 0.0 <= self.dp_ce_balance_threshold <= 1.0:
+            raise ValueError(
+                "`dp_ce_balance_threshold` must be in [0, 1], found"
+                f" {self.dp_ce_balance_threshold}"
+            )
 
     @classmethod
     def from_pipeline_config(
@@ -113,6 +132,8 @@ class TokenGenerationSchedulerConfig:
             kvcache_ce_watermark=pipeline_config.runtime.kvcache_ce_watermark,
             decode_stall_timeout_s=pipeline_config.runtime.decode_stall_timeout_s,
             decode_request_ttl_s=pipeline_config.runtime.decode_request_ttl_s,
+            dp_ce_balance_timeout_ms=pipeline_config.runtime.dp_ce_balance_timeout_ms,
+            dp_ce_balance_threshold=pipeline_config.runtime.dp_ce_balance_threshold,
             num_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
             if pipeline_config.speculative is not None
             else 0,

@@ -52,7 +52,7 @@ from max.profiler import traced
 from max.support.math import ceildiv
 
 from ..connectors import create_connector
-from .block_manager import BlockManager, _compute_seq_len
+from .block_manager import BlockManager, PrefixCacheHits, _compute_seq_len
 
 logger = logging.getLogger("max.pipelines")
 
@@ -368,6 +368,37 @@ class PagedKVCacheManager:
             1.0,
             num_needed_blocks / self._total_num_pages,
         )
+
+    def get_prefix_cache_hit_counts(
+        self, ctx: TextContext
+    ) -> list[PrefixCacheHits]:
+        """Counts each replica's contiguous cached prefix for a request.
+
+        Computes the request's block hashes once and queries every replica's
+        block manager read-only, without claiming the request or mutating any
+        per-request state. Intended for prefix-aware data-parallel routing:
+        callers can compare replicas' hit depths (across the device, host,
+        and disk tiers) before deciding which replica should serve the
+        request.
+
+        Args:
+            ctx: The request context to count cached prefix blocks for.
+
+        Returns:
+            One :class:`PrefixCacheHits` per replica, indexed by replica.
+        """
+        if not self.params.enable_prefix_caching:
+            return [PrefixCacheHits() for _ in self._replica]
+
+        # The hash chain is identical across replicas (same algo, seed, and
+        # block size), so hash once and only vary the lookups.
+        block_hashes = self._replica[0].block_manager.compute_block_hashes(
+            ctx, []
+        )
+        return [
+            replica.block_manager.count_cached_prefix_blocks(block_hashes)
+            for replica in self._replica
+        ]
 
     def alloc(
         self,

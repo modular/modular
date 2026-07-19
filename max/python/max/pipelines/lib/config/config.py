@@ -1643,6 +1643,8 @@ class PipelineConfig(ConfigFileModel):
                 decode_stall_timeout_s=args.decode_stall_timeout_s,
                 decode_request_ttl_s=args.decode_request_ttl_s,
                 enable_overlap_scheduler=args.enable_overlap_scheduler,
+                dp_ce_balance_timeout_ms=args.dp_ce_balance_timeout_ms,
+                dp_ce_balance_threshold=args.dp_ce_balance_threshold,
                 allow_unsupported_logprobs=args.allow_unsupported_logprobs,
                 allow_extra_request_fields=args.allow_extra_request_fields,
                 prefer_module_v3=args.prefer_module_v3,

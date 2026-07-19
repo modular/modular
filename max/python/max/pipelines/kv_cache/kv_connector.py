@@ -179,6 +179,29 @@ class KVConnector(Protocol):
         """
         return None
 
+    def count_cached_prefix(
+        self, block_hashes: Sequence[bytes]
+    ) -> tuple[int, int]:
+        """Counts contiguous leading blocks resident in this connector's tiers.
+
+        Walks ``block_hashes`` in prefix order, counting blocks the connector
+        holds in its external tiers, and stops at the first block found in no
+        tier. Implementations must be strictly read-only: no transfers,
+        allocations, or LRU updates. Counts reflect index presence only and
+        may ignore transient constraints that the ``load`` path enforces
+        (e.g. free staging blocks required to onboard a disk hit).
+
+        Args:
+            block_hashes: Block hashes in prefix order, in canonical bytes
+                form (see ``to_block_hash_bytes``).
+
+        Returns:
+            ``(num_host_blocks, num_disk_blocks)`` counted along the
+            contiguous run. Connectors without a cheap local index (e.g.
+            remote block stores) return ``(0, 0)``.
+        """
+        return (0, 0)
+
     def wait_for_loads(self) -> None:
         """Order all posted loads before the forward pass.
 

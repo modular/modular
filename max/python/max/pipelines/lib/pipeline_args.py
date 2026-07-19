@@ -421,6 +421,24 @@ class PipelineArgs(ConfigFileModel):
         description=("Whether to enable the overlap scheduler."),
     )
 
+    dp_ce_balance_timeout_ms: float = Field(
+        default=-1.0,
+        description=(
+            "Max deferral time in milliseconds for token-balanced CE "
+            "scheduling across DP replicas. -1 disables the balancer; 0 "
+            "places eagerly with post-cache weights; > 0 defers unbalanced "
+            "CE work up to the deadline."
+        ),
+    )
+
+    dp_ce_balance_threshold: float = Field(
+        default=0.8,
+        description=(
+            "Per-step CE occupancy across DP replicas (0-1) at or above "
+            "which CE work is scheduled without further deferral."
+        ),
+    )
+
     allow_unsupported_logprobs: bool = Field(
         default=False,
         description=(
@@ -777,6 +795,8 @@ class PipelineArgs(ConfigFileModel):
             decode_stall_timeout_s=runtime.decode_stall_timeout_s,
             decode_request_ttl_s=runtime.decode_request_ttl_s,
             enable_overlap_scheduler=runtime.enable_overlap_scheduler,
+            dp_ce_balance_timeout_ms=runtime.dp_ce_balance_timeout_ms,
+            dp_ce_balance_threshold=runtime.dp_ce_balance_threshold,
             allow_unsupported_logprobs=runtime.allow_unsupported_logprobs,
             allow_extra_request_fields=runtime.allow_extra_request_fields,
             prefer_module_v3=runtime.prefer_module_v3,

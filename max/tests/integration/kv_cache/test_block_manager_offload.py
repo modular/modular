@@ -92,6 +92,11 @@ class RecordingConnector:
         self.calls.append("load")
         return min(len(block_hashes), self.num_blocks_to_load)
 
+    def count_cached_prefix(
+        self, block_hashes: Sequence[bytes]
+    ) -> tuple[int, int]:
+        return (0, 0)
+
     def wait_for_loads(self) -> None: ...
     def wait_for_offloads(self) -> None: ...
     def shutdown(self) -> None: ...

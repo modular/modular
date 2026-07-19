@@ -129,6 +129,22 @@ class LocalConnector:
         self._h2d_blocks_copied += len(dsts)
         return len(dsts)
 
+    def count_cached_prefix(
+        self, block_hashes: Sequence[bytes]
+    ) -> tuple[int, int]:
+        """Counts contiguous leading blocks resident in the host cache.
+
+        Read-only companion to ``load``: same walk order and stop condition,
+        but no copies and no LRU updates.
+        """
+        host_cache = self._host_block_pool.prefix_cache
+        num_host_hits = 0
+        for block_hash in block_hashes:
+            if block_hash not in host_cache:
+                break
+            num_host_hits += 1
+        return (num_host_hits, 0)
+
     @traced
     def offload(
         self,
