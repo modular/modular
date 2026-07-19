@@ -275,12 +275,37 @@ class KVCacheBuffer(KVCacheBufferInterface):
     replicates_kv_across_tp: bool
     values: list[Buffer]
     scales: list[Buffer] | None = None
+    values_per_layer: list[list[Buffer]] | None = None
+    """Per-TP-shard, per-layer value buffers when the pool uses
+    :attr:`~max.nn.kv_cache.KVCacheParams.per_layer_buffers`.
+
+    ``values_per_layer[shard]`` is the list of single-layer buffers for that
+    shard, and ``values[shard]`` aliases ``values_per_layer[shard][0]`` so the
+    single-buffer ``values`` invariants (and consumers) stay valid. ``None``
+    for a normal single multi-layer buffer."""
 
     def __post_init__(self) -> None:
         all_buffers = self.all_buffers
 
         if len(self.values) == 0:
             raise ValueError("List of values must be non-empty")
+
+        if self.values_per_layer is not None:
+            if len(self.values_per_layer) != len(self.values):
+                raise ValueError(
+                    "values_per_layer must have one entry per TP shard"
+                )
+            for shard_layers, value in zip(
+                self.values_per_layer, self.values, strict=True
+            ):
+                if len(shard_layers) == 0:
+                    raise ValueError(
+                        "each values_per_layer shard must be non-empty"
+                    )
+                if shard_layers[0] is not value:
+                    raise ValueError(
+                        "values[i] must alias values_per_layer[i][0]"
+                    )
 
         if self.replicates_kv_across_tp and len(self.values) <= 1:
             raise ValueError(
@@ -599,6 +624,16 @@ class KVCacheParams(KVCacheParamInterface):
     the shared external tier via the KV connector (or recomputed). Only
     relevant when ``data_parallel_degree > 1`` and prefix caching is enabled."""
 
+    per_layer_buffers: bool = False
+    """When ``True``, allocate one standalone single-layer buffer per layer
+    instead of one ``[..., num_layers, ...]`` multi-layer buffer.
+
+    Each attention dispatch then binds only its own per-layer buffer, so the
+    pool total can exceed a per-allocation size cap (e.g. a device's maximum
+    single allocation) while every individual buffer stays under it. Defaults
+    to ``False`` (one multi-layer buffer), keeping all other backends and
+    models byte-identical."""
+
     kv_connector: KVConnectorType | None = None
     """Type of KV cache connector to use (null, local, tiered, dkv)."""
 
@@ -832,6 +867,22 @@ class KVCacheParams(KVCacheParamInterface):
         ]
 
     @property
+    def shape_per_layer_block(self) -> list[int]:
+        """Returns the block shape for a single-layer buffer.
+
+        Same as :attr:`shape_per_block` but with the layer dimension pinned to
+        ``1``. Used when :attr:`per_layer_buffers` is set: the pool allocates
+        ``num_layers`` such buffers per device instead of one multi-layer
+        buffer. The attention kernel derives ``num_layers`` from this dim, so a
+        single-layer buffer (``num_layers == 1``) with ``layer_idx == 0`` is
+        self-consistent.
+        """
+        kv_dim, _num_layers, page_size, n_kv_heads, head_dim = (
+            self.shape_per_block
+        )
+        return [kv_dim, 1, page_size, n_kv_heads, head_dim]
+
+    @property
     def shape_per_scale_block(self) -> list[int]:
         """Returns the shape of each scale block used for KVCache quantization
 
@@ -897,6 +948,42 @@ class KVCacheParams(KVCacheParamInterface):
 
     def allocate_buffers(self, total_num_pages: int) -> list[KVCacheBuffer]:
         """Allocates the buffers for the KV cache."""
+        if self.per_layer_buffers:
+            # Validate the per-layer configuration before materializing any
+            # device buffers. These guards live here, not in ``__post_init__``,
+            # because call sites set ``per_layer_buffers`` after construction.
+            if self.num_layers < 1:
+                # ``values`` aliases layer 0, so the pool needs at least one
+                # layer; otherwise ``layer_buffers[0]`` below raises an opaque
+                # IndexError.
+                raise ValueError(
+                    "per_layer_buffers requires num_layers >= 1, got"
+                    f" {self.num_layers}"
+                )
+            if self.quantized_kv_cache:
+                raise NotImplementedError(
+                    "per_layer_buffers is not supported with a quantized KV"
+                    " cache"
+                )
+            if self.kv_connector in (
+                KVConnectorType.local,
+                KVConnectorType.tiered,
+                KVConnectorType.dkv,
+            ):
+                # KVCacheBuffer.all_buffers / to_memory enumerate only the
+                # layer-0 alias, so an off-device connector would move layers
+                # 1..N-1 nowhere. Reject until that enumeration covers per-layer
+                # buffers.
+                raise NotImplementedError(
+                    "per_layer_buffers is not supported with an off-device KV"
+                    f" connector ('{self.kv_connector.value}')"
+                )
+            if self.data_parallel_degree > 1:
+                # Cross-replica block copy enumerates the same layer-0 alias.
+                raise NotImplementedError(
+                    "per_layer_buffers is not supported with data parallelism"
+                    " (data_parallel_degree > 1)"
+                )
         # ``Buffer.zeros`` needs concrete devices, so materialize the per-replica
         # device groups from the ``DeviceRef``s here.
         devices_per_replica = split_into_groups(
@@ -905,14 +992,35 @@ class KVCacheParams(KVCacheParamInterface):
         )
         kv_cache_buffers: list[KVCacheBuffer] = []
         for devices in devices_per_replica:
-            values = []
-            for device in devices:
-                value = Buffer.zeros(
-                    shape=[total_num_pages, *self.shape_per_block],
-                    dtype=self.dtype,
-                    device=device,
-                )
-                values.append(value)
+            values: list[Buffer] = []
+            values_per_layer: list[list[Buffer]] | None = None
+            if self.per_layer_buffers:
+                # One standalone single-layer buffer per layer (num_layers==1 in
+                # dim-2). ``values`` aliases each shard's layer-0 buffer so the
+                # single-buffer invariants and consumers stay valid.
+                values_per_layer = []
+                for device in devices:
+                    layer_buffers = [
+                        Buffer.zeros(
+                            shape=[
+                                total_num_pages,
+                                *self.shape_per_layer_block,
+                            ],
+                            dtype=self.dtype,
+                            device=device,
+                        )
+                        for _ in range(self.num_layers)
+                    ]
+                    values_per_layer.append(layer_buffers)
+                    values.append(layer_buffers[0])
+            else:
+                for device in devices:
+                    value = Buffer.zeros(
+                        shape=[total_num_pages, *self.shape_per_block],
+                        dtype=self.dtype,
+                        device=device,
+                    )
+                    values.append(value)
 
             scales: list[Buffer] | None = None
             if self.quantized_kv_cache:
@@ -931,6 +1039,7 @@ class KVCacheParams(KVCacheParamInterface):
                 values=values,
                 scales=scales,
                 replicates_kv_across_tp=self.replicates_kv_across_tp,
+                values_per_layer=values_per_layer,
             )
             kv_cache_buffers.append(kv_cache_buffer)
         return kv_cache_buffers
@@ -947,6 +1056,7 @@ class KVCacheParams(KVCacheParamInterface):
         target_key: AttnKeyInterface,
         draft_key: AttnKeyInterface | None,
         max_cache_valid_length: int,
+        blocks_per_layer: list[Buffer] | None = None,
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
         raise NotImplementedError
 
@@ -992,6 +1102,11 @@ class KVCacheParams(KVCacheParamInterface):
                 kv_scales = (
                     buffer.scales[i] if buffer.scales is not None else None
                 )
+                blocks_per_layer = (
+                    buffer.values_per_layer[i]
+                    if buffer.values_per_layer is not None
+                    else None
+                )
                 tp_shards.append(
                     self._build_kvcache_inputs_per_device(
                         device,
@@ -1004,6 +1119,7 @@ class KVCacheParams(KVCacheParamInterface):
                         target_key,
                         draft_key,
                         max_cl,
+                        blocks_per_layer=blocks_per_layer,
                     )
                 )
         return KVCacheInputs(inputs=tp_shards)
@@ -1119,13 +1235,41 @@ class MHAKVCacheParams(KVCacheParams):
     ) -> list[KVCacheInputsPerDevice[TensorType, BufferType]]:
         devices = self.devices_per_replica[replica_idx]
 
+        def _blocks_per_layer(
+            device: DeviceRef,
+        ) -> list[BufferType] | None:
+            # One single-layer BufferType per layer. Must stay in exact
+            # lock-step with ``flatten``/``unflatten`` (tail order) and with the
+            # runtime buffers built by ``allocate_buffers`` / ``build_runtime_inputs``.
+            if not self.per_layer_buffers:
+                return None
+            return [
+                BufferType(
+                    self.dtype,
+                    shape=["total_num_pages", *self.shape_per_layer_block],
+                    device=device,
+                )
+                for _ in range(self.num_layers)
+            ]
+
+        def _kv_blocks(device: DeviceRef) -> BufferType:
+            # ``per_layer_buffers`` aliases ``kv_blocks`` to the first per-layer
+            # buffer so single-buffer consumers stay valid.
+            if self.per_layer_buffers:
+                return BufferType(
+                    self.dtype,
+                    shape=["total_num_pages", *self.shape_per_layer_block],
+                    device=device,
+                )
+            return BufferType(
+                self.dtype,
+                shape=["total_num_pages", *self.shape_per_block],
+                device=device,
+            )
+
         return [
             KVCacheInputsPerDevice(
-                kv_blocks=BufferType(
-                    self.dtype,
-                    shape=["total_num_pages", *self.shape_per_block],
-                    device=device,
-                ),
+                kv_blocks=_kv_blocks(device),
                 cache_lengths=TensorType(
                     DType.uint32,
                     shape=[prefix + "batch_size"],
@@ -1159,6 +1303,7 @@ class MHAKVCacheParams(KVCacheParams):
                 )
                 if self.speculative_method is not None
                 else None,
+                kv_blocks_per_layer=_blocks_per_layer(device),
             )
             for device in devices
         ]
@@ -1175,6 +1320,7 @@ class MHAKVCacheParams(KVCacheParams):
         target_key: AttnKeyInterface,
         draft_key: AttnKeyInterface | None,
         max_cache_valid_length: int,
+        blocks_per_layer: list[Buffer] | None = None,
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
         return KVCacheInputsPerDevice(
             kv_blocks=blocks,
@@ -1191,6 +1337,7 @@ class MHAKVCacheParams(KVCacheParams):
             )
             if draft_key is not None
             else None,
+            kv_blocks_per_layer=blocks_per_layer,
         )
 
 
@@ -1356,7 +1503,11 @@ class MLAKVCacheParams(KVCacheParams):
         target_key: AttnKeyInterface,
         draft_key: AttnKeyInterface | None,
         max_cache_valid_length: int,
+        blocks_per_layer: list[Buffer] | None = None,
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
+        # MLA never uses per-layer buffers; the parameter exists only to match
+        # the base signature threaded by ``build_runtime_inputs``.
+        assert blocks_per_layer is None
         assert isinstance(target_key, MLAAttnKey)
         assert draft_key is None or isinstance(draft_key, MLAAttnKey)
         return KVCacheInputsPerDevice(

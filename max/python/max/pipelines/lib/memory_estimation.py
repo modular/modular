@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, cast
 
 from max.driver import Device, is_virtual_device_mode
 from max.nn.kv_cache import (
+    KVCacheParamInterface,
     compute_max_seq_len_fitting_in_cache,
     estimated_memory_size,
 )
@@ -41,6 +42,39 @@ from .interfaces import (
 logger = logging.getLogger("max.pipelines")
 
 _DEFAULT_BATCH_SIZE = 512
+
+
+def _kv_params_per_layer_depth(params: KVCacheParamInterface) -> int:
+    """Returns the largest ``num_layers`` among the pool's per-layer sub-pools.
+
+    Recurses into a :class:`~max.nn.kv_cache.MultiKVCacheParams` tree. A leaf
+    with ``per_layer_buffers`` set contributes its ``num_layers``; every other
+    cache contributes ``1`` (a single multi-layer buffer). Returns ``1`` when no
+    cache uses per-layer buffers.
+    """
+    children = getattr(params, "children", None)
+    if children is not None:
+        return max(
+            (_kv_params_per_layer_depth(child) for child in children.values()),
+            default=1,
+        )
+    if getattr(params, "per_layer_buffers", False):
+        return max(int(getattr(params, "num_layers", 1)), 1)
+    return 1
+
+
+def _max_per_layer_buffer_count(arch_config: ArchConfig) -> int:
+    """Returns the per-device allocation-cap multiplier for the KV pool.
+
+    A pool that uses one buffer *per layer* splits its per-device allocation
+    into ``num_layers`` independent buffers, each bounded by the per-allocation
+    cap, so the pool may use up to ``num_layers`` times that cap per device.
+    Returns the depth of the largest per-layer sub-pool, or ``1`` when no cache
+    uses per-layer buffers (leaving the cap unchanged).
+    """
+    if not isinstance(arch_config, ArchConfigWithKVCache):
+        return 1
+    return _kv_params_per_layer_depth(arch_config.get_kv_params())
 
 
 @dataclass(frozen=True)
@@ -283,11 +317,15 @@ class MemoryEstimator:
                 f"Try running a smaller model, using a smaller precision, or using a device with more memory."
             )
 
-        # KV cache is one buffer per device; budget can't exceed the
-        # per-allocation cap (Metal's maxBufferLength).
+        # KV cache is normally one buffer per device, so the budget can't
+        # exceed the per-allocation cap (e.g. Metal's maxBufferLength). A pool
+        # that uses one buffer *per layer* (``per_layer_buffers``) splits that
+        # allocation into ``num_layers`` independent buffers, each bounded by
+        # the cap, so it may use up to ``num_layers`` times the cap per device.
+        per_alloc_layers = _max_per_layer_buffer_count(arch_config)
         available_kv_cache_memory = min(
             available_kv_cache_memory,
-            sum(d.max_single_alloc_size for d in devices),
+            per_alloc_layers * sum(d.max_single_alloc_size for d in devices),
         )
 
         vision_cache_bytes = cls._reserve_vision_cache_memory(

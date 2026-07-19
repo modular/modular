@@ -18,18 +18,78 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 from max.driver import CPU, DeviceSpec, load_devices
+from max.dtype import DType
+from max.graph import DeviceRef
 from max.nn.comm import Signals
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import MemoryEstimator
 from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
 )
+from max.pipelines.lib.memory_estimation import (
+    _kv_params_per_layer_depth,
+    _max_per_layer_buffer_count,
+)
 from test_common.mocks import DummyPipelineConfig
 from test_common.pipeline_model_dummy import (
     DUMMY_LLAMA_ARCH,
     DummyLlamaPipelineModel,
 )
+
+
+def _mha_params(num_layers: int, per_layer_buffers: bool) -> MHAKVCacheParams:
+    return MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=128,
+        num_layers=num_layers,
+        devices=[DeviceRef.GPU()],
+        page_size=128,
+        per_layer_buffers=per_layer_buffers,
+    )
+
+
+def test_per_layer_depth_single_buffer_pool_is_one() -> None:
+    """A normal single-buffer pool contributes a multiplier of 1."""
+    assert _kv_params_per_layer_depth(_mha_params(50, False)) == 1
+
+
+def test_per_layer_depth_reports_num_layers() -> None:
+    """A per-layer pool contributes its layer count as the multiplier."""
+    assert _kv_params_per_layer_depth(_mha_params(50, True)) == 50
+
+
+def test_per_layer_depth_tree_takes_largest_flagged_child() -> None:
+    """In a tree, only per-layer children count; the largest wins."""
+    root = MultiKVCacheParams.from_params(
+        {
+            "sliding_attention": _mha_params(50, True),
+            "full_attention": _mha_params(10, False),
+        }
+    )
+    assert _kv_params_per_layer_depth(root) == 50
+
+
+def test_per_layer_depth_tree_all_single_buffer_is_one() -> None:
+    """A tree with no per-layer child keeps the multiplier at 1."""
+    root = MultiKVCacheParams.from_params(
+        {"a": _mha_params(50, False), "b": _mha_params(10, False)}
+    )
+    assert _kv_params_per_layer_depth(root) == 1
+
+
+def test_max_per_layer_buffer_count_non_kv_arch_is_one() -> None:
+    """A non-KV arch config leaves the allocation cap unchanged."""
+    assert _max_per_layer_buffer_count(object()) == 1  # type: ignore[arg-type]
+
+
+def test_max_per_layer_buffer_count_reads_arch_kv_params() -> None:
+    """The multiplier is read from the arch config's KV params."""
+    arch = MagicMock(spec=ArchConfigWithKVCache)
+    arch.get_kv_params.return_value = _mha_params(50, True)
+    assert _max_per_layer_buffer_count(arch) == 50
 
 
 def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memory() -> (
