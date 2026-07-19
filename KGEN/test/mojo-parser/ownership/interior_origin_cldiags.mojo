@@ -182,3 +182,6 @@ def ret_invalid_ref(mut list: MyListInterior[Int]) -> ref[list[]] Int:
 # This shouldn't crash.
 def throwing_function(ref values: MyListInterior[String]) raises -> ref[values[]] String:
     return values[]
+
+def call_throwing_fn(list: MyListInterior[String]) raises:
+    _ = throwing_function(list)
