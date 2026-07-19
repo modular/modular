@@ -1112,29 +1112,6 @@ dropResultSlots(ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
   return argumentValues;
 }
 
-namespace {
-/// Replace all dangling ("free") implicit origin references with
-/// ComptimeOriginAttr. This is used for emitting calls in the param context.
-struct DanglingImplicitOriginRefEraser
-    : IndexParameterReplacer<DanglingImplicitOriginRefEraser> {
-  Type tryReplace(Type, size_t) { return {}; }
-  Attribute tryReplace(Attribute attr, size_t depth) {
-    auto ref = ::dyn_cast<ImplicitOriginRefAttr>(attr);
-    if (!ref || ref.getDepth() < depth)
-      return nullptr;
-    return ComptimeOriginAttr::get(ref.getContext(), ref.getType());
-  }
-
-  /// Get this signature with all the implicit origins bound to the empty union.
-  FnTypeGeneratorType replaceSignature(FnTypeGeneratorType sig) {
-    FunctionType newFnType = replace(sig.getValues());
-    return sig.getWithBody(
-        FuncType::get(newFnType, sig.getArgConventions(), sig.getFnEffects(),
-                      sig.getFnMetadata(), sig.getArgListAttrs()));
-  }
-};
-} // namespace
-
 TypedAttr CallEmitter::emitCallInParamContext(
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
   assert(!emitter.builder && "not in parameter context");
@@ -1156,13 +1133,26 @@ TypedAttr CallEmitter::emitCallInParamContext(
 
   // If the callee has implicit origins, we need to bind them to immortal
   // references and rebind the callee.
-  // FIXME: Extend apply to handle implicit origins directly, this makes it
-  // super hard to read the generated IR because of redundant signatures.
   FnTypeGeneratorType boundSigType = calleeSig;
-  std::optional<DanglingImplicitOriginRefEraser> implicitOriginRefEraser;
   if (calleeSig.getNumImplicitOriginDecls()) {
-    implicitOriginRefEraser.emplace();
-    boundSigType = implicitOriginRefEraser->replaceSignature(calleeSig);
+    SmallVector<TypedAttr> implicitOrigins;
+    for (auto [convention, argType] :
+         llvm::zip(calleeSig.getArgConventions(), calleeSig.getArguments())) {
+      if (hasImplicitOrigin(convention)) {
+        auto originType = cast<RefType>(argType).getOriginType();
+        implicitOrigins.push_back(ComptimeOriginAttr::get(originType));
+      }
+    }
+    FunctionType newFnType = calleeSig.substituteImplicitOriginsIntoValues(
+        implicitOrigins, [&]() -> InFlightDiagnostic {
+          llvm_unreachable("substitution should always succeed");
+        });
+    boundSigType = calleeSig.getWithBody(
+        calleeSig.getBody().getWithValuesReplaced(newFnType));
+
+    // Rebind it to the new signature.
+    // FIXME: Extend apply to handle implicit origins directly, this makes it
+    // super hard to read the generated IR because of redundant signatures.
     operands[0] = ParamOperatorAttr::getRebind(operands[0], boundSigType);
   }
 
@@ -1190,9 +1180,6 @@ TypedAttr CallEmitter::emitCallInParamContext(
       if (hasAddress(convention))
         arg = StoreToMemAttr::get(arg, calleeArgType);
     }
-
-    if (implicitOriginRefEraser)
-      arg = implicitOriginRefEraser->replace(arg);
 
     // Emit a rebind if the refined type does not match the callee arg type.
     arg = ParamOperatorAttr::getRebind(arg, calleeArgType);
