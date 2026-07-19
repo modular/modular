@@ -2,6 +2,10 @@ load("//bazel:api.bzl", "modular_py_binary", "mojo_test")
 
 package(default_visibility = ["//max:consumers"])
 
+exports_files([
+    "run_nightly_fuzz.sh",
+])
+
 # CPU unit test for the reusable fuzz harness (_fuzz.mojo): boundary-aware shape
 # generation and the value-distribution fills (incl. NaN/Inf injection). No GPU.
 mojo_test(

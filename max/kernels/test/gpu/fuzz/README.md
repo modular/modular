@@ -147,22 +147,28 @@ design's non-gating → gating rollout:
   ```
 
 - **Nightly (non-gating / notify-only, slow):** a time-boxed live search per
-  oracle. New findings surface as a soft-failed step + notify; the lane does
-  not redden `main`. The lane is `kernel-fuzz-b200` in
-  `ci/default/postsubmit.json`, running `ci/default/kernel-fuzz.sh`
-  (`soft_fail: true`), which sweeps the determinism/batch-invariance oracle
-  family over the wired targets with a bounded budget and a fresh
-  `$BUILDKITE_BUILD_NUMBER` seed.
+  oracle. Because the input set is random and fresh each night, a finding is an
+  EXPECTED, intermittent event; a red scheduled run means "the live search
+  surfaced a candidate finding to triage" and it never gates `main`. This runs
+  on GitHub Actions as `.github/workflows/nightlyKernelFuzz.yaml` (a
+  `modrunner-b200` self-hosted local-GPU runner — the direct-binary home this
+  section recommended), one matrix lane per oracle
+  (`memcheck/initcheck/redzone/ref/determinism/contract`), driving
+  `run_nightly_fuzz.sh <oracle>` over a curated per-oracle target list with a
+  fresh `${{ github.run_number }}` seed. It notifies #kernel-team-notifications
+  on a scheduled failure, mirroring the allocator-sweep and compute-sanitizer
+  nightlies.
+
+  `synccheck`/`racecheck` are deliberately NOT nightly lanes: `synccheck`
+  false-positives on warp-specialized SM100 kernels (block-wide `__syncthreads`
+  model vs warpgroup-scoped named barriers), so it is noise for a notify lane.
 
   GPU-locality caveat: `fuzz.py` runs the built target binaries **directly**
-  (not via `bazel test`), so it needs a **local** GPU on the agent. The
-  `persistent-b200` queue runs its bazel work via remote execution
-  (`--config=ci-remote-b200`), so a local GPU is not guaranteed there —
-  `kernel-fuzz.sh` self-checks `nvidia-smi` and no-ops cleanly when absent.
-  The proven home for direct-binary GPU fuzzing is a self-hosted local-GPU
-  GitHub Actions runner (the `.github/workflows/llmFuzzAdHoc.yaml` pattern);
-  porting the search there is the recommended long-term move. Also note
-  `manual`-tagged fuzz targets must be built by explicit name — `//...` and
-  `:all` wildcards skip them.
+  (not via `bazel test`), so it needs a **local** GPU on the agent — hence the
+  `modrunner-b200` runner rather than the remote-execution `persistent-b200`
+  queue. Also note `manual`-tagged fuzz targets must be built by explicit name
+  — `//...` and `:all` wildcards skip them (which is how the targets in the
+  default lists silently bit-rotted against a `LayoutTensor` origin API change;
+  give them a build-by-name presubmit to catch that).
 
   Validate the redzone/poison allocators on MI355 before adding an AMD lane.
