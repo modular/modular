@@ -376,6 +376,20 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `List.__getitem__` and `List.unsafe_get` now return element references bound
+  to an *interior origin* of the list instead of the whole-list origin, so an
+  element reference is invalidated when the list is mutated (for example by
+  `append()` or `pop()`). Code that holds an element reference across such a
+  mutation is now correctly rejected by the lifetime checker instead of
+  silently dangling after a reallocation:
+
+  ```mojo
+  var list = [1, 2, 3]
+  ref elem = list[0]
+  list.append(4)  # may reallocate, invalidating `elem`
+  print(elem)     # error: use of invalidated interior reference
+  ```
+
 - Added `Tuple.consume_elements`, which moves each element out of a tuple into a
   caller-provided closure one at a time. Destructuring such as `a, b = t^`
   copies each element, so it cannot take apart a tuple whose elements are

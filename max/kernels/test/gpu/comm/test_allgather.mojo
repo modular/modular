@@ -101,17 +101,27 @@ def all_gather_test[
         out_bufs_list.append(device_outputs^)
 
     # Build TileTensor arrays directly.
+    # TODO(MOCO-4346): `.as_unsafe_any_origin()` casts the tensors off the
+    # `List` interior origin; storing an interior-origin type into an
+    # uninitialized `InlineArray` trips a CheckLifetimes over-rejection.
+    # Drop these casts once the compiler bug is fixed.
     comptime InTileType = type_of(
-        TileTensor(in_bufs_list[0], row_major(lengths[0])).as_immut()
+        TileTensor(in_bufs_list[0], row_major(lengths[0]))
+        .as_immut()
+        .as_unsafe_any_origin()
     )
     var tt_in_bufs = InlineArray[InTileType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
-        tt_in_bufs[i] = TileTensor(
-            in_bufs_list[i], row_major(lengths[i])
-        ).as_immut()
+        tt_in_bufs[i] = (
+            TileTensor(in_bufs_list[i], row_major(lengths[i]))
+            .as_immut()
+            .as_unsafe_any_origin()
+        )
 
     comptime OutTileType = type_of(
-        TileTensor(out_bufs_list[0][0], row_major(lengths[0]))
+        TileTensor(
+            out_bufs_list[0][0], row_major(lengths[0])
+        ).as_unsafe_any_origin()
     )
     var tt_out_bufs = InlineArray[OutTileType, ngpus * ngpus](
         uninitialized=True
@@ -122,7 +132,7 @@ def all_gather_test[
         tt_out_bufs[i] = TileTensor(
             out_bufs_list[device_idx][input_idx],
             row_major(lengths[input_idx]),
-        )
+        ).as_unsafe_any_origin()
 
     # Optional: vendor CCL (only if all lengths are equal; NCCL/RCCL requires uniform count).
     var uniform = True
@@ -268,17 +278,27 @@ def grouped_all_gather_test[
             )
         out_bufs_list.append(device_outputs^)
 
+    # TODO(MOCO-4346): `.as_unsafe_any_origin()` casts the tensors off the
+    # `List` interior origin; storing an interior-origin type into an
+    # uninitialized `InlineArray` trips a CheckLifetimes over-rejection.
+    # Drop these casts once the compiler bug is fixed.
     comptime InTileType = type_of(
-        TileTensor(in_bufs_list[0], row_major(lengths[0])).as_immut()
+        TileTensor(in_bufs_list[0], row_major(lengths[0]))
+        .as_immut()
+        .as_unsafe_any_origin()
     )
     var tt_in_bufs = InlineArray[InTileType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
-        tt_in_bufs[i] = TileTensor(
-            in_bufs_list[i], row_major(lengths[i])
-        ).as_immut()
+        tt_in_bufs[i] = (
+            TileTensor(in_bufs_list[i], row_major(lengths[i]))
+            .as_immut()
+            .as_unsafe_any_origin()
+        )
 
     comptime OutTileType = type_of(
-        TileTensor(out_bufs_list[0][0], row_major(lengths[0]))
+        TileTensor(
+            out_bufs_list[0][0], row_major(lengths[0])
+        ).as_unsafe_any_origin()
     )
     var tt_out_bufs = InlineArray[OutTileType, ngpus * group_size](
         uninitialized=True
@@ -291,7 +311,7 @@ def grouped_all_gather_test[
         tt_out_bufs[i] = TileTensor(
             out_bufs_list[device_idx][local_idx],
             row_major(lengths[input_idx]),
-        )
+        ).as_unsafe_any_origin()
 
     comptime for group_idx in range(ngpus // group_size):
         comptime group_start = group_idx * group_size

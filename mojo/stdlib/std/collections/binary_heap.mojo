@@ -142,7 +142,7 @@ struct BinaryHeap[T: Copyable & Comparable & ImplicitlyDeletable](
             self._heapify_down(0)
         return item^
 
-    def peek(imm self) -> ref[self._data] Self.T:
+    def peek(imm self) -> ref[self._data[0]] Self.T:
         """Gets a reference to the largest element in the heap.
 
         Returns:

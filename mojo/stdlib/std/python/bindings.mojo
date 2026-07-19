@@ -339,7 +339,7 @@ struct PythonModuleBuilder:
     def add_type[
         T: ImplicitlyDeletable
     ](mut self, type_name: StaticString) -> ref[
-        self.type_builders
+        self.type_builders[0]
     ] PythonTypeBuilder:
         """Add a type to the module and return a builder for it.
 

@@ -1401,8 +1401,11 @@ struct List[T: Movable, /](
             ptr=self.unsafe_ptr().unsafe_offset(start), length=end - start
         )
 
+    @__unsafe_nested_origins_read_only
     @always_inline
-    def __getitem__(ref self, idx: IntLiteral) -> ref[self] Self.T:
+    def __getitem__(
+        ref self, idx: IntLiteral
+    ) -> ref[self.unsafe_get(index(idx))] Self.T:
         """Gets the list element at the given index.
 
         Args:
@@ -1415,10 +1418,13 @@ struct List[T: Movable, /](
             IntLiteral[idx.value]() >= 0
         ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
         check_bounds(idx, len(self))
-        return self._data[unsafe_offset=idx]
+        return self.unsafe_get(index(idx))
 
+    @__unsafe_nested_origins_read_only
     @always_inline
-    def __getitem__(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
+    def __getitem__(
+        ref self, idx: Some[Indexer]
+    ) -> ref[self.unsafe_get(index(idx))] Self.T:
         """Gets the list element at the given index.
 
         Args:
@@ -1428,10 +1434,13 @@ struct List[T: Movable, /](
             A reference to the element at the given index.
         """
         check_bounds(idx, len(self))
-        return self._data[unsafe_offset=idx]
+        return self.unsafe_get(index(idx))
 
+    @__unsafe_nested_origins_read_only
     @always_inline
-    def unsafe_get(ref self, idx: Int) -> ref[self] Self.T:
+    def unsafe_get(
+        ref self, idx: Int
+    ) -> ref[origin_of(self)._get_owned_interior["element"]] Self.T:
         """Get a reference to an element of self without checking index bounds.
 
         Args:
@@ -1451,7 +1460,11 @@ struct List[T: Movable, /](
             list. Instead, do `my_list.unsafe_get(len(my_list) - 1)`.
         """
         check_bounds[cpu_default=False](idx, len(self))
-        return self._data[unsafe_offset=idx]
+        return (
+            self.unsafe_ptr()
+            .unsafe_offset(idx)
+            ._get_ref_with_unsafe_interior_origin["element", origin_of(self)]()
+        )
 
     @always_inline
     def unsafe_set(
