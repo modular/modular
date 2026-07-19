@@ -344,8 +344,18 @@ void OperationEffects::analyzeCallOp(Operation &op) {
     }
   };
 
+  // Find the actual result type of the call.  We can't pick this up from the
+  // signature type with getUserResultType because that won't have implicit
+  // origins substituted in.
+  // TODO(remove implicit origins)!
+  assert(op.getNumResults() == 1);
+  Type userResultType = op.getResult(0).getType();
+
   for (auto [idx, arg, convention] :
        llvm::enumerate(callArguments, conventions)) {
+
+    if (convention == ArgConvention::ByRefResult)
+      userResultType = cast<RefType>(arg.getType()).getElementType();
 
     // If this is VariadicList/VariadicPack, dig out the original arguments so
     // we can model owned arguments correctly. This provides two benefits:
@@ -401,18 +411,14 @@ void OperationEffects::analyzeCallOp(Operation &op) {
 
   // If the result is defining an owned register value, then we treat this as
   // a definition
-  if (op.getNumResults()) {
-    assert(op.getNumResults() == 1);
-    results.push_back(isTypeObviouslyTrivial(op.getResult(0).getType())
-                          ? ResultEffect::ignore
-                          : ResultEffect::regDefine);
-  }
+  results.push_back(isTypeObviouslyTrivial(op.getResult(0).getType())
+                        ? ResultEffect::ignore
+                        : ResultEffect::regDefine);
 
   // If the result of this function is defining an interior origin, then we
   // need to mark the interior origins live.
   if (signature.getDefinesInteriorOrigins()) {
-    for (TypedAttr origin :
-         originFinder.findOriginsIn({signature.getUserResultType()})) {
+    for (TypedAttr origin : originFinder.findOriginsIn({userResultType})) {
       // Given a def of something with an "a.list["x"].second.field["y"].z"
       // origin, we need to mark the "x" and "y" interior origins live.
       origin.walk([&](InteriorOriginAttr into) {
