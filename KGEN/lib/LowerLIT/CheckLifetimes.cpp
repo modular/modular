@@ -1665,6 +1665,15 @@ public:
   /// Given an InteriorOrigin, return its ID.
   size_t getInteriorOriginID(InteriorOriginAttr o) const {
     auto it = interiorOriginID.find(o);
+    // If we're going to explode, produce some debris to help debug.
+    if (!(it != interiorOriginID.end() && it->second < nextInteriorOriginID)) {
+      llvm::errs() << "\n-----\n";
+      o.dump();
+      llvm::errs() << "\n-----\n";
+      dump();
+      llvm::errs() << "\n-----\n";
+      theFunc.dumpPretty();
+    }
     assert(it != interiorOriginID.end() && it->second < nextInteriorOriginID &&
            "Unknown interior origin");
     return it->second;
@@ -1718,6 +1727,9 @@ public:
   }
 
 private:
+  /// The function we're analyzing.
+  Operation &theFunc;
+
   /// This method is called whenever we discover an interior origin.
   void addInteriorOrigin(InteriorOriginAttr interior);
 
@@ -1744,7 +1756,8 @@ private:
 } // namespace
 
 InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
-                                             FunctionLikeOp func) {
+                                             FunctionLikeOp func)
+    : theFunc(*func.op) {
 
   // The same types (eg none) are used over & over again, precache origin scan.
   SmallPtrSet<Type, 32> visitedTypes;
@@ -1755,29 +1768,35 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
       collectedTypes.push_back(type);
   };
 
+  // For a function with regions, collect the types from the block arguments.
+  auto collectBlockArgs = [&](Operation *op) {
+    for (auto &region : op->getRegions()) {
+      for (auto &block : region)
+        for (auto arg : block.getArguments())
+          collectType(arg.getType());
+    }
+  };
+
+  // Get any interior origins in function arguments (including the result slot).
+  collectBlockArgs(func.op);
+
   // Scan the body region to find all the interior origins.
-  func.getBodyRegion().walk<mlir::WalkOrder::PreOrder>(
-      [&](Operation *op) -> WalkResult {
-        // Skip looking at nested functions, they are handled as separate
-        // contexts.
-        if (isa<FnOp>(op))
-          return WalkResult::skip();
+  func.getBodyRegion().walk([&](Operation *op) -> WalkResult {
+    // Skip looking at nested functions, they are handled as separate
+    // contexts.
+    if (isa<FnOp>(op))
+      return WalkResult::skip();
 
-        // Interior origins can be found by scanning all the operation results
-        // and arguments.  We can ignore any operands because they'll be using
-        // the other things.
-        for (Type resultType : op->getResultTypes())
-          collectType(resultType);
+    // Interior origins can be found by scanning all the operation results
+    // and arguments.  We can ignore any operands because they'll be using
+    // the other things.
+    for (Type resultType : op->getResultTypes())
+      collectType(resultType);
 
-        // If there are any regions, check the block arguments for arguments.
-        for (auto &region : op->getRegions()) {
-          for (auto &block : region)
-            for (auto arg : block.getArguments())
-              collectType(arg.getType());
-        }
-
-        return WalkResult::advance();
-      });
+    // If there are any regions, check the block arguments for arguments.
+    collectBlockArgs(op);
+    return WalkResult::advance();
+  });
 
   // Given a set of origins used in the function, scan their structure for any
   // interior origins (including ones nested in fields) and build the

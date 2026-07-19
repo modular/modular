@@ -183,6 +183,12 @@ def ret_invalid_ref(mut list: MyList[Int]) -> ref[list[]] Int:
     return r # expected-error {{use of invalidated interior reference 'list["element"]'}}
 
 # This shouldn't crash.
+def test_thing1(data: MyList[String]) raises -> ref[data[]] String:
+    return data[]
+def test_thing2(data: MyList[String]) raises -> ref[data[]] String:
+    return test_thing1(data)
+
+# This shouldn't crash.
 def throwing_function(ref values: MyList[String]) raises -> ref[values[]] String:
     return values[]
 
