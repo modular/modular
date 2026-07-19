@@ -1674,7 +1674,7 @@ public:
   void markInteriorOriginLive(InteriorOriginAttr o,
                               TrackedAndInteriorLiveness &liveness,
                               Operation &op,
-                              const mlir::DominanceInfo &domInfo) const;
+                              const mlir::DominanceInfo &domInfo);
 
   bool originHasInteriorOrigins(TypedAttr origin) const {
     return originWithInteriorOrigins.count(origin);
@@ -1918,7 +1918,19 @@ void InteriorOriginTracker::dump() const {
 /// Mark the given interior origin as live in the given bitvector.
 void InteriorOriginTracker::markInteriorOriginLive(
     InteriorOriginAttr o, TrackedAndInteriorLiveness &liveness, Operation &op,
-    const mlir::DominanceInfo &domInfo) const {
+    const mlir::DominanceInfo &domInfo) {
+  // Interior origins must not have a parametric user name.  We can't do our
+  // analysis before elaboration, so don't know what concrete parameter values
+  // will be substituted in.  Reject them so the user doesn't misunderstand our
+  // capabilities.
+  if (!isa<StringAttr>(o.getUserName())) {
+    size_t interiorID = getInteriorOriginID(o);
+    if (!markErrorEmittedForInteriorOrigin(interiorID))
+      op.emitError("interior origin name must be a string literal, it cannot "
+                   "be parametric when used");
+    return;
+  }
+
   // If the entry was previously invalid, mark it as now live.
   auto &entry = liveness.interior[getInteriorOriginID(o)];
   if (!entry.getInt()) {
@@ -1995,7 +2007,6 @@ private:
   void handleAnyOriginUse(Operation &op, ArrayRef<TypedAttr> definedOrigins);
 
   SmallVector<InteriorOriginAttr> findInteriorOriginsInType(Type type);
-  void establishInteriorOriginsFromDef(Type type, Operation &op);
   void invalidateInteriorOriginsForOperand(Value operand, bool isDeref,
                                            Operation &op);
 
@@ -2161,45 +2172,6 @@ UninitializedValueScan::findInteriorOriginsInType(Type type) {
   return result;
 }
 
-void UninitializedValueScan::establishInteriorOriginsFromDef(Type type,
-                                                             Operation &op) {
-  // Don't scan anything if no interior origins are accessed.
-  if (liveness.interior.empty())
-    return;
-
-  // Only calls can establish a new interior origin, and they can only do so
-  // when they use the `@__defines_interior_origins` decorator.  Other functions
-  // (e.g. Pointer.getitem) can produce something with an interior origin, but
-  // that doesn't mean they guarantee it is live!
-  if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
-    if (!call.getCalleeType().getBody().getDefinesInteriorOrigins())
-      return;
-  } else if (auto call = dyn_cast<LIT::CallIndirectOp>(op)) {
-    if (!call.getCalleeType().getDefinesInteriorOrigins())
-      return;
-  } else {
-    return;
-  }
-
-  for (InteriorOriginAttr origin : findInteriorOriginsInType(type)) {
-    // Interior origins being defined must not have a parametric user name.  We
-    // can't do our analysis before elaboration, so don't know what concrete
-    // parameter values will be substituted in.  Reject them so the user doesn't
-    // misunderstand our capabilities.
-    if (!isa<StringAttr>(origin.getUserName())) {
-      size_t interiorID = interiorOriginTracker.getInteriorOriginID(origin);
-      if (!interiorOriginTracker.markErrorEmittedForInteriorOrigin(interiorID))
-        op.emitError("interior origin name must be a string literal, it cannot "
-                     "be parametric when used");
-
-      return;
-    }
-
-    interiorOriginTracker.markInteriorOriginLive(origin, liveness, op,
-                                                 valueSet.domInfo);
-  }
-}
-
 void UninitializedValueScan::invalidateInteriorOriginsForOperand(
     Value operand, bool isDeref, Operation &op) {
   // Ignore the results of function calls etc.  These are defining the result,
@@ -2316,11 +2288,6 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
     // Finally, marks its value live so any use after this isn't treated as
     // uninitialized.
     valueRef.markBits(liveness.tracked, true);
-
-    // Notice any interior origins that are embedded in the result type so we
-    // know they're alive at this point.
-    establishInteriorOriginsFromDef(
-        ValueRef::getDereferencedType(value.getType(), isDeref), op);
     return;
   }
 
@@ -2747,10 +2714,6 @@ void UninitializedValueScan::scanBlock(Block &block) {
       switch (effect) {
       case ResultEffect::ignore:
         assert(!trackable && "Origin trackable and CheckLifetimes disagree");
-        // Ref results don't matter for tracking ownership, but they can return
-        // interior origins, which indicate they are alive.  Notice them.
-        if (auto refType = sugarDynCast<RefType>(result.getType()))
-          establishInteriorOriginsFromDef(refType, op);
         continue;
       case ResultEffect::regDefine:
         assert(trackable && !trackable.isIndirect && endsUninit &&
@@ -2792,6 +2755,11 @@ void UninitializedValueScan::scanBlock(Block &block) {
     // not destroyed too early.
     if (hasAnyOrigin)
       handleAnyOriginUse(op, definedOrigins);
+
+    // Mark any interior origins declared by this operation as live.
+    for (auto interiorOrigin : opEffects.interiorOriginsDefined)
+      interiorOriginTracker.markInteriorOriginLive(interiorOrigin, liveness, op,
+                                                   valueSet.domInfo);
 
     // Finally, handle any other special per-operation behavior.
     switch (overall) {
