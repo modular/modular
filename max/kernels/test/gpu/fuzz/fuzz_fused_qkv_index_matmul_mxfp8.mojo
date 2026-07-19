@@ -480,35 +480,31 @@ def run_one_case(
     ctx.synchronize()
 
     # --- device LayoutTensors ------------------------------------------------
-    var hs_dev_lt = LayoutTensor[data_dtype, hs_layout, MutAnyOrigin](
+    var hs_dev_lt = LayoutTensor[data_dtype, hs_layout](
         hs_device.unsafe_ptr(),
         RuntimeLayout[hs_layout].row_major(IndexList[2](M, HIDDEN)),
     )
-    var w_dev_lt = LayoutTensor[data_dtype, w_layout, MutAnyOrigin](
+    var w_dev_lt = LayoutTensor[data_dtype, w_layout](
         w_device.unsafe_ptr(),
         RuntimeLayout[w_layout].row_major(IndexList[2](N_TOTAL, HIDDEN)),
     )
-    var input_scale_dev_lt = LayoutTensor[
-        scale_dtype, input_sf_layout, MutAnyOrigin
-    ](
+    var input_scale_dev_lt = LayoutTensor[scale_dtype, input_sf_layout](
         input_scale_device.unsafe_ptr(),
         RuntimeLayout[input_sf_layout].row_major(input_scale_shape),
     )
-    var weight_scale_dev_lt = LayoutTensor[
-        scale_dtype, weight_sf_layout, MutAnyOrigin
-    ](
+    var weight_scale_dev_lt = LayoutTensor[scale_dtype, weight_sf_layout](
         weight_scale_device.unsafe_ptr(),
         RuntimeLayout[weight_sf_layout].row_major(
             IndexList[5](n_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
         ),
     )
     comptime out_layout = Layout.row_major(UNKNOWN_VALUE, COMBINED_OUT)
-    var output_dev_lt = LayoutTensor[out_dtype, out_layout, MutAnyOrigin](
+    var output_dev_lt = LayoutTensor[out_dtype, out_layout](
         output_device.unsafe_ptr(),
         RuntimeLayout[out_layout].row_major(IndexList[2](M, COMBINED_OUT)),
     )
     comptime ro_layout = Layout(UNKNOWN_VALUE)
-    var row_offsets_lt = LayoutTensor[DType.uint32, ro_layout, MutAnyOrigin](
+    var row_offsets_lt = LayoutTensor[DType.uint32, ro_layout](
         row_offsets_device.unsafe_ptr(),
         RuntimeLayout[ro_layout].row_major(IndexList[1](batch_size + 1)),
     )
@@ -537,52 +533,52 @@ def run_one_case(
     )
 
     var main_kv = PagedKVCacheCollection[kv_dtype, main_kv_params, PAGE_SIZE](
-        LayoutTensor[kv_dtype, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_dtype, Layout.row_major[6]()](
             main_blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 main_blocks_lt.runtime_layout.shape.value,
                 main_blocks_lt.runtime_layout.stride.value,
             ),
-        ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        ).as_unsafe_any_origin(),
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
-        ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        ).as_unsafe_any_origin(),
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
                 lookup_table_lt.runtime_layout.stride.value,
             ),
-        ),
+        ).as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
     var index_kv = PagedKVCacheCollection[kv_dtype, index_kv_params, PAGE_SIZE](
-        LayoutTensor[kv_dtype, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_dtype, Layout.row_major[6]()](
             index_blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 index_blocks_lt.runtime_layout.shape.value,
                 index_blocks_lt.runtime_layout.stride.value,
             ),
-        ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        ).as_unsafe_any_origin(),
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
-        ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        ).as_unsafe_any_origin(),
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
                 lookup_table_lt.runtime_layout.stride.value,
             ),
-        ),
+        ).as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
