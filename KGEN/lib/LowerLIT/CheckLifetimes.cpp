@@ -1782,8 +1782,8 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
   // Given a set of origins used in the function, scan their structure for any
   // interior origins (including ones nested in fields) and build the
   // invalidation map.
-  for (TypedAttr origin :
-       perThreadCache.originFinder.findOriginsIn(collectedTypes)) {
+  for (TypedAttr origin : perThreadCache.originFinder.findOriginsIn(
+           collectedTypes, func.getFuncTypeGenerator().getCaptureOrigins())) {
     // processRawOrigin looks through SugarAttr and UnionAttr.
     bool hasInteriorOrigin = false;
     processOriginUnionElts(origin, [&](TypedAttr raw) {
@@ -2431,15 +2431,15 @@ static Operation *getProgramPointThatDefinedInteriorOrigin(Value v) {
   }
 }
 
+static std::string getOriginStr(InteriorOriginAttr origin) {
+  std::string originStr;
+  llvm::raw_string_ostream originOs(originStr);
+  OriginPrinter().print(originOs, origin, /*elideOriginOf=*/true);
+  return originStr;
+}
+
 void UninitializedValueScan::checkInteriorOriginUsage(
     InteriorOriginAttr interior, Value operand, Operation &op) {
-
-  auto getOriginStr = [&]() -> std::string {
-    std::string originStr;
-    llvm::raw_string_ostream originOs(originStr);
-    OriginPrinter().print(originOs, interior, /*elideOriginOf=*/true);
-    return originStr;
-  };
 
   // If we know it isn't live because it has never been invalidated, or got
   // invalidated, then it is obviously not live.
@@ -2463,13 +2463,13 @@ void UninitializedValueScan::checkInteriorOriginUsage(
 
     auto diag = emitError(op.getLoc());
     if (Operation *invalidatingOp = entry.getPointer()) {
-      diag << "use of invalidated interior reference '" << getOriginStr()
-           << "'";
+      diag << "use of invalidated interior reference '"
+           << getOriginStr(interior) << "'";
       diag.attachNote(invalidatingOp->getLoc())
           << "origin was invalidated here";
     } else {
       diag << "use of a never-initialized interior reference '"
-           << getOriginStr() << "'";
+           << getOriginStr(interior) << "'";
     }
     return;
   }
@@ -2490,12 +2490,13 @@ void UninitializedValueScan::checkInteriorOriginUsage(
   // Def #2 dominating r2). If that operation does not dominate the reference
   // (as in Def #2 not dominating r1) then it is invalid.
   Operation *definingOp = entry.getPointer();
-  Operation *operandPt = getProgramPointThatDefinedInteriorOrigin(operand);
+  Operation *operandPt = &op;
 
   // If this is checking liveness of a result slot for a return, use the
-  // location of the return itself.
-  if (!operandPt && isa<KGEN::ReturnOp, LIT::ErrorReturnOp>(op))
-    operandPt = &op;
+  // location of the return itself. "operand" may be null when checking capture
+  // set origins.
+  if (operand && !isa<KGEN::ReturnOp, LIT::ErrorReturnOp>(op))
+    operandPt = getProgramPointThatDefinedInteriorOrigin(operand);
 
   // TODO: What about block arguments?
   assert(operandPt && "operand wasn't defined by a program point?");
@@ -2504,13 +2505,26 @@ void UninitializedValueScan::checkInteriorOriginUsage(
   if (valueSet.domInfo.dominates(definingOp, operandPt))
     return;
 
+  // TODO(remove legacy closures): Legacy closures can have operands defined
+  // outside the function that are referenced directly from within it.  For
+  // example:
+  //   ptr = ...
+  //   @parameter
+  //   def inner():
+  //     use(ptr)
+  // This gets represented as a direct use of the operand but we mark the origin
+  // live on the function itself. This trips up the dominance check, so special
+  // case this.
+  if (isa<FnOp>(definingOp))
+    return;
+
   // Otherwise, it is valid for some other reference but was reinitialized since
   // this reference was formed.
   if (interiorOriginTracker.markErrorEmittedForInteriorOrigin(interiorID))
     return;
 
   auto diag = emitError(op.getLoc(), "use of invalidated interior reference '");
-  diag << getOriginStr() << "'";
+  diag << getOriginStr(interior) << "'";
   // Control-flow parents (e.g. the `if` at a branch join) can be the merged
   // defining point without being a concrete redefinition site.
   if (definingOp->getNumRegions() == 0)
@@ -2623,8 +2637,42 @@ void UninitializedValueScan::scanFunction(FunctionLikeOp func) {
       liveness.tracked.set(info.endValueBit - 1);
     }
 
+  // Closures can access interior origins from their capture set without
+  // defining them in the body. Mark those origins live on entry.
+  SmallVector<InteriorOriginAttr> captureOrigins;
+  if (!liveness.interior.empty()) {
+    // Find all the interior origins in the capture set.
+    for (TypedAttr origin : valueSet.getOriginFinder().findOriginsIn(
+             {}, func.getFuncTypeGenerator().getCaptureOrigins())) {
+      origin.walk([&](InteriorOriginAttr interior) {
+        captureOrigins.push_back(interior);
+      });
+    }
+
+    // Mark all the capture set origins live on entry.
+    for (auto interior : captureOrigins)
+      interiorOriginTracker.markInteriorOriginLive(interior, liveness, *func.op,
+                                                   valueSet.domInfo);
+  }
+
   // Scan the body of the function.
   scanBlock(func.getBodyRegion().front());
+
+  // The function must not have invalidated any interior origins.
+  for (auto interior : captureOrigins) {
+    size_t interiorID = interiorOriginTracker.getInteriorOriginID(interior);
+    Operation *invalidatingOp = liveness.interior[interiorID].getPointer();
+    if (invalidatingOp == func.op)
+      continue;
+
+    // If we already emitted a diagnostic for this, don't do it again.
+    if (interiorOriginTracker.markErrorEmittedForInteriorOrigin(interiorID))
+      continue;
+
+    emitError(invalidatingOp->getLoc())
+        << "incorrect invalidation of interior origin in closure '"
+        << getOriginStr(interior) << "'";
+  }
 }
 
 /// Scan a block top down, checking all the operations that may use a value or
