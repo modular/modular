@@ -2522,11 +2522,23 @@ def msa_sparse_indexer(
         "local_blocks": local_blocks,
     }
 
+    if index_kv_collection.attention_dispatch_metadata is None:
+        raise ValueError(
+            "msa_sparse_indexer requires attention_dispatch_metadata on the"
+            " index-K cache: it carries the kernel's msa_scalar_args input."
+        )
+
+    # The kernel's operand list ends at msa_scalar_args (fed from
+    # attention_dispatch_metadata), so append the metadata explicitly rather
+    # than using flatten(), which also emits optional fields the kernel does
+    # not take (e.g. draft_attention_dispatch_metadata under speculative
+    # decoding) and would shift every operand after them.
     values: list[Value[Any]] = [
         index_q,
         input_row_offsets,
         prefix_lens,
-        *index_kv_collection.flatten(),
+        *index_kv_collection.flatten_without_attention_dispatch_metadata(),
+        index_kv_collection.attention_dispatch_metadata,
         layer_idx,
         score_scratch,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -2676,12 +2688,25 @@ def msa_sparse_attention_ragged(
     if topk <= 0:
         raise ValueError(f"topk must be greater than 0, got {topk}")
 
+    if kv_collection.attention_dispatch_metadata is None:
+        raise ValueError(
+            "msa_sparse_attention_ragged requires"
+            " attention_dispatch_metadata on the KV cache: it carries the"
+            " kernel's msa_scalar_args input."
+        )
+
+    # The kernel's operand list ends at msa_scalar_args (fed from
+    # attention_dispatch_metadata), so append the metadata explicitly rather
+    # than using flatten(), which also emits optional fields the kernel does
+    # not take (e.g. draft_attention_dispatch_metadata under speculative
+    # decoding) and would shift every operand after them.
     values: list[Value[Any]] = [
         input,
         input_row_offsets,
         cache_row_offsets,
         total_context_length,
-        *kv_collection.flatten(),
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        kv_collection.attention_dispatch_metadata,
         layer_idx,
         block_indices,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
