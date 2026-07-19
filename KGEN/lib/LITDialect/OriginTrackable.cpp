@@ -260,8 +260,8 @@ void OperationEffects::analyzeCallOp(Operation &op) {
 
     assert(conventions.size() == op.getNumOperands());
   } else {
-    auto call = cast<LIT::CallIndirectOp>(op);
-    signature = call.getCallee().getType().getBody();
+    // Otherwise must be a call indirect.
+    signature = cast<LIT::CallIndirectOp>(op).getCallee().getType().getBody();
     conventions = signature.getArgConventions();
 
     // We use the callee value, and process the rest as operands.
@@ -406,15 +406,18 @@ void OperationEffects::analyzeCallOp(Operation &op) {
     results.push_back(isTypeObviouslyTrivial(op.getResult(0).getType())
                           ? ResultEffect::ignore
                           : ResultEffect::regDefine);
-    if (signature.getDefinesInteriorOrigins()) {
-      for (TypedAttr origin :
-           originFinder.findOriginsIn({op.getResult(0).getType()}, {})) {
-        // Given a def of something with an "a.list["x"].second.field["y"].z"
-        // origin, we need to mark the "x" and "y" interior origins live.
-        origin.walk([&](InteriorOriginAttr into) {
-          interiorOriginsDefined.push_back(into);
-        });
-      }
+  }
+
+  // If the result of this function is defining an interior origin, then we
+  // need to mark the interior origins live.
+  if (signature.getDefinesInteriorOrigins()) {
+    for (TypedAttr origin :
+         originFinder.findOriginsIn({signature.getUserResultType()})) {
+      // Given a def of something with an "a.list["x"].second.field["y"].z"
+      // origin, we need to mark the "x" and "y" interior origins live.
+      origin.walk([&](InteriorOriginAttr into) {
+        interiorOriginsDefined.push_back(into);
+      });
     }
   }
 }

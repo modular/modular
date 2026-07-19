@@ -2210,42 +2210,40 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
   // Remember the user-declared result type.
   tcSignature.resultType = resultType;
 
-  // Functions with an explicitly declared return type containing an interior
-  // origin establish those origins when called.
-  // TODO: Instead of treating this as binary, we should actually capture which
-  // indirect origins are being defined.  A binary flag is not the right answer,
-  // because parametric types can be substituted in that contain indirect
-  // origins, but should be sufficient for now.
-  if (resultArg.typeExpr &&
-      resultArg.typeExpr->kind != ExprNode::kNoneLiteral) {
-    for (TypedAttr origin :
-         shared.cachedOriginFinder.findOriginsIn(resultType.mlirType, {})) {
+  // Process any origins in the result type.
+  if (auto resultOrigins =
+          shared.cachedOriginFinder.findOriginsIn({resultType});
+      !resultOrigins.empty()) {
+
+    // Function result types containing an interior origin establish those
+    // origins when called.
+    //
+    // TODO: Instead of treating this as binary, we should actually capture
+    // which indirect origins are being defined.  A binary flag is not the right
+    // answer, because parametric types can be substituted in that contain
+    // indirect origins, but should be sufficient for now.
+    for (TypedAttr origin : resultOrigins)
       origin.walk([&](InteriorOriginAttr) {
         tcSignature.definesInteriorOrigins = true;
       });
-    }
-  }
 
-  // Check to see if the result type has any embedded origins that refer to
-  // in-memory argument origins of generic type, e.g.:
-  //
-  //     def get[T: AnyType](a: T) -> Pointer[T, origin_of(a)]:
-  //        return Pointer(a)
-  //
-  // These origins are not allowed to be returned from the function, because
-  // when instantiated with a register-passable type, argument convention
-  // lowering will turn them into:
-  //
-  //     def get[T: AnyType](borrow_in_reg a: T)
-  //                             -> Pointer[T, origin_of(tmp)]:
-  //        var tmp = a
-  //        return Reference(tmp)
-  //
-  // Note that we're now returning a reference to something that doesn't outlast
-  // the function!
-  if (auto resultOrigins =
-          shared.cachedOriginFinder.findOriginsIn(resultType.mlirType);
-      !resultOrigins.empty()) {
+    // Check to see if the result type has any embedded origins that refer to
+    // in-memory argument origins of generic type, e.g.:
+    //
+    //     def get[T: AnyType](a: T) -> Pointer[T, origin_of(a)]:
+    //        return Pointer(a)
+    //
+    // These origins are not allowed to be returned from the function, because
+    // when instantiated with a register-passable type, argument convention
+    // lowering will turn them into:
+    //
+    //     def get[T: AnyType](borrow_in_reg a: T)
+    //                             -> Pointer[T, origin_of(tmp)]:
+    //        var tmp = a
+    //        return Reference(tmp)
+    //
+    // Note that we're now returning a reference to something that doesn't
+    // outlast the function!
     SmallDenseMap<TypedAttr, size_t, 8> possiblyRegisterPassableOrigins;
     for (auto [idx, parsedArg, fullType] : llvm::enumerate(
              tcSignature.argList.parsedArgs, tcSignature.fullArgTypes)) {
