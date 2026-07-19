@@ -52,10 +52,12 @@ def _rebuild_wheel(rctx):
     shared_lib_ext = "dylib" if rctx.attr.platform == "macos_arm64" else "so"
     rctx.file(
         "BUILD.bazel",
+        # buildifier: disable=canonical-repository
         """
 load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_cc//cc:defs.bzl", "cc_import")
 load("@rules_mojo//mojo:mojo_import.bzl", "mojo_import")
+load("@@//bazel:mojo_aliases.bzl", "INTERNAL_PACKAGES")
 
 # Subdirectories of the wheel that are part of this repo and therefore should
 # be removed so that they're not accidentally used when testing changes that
@@ -133,17 +135,14 @@ cc_import(
     })
 )
 
-mojo_import(
-    name = "msa_lib",
-    mojodeps = ["modular/lib/mojo/msa.mojoc"],
-    visibility = ["//visibility:public"],
-)
-
-mojo_import(
-    name = "matmul_rs_lib",
-    mojodeps = ["modular/lib/mojo/matmul_rs.mojoc"],
-    visibility = ["//visibility:public"],
-)
+[
+    mojo_import(
+        name = lib.split("/")[-1],
+        mojodeps = ["platlib/modular/lib/mojo/" + lib.split("/")[-1] + ".mojoc"],
+        visibility = ["//visibility:public"],
+    )
+    for lib in INTERNAL_PACKAGES
+]
 """.replace("SHARED_LIB_EXT", shared_lib_ext),
     )
 
@@ -170,6 +169,7 @@ def _modular_wheel_repository_impl(rctx):
     rctx.file("BUILD.bazel", """
 load("@rules_pycross//pycross:defs.bzl", "pycross_wheel_library")
 load("@@//bazel:api.bzl", "requirement")
+load("@@//bazel:mojo_aliases.bzl", "INTERNAL_PACKAGES")
 load("@rules_python//python:defs.bzl", "py_binary")
 
 alias(
@@ -202,25 +202,18 @@ alias(
     visibility = ["//visibility:public"],
 )
 
-alias(
-    name = "msa_lib",
-    actual = select({
-        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:msa_lib",
-        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:msa_lib",
-        "@platforms//os:macos": "@module_platlib_macos_arm64//:msa_lib",
-    }),
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "matmul_rs_lib",
-    actual = select({
-        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:matmul_rs_lib",
-        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:matmul_rs_lib",
-        "@platforms//os:macos": "@module_platlib_macos_arm64//:matmul_rs_lib",
-    }),
-    visibility = ["//visibility:public"],
-)
+[
+    alias(
+        name = lib.split("/")[-1],
+        actual = select({
+            "@//:linux_aarch64": "@module_platlib_linux_aarch64//:" + lib.split("/")[-1],
+            "@//:linux_x86_64": "@module_platlib_linux_x86_64//:" + lib.split("/")[-1],
+            "@platforms//os:macos": "@module_platlib_macos_arm64//:" + lib.split("/")[-1],
+        }),
+        visibility = ["//visibility:public"],
+    )
+    for lib in INTERNAL_PACKAGES
+]
 
 pycross_wheel_library(
     name = "mblack-lib",

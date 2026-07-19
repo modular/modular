@@ -40,9 +40,10 @@ _MAX_PACKAGES = {
     "max_mojo": "mojo/max",
 }
 
-_INTERNAL_PACKAGES = [
+INTERNAL_PACKAGES = [
     "//Kernels/lib/matmul_rs",
     "//Kernels/lib/msa",
+    "//Kernels/src/mega_ffn",
 ]
 
 # Packages that are marked testonly and cannot be used by production targets
@@ -103,7 +104,7 @@ def max_aliases():
         ]),
         internal_packages = "\n".join([
             '    "{}",'.format(name)
-            for name in _INTERNAL_PACKAGES
+            for name in INTERNAL_PACKAGES
         ]),
         prod_packages = "\n".join([
             '    "@mojo//:{}",'.format(name)

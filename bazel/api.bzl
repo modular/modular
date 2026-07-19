@@ -103,17 +103,6 @@ def _process_cc_deps(data, deps):
         if dep == "//max/internal:max":
             new_deps.append("@modular_wheel//:max_lib")
             needs_wheel = True
-        elif dep == "//Kernels/lib/msa":
-            new_deps.append("@modular_wheel//:msa_lib")
-            needs_wheel = True
-        elif dep == "//Kernels/lib/matmul_rs":
-            new_deps.append("@modular_wheel//:matmul_rs_lib")
-            needs_wheel = True
-        elif dep == "//Kernels/src/mega_ffn":
-            # Internal-only MegaFFN kernel package: it has no OSS wheel lib and
-            # its graph-op registration is excluded from the public export, so
-            # drop it for open-source builds (mirrors the mef + copybara drops).
-            pass
         else:
             new_deps.append(dep)
 
@@ -121,6 +110,16 @@ def _process_cc_deps(data, deps):
         "deps": new_deps,
         "data": data + (["@modular_wheel//:wheel"] if needs_wheel else []),
     }
+
+def _process_mojo_deps(deps):
+    # TODO: This will break in the presence of select()s
+    new_deps = []
+    for dep in deps:
+        if dep.startswith("//Kernels"):
+            new_deps.append("@modular_wheel//:" + dep.split("/")[-1])
+        else:
+            new_deps.append(dep)
+    return new_deps
 
 # Ignore internal_deps for public builds
 # buildifier: disable=unused-variable
@@ -189,12 +188,10 @@ def modular_generate_stubfiles(name, pyi_srcs, deps = [], tags = [], **_kwargs):
 
 # Ignore use_production_compiler_for_asan for public builds
 # buildifier: disable=unused-variable
-def mojo_library(data = [], deps = [], use_production_compiler_for_asan = None, **kwargs):
+def mojo_library(deps = [], use_production_compiler_for_asan = None, **kwargs):
     _mojo_library(
-        **(kwargs | _process_cc_deps(
-            data = data,
-            deps = deps,
-        ))
+        deps = _process_mojo_deps(deps),
+        **kwargs
     )
 
 # Ignore use_production_compiler_for_asan for public builds
@@ -202,33 +199,12 @@ def mojo_library(data = [], deps = [], use_production_compiler_for_asan = None, 
 def mojo_shared_library(use_production_compiler_for_asan = None, **kwargs):
     _mojo_shared_library(**kwargs)
 
-# buildifier: disable=function-docstring
 def modular_py_binary(mojo_deps = [], **kwargs):
-    new_mojo_deps = []
-    for dep in mojo_deps:
-        if dep == "//Kernels/lib/msa":
-            new_mojo_deps.append("@modular_wheel//:msa_lib")
-        elif dep == "//Kernels/lib/matmul_rs":
-            new_mojo_deps.append("@modular_wheel//:matmul_rs_lib")
-        else:
-            new_mojo_deps.append(dep)
-    _modular_py_binary(mojo_deps = new_mojo_deps, **kwargs)
+    _modular_py_binary(mojo_deps = _process_mojo_deps(mojo_deps), **kwargs)
 
 # buildifier: disable=function-docstring
 def mef(**kwargs):
-    new_deps = []
-    for dep in MOJO_DEPS:
-        if dep == "//Kernels/lib/msa":
-            new_deps.append("@modular_wheel//:msa_lib")
-        elif dep == "//Kernels/lib/matmul_rs":
-            new_deps.append("@modular_wheel//:matmul_rs_lib")
-        elif dep == "//Kernels/src/mega_ffn":
-            # Internal-only MegaFFN kernel package: dropped for open-source
-            # builds (see _process_cc_deps).
-            pass
-        else:
-            new_deps.append(dep)
-    _mef(mojo_deps = new_deps, **kwargs)
+    _mef(mojo_deps = _process_mojo_deps(MOJO_DEPS), **kwargs)
 
 # buildifier: disable=function-docstring
 def copy_files(srcs, **kwargs):
