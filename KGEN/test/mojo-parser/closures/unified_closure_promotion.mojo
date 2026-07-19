@@ -190,7 +190,7 @@ def local_higher_order[
     rank: Int,
     dtype: DType,
     compute_init: def[simd_width: Int]() -> SIMD[dtype, simd_width],
-](compute_init_closure: compute_init,):
+](compute_init_closure: compute_init):
     pass
 
 
@@ -214,4 +214,3 @@ def callIt[T: AnyType, list: MyList[T]]():
         return 1
 
     comptime x = thinClosure[list]()
-

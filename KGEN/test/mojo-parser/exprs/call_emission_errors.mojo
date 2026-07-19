@@ -551,7 +551,7 @@ def differ_take[  # expected-note {{function declared here}}
 
 def differ_wrong[
     input_addr: Int, output_shape: Int, output_addr: Int
-](output: DifferExample[output_shape, input_addr],):
+](output: DifferExample[output_shape, input_addr]):
     # expected-error @below {{has 'def[input_addr: Int, output_shape: Int, output_addr: Int](DifferExample[output_shape, output_addr]) thin -> None' type, but value has type 'def differ_wrong[input_addr: Int, output_shape: Int, output_addr: Int](output: DifferExample[output_shape, input_addr]) thin -> None'}}
     # expected-note @below {{.output.addr of the first value is 'output_addr' but the second value is 'input_addr'}}
     differ_take[differ_wrong]()

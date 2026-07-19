@@ -1160,9 +1160,7 @@ def apply_copyable_fn[
     f(x)
 
 
-def print_wrapper_value[
-    T: Copyable & ImplicitlyDeletable
-](w: SimpleWrapper[T],):
+def print_wrapper_value[T: Copyable & ImplicitlyDeletable](w: SimpleWrapper[T]):
     # CHECK: fn_conversion_scope: ok
     print("fn_conversion_scope: ok")
 

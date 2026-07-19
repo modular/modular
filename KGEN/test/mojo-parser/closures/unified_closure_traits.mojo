@@ -179,7 +179,7 @@ def s5_foo(x: Int):
         T: CollectionElement,
         U: CollectionElement,
         func: def(x: T) -> U,
-    ](item: T, closure: func,) -> U:
+    ](item: T, closure: func) -> U:
         return closure(item)
 
     def double(x: Int) {mut} -> Int:
@@ -265,4 +265,3 @@ def s8_call_inner[
         return f(y) + payload.value
 
     return outer(x)
-

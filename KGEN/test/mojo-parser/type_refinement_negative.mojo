@@ -33,7 +33,7 @@ def process_element_1[T: ProcessTrait](elem: T) -> Int:
 
 def test_wrong_param[
     T: ImplicitlyCopyable, U: ImplicitlyCopyable
-](t_val: T, u_val: U,) -> Int where conforms_to(T, ProcessTrait):
+](t_val: T, u_val: U) -> Int where conforms_to(T, ProcessTrait):
     return process_element_1(u_val)  # expected-error {{cannot be converted}}
 
 
@@ -66,7 +66,7 @@ trait TraitWithDoubleValue:
 
 def test_ambiguous_method[
     T: TraitWithValue
-](x: T,) -> Int where conforms_to(T, TraitWithDoubleValue):
+](x: T) -> Int where conforms_to(T, TraitWithDoubleValue):
     return x.get_value()  # expected-error {{ambiguous call to 'get_value'}}
 
 
@@ -93,7 +93,7 @@ def needs_leak_trait_1[T: LeakTestTrait](x: T) -> Int:
 
 def test_refinement_does_not_leak_past_branch[
     T: ImplicitlyCopyable
-](val: T,) -> Int:
+](val: T) -> Int:
     comptime if conforms_to(T, LeakTestTrait):
         pass
     return needs_leak_trait_1(val)  # expected-error {{cannot be converted}}
@@ -106,7 +106,7 @@ def needs_leak_trait_2[T: LeakTestTrait](x: T) -> Int:
 
 def test_refinement_does_not_leak_to_else_branch[
     T: ImplicitlyCopyable
-](val: T,) -> Int:
+](val: T) -> Int:
     comptime if conforms_to(T, LeakTestTrait):
         return needs_leak_trait_2(val)
     else:
