@@ -2209,10 +2209,8 @@ void UninitializedValueScan::checkUse(Value value, Operation &op,
   }
 
   // Verify that any accessed interior origins are also live.
-  if (!interiorOrigins.empty()) {
-    for (auto origin : interiorOrigins)
-      checkInteriorOriginUsage(origin, value, op);
-  }
+  for (auto origin : interiorOrigins)
+    checkInteriorOriginUsage(origin, value, op);
 }
 
 /// One of the specified fields is missing, so emit an error about it.  This is
@@ -2493,6 +2491,12 @@ void UninitializedValueScan::checkInteriorOriginUsage(
   // (as in Def #2 not dominating r1) then it is invalid.
   Operation *definingOp = entry.getPointer();
   Operation *operandPt = getProgramPointThatDefinedInteriorOrigin(operand);
+
+  // If this is checking liveness of a result slot for a return, use the
+  // location of the return itself.
+  if (!operandPt && isa<KGEN::ReturnOp, LIT::ErrorReturnOp>(op))
+    operandPt = &op;
+
   // TODO: What about block arguments?
   assert(operandPt && "operand wasn't defined by a program point?");
 
@@ -2530,10 +2534,8 @@ void UninitializedValueScan::checkOriginAccesses(TypedAttr origin,
   }
 
   // Verify that any accessed interior origins are also live.
-  if (!interiorOrigins.empty()) {
-    for (auto origin : interiorOrigins)
-      checkInteriorOriginUsage(origin, operand, op);
-  }
+  for (auto origin : interiorOrigins)
+    checkInteriorOriginUsage(origin, operand, op);
 }
 
 /// This function is called when an operation uses a #lit.any.origin origin.
