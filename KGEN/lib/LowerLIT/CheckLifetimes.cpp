@@ -2663,18 +2663,11 @@ void UninitializedValueScan::scanFunction(FunctionLikeOp func) {
 /// initialized, and returns the set of values that are live at the end of the
 /// block.
 void UninitializedValueScan::scanBlock(Block &block) {
-  SmallVector<std::pair<Value, OperandEffect>> operandEffects;
-  SmallVector<ResultEffect> resultEffects;
-  SmallVector<std::pair<TypedAttr, Value>> originEffects;
+  OperationEffects opEffects(valueSet.getOriginFinder());
   SmallVector<TypedAttr> definedOrigins;
   for (Operation &op : block) {
-    operandEffects.clear();
-    resultEffects.clear();
-    originEffects.clear();
     definedOrigins.clear();
-    auto overall =
-        getOperationEffects(op, operandEffects, resultEffects, originEffects,
-                            valueSet.getOriginFinder());
+    auto overall = opEffects.analyze(op);
     /// If the operation is unknown, ignore it.
     if (overall == OverallOpValueEffect::unknownOp) {
       // NOTE: Can log here when extending things.
@@ -2685,7 +2678,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
     bool hasAnyOrigin = false;
 
     // Handle all the normal operand and result effects.
-    for (auto [operand, effect] : operandEffects) {
+    for (auto [operand, effect] : opEffects.operands) {
       switch (effect) {
       case OperandEffect::regUse:
         checkUse(operand, op, /*isDeref=*/false);
@@ -2723,14 +2716,15 @@ void UninitializedValueScan::scanBlock(Block &block) {
     }
 
     // Process any origins accessed indirectly.
-    for (auto [origin, value] : originEffects) {
+    for (auto [origin, value] : opEffects.origins) {
       checkOriginAccesses(origin, value, op);
       hasAnyOrigin |= sugarIsa<AnyOriginAttr>(origin);
     }
 
-    assert(resultEffects.size() == op.getNumResults() &&
-           "getOperationEffects returned wrong # effects");
-    for (auto [result, effect] : llvm::zip(op.getResults(), resultEffects)) {
+    assert(opEffects.results.size() == op.getNumResults() &&
+           "OperationEffects::analyze returned wrong # effects");
+    for (auto [result, effect] :
+         llvm::zip(op.getResults(), opEffects.results)) {
 #ifndef NDEBUG
       OriginTrackable trackable(result);
       // Perform some general sanity checking of the OriginTrackable
@@ -4083,19 +4077,12 @@ void DestructorInsertion::scanFunction() {
 /// block.
 void DestructorInsertion::scanBlock(Block &block) {
   // Process each operation bottom-up in the block.
-  SmallVector<std::pair<Value, OperandEffect>> operandEffects;
-  SmallVector<ResultEffect> resultEffects;
-  SmallVector<std::pair<TypedAttr, Value>> originEffects;
+  OperationEffects opEffects(valueSet.getOriginFinder());
 
   SmallVector<Operation *> opsToRemove;
 
   for (Operation &op : llvm::reverse(block)) {
-    operandEffects.clear();
-    resultEffects.clear();
-    originEffects.clear();
-    auto overall =
-        getOperationEffects(op, operandEffects, resultEffects, originEffects,
-                            valueSet.getOriginFinder());
+    auto overall = opEffects.analyze(op);
     switch (overall) {
     case OverallOpValueEffect::unknownOp:
       // NOTE: Enable logging when debugging.
@@ -4110,10 +4097,10 @@ void DestructorInsertion::scanBlock(Block &block) {
       checkLocalControlFlowOp(op);
       break;
     case OverallOpValueEffect::ifLikeOp:
-      checkIfLikeOp(op, resultEffects);
+      checkIfLikeOp(op, opEffects.results);
       break;
     case OverallOpValueEffect::elifOp:
-      checkElIfOp(cast<HLCF::ElifOp>(op), resultEffects);
+      checkElIfOp(cast<HLCF::ElifOp>(op), opEffects.results);
       break;
     case OverallOpValueEffect::loopOp:
       checkLoopOp(op);
@@ -4129,11 +4116,12 @@ void DestructorInsertion::scanBlock(Block &block) {
                                  std::next(Block::iterator(&op)));
     DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
 
-    assert((resultEffects.size() == op.getNumResults() ||
+    assert((opEffects.results.size() == op.getNumResults() ||
             overall == OverallOpValueEffect::ifLikeOp) &&
-           "getOperationEffects returned wrong # effects");
+           "OperationEffects::analyze returned wrong # effects");
 
-    for (auto [result, effect] : llvm::zip(op.getResults(), resultEffects)) {
+    for (auto [result, effect] :
+         llvm::zip(op.getResults(), opEffects.results)) {
       // CheckUninit pass does all the paranoid checking, don't duplicate it.
       switch (effect) {
       case ResultEffect::ignore:
@@ -4162,7 +4150,7 @@ void DestructorInsertion::scanBlock(Block &block) {
     }
 
     // Handle all the normal operand and result effects.
-    for (auto [operand, effect] : operandEffects) {
+    for (auto [operand, effect] : opEffects.operands) {
       switch (effect) {
       case OperandEffect::regUse:
         checkUse(operand, /*isDeref=*/false, dtorInserter);
@@ -4204,7 +4192,7 @@ void DestructorInsertion::scanBlock(Block &block) {
     }
 
     // Process any other origins accessed indirectly.
-    for (auto [origin, value] : originEffects) {
+    for (auto [origin, value] : opEffects.origins) {
       (void)value;
       checkOriginAccesses(origin, dtorInserter);
     }

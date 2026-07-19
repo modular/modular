@@ -241,14 +241,9 @@ Value OriginTrackable::findUnderlyingValueFromField(Value value) {
 // OperationValueEffects
 //===----------------------------------------------------------------------===//
 
-/// This is a helper for LIT::getOperationEffects split out since calls are so
-/// interesting.
-static void
-getCallOpEffects(Operation &op,
-                 SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
-                 SmallVectorImpl<ResultEffect> &results,
-                 SmallVectorImpl<std::pair<TypedAttr, Value>> &origins,
-                 CachedOriginFinder &originFinder) {
+/// This is a helper for `OperationEffects::analyze` split out since calls are
+/// so interesting.
+void OperationEffects::analyzeCallOp(Operation &op) {
   FuncType signature;
   OperandRange callArguments = op.getOperands();
   ArrayRef<ArgConvention> conventions;
@@ -416,11 +411,12 @@ getCallOpEffects(Operation &op,
 
 /// This computes the effects that an operation has on any operands and result
 /// values. This information is used by both phases of CheckLifetimes.
-OverallOpValueEffect LIT::getOperationEffects(
-    Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
-    SmallVectorImpl<ResultEffect> &results,
-    SmallVectorImpl<std::pair<TypedAttr, Value>> &origins,
-    CachedOriginFinder &originFinder) {
+OverallOpValueEffect OperationEffects::analyze(Operation &op) {
+  // Get ready to populate the new fields.
+  operands.clear();
+  results.clear();
+  origins.clear();
+
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.  These indexing operations are handled specially.
   if (isa<RefStructGEROp, RebindOp, RefImmutOp>(op) ||
@@ -432,9 +428,10 @@ OverallOpValueEffect LIT::getOperationEffects(
 
   /// When all of the operands of an instruction have an effect and they are
   /// in a fixed order, this helper can help specify them.
-  auto setOperandEffects = [&](ArrayRef<OperandEffect> effects) {
-    assert(effects.size() == op.getNumOperands() && "operand count mismatch");
-    for (auto [operand, effect] : llvm::zip(op.getOperands(), effects))
+  auto setOperandEffects = [&](ArrayRef<OperandEffect> operandEffects) {
+    assert(operandEffects.size() == op.getNumOperands() &&
+           "operand count mismatch");
+    for (auto [operand, effect] : llvm::zip(op.getOperands(), operandEffects))
       operands.push_back({operand, effect});
   };
 
@@ -474,10 +471,10 @@ OverallOpValueEffect LIT::getOperationEffects(
   }
 
   if (auto use = dyn_cast<OwnershipUseOp>(op)) {
-    auto effect = isa<RefType>(op.getOperand(0).getType())
-                      ? OperandEffect::memLoad
-                      : OperandEffect::regUse;
-    operands.push_back({use.getOperand(), effect});
+    auto operandEffect = isa<RefType>(op.getOperand(0).getType())
+                             ? OperandEffect::memLoad
+                             : OperandEffect::regUse;
+    operands.push_back({use.getOperand(), operandEffect});
     return {};
   }
 
@@ -497,22 +494,24 @@ OverallOpValueEffect LIT::getOperationEffects(
   // because not all control flow paths will execute the operation.
   if (auto refFromPtr = dyn_cast<RefFromPointerOp>(op)) {
     // Ignore the pointer input.
-    ResultEffect effect;
+    ResultEffect resultEffect;
     if (refFromPtr.getStartUninit()) {
-      effect = refFromPtr.getEndUninit() ? ResultEffect::memDefineUninitToUninit
-                                         : ResultEffect::memDefineUninitToInit;
+      resultEffect = refFromPtr.getEndUninit()
+                         ? ResultEffect::memDefineUninitToUninit
+                         : ResultEffect::memDefineUninitToInit;
     } else {
-      effect = refFromPtr.getEndUninit() ? ResultEffect::memDefineInitToUninit
-                                         : ResultEffect::memDefineInitToInit;
+      resultEffect = refFromPtr.getEndUninit()
+                         ? ResultEffect::memDefineInitToUninit
+                         : ResultEffect::memDefineInitToInit;
     }
-    results.push_back(effect);
+    results.push_back(resultEffect);
     return {};
   }
 
   // If this is a call, investigate each of the operands along with the
   // argument convention effects.
   if (isa<LIT::CallIndirectOp, KGENCallOpInterface>(op)) {
-    getCallOpEffects(op, operands, results, origins, originFinder);
+    analyzeCallOp(op);
     return {};
   }
   // A closure init is analogous to a call to a constructor of a struct.
@@ -586,22 +585,22 @@ OverallOpValueEffect LIT::getOperationEffects(
   // If-like operations.
   if (isa<ParamIfOp, HLCF::IfOp>(op)) {
     // If-like ops can return owned results.
-    for (auto result : op.getResults()) {
-      auto effect = isTypeObviouslyTrivial(result.getType())
-                        ? ResultEffect::ignore
-                        : ResultEffect::regDefine;
-      results.push_back(effect);
+    for (auto opResult : op.getResults()) {
+      auto resultEffect = isTypeObviouslyTrivial(opResult.getType())
+                              ? ResultEffect::ignore
+                              : ResultEffect::regDefine;
+      results.push_back(resultEffect);
     }
     return OverallOpValueEffect::ifLikeOp;
   }
 
   if (isa<HLCF::ElifOp>(op)) {
     // If-like ops can return owned results.
-    for (auto result : op.getResults()) {
-      auto effect = isTypeObviouslyTrivial(result.getType())
-                        ? ResultEffect::ignore
-                        : ResultEffect::regDefine;
-      results.push_back(effect);
+    for (auto opResult : op.getResults()) {
+      auto resultEffect = isTypeObviouslyTrivial(opResult.getType())
+                              ? ResultEffect::ignore
+                              : ResultEffect::regDefine;
+      results.push_back(resultEffect);
     }
     return OverallOpValueEffect::elifOp;
   }
