@@ -440,17 +440,24 @@ struct RaisingFieldwiseInit(ImplicitlyCopyable):
         pass
 
 # ===----------------------------------------------------------------------=== #
-# @__defines_interior_origins
+# defines_interior_origins (from explicit return type)
 # ===----------------------------------------------------------------------=== #
 
-# CHECK-LABEL: lit.fn @"with_interior_origins()"
+struct InteriorOriginReturnTest:
+    var data: UnsafePointer[Int, UntrackedOrigin[mut=True]]
+
+    def __init__(out self):
+        self.data = UnsafePointer[Int, UntrackedOrigin[mut=True]].unsafe_dangling()
+
+# CHECK-LABEL: lit.fn @"with_interior_origins(decorators::InteriorOriginReturnTest)"
 # CHECK-SAME: defines_interior_origins
-@__defines_interior_origins
-def with_interior_origins():
-    pass
+def with_interior_origins(c: InteriorOriginReturnTest) -> ref[
+    c.data._get_ref_with_unsafe_interior_origin["element"](c)
+] Int:
+    return c.data._get_ref_with_unsafe_interior_origin["element"](c)
 
 
 # CHECK-LABEL: lit.fn @"without_interior_origins()"
-# CHECK-NOT: defines_interior_origins
+# CHECK-SAME: () -> !kgen.none attributes {sourceName = "without_interior_origins"
 def without_interior_origins():
     pass

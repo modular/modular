@@ -198,7 +198,7 @@ struct OperationEffects {
   SmallVector<ResultEffect> results;
   SmallVector<std::pair<TypedAttr, Value>> origins;
   /// Interior origins guaranteed live by this operation, e.g. a call to a
-  /// callee marked `@__defines_interior_origins`.
+  /// callee whose declared return type contains an interior origin.
   SmallVector<InteriorOriginAttr> interiorOriginsDefined;
 
   OperationEffects(CachedOriginFinder &originFinder)

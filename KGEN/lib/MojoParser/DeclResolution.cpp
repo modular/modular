@@ -754,9 +754,6 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
   } else if (spelling == "__unsafe_nested_origins_read_only") {
     applyArgumentless(spelling, callNode,
                       [&]() { tcSignature.isNestedOriginsReadOnly = true; });
-  } else if (spelling == "__defines_interior_origins") {
-    applyArgumentless(spelling, callNode,
-                      [&]() { tcSignature.definesInteriorOrigins = true; });
   } else if (spelling == "implicit") {
     applyImplicitDecorator(decorator->getLoc(), callNode);
   } else if (spelling == "extern") {
