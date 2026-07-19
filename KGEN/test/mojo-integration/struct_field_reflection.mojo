@@ -14,7 +14,7 @@ trait CanDoSomething:
     def do_something(self):
         comptime names = reflect[Self].field_names()
 
-        comptime for i in range(names.size):
+        comptime for i in range(names.length):
             print(materialize[names[i]](), ": ", sep="", end="")
             comptime assert conforms_to(
                 reflect[Self].field_types()[i], CanDoSomething
