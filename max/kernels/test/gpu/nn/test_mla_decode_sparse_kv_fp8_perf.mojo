@@ -357,38 +357,81 @@ def main() raises:
             #   local_q_head    = q_head / TP = 64 / 8 = 8
             # Sweep batch_size 1..8; sequence_length=1 rows are the
             # per-position reference.
+            # KERN-3217 q1 split-K tuning A/B: q_len=1 sparse FP8 decode,
+            # topk=2048, cache in {2048, 1024}, bs 1..8. The baseline binary
+            # picks np=4 (unchanged dispatch); the candidate binary picks np
+            # tracking the effective (clamped) KV page count. The
+            # num_partitions PRINTED here is the cache-based heuristic value
+            # and does NOT reflect the sparse launch np — read the actual np
+            # from nsys decode grid.z (np = grid.z / batch_size).
             for bs in range(1, 9):
-                # q_len=6 (MTP5+1): A = unfolded baseline, B = shared-index fold.
                 bench_sparse_kv_fp8[
                     DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=False
                 ](
-                    "glm52_tp8_mtp5",
-                    bs,
-                    2048,
-                    ctx,
-                    topk=2048,
-                    q_max_seq_len=6,
-                )
-                bench_sparse_kv_fp8[
-                    DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=True
-                ](
-                    "glm52_tp8_mtp5",
-                    bs,
-                    2048,
-                    ctx,
-                    topk=2048,
-                    q_max_seq_len=6,
-                )
-                # q_len=1 reference (per-position; fold not applicable).
-                bench_sparse_kv_fp8[
-                    DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=False
-                ](
-                    "glm52_tp8_mtp5",
+                    "glm52_q1_splitk",
                     bs,
                     2048,
                     ctx,
                     topk=2048,
                     q_max_seq_len=1,
                 )
+                bench_sparse_kv_fp8[
+                    DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=False
+                ](
+                    "glm52_q1_splitk",
+                    bs,
+                    1024,
+                    ctx,
+                    topk=2048,
+                    q_max_seq_len=1,
+                )
+            # bs=16 regression probe: batch_size > 8 is OUT of the tuning's
+            # scope (the dispatch guard is batch_size <= 8), so it reverts to
+            # the OLD partition policy (np=4). Launch-only check — confirm np=4
+            # via nsys decode grid.z (= 4*16 = 64); the timing here is NOT a
+            # perf claim.
+            bench_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=False
+            ](
+                "glm52_q1_splitk_bs16probe",
+                16,
+                2048,
+                ctx,
+                topk=2048,
+                q_max_seq_len=1,
+            )
+            bench_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=False
+            ](
+                "glm52_q1_splitk_bs16probe",
+                16,
+                1024,
+                ctx,
+                topk=2048,
+                q_max_seq_len=1,
+            )
+            # Byte-identical sanity: q_len>1 is OUT of scope for the q1 tuning.
+            # These q_len=6 cells (baseline + shared-index fold) must be
+            # unchanged between the baseline and candidate binaries.
+            bench_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=False
+            ](
+                "glm52_q6_unchanged",
+                8,
+                2048,
+                ctx,
+                topk=2048,
+                q_max_seq_len=6,
+            )
+            bench_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=True
+            ](
+                "glm52_q6_unchanged",
+                8,
+                2048,
+                ctx,
+                topk=2048,
+                q_max_seq_len=6,
+            )
         else:
             print("skip: requires SM100 NVIDIA GPU")

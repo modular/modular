@@ -288,6 +288,13 @@ def run_test_sparse_kv_fp8[
     ctx: DeviceContext,
     topk: Int,
     q_max_seq_len: Int = 1,
+    # np-invariance knob (KERN-3217 q1 split-K tuning): >0 forces the split-K
+    # partition count via the capturable-graph num_partitions_in override, so a
+    # single shape can be verified across np values (default heuristic, the
+    # candidate-selected np, and an adversarial over-split). 0 -> use the
+    # dispatch heuristic. Drives BOTH the decode grid.z (bs*np) and the combine
+    # n_splits, so decode and combine always agree on np.
+    forced_np: Int = 0,
 ) raises:
     print(
         "test:",
@@ -744,12 +751,21 @@ def run_test_sparse_kv_fp8[
 
     var indices_stride = topk
 
+    # np-invariance override: force num_partitions when forced_np>0, else let
+    # the dispatch heuristic pick. One value drives decode grid.z AND combine
+    # n_splits (see flare_mla_decoding.num_partitions_in).
+    var _np_ovr = Optional[Int](forced_np) if forced_np > 0 else Optional[Int](
+        None
+    )
+
     print(
         "  Launching MLA sparse KV_FP8 decode kernel...",
         " topk=",
         topk,
         " num_keys=",
         num_keys,
+        " forced_np=",
+        forced_np,
     )
 
     comptime if use_causal:
@@ -772,6 +788,7 @@ def run_test_sparse_kv_fp8[
                 d_indices_device.unsafe_ptr()
             ),
             indices_stride=indices_stride,
+            num_partitions_in=_np_ovr,
         )
     else:
         flare_mla_decoding[
@@ -793,6 +810,7 @@ def run_test_sparse_kv_fp8[
                 d_indices_device.unsafe_ptr()
             ),
             indices_stride=indices_stride,
+            num_partitions_in=_np_ovr,
         )
 
     ctx.synchronize()
@@ -2688,6 +2706,150 @@ def main() raises:
             ctx.default_device_info
         ):
             seed(42)
+
+            # =====================================================
+            # KERN-3217 q1 split-K tuning: np-invariance + zero-work coverage.
+            # The dispatch change relaxes the split-K page floor for the
+            # q_len=1, batch_size<=8, sparse FP8 (NullMask, no extra_kv /
+            # variable_topk / attn_sink) path so np tracks the effective
+            # (clamped) KV page count.
+            # These cases prove the split-K decode + combine produce the
+            # SAME (reference-matching) output across np: the default heuristic,
+            # the candidate-selected np, and an adversarial over-split forcing
+            # zero-work splits. forced_np drives BOTH decode grid.z and combine
+            # n_splits, so decode/combine always agree on np. (Read the ACTUAL
+            # launched np from nsys grid.z; the printed num_partitions is the
+            # cache-based heuristic value, which does not reflect the sparse
+            # launch np.)
+            # =====================================================
+            # --- effective-2048 domain (cache=2048, topk=2048 -> 16 pages):
+            #     candidate heuristic selects np=16 (one page per split). ---
+            run_test_sparse_kv_fp8[DType.bfloat16, DType.float8_e4m3fn, 8](
+                "q1_np_inv_eff2048_bs2_default",
+                2,
+                2048,
+                ctx,
+                topk=2048,
+                q_max_seq_len=1,
+                forced_np=0,
+            )
+            run_test_sparse_kv_fp8[DType.bfloat16, DType.float8_e4m3fn, 8](
+                "q1_np_inv_eff2048_bs2_np4",
+                2,
+                2048,
+                ctx,
+                topk=2048,
+                q_max_seq_len=1,
+                forced_np=4,
+            )
+            run_test_sparse_kv_fp8[DType.bfloat16, DType.float8_e4m3fn, 8](
+                "q1_np_inv_eff2048_bs2_np8",
+                2,
+                2048,
+                ctx,
+                topk=2048,
+                q_max_seq_len=1,
+                forced_np=8,
+            )
+            run_test_sparse_kv_fp8[DType.bfloat16, DType.float8_e4m3fn, 8](
+                "q1_np_inv_eff2048_bs2_np16",
+                2,
+                2048,
+                ctx,
+                topk=2048,
+                q_max_seq_len=1,
+                forced_np=16,
+            )
+            # Primary reviewer batch (bs=8): default (candidate np=16) + np=16.
+            run_test_sparse_kv_fp8[DType.bfloat16, DType.float8_e4m3fn, 8](
+                "q1_np_inv_eff2048_bs8_default",
+                8,
+                2048,
+                ctx,
+                topk=2048,
+                q_max_seq_len=1,
+                forced_np=0,
+            )
+            run_test_sparse_kv_fp8[DType.bfloat16, DType.float8_e4m3fn, 8](
+                "q1_np_inv_eff2048_bs8_np16",
+                8,
+                2048,
+                ctx,
+                topk=2048,
+                q_max_seq_len=1,
+                forced_np=16,
+            )
+            # --- effective-1024 domain (cache=1024, topk=1024 -> 8 pages):
+            #     forced-np proxy shape (topk != 2048, so the tuning gate is
+            #     false and the heuristic keeps the old policy); np=8 is the
+            #     one-page-per-split value forced here for invariance. ---
+            run_test_sparse_kv_fp8[DType.bfloat16, DType.float8_e4m3fn, 8](
+                "q1_np_inv_eff1024_bs2_default",
+                2,
+                1024,
+                ctx,
+                topk=1024,
+                q_max_seq_len=1,
+                forced_np=0,
+            )
+            run_test_sparse_kv_fp8[DType.bfloat16, DType.float8_e4m3fn, 8](
+                "q1_np_inv_eff1024_bs2_np8",
+                2,
+                1024,
+                ctx,
+                topk=1024,
+                q_max_seq_len=1,
+                forced_np=8,
+            )
+            # ADVERSARIAL over-split: 8 pages forced to np=16 -> 8 zero-work
+            # splits. Must stay reference-correct with zero NaN (validates the
+            # num_keys_this_split==0 early-exit + combine -inf partition
+            # handling). The heuristic will NOT select this (np is capped at the
+            # page count); coverage is retained via the explicit override.
+            run_test_sparse_kv_fp8[DType.bfloat16, DType.float8_e4m3fn, 8](
+                "q1_np_inv_eff1024_bs2_np16_ADVERSARIAL_oversplit",
+                2,
+                1024,
+                ctx,
+                topk=1024,
+                q_max_seq_len=1,
+                forced_np=16,
+            )
+            # --- 9-page domain (cache=1152, topk=1152 -> 9 pages): matches the
+            #     CLAMPED work of the in-scope cache=1024/topk=2048 shape, for
+            #     which the tuned dispatch selects np=9. Here topk != 2048, so
+            #     the gate is false; np=9 is forced for invariance coverage. ---
+            run_test_sparse_kv_fp8[DType.bfloat16, DType.float8_e4m3fn, 8](
+                "q1_np_inv_9page_bs2_default",
+                2,
+                1152,
+                ctx,
+                topk=1152,
+                q_max_seq_len=1,
+                forced_np=0,
+            )
+            run_test_sparse_kv_fp8[DType.bfloat16, DType.float8_e4m3fn, 8](
+                "q1_np_inv_9page_bs2_np16_ADVERSARIAL_oversplit",
+                2,
+                1152,
+                ctx,
+                topk=1152,
+                q_max_seq_len=1,
+                forced_np=16,
+            )
+            # --- exact clamped production shape (cache=1024, topk=2048):
+            #     the KERN-3217 tuning gate is TRUE here, so the automatic
+            #     dispatch clamps the split length to min(2048, 1024+1) ->
+            #     9 pages and selects np=9 itself (forced_np=0). ---
+            run_test_sparse_kv_fp8[DType.bfloat16, DType.float8_e4m3fn, 8](
+                "q1_np_inv_topk2048_cache1024_bs2_default",
+                2,
+                1024,
+                ctx,
+                topk=2048,
+                q_max_seq_len=1,
+                forced_np=0,
+            )
 
             # =====================================================
             # Read-once shared-index MTP fold (KERN-3141), shared_index=True.
