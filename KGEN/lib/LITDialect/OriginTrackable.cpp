@@ -406,6 +406,16 @@ void OperationEffects::analyzeCallOp(Operation &op) {
     results.push_back(isTypeObviouslyTrivial(op.getResult(0).getType())
                           ? ResultEffect::ignore
                           : ResultEffect::regDefine);
+    if (signature.getDefinesInteriorOrigins()) {
+      for (TypedAttr origin :
+           originFinder.findOriginsIn({op.getResult(0).getType()}, {})) {
+        // Given a def of something with an "a.list["x"].second.field["y"].z"
+        // origin, we need to mark the "x" and "y" interior origins live.
+        origin.walk([&](InteriorOriginAttr into) {
+          interiorOriginsDefined.push_back(into);
+        });
+      }
+    }
   }
 }
 
@@ -416,6 +426,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
   operands.clear();
   results.clear();
   origins.clear();
+  interiorOriginsDefined.clear();
 
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.  These indexing operations are handled specially.

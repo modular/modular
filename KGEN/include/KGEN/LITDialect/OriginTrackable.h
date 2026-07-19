@@ -7,6 +7,7 @@
 #ifndef KGEN_LITDIALECT_ORIGIN_TRACKABLE_H
 #define KGEN_LITDIALECT_ORIGIN_TRACKABLE_H
 
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Value.h"
@@ -196,6 +197,9 @@ struct OperationEffects {
   SmallVector<std::pair<Value, OperandEffect>> operands;
   SmallVector<ResultEffect> results;
   SmallVector<std::pair<TypedAttr, Value>> origins;
+  /// Interior origins guaranteed live by this operation, e.g. a call to a
+  /// callee marked `@__defines_interior_origins`.
+  SmallVector<InteriorOriginAttr> interiorOriginsDefined;
 
   OperationEffects(CachedOriginFinder &originFinder)
       : originFinder(originFinder) {}
