@@ -2870,7 +2870,7 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
       ctx, implicitOriginDecls.size(),
       getOriginsAccessibleByParams(paramListAttr, paramList.paramDeclAttrs,
                                    paramList.shared, captureOrigins),
-      isNestedOriginsReadOnly);
+      isNestedOriginsReadOnly, definesInteriorOrigins);
 
   /// We shouldn't have internal verifier errors here, but if we do, try to
   /// emit them at some location of merit because something snuck through

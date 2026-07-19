@@ -388,7 +388,8 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   auto metadata =
       FnMetadataAttr::get(ctx, oldFnMetadata.getNumImplicitOriginDecls(),
                           oldFnMetadata.getCaptureOrigins(),
-                          oldFnMetadata.getIsNestedOriginsReadOnly());
+                          oldFnMetadata.getIsNestedOriginsReadOnly(),
+                          oldFnMetadata.getDefinesInteriorOrigins());
   return FuncTypeGeneratorType::get(
       sig.getInputParamTypes(),
       FunctionType::get(ctx, signatureInputs, sig.getResults()), argConventions,
@@ -1814,7 +1815,8 @@ static FnTypeGeneratorType prependImplicitOriginDecl(FnTypeGeneratorType sig) {
   FnMetadataAttr oldMeta = sig.getFnMetadata();
   FnMetadataAttr newMeta = FnMetadataAttr::get(
       sig.getContext(), oldMeta.getNumImplicitOriginDecls() + 1,
-      oldMeta.getCaptureOrigins(), oldMeta.getIsNestedOriginsReadOnly());
+      oldMeta.getCaptureOrigins(), oldMeta.getIsNestedOriginsReadOnly(),
+      oldMeta.getDefinesInteriorOrigins());
   return FnTypeGeneratorType::get(
       sig.getInputParamTypes(), sig.getValues(), sig.getArgConventions(),
       sig.getFnEffects(), newMeta, sig.getMetadata(), sig.getArgListAttrs());

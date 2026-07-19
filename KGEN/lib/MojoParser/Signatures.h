@@ -316,6 +316,9 @@ public:
   /// nested origins are not considered in exclusivity checking.
   /// TODO: Generalize this to mutation sets.
   bool isNestedOriginsReadOnly = false;
+  /// Whether `@__defines_interior_origins` was specified: the function
+  /// establishes new interior origins for its result.
+  bool definesInteriorOrigins = false;
 
   /// This performs any special checks over the declaration based on its name
   /// and whether it is a method.  This happens after decorator processing

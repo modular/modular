@@ -175,7 +175,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
       argListAttrs.getContext(), numImplicitOriginDecls,
       getOriginsAccessibleByParams(paramListAttrs, params, shared,
                                    /*captureOrigins=*/nullptr),
-      /*isNestedOriginsReadOnly=*/false);
+      /*isNestedOriginsReadOnly=*/false, /*definesInteriorOrigins=*/false);
   FunctionType functionType =
       builder.getFunctionType(adjustedArgTypes, {resultType});
   Location location = shared.translateLocation(loc);

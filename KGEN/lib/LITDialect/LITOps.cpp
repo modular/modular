@@ -793,6 +793,8 @@ static ParseResult parseLITFunctionSignature(
   }
   bool isNestedOriginsReadOnly =
       succeeded(p.parseOptionalKeyword("no_nested_origin_exclusivity"));
+  bool definesInteriorOrigins =
+      succeeded(p.parseOptionalKeyword("defines_interior_origins"));
 
   SmallVector<ParamDeclAttr> originDecls;
   auto parseOriginDecl = [&]() -> ParseResult {
@@ -876,8 +878,9 @@ static ParseResult parseLITFunctionSignature(
       PogListAttr::get(p.getContext(), argNames, argPassingKinds, argVariadics,
                        defaults, origVariadicConvention,
                        /*bodyConstraints=*/{});
-  auto metadata = FnMetadataAttr::get(p.getContext(), originDecls.size(),
-                                      captureOrigins, isNestedOriginsReadOnly);
+  auto metadata =
+      FnMetadataAttr::get(p.getContext(), originDecls.size(), captureOrigins,
+                          isNestedOriginsReadOnly, definesInteriorOrigins);
   signature = FuncTypeGeneratorType::remapToFuncTypeGenerator(
       params, functionType, argConventions, effects, metadata, paramListAttr,
       [&] { return p.emitError(startLoc); }, pogList);
@@ -911,6 +914,11 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   }
   if (signature.getIsNestedOriginsReadOnly())
     p << "no_nested_origin_exclusivity";
+  if (signature.getDefinesInteriorOrigins()) {
+    if (signature.getIsNestedOriginsReadOnly())
+      p << ' ';
+    p << "defines_interior_origins";
+  }
 
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, params.drop_back(originDecls.size()),
@@ -1188,7 +1196,6 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
         ImplicitConversionKindAttr::get(ctx, ImplicitConversionKind::None),
         /*isExtern=*/none,
         /*isDefaultedTraitFn=*/none,
-        /*definesInteriorOrigins=*/none,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(SpecialFunctionKind::kNormal)),

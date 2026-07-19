@@ -250,15 +250,11 @@ getCallOpEffects(Operation &op,
                  SmallVectorImpl<std::pair<TypedAttr, Value>> &origins,
                  CachedOriginFinder &originFinder) {
   FuncType signature;
-  PogListAttr pogs;
   OperandRange callArguments = op.getOperands();
   ArrayRef<ArgConvention> conventions;
 
   if (auto directCall = dyn_cast<KGENCallOpInterface>(op)) {
     // These all have the callee as a parameter, not operand.
-    pogs = cast<FnTypeGeneratorType>(directCall.getCalleeType())
-               .getBody()
-               .getArgListAttrs();
     signature = directCall.getCalleeType().getBody();
     conventions = signature.getArgConventions().drop_back(
         signature.getNumAsyncReturnSlots());

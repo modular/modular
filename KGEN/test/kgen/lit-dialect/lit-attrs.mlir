@@ -25,6 +25,10 @@
 // CHECK-SAME: #lit.fn_metadata<2, false>
 "some.metadata4"() {metadata = #lit.fn_metadata<2, false>} : () -> ()
 
+// CHECK-LABEL: "some.metadata5"
+// CHECK-SAME: #lit.fn_metadata<2, false, true>
+"some.metadata5"() {metadata = #lit.fn_metadata<2, false, true>} : () -> ()
+
 // CHECK-LABEL: "none.type"
 // CHECK-SAME: #kgen.none : !kgen.none
 "none.type"() {a = #kgen.none : !kgen.none} : () -> ()
