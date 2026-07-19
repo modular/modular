@@ -345,9 +345,8 @@ def run_one_case(
     # A token in batch 0 with local_idx < extend[0]//2 must NOT see this key; if
     # the kernel reads it (intra-diagonal-block causality bug) the block max
     # jumps detectably above the f32 reference (which excludes it).
-    var plant_key = -1
     if spec.plant == 1 and batch >= 1 and extend[0] >= 2:
-        plant_key = prefix[0] + extend[0] // 2  # within batch-0 key region
+        var plant_key = prefix[0] + extend[0] // 2  # within batch-0 key region
         for d in range(idx_head_dim):
             k_host[plant_key * idx_head_dim + d] = Scalar[kv_type](PLANT_VAL)
 

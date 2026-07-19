@@ -103,7 +103,7 @@ def main() raises:
 
         var vl_dev = ctx.enqueue_create_buffer[DType.uint32](1)
         ctx.enqueue_memset(vl_dev, UInt32(valid_length))
-        var vl = LayoutTensor[DType.uint32, Layout.row_major(1), MutAnyOrigin](
+        var vl = LayoutTensor[DType.uint32, Layout.row_major(1)](
             vl_dev.unsafe_ptr()
         )
         var mask = CausalPaddingMask(vl)

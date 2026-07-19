@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("//bazel:api.bzl", "modular_py_binary", "mojo_test")
 
 package(default_visibility = ["//max:consumers"])
@@ -5,6 +6,52 @@ package(default_visibility = ["//max:consumers"])
 exports_files([
     "run_nightly_fuzz.sh",
 ])
+
+# Compile-guard for the fuzz targets. Every fuzz_*.mojo.test below is `manual`
+# (it runs via fuzz.py and the nightly, not the normal test sweep), so `//...`
+# and `:all` skip them for both build and test -- which let an upstream
+# LayoutTensor origin-API change silently break 8 of them on main. This
+# build_test is NOT manual, so the targets stay in the build graph: bazel-diff
+# selects it whenever one of their deps changes and fails the PR if any stops
+# compiling. It only builds (never launches) the binaries, so there is no GPU
+# execution and no fuzz flake. Keep this list in sync when adding a target.
+build_test(
+    name = "fuzz_build_test",
+    tags = ["gpu"],
+    targets = [
+        ":fuzz_block_scaled_fp4.mojo.test",
+        ":fuzz_block_scaled_mxfp8.mojo.test",
+        ":fuzz_ep_combine.mojo.test",
+        ":fuzz_fused_qk_rms_norm.mojo.test",
+        ":fuzz_fused_qk_rope.mojo.test",
+        ":fuzz_fused_qkv_index_matmul_mxfp8.mojo.test",
+        ":fuzz_fused_qkv_matmul_mxfp8.mojo.test",
+        ":fuzz_fused_rope_rmsnorm.mojo.test",
+        ":fuzz_fused_swiglu_dispatch.mojo.test",
+        ":fuzz_fused_swiglu_mxfp8.mojo.test",
+        ":fuzz_gemv_split_k.mojo.test",
+        ":fuzz_grouped_matmul_mxfp8.mojo.test",
+        ":fuzz_layer_norm.mojo.test",
+        ":fuzz_matmul.mojo.test",
+        ":fuzz_mha_causal.mojo.test",
+        ":fuzz_mha_nullmask.mojo.test",
+        ":fuzz_mla_decode.mojo.test",
+        ":fuzz_moe_indices.mojo.test",
+        ":fuzz_moe_router.mojo.test",
+        ":fuzz_msa_decode.mojo.test",
+        ":fuzz_msa_prefill.mojo.test",
+        ":fuzz_mxfp8_quantize.mojo.test",
+        ":fuzz_numeric_canary.mojo.test",
+        ":fuzz_oob_canary.mojo.test",
+        ":fuzz_rms_norm.mojo.test",
+        ":fuzz_softmax.mojo.test",
+        ":fuzz_sparse_indexer.mojo.test",
+        ":fuzz_sparse_indexer_decode.mojo.test",
+        ":fuzz_sparse_indexer_prefill.mojo.test",
+        ":fuzz_topk_sampling.mojo.test",
+        ":repro_decode_hang.mojo.test",
+    ],
+)
 
 # CPU unit test for the reusable fuzz harness (_fuzz.mojo): boundary-aware shape
 # generation and the value-distribution fills (incl. NaN/Inf injection). No GPU.
