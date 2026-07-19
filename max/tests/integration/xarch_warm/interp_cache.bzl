@@ -24,6 +24,8 @@ when the binary is exec'd as a ``genrule`` tool, so read the binary's
 the short_path values in those vars resolve.
 """
 
+load("@cfg_workaround.bzl", "CFG_WORKAROUND")
+
 def _warm_interp_cache_impl(ctx):
     derived_dir = ctx.actions.declare_directory(ctx.attr.name + "_derived")
 
@@ -83,24 +85,12 @@ warm_interp_cache = rule(
         "binary": attr.label(
             mandatory = True,
             executable = True,
-            # "exec", not a target config: the warm producer must build the
-            # SAME way on every GPU lane so the expensive CPU sweep is one
-            # remote-cache-shared action, not re-run per lane. Under a target
-            # config the op .so deps compile per-lane GPU arch (via
-            # --target-accelerator), fragmenting this action's key across lanes;
-            # the exec platform is lane-independent, so the CPU warm is compiled
-            # once and shared. Cost: _interpreter_ops (also a target-config dep
-            # of the consumer test) builds twice, exec + target -- far cheaper
-            # than re-running the CPU sweep on every lane. Force-load adopts by
-            # path and bypasses the toolchain cache key, so adoption stays
-            # correct regardless of the producer's config.
-            #
             # Deferred: the sweep uses only the graph compiler, never the op .so
             # kernels, but importing the sweep-builders runs
             # _interpreter_ops/__init__, which eagerly imports every op module,
             # so the producer builds op .so's it never uses. Splitting gc_sweeps
             # + gc_compile out of that init would drop the dep.
-            cfg = "exec",
+            cfg = CFG_WORKAROUND,
             doc = "The per-slot producer modular_py_binary to run " +
                   "(warm_cpu or warm_accelerators).",
         ),
@@ -182,9 +172,7 @@ compose_warm_cache = rule(
         "binary": attr.label(
             mandatory = True,
             executable = True,
-            # "exec" to match warm_interp_cache. compose is pure stdlib (no
-            # _interpreter_ops), so there's nothing to double-build here.
-            cfg = "exec",
+            cfg = CFG_WORKAROUND,
             doc = "The compose modular_py_binary to run.",
         ),
         "warms": attr.label_list(
