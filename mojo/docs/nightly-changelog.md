@@ -10,11 +10,27 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Mojo supports an (internal only for now) feature known as *interior origins*,
+  which allows collections to protect from a common class of memory unsafety
+  problems. `List`, for example, now returns element references bound
+  to an *interior origin* of the list instead of the whole-list origin, so an
+  element reference is invalidated when the list is mutated (for example by
+  `append()` or `pop()`). Code that holds an element reference across such a
+  mutation is now correctly rejected by the lifetime checker instead of
+  silently dangling after a reallocation:
+
+  ```mojo
+  var list = [1, 2, 3]
+  ref elem = list[0]
+  list.append(4)  # may reallocate, invalidating `elem`
+  print(elem)     # error: use of invalidated interior reference
+  ```
+
 - Mojo now support type inference from literals initializer.
 
   ```mojo
   var x : List[_] = [1, 2, 3]
-  var x : List[_] = [1.0, 2.0, 3.0]
+  var x : List = [1.0, 2.0, 3.0]
   ```
 
 - Mojo now support `==` and `!=` for type equality check, and `_type_is_eq` is
@@ -376,19 +392,8 @@ This version is still a work in progress.
 
 ## Library changes
 
-- `List.__getitem__` and `List.unsafe_get` now return element references bound
-  to an *interior origin* of the list instead of the whole-list origin, so an
-  element reference is invalidated when the list is mutated (for example by
-  `append()` or `pop()`). Code that holds an element reference across such a
-  mutation is now correctly rejected by the lifetime checker instead of
-  silently dangling after a reallocation:
-
-  ```mojo
-  var list = [1, 2, 3]
-  ref elem = list[0]
-  list.append(4)  # may reallocate, invalidating `elem`
-  print(elem)     # error: use of invalidated interior reference
-  ```
+- Various datatypes have adopted interior origins for increased memory safety,
+  including `List`, `Deque` and `Variant`.
 
 - Added `Tuple.consume_elements`, which moves each element out of a tuple into a
   caller-provided closure one at a time. Destructuring such as `a, b = t^`
