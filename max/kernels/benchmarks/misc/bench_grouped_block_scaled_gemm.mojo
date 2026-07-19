@@ -67,7 +67,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scale
 def _get_run_name[
     in_type: DType,
     out_type: DType,
-](num_groups: Int, m_per_group: Int, n: Int, k: Int, cta_group: Int,) -> String:
+](num_groups: Int, m_per_group: Int, n: Int, k: Int, cta_group: Int) -> String:
     var mode_str = "1SM" if cta_group == 1 else "2SM"
     return String(
         "grouped_block_scaled_gemm(",

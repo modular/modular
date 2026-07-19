@@ -90,7 +90,7 @@ def bench_fused_qk_rms_norm_rope[
     rope_dim: Int,
     num_q_heads: Int,
     num_kv_heads: Int,
-](ctx: DeviceContext, mut m: Bench, batch_size: Int, seq_len: Int,) raises:
+](ctx: DeviceContext, mut m: Bench, batch_size: Int, seq_len: Int) raises:
     """Benchmarks two-step (norm+rope) vs fused at a given shape."""
     comptime kv_params = KVCacheStaticParams(
         num_heads=num_kv_heads, head_size=head_dim

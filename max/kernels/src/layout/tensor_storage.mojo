@@ -261,7 +261,7 @@ trait TensorStorage:
         alignment: Int,
         *,
         non_temporal: Bool = False,
-    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _],):
+    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _]):
         """Stores a `SIMD` value into the storage.
 
         Parameters:
@@ -1315,7 +1315,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         alignment: Int,
         *,
         non_temporal: Bool = False,
-    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _],):
+    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _]):
         """Stores a `SIMD` value into the storage.
 
         Parameters:
@@ -2350,7 +2350,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         alignment: Int,
         *,
         non_temporal: Bool = False,
-    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _],):
+    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _]):
         """Stores a `SIMD` value into the storage.
 
         Device-only: reinterprets the encoded device pointer, which aborts on
@@ -3323,7 +3323,7 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
         alignment: Int,
         *,
         non_temporal: Bool = False,
-    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _],):
+    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _]):
         """Stores a `SIMD` value at the start of the viewed region.
 
         Parameters:

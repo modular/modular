@@ -403,7 +403,7 @@ def bench_prefill_sparse[
     q_tmem_depth: Int = 384,
     page_size: Int = 128,
     cache_busting: Bool = True,
-](mut m: Bench, s_q: Int, num_kv_tokens: Int, ctx: DeviceContext,) raises:
+](mut m: Bench, s_q: Int, num_kv_tokens: Int, ctx: DeviceContext) raises:
     var scale = Float32(1.0) / sqrt(Float32(192.0))
     comptime kv_num_heads = 1
     comptime num_layers = 1

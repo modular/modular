@@ -3714,7 +3714,7 @@ struct TMATensorTile[
     @always_inline
     def replace_tensormap_global_address_in_gmem[
         _dtype: DType,
-    ](self, src_ptr: UnsafePointer[Scalar[_dtype], _],):
+    ](self, src_ptr: UnsafePointer[Scalar[_dtype], _]):
         """
         Replaces the global memory address in the TMA descriptor stored in global memory.
 

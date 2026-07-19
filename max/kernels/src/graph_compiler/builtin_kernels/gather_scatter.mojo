@@ -1014,7 +1014,7 @@ struct StaticBroadcastTo:
     @staticmethod
     def build_view[
         out_rank: Int,
-    ](x: InputTensor,) -> IndexList[out_rank]:
+    ](x: InputTensor) -> IndexList[out_rank]:
         var new_strides = IndexList[out_rank]()
         comptime delta = out_rank - x.rank
 
@@ -1515,7 +1515,7 @@ struct GatherND:
 @extensibility.register_shape_function("mo.gather_nd")
 def gather_nd_shape_fn[
     batch_dims: Int, output_rank: Int
-](data: InputTensor, indices: InputTensor,) raises -> IndexList[output_rank]:
+](data: InputTensor, indices: InputTensor) raises -> IndexList[output_rank]:
     """Computes the output shape for the `mo.gather_nd` graph op."""
     return gather_nd_shape[
         batch_dims=batch_dims,
@@ -1590,7 +1590,7 @@ struct Gather:
 def gather_shape_fn[
     output_rank: Int,
     axis: Int,
-](input: InputTensor, indices: InputTensor,) raises -> IndexList[output_rank]:
+](input: InputTensor, indices: InputTensor) raises -> IndexList[output_rank]:
     """Computes the output shape for the `mo.gather` graph op."""
     return gather_shape[output_rank=output_rank](
         input.to_tile_tensor[DType.int64](),

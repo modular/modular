@@ -888,7 +888,7 @@ def cudnnCreateTensorTransformDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateTensorTransformDescriptor",
-        def(type_of(transform_desc),) thin -> cudnnStatus_t,
+        def(type_of(transform_desc)) thin -> cudnnStatus_t,
     ]()(transform_desc)
 
 
@@ -1001,7 +1001,7 @@ def cudnnCreateReduceTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateReduceTensorDescriptor",
-        def(type_of(reduce_tensor_desc),) thin -> cudnnStatus_t,
+        def(type_of(reduce_tensor_desc)) thin -> cudnnStatus_t,
     ]()(reduce_tensor_desc)
 
 
@@ -1974,7 +1974,7 @@ def cudnnCreateActivationDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateActivationDescriptor",
-        def(type_of(activation_desc),) thin -> cudnnStatus_t,
+        def(type_of(activation_desc)) thin -> cudnnStatus_t,
     ]()(activation_desc)
 
 
@@ -3507,7 +3507,7 @@ def cudnnCreateSpatialTransformerDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateSpatialTransformerDescriptor",
-        def(type_of(st_desc),) thin -> cudnnStatus_t,
+        def(type_of(st_desc)) thin -> cudnnStatus_t,
     ]()(st_desc)
 
 
@@ -3533,7 +3533,7 @@ def cudnnCreateAlgorithmDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateAlgorithmDescriptor",
-        def(type_of(algo_desc),) thin -> cudnnStatus_t,
+        def(type_of(algo_desc)) thin -> cudnnStatus_t,
     ]()(algo_desc)
 
 

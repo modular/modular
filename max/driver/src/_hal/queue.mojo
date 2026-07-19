@@ -311,7 +311,7 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,
-    ](self, out event: Event[flags],) raises HALError:
+    ](self, out event: Event[flags]) raises HALError:
         """Creates a fresh event, records it on this queue's timeline, and
         returns it.
 
@@ -337,7 +337,7 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def wait_for_events[
         *EventTypes: Waitable,
-    ](self, *events: *EventTypes,) raises HALError:
+    ](self, *events: *EventTypes) raises HALError:
         """Enqueues a wait for the given events on this queue.
 
         Accepts any combination of events with different flag combos.

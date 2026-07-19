@@ -271,9 +271,7 @@ def test_out() raises:
 # --- ref convention ---
 
 
-def get_first[
-    T: Copyable
-](ref data: List[T],) -> ref[data[0]] T:
+def get_first[T: Copyable](ref data: List[T]) -> ref[data[0]] T:
     return data[0]
 
 

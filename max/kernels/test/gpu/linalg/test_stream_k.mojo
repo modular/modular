@@ -434,7 +434,7 @@ def run_matmul_stream_k[
     M: Int,
     N: Int,
     K: Int,
-](ctx: DeviceContext,) raises:
+](ctx: DeviceContext) raises:
     print("== run_matmul kernel stream_k")
 
     var a_host = alloc[Scalar[dtype]](M * K)

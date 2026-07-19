@@ -16,7 +16,7 @@ from std.collections import BitSet, InlineArray
 
 def _compute_unshareable[
     N: Int,
-](can_share: InlineArray[Int, N * N], out result: BitSet[N],):
+](can_share: InlineArray[Int, N * N], out result: BitSet[N]):
     """Compute which allocations cannot share memory with any other allocation.
 
     An allocation i is unshareable if no other allocation j has a
@@ -35,7 +35,7 @@ def _compute_unshareable[
 
 def _compute_shareable_rows[
     N: Int,
-](can_share: InlineArray[Int, N * N], out result: InlineArray[BitSet[N], N],):
+](can_share: InlineArray[Int, N * N], out result: InlineArray[BitSet[N], N]):
     """Compute per-allocation sharing bitsets from the sharing matrix.
 
     result[i].test(j) == True iff can_share[i * N + j] == 1, i.e. allocations
@@ -257,9 +257,7 @@ struct BufferPlanState[
             self.allocate_new_block(result_idx, alloc_size)
 
     @always_inline
-    def allocate_greedy[
-        start: Int = 0
-    ](mut self, sizes: InlineArray[Int, _],):
+    def allocate_greedy[start: Int = 0](mut self, sizes: InlineArray[Int, _]):
         comptime if not Self.enable_sharing:
             # No allocations can be shared; skip the greedy search entirely.
             for i, size in enumerate(sizes):

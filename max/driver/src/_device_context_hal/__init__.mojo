@@ -1134,7 +1134,7 @@ struct DeviceContext(
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype],) raises:
+    ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -1156,7 +1156,7 @@ struct DeviceContext(
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: DeviceBuffer[dtype], src_buf: HostBuffer[dtype],) raises:
+    ](self, dst_buf: DeviceBuffer[dtype], src_buf: HostBuffer[dtype]) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -1178,7 +1178,7 @@ struct DeviceContext(
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: HostBuffer[dtype], src_buf: DeviceBuffer[dtype],) raises:
+    ](self, dst_buf: HostBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -1251,7 +1251,7 @@ struct DeviceContext(
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: HostBuffer[dtype], src_buf: HostBuffer[dtype],) raises:
+    ](self, dst_buf: HostBuffer[dtype], src_buf: HostBuffer[dtype]) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -1273,7 +1273,7 @@ struct DeviceContext(
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: DeviceBuffer[dtype], src: Span[Scalar[dtype], _],) raises:
+    ](self, dst_buf: DeviceBuffer[dtype], src: Span[Scalar[dtype], _]) raises:
         """Enqueues an async copy from a host `Span` to a device buffer.
 
         The number of bytes copied is determined by the size of the device
@@ -1328,7 +1328,7 @@ struct DeviceContext(
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: HostBuffer[dtype], src: Span[Scalar[dtype], _],) raises:
+    ](self, dst_buf: HostBuffer[dtype], src: Span[Scalar[dtype], _]) raises:
         """Enqueues an async copy from a host `Span` to a pinned host buffer.
 
         The number of bytes copied is determined by the size of the device

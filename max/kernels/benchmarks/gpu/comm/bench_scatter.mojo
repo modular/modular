@@ -80,7 +80,7 @@ def bench_scatter[
     dp_size: Int,
     *,
     cache_busting: Bool,
-](mut b: Bench, list_of_ctx: List[DeviceContext], num_elems: Int,) raises:
+](mut b: Bench, list_of_ctx: List[DeviceContext], num_elems: Int) raises:
     comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
     comptime assert ngpus >= dp_size, "ngpus must be >= dp_size"
     comptime tp_size = ceildiv(ngpus, dp_size)

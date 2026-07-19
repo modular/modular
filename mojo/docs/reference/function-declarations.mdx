@@ -409,9 +409,7 @@ Passes a reference with an explicit *origin* specifier. The
 origin tracks where the reference came from:
 
 ```mojo
-def get_first[T: Copyable](
-    ref data: List[T],
-) -> ref[data[0]] T:
+def get_first[T: Copyable](ref data: List[T]) -> ref[data[0]] T:
     return data[0]
 
 def main():

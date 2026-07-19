@@ -317,7 +317,7 @@ struct OwnedTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
 @no_inline
 def create_tensor_spec_async[
     spec_rank: Int
-](spec: IndexList[spec_rank], async_ptr: OpaquePointer[MutAnyOrigin],):
+](spec: IndexList[spec_rank], async_ptr: OpaquePointer[MutAnyOrigin]):
     # Mojo impl is bitwise compatible with cpp variant, can construct TensorSpec in mojo
     # and pass it back to C++ -- However, this is an issue for the heap allocated dims.
     # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
@@ -1068,7 +1068,7 @@ def mgp_device_wait(
 def mgp_debug_print[
     aDebugString: StaticString,
     bLabel: StaticString,
-](ctx: StateContext,) raises:
+](ctx: StateContext) raises:
     var prefix = String()
     if bLabel:
         prefix = "[" + bLabel + "] "

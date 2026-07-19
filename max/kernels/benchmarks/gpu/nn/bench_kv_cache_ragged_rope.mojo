@@ -48,7 +48,7 @@ def _get_run_name[
     num_q_heads: Int,
     num_kv_heads: Int,
     head_dim: Int,
-](batch_size: Int, seq_len: Int, use_random_seq_lengths: Bool,) -> String:
+](batch_size: Int, seq_len: Int, use_random_seq_lengths: Bool) -> String:
     # fmt: off
     return String(
         "fused_qkv_ragged_rope(", dtype, ") : ",

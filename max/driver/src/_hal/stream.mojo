@@ -243,7 +243,7 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,
-    ](mut self,) raises HALError -> Event[flags]:
+    ](mut self) raises HALError -> Event[flags]:
         """Returns an event signaled when all previous stream ops complete.
 
         Parameters:
@@ -255,7 +255,7 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def wait_for_events[
         *EventTypes: Waitable,
-    ](mut self, *events: *EventTypes,) raises HALError:
+    ](mut self, *events: *EventTypes) raises HALError:
         """Inserts a wait for cross-stream events into the in-order chain.
 
         Accepts any combination of events with different flag combos.
