@@ -16,7 +16,7 @@ struct ConditionalArraySize[T: AnyType]:
 
 
 def generic(conditional: ConditionalArraySize) raises:
-    print(conditional.array.size)
+    print(conditional.array.length)
 
 
 struct ConditionalValueType[T: AnyType]:
@@ -38,13 +38,13 @@ def main() raises:
     # CHECK: 0
     generic(size_0)
     # CHECK: 0
-    print(size_0.array.size)
+    print(size_0.array.length)
 
     var size_1 = ConditionalArraySize[IsNotImplicitlyCopyable]()
     # CHECK: 1
     generic(size_1)
     # CHECK: 1
-    print(size_1.array.size)
+    print(size_1.array.length)
 
     var _list_int = ConditionalValueType[IsImplicitlyCopyable]()
     # CHECK: True
