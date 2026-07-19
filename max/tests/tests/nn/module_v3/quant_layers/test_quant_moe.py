@@ -38,7 +38,9 @@ _SEQ_LEN = 4
 
 def _expected_expert_param_names(quantized: bool) -> set[str]:
     """Per-expert MLP parameter names for the routed experts."""
-    leaves = ("weight.data", "weight.scale_inv") if quantized else ("weight",)
+    leaves = (
+        ("weight.data", "weight.weight_scale_inv") if quantized else ("weight",)
+    )
     names = set()
     for i in range(_NUM_EXPERTS):
         for proj in ("gate_proj", "up_proj", "down_proj"):
@@ -174,7 +176,7 @@ def test_moe_stacked_weights_fp8(
         assert len(gate_up) == 1
         assert isinstance(gate_up[0], FP8BlockTensor)
         assert gate_up[0].data.dtype == DType.float8_e4m3fn
-        assert gate_up[0].scale_inv.dtype == DType.float32
+        assert gate_up[0].weight_scale_inv.dtype == DType.float32
         assert list(gate_up[0].data.shape) == [
             _NUM_EXPERTS,
             2 * _MOE_DIM,

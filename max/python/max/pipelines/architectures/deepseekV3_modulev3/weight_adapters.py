@@ -18,8 +18,8 @@ from transformers.configuration_utils import PretrainedConfig
 
 # MLA projections that are stored as raw ``FP8BlockTensor`` parameters
 # (not wrapped in a ``QuantizedLinear``). Used to decide whether the FP8
-# adapter should emit ``<proj>.data`` / ``<proj>.scale_inv`` versus
-# ``<proj>.weight.data`` / ``<proj>.weight.scale_inv``.
+# adapter should emit ``<proj>.data`` / ``<proj>.weight_scale_inv`` versus
+# ``<proj>.weight.data`` / ``<proj>.weight.weight_scale_inv``.
 _MLA_RAW_PROJECTIONS: frozenset[str] = frozenset(
     {
         "q_a_proj",
@@ -103,12 +103,12 @@ def _convert_fp8_state_dict(
       module, not wrapped in a Linear)::
 
           self_attn.q_a_proj.weight          → self_attn.q_a_proj.data
-          self_attn.q_a_proj.weight_scale_inv → self_attn.q_a_proj.scale_inv
+          self_attn.q_a_proj.weight_scale_inv → self_attn.q_a_proj.weight_scale
 
     * Linear-backed projections (QuantizedLinear → weight: FP8BlockTensor)::
 
           mlp.gate_proj.weight               → mlp.gate_proj.weight.data
-          mlp.gate_proj.weight_scale_inv     → mlp.gate_proj.weight.scale_inv
+          mlp.gate_proj.weight_scale_inv     → mlp.gate_proj.weight.weight_scale_inv
           self_attn.o_proj.weight            → self_attn.o_proj.weight.data
           ...
     """
@@ -132,11 +132,11 @@ def _convert_fp8_state_dict(
             tail = base.rsplit(".", 1)[-1]
             if tail in _MLA_RAW_PROJECTIONS:
                 # Raw-tensor MLA: drop ``.weight`` entirely, then attach
-                # ``.data`` / ``.scale_inv`` for the FP8BlockTensor params.
-                inner = "scale_inv" if is_scale else "data"
+                # ``.data`` / ``.weight_scale_inv`` for the FP8BlockTensor params.
+                inner = "weight_scale_inv" if is_scale else "data"
                 max_name = f"{base}.{inner}"
             elif tail in _FP8_LINEAR_PROJECTIONS:
-                inner = "scale_inv" if is_scale else "data"
+                inner = "weight_scale_inv" if is_scale else "data"
                 max_name = f"{base}.weight.{inner}"
             elif not is_scale:
                 # ``.weight`` entry that's not FP8-quantized: layernorm
@@ -149,7 +149,7 @@ def _convert_fp8_state_dict(
             else:
                 # Unrecognized scale-bearing weight; surface a clear error
                 # by routing to a debug path so the load layer can report.
-                max_name = f"{base}.scale_inv"
+                max_name = f"{base}.weight_scale_inv"
 
         if max_name.endswith(".k_scale") or max_name.endswith(".v_scale"):
             continue

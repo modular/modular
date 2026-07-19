@@ -35,13 +35,13 @@ def test_init_stores_tensors_and_block_size() -> None:
     """``__init__`` keeps the passed tensors and block size verbatim."""
     with F.lazy():
         data = Tensor.zeros((4, 8), dtype=DType.float8_e4m3fn)
-        scale_inv = Tensor.zeros((1, 1), dtype=DType.float32)
+        weight_scale_inv = Tensor.zeros((1, 1), dtype=DType.float32)
         qt = FP8BlockTensor(
-            data=data, scale_inv=scale_inv, block_size=(128, 128)
+            data=data, weight_scale_inv=weight_scale_inv, block_size=(128, 128)
         )
 
         assert qt.data is data
-        assert qt.scale_inv is scale_inv
+        assert qt.weight_scale_inv is weight_scale_inv
         assert qt.block_size == (128, 128)
 
 
@@ -50,7 +50,7 @@ def test_init_default_block_size() -> None:
     with F.lazy():
         qt = FP8BlockTensor(
             data=Tensor.zeros((4, 8), dtype=DType.float8_e4m3fn),
-            scale_inv=Tensor.zeros((1, 1), dtype=DType.float32),
+            weight_scale_inv=Tensor.zeros((1, 1), dtype=DType.float32),
         )
         assert qt.block_size == (128, 128)
 
@@ -60,7 +60,7 @@ def test_zeros_dtypes_are_kernel_fixed() -> None:
     with F.lazy():
         qt = FP8BlockTensor.zeros((256, 512))
         assert qt.data.dtype == DType.float8_e4m3fn
-        assert qt.scale_inv.dtype == DType.float32
+        assert qt.weight_scale_inv.dtype == DType.float32
 
 
 def test_zeros_data_shape_matches_request() -> None:
@@ -75,7 +75,7 @@ def test_zeros_scale_shape_divisible() -> None:
     with F.lazy():
         qt = FP8BlockTensor.zeros((256, 512), block_size=(128, 128))
         # 256 / 128 == 2, 512 / 128 == 4
-        assert list(qt.scale_inv.shape) == [2, 4]
+        assert list(qt.weight_scale_inv.shape) == [2, 4]
         assert qt.block_size == (128, 128)
 
 
@@ -84,7 +84,7 @@ def test_zeros_scale_shape_uses_ceildiv() -> None:
     with F.lazy():
         qt = FP8BlockTensor.zeros((130, 100), block_size=(128, 128))
         # ceil(130 / 128) == 2, ceil(100 / 128) == 1
-        assert list(qt.scale_inv.shape) == [2, 1]
+        assert list(qt.weight_scale_inv.shape) == [2, 1]
 
 
 def test_zeros_custom_block_size() -> None:
@@ -93,7 +93,7 @@ def test_zeros_custom_block_size() -> None:
         qt = FP8BlockTensor.zeros((256, 512), block_size=(64, 256))
         assert qt.block_size == (64, 256)
         # 256 / 64 == 4, 512 / 256 == 2
-        assert list(qt.scale_inv.shape) == [4, 2]
+        assert list(qt.weight_scale_inv.shape) == [4, 2]
 
 
 def test_zeros_single_block() -> None:
@@ -101,7 +101,7 @@ def test_zeros_single_block() -> None:
     with F.lazy():
         qt = FP8BlockTensor.zeros((16, 32), block_size=(128, 128))
         assert list(qt.data.shape) == [16, 32]
-        assert list(qt.scale_inv.shape) == [1, 1]
+        assert list(qt.weight_scale_inv.shape) == [1, 1]
 
 
 def test_is_module_subclass() -> None:
@@ -111,14 +111,14 @@ def test_is_module_subclass() -> None:
 
 
 def test_local_parameters_discovered() -> None:
-    """``data`` and ``scale_inv`` are discoverable as local parameters."""
+    """``data`` and ``weight_scale_inv`` are discoverable as local parameters."""
     with F.lazy():
         qt = FP8BlockTensor.zeros((256, 512))
         local = dict(qt.local_parameters)
 
-        assert set(local) == {"data", "scale_inv"}
+        assert set(local) == {"data", "weight_scale_inv"}
         assert local["data"] is qt.data
-        assert local["scale_inv"] is qt.scale_inv
+        assert local["weight_scale_inv"] is qt.weight_scale_inv
 
 
 def test_block_size_is_not_a_parameter() -> None:
@@ -126,7 +126,7 @@ def test_block_size_is_not_a_parameter() -> None:
     with F.lazy():
         qt = FP8BlockTensor.zeros((256, 512))
         names = {name for name, _ in qt.parameters}
-        assert names == {"data", "scale_inv"}
+        assert names == {"data", "weight_scale_inv"}
 
 
 def test_parameters_discovered_through_parent_module() -> None:
@@ -143,7 +143,7 @@ def test_parameters_discovered_through_parent_module() -> None:
     with F.lazy():
         wrapper = _Wrapper()
         names = {name for name, _ in wrapper.parameters}
-        assert names == {"weight.data", "weight.scale_inv"}
+        assert names == {"weight.data", "weight.weight_scale_inv"}
 
 
 def test_forward_raises() -> None:
@@ -210,9 +210,9 @@ def test_fp8_shard_row_axis_data_shape() -> None:
         for shard in sharded.data.local_shards:
             assert list(shard.shape) == [256 // num_devices, 256]
 
-        # scale_inv: [2, 2] → each device [1, 2]
-        assert sharded.scale_inv.placements == (Sharded(axis=0),)
-        for shard in sharded.scale_inv.local_shards:
+        # weight_scale_inv: [2, 2] → each device [1, 2]
+        assert sharded.weight_scale_inv.placements == (Sharded(axis=0),)
+        for shard in sharded.weight_scale_inv.local_shards:
             assert list(shard.shape) == [2 // num_devices, 2]
 
         # block_size preserved
@@ -238,8 +238,8 @@ def test_fp8_shard_col_axis_data_shape() -> None:
         for shard in sharded.data.local_shards:
             assert list(shard.shape) == [256, 256 // num_devices]
 
-        # scale_inv last dim: 2 → 1 per device
-        for shard in sharded.scale_inv.local_shards:
+        # weight_scale_inv last dim: 2 → 1 per device
+        for shard in sharded.weight_scale_inv.local_shards:
             assert list(shard.shape) == [2, 2 // num_devices]
 
 
@@ -263,12 +263,12 @@ def test_fp8_shard_3d_down_proj_shape() -> None:
         data = Tensor.zeros(
             (num_experts, hidden, moe_dim), dtype=DType.float8_e4m3fn
         )
-        # scale_inv shape: [E, ceil(H/128), ceil(moe_dim/128)] = [4, 2, 4]
-        scale_inv = Tensor.zeros(
+        # weight_scale_inv shape: [E, ceil(H/128), ceil(moe_dim/128)] = [4, 2, 4]
+        weight_scale_inv = Tensor.zeros(
             (num_experts, hidden // 128, moe_dim // 128), dtype=DType.float32
         )
         qt = FP8BlockTensor(
-            data=data, scale_inv=scale_inv, block_size=(128, 128)
+            data=data, weight_scale_inv=weight_scale_inv, block_size=(128, 128)
         )
         sharded = qt.shard(axis=-1, mesh=mesh)
 
@@ -278,7 +278,7 @@ def test_fp8_shard_3d_down_proj_shape() -> None:
                 hidden,
                 moe_dim // num_devices,
             ]
-            assert list(shard.scale_inv.shape) == [
+            assert list(shard.weight_scale_inv.shape) == [
                 num_experts,
                 hidden // 128,
                 moe_dim // 128 // num_devices,

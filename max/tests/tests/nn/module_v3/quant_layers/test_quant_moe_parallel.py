@@ -155,6 +155,7 @@ def test_tensor_parallel_moe_fp8_weights(
         devices = [mock_accelerator(0), mock_accelerator(1)]
         num_devices = len(devices)
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
+        replicated = PlacementMapping(mesh, (Replicated(),))
 
         layer = TensorParallelMoE(
             hidden_dim=_FP8_HIDDEN_DIM,
@@ -173,7 +174,7 @@ def test_tensor_parallel_moe_fp8_weights(
             _FP8_HIDDEN_DIM,
         ]
         # Scale grid is the (128, 128)-block count of the sharded data.
-        assert list(gate_up[0].scale_inv.shape) == [
+        assert list(gate_up[0].weight_scale_inv.shape) == [
             _NUM_EXPERTS,
             2 * _FP8_MOE_DIM // num_devices // 128,
             _FP8_HIDDEN_DIM // 128,
@@ -187,11 +188,25 @@ def test_tensor_parallel_moe_fp8_weights(
             _FP8_HIDDEN_DIM,
             _FP8_MOE_DIM // num_devices,
         ]
-        assert list(down[0].scale_inv.shape) == [
+        assert list(down[0].weight_scale_inv.shape) == [
             _NUM_EXPERTS,
             _FP8_HIDDEN_DIM // 128,
             _FP8_MOE_DIM // num_devices // 128,
         ]
+
+        x = Tensor.zeros(
+            [_SEQ_LEN, _FP8_HIDDEN_DIM],
+            dtype=DType.bfloat16,
+            device=replicated,
+        )
+        out = layer(x)
+
+    assert list(out.shape) == [_SEQ_LEN, _FP8_HIDDEN_DIM]
+    assert out.mapping.mesh == mesh
+    # The FP8 grouped matmul still runs per-device via local_map (see
+    # quant_moe.TensorParallelMoE.apply_experts), but the layer's output
+    # contract is unchanged: a Partial sum for the caller to all-reduce.
+    assert out.mapping.to_placements() == (Partial(),)
 
 
 # --------------------------------------------------------------------------- #

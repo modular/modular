@@ -79,13 +79,13 @@ def test_linear_fp8_parameters(
             layer.weight.block_size == fp8_quant_config.weight_scale.block_size
         )
         assert layer.weight.data.dtype == DType.float8_e4m3fn
-        assert layer.weight.scale_inv.dtype == DType.float32
+        assert layer.weight.weight_scale_inv.dtype == DType.float32
         assert list(layer.weight.data.shape) == [_FFN_DIM, _HIDDEN_DIM]
         # 512 / 128 == 4, 256 / 128 == 2
-        assert list(layer.weight.scale_inv.shape) == [4, 2]
+        assert list(layer.weight.weight_scale_inv.shape) == [4, 2]
 
         names = {name for name, _ in layer.parameters}
-        assert names == {"weight.data", "weight.scale_inv", "bias"}
+        assert names == {"weight.data", "weight.weight_scale_inv", "bias"}
 
 
 def test_linear_bf16_forward(mock_accelerator: MagicMock) -> None:
@@ -146,7 +146,7 @@ def test_mlp_bf16_parameters(mock_accelerator: MagicMock) -> None:
 def test_mlp_fp8_parameters(
     mock_accelerator: MagicMock, fp8_quant_config: QuantConfig
 ) -> None:
-    """Each FP8 projection contributes a ``data`` + ``scale_inv`` pair."""
+    """Each FP8 projection contributes a ``data`` + ``weight_scale_inv`` pair."""
     device = mock_accelerator()
     with F.lazy():
         layer = QuantizedMLP(
@@ -156,11 +156,11 @@ def test_mlp_fp8_parameters(
         names = {name for name, _ in layer.parameters}
         assert names == {
             "gate_proj.weight.data",
-            "gate_proj.weight.scale_inv",
+            "gate_proj.weight.weight_scale_inv",
             "up_proj.weight.data",
-            "up_proj.weight.scale_inv",
+            "up_proj.weight.weight_scale_inv",
             "down_proj.weight.data",
-            "down_proj.weight.scale_inv",
+            "down_proj.weight.weight_scale_inv",
         }
 
 

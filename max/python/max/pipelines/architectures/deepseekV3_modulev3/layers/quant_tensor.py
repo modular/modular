@@ -50,24 +50,24 @@ class FP8BlockTensor(QTensor):
     """FP8 block-scaled quantized tensor.
     Args:
         data: Packed ``float8_e4m3fn`` data of shape ``[rows, cols]``.
-        scale_inv: Per-block inverse ``float32`` scales of shape
+        weight_scale_inv: Per-block inverse ``float32`` scales of shape
             ``[ceil(rows / block_m), ceil(cols / block_k)]``.
         block_size: Per-block size as ``(block_m, block_k)``.
     """
 
     data: Tensor
-    scale_inv: Tensor
+    weight_scale_inv: Tensor
 
     def __init__(
         self,
         *,
         data: Tensor,
-        scale_inv: Tensor,
+        weight_scale_inv: Tensor,
         block_size: tuple[int, int] = (128, 128),
     ) -> None:
         super().__init__()
         self.data = data
-        self.scale_inv = scale_inv
+        self.weight_scale_inv = weight_scale_inv
         self._block_size = block_size
 
     @classmethod
@@ -82,7 +82,7 @@ class FP8BlockTensor(QTensor):
         block_m, block_k = block_size
         return cls(
             data=Tensor.zeros((rows, cols), dtype=DType.float8_e4m3fn),
-            scale_inv=Tensor.zeros(
+            weight_scale_inv=Tensor.zeros(
                 (_ceildiv(rows, block_m), _ceildiv(cols, block_k)),
                 dtype=DType.float32,
             ),
@@ -98,18 +98,18 @@ class FP8BlockTensor(QTensor):
 
         Args:
             axis: Tensor axis to shard along (same index into both
-                ``data.shape`` and ``scale_inv.shape``).
+                ``data.shape`` and ``weight_scale_inv.shape``).
             mesh: 1-D :class:`DeviceMesh` to scatter onto.
 
         Returns:
-            A new :class:`FP8BlockTensor` whose ``data`` and ``scale_inv``
+            A new :class:`FP8BlockTensor` whose ``data`` and ``weight_scale_inv``
             leaves are each distributed ``Sharded(axis=axis)`` across
             ``mesh``.
         """
         mapping = PlacementMapping(mesh, (Sharded(axis=axis),))
         return FP8BlockTensor(
             data=self.data.to(mapping),
-            scale_inv=self.scale_inv.to(mapping),
+            weight_scale_inv=self.weight_scale_inv.to(mapping),
             block_size=self.block_size,
         )
 
@@ -118,7 +118,7 @@ class FP8BlockTensor(QTensor):
         return tuple(
             FP8BlockTensor(
                 data=self.data.local_shards[i],
-                scale_inv=self.scale_inv.local_shards[i],
+                weight_scale_inv=self.weight_scale_inv.local_shards[i],
                 block_size=self.block_size,
             )
             for i in range(self.data.num_shards)
@@ -135,7 +135,7 @@ class FP8BlockTensor(QTensor):
     @_mapping.setter
     def _mapping(self, mapping: DeviceMapping) -> None:
         self.data._mapping = mapping
-        self.scale_inv._mapping = mapping
+        self.weight_scale_inv._mapping = mapping
 
 
 def all_fp8_block(

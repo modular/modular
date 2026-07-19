@@ -15,7 +15,7 @@
 
 import functools
 import inspect
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 from max.experimental import functional as F
@@ -26,9 +26,12 @@ from max.experimental.sharding import (
     Placement,
     PlacementMapping,
     Replicated,
+    Sharded,
 )
-from max.experimental.sharding.action import Action, ActionSet, AxisAssignment
+from max.experimental.sharding.action import ActionSet, AxisAssignment
 from max.experimental.sharding.cost import (
+    P,
+    R,
     build_action_set,
     force_replicated_action_set,
 )
@@ -37,6 +40,9 @@ from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn.comm.ep.ep_kernels import (
     fused_silu as _fused_silu,
+)
+from max.nn.comm.ep.ep_kernels import (
+    fused_silu_quantized as _fused_silu_quantized,
 )
 from max.nn.kernels import (
     flare_mla_prefill_plan as _flare_mla_prefill_plan,
@@ -70,17 +76,6 @@ from max.nn.kernels import (
 )
 
 
-def _preserve_orig_mappings(
-    orig_mappings: tuple[Any, ...],
-) -> Callable[[Action], Action]:
-    """Returns a finalize that restores the op's original input mappings."""
-
-    def finalize(action: Action) -> Action:
-        return Action(inputs=orig_mappings, outputs=action.outputs)
-
-    return finalize
-
-
 def grouped_matmul_ragged_rule(
     hidden_states: TensorLayout,
     weight: TensorLayout,
@@ -88,6 +83,16 @@ def grouped_matmul_ragged_rule(
     expert_ids: TensorLayout,
     expert_usage_stats: TensorLayout,
 ) -> ActionSet:
+    """Strategies for the MoE grouped matmul ``hidden_states @ weight.T``.
+
+    ``weight`` is ``[num_experts, N, K]`` (Linear convention) and
+    ``hidden_states`` is ``[tokens, K]``, producing ``[tokens, N]``. Mirrors
+    the bf16 dense-matmul strategies: column-parallel (weight's ``N`` axis
+    sharded, matching output axis) and row-parallel (weight's contraction
+    ``K`` axis sharded, together with ``hidden_states``' matching axis,
+    producing a partial sum). ``expert_start_indices`` / ``expert_ids`` /
+    ``expert_usage_stats`` are small per-call metadata, always ``Replicated``.
+    """
     layouts = (
         hidden_states,
         weight,
@@ -95,17 +100,15 @@ def grouped_matmul_ragged_rule(
         expert_ids,
         expert_usage_stats,
     )
-    n_axes = weight.mapping.mesh.ndim
-    rows = []
-    for axis in range(n_axes):
-        needed = tuple(l.mapping.to_placements()[axis] for l in layouts)
-        out = weight.mapping.to_placements()[axis]
-        rows.append(AxisAssignment(needed_inputs=needed, output=out))
-    return build_action_set(
-        rows,
-        layouts=layouts,
-        finalize=_preserve_orig_mappings(tuple(l.mapping for l in layouts)),
-    )
+    rows = [
+        AxisAssignment((R, R, R, R, R), R),
+        # Column-parallel: weight's N (out) axis sharded -> output's N axis.
+        AxisAssignment((R, Sharded(1), R, R, R), Sharded(1)),
+        # Row-parallel: weight's K (contraction) axis sharded, matched by
+        # hidden_states' K axis -> partial sum.
+        AxisAssignment((Sharded(1), Sharded(2), R, R, R), P),
+    ]
+    return build_action_set(rows, layouts=layouts)
 
 
 grouped_matmul_ragged = F.functional(
@@ -205,7 +208,8 @@ def _local_functional_op(
         and return_input_sharding not in sig.parameters
     ):
         raise ValueError(
-            f"Input tensor arg {return_input_sharding} not found in {op.__name__}"
+            f"Input tensor arg {return_input_sharding} not found in"
+            f" {op.__name__}"
         )
 
     def run_graph_op(**kwargs: Any) -> Any:
@@ -279,7 +283,8 @@ def _get_mapping(
         input_sharding = bound_args.arguments[return_input_sharding]
         if not isinstance(input_sharding, Tensor):
             raise ValueError(
-                f"Input tensor arg {return_input_sharding} passed to {op_name} must be a Tensor"
+                f"Input tensor arg {return_input_sharding} passed to"
+                f" {op_name} must be a Tensor"
             )
         mesh = input_sharding.mesh
         placements = input_sharding.placements
@@ -329,13 +334,39 @@ mla_prefill_graph = _local_functional_op(_mla_prefill_graph, "q")
 mla_decode_graph = _local_functional_op(_mla_decode_graph, "q")
 mla_prefill_decode_graph = _local_functional_op(_mla_prefill_decode_graph, "q")
 
-fused_silu = _local_functional_op(_fused_silu, "input")
+
+def fused_silu_rule(x: TensorLayout, row_offsets: TensorLayout) -> ActionSet:
+    """Strategies for ``fused_silu``: preserves every input axis (nonlinear).
+
+    ``row_offsets`` is the small per-call expert boundary tensor; it is
+    always ``Replicated``. No ``Partial`` row: SiLU is nonlinear.
+    """
+    rows = [AxisAssignment((R, R), R)]
+    rows += [AxisAssignment((Sharded(d), R), Sharded(d)) for d in range(x.rank)]
+    return build_action_set(rows, layouts=(x, row_offsets))
+
+
+fused_silu = F.functional(_fused_silu, rule=fused_silu_rule)
+# Fused SiLU+FP8-quantize. The EP grouped_silu routes through this so the
+# down-projection reads an already-quantized activation instead of a separate
+# quantize pass; the per-128-block scale is shard-invariant.
+fused_silu_quantized = _local_functional_op(_fused_silu_quantized, "input")
 
 # Routing decisions must match the placement of the (replicated) router
 # scores so every device agrees on expert assignment under TP/EP.
 moe_router_group_limited = _local_functional_op(
     _moe_router_group_limited, "expert_scores"
 )
+
+
+def stack_device_shards(
+    shards: Sequence[Tensor], axis: int, mesh: DeviceMesh
+) -> Tensor:
+    """Reassembles a per-device weight-shard bundle into one ``Sharded`` tensor."""
+    if len(shards) == 1:
+        return shards[0]
+    mapping = PlacementMapping(mesh, (Sharded(axis=axis),))
+    return Tensor.from_shard_values([TensorValue(s) for s in shards], mapping)
 
 
 __all__ = [
@@ -347,4 +378,5 @@ __all__ = [
     "moe_router_group_limited",
     "rms_norm_key_cache",
     "rope_split_store_ragged",
+    "stack_device_shards",
 ]

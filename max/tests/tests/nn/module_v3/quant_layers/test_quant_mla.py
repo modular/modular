@@ -148,7 +148,7 @@ def _expected_parameters(
 ) -> set[str]:
     def proj(name: str) -> set[str]:
         if quantized:
-            return {f"{name}.data", f"{name}.scale_inv"}
+            return {f"{name}.data", f"{name}.weight_scale_inv"}
         return {name}
 
     names: set[str] = set()
@@ -270,7 +270,7 @@ def test_mla_fp8_weight_types(
         ).to(device)
         assert isinstance(layer.q_proj, FP8BlockTensor)
         assert layer.q_proj.data.dtype == DType.float8_e4m3fn
-        assert layer.q_proj.scale_inv.dtype == DType.float32
+        assert layer.q_proj.weight_scale_inv.dtype == DType.float32
         assert list(layer.q_proj.data.shape) == [
             _N_HEADS * _QK_HEAD_DIM,
             _HIDDEN_SIZE,
@@ -434,13 +434,13 @@ def test_mla_fp8_tensor_parallel(
         # Rowwise weights co-shard data and scales on axis 0.
         assert isinstance(layer.kv_b_proj, FP8BlockTensor)
         assert layer.kv_b_proj.data.mapping.to_placements() == (Sharded(0),)
-        assert layer.kv_b_proj.scale_inv.mapping.to_placements() == (
+        assert layer.kv_b_proj.weight_scale_inv.mapping.to_placements() == (
             Sharded(0),
         )
         # o_proj is columnwise: data and scales shard the contraction (axis 1).
         assert isinstance(layer.o_proj.weight, FP8BlockTensor)
         assert layer.o_proj.weight.data.mapping.to_placements() == (Sharded(1),)
-        assert layer.o_proj.weight.scale_inv.mapping.to_placements() == (
+        assert layer.o_proj.weight.weight_scale_inv.mapping.to_placements() == (
             Sharded(1),
         )
 

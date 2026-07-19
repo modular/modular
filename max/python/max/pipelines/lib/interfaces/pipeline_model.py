@@ -998,6 +998,7 @@ class ModuleV3PipelineModelWithKVCache(
         with F.lazy(), default_dtype(module_default_dtype):
             nn_model = self._instantiate_module(model_config)
         compile_input_types = self._get_compile_input_types(model_config)
+        self._wire_batch_processor(nn_model, model_config)
         return nn_model.compile(*compile_input_types, weights=state_dict)
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:

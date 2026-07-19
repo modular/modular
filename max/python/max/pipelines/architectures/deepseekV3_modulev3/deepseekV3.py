@@ -47,7 +47,9 @@ from .model_config import DeepseekV3Config
 
 
 class DeepseekV3TextModel(
-    Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor, ...]]
+    Module[
+        [Tensor, PagedCacheValues, Tensor, Tensor, Tensor], tuple[Tensor, ...]
+    ]
 ):
     """The DeepseekV3 language model.
 
@@ -123,6 +125,7 @@ class DeepseekV3TextModel(
         kv_collection: PagedCacheValues,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
+        batch_context_length: Tensor,
     ) -> tuple[Tensor, ...]:
         if self.mesh is not None:
             tokens = tokens.to(self.mesh)
@@ -136,6 +139,14 @@ class DeepseekV3TextModel(
         else:
             freqs_cis = freqs_cis.to(h.device)
 
+        mla_prefill_metadata = None
+        first_attn = self.layers[0].self_attn
+        if first_attn.graph_mode in ("prefill", "auto"):
+            mla_prefill_metadata = first_attn.create_mla_prefill_metadata(
+                input_row_offsets, kv_collection
+            )
+            mla_prefill_metadata.buffer_lengths = batch_context_length
+
         for idx, layer in enumerate(self.layers):
             layer_idx_tensor = F.constant(idx, DType.uint32, device=CPU())
             h = layer(
@@ -144,18 +155,15 @@ class DeepseekV3TextModel(
                 kv_collection,
                 input_row_offsets,
                 freqs_cis,
+                mla_prefill_metadata,
             )
 
         last_token_indices = input_row_offsets[1:] - 1
         last_token_h = F.gather(h, last_token_indices, axis=0)
-        last_logits = F.cast(
-            self.lm_head(self.norm(last_token_h)),
-            DType.float32,
-        )
-        # The logits are replicated across the mesh; collapse to a single
-        # device so the pipeline can read them as one buffer.
+        last_logits = self.lm_head(self.norm(last_token_h))
         if self.mesh is not None:
             last_logits = last_logits.to(self.mesh.devices[0])
+        last_logits = F.cast(last_logits, DType.float32)
         return (last_logits,)
 
 
@@ -179,6 +187,7 @@ class DeepseekV3(Module[..., tuple[Tensor, ...]]):
         tokens: Tensor,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
+        batch_context_length: Tensor,
         *variadic_args: Tensor,
     ) -> tuple[Tensor, ...]:
         kv_inputs = iter(x._graph_value for x in variadic_args)
@@ -201,5 +210,9 @@ class DeepseekV3(Module[..., tuple[Tensor, ...]]):
         else:
             raise ValueError("Mesh must be define")
         return self.language_model(
-            tokens, kv_collection, return_n_logits, input_row_offsets
+            tokens,
+            kv_collection,
+            return_n_logits,
+            input_row_offsets,
+            batch_context_length,
         )
