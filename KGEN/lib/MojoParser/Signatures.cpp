@@ -2210,6 +2210,22 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
   // Remember the user-declared result type.
   tcSignature.resultType = resultType;
 
+  // Functions with an explicitly declared return type containing an interior
+  // origin establish those origins when called.
+  // TODO: Instead of treating this as binary, we should actually capture which
+  // indirect origins are being defined.  A binary flag is not the right answer,
+  // because parametric types can be substituted in that contain indirect
+  // origins, but should be sufficient for now.
+  if (resultArg.typeExpr &&
+      resultArg.typeExpr->kind != ExprNode::kNoneLiteral) {
+    for (TypedAttr origin :
+         shared.cachedOriginFinder.findOriginsIn(resultType.mlirType, {})) {
+      origin.walk([&](InteriorOriginAttr) {
+        tcSignature.definesInteriorOrigins = true;
+      });
+    }
+  }
+
   // Check to see if the result type has any embedded origins that refer to
   // in-memory argument origins of generic type, e.g.:
   //

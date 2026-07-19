@@ -31,7 +31,6 @@ struct MyListInterior[T: AnyType]:
     def access(self): # doesn't invalidate interior origins.
         pass
 
-    @__defines_interior_origins
     @__unsafe_nested_origins_read_only
     def __getitem__(
         ref self
