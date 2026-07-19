@@ -178,3 +178,7 @@ def ret_invalid_ref(mut list: MyListInterior[Int]) -> ref[list[]] Int:
     ref r = list[]
     list.mutate()  # expected-note {{origin was invalidated here}}
     return r # expected-error {{use of invalidated interior reference 'list["element"]'}}
+
+# This shouldn't crash.
+def throwing_function(ref values: MyListInterior[String]) raises -> ref[values[]] String:
+    return values[]
