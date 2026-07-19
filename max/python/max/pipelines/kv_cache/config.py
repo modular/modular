@@ -105,6 +105,20 @@ class KVCacheConfig(ConfigFileModel):
     )
     """Whether to enable prefix caching for the paged KV cache."""
 
+    enable_dp_cross_replica_prefix_copy: bool = Field(
+        default=True,
+        description=(
+            "Whether a prefix-cache block resident on another data-parallel "
+            "(DP) replica's GPU may be copied device-to-device onto the "
+            "request's replica to serve a cache hit. When disabled, "
+            "cross-replica reuse is only served from the shared host/disk "
+            "tier via the KV connector (or recomputed). Only relevant when "
+            "``data_parallel_degree > 1`` and prefix caching is enabled."
+        ),
+    )
+    """Whether DP cross-replica prefix-cache hits may be served by
+    device-to-device copies."""
+
     kv_connector: KVConnectorType | None = Field(
         default=None,
         description=(
@@ -254,6 +268,9 @@ class KVCacheConfig(ConfigFileModel):
             num_layers=num_layers,
             page_size=self.kv_cache_page_size,
             enable_prefix_caching=self.enable_prefix_caching,
+            enable_dp_cross_replica_prefix_copy=(
+                self.enable_dp_cross_replica_prefix_copy
+            ),
             kv_connector=self.kv_connector,
             kv_connector_config=cfg,
             host_kvcache_swap_space_gb=(

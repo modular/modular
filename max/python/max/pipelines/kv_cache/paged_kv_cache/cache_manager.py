@@ -323,6 +323,9 @@ class PagedKVCacheManager:
             kv_hash_algo=params.kv_hash_algo,
             kv_hash_seed=params.kv_hash_seed,
             replica_kv_memory=cross_replica_kv_memory,
+            enable_dp_cross_replica_prefix_copy=(
+                params.enable_dp_cross_replica_prefix_copy
+            ),
         )
 
         self._replica: list[_ReplicaMetadata] = [

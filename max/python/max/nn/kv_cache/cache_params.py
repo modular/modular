@@ -463,6 +463,12 @@ class KVCacheParamInterface(Protocol):
         ...
 
     @property
+    def enable_dp_cross_replica_prefix_copy(self) -> bool:
+        """Whether a prefix-cache hit resident on another data-parallel
+        replica's device may be served by a device-to-device copy."""
+        ...
+
+    @property
     def num_draft_tokens_per_step(self) -> int:
         """Number of draft tokens written per draft forward.
 
@@ -585,6 +591,13 @@ class KVCacheParams(KVCacheParamInterface):
 
     enable_prefix_caching: bool = False
     """Whether to enable prefix caching for efficient reuse of common prompt prefixes."""
+
+    enable_dp_cross_replica_prefix_copy: bool = True
+    """Whether a prefix-cache block resident on another data-parallel (DP)
+    replica's device may be materialized locally via a device-to-device copy
+    to serve a cache hit. When False, cross-replica reuse is only served from
+    the shared external tier via the KV connector (or recomputed). Only
+    relevant when ``data_parallel_degree > 1`` and prefix caching is enabled."""
 
     kv_connector: KVConnectorType | None = None
     """Type of KV cache connector to use (null, local, tiered, dkv)."""
@@ -1493,6 +1506,16 @@ class MultiKVCacheParams(KVCacheParamInterface):
                 f" {enable_prefix_caching}"
             )
 
+        enable_dp_cross_replica_prefix_copy = {
+            p.enable_dp_cross_replica_prefix_copy for p in params
+        }
+        if len(enable_dp_cross_replica_prefix_copy) > 1:
+            raise ValueError(
+                "All params must use the same"
+                " enable_dp_cross_replica_prefix_copy, got:"
+                f" {enable_dp_cross_replica_prefix_copy}"
+            )
+
         kv_connectors = {p.kv_connector for p in params}
         if len(kv_connectors) > 1:
             raise ValueError(
@@ -1562,6 +1585,12 @@ class MultiKVCacheParams(KVCacheParamInterface):
     def enable_prefix_caching(self) -> bool:
         """Whether prefix caching is enabled (shared across all caches)."""
         return self._first.enable_prefix_caching
+
+    @property
+    def enable_dp_cross_replica_prefix_copy(self) -> bool:
+        """Whether DP cross-replica prefix copies are enabled (shared across
+        all caches)."""
+        return self._first.enable_dp_cross_replica_prefix_copy
 
     @property
     def kv_connector_config(self) -> Any:

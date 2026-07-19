@@ -131,10 +131,13 @@ class BlockManager:
     The device prefix cache is shared across replicas in the sense that a
     lookup for a request on replica ``B`` can hit a block physically resident
     on replica ``A``: the block's pages are copied device-to-device onto ``B``
-    via :meth:`KVCacheMemory.copy_block_to` (SERVOPT-1500). External tiers
-    (host/disk) are reached through a single ``KVConnector`` shared by every
-    replica; each ``load``/``offload`` passes the ``replica_idx`` so the
-    connector can select that replica's device buffers (SERVOPT-1501).
+    via :meth:`KVCacheMemory.copy_block_to` (SERVOPT-1500). The
+    ``enable_dp_cross_replica_prefix_copy`` config flag turns these copies
+    off, in which case cross-replica reuse falls through to the shared
+    external tier instead. External tiers (host/disk) are reached through a
+    single ``KVConnector`` shared by every replica; each ``load``/``offload``
+    passes the ``replica_idx`` so the connector can select that replica's
+    device buffers (SERVOPT-1501).
     """
 
     @traced
@@ -151,6 +154,7 @@ class BlockManager:
         kv_hash_algo: KVHashAlgo = "ahash64",
         kv_hash_seed: bytes | None = None,
         replica_kv_memory: Sequence[Sequence[KVCacheMemory]] | None = None,
+        enable_dp_cross_replica_prefix_copy: bool = True,
     ) -> None:
         if num_replicas < 1:
             raise ValueError("BlockManager requires at least one replica")
@@ -186,6 +190,16 @@ class BlockManager:
             [list(units) for units in replica_kv_memory]
             if replica_kv_memory is not None
             else None
+        )
+
+        # Whether a cross-replica device prefix-cache hit may be served by a
+        # device-to-device copy. Requires per-replica device memory handles;
+        # the enable_dp_cross_replica_prefix_copy config flag turns it off so
+        # that cross-replica reuse falls through to the shared external tier
+        # instead.
+        self._cross_replica_copy_enabled = (
+            self._replica_kv_memory is not None
+            and enable_dp_cross_replica_prefix_copy
         )
 
         # Ordered offload sequences pending delivery to each replica's
@@ -434,11 +448,20 @@ class BlockManager:
         A hash counts as a device hit if it is resident in *any* replica's
         device prefix cache, because a cross-replica hit is served by a
         device-to-device copy onto ``replica_idx`` rather than a recompute.
+        When cross-replica copies are unavailable or disabled (see
+        ``enable_dp_cross_replica_prefix_copy``), only ``replica_idx``'s
+        own cache counts, matching what the reuse path can actually serve.
         """
+        local_cache = self.device_block_pools[replica_idx].prefix_cache
         device_prefix_cache_hits = []
         desired_host_hashes = []
         for hash_value in desired_hashes:
-            _, block = self._find_block_in_any_replica(hash_value, replica_idx)
+            if self._cross_replica_copy_enabled:
+                _, block = self._find_block_in_any_replica(
+                    hash_value, replica_idx
+                )
+            else:
+                block = local_cache.get(hash_value)
             if block is not None:
                 # Device hashes with prefix cache hit (local or cross-replica)
                 device_prefix_cache_hits.append(hash_value)
@@ -487,7 +510,10 @@ class BlockManager:
         directly. Blocks committed on a *different* replica are materialized
         onto ``replica_idx`` via a device-to-device copy into a freshly
         allocated block, which is then committed into the local prefix cache so
-        subsequent requests on this replica hit locally (SERVOPT-1500).
+        subsequent requests on this replica hit locally (SERVOPT-1500). When
+        cross-replica copies are disabled via
+        ``enable_dp_cross_replica_prefix_copy``, the chain stops at the
+        first local miss so the external tier (host/disk) can serve the rest.
         """
         if self._only_use_kv_connector_last_level_cache:
             return []
@@ -503,20 +529,23 @@ class BlockManager:
                 blocks.append(local_block)
                 continue
 
-            # Local miss: look for the block on another replica.
+            # Local miss: a cross-replica hit can only be served when
+            # device-to-device copies are enabled; otherwise stop the prefix
+            # chain here and let the external tier serve the rest.
+            if not self._cross_replica_copy_enabled:
+                break
+
+            # Look for the block on another replica.
             src_replica, src_block = self._find_block_in_any_replica(
                 block_hash, replica_idx
             )
             if src_block is None:
                 break
 
-            # A cross-replica hit needs a free local block to copy into, and
-            # device memory handles to copy with. If either is missing, stop the
-            # prefix chain here (it must remain contiguous).
-            if (
-                self._replica_kv_memory is None
-                or local_pool.num_free_blocks == 0
-            ):
+            # A cross-replica hit needs a free local block to copy into. If
+            # none is available, stop the prefix chain here (it must remain
+            # contiguous).
+            if local_pool.num_free_blocks == 0:
                 break
 
             # Materialize the block on this replica via a device-to-device copy

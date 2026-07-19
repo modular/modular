@@ -54,6 +54,14 @@ This version is still a work in progress.
   Apple FP4 (W4A16) decode GEMV with an f16-domain E2M1 decode plus a
   redesigned varlen causal-conv1d kernel. Verified on M5: the 30B-A3B MoE
   serves in bfloat16 at GSM8K 8-shot ~0.85.
+- Added an `enable_dp_cross_replica_prefix_copy` KV cache config flag
+  (default on). When serving with data parallelism, a prefix-cache hit
+  resident on another DP replica's GPU is normally served by a
+  device-to-device copy onto the request's replica. Disabling the flag turns
+  those copies off so cross-replica reuse is served only from the shared
+  host/disk tier via the KV connector (or recomputed), which can be
+  preferable when a connector is configured and GPU block-pool pressure
+  matters more than copy bandwidth.
 - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
 - Added tool-calling, reasoning, and structured-output (`response_format`)
   support to GLM-5.1 / GLM-5.2, enabled with

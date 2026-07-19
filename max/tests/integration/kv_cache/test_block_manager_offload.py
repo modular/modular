@@ -158,6 +158,7 @@ def _make_block_manager(
     *,
     num_replicas: int = 1,
     connector: RecordingConnector | None = None,
+    enable_dp_cross_replica_prefix_copy: bool = True,
 ) -> tuple[BlockManager, RecordingConnector]:
     connector = connector if connector is not None else RecordingConnector()
     # Multi-replica needs per-replica memory units so a cross-replica hit can
@@ -178,6 +179,7 @@ def _make_block_manager(
         enable_prefix_caching=True,
         num_replicas=num_replicas,
         replica_kv_memory=replica_kv_memory,
+        enable_dp_cross_replica_prefix_copy=enable_dp_cross_replica_prefix_copy,
     )
     return bm, connector
 
@@ -375,6 +377,53 @@ def test_touch_fires_on_cross_replica_hit_keyed_to_serving_replica() -> None:
 
     assert len(device_blocks) == 2  # materialized onto replica 0
     assert connector.touches == [([_b(111), _b(222)], 0)]
+
+
+def test_cross_replica_copy_disabled_serves_from_external_tier() -> None:
+    """With enable_dp_cross_replica_prefix_copy off, a block resident only on
+    another replica's device is NOT materialized via a device-to-device copy:
+    the device lookup stops at the local miss and the prefix is served from
+    the shared external tier instead.
+    """
+    connector = _ExternalTierConnector()
+    connector.num_blocks_to_load = 2  # both blocks are warm in the tier
+    bm, _ = _make_block_manager(
+        num_replicas=2,
+        connector=connector,
+        enable_dp_cross_replica_prefix_copy=False,
+    )
+    rid = RequestID("req-xrep-off")
+    bm.req_to_hashes[rid] = [111, 222]
+    _commit_device_block(bm.device_block_pools[1], 111)
+    _commit_device_block(bm.device_block_pools[1], 222)
+
+    served = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid), replica_idx=0)
+
+    assert len(served) == 2  # served, but by the external tier
+    assert connector.calls == ["load", "touch"]  # host load, no device hit
+    assert bm.metrics.cross_replica_blocks_copied == 0
+    assert bm._replica_kv_memory is not None
+    for units in bm._replica_kv_memory:
+        assert cast(_FakeKVMemory, units[0]).copies == []  # no D2D issued
+
+
+def test_cross_replica_copy_disabled_count_is_local_only() -> None:
+    """With the flag off, the admission estimate must not count blocks the
+    reuse path can no longer serve by device-to-device copy: only the request
+    replica's own resident blocks count as device hits.
+    """
+    bm, _ = _make_block_manager(
+        num_replicas=2, enable_dp_cross_replica_prefix_copy=False
+    )
+    _commit_device_block(bm.device_block_pools[1], 111)
+    _commit_device_block(bm.device_block_pools[1], 222)
+
+    assert (
+        bm._count_full_blocks_from_prefix_cache([111, 222], replica_idx=0) == 0
+    )
+    assert (
+        bm._count_full_blocks_from_prefix_cache([111, 222], replica_idx=1) == 2
+    )
 
 
 def test_touch_not_fired_without_external_tier() -> None:
