@@ -11,11 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Implements the ARM I8MM (int8 matrix multiply) CPU microkernel.
+"""Implements the ARM I8MM (8-bit integer matrix multiply) CPU microkernel.
 
 Provides `Inner_matmul_i8mm`, an `InnerMatmulKernel` conforming struct that
 performs 8-bit integer matrix multiplication using the `_neon_matmul` NEON
-intrinsic, accumulating 32-bit results through `LoadStore_i8mm`.
+intrinsic. It accumulates `int32` or `uint32` results from `uint8`/`uint8`,
+`uint8`/`int8`, or `int8`/`int8` operand pairs (i8mm does not support a
+signed-`A`, unsigned-`B` pair) through `LoadStore_i8mm`.
 """
 
 from std.math import align_up
@@ -56,13 +58,22 @@ struct LoadStore_i8mm[
     """
 
     comptime num_simd_cols = Self.tile_columns // Self.simd_size
+    """Number of SIMD-width column groups in the output tile."""
     var output_tile: _Accumulator[
         Self.dtype, Self.tile_rows, Self.num_simd_cols, Self.simd_size
     ]
+    """Accumulation buffer holding the partial sums for the output tile."""
     var skip_boundary_check: Bool
+    """Whether to skip partial-tile boundary handling on load and store."""
 
     @always_inline
     def __init__(out self, skip_boundary_check: Bool):
+        """Initializes the tile buffer with a boundary-check setting.
+
+        Args:
+            skip_boundary_check: Whether to skip partial-tile boundary
+                handling on load and store.
+        """
         self.output_tile = _Accumulator[
             Self.dtype, Self.tile_rows, Self.num_simd_cols, Self.simd_size
         ]()
@@ -163,13 +174,14 @@ struct LoadStore_i8mm[
 # implements the I8MM microkernel.
 @fieldwise_init
 struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
-    """ARM I8MM (int8 matrix multiply) microkernel for CPU matmul.
+    """ARM I8MM (8-bit integer matrix multiply) microkernel for CPU matmul.
 
     Implements `InnerMatmulKernel` using the `_neon_matmul` intrinsic to
     compute 8-bit integer dot products in pairs of two rows. Operates on a
     pre-packed A buffer (packed by `packA_i8mm`) and a packed B tile, and
-    accumulates results in `LoadStore_i8mm` to produce a 32-bit integer
-    output tile.
+    accumulates `int32` or `uint32` results from `uint8`/`uint8`,
+    `uint8`/`int8`, or `int8`/`int8` operands (not signed-`A`, unsigned-`B`)
+    in `LoadStore_i8mm`.
     """
 
     # Parameters for global reference.

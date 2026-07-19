@@ -15,7 +15,10 @@
 
 Defines `Inner_matmul_neon`, a struct conforming to the `InnerMatmulKernel`
 trait that accumulates partial products using vectorized lane-broadcast FMA
-against a packed B matrix.
+against a packed B matrix. The dispatcher selects this kernel on ARM NEON
+hardware for operand types that take neither the integer dot-product
+(`dotprod`) nor the `i8mm` path, which in practice means floating-point
+operands.
 """
 
 from std.math import fma

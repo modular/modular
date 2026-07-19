@@ -87,6 +87,24 @@ trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDeletable):
         tile_n_k: IndexList[2],
         skip_boundary_check: Bool,
     ):
+        """Accumulates one packed `B` tile into the corresponding `C` tile.
+
+        Parameters:
+            kernel_rows: Number of `C` rows the microkernel accumulates per
+                tile.
+            kernel_cols: Number of `C` columns the microkernel accumulates per
+                tile.
+            simd_size: SIMD vector width used by the inner accumulation.
+
+        Args:
+            c: Output tile to accumulate into.
+            a: Non-transposed left operand tile.
+            b_packed: Pre-packed right operand panel (rank 3).
+            global_offset: `(M, N, K)` offset of this tile in the full problem.
+            global_bound: `(M, N, K)` bounds of the full problem.
+            tile_n_k: Dynamic `(N, K)` extent of the tile to process.
+            skip_boundary_check: Whether to skip partial-tile boundary handling.
+        """
         comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
         ...
 
@@ -271,17 +289,24 @@ struct TiledMatmul[
     """
 
     var alg: Self.algorithm
+    """Inner microkernel conforming to `InnerMatmulKernel`."""
     var c: TileTensor[Self.c_type, Self.c_layout, Self.c_origin]
+    """Output `TileTensor` the result accumulates into."""
     var a: TileTensor[Self.a_type, Self.a_layout, Self.a_origin]
+    """Left operand `TileTensor`."""
     var b: TileTensor[Self.b_type, Self.b_layout, Self.b_origin]
+    """Right operand `TileTensor`."""
     # Dynamic tile parameter.
     var tile_n_k: IndexList[2]
+    """Dynamic `(N, K)` tile extents used to partition the problem."""
 
     # Tile starting points on the (M,N,K) coordinates.
     var global_tile_offset: GemmShape
+    """`(M, N, K)` offset of this routine's tile region."""
 
     # Tile sizes this routine will process on the (M,N,K) coordinates.
     var global_tile_shape: GemmShape
+    """`(M, N, K)` extent of this routine's tile region."""
 
     var b_tile_generator: BTileGenerator[
         Self.config,
@@ -293,8 +318,10 @@ struct TiledMatmul[
         Self.b_packed,
         Self.b_origin,
     ]
+    """Generator that packs `B` sub-tiles for the inner kernel."""
 
     var elementwise_epilogue_fn: Self.ElementwiseEpilogueFnType
+    """Fused elementwise epilogue applied to each output tile."""
 
     def _outer_m_loop[
         tile_kernel_cols: Int
@@ -648,8 +675,10 @@ def matmul[
             layout (defaults to `False`).
         elementwise_lambda_fn: Optional elementwise epilogue applied to each
             output tile (defaults to `None`).
-        saturated_vnni: Whether to use the saturating VNNI variant on x86
-            (defaults to `False`).
+        saturated_vnni: When `True`, uses the saturating x86 variant, which
+            requires the `a` operand to lie in `[0, 127]`; it saves
+            instructions only on the AVX2 emulation path used when the target
+            lacks VNNI (defaults to `False`).
 
     Args:
         c: Output matrix buffer accumulating the matmul result.

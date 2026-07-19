@@ -57,6 +57,7 @@ comptime cblas_gemm_type = def(
     UnsafePointer[Float32, MutAnyOrigin],
     Int32,
 ) thin -> None
+"""Function type matching the Accelerate `cblas_sgemm` C signature."""
 
 # ===-----------------------------------------------------------------------===#
 # Constants
@@ -65,6 +66,7 @@ comptime cblas_gemm_type = def(
 comptime LIB_ACC_PATH = (
     "/System/Library/Frameworks/Accelerate.framework/Accelerate"
 )
+"""Filesystem path to the Apple Accelerate framework dynamic library."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -87,6 +89,7 @@ def _on_error_msg() -> Error:
 comptime APPLE_ACCELERATE = _Global[
     "APPLE_ACCELERATE", _init_dylib, on_error_msg=_on_error_msg
 ]
+"""Process-global lazily loaded handle to the Accelerate dynamic library."""
 
 
 def _init_dylib() -> OwnedDLHandle:

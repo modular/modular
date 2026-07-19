@@ -11,7 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Implements the CPU int8 matmul microkernel using x86 VNNI or ARM NEON dot-product instructions."""
+"""Implements the integer CPU matmul microkernel (x86 VNNI or ARM NEON).
+
+On x86 it accumulates `int32` from a `uint8` `A` and an `int8` `B`; on ARM it
+accumulates `int32` from `int8`/`int8` or `uint8`/`uint8` operands.
+"""
 
 from std.math import align_down
 from std.sys import prefetch
@@ -39,16 +43,23 @@ from .impl import InnerMatmulKernel
 # implements the VNNI microkernel.
 @fieldwise_init
 struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
-    """Int8 microkernel for CPU matmul using x86 VNNI or ARM NEON dot-product.
+    """Integer CPU matmul microkernel using x86 VNNI or ARM NEON dot-product.
 
-    Implements `InnerMatmulKernel` using 4-element int8 dot-product instructions
-    (`vpdpbusd` on x86, `_neon_dotprod` on ARM) to accumulate int32 partial
-    products. Handles K tails (remainder < 4) by packing A into a local buffer
-    or using AVX-512 masked loads. When `saturated_vnni` is `True`, uses the
-    saturated x86 variant (`dot_i8_to_i32_saturated_x86`) to prevent overflow.
+    Implements `InnerMatmulKernel` using 4-element 8-bit integer dot-product
+    instructions to accumulate `int32` partial products. On x86 it accumulates
+    from a `uint8` `A` and an `int8` `B`, emitting the VNNI `vpdpbusd`
+    instruction when the target has VNNI (AVX-512 VNNI or AVX-VNNI) and falling
+    back to an AVX2 emulation otherwise (AVX2 is the minimum, not AVX-512). On
+    ARM it accumulates from `int8`/`int8` or `uint8`/`uint8` operands using the
+    NEON dot-product (`_neon_dotprod`). Handles K tails (remainder < 4) by
+    packing A into a local buffer or using AVX-512 masked loads.
 
     Parameters:
-        saturated_vnni: Whether to use the saturating VNNI variant on x86.
+        saturated_vnni: When `True`, uses the saturating x86 variant
+            (`dot_i8_to_i32_saturated_x86`), which requires the `A` operand to
+            lie in `[0, 127]`. This saves instructions on the AVX2 emulation
+            path used when the target lacks VNNI; on VNNI hardware it emits the
+            same instruction as the default.
     """
 
     # Parameters for global reference.
