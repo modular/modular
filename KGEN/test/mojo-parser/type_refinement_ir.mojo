@@ -83,7 +83,7 @@ struct MiniPack[
 ]:
     def get_element[
         index: Int
-    ](self) -> ref[origin_of(self)] Self.element_types[index]:
+    ](self) -> ref[self] Self.element_types[index]:
         while True:
             pass
 
@@ -103,7 +103,7 @@ struct BaseMiniPack[
 ]:
     def get_element[
         index: Int
-    ](self) -> ref[origin_of(self)] Self.element_types[index]:
+    ](self) -> ref[self] Self.element_types[index]:
         while True:
             pass
 
