@@ -170,7 +170,7 @@ def static_label_alias[T: AnyType]() -> String:
 
 def static_label_type_of_value[
     T: AnyType
-](x: T,) -> String where conforms_to(T, StaticLabel):
+](x: T) -> String where conforms_to(T, StaticLabel):
     return type_of(x).static_label()
 
 
@@ -549,7 +549,7 @@ def needs_describable[T: Describable](x: T) -> String:
 
 def greet_and_describe[
     T: Movable
-](x: T,) -> String where conforms_to(T, Greetable) and conforms_to(
+](x: T) -> String where conforms_to(T, Greetable) and conforms_to(
     T, Describable
 ):
     return x.greet() + " | " + x.describe()
@@ -557,7 +557,7 @@ def greet_and_describe[
 
 def call_both_from_conjunction[
     T: Movable
-](x: T,) -> String where conforms_to(T, Greetable) and conforms_to(
+](x: T) -> String where conforms_to(T, Greetable) and conforms_to(
     T, Describable
 ):
     return needs_greetable(x) + " | " + needs_describable(x)
@@ -615,7 +615,7 @@ def use_all_three[
 
 def and_alongside_or[
     T: Movable, U: Movable
-](x: T, y: U,) -> String where conforms_to(T, Greetable) and conforms_to(
+](x: T, y: U) -> String where conforms_to(T, Greetable) and conforms_to(
     T, Describable
 ):
     return x.greet() + " | " + x.describe()
@@ -636,15 +636,11 @@ def inner_greet[T: Greetable](x: T) -> String:
     return x.greet()
 
 
-def middle_greet[
-    T: Movable
-](x: T,) -> String where conforms_to(T, Greetable):
+def middle_greet[T: Movable](x: T) -> String where conforms_to(T, Greetable):
     return inner_greet(x)
 
 
-def outer_greet[
-    T: Movable
-](x: T,) -> String where conforms_to(T, Greetable):
+def outer_greet[T: Movable](x: T) -> String where conforms_to(T, Greetable):
     return middle_greet(x)
 
 
@@ -820,7 +816,7 @@ def reg_read[
 
 def reg_conjunction[
     T: TrivialRegisterPassable
-](imm x: T,) -> String where conforms_to(T, Greetable) and conforms_to(
+](imm x: T) -> String where conforms_to(T, Greetable) and conforms_to(
     T, Describable
 ):
     return x.greet() + " | " + x.describe()
@@ -922,13 +918,13 @@ struct Pair[A: ImplicitlyDeletable & Movable, B: ImplicitlyDeletable & Movable]:
 
 def greet_wrapper[
     T: ImplicitlyDeletable & Movable
-](w: Wrapper[T],) -> String where conforms_to(T, Greetable):
+](w: Wrapper[T]) -> String where conforms_to(T, Greetable):
     return w.get().greet()
 
 
 def greet_double_alias[
     T: ImplicitlyDeletable & Movable
-](w: DoubleAliasWrapper[T],) -> String where conforms_to(T, Greetable):
+](w: DoubleAliasWrapper[T]) -> String where conforms_to(T, Greetable):
     return w.get().greet()
 
 

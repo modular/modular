@@ -204,7 +204,7 @@ def must_be_read_only_with_origin[
 
 def demo_origin_closure[
     o: Origin[mut=True]
-](ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC,],):
+](ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC]):
     var immut_ptr = ptr.as_immutable()
 
     def read() {imm immut_ptr}:

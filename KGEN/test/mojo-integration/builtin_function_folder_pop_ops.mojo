@@ -238,7 +238,7 @@ def fold_pop_simd_and() -> POPUInt8x4T[POP_UI8x4_Fold]:
 @always_inline("builtin")
 def pop_unresolved_simd_and[
     dt: DType, n: Int
-](x: SIMD[dt, n], y: SIMD[dt, n],) -> SIMD[dt, n]._mlir_type:
+](x: SIMD[dt, n], y: SIMD[dt, n]) -> SIMD[dt, n]._mlir_type:
     return __mlir_op.`pop.simd.and`(x._mlir_value, y._mlir_value)
 
 
@@ -270,7 +270,7 @@ def fold_pop_simd_xor() -> POPUInt8x4T[POP_UI8x4_Fold]:
 @always_inline("builtin")
 def pop_unresolved_simd_xor[
     dt: DType, n: Int
-](x: SIMD[dt, n], y: SIMD[dt, n],) -> SIMD[dt, n]._mlir_type:
+](x: SIMD[dt, n], y: SIMD[dt, n]) -> SIMD[dt, n]._mlir_type:
     return __mlir_op.`pop.simd.xor`(x._mlir_value, y._mlir_value)
 
 
