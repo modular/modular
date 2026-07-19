@@ -768,7 +768,6 @@ struct Pointer[
         """
         return self[unsafe_offset=offset]
 
-    @__defines_interior_origins
     @always_inline
     def _get_ref_with_unsafe_interior_origin[
         name: StringLiteral,
@@ -803,7 +802,6 @@ struct Pointer[
             __mlir_op.`lit.ref.from_pointer`[_type=ref_type](self._mlir_value)
         )
 
-    @__defines_interior_origins
     @always_inline
     def _get_ref_with_unsafe_interior_origin[
         name: StringLiteral,

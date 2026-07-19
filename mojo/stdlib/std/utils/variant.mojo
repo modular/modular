@@ -545,7 +545,6 @@ struct Variant[*Ts: Movable](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    @__defines_interior_origins
     @__unsafe_nested_origins_read_only
     @always_inline
     def __getitem_param__[

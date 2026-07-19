@@ -304,8 +304,6 @@ and can identify the interior object when Mojo gains fine-grained invalidation
 sets. Interior origins with different names are logically independent values
 tracked in a "field sensitive" way.
 
-Functions that introduce interior references mark themselves with the
-`@__defines_interior_origins` decorator (which needs to be properly designed).
 Methods that only read through nested origins without invalidating them can use
 `@__unsafe_nested_origins_read_only` to opt out of blanket invalidation on
 call. In the standard library, `Origin.get_owned_interior[name]` builds the
@@ -525,9 +523,10 @@ In both cases the data you reach through the reference is fully owned and
 managed by the container. Interior origin tracking connects the reference’s
 lifetime to mutations on that owner.
 
-Library authors who vend interior references use `@__defines_interior_origins`
-on the accessor and derive the origin with helpers such as
-`Origin._get_owned_interior[name]`. Application code typically just uses the
+Library authors who vend interior references define functions whose return type
+includes an interior origin (either directly in a `ref` result, or indirectly
+in a type containing it, like `Pointer` or `Span`. Application code typically
+just uses the
 container API; the compiler attaches the interior origin automatically.
 The specific decorator names are under discussion and expected to change, which
 is why they start with double underscores. Similarly, the utility methods on
@@ -551,7 +550,9 @@ Interior references add a parallel idea for storage that is not a struct field
 you access directly, but lives behind a container. An **interior origin** pairs
 the base value with a compile-time tag (for example `"element"`) that names a
 logical slot inside it. The compiler treats that interior origin as **live**
-when an accessor marked `@__defines_interior_origins` returns it, and as
+for calls to functions that return them: Mojo knows that the body of the
+function needed to prove the interior origin live within the body, so it can
+know that the result of the call is also live. These interior origins are
 **invalidated** when something mutates the base origin the interior hangs off
 of.
 
@@ -563,7 +564,6 @@ struct MyList[T: AnyType]:
     def __len__(self) -> Int: ...
     def append(mut self, var elt: T): ...
 
-    @__defines_interior_origins
     def __getitem__(
         ref self, idx: Int
     ) -> ref[self.data._get_ref_with_unsafe_interior_origin["element"](self)] Self.T:
@@ -573,9 +573,9 @@ struct MyList[T: AnyType]:
 The initializer, `__len__`, and `append` methods are ordinary; `__getitem__` is
 where the interior reference is introduced. The return type uses
 `_get_ref_with_unsafe_interior_origin` to rebase the element reference onto an
-interior origin derived from `self`. The `@__defines_interior_origins`
-annotation tells the compiler that this call **creates** a new, valid interior
-origin - promising that it can be safely dereferenced when the method returns.
+interior origin derived from `self`. Because `__getitem__` returns a reference
+with an interior origin, it is promising that the returned reference is to a
+valid interior origin - it can be safely dereferenced after the method returns.
 
 Typical client code then looks like this:
 
@@ -809,9 +809,6 @@ The model applies cleanly when all of the following hold:
   with in-place updates that preserve pointer stability may eventually need
   narrower invalidation metadata; until then, assume reallocation or overwrite
   is possible.
-- The accessor that returns the interior reference is correctly marked with
-  `@__defines_interior_origins`. If it is not, the compiler cannot tie the
-  reference back to a tracked interior origin.
 
 Interior origins are an extension of Mojo's existing lifetime tracking behavior.
 They do not help with untracked pointers, manual origin casts used
