@@ -88,7 +88,7 @@ trait Hashable:
         comptime names = r.field_names()
         comptime types = r.field_types()
 
-        comptime for i in range(names.size):
+        comptime for i in range(names.length):
             comptime T = types[i]
             comptime assert conforms_to(T, Hashable), _field_conforms_to_error[
                 Parent=Self,

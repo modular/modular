@@ -430,7 +430,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 pack=False,
             ](s_tmem_slot)
 
-            comptime for _i in range(type_of(s_row_val).size):
+            comptime for _i in range(type_of(s_row_val).length):
                 s_row.raw_store(_i, s_row_val[_i])
             tcgen05_load_wait()
 

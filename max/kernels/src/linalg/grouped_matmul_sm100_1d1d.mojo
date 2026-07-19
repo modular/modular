@@ -312,7 +312,7 @@ def copy_accum_to_gmem[
                     elementwise_compute_lambda_fn.value(),
                     num_output_warps,
                     epilogue_dtype,
-                    upper_frag_casted.size,
+                    upper_frag_casted.length,
                     repeat,
                     transpose_c,
                     cta_group=cta_group,

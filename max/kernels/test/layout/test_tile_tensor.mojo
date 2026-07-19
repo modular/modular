@@ -1762,7 +1762,7 @@ def test_exp_scale() raises:
 def test_tuple_getter() raises:
     var data = InlineArray[Float32, 4](fill=0)
     var a = TileTensor(data, row_major[2, 2]())
-    comptime for i in range(data.size):
+    comptime for i in range(data.length):
         data[i] = Float32(i)
 
     assert_equal(a[(1, 1)], 3)

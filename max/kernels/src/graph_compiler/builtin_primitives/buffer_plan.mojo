@@ -266,7 +266,7 @@ struct BufferPlanState[
                 self.requested += size
                 self.allocate_new_block(i + start, size)
         else:
-            comptime for i in range(sizes.size):
+            comptime for i in range(sizes.length):
                 var alloc_size = sizes[i]
                 comptime result_idx = i + start
                 self.requested += alloc_size

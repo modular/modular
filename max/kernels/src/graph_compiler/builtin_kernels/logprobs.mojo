@@ -54,8 +54,8 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
             fill_k: Key value to fill every heap slot with.
             fill_v: Value to fill every heap slot with.
         """
-        self.k_array = InlineArray[size=Self.num_elements](fill=fill_k)
-        self.v_array = InlineArray[size=Self.num_elements](fill=fill_v)
+        self.k_array = InlineArray[length=Self.num_elements](fill=fill_k)
+        self.v_array = InlineArray[length=Self.num_elements](fill=fill_v)
 
     @always_inline
     def swap(mut self, a: Int, b: Int) -> None:

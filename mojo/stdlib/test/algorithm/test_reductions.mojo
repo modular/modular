@@ -263,7 +263,7 @@ def test_cumsum() raises:
     var vector = InlineArray[Float32, 150](fill=0)
     for i in range(len(vector)):
         vector[i] = Float32(i + 1)
-    var cumsum_out1 = InlineArray[Float32, vector.size](fill=0)
+    var cumsum_out1 = InlineArray[Float32, vector.length](fill=0)
     # cumsum[150, DType.float32](cumsum_out1, vector)
     # cumsum(cumsum_out1, vector)
     cumsum(cumsum_out1, vector)

@@ -282,7 +282,7 @@ def _reflection_write_to[
     writer.write_string(type_name)
     writer.write_string("(")
 
-    comptime for i in range(names.size):
+    comptime for i in range(names.length):
         comptime FieldType = types[i]
         comptime assert conforms_to(
             FieldType, Writable
