@@ -126,7 +126,7 @@ def roi_align_nhwc[
 ):
     """
     Compute ROIAlign a batch of rois of shape [M, 5] where the first dim is the
-    batch index, followed by region box coordinates (y0, x0) (y1, x1). For
+    batch index, followed by region box coordinates (x0, y0) (x1, y1). For
     inputs of NHWC format. The output shape is
     [M, output_height, output_width, C].
 

@@ -1138,11 +1138,13 @@ def mla_decode_branch_fp8[
         w_uk: Weight matrix for projecting the non-rope part of each query head to
             KV latent space. Shape: [num_heads, kv_latent_dim, qk_nope_head_dim].
         w_uk_scale: The scale for the w_uk weight matrix. Shape varies
-            depending on the float8_config.
+            depending on the FP8 block-scaling granularity used for weight
+            quantization.
         w_uv: Weight matrix for projecting the output of the attention back to
             each head's original space. Shape: [num_heads, v_head_dim, kv_latent_dim].
         w_uv_scale: The scale for the w_uv weight matrix. Shape varies
-            depending on the float8_config.
+            depending on the FP8 block-scaling granularity used for weight
+            quantization.
         scalar_args_buf: Packed MLA dispatch metadata buffer.
         ctx: Device context.
         d_indices: Sparse decode packed indices (null when dense).
@@ -1660,7 +1662,8 @@ def mla_prefill_decode_graph_fp8[
             to KV latent space. Shape: [num_heads, kv_latent_dim,
             qk_nope_head_dim].
         w_uk_scale: The scale for the `w_uk` weight matrix. Shape varies
-            depending on the float8_config.
+            depending on the FP8 block-scaling granularity used for weight
+            quantization.
         w_uv: Weight tensor for projecting latent values to V. Shape:
             [num_heads, v_head_dim, kv_latent_dim].
         w_uv_scale: Scale tensor for `w_uv`.

@@ -32,7 +32,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 struct MaskName(Writable):
-    """A tile's masking status."""
+    """A canonical string name identifying a mask type."""
 
     var name: String
 

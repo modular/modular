@@ -191,9 +191,11 @@ def mla_sm100_prefill_sparse[
 
     Thin wrapper around ``mla_prefill_sparse`` that builds the
     ``MLASparseConfig`` from the passed dimensions so callers don't have to
-    reach into the kernel's config type. The kernel itself hardcodes the
-    DSv3.2 absorbed/latent shape (``qk_depth=576``, ``v_depth=512``,
-    ``num_q_heads=128``, ``num_kv_heads=1``) and asserts on those values.
+    reach into the kernel's config type. The kernel targets the DSv3.2
+    absorbed/latent shape and comptime-asserts ``qk_depth==576``,
+    ``num_q_heads`` is 128 or 64, and ``num_kv_heads==1``, plus equal
+    output/query bit-width. ``v_depth`` is assumed to be 512 (=
+    ``kv_lora_rank``) by that shape but is not asserted.
 
     Parameters:
         output_type: Output element type (must be the same width as
@@ -201,11 +203,11 @@ def mla_sm100_prefill_sparse[
         q_type: Query element type (BF16 in the supported DSv3.2 shape).
         cache_t: KV cache type (typically a paged MLA cache obtained from
             ``kv_collection.get_key_cache(layer_idx)``).
-        num_q_heads: Number of query heads (must be 128 for the DSv3.2
-            absorbed shape).
+        num_q_heads: Number of query heads (asserted to be 128 or 64).
         qk_depth: Per-head Q/K depth (must be 576 = ``kv_lora_rank(512) +
             qk_rope_head_dim(64)``).
-        v_depth: Per-head V depth (must be 512 = ``kv_lora_rank``).
+        v_depth: Per-head V depth (512 = ``kv_lora_rank`` for the DSv3.2
+            absorbed shape; not asserted).
         indices_stride: Per-query indices buffer stride (= the indexer's
             ``index_topk``). Also used as the runtime ``indices_stride`` to
             the kernel.

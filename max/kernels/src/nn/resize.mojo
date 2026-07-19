@@ -334,8 +334,6 @@ def resize_linear[
 ):
     """Resizes input to output shape using linear interpolation.
 
-    Does not use anti-aliasing filter for downsampling (coming soon).
-
     Parameters:
         coordinate_transformation_mode: How to map a coordinate in output to a coordinate in input.
         antialias: Whether or not to use an antialiasing linear/cubic filter, which when downsampling, uses

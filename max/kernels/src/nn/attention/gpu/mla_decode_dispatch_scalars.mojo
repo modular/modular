@@ -53,8 +53,8 @@ def mla_decode_dispatch_scalars(
     `ctx.api()` internally, mirroring `mha_decoding_num_partitions`:
 
     - **HIP (AMD):** the AMD MLA decode kernel bakes its split-K grid from
-      `mha_decoding_num_partitions(..., is_mla=True)` at dispatch time
-      (`mla.mojo:756-768`) and never reads `num_partitions` from the scalar
+      `mha_decoding_num_partitions(..., is_mla=True)` at dispatch time and
+      never reads `num_partitions` from the scalar
       buffer; the metadata `num_partitions` is used only as the HIP
       device-graph capture/replay selection key. To keep the capture key
       byte-for-byte equal to the baked grid, compute the SAME value the kernel
@@ -80,8 +80,8 @@ def mla_decode_dispatch_scalars(
     """
     if ctx.api() == "hip":
         # MLA: kv_num_heads == 1, so heads_per_group == num_heads. Pass raw
-        # max_cache_valid_length — byte-for-byte the same call mla.mojo:762
-        # bakes into the AMD split-K grid.
+        # max_cache_valid_length — byte-for-byte the same value
+        # `mha_decoding_num_partitions` bakes into the AMD split-K grid.
         var np = mha_decoding_num_partitions(
             batch_size,
             max_cache_valid_length,
