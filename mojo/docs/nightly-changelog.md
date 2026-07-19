@@ -150,18 +150,6 @@ This version is still a work in progress.
 - `imm` is now the preferred spelling for the `read` argument and
   closure-capture convention. `read` still works but will soon be deprecated.
 
-- A file can now import another identically named module or package, assuming
-  it is found first during import resolution (#4534):
-
-  ```mojo
-  # -------- #
-  # foo.mojo #
-  # -------- #
-  from foo import bar   # a package on the system
-
-  bar()
-  ```
-
 ## Language changes
 
 - User-written structs must now explicitly declare closure-trait conformance
