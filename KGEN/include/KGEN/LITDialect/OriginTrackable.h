@@ -162,7 +162,7 @@ enum class OperandEffect {
   memMarkDestroyed,
 };
 
-/// This is the result value of `getOperationValueEffects`, indicating
+/// This is the result value of `OperationEffects::analyze`, indicating
 /// out-of-bound effects (aka special cases) and whether the op is unknown.
 enum class OverallOpValueEffect {
   /// this indicates that the returned value effects cover everything.
@@ -191,15 +191,24 @@ enum class OverallOpValueEffect {
   tryOp,
 };
 
-/// This computes the effects that an operation has on any operands, result
-/// values, and other declared origins. This information is used by both
-/// phases of CheckLifetimes.
-OverallOpValueEffect
-getOperationEffects(Operation &op,
-                    SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
-                    SmallVectorImpl<ResultEffect> &results,
-                    SmallVectorImpl<std::pair<TypedAttr, Value>> &origins,
-                    CachedOriginFinder &originFinder);
+/// Operand, result, and origin effects produced by `OperationEffects::analyze`.
+struct OperationEffects {
+  SmallVector<std::pair<Value, OperandEffect>> operands;
+  SmallVector<ResultEffect> results;
+  SmallVector<std::pair<TypedAttr, Value>> origins;
+
+  OperationEffects(CachedOriginFinder &originFinder)
+      : originFinder(originFinder) {}
+
+  /// Computes the effects that `op` has on operands, result values, and other
+  /// declared origins. Used by both phases of CheckLifetimes.
+  OverallOpValueEffect analyze(Operation &op);
+
+private:
+  CachedOriginFinder &originFinder;
+
+  void analyzeCallOp(Operation &op);
+};
 
 } // namespace LIT
 } // namespace M::KGEN
