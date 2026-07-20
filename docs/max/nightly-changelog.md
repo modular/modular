@@ -632,6 +632,14 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed `ops.scatter_add` / `ops.scatter_mul` / `ops.scatter_max` /
+  `ops.scatter_min` silently returning wrong results when `indices` contains
+  duplicates and the update count is large. These ops run on CPU, and once
+  the update count exceeded roughly 32k elements the reduction was split
+  across worker threads with a plain read-modify-write, so concurrent
+  updates to the same output element raced and got dropped. The reduce path
+  now applies updates atomically; the plain overwrite `ops.scatter` is
+  unchanged (duplicates keep last-writer-wins semantics).
 - Fixed `ops.scatter_nd_add` / `ops.scatter_nd_mul` / `ops.scatter_nd_max` /
   `ops.scatter_nd_min` silently returning wrong results when `indices`
   contains duplicate index vectors. The reduction applied each update with a

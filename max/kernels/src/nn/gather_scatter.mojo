@@ -1390,11 +1390,11 @@ def scatter_elements[
     input_type: DType,
     indices_type: DType,
     *,
-    ReduceFn: ImplicitlyCopyable
-    & RegisterPassable
-    & def[dtype: DType, width: SIMDSize](
-        SIMD[dtype, width], SIMD[dtype, width]
-    ) -> SIMD[dtype, width],
+    reduce_fn: OptionalReg[
+        def[
+            dtype: DType, width: SIMDSize
+        ](SIMD[dtype, width], SIMD[dtype, width]) thin -> SIMD[dtype, width]
+    ] = None,
 ](
     input: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
     indices: ManagedTensorSlice[dtype=indices_type, rank=rank, ...],
@@ -1402,7 +1402,6 @@ def scatter_elements[
     _axis: Int,
     output: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
     ctx: DeviceContext,
-    reduce_fn: ReduceFn,
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
@@ -1411,8 +1410,10 @@ def scatter_elements[
         rank: Rank of the `input`, `indices`, `updates`, and `output` tensors.
         input_type: Element type of `input`, `updates`, and `output`.
         indices_type: Element type of `indices` (must be `int32` or `int64`).
-        ReduceFn: Binary reduction function type combining existing output
-            values with updates.
+        reduce_fn: Reduction function to apply: none (default, overwrite),
+            add, mul, max, min. Updates for duplicate indices are reduced
+            atomically, in unspecified order (without a reduce_fn,
+            duplicates leave an unspecified winner instead).
 
     Args:
         input: Source tensor copied into `output` before scattering.
@@ -1424,8 +1425,6 @@ def scatter_elements[
         output: Output tensor, same shape as `input`, receiving scattered
             updates.
         ctx: Device context for execution.
-        reduce_fn: Reduction function combining existing output values with
-            updates.
     """
     comptime assert (
         indices_type == DType.int32 or indices_type == DType.int64
@@ -1463,10 +1462,20 @@ def scatter_elements[
         output_coords[axis] = Int(
             _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
         )
-        var curr = output.to_tile_tensor()[Coord(output_coords)]
-        output.to_tile_tensor()[Coord(output_coords)] = reduce_fn[
-            dtype=input_type, width=1
-        ](curr, updates.to_tile_tensor()[indices_coords])
+        var update_val = updates.to_tile_tensor()[indices_coords]
+
+        comptime if reduce_fn:
+            var output_tt = output.to_tile_tensor()
+            var output_offset = 0
+            for i in range(rank):
+                output_offset += (
+                    Int(output_tt.dynamic_stride(i)) * output_coords[i]
+                )
+            _atomic_reduce[reduce_fn.value()](
+                output.unsafe_ptr() + output_offset, update_val
+            )
+        else:
+            output.to_tile_tensor()[Coord(output_coords)] = update_val
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
     elementwise[1](update_func, indices.shape_coord(), ctx)
