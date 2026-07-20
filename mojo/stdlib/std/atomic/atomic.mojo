@@ -511,6 +511,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         *,
         success_ordering: Ordering = _DEFAULT_COMPARISON_ORDERING,
         failure_ordering: Ordering = _DEFAULT_COMPARISON_ORDERING,
+        weak: Bool = False,
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         mut expected: Scalar[Self.dtype],
@@ -524,6 +525,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         Parameters:
             success_ordering: The memory ordering for the success case.
             failure_ordering: The memory ordering for the failure case.
+            weak: Allows the comparison to fail spuriously even when `ptr`
+                equals `expected`. Only safe inside a retry loop.
 
         Args:
           ptr: The source pointer.
@@ -550,6 +553,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
                 scope=Self.scope,
                 success_ordering=success_ordering,
                 failure_ordering=failure_ordering,
+                weak=weak,
             ](ptr, UnsafePointer(to=expected), desired)
 
         # For the floating point case, we need to bitcast the floating point
@@ -568,6 +572,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             scope=Self.scope,
             success_ordering=success_ordering,
             failure_ordering=failure_ordering,
+            weak=weak,
         ](atomic_integral_ptr, expected_integral_ptr, desired_integral)
 
     @always_inline("nodebug")
@@ -575,6 +580,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         *,
         success_ordering: Ordering = _DEFAULT_COMPARISON_ORDERING,
         failure_ordering: Ordering = _DEFAULT_COMPARISON_ORDERING,
+        weak: Bool = False,
     ](
         mut self, mut expected: Scalar[Self.dtype], desired: Scalar[Self.dtype]
     ) -> Bool:
@@ -586,6 +592,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         Parameters:
             success_ordering: The memory ordering for the success case.
             failure_ordering: The memory ordering for the failure case.
+            weak: Allows the comparison to fail spuriously even when `self`
+                equals `expected`. Only safe inside a retry loop.
 
         Args:
           expected: The expected value.
@@ -598,6 +606,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         return Self.compare_exchange[
             success_ordering=success_ordering,
             failure_ordering=failure_ordering,
+            weak=weak,
         ](UnsafePointer(to=self.value), expected, desired)
 
     @staticmethod
@@ -728,12 +737,39 @@ def _compare_exchange_integral_impl[
     scope: StaticString,
     success_ordering: Ordering,
     failure_ordering: Ordering,
+    weak: Bool = False,
 ](
     atomic_ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
     expected_ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
     desired: Scalar[dtype],
 ) -> Bool:
     comptime assert dtype.is_integral(), "the input type must be integral"
+
+    # `weak` is a unit attribute with no "absent" value, so each form needs
+    # its own `__mlir_op` call rather than one with a conditional attribute.
+    comptime if weak:
+        var cmpxchg_res = __mlir_op.`pop.atomic.cmpxchg`[
+            weak=__mlir_attr.unit,
+            failure_ordering=failure_ordering.__mlir_attr(),
+            success_ordering=success_ordering.__mlir_attr(),
+            syncscope=_get_kgen_string[scope](),
+        ](
+            atomic_ptr.bitcast[Scalar[dtype]._mlir_type]()._get_kgen_pointer(),
+            expected_ptr[]._mlir_value,
+            desired._mlir_value,
+        )
+
+        expected_ptr[] = Scalar[dtype](
+            mlir_value=__mlir_op.`kgen.struct.extract`[
+                index=__mlir_attr.`0:index`
+            ](cmpxchg_res)
+        )
+
+        return Bool(
+            mlir_value=__mlir_op.`kgen.struct.extract`[
+                index=__mlir_attr.`1:index`
+            ](cmpxchg_res)
+        )
 
     var cmpxchg_res = __mlir_op.`pop.atomic.cmpxchg`[
         failure_ordering=failure_ordering.__mlir_attr(),

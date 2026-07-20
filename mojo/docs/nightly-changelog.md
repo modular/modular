@@ -880,6 +880,14 @@ This version is still a work in progress.
   GPU generations (M1-M5). It accepts `Float16`, `BFloat16`, and `Float32`
   inputs with a `Float32` accumulator.
 
+- `Atomic.compare_exchange()` now accepts a `weak` parameter, and requires
+  `weak=True` to compile on Apple GPU targets: AIR exposes no strong
+  compare-exchange primitive, so Metal only lowers the `weak` form. This is
+  safe for the common case of a CAS-retry loop, since a spurious failure just
+  costs one extra iteration. Previously any use of `compare_exchange()`,
+  including helpers built on it like atomic scatter-reduce, failed to
+  compile on Metal.
+
 - Apple M5 `simdgroup_matrix` MMA now accepts FP8 (`float8_e4m3fn`,
   `float8_e5m2`) inputs with an F32 accumulator, alongside the existing
   F16/BF16/F32 and 8-bit integer types.
