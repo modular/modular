@@ -14,12 +14,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 import pytest
 from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DevicePlacementPolicy, DeviceRef, Graph, TensorType, ops
+from max.graph import (
+    DevicePlacementPolicy,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
 
 device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
@@ -140,6 +149,64 @@ def test_scatter_nd(
     np.testing.assert_equal(
         result.to_numpy(), np.array(expected, dtype=np.float32)
     )
+
+
+@pytest.mark.parametrize(
+    "op,np_reduce",
+    [
+        (ops.scatter_nd_add, np.add),
+        (ops.scatter_nd_mul, np.multiply),
+        (ops.scatter_nd_max, np.maximum),
+        (ops.scatter_nd_min, np.minimum),
+    ],
+)
+def test_scatter_nd_reduce_duplicate_indices(
+    session: InferenceSession,
+    op: Callable[..., TensorValue],
+    np_reduce: np.ufunc,
+) -> None:
+    """Duplicate index vectors must reduce, not race: 8192 update rows
+    collide on 4 target rows, so on GPU thousands of threads reduce into the
+    same elements concurrently. Update values keep each reduction exact in
+    float32 in any application order, so the result must match the serial
+    numpy reference exactly.
+    """
+    rows, cols, n_idx, n_targets = 64, 16, 8192, 4
+
+    input_array = (np.arange(rows * cols, dtype=np.float32) % 7).reshape(
+        rows, cols
+    )
+    indices_data = ((np.arange(n_idx, dtype=np.int32) % n_targets) * 5 + 3)[
+        :, None
+    ]
+    if np_reduce is np.add:
+        updates_data = np.ones((n_idx, cols), dtype=np.float32)
+    elif np_reduce is np.multiply:
+        # Four twos per target row (the rest are ones), so each target is
+        # scaled by exactly 2**4.
+        updates_data = np.ones((n_idx, cols), dtype=np.float32)
+        updates_data[: 4 * n_targets] = 2.0
+    else:
+        values = (np.arange(n_idx, dtype=np.float32) * 37) % 251
+        updates_data = np.broadcast_to(values[:, None], (n_idx, cols)).copy()
+
+    input_type = TensorType(DType.float32, input_array.shape, device_ref)
+    with Graph("scatter_nd_reduce_dup", input_types=[input_type]) as graph:
+        input_val = graph.inputs[0].tensor
+        updates = ops.constant(updates_data, DType.float32, device=device_ref)
+        indices = ops.constant(indices_data, DType.int32, device=device_ref)
+        graph.output(op(input_val, updates, indices))
+
+    model = session.load(graph)
+    input_tensor = Buffer.from_numpy(input_array).to(model.input_devices[0])
+
+    result = model.execute(input_tensor)[0]
+    assert isinstance(result, Buffer)
+
+    expected = input_array.copy()
+    np_reduce.at(expected, indices_data.ravel(), updates_data)
+
+    np.testing.assert_equal(result.to_numpy(), expected)
 
 
 @pytest.mark.skipif(

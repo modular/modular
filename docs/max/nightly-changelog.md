@@ -632,6 +632,15 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed `ops.scatter_nd_add` / `ops.scatter_nd_mul` / `ops.scatter_nd_max` /
+  `ops.scatter_nd_min` silently returning wrong results when `indices`
+  contains duplicate index vectors. The reduction applied each update with a
+  plain read-modify-write, so concurrent threads targeting the same output
+  element raced and dropped updates — on GPU always, and on CPU once the
+  index count was large enough to split across worker threads. The reduce
+  path now applies updates atomically (a compare-exchange loop around the
+  reduction), so duplicate indices accumulate correctly on both devices, in
+  line with ONNX `ScatterND` reduction semantics.
 - Fixed the compiled-model cache (`.max_cache`) not invalidating when the
   Mojo kernel libraries change. The cache key previously content-hashed only
   the two built-in kernel packages, not the packages they import

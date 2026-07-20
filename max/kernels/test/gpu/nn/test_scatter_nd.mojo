@@ -14,9 +14,11 @@
 
 Covers row scatter, batched indices, sheet scatter (m=2, r_minus_m=1),
 element scatter (r_minus_m=0), negative indices, the SKIP out-of-bounds
-strategy, and the reduce path. The shape tests run under both OOB
-strategies (with in-bounds indices they must agree), and dedicated tests
-cover actual skipping for single- and multi-component indices.
+strategy, and the reduce path — including duplicate index vectors, which
+must reduce atomically across dtypes and reduction ops. The shape tests
+run under both OOB strategies (with in-bounds indices they must agree),
+and dedicated tests cover actual skipping for single- and multi-component
+indices.
 """
 
 from std.gpu.host import DeviceContext
@@ -449,11 +451,6 @@ def test_reduce_add[
         data_host[i] = Float32(i % 1000)
     for i in range(n_idx * cols):
         upd_host[i] = Float32(i + 1)
-    # Indices are deliberately unique. The reduce path applies reduce_fn as a
-    # non-atomic read-modify-write, so duplicate indices targeting the same
-    # output element race; that is a known limitation tracked separately, not
-    # something this test should exercise (a duplicate-index case would be
-    # nondeterministic, not a stable assertion).
     for i in range(n_idx):
         idx_host[i] = Scalar[itype]((i * 9 + 4) % rows)
 
@@ -563,6 +560,13 @@ def _add[
 
 
 @always_inline
+def _mul[
+    ty: DType, width: SIMDSize
+](lhs: SIMD[ty, width], rhs: SIMD[ty, width]) -> SIMD[ty, width]:
+    return lhs * rhs
+
+
+@always_inline
 def _max[
     ty: DType, width: SIMDSize
 ](lhs: SIMD[ty, width], rhs: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -576,38 +580,60 @@ def _min[
     return min(lhs, rhs)
 
 
+@always_inline
+def _upd_ones[dt: DType](k: Int) -> Scalar[dt]:
+    return Scalar[dt](1)
+
+
+@always_inline
+def _upd_twos_then_ones[dt: DType, n_twos: Int](k: Int) -> Scalar[dt]:
+    return Scalar[dt](2 if k < n_twos else 1)
+
+
+@always_inline
+def _upd_modular[dt: DType, mod: Int](k: Int) -> Scalar[dt]:
+    return Scalar[dt]((k * 37) % mod)
+
+
 def test_reduce_duplicate_indices[
+    dt: DType,
     reduce_op: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
+    n_idx: Int,
+    n_targets: Int,
+    update_fn: def(Int) thin -> Scalar[dt],
+    cols: Int = 16,
 ](ctx: DeviceContext) raises:
-    """All index rows collide on one output row; the atomic path must apply
-    every duplicate update. Integer-valued floats keep the reduction exact
-    regardless of the (nondeterministic) atomic application order."""
+    """Index rows collide on `n_targets` output rows (`n_idx // n_targets`
+    duplicates each), so concurrent threads reduce into the same output
+    elements; every duplicate update must land exactly once. Update values
+    are chosen per op so the reduction is exact in `dt` in any application
+    order, which makes the serial host reference valid despite the
+    nondeterministic GPU ordering."""
     comptime rows = 64
-    comptime cols = 16
-    comptime n_idx = 8
-    comptime target_row = 5
+    comptime assert n_targets <= 12, "target rows must stay within bounds"
 
-    var data_dev = ctx.enqueue_create_buffer[dtype](rows * cols)
-    var out_dev = ctx.enqueue_create_buffer[dtype](rows * cols)
-    var upd_dev = ctx.enqueue_create_buffer[dtype](n_idx * cols)
+    var data_dev = ctx.enqueue_create_buffer[dt](rows * cols)
+    var out_dev = ctx.enqueue_create_buffer[dt](rows * cols)
+    var upd_dev = ctx.enqueue_create_buffer[dt](n_idx * cols)
     var idx_dev = ctx.enqueue_create_buffer[itype](n_idx)
 
-    var data_host = ctx.enqueue_create_host_buffer[dtype](rows * cols)
-    var upd_host = ctx.enqueue_create_host_buffer[dtype](n_idx * cols)
+    var data_host = ctx.enqueue_create_host_buffer[dt](rows * cols)
+    var upd_host = ctx.enqueue_create_host_buffer[dt](n_idx * cols)
     var idx_host = ctx.enqueue_create_host_buffer[itype](n_idx)
-    var out_host = ctx.enqueue_create_host_buffer[dtype](rows * cols)
-    var expected = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var out_host = ctx.enqueue_create_host_buffer[dt](rows * cols)
+    var expected = ctx.enqueue_create_host_buffer[dt](rows * cols)
     ctx.synchronize()
 
     for i in range(rows * cols):
-        data_host[i] = Float32(i % 7)
+        data_host[i] = Scalar[dt](i % 7)
     for k in range(n_idx):
+        var v = update_fn(k)
         for c in range(cols):
-            upd_host[k * cols + c] = Float32(k + 1)
-    for i in range(n_idx):
-        idx_host[i] = Scalar[itype](target_row)
+            upd_host[k * cols + c] = v
+    for k in range(n_idx):
+        idx_host[k] = Scalar[itype]((k % n_targets) * 5 + 3)
 
     ctx.enqueue_copy(data_dev, data_host)
     ctx.enqueue_copy(upd_dev, upd_host)
@@ -627,13 +653,77 @@ def test_reduce_duplicate_indices[
 
     for i in range(rows * cols):
         expected[i] = data_host[i]
-    for c in range(cols):
-        var acc = data_host[target_row * cols + c]
-        for k in range(n_idx):
-            acc = reduce_op[dtype, 1](acc, upd_host[k * cols + c])
-        expected[target_row * cols + c] = acc
+    for k in range(n_idx):
+        var r = Int(idx_host[k])
+        for c in range(cols):
+            expected[r * cols + c] = reduce_op[dt, 1](
+                expected[r * cols + c], upd_host[k * cols + c]
+            )
 
     for i in range(rows * cols):
+        assert_equal(
+            out_host[i],
+            expected[i],
+            String("dt=", dt, " i=", i),
+        )
+
+    _ = data_dev
+    _ = out_dev
+    _ = upd_dev
+    _ = idx_dev
+
+
+def test_elem_scatter_duplicate_indices(ctx: DeviceContext) raises:
+    """Element scatter (r_minus_m == 0) with duplicate index vectors: 4096
+    scalar updates collide on 8 output elements (512 adds each)."""
+    comptime rows = 32
+    comptime cols = 32
+    comptime n_idx = 4096
+    comptime n_elems = rows * cols
+
+    var data_dev = ctx.enqueue_create_buffer[dtype](n_elems)
+    var out_dev = ctx.enqueue_create_buffer[dtype](n_elems)
+    var upd_dev = ctx.enqueue_create_buffer[dtype](n_idx)
+    var idx_dev = ctx.enqueue_create_buffer[itype](n_idx * 2)
+
+    var data_host = ctx.enqueue_create_host_buffer[dtype](n_elems)
+    var upd_host = ctx.enqueue_create_host_buffer[dtype](n_idx)
+    var idx_host = ctx.enqueue_create_host_buffer[itype](n_idx * 2)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](n_elems)
+    var expected = ctx.enqueue_create_host_buffer[dtype](n_elems)
+    ctx.synchronize()
+
+    for i in range(n_elems):
+        data_host[i] = Float32(i % 7)
+    for k in range(n_idx):
+        upd_host[k] = Float32(1)
+        idx_host[2 * k] = Scalar[itype]((k % 4) * 9 + 2)
+        idx_host[2 * k + 1] = Scalar[itype](((k % 8) // 4) * 15 + 6)
+
+    ctx.enqueue_copy(data_dev, data_host)
+    ctx.enqueue_copy(upd_dev, upd_host)
+    ctx.enqueue_copy(idx_dev, idx_host)
+    ctx.synchronize()
+
+    var data_tt = TileTensor(data_dev, row_major[rows, cols]())
+    var out_tt = TileTensor(out_dev, row_major[rows, cols]())
+    var upd_tt = TileTensor(upd_dev, row_major[n_idx]())
+    var idx_tt = TileTensor(idx_dev, row_major[n_idx, 2]())
+
+    scatter_nd_generator[target="gpu", reduce_fn=_add](
+        data_tt, idx_tt, upd_tt, out_tt, ctx
+    )
+    ctx.enqueue_copy(out_host, out_dev)
+    ctx.synchronize()
+
+    for i in range(n_elems):
+        expected[i] = data_host[i]
+    for k in range(n_idx):
+        var r = Int(idx_host[2 * k])
+        var c = Int(idx_host[2 * k + 1])
+        expected[r * cols + c] = expected[r * cols + c] + upd_host[k]
+
+    for i in range(n_elems):
         assert_equal(out_host[i], expected[i])
 
     _ = data_dev
@@ -645,6 +735,11 @@ def test_reduce_duplicate_indices[
 def main() raises:
     comptime UNDEFINED = ScatterOobIndexStrategy.UNDEFINED
     comptime SKIP = ScatterOobIndexStrategy.SKIP
+    comptime f32 = DType.float32
+    comptime i32 = DType.int32
+    comptime bf16 = DType.bfloat16
+    comptime f16 = DType.float16
+    comptime i8 = DType.int8
     with DeviceContext() as ctx:
         test_row_scatter_2d[UNDEFINED](ctx)
         test_row_scatter_2d[SKIP](ctx)
@@ -659,3 +754,34 @@ def main() raises:
         test_reduce_add[UNDEFINED](ctx)
         test_reduce_add[SKIP](ctx)
         test_unaligned_slice(ctx)
+
+        test_reduce_duplicate_indices[f32, _add, 4096, 4, _upd_ones[f32]](ctx)
+        test_reduce_duplicate_indices[i32, _add, 4096, 4, _upd_ones[i32]](ctx)
+        test_reduce_duplicate_indices[bf16, _add, 192, 1, _upd_ones[bf16]](ctx)
+        test_reduce_duplicate_indices[i8, _add, 100, 1, _upd_ones[i8]](ctx)
+        test_reduce_duplicate_indices[
+            f32, _mul, 4096, 4, _upd_twos_then_ones[f32, 16]
+        ](ctx)
+        test_reduce_duplicate_indices[
+            f16, _mul, 4096, 4, _upd_twos_then_ones[f16, 16]
+        ](ctx)
+        test_reduce_duplicate_indices[
+            f32, _max, 4096, 4, _upd_modular[f32, 251]
+        ](ctx)
+        test_reduce_duplicate_indices[
+            i32, _max, 4096, 4, _upd_modular[i32, 251]
+        ](ctx)
+        test_reduce_duplicate_indices[
+            bf16, _max, 4096, 4, _upd_modular[bf16, 251]
+        ](ctx)
+        test_reduce_duplicate_indices[
+            f32, _min, 4096, 4, _upd_modular[f32, 251]
+        ](ctx)
+        test_reduce_duplicate_indices[
+            i32, _min, 4096, 4, _upd_modular[i32, 251]
+        ](ctx)
+        # cols=13 forces the scalar (simd_width=1) launch path.
+        test_reduce_duplicate_indices[
+            f32, _add, 1024, 2, _upd_ones[f32], cols=13
+        ](ctx)
+        test_elem_scatter_duplicate_indices(ctx)
