@@ -64,6 +64,14 @@ class ContentEdgeCases(BaseScenario):
             ),
             # --- Unicode edge cases ---
             "surrogate_halves": msg("\ud800\udc00"),  # valid surrogate pair
+            # Unpaired UTF-16 surrogates: legal in JSON (sent as \uXXXX
+            # escapes), but they decode to a lone surrogate that is not a valid
+            # Unicode scalar -- e.g. an emoji split by client-side truncation.
+            # Must not crash the tokenizer or return a 5xx. See CENG-790.
+            "lone_low_surrogate": msg("\ude00"),
+            "lone_high_surrogate": msg("\ud800"),
+            "consecutive_lone_surrogates": msg("\ud800\ud801\ud802"),
+            "lone_surrogate_in_text": msg("hi \ude00 world"),
             "bom_prefix": msg("\ufeffhello"),
             "rtl_override": msg("\u202ehello\u202c"),
             "rtl_mixed": msg("hello \u0645\u0631\u062d\u0628\u0627 world"),
@@ -128,6 +136,9 @@ class ContentEdgeCases(BaseScenario):
             "random_bytes_as_utf8_long": msg(_random_bytes_utf8(50000)),
             "random_unicode": msg(_random_unicode(1000)),
             "random_unicode_long": msg(_random_unicode(10000)),
+            "random_unicode_with_lone_surrogates": msg(
+                _random_unicode(1000, allow_lone_surrogates=True)
+            ),
             # --- Repetitive patterns ---
             "single_char_repeated": msg("A" * 100000),
             "single_word_repeated": msg("buffalo " * 10000),
@@ -173,6 +184,42 @@ class ContentEdgeCases(BaseScenario):
             "system_only": {
                 "model": model,
                 "messages": [{"role": "system", "content": "You are a cat."}],
+                "max_tokens": 5,
+            },
+            # Lone surrogate carried in a system prompt and in tool-call
+            # arguments -- the other positions flagged in CENG-790.
+            "lone_surrogate_system_prompt": {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "You are \ud800 helpful."},
+                    {"role": "user", "content": "hi"},
+                ],
+                "max_tokens": 5,
+            },
+            "lone_surrogate_tool_arguments": {
+                "model": model,
+                "messages": [
+                    {"role": "user", "content": "look it up"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_0",
+                                "type": "function",
+                                "function": {
+                                    "name": "search",
+                                    "arguments": '{"q": "\ud800"}',
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_0",
+                        "content": "done",
+                    },
+                ],
                 "max_tokens": 5,
             },
             "assistant_only": {
@@ -259,11 +306,11 @@ def _random_bytes_utf8(length: int) -> str:
     return os.urandom(length).decode("utf-8", errors="replace")
 
 
-def _random_unicode(length: int) -> str:
+def _random_unicode(length: int, *, allow_lone_surrogates: bool = False) -> str:
     chars = []
     for _ in range(length):
         cp = random.randint(0x20, 0xFFFF)
-        if 0xD800 <= cp <= 0xDFFF:
+        if 0xD800 <= cp <= 0xDFFF and not allow_lone_surrogates:
             cp = 0x20  # skip surrogates
         chars.append(chr(cp))
     return "".join(chars)
