@@ -225,6 +225,33 @@ struct Context(Movable, Writable):
             dst_view[]._hal, src_view[]._hal
         )
 
+    @staticmethod
+    def set_memory_sync(
+        py_self: PythonObject,
+        dst_obj: PythonObject,
+        value_obj: PythonObject,
+    ) raises:
+        var self_ptr = Self._self_ptr(py_self)
+        var dst_view = dst_obj.downcast_value_ptr[BufferView]()
+        self_ptr[]._arc[].set_memory_sync(
+            dst_view[]._hal, UInt8(Int(py=value_obj))
+        )
+
+    @staticmethod
+    def fill_sync(
+        py_self: PythonObject,
+        dst_obj: PythonObject,
+        value_obj: PythonObject,
+        value_size_obj: PythonObject,
+    ) raises:
+        var self_ptr = Self._self_ptr(py_self)
+        var dst_view = dst_obj.downcast_value_ptr[BufferView]()
+        self_ptr[]._arc[].fill_sync(
+            dst_view[]._hal,
+            UInt64(Int(py=value_obj)),
+            UInt64(Int(py=value_size_obj)),
+        )
+
     def write_to(self, mut writer: Some[Writer]):
         writer.write("Context()")
 

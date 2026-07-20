@@ -28,6 +28,8 @@ from _mojo_module import (
     Queue,
     Stream,
     copy,
+    fill,
+    set_memory,
 )
 
 
@@ -69,6 +71,8 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
             .def_method[Context.copy_intra_device_sync](
                 "copy_intra_device_sync"
             )
+            .def_method[Context.set_memory_sync]("set_memory_sync")
+            .def_method[Context.fill_sync]("fill_sync")
         )
 
         _ = (
@@ -126,6 +130,8 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
         )
 
         b.def_function[copy]("copy")
+        b.def_function[set_memory]("set_memory")
+        b.def_function[fill]("fill")
 
         return b.finalize()
     except e:

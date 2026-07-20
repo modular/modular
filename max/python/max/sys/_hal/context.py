@@ -171,6 +171,23 @@ class Context:
         """
         self._inner.copy_intra_device_sync(dst._inner, src._inner)
 
+    def set_memory_sync(self, dst: BufferView, value: int) -> None:
+        """Sets every byte of ``dst`` to ``value``, blocking until complete.
+
+        Runs directly on this context, creating no queue or stream, and returns
+        only once the fill completes.
+        """
+        self._inner.set_memory_sync(dst._inner, value)
+
+    def fill_sync(self, dst: BufferView, value: int, value_size: int) -> None:
+        """Fills ``dst`` with a repeated ``value_size``-byte ``value``.
+
+        Runs directly on this context, creating no queue or stream, and returns
+        only once the fill completes. ``value_size`` must be one of 1, 2, 4,
+        or 8.
+        """
+        self._inner.fill_sync(dst._inner, value, value_size)
+
     def compile(self, compile_fn: Callable[[Any], Any]) -> Bundle:
         """Compile a Mojo kernel for this context, returning a ``Bundle``.
 

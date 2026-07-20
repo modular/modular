@@ -27,11 +27,11 @@ from .array import Array
 from .buffer import Buffer, BufferView
 from .bundle import Bundle
 from .context import Context
-from .copy import copy
 from .device import Device
 from .driver import Driver
 from .event import Event
 from .function import Function
+from .memory import copy, fill, set_memory
 from .queue import Queue
 from .stream import Stream
 
@@ -49,4 +49,6 @@ __all__ = [
     "Queue",
     "Stream",
     "copy",
+    "fill",
+    "set_memory",
 ]

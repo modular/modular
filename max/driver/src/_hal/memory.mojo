@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Unified, transport-dispatching copy between HAL buffers."""
+"""Module-level synchronous memory operations: copy, set_memory, fill."""
 
 from .buffer import Buffer
 from .device import DeviceSpec
@@ -249,3 +249,54 @@ def copy[
         return
 
     _sync_copy(dst._context[]._raw, dst=dst, src=src)
+
+
+# ===----------------------------------------------------------------------=== #
+# Synchronous free `set_memory` / `fill`
+# ===----------------------------------------------------------------------=== #
+
+
+def set_memory[
+    device_spec: DeviceSpec
+](*, dst: Buffer[device_spec], value: UInt8) raises HALError:
+    """Synchronously sets every byte of `dst` to `value`.
+
+    Sets `dst.byte_size` bytes and blocks until the fill completes; no queue is
+    created. Runs on the plugin's synchronous, stream-less op on `dst`'s
+    context.
+
+    Parameters:
+        device_spec: The compilation target the buffer's memory lives on.
+
+    Args:
+        dst: Destination buffer.
+        value: The byte value to write.
+    """
+    dst._context[]._raw[].set_memory_sync(
+        dst._context[]._handle, dst.view()._view, value
+    )
+
+
+def fill[
+    device_spec: DeviceSpec
+](
+    *, dst: Buffer[device_spec], value: UInt64, value_size: UInt64
+) raises HALError:
+    """Synchronously fills `dst` with a repeated `value_size`-byte `value`.
+
+    Fills `dst.byte_size` bytes and blocks until the fill completes; no queue is
+    created. `dst.byte_size` must be a multiple of `value_size`, which must be
+    one of 1, 2, 4, or 8; a `value_size` of 1 is equivalent to `set_memory`.
+    Runs on the plugin's synchronous, stream-less op on `dst`'s context.
+
+    Parameters:
+        device_spec: The compilation target the buffer's memory lives on.
+
+    Args:
+        dst: Destination buffer.
+        value: The value to fill with; the low `value_size` bytes are used.
+        value_size: Width of the value in bytes; one of 1, 2, 4, or 8.
+    """
+    dst._context[]._raw[].fill_sync(
+        dst._context[]._handle, dst.view()._view, value, value_size
+    )

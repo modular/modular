@@ -19,7 +19,7 @@ from .plugin import (
 )
 from .buffer import Buffer, BufferView
 from .context import Context
-from .copy import _enqueue_copy
+from .memory import _enqueue_copy
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable, _EventInner
 from .device import DeviceSpec
 from .status import STATUS_SUCCESS, HALError

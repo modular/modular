@@ -143,7 +143,6 @@ class Array:
     _strides: tuple[int, ...]
     _byte_offset: int
     _pinned: bool
-    _queue: Queue | None
 
     __slots__ = (
         "_buffer",
@@ -151,7 +150,6 @@ class Array:
         "_context",
         "_dtype",
         "_pinned",
-        "_queue",
         "_shape",
         "_strides",
     )
@@ -182,7 +180,6 @@ class Array:
         obj._strides = tuple(strides)
         obj._byte_offset = int(byte_offset)
         obj._pinned = pinned
-        obj._queue = None
         return obj
 
     # ------------------------------------------------------------------
@@ -636,16 +633,7 @@ class Array:
         A zero fill uses a single-byte memset (and is the only value fillable
         for dtypes with no numpy equivalent); any other value writes its
         dtype-width byte pattern. A strided array is filled one contiguous run
-        at a time.
-        """
-        queue = self._get_queue()
-        self._enqueue_fill(queue, value)
-        queue.synchronize()
-
-    def _enqueue_fill(self, sink: Queue | Stream, value: float | int) -> None:
-        """Enqueues a fill of every element with ``value`` onto ``sink`` (a
-        ``Queue`` or ``Stream``), without host synchronization. Shared by the
-        blocking :meth:`fill` and the async ``array_fill``.
+        at a time. Runs directly on the context with no queue.
         """
         # Zero is all-zero bytes in every dtype, so it fills with a single-byte
         # memset — and it is the only value expressible for dtypes with no numpy
@@ -661,13 +649,43 @@ class Array:
                     view = self._buffer.view(
                         byte_offset=src_byte, byte_size=run_bytes
                     )
-                    sink.set_memory(view, 0)
+                    self._context.set_memory_sync(view, 0)
         else:
             raw = np.array(value, dtype=self._dtype.to_numpy()).tobytes()
             packed, value_size = int.from_bytes(raw, "little"), len(raw)
             if value_size not in (1, 2, 4, 8):
                 # Plugins only fill 1/2/4/8-byte patterns; Metal silently
                 # no-ops other widths, so reject rather than corrupt.
+                raise ValueError(
+                    f"cannot fill dtype {self._dtype}: pattern width "
+                    f"{value_size} is not one of 1, 2, 4, or 8 bytes"
+                )
+            for src_byte, run_bytes in self._runs():
+                if run_bytes:
+                    view = self._buffer.view(
+                        byte_offset=src_byte, byte_size=run_bytes
+                    )
+                    self._context.fill_sync(view, packed, value_size)
+
+    def _enqueue_fill(self, sink: Queue | Stream, value: float | int) -> None:
+        """Enqueues a fill of every element with ``value`` onto ``sink`` (a
+        ``Queue`` or ``Stream``), without host synchronization. Used by the
+        async ``array_fill``.
+        """
+        is_positive_zero = value == 0 and not (
+            isinstance(value, float) and math.copysign(1.0, value) < 0.0
+        )
+        if is_positive_zero:
+            for src_byte, run_bytes in self._runs():
+                if run_bytes:
+                    view = self._buffer.view(
+                        byte_offset=src_byte, byte_size=run_bytes
+                    )
+                    sink.set_memory(view, 0)
+        else:
+            raw = np.array(value, dtype=self._dtype.to_numpy()).tobytes()
+            packed, value_size = int.from_bytes(raw, "little"), len(raw)
+            if value_size not in (1, 2, 4, 8):
                 raise ValueError(
                     f"cannot fill dtype {self._dtype}: pattern width "
                     f"{value_size} is not one of 1, 2, 4, or 8 bytes"
@@ -1072,11 +1090,6 @@ class Array:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-
-    def _get_queue(self) -> Queue:
-        if self._queue is None:
-            self._queue = self._context.create_queue()
-        return self._queue
 
     def _runs(self) -> Iterator[tuple[int, int]]:
         """Yields ``(buffer_byte_offset, run_bytes)`` for each contiguous run.

@@ -199,6 +199,17 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         )
         self._raw[].copy_intra_device_sync(self._handle, dst._view, src._view)
 
+    def set_memory_sync(self, dst: BufferView, value: UInt8) raises HALError:
+        """Sets every byte of `dst` to `value`, blocking until complete."""
+        self._raw[].set_memory_sync(self._handle, dst._view, value)
+
+    def fill_sync(
+        self, dst: BufferView, value: UInt64, value_size: UInt64
+    ) raises HALError:
+        """Fills `dst` with a repeated `value_size`-byte `value`, blocking until
+        complete. `value_size` must be one of 1, 2, 4, or 8."""
+        self._raw[].fill_sync(self._handle, dst._view, value, value_size)
+
     def _compile_inner[
         fn_type: TrivialRegisterPassable,
         func: fn_type,
