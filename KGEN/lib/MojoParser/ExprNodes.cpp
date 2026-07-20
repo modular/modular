@@ -872,6 +872,18 @@ diagnoseUnknownDeclaration(StringRef spelling, ASTDecl &lookupScope,
     }
   }
 
+  if (auto lookupOp = lookupScope.getIfOperation();
+      lookupOp && isa<PackageOp, FileModuleOp>(lookupOp)) {
+    auto diag = emitter.emitError(loc);
+    if (auto packageOp = dyn_cast<PackageOp>(lookupOp))
+      diag << "package '" << packageOp.getName();
+    else {
+      diag << "module '" << cast<FileModuleOp>(lookupOp).getName();
+    }
+    diag << "' has no declaration '" << spelling << "'" << expr->getRange();
+    return {};
+  }
+
   auto diag = emitter.emitError(loc, "use of unknown declaration '")
               << spelling << "'" << expr->getRange();
   if (spelling == "__type_of" || spelling == "_type_of" ||
