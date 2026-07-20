@@ -338,7 +338,9 @@ class JitExecutor:
                 # Compilation mutates the graph; compile a copy so the
                 # interpreter path still sees the original module.
                 compiled = session.compile_async(graph.copy())
-                future = self.cache[key] = compiled._compiled.and_then(
+                handle = compiled._compiled
+                assert isinstance(handle, AsyncValue)
+                future = self.cache[key] = handle.and_then(
                     lambda _: session.init(compiled)
                 )
 

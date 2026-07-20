@@ -123,6 +123,10 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added `max.engine.read` for loading a compiled-model artifact (a `.mef`
+  file) without an `InferenceSession`. The resulting `CompiledModel` can
+  be initialized on any session via `InferenceSession.init`. It replaces
+  `InferenceSession.read`, which has been removed.
 - Image generation responses on the Open Responses endpoint now report
   `usage`: `output_tokens` and `total_tokens` carry the total pixel count of
   the generated images, counted from the actual output arrays, and

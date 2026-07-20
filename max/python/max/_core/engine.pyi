@@ -84,6 +84,34 @@ class CompiledModels:
             path: Filesystem path to write the MEF to.
         """
 
+@overload
+def read(path: str | os.PathLike) -> CompiledModels:
+    """
+    Reads a compiled-model artifact (``.mef``) from a file path.
+
+    Returns:
+        CompiledModels: the artifact, ready to be initialized on any
+        session via :meth:`InferenceSession._load_all`.
+
+    Raises:
+        RuntimeError: if the file is missing or is not a valid MEF
+        for this engine build.
+    """
+
+@overload
+def read(data: bytes) -> CompiledModels:
+    """
+    Reads a compiled-model artifact (``.mef``) from bytes.
+
+    Returns:
+        CompiledModels: the artifact, ready to be initialized on any
+        session via :meth:`InferenceSession._load_all`.
+
+    Raises:
+        RuntimeError: if the bytes are not a valid MEF for this
+        engine build.
+    """
+
 class Model:
     """
     A loaded model that you can execute.
@@ -544,34 +572,14 @@ class InferenceSession:
             with weights via :meth:`_load_all`.
         """
 
-    @overload
-    def read(
-        self, path: str | os.PathLike
+    def _wrap_compiled(
+        self, models: CompiledModels
     ) -> max._core.mlrt.AsyncValue[CompiledModels]:
         """
-        Reads a compiled-model artifact (``.mef``) from a file path.
+        Wraps an already-read ``CompiledModels`` in a resolved async handle.
 
-        Returns:
-            AsyncValue[CompiledModels]: already-resolved handle to the
-            artifact, ready to be initialized via :meth:`_load_all`.
-
-        Raises:
-            RuntimeError: if the file is missing or is not a valid MEF
-            for this engine build.
-        """
-
-    @overload
-    def read(self, data: bytes) -> max._core.mlrt.AsyncValue[CompiledModels]:
-        """
-        Reads a compiled-model artifact (``.mef``) from bytes.
-
-        Returns:
-            AsyncValue[CompiledModels]: already-resolved handle to the
-            artifact, ready to be initialized via :meth:`_load_all`.
-
-        Raises:
-            RuntimeError: if the bytes are not a valid MEF for this
-            engine build.
+        Consumes ``models``. The handle is allocated on this session's
+        runtime and can be passed to :meth:`_load_all`.
         """
 
     def set_debug_print_options(
