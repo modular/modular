@@ -42,7 +42,7 @@ def test_for_bind[
 def test_for_ref[
     T: ImplicitlyCopyable & ImplicitlyDeletable
 ](items1: List[T], items2: List[T]) where conforms_to(T, Greetable):
-    for ref left, ref right in zip(items1, items2):
+    for ref left, right in zip(items1, items2):
         print("ref:", left.greet(), right.greet())
 
 
@@ -50,7 +50,7 @@ def test_for_ref[
 def test_for_var_each[
     T: ImplicitlyCopyable & ImplicitlyDeletable
 ](items1: List[T], items2: List[T]) where conforms_to(T, Greetable):
-    for var left, var right in zip(items1, items2):
+    for var left, right in zip(items1, items2):
         print("var:", left.greet(), right.greet())
 
 
@@ -67,7 +67,7 @@ def test_for_var_whole[
 def test_for_var_reassign[
     T: ImplicitlyCopyable & ImplicitlyDeletable
 ](items1: List[T], items2: List[T]) where conforms_to(T, Greetable):
-    for var left, var right in zip(items1, items2):
+    for (var left), (var right) in zip(items1, items2):
         var before = left.greet()
         left = right.copy()
         print("var_reassign:", before, left.greet(), right.greet())
@@ -140,9 +140,9 @@ def test_shadow_ref[
 ](a1: List[T], a2: List[T], b1: List[T], b2: List[T]) where conforms_to(
     T, Greetable
 ):
-    for ref left, ref right in zip(a1, a2):
+    for ref left, right in zip(a1, a2):
         print("ref_first:", left.greet(), right.greet())
-    for ref left, ref right in zip(b1, b2):
+    for ref left, right in zip(b1, b2):
         print("ref_second:", left.greet(), right.greet())
 
 
@@ -156,7 +156,7 @@ def greet_through_ref_param[T: Greetable](ref x: T) -> String:
 def test_ref_pass_through_unpack[
     T: ImplicitlyCopyable & ImplicitlyDeletable
 ](items1: List[T], items2: List[T]) where conforms_to(T, Greetable):
-    for ref left, ref right in zip(items1, items2):
+    for ref left, right in zip(items1, items2):
         print(
             "ref_pass:",
             greet_through_ref_param(left),

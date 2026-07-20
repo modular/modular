@@ -175,3 +175,6 @@ def redundant_var_ref():
     var n = 1
     # expected-warning @+1 {{nested 'var' or 'ref' patterns are redundant, remove the outer pattern}}
     var ref a = n
+    # https://github.com/modular/modular/issues/6700
+    # expected-warning @+1 {{nested 'var' or 'ref' patterns are redundant, remove the outer pattern}}
+    ref var y : Int = n

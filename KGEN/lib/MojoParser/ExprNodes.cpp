@@ -4283,6 +4283,13 @@ AnyValue UnaryOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   // var/ref patterns are special unary operators that affect their enclosing
   // lvalue.  They are not valid on the right side of an assignment.
   if (kind == kVarPat || kind == kRefPat) {
+    if (dest.getPatternDeclKind() != PatternDeclKind::kNone &&
+        dest.getPatternDeclKind() != PatternDeclKind::kBind) {
+      emitter.emitWarning(getLoc()) << "nested 'var' or 'ref' patterns are "
+                                       "redundant, remove the outer pattern";
+      return {};
+    }
+
     dest.setPatternDeclKind(kind == kVarPat ? PatternDeclKind::kVar
                                             : PatternDeclKind::kRef);
     auto result = emitter.emitExpr(subExpr, dest);
