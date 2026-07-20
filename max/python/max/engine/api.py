@@ -18,6 +18,7 @@ import faulthandler
 import os
 import signal
 import sys
+import threading
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from enum import Enum, IntEnum, auto
@@ -113,6 +114,10 @@ levels provide more detail but may introduce additional overhead.
 See Also:
     :meth:`InferenceSession.gpu_profiling`: Method to set the profiling mode.
 """
+
+
+# TODO(GEX-2071): Remove global lock when parallel compilation is safe.
+_COMPILATION_LOCK = threading.Lock()
 
 
 def _raise_if_not_contiguous(x: InputType) -> None:
@@ -924,6 +929,10 @@ class InferenceSession:
         :meth:`init_all`, or :meth:`CompiledModel.export_mef`. Use
         :meth:`compile` for the synchronous variant that blocks and raises.
 
+        Compiles are serialized process-wide: if another compile is in
+        flight (from any session), this call blocks until it resolves
+        before scheduling this one. See ``_COMPILATION_LOCK``.
+
         Args:
             model: A :class:`Graph` instance, a :class:`max.graph.Module`
                 containing one or more ``mo.graph`` ops, or the path to a
@@ -1224,22 +1233,30 @@ class InferenceSession:
         custom_extensions_final: list[CustomExtensionType],
         tile_based_fusion: bool = False,
     ) -> _AsyncValue[_CompiledModels]:
-        """Compiles an MLIR module under the session's compilation lock.
+        """Compiles an MLIR module under the process-global compilation lock.
 
-        Wraps any synchronous setup failure in a ``RuntimeError`` pointing at
-        the ``max-debug.source-tracebacks`` config key for richer diagnostics.
-        Compilation itself is asynchronous; that failure surfaces when the
-        returned value is awaited (see :meth:`compile`).
+        Compilation itself is asynchronous; a compile failure surfaces when
+        the returned value is awaited (see :meth:`compile`).
+
+        Raises:
+            RuntimeError: If synchronous compile setup fails; the message
+                points at the ``max-debug.source-tracebacks`` config key
+                for richer diagnostics.
         """
+        _COMPILATION_LOCK.acquire()
         try:
-            return self._impl.compile(
+            handle = self._impl.compile(
                 module.mlir_module._CAPIPtr,
                 custom_extensions_final,
                 _derive_pipeline_name(module),
                 tile_based_fusion,
             )
         except Exception as e:
+            _COMPILATION_LOCK.release()
             raise RuntimeError(self._compile_failure_message()) from e
+        # Released from a runtime worker thread when the compile resolves.
+        handle.add_done_callback(lambda _: _COMPILATION_LOCK.release())
+        return handle
 
     def set_debug_print_options(
         self,
