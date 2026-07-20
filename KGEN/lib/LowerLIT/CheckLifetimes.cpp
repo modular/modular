@@ -1579,10 +1579,19 @@ struct TrackedAndInteriorLiveness {
 };
 } // namespace
 
+/// Lift \p op toward \p other by climbing parent ops until \p op's region is an
+/// ancestor of \p other's region.
+static Operation *liftToCommonRegion(Operation *op, Operation *other) {
+  Region *otherRegion = other->getParentRegion();
+  while (!op->getParentRegion()->isAncestor(otherRegion))
+    op = op->getParentOp();
+  return op;
+}
+
 /// Given two operations indicating interior-origin validity, pick the defining
 /// operation that remains valid after a control-flow merge with the shortest
 /// lifetime. Same-block cases pick the later operation; sibling regions are
-/// lifted to their nearest common ancestor (see LowerAsyncFunctions).
+/// lifted to their nearest common ancestor.
 static Operation *findNearestCommonAncestor(Operation *op1, Operation *op2,
                                             mlir::DominanceInfo &domInfo) {
   if (op1 == op2)
@@ -1590,14 +1599,8 @@ static Operation *findNearestCommonAncestor(Operation *op1, Operation *op2,
   if (op1->getBlock() == op2->getBlock())
     return domInfo.dominates(op1, op2) ? op2 : op1;
 
-  auto findOpInCommonRegion = [](Operation *lhs, Operation *rhs) {
-    Region *rhsRegion = rhs->getParentRegion();
-    while (!lhs->getParentRegion()->isAncestor(rhsRegion))
-      lhs = lhs->getParentOp();
-    return lhs;
-  };
-  Operation *op1Common = findOpInCommonRegion(op1, op2);
-  Operation *op2Common = findOpInCommonRegion(op2, op1);
+  Operation *op1Common = liftToCommonRegion(op1, op2);
+  Operation *op2Common = liftToCommonRegion(op2, op1);
   return domInfo.dominates(op1Common, op2Common) ? op2Common : op1Common;
 }
 
@@ -2429,6 +2432,8 @@ static Operation *getProgramPointThatDefinedInteriorOrigin(Value v) {
       // Here we treat the program point for the reference as %vd instead of
       // %tmp.
       v = load.getOperand();
+    } else if (auto load = v.getDefiningOp<LoadConsumeOp>()) {
+      v = load.getOperand(); // Same as LoadOp.
     } else if (auto varDecl = v.getDefiningOp<VarDeclOp>()) {
       // If we have a vardecl, scan down its block to find the first use that
       // might be a store to it.  We know the vardecl itself doesn't have an
@@ -2531,6 +2536,22 @@ void UninitializedValueScan::checkInteriorOriginUsage(
 
   // If the defining operation dominates the operand, then it is valid.
   if (valueSet.domInfo.dominates(definingOp, operandPt))
+    return;
+
+  // Otherwise, we may have a more complex case where the defining op is buried
+  // in some control structure (e.g. a "then" block where the "else" block
+  // doesn't fall through:
+  //      var ptr
+  //      if cond:
+  //        ptr = foo() # defining op.
+  //      else:
+  //        return
+  //      use(ptr)
+  // Handle this by climbing up the region tree until \p definingOp and
+  // \p operandPt share a region, then checking dominance there.
+  Operation *liftedDefiningOp = liftToCommonRegion(definingOp, &op);
+  Operation *liftedOperandPt = liftToCommonRegion(operandPt, &op);
+  if (valueSet.domInfo.dominates(liftedDefiningOp, liftedOperandPt))
     return;
 
   // TODO(remove legacy closures): Legacy closures can have operands defined
