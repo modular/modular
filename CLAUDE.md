@@ -58,8 +58,8 @@ pixi run hello             # Run hello.mojo
 
 # Common Pixi tasks available in different directories:
 # - /mojo/: build, tests, examples, benchmarks
-# - /max/: llama3, mistral, generate, serve
-# - /examples/*/: main, test, hello, dev-server, format
+# - /max/examples/*/: main, test, hello, dev-server, format
+# - /mojo/examples/*/: main, test, hello, dev-server, format
 
 # List available tasks
 pixi task list
@@ -91,14 +91,19 @@ modular/
 │   ├── stdlib/              # Standard library implementation
 │   ├── docs/                # User documentation
 │   ├── proposals/           # Language proposals (RFCs)
+│   ├── examples/            # Mojo usage examples
 │   └── integration-test/    # Integration tests
 ├── max/                     # MAX framework
 │   ├── kernels/             # High-performance Mojo kernels (GPU/CPU)
-│   ├── serve/               # Python inference server (OpenAI-compatible)
-│   ├── pipelines/           # Model architectures (Python)
-│   └── nn/                  # Neural network operators (Python)
-├── examples/                # Usage examples
-├── benchmark/               # Benchmarking tools
+│   ├── python/max/          # Python packages
+│   │   ├── serve/           # Inference server (OpenAI-compatible)
+│   │   ├── pipelines/       # Model architectures (Python)
+│   │   ├── nn/              # Neural network operators (Python)
+│   │   └── ...              # graph, driver, engine, kv_cache, etc.
+│   ├── driver/               # Device/runtime driver (C++/Mojo)
+│   ├── examples/             # MAX usage examples
+│   └── tests/                # MAX tests
+├── docs/                    # Docs site sources (docs.modular.com)
 └── bazel/                   # Build system configuration
 ```
 
@@ -106,7 +111,7 @@ modular/
 
 1. **Language Separation**:
    - Low-level performance kernels in Mojo (`max/kernels/`)
-   - High-level orchestration in Python (`max/serve/`, `max/pipelines/`)
+   - High-level orchestration in Python (`max/python/max/serve/`, `max/python/max/pipelines/`)
 
 2. **Hardware Abstraction**:
    - Platform-specific optimizations via dispatch tables
