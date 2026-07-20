@@ -1502,7 +1502,10 @@ struct String(
         # are invalidated when the string is mutated.
         return StringSlice(unsafe_from_utf8=self.as_bytes())
 
-    def unsafe_as_bytes_mut(mut self) -> Span[Byte, origin_of(self)]:
+    @__unsafe_nested_origins_read_only
+    def unsafe_as_bytes_mut(
+        mut self,
+    ) -> Span[Byte, origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a mutable contiguous slice of the bytes owned by this string.
         This name has a _mut suffix so the as_bytes() method doesn't have to
         guarantee mutability.
@@ -1514,8 +1517,13 @@ struct String(
             - Any mutation of the byte slice must uphold UTF-8 validity of the
               overall string.
         """
-        return Span[Byte, origin_of(self)](
-            ptr=self.unsafe_ptr_mut(), length=self.byte_length()
+        return Span(
+            ptr=UnsafePointer(
+                to=self.unsafe_ptr_mut()._get_ref_with_unsafe_interior_origin[
+                    "bytes", origin_of(self)
+                ]()
+            ),
+            length=self.byte_length(),
         )
 
     @deprecated("Use `StringSlice(str)` instead.")
@@ -1807,7 +1815,9 @@ struct String(
         """
         return StringSlice(self).replace(old, new)
 
-    def strip(self, chars: StringSlice) -> StringSlice[origin_of(self)]:
+    def strip(
+        self, chars: StringSlice
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Return a copy of the string with leading and trailing characters
         removed.
 
@@ -1820,7 +1830,9 @@ struct String(
 
         return self.lstrip(chars).rstrip(chars)
 
-    def strip(self) -> StringSlice[origin_of(self)]:
+    def strip(
+        self,
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Return a copy of the string with leading and trailing whitespaces
         removed. This only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
@@ -1830,7 +1842,9 @@ struct String(
         """
         return self.lstrip().rstrip()
 
-    def rstrip(self, chars: StringSlice) -> StringSlice[origin_of(self)]:
+    def rstrip(
+        self, chars: StringSlice
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Return a copy of the string with trailing characters removed.
 
         Args:
@@ -1840,9 +1854,11 @@ struct String(
             A copy of the string with no trailing characters.
         """
 
-        return StringSlice(self).rstrip(chars)
+        return self._interior_slice().rstrip(chars)
 
-    def rstrip(self) -> StringSlice[origin_of(self)]:
+    def rstrip(
+        self,
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Return a copy of the string with trailing whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
@@ -1850,9 +1866,11 @@ struct String(
         Returns:
             A copy of the string with no trailing whitespaces.
         """
-        return StringSlice(self).rstrip()
+        return self._interior_slice().rstrip()
 
-    def lstrip(self, chars: StringSlice) -> StringSlice[origin_of(self)]:
+    def lstrip(
+        self, chars: StringSlice
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Return a copy of the string with leading characters removed.
 
         Args:
@@ -1862,9 +1880,11 @@ struct String(
             A copy of the string with no leading characters.
         """
 
-        return StringSlice(self).lstrip(chars)
+        return self._interior_slice().lstrip(chars)
 
-    def lstrip(self) -> StringSlice[origin_of(self)]:
+    def lstrip(
+        self,
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Return a copy of the string with leading whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
@@ -1872,7 +1892,7 @@ struct String(
         Returns:
             A copy of the string with no leading whitespaces.
         """
-        return StringSlice(self).lstrip()
+        return self._interior_slice().lstrip()
 
     def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
@@ -1945,7 +1965,7 @@ struct String(
 
     def removeprefix(
         self, prefix: StringSlice, /
-    ) -> StringSlice[origin_of(self)]:
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a new string with the prefix removed if it was present.
 
         Args:
@@ -1962,11 +1982,11 @@ struct String(
         print(String('BaseTestCase').removeprefix('Test')) # 'BaseTestCase'
         ```
         """
-        return StringSlice(self).removeprefix(prefix)
+        return self._interior_slice().removeprefix(prefix)
 
     def removesuffix(
         self, suffix: StringSlice, /
-    ) -> StringSlice[origin_of(self)]:
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a new string with the suffix removed if it was present.
 
         Args:
@@ -1983,7 +2003,7 @@ struct String(
         print(String('BaseTestCase').removesuffix('Test')) # 'BaseTestCase'
         ```
         """
-        return StringSlice(self).removesuffix(suffix)
+        return self._interior_slice().removesuffix(suffix)
 
     def __int__(self) raises -> Int:
         """Parses the given string as a base-10 integer and returns that value.
