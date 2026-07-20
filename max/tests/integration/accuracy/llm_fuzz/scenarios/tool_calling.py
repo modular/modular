@@ -1073,4 +1073,95 @@ class ToolCallingAttacks(BaseScenario):
             )
         )
 
+        # ----- 14. Orphaned tool-role messages (trimmed histories) -----
+        # Agent frameworks (LangChain-style trimming) routinely resend a tool
+        # result without the assistant ``tool_calls`` turn that produced it.
+        # A strict chat template (e.g. MiniMax M3) calls ``raise_exception``;
+        # the server must translate that into a clean 4xx, never a 500. Kimi's
+        # template tolerates the shape and returns 200 -- also a pass. Only a
+        # 5xx (or timeout) is a failure. Regression coverage for CENG-789.
+        orphaned_tool_histories = {
+            # Tool result with no preceding assistant turn at all.
+            "tool_after_user": [
+                {"role": "user", "content": "hi"},
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_x",
+                    "content": "result",
+                },
+            ],
+            # Tool result as the very first message.
+            "tool_as_first_message": [
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_x",
+                    "content": "result",
+                },
+            ],
+            # Assistant turn present but with no matching ``tool_calls`` entry,
+            # so the tool_call_id dangles.
+            "dangling_tool_call_id": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "sure, one moment"},
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_missing",
+                    "content": "result",
+                },
+            ],
+        }
+
+        for case_name, messages in orphaned_tool_histories.items():
+            payload = {
+                "model": model,
+                "messages": messages,
+                "tools": [valid_tool],
+                "max_tokens": 10,
+            }
+            resp = await client.post_json(payload)
+            results.append(
+                self.make_result(
+                    self.name,
+                    f"orphaned_{case_name}",
+                    Verdict.FAIL
+                    if resp.status >= 500 or resp.error == "TIMEOUT"
+                    else Verdict.PASS,
+                    status_code=resp.status,
+                    detail=f"Status {resp.status}"
+                    + (f" error: {resp.error}" if resp.error else ""),
+                )
+            )
+            # The streaming path returns HTTP 200 and reports the failure in an
+            # error frame, so a status check alone would miss a 5xx regression;
+            # inspect the frames for a >=500 error code.
+            resp_stream = await client.post_streaming(payload)
+            stream_5xx = False
+            for chunk in resp_stream.chunks or []:
+                if chunk == "[DONE]":
+                    continue
+                try:
+                    err = json.loads(chunk).get("error")
+                except (json.JSONDecodeError, AttributeError):
+                    continue
+                if err and str(err.get("code", "")).startswith("5"):
+                    stream_5xx = True
+                    break
+            results.append(
+                self.make_result(
+                    self.name,
+                    f"orphaned_{case_name}_streaming",
+                    Verdict.FAIL
+                    if resp_stream.status >= 500
+                    or resp_stream.error == "TIMEOUT"
+                    or stream_5xx
+                    else Verdict.PASS,
+                    status_code=resp_stream.status,
+                    detail=(
+                        "stream error frame (5xx)"
+                        if stream_5xx
+                        else f"Status {resp_stream.status}"
+                    ),
+                )
+            )
+
         return results
