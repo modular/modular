@@ -695,7 +695,9 @@ struct List[T: Copyable](Copyable, Iterable):
     def append(mut self, var value: Self.T):
         pass
 
-    def __getitem__(ref self, idx: Int) -> ref[self] Self.T:
+    def __getitem__(
+        ref self, idx: Int
+    ) -> ref[origin_of(self)._get_owned_interior["element"]] Self.T:
         pass
 
     comptime IteratorType[

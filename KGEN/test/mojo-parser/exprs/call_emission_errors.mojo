@@ -446,10 +446,22 @@ def rp_exclusivity2(mut x: MyRPStruct2):
     # expected-note @below {{'origin_of(x)' value is passed through aliasing 'mut' argument}}
     take_and_mutate_rp(x.b, x)
 
+def bad_interior_origin_example_exclusivity():
+    var b : Buf
+    # expected-error @below {{argument of 'Buf' initializer call allows writing a memory location previously readable through another aliased argument}}
+    # expected-note @below {{'origin_of(b)' value is passed through aliasing 'out' argument}}
+    b = Buf(b.view())   # copy from own interior view, then reassign
+
+struct Buf:
+    var data: List[Int]
+
+    def view(self) -> ref[self.data[0]] Int:
+        return self.data[0]
+    def __init__(out self, ref size: Int):
+        self.data = {}
+
 
 # MOCO-1242 - [QoI] Improve error message on trait failure for variadics (e.g. print with Formattable)
-
-
 # expected-note @below {{function declared here}}
 def my_print_variadic[*Ts: MyWritable](x: Int, *args: *Ts):
     pass

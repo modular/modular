@@ -1385,12 +1385,6 @@ bool ExclusivityChecker::mayAccessCallerStack() const {
             UnboundAttr>(origin))
       continue;
 
-    // If this is reading out of an Origin, be conservative, we have no idea
-    // what it could be.
-    // TODO: This seems overly conservative, only used in capture lists?
-    if (isa<OriginSetUnionAttr>(origin))
-      return true;
-
     // Scan up our decl hierarchy to see if this parameter is defined on a
     // function or struct.  If so, it can't be local to this function.
     // This seems unfortunate, there should be a better way to do this.
@@ -1455,69 +1449,79 @@ void ExclusivityChecker::checkOriginAccess(
   assert(!sugarIsa<ParamIndexRefAttr>(origin) &&
          "unexpected ParamIndexRefAttr reached checkOriginAccess");
 
-  // Determine whether we've seen this leaf origin before.
-  auto [it, isNew] =
-      originAccesses.insert({origin, {argIdx, isImmut, /*isLeaf=*/true}});
-  if (!isNew) {
-    assert(val && "capture origins cannot self-conflict");
-    // If so, check to see if this access and the previous one were both
-    // immutable.  Read/read aliasing is fine, but write/write and read/write
-    // are not.
-    if (!it->second.isImmut || !isImmut) {
-      // If not, we have a problem!
-      diagViolation(val, *convention, *argIdx, rawOrigin, it->second);
-      return;
-    }
+  // Process each level of the origin hierarchy, checking to see if we have a
+  // conflict at any level.
+  bool isLeaf = true; // First level is considered a leaf access.
+  while (1) {
+    assert(!isa<OriginUnionAttr>(origin) && !isa<OriginMutCastAttr>(origin) &&
+           "union/mutcast are canonicalized to the outside");
 
-    // Ok, this is a read/read conflict.  If this origin was previously seen
-    // as a non-leaf, upgrade it to a leaf access, so any subsequent subfield
-    // modifications are known to conflict.
-    it->second.isLeaf = true;
-  }
-
-  // Ok, there is no direct conflict: scan up the parent structs to see if there
-  // are conflicts for them.
-  while (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin)) {
-    origin = fieldAttr.getBase();
+    // Determine whether we've seen this origin before.
     auto [it, isNew] =
-        originAccesses.insert({origin, {argIdx, isImmut, /*isLeaf=*/false}});
-
-    // If we have seen this parent origin before, check to see if it is ok.
-    if (isNew)
-      continue;
-
-    // If the other access is a leaf access, then we are a subfield of it -
-    // the access conflicts if either is a store.
-    if (it->second.isLeaf && (!isImmut || !it->second.isImmut)) {
+        originAccesses.insert({origin, {argIdx, isImmut, isLeaf}});
+    if (!isNew) {
       assert(val && "capture origins cannot self-conflict");
-      diagViolation(val, *convention, *argIdx, rawOrigin, it->second);
-      return;
+      // If we've seen this origin before, check to see if either access is
+      // potentially mutating.  Read/read aliasing is fine, but
+      // write/write and read/write are not.
+      if ((!isImmut || !it->second.isImmut) &&
+          // Only diagnose leaf field conflicts. It's fine to mutate "a.x" and
+          // "a.y" independently.
+          (isLeaf || it->second.isLeaf)) {
+        // If not, we have a problem!
+        diagViolation(val, *convention, *argIdx, rawOrigin, it->second);
+        return;
+      }
+
+      // Otherwise we have a non-conflicting access.  This can be because we
+      // have a read of a subfield of another read, or because we have a
+      // write/write or read/write of different subfields (e.g. 'a.x' vs 'a.y').
+
+      // Ok, this is a read/read.  If this origin was previously seen
+      // as a non-leaf, upgrade it to a leaf access, so any subsequent subfield
+      // modifications are known to conflict.
+      it->second.isLeaf |= isLeaf;
+
+      // Upgrade the inner access to a write if our access is a write.
+      it->second.isImmut &= isImmut;
     }
 
-    // Otherwise we have a non-conflicting access.  This can be because we
-    // have a read of a subfield of another read, or because we have a
-    // write/write or read/write of different subfields (e.g. 'a.x' vs 'a.y').
-    // Either way it is fine, just make sure that we upgrade the interior
-    // access to a write if our access is a write.
-    it->second.isImmut &= isImmut;
-  }
+    // Only the first level is considered a leaf access.
+    isLeaf = false;
 
-  assert(!isa<OriginUnionAttr>(origin) &&
-         "unions are canonicalized to the outside");
+    // See if this is field access, process the base next.
+    if (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin)) {
+      origin = fieldAttr.getBase();
+      continue;
+    }
+
+    // If this is derived from an interior origin, process the base as an
+    // immutable access.
+    if (auto interior = dyn_cast<InteriorOriginAttr>(origin)) {
+      origin = interior.getBase();
+      // This is going to read the base.
+      isImmut = true;
+      continue;
+    }
+
+    // We're done.
+    break;
+  }
 }
 
 /// As each argument is emitted, check against previous arguments for
-/// exclusivity violations.
+/// exclusivity violations. This handles normal scalar arguments as well as
+/// unpacking the elements passed to variadic lists and packs and processing
+/// each independently.
 void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
                                        FnTypeGeneratorType signature) {
   // We get passed the MLIR representation for the dynamic argument, which
   // includes variadic and pack constructions.  Make sure to handle each
   // variadic argument separately.
   auto checkArg = [&](Value argVal, ArgConvention convention) {
-    // We sometimes get rebinds for downcasts of origins, e.g. to AnyOrigin.
+    // We sometimes get rebinds for downcasts of origins or for sugar alignment.
     // Ignore those so we can see the actual incoming value's origin.
-    if (auto rebind = argVal.getDefiningOp<RebindOp>())
-      argVal = rebind.getOperand();
+    argVal = RebindOp::strip(argVal);
 
     // If this is a result argument, then we only look at the origin of the
     // destination that we're storing into, not any nested references that may
