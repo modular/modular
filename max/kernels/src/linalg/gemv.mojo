@@ -359,25 +359,30 @@ def gemv_kernel_vector[
 
 @always_inline
 def _dot_accum[
-    in_type: DType,
+    a_type: DType,
+    b_type: DType,
     accum_type: DType,
     width: SIMDSize,
 ](
-    a: SIMD[in_type, width], b: SIMD[in_type, width], acc: Scalar[accum_type]
+    a: SIMD[a_type, width], b: SIMD[b_type, width], acc: Scalar[accum_type]
 ) -> Scalar[accum_type]:
     """Compute dot(a, b) + acc with fused bf16→f32 dot product on AMD.
 
-    On AMD GPUs except gfx90a, bf16 inputs with an f32 accumulator use
-    v_dot2_f32_bf16 to avoid explicit bf16→f32 conversion
-    (120 v_perm/v_bfi instructions). On other targets or types, this
-    falls back to cast-then-multiply.
+    `a` and `b` may have different element types. On AMD GPUs except gfx90a,
+    when BOTH operands are bf16 with an f32 accumulator we use v_dot2_f32_bf16
+    to avoid explicit bf16→f32 conversion (120 v_perm/v_bfi instructions). When
+    the operands differ (e.g. bf16 activation × fp32 router weight) or on other
+    targets/types, each operand is widened to `accum_type` and multiplied — the
+    widening is exact for bf16→f32, so a mixed bf16×fp32 dot is numerically
+    identical to first casting the bf16 activation to f32 then dotting.
     """
     var result = acc
 
     comptime if (
         is_amd_gpu()
         and not _is_amd_mi250x()
-        and in_type == DType.bfloat16
+        and a_type == DType.bfloat16
+        and b_type == DType.bfloat16
         and accum_type == DType.float32
     ):
         # v_dot2_f32_bf16: D.f32 = S0.bf16[0]*S1.bf16[0] + S0.bf16[1]*S1.bf16[1] + S2.f32
@@ -565,10 +570,13 @@ def gemv_split_k[
                     continue
             var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
 
-            comptime NativeVecType = SIMD[a_type, simd_width]
-            var act_native = rebind[NativeVecType](act_vec)
+            # `act` is a_type, `tile_w` is b_type; keep each fragment in its
+            # native element type so mixed A/B dtypes (e.g. bf16 activation ×
+            # fp32 router weight) need no unsafe reinterpretation. `_dot_accum`
+            # widens both to accum_type unless both are bf16 (fused fdot2).
+            var act_native = rebind[SIMD[a_type, simd_width]](act_vec)
             comptime for j in range(tile_n):
-                var weight_native = rebind[NativeVecType](
+                var weight_native = rebind[SIMD[b_type, simd_width]](
                     tile_w.vectorize[1, simd_width]()[j, 0]
                 )
                 var local_accum = rebind[Scalar[accum_type]](acc[i, j])
@@ -653,6 +661,119 @@ def gemv_split_k[
 
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
+
+
+def router_gate_use_mixed_gemv(m: Int) -> Bool:
+    """Returns whether runtime `m` should take the fused mixed router GEMV.
+
+    Only tiny-M (decode) rows use the single-launch mixed GEMV. `m == 0`
+    (graph-capture warmup) takes neither path, and large `m` (prefill) must fall
+    back to cast + fp32 matmul to preserve the baseline's performance.
+
+    Args:
+        m: The runtime row count of the router-gate activation.
+
+    Returns:
+        True if the fused mixed GEMV should be launched for this `m`.
+    """
+    comptime max_m = 16
+    return m > 0 and m <= max_m
+
+
+def router_gate_mixed_gemv[
+    static_N: Int,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    c_storage: TensorStorage,
+    a_storage: TensorStorage,
+    b_storage: TensorStorage,
+](
+    c: TileTensor[DType.float32, c_layout, MutAnyOrigin, Storage=c_storage],
+    a: TileTensor[DType.bfloat16, a_layout, ImmutAnyOrigin, Storage=a_storage],
+    b: TileTensor[DType.float32, b_layout, ImmutAnyOrigin, Storage=b_storage],
+    m: Int,
+    n: Int,
+    k: Int,
+    ctx: DeviceContext,
+) raises:
+    """Launches the mixed bf16-activation × fp32-weight router-gate GEMV.
+
+    Fuses the standalone bf16→fp32 activation cast into the router GEMV: `a` is
+    loaded as bf16 and widened to fp32 in registers, then dotted against the
+    unchanged fp32 weight `b` (`c = a @ b^T`) in a single launch. MiniMax-M3
+    uses this path on MI355X; other architectures retain the standard router.
+
+    Because bf16→fp32 widening is lossless and the reduction structure matches
+    `gemv_split_k`, the result is numerically identical to casting `a` to fp32
+    first and running the fp32 GEMV.
+
+    The launch config is the MI355X (gfx950 / CDNA4) cache-busting sweep winner
+    for the `N=128, K=6144, M<=16` router-gate shape: `simd_width=4, tile_m=1,
+    tile_n=2, 128 threads, unroll=2`, with the weight kept cache-resident
+    (`weight_non_temporal=False`) so the per-row-block weight rereads hit L2 —
+    the same cache policy the merged KERN-3219 fp32 router path selects.
+
+    Parameters:
+        static_N: Static output width (weight rows / expert count). Selects the
+            `check_bounds_n` guard at compile time.
+        c_layout: Layout of the fp32 output tensor.
+        a_layout: Layout of the bf16 activation tensor.
+        b_layout: Layout of the fp32 weight tensor.
+        c_storage: Storage of the fp32 output tensor.
+        a_storage: Storage of the bf16 activation tensor.
+        b_storage: Storage of the fp32 weight tensor.
+
+    Args:
+        c: Output `[M, N]` fp32 tensor.
+        a: Activation `[M, K]` bf16 tensor.
+        b: Weight `[N, K]` fp32 tensor (transpose_b layout).
+        m: Runtime row count (`M`). Optimal for tiny `M` (router: `M<=16`).
+        n: Output width (`N`).
+        k: Contraction dim (`K`).
+        ctx: The device context.
+    """
+    # gfx950 fp32 vectorized load = 16 B = 4 fp32 elements; the same element
+    # count vectorizes the bf16 activation load (8 B), matching the K tiling.
+    comptime simd_width = 16 // size_of[DType.float32]()
+    comptime tile_m = 1
+    comptime tile_n = 2
+    comptime num_threads = 128
+    comptime unroll_factor = 2
+    # Empty-launch guard: a graph-capture warmup can call the router with M==0
+    # (and N is never 0 for a real gate); skip the launch so no block reads or
+    # writes past the zero-length buffers.
+    if m == 0 or n == 0:
+        return
+    comptime kernel = gemv_split_k[
+        DType.float32,
+        DType.bfloat16,
+        DType.float32,
+        c_layout,
+        a_layout,
+        b_layout,
+        c_storage,
+        a_storage,
+        b_storage,
+        simd_width=simd_width,
+        tile_m=tile_m,
+        tile_n=tile_n,
+        num_threads=num_threads,
+        unroll_factor=unroll_factor,
+        weight_non_temporal=False,
+        check_bounds_m=tile_m > 1,
+        check_bounds_n=static_N % tile_n != 0,
+    ]
+    ctx.enqueue_function[kernel](
+        c,
+        a,
+        b,
+        m,
+        n,
+        k,
+        grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
+        block_dim=num_threads,
+    )
 
 
 # Row Vector-Matrix multiplication

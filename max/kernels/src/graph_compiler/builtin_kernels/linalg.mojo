@@ -32,7 +32,7 @@ import extensibility
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
 
-from std.gpu.host import DeviceContext
+from std.gpu.host import DeviceContext, get_gpu_target
 from layout.tile_tensor import row_major
 from std.gpu.host.info import is_gpu, _is_sm10x_gpu
 from layout import (
@@ -41,6 +41,7 @@ from layout import (
     IntTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    coord_to_index_list,
     row_major,
 )
 from linalg.bmm import batched_matmul, batched_matmul_shape
@@ -54,6 +55,7 @@ from linalg.matmul.gpu.amd import (
     mxfp4_grouped_matmul_amd,
     mxfp4_grouped_matmul_amd_preb,
 )
+from linalg.gemv import router_gate_mixed_gemv, router_gate_use_mixed_gemv
 from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
 from linalg.matmul.gpu.apple.fp4_matmul import enqueue_apple_fp4_matmul
 from linalg.matmul.gpu.apple.fp8_gemv import enqueue_apple_fp8_matmul
@@ -103,6 +105,7 @@ from std.logger import Logger
 
 comptime logger = Logger()
 
+from std.algorithm.functional import elementwise
 from std.utils import IndexList
 
 # ===-----------------------------------------------------------------------===#
@@ -1824,3 +1827,118 @@ struct Struct_lora_sgmv_qkv_expand_ragged:
             lora_ids.dim_size[0](),
             context,
         )
+
+
+@extensibility.register("mo.router.gate.mixed.gemv")
+struct Struct_router_gate_mixed_gemv:
+    """MOGG wrapper for the mixed-input router-gate GEMV.
+
+    Computes `c = a @ b^T` for a bf16 activation `a` and an fp32 router weight
+    `b`, returning fp32 `c`. `M` is runtime-dynamic (one graph serves both
+    decode and prefill), so the op branches on runtime `M`:
+
+    - `M == 0` (graph-capture warmup): no launch.
+    - tiny `M` (`M <= 16`, decode): the fused mixed GEMV — `a` is loaded as bf16
+      and widened to fp32 in registers, then dotted against the unchanged fp32
+      `b` in a SINGLE launch, fusing away the standalone bf16->fp32 activation
+      cast that otherwise precedes the fp32 router GEMV.
+    - large `M` (prefill): the fused GEMV is catastrophically slow, so the op
+      falls back to the baseline chain — cast `a` to fp32, then an ordinary
+      fp32 matmul against the fp32 `b` (two launches, matching baseline).
+
+    Because bf16->fp32 widening is lossless, every route is numerically
+    equivalent to casting `a` to fp32 first and running the fp32 GEMM.
+
+    This is not part of generic matmul/GEMV dispatch. The MiniMax-M3 router emits
+    this explicit graph op on MI355X; other architectures retain the standard
+    router path.
+
+    `N` (expert count) and `K` (hidden size) are read from the weight `b`'s
+    static `[N, K]` layout at compile time — the op carries no redundant `N`/`K`
+    custom-op parameters. `N` still selects the kernel's `check_bounds_n` guard.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=DType.float32, rank=2, ...],
+        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=DType.float32, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        """Executes the mixed bf16-A × fp32-B router-gate GEMV with an M-based
+        route to the baseline cast + fp32 matmul for large (prefill) M.
+
+        Constraints:
+            The weight `b` must have a static `[N, K]` shape (both dims known at
+            compile time).
+
+        Args:
+            c: Output `[M, N]` fp32 tensor.
+            a: Activation `[M, K]` bf16 tensor.
+            b: Weight `[N, K]` fp32 tensor (transpose_b layout).
+            context: The device context.
+        """
+        comptime assert is_gpu[target](), "router-gate mixed GEMV is GPU-only"
+
+        var M = c.dim_size[0]()
+        # Empty-launch guard: a graph-capture warmup can call with M == 0.
+        if M == 0:
+            return
+
+        # `b` carries the static `[N, K]` router-gate shape from the graph, so
+        # the standard projection drives the compile-time N/K specialization the
+        # kernels rely on (`N` picks the `check_bounds_n` guard). `c`/`a` stay
+        # manual because their M dimension is runtime-dynamic.
+        var b_tt = b.to_tile_tensor()
+        comptime N = type_of(b_tt).static_shape[0]
+        comptime K = type_of(b_tt).static_shape[1]
+        comptime assert (
+            N != UNKNOWN_VALUE and K != UNKNOWN_VALUE
+        ), "router-gate mixed GEMV requires a static [N, K] weight shape"
+
+        var c_tt = TileTensor(c.unsafe_ptr(), row_major(Coord(M, Idx[N])))
+
+        if router_gate_use_mixed_gemv(M):
+            # Tiny-M decode: fused mixed bf16-A × fp32-B GEMV, one launch.
+            var a_tt = TileTensor(a.unsafe_ptr(), row_major(Coord(M, Idx[K])))
+            router_gate_mixed_gemv[N](
+                c_tt,
+                a_tt.as_immut(),
+                b_tt.as_immut(),
+                M,
+                N,
+                K,
+                context,
+            )
+            return
+
+        # Large-M prefill: preserve the baseline's semantics and performance —
+        # widen the bf16 activation to fp32 (the standalone cast the fused path
+        # avoids), then run the ordinary fp32 matmul against the fp32 weight.
+        # Routing large M through the tiny-M GEMV is catastrophically slow.
+        var a_f32 = context.enqueue_create_buffer[DType.float32](M * K)
+        var a_bf16_tt = TileTensor(a.unsafe_ptr(), row_major(Coord(M, Idx[K])))
+        var a_f32_tt = TileTensor(a_f32, row_major(Coord(M, Idx[K])))
+
+        @parameter
+        @always_inline
+        @__copy_capture(a_bf16_tt, a_f32_tt)
+        def _cast_bf16_to_fp32[width: Int, alignment: Int = 1](idx: Coord):
+            var il = coord_to_index_list(idx)
+            a_f32_tt.store_linear(
+                il, a_bf16_tt.load_linear[width](il).cast[DType.float32]()
+            )
+
+        elementwise[
+            _cast_bf16_to_fp32,
+            simd_width_of[DType.bfloat16, target=get_gpu_target()](),
+            target=target,
+        ](Coord(M, Idx[K]), context)
+
+        matmul[transpose_b=True, target=target](
+            c_tt, a_f32_tt.as_immut(), b_tt.as_immut(), context
+        )
+        _ = a_f32^

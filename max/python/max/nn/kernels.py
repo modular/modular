@@ -4608,6 +4608,45 @@ def moe_router_group_limited(
     return (results[0].tensor, results[1].tensor)
 
 
+def _router_gate_mixed_gemv(
+    hidden_states: TensorValue,
+    gate_weight: TensorValue,
+) -> TensorValue:
+    """Computes mixed-input MiniMax router logits."""
+    _check_rank(2, hidden_states=hidden_states, gate_weight=gate_weight)
+    _check_dtype(DType.bfloat16, hidden_states=hidden_states)
+    _check_dtype(DType.float32, gate_weight=gate_weight)
+    _check_same_device(hidden_states=hidden_states, gate_weight=gate_weight)
+
+    n_dim = gate_weight.shape[0]
+    k_dim = gate_weight.shape[1]
+    # N/K are inferred from the static gate-weight layout inside the op, so the
+    # shape must be known here (the op also asserts this at compile time).
+    if not isinstance(n_dim, StaticDim) or not isinstance(k_dim, StaticDim):
+        raise ValueError(
+            "_router_gate_mixed_gemv requires a static gate-weight shape, got"
+            f" {gate_weight.shape}"
+        )
+    if hidden_states.shape[1] != k_dim:
+        raise ValueError(
+            "hidden_states K must match gate_weight K, got"
+            f" {hidden_states.shape[1]} and {k_dim}"
+        )
+
+    return ops.custom(
+        "mo.router.gate.mixed.gemv",
+        device=hidden_states.device,
+        values=[hidden_states, gate_weight],
+        out_types=[
+            TensorType(
+                dtype=DType.float32,
+                shape=[hidden_states.shape[0], n_dim],
+                device=hidden_states.device,
+            )
+        ],
+    )[0].tensor
+
+
 def moe_eplb_remap(
     router_idx: TensorValue,
     logcnt: TensorValue,

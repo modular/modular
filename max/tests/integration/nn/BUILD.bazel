@@ -115,6 +115,7 @@ modular_py_test(
             "test_mlp_fp4_gpu.py",
             "test_moe_nvfp4_gpu.py",
             "test_mxfp4_fused_silu_scale_fusion_gpu.py",
+            "test_router_gate_mixed_gemv_gpu.py",
             "test_sgmv_kernels_gpu.py",
             "test_swiglu_nvfp4_graph_capture_mwe_gpu.py",
         ],
@@ -321,6 +322,7 @@ modular_py_test(
     srcs = [
         "conftest.py",
         "test_linear_fp8_amd_gpu.py",
+        "test_router_gate_mixed_gemv_gpu.py",
     ],
     exec_properties = {
         "test.resources:gpu-memory": "2",
