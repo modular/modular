@@ -295,7 +295,7 @@ import test_package.test_nested_package
 def test_package_not_leaking():
     _ = test_package  # OK: reference to parent package
     _ = test_package.test_nested_package  # OK: reference to child package
-    # expected-error @+1 {{use of unknown declaration 'module'}}
+    # expected-error @+1 {{package 'test_package' has no declaration 'module'}}
     test_package.module.function()
 
 # // -----

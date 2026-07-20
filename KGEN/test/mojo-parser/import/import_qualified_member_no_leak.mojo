@@ -22,7 +22,7 @@ from qualified_member_leak.consumer_reexport import consume
 def main():
     _ = consume()
 
-# CHECK: consumer_reexport.mojo:{{[0-9]+}}:{{[0-9]+}}: error: use of unknown declaration 'shared_fn'
+# CHECK: consumer_reexport.mojo:{{[0-9]+}}:{{[0-9]+}}: error: module 'other' has no declaration 'shared_fn'
 # CHECK-NOT: from the enclosing package's '__init__' is deprecated
 
 # // -----
@@ -34,5 +34,5 @@ from qualified_member_leak.consumer_sibling import consume
 def main():
     _ = consume()
 
-# CHECK: consumer_sibling.mojo:{{[0-9]+}}:{{[0-9]+}}: error: use of unknown declaration 'helpers'
+# CHECK: consumer_sibling.mojo:{{[0-9]+}}:{{[0-9]+}}: error: module 'other' has no declaration 'helpers'
 # CHECK-NOT: implicit reference to sibling module 'helpers'

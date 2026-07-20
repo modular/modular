@@ -11,7 +11,7 @@ import visibility_pkg
 
 
 def main():
-    # expected-error @+1 {{use of unknown declaration 'sub'}}
+    # expected-error @+1 {{package 'visibility_pkg' has no declaration 'sub'}}
     _ = visibility_pkg.sub
 
 
@@ -34,7 +34,7 @@ import visibility_pkg.inner
 
 def main():
     _ = visibility_pkg.inner
-    # expected-error @+1 {{use of unknown declaration 'deep'}}
+    # expected-error @+1 {{package 'inner' has no declaration 'deep'}}
     _ = visibility_pkg.inner.deep
 
 
@@ -57,7 +57,7 @@ import visibility_pkg
 
 def main():
     _ = visibility_pkg.shown
-    # expected-error @+1 {{use of unknown declaration 'sub'}}
+    # expected-error @+1 {{package 'visibility_pkg' has no declaration 'sub'}}
     _ = visibility_pkg.sub
 
 # // -----

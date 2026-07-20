@@ -14,13 +14,13 @@ import test_package
 
 def main():
     # A submodule of test_package that was not imported is not an attribute.
-    # expected-error @+1 {{use of unknown declaration 'test_nested_package'}}
+    # expected-error @+1 {{package 'test_package' has no declaration 'test_nested_package'}}
     _ = test_package.test_nested_package
 
-    # expected-error @+1 {{use of unknown declaration 'test_nested_package'}}
+    # expected-error @+1 {{package 'test_package' has no declaration 'test_nested_package'}}
     test_package.test_nested_package.module.nested_function()
 
-    # expected-error @+1 {{use of unknown declaration 'test_nested_package'}}
+    # expected-error @+1 {{package 'test_package' has no declaration 'test_nested_package'}}
     test_package.test_nested_package.deep_package.leaf.deep_function()
 
 
@@ -45,7 +45,7 @@ def main():
 
     # deep_package re-exports `leaf` but not `hidden`, so the non-re-exported
     # submodule stays gated even when deep_package is reached via re-export.
-    # expected-error @+1 {{use of unknown declaration 'hidden'}}
+    # expected-error @+1 {{package 'deep_package' has no declaration 'hidden'}}
     test_package.test_nested_package.deep_package.hidden.hidden_fn()
 
 
