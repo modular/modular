@@ -423,10 +423,19 @@ appendNamedBodyConstraints(ArrayRef<ParamDeclAttr> params,
   }
 }
 
-/// Given a function context, return the constraints known from the context.
+/// Given a function context, return the constraints known from the context,
+/// including trailing `where` clauses on enclosing struct/trait declarations.
 static SmallVector<ConstraintAttr>
 getConstraintsFromContext(FunctionLikeOp fnContext) {
   SmallVector<ConstraintAttr> assumptions;
+  if (auto fn = dyn_cast<FnOp>(fnContext.op)) {
+    FnTypeGeneratorType fullSig = fn.getFullSignature();
+    appendNamedBodyConstraints(
+        fn.collectAllParams(/*includeImplOrigins=*/false),
+        fullSig.getParamListAttrs().getBodyConstraints(), assumptions);
+    return assumptions;
+  }
+
   PogListAttr paramList = fnContext.getFuncTypeGenerator().getParamListAttrs();
   appendNamedBodyConstraints(fnContext.getInputParams(),
                              paramList.getBodyConstraints(), assumptions);

@@ -137,3 +137,13 @@ def moco2373(l: I):
     # This shouldn't cause a crash, it should successfully destruct it.
     # CHECK: lit.call {{.*}}@_MapIterator::@"__del__
     _ = l2^
+
+
+# MOCO-4254
+struct PredicateOnStructOuter[value: Int] where value >= 0:
+    var field: PredicateOnStructInner[Self.value]
+
+struct PredicateOnStructInner[value: Int](
+    ImplicitlyDeletable where value >= 0,
+):
+    pass
