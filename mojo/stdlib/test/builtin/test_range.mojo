@@ -292,6 +292,100 @@ def test_range_reversed() raises:
         test_sum_reversed(20, end, -3)
 
 
+def test_range_reversed_float() raises:
+    # `reversed()` must equal forward in reverse order, element-for-element,
+    # exact even for steps not representable in binary.
+    def assert_reversed_matches(
+        start: Float64, end: Float64, step: Float64
+    ) raises:
+        var forward = List[Float64]()
+        for x in range(start, end, step):
+            forward.append(x)
+        var backward = List[Float64]()
+        for x in reversed(range(start, end, step)):
+            backward.append(x)
+        assert_equal(len(backward), len(forward))
+        for i in range(len(forward)):
+            assert_equal(backward[i], forward[len(forward) - 1 - i])
+
+    # Exact-binary steps.
+    assert_reversed_matches(5.0, 0.0, -0.5)  # fractional negative step
+    assert_reversed_matches(0.0, 5.0, 0.5)  # ascending fractional step
+    assert_reversed_matches(5.0, 0.6, -0.5)  # end not aligned to the grid
+    assert_reversed_matches(0.0, 10.0, 3.0)  # step magnitude greater than one
+    assert_reversed_matches(0.0, 5.0, -0.5)  # empty: step points the wrong way
+    # Steps not exactly representable in binary.
+    assert_reversed_matches(0.0, 1.0, 0.1)
+    assert_reversed_matches(1.0, 0.0, -0.1)
+    assert_reversed_matches(2.0, -1.0, -0.3)
+
+    # Accumulation hazards: hundreds to thousands of steps.
+    assert_reversed_matches(0.0, 100.0, 0.1)  # ~1000 steps
+    assert_reversed_matches(-5.0, 5.0, 0.1)  # crosses zero, ~100 steps
+    assert_reversed_matches(0.0, 10.0, 0.3)  # repr-nasty step
+    assert_reversed_matches(10.0, 0.0, -0.7)  # descending repr-nasty step
+
+    # Spot-check the exact reversed values for the originally reported case.
+    var expected: List[Float64] = [
+        0.5,
+        1.0,
+        1.5,
+        2.0,
+        2.5,
+        3.0,
+        3.5,
+        4.0,
+        4.5,
+        5.0,
+    ]
+    var actual = List[Float64]()
+    for x in reversed(range(5.0, 0.0, -0.5)):
+        actual.append(x)
+    assert_equal(actual, expected)
+
+
+def test_range_float_forward_count() raises:
+    # Non-representable step used to drift to 11 elements for [0, 1) by 0.1.
+    var values = List[Float64]()
+    for x in range(0.0, 1.0, 0.1):
+        values.append(x)
+    assert_equal(len(values), 10)
+    assert_equal(values[0], 0.0)
+    assert_equal(values[1], 0.1)
+
+
+def test_range_float_zero_step() raises:
+    # Zero step is empty both directions, not an infinite loop.
+    var count = 0
+    for _ in range(5.0, 0.0, 0.0):
+        count += 1
+    assert_equal(count, 0)
+    var reverse_count = 0
+    for _ in reversed(range(5.0, 0.0, 0.0)):
+        reverse_count += 1
+    assert_equal(reverse_count, 0)
+
+
+def test_range_float_grid() raises:
+    # On-grid `end` is excluded, no `// + 1` overcount (1.0 = 4 * 0.25).
+    var v = List[Float64]()
+    for x in range(0.0, 1.0, 0.25):
+        v.append(x)
+    assert_equal(v, [0.0, 0.25, 0.5, 0.75])
+
+
+def test_range_float_empty() raises:
+    # Wrong-direction ranges are empty for either step sign.
+    var forward = 0
+    for _ in range(5.0, 0.0, 0.5):  # positive step, end < start
+        forward += 1
+    assert_equal(forward, 0)
+    var backward = 0
+    for _ in range(0.0, 5.0, -0.5):  # negative step, end > start
+        backward += 1
+    assert_equal(backward, 0)
+
+
 def test_indexing() raises:
     var r = range(10)
     assert_equal(r[Int(4)], 4)

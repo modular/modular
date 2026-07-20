@@ -124,18 +124,6 @@ def test_scalar_zero_based() raises:
         u.append(i)
     assert_equal(u, [0, 1, 2, 3])
 
-    # Float zero-start ranges iterate, index, and reverse (they just have no
-    # builtin len()).
-    var f = List[Float64]()
-    for x in range(Float64(4.0)):
-        f.append(x)
-    assert_equal(f, [0.0, 1.0, 2.0, 3.0])
-    assert_equal(range(Float64(4.0))[Float64(1.0)], 1.0)
-    var frev = List[Float64]()
-    for x in reversed(range(Float64(4.0))):
-        frev.append(x)
-    assert_equal(frev, [3.0, 2.0, 1.0, 0.0])
-
     # Integer scalar: indexing and reversed() (no builtin len() on this form)
     assert_equal(range(Int32(4))[Int32(2)], 2)
     var rev = List[Int32]()
@@ -162,13 +150,6 @@ def test_scalar_sequential() raises:
     for x in reversed(range(Int32(3), Int32(7))):
         rev.append(x)
     assert_equal(rev, [6, 5, 4, 3])
-
-    # Float sequential ranges index and reverse too
-    assert_equal(range(Float64(2.0), Float64(6.0))[Float64(1.0)], 3.0)
-    var frev = List[Float64]()
-    for x in reversed(range(Float64(2.0), Float64(6.0))):
-        frev.append(x)
-    assert_equal(frev, [5.0, 4.0, 3.0, 2.0])
 
     # end <= start is empty (no len() here, so iterate)
     var empty = List[Int32]()

@@ -450,6 +450,18 @@ This version is still a work in progress.
   is still available as a deprecated alias and will be removed in a future
   release.
 
+- Floating-point `range()` iteration is now drift-free and reversible.
+  Element `i` is computed as `fma(i, step, start)`. Forward and reverse
+  iteration produce identical sequences across repeated calls
+  and across any IEEE-754 platform at the same floating-point width.
+  Previously a step that was not exactly representable, such as `0.1`, could
+  drift and yield an extra forward element that `reversed()` then dropped.
+
+- `range()` now rejects non-numeric element types (`Bool` and the narrow MX
+  float formats) at construction. The one- and two-argument float ranges
+  (`range(Float64(4.5))` and `range(Float64(0.5), Float64(3.0))`) are compile
+  errors instead of infinite loops; use the three-argument stepped form.
+
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
   `destroy_func`, so it can clear a `Dict` whose key or value type is not

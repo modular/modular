@@ -21,7 +21,7 @@ strided ranges.
 `range()` is built in. You don't need to import it.
 """
 
-from std.math import ceildiv
+from std.math import ceil, ceildiv, fma
 from std.sys.info import size_of
 from std.sys.intrinsics import unlikely
 
@@ -611,7 +611,23 @@ struct _SequentialScalarRange[dtype: DType](
         return _scalar_range_bounds(self.__len__())
 
 
-@fieldwise_init
+@always_inline
+def _fp_range_count[
+    dtype: DType, //
+](start: Scalar[dtype], end: Scalar[dtype], step: Scalar[dtype]) -> Int:
+    # A zero step is empty.
+    if step == 0:
+        return 0
+    # This calculation avoids `// + 1`, which overcounts by one when `end`
+    # lands on the grid. `ceil` and `/` are correct for forward and backward
+    # ranges.
+    var raw = ceil((end - start) / step)
+    return Int(raw) if raw > 0 else 0
+
+
+# Floating-point ranges iterate by index (`fma(k, step, start)`), avoiding
+# drift. Reverse iteration mirrors forward. One extra `Int` cursor carries
+# both position and direction; integer ranges ignore it.
 struct _StridedScalarRange[dtype: DType](
     ImplicitlyCopyable,
     Iterable,
@@ -628,6 +644,20 @@ struct _StridedScalarRange[dtype: DType](
     var start: Scalar[Self.dtype]
     var end: Scalar[Self.dtype]
     var step: Scalar[Self.dtype]
+    var idx: Int  # fp iteration cursor; sign is the direction (>= 0 fwd, < 0 rev)
+
+    @always_inline
+    def __init__(
+        out self,
+        start: Scalar[Self.dtype],
+        end: Scalar[Self.dtype],
+        step: Scalar[Self.dtype],
+        idx: Int = 0,
+    ):
+        self.start = start
+        self.end = end
+        self.step = step
+        self.idx = idx
 
     @always_inline
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -635,20 +665,38 @@ struct _StridedScalarRange[dtype: DType](
 
     @always_inline
     def __next__(mut self) raises StopIteration -> Scalar[Self.dtype]:
-        # If the type is unsigned, then 'step' cannot be negative.
-        comptime if Self.dtype.is_unsigned():
-            if self.start >= self.end:
-                raise StopIteration()
+        comptime if Self.dtype.is_floating_point():
+            var count = _fp_range_count(self.start, self.end, self.step)
+            if self.idx >= 0:
+                if self.idx >= count:
+                    raise StopIteration()
+                var result = fma(
+                    Scalar[Self.dtype](self.idx), self.step, self.start
+                )
+                self.idx += 1
+                return result
+            else:
+                var i = count + self.idx
+                if i < 0:
+                    raise StopIteration()
+                var result = fma(Scalar[Self.dtype](i), self.step, self.start)
+                self.idx -= 1
+                return result
         else:
-            if self.step > 0:
+            # If the type is unsigned, then 'step' cannot be negative.
+            comptime if Self.dtype.is_unsigned():
                 if self.start >= self.end:
                     raise StopIteration()
-            elif self.end >= self.start:
-                raise StopIteration()
+            else:
+                if self.step > 0:
+                    if self.start >= self.end:
+                        raise StopIteration()
+                elif self.end >= self.start:
+                    raise StopIteration()
 
-        var result = self.start
-        self.start += self.step
-        return result
+            var result = self.start
+            self.start += self.step
+            return result
 
     @always_inline
     def __len__(self) -> Int:
@@ -677,12 +725,17 @@ struct _StridedScalarRange[dtype: DType](
         return self.start + idx * self.step
 
     @always_inline
-    def __reversed__(self) -> Self:
-        var shifted_end = self.end - _sign(self.step)
-        var start = shifted_end - ((shifted_end - self.start) % self.step)
-        var end = self.start - self.step
-        var step = -self.step
-        return Self(start, end, step)
+    def __reversed__(self) -> Self.ReversedType:
+        comptime if Self.dtype.is_integral():
+            # Integer spacing guarantees that `end - ±step` snaps to the last
+            # produced element.
+            var shifted_end = self.end - _sign(self.step)
+            var start = shifted_end - ((shifted_end - self.start) % self.step)
+            return Self(start, self.start - self.step, -self.step)
+        else:
+            # Reverse starts the cursor at -1; `__next__` maps it to
+            # count - 1.
+            return Self(self.start, self.end, self.step, -1)
 
 
 @always_inline
@@ -694,10 +747,10 @@ def range[
     Use this overload when you need typed scalar elements.
 
     The `dtype` is inferred from the argument, so `Int32(8)` produces
-    `Int32` elements. Scalar ranges support O(1) indexing.
-    Signed-integer and floating-point ranges can be reversed; reversing an
-    unsigned range is a compile-time error. This scalar form doesn't support
-    `len()`; only the strided (three-argument) form does.
+    `Int32` elements. This form requires an integer `dtype`; floating-point
+    ranges require an explicit step. Signed-integer ranges can be reversed;
+    reversing an unsigned range is a compile-time error. Only the
+    three-argument form supports `len()`.
 
     Parameters:
         dtype: The `DType` of the sequence elements. Inferred from `end`.
@@ -715,12 +768,14 @@ def range[
 
     ```mojo
     for i in range(UInt8(4)):
-        print(i)  # 0, 1, 2, 3  — each value is UInt8
-
-    for x in range(Float64(4.0)):
-        print(x)  # 0.0, 1.0, 2.0, 3.0
+        print(i)  # 0, 1, 2, 3 (each value is UInt8)
     ```
     """
+    comptime assert dtype.is_numeric(), "range requires a numeric dtype"
+    comptime assert dtype.is_integral(), (
+        "a floating-point range requires an explicit step; use range(start,"
+        " end, step)"
+    )
     return _ZeroStartingScalarRange(end)
 
 
@@ -730,12 +785,12 @@ def range[
 ](start: Scalar[dtype], end: Scalar[dtype]) -> _SequentialScalarRange[dtype]:
     """Returns the scalar sequence `[start, end)` with elements of type `dtype`.
 
-    **The two-argument form never counts down.** When `end <= start`, the
-    range is empty. Use the three-argument form with a negative step to
-    count downward. Scalar ranges support O(1) indexing. Signed-integer and
-    floating-point ranges can be reversed; reversing an unsigned range is a
-    compile-time error. This scalar form doesn't support `len()`; only the
-    strided (three-argument) form does.
+        **The two-argument form never counts down.** The range is empty
+        when `end <= start`. Use the three-argument form with a negative
+        step to count downward. This form requires an integer `dtype`.
+        Floating-point ranges require an explicit step. Signed-integer
+        ranges can be reversed; reversing an unsigned range is a compile-time
+        error. Only the three-argument form supports `len()`.
 
     Parameters:
         dtype: The `DType` of the sequence elements. Inferred from the arguments.
@@ -757,6 +812,11 @@ def range[
         print(i)  # 3, 4, 5, 6  — each value is Int32
     ```
     """
+    comptime assert dtype.is_numeric(), "range requires a numeric dtype"
+    comptime assert dtype.is_integral(), (
+        "a floating-point range requires an explicit step; use range(start,"
+        " end, step)"
+    )
     return _SequentialScalarRange(start, end)
 
 
@@ -769,8 +829,9 @@ def range[
     """Returns the scalar sequence `[start, end)` with a given step.
 
     Integer scalar ranges support `len()`, O(1) indexing, and `reversed()`,
-    including unsigned ranges. Float scalar ranges step in both directions
-    but are iteration-only.
+    including unsigned ranges. Float ranges are iteration-only. Each element
+    is computed as `fma(i, step, start)`, and `reversed()` is a bit-for-bit
+    mirror of forward iteration.
 
     **Float endpoints are exclusive.** To include a specific endpoint, push
     `end` past it by a fraction of the step:
@@ -786,10 +847,10 @@ def range[
         print(t)
     ```
 
-    **Avoid a zero step.** For integer element types `len()` returns 0, but
-    iterating a zero-step range can loop forever, because the value never
-    advances toward `end`: a signed or float range with `end < start`, or an
-    unsigned range with `start < end`. Pass a nonzero step.
+    **A zero step yields an empty float range.** For integer element types a
+    zero step can still iterate forever when the bounds and step disagree (a
+    signed range with `end < start`, or an unsigned range with `start < end`),
+    so pass a nonzero step for integer ranges.
 
     Parameters:
         dtype: The `DType` of the sequence elements. Inferred from the arguments.
@@ -799,7 +860,8 @@ def range[
             inclusive upper bound when stepping backward.
         end: The exclusive bound in the direction of the step.
         step: The increment per iteration. A positive step counts up, and a
-            negative step counts down. Avoid a zero step.
+            negative step counts down. A zero step yields an empty float range;
+            avoid it for integer ranges.
 
     Returns:
         A strided scalar range over `[start, end)` by `step`.
@@ -820,4 +882,5 @@ def range[
     print(r[Int32(3)])  # 6
     ```
     """
+    comptime assert dtype.is_numeric(), "range requires a numeric dtype"
     return _StridedScalarRange(start, end, step)
