@@ -1022,106 +1022,65 @@ auto SharedState::lookupAllDeclsWithName(StringRef name, SMLoc loc,
   return entry;
 }
 
-/// Mojo import kinds. Enumerator order defines resolution priority: a
-/// lower value outranks a higher one when several candidates share a stem.
-enum class MojoImportKind {
-  SourcePackage,
-  Precompiled,
-  SourceModule,
-  LegacyPkg,
-  SourceDir,
-};
-
-static std::optional<MojoImportKind>
-classifyMojoImportKind(const std::filesystem::path &path) {
+std::optional<SharedState::ModuleSpec>
+SharedState::ModuleSpec::classify(const std::filesystem::path &path) {
   if (Filesystem::isMojoSourcePackagePath(path))
-    return MojoImportKind::SourcePackage;
+    return ModuleSpec{path, ModuleSpec::Kind::SourcePackage};
 
   std::error_code ec;
   if (std::filesystem::is_directory(path, ec) && !ec)
-    return MojoImportKind::SourceDir;
+    return ModuleSpec{path, ModuleSpec::Kind::SourceDir};
 
   if (Filesystem::isMojoBinaryPackagePath(path)) {
     auto ext = path.filename().extension();
-    return ext == ".mojopkg" ? MojoImportKind::LegacyPkg
-                             : MojoImportKind::Precompiled;
+    return ModuleSpec{path, ext == ".mojopkg" ? ModuleSpec::Kind::LegacyPkg
+                                              : ModuleSpec::Kind::Precompiled};
   }
 
   if (Filesystem::isMojoSourceFile(path))
-    return MojoImportKind::SourceModule;
+    return ModuleSpec{path, ModuleSpec::Kind::SourceModule};
 
   return std::nullopt;
 }
 
-/// Return true if the import candidate (kind, path) takes precedence over
-/// the other. Higher-priority kinds win; between candidates of
-/// the same kind (e.g. directories foo and foo.bar, which share the stem
-/// 'foo'), the lexicographically smaller filename wins so the result does not
-/// depend on the platform's directory iteration order.
-static bool takesImportPrecedence(MojoImportKind kind,
-                                  const std::filesystem::path &path,
-                                  MojoImportKind otherKind,
-                                  const std::filesystem::path &otherPath) {
-  if (kind != otherKind)
-    return kind < otherKind;
-  return path.filename() < otherPath.filename();
-}
-
 /// Resolve the absolute path for a given module name within the provided
 /// directory. Returns nullopt if the module cannot be found.
-static std::optional<std::string> resolveModulePath(SharedState &shared,
-                                                    llvm::SMLoc includeLoc,
-                                                    StringRef moduleName,
-                                                    StringRef includeDir,
-                                                    bool ignorePrebuilt) {
-  using namespace std::filesystem;
-
-  // Find a path in `includeDir` that is a mojo package for `moduleName`. This
-  // is either a directory with an `__init__.mojo` file inside it, a
-  // `moduleName.mojo` file, a precompiled `moduleName.mojoc` file, or a regular
-  // directory. Make sure to ignore other `moduleName.*` files that are
-  // definitely not mojo packages.
+std::optional<SharedState::ModuleSpec>
+SharedState::resolveModulePath(StringRef moduleName, llvm::SMLoc includeLoc,
+                               StringRef includeDir, bool ignorePrebuilt) {
+  // Find a path in `includeDir` that is an importable mojo construct matching
+  // `moduleName`
   std::error_code ec;
-  auto iter = directory_iterator(includeDir.str(), ec);
+  auto iter = std::filesystem::directory_iterator(includeDir.str(), ec);
   if (ec)
     return std::nullopt;
 
   // Gets the name of the file or directory in a case sensitive way. On non-case
   // sensitive systems we cannot just do `path / moduleName` since the
   // constructed path will not adhere to case sensitivity.
-  std::optional<std::pair<MojoImportKind, std::filesystem::path>> bestMatch;
+  std::optional<SharedState::ModuleSpec> bestMatch;
   for (const auto &entry : iter) {
     if (entry.path().filename().stem().string() != moduleName)
       continue;
 
-    auto kind = classifyMojoImportKind(entry.path());
-
-    if (ignorePrebuilt && (kind == MojoImportKind::Precompiled ||
-                           kind == MojoImportKind::LegacyPkg)) {
-      continue;
-    }
-
-    if (kind && (!bestMatch ||
-                 takesImportPrecedence(*kind, entry.path(), bestMatch->first,
-                                       bestMatch->second))) {
-      bestMatch =
-          std::make_pair(*kind, std::filesystem::absolute(entry.path()));
+    if (auto moduleSpec = ModuleSpec::classify(entry.path())) {
+      if (ignorePrebuilt && moduleSpec->isPrecompiled())
+        continue;
+      if (!bestMatch || moduleSpec->takesImportPrecedence(*bestMatch))
+        bestMatch = moduleSpec;
     }
   }
 
-  if (bestMatch)
-    return bestMatch->second;
-
-  return std::nullopt;
+  return bestMatch;
 }
 
 /// Resolve the absolute path for a given module name. Returns nullopt if the
 /// module cannot be found.
-std::optional<std::string> SharedState::resolveModulePath(StringRef moduleName,
-                                                          SMLoc includeLoc) {
+std::optional<SharedState::ModuleSpec>
+SharedState::resolveModulePath(StringRef moduleName, SMLoc includeLoc) {
   unsigned includeBufferId = getSourceMgr().FindBufferContainingLoc(includeLoc);
 
-  std::optional<std::string> result;
+  std::optional<ModuleSpec> result;
   traverseImportDirectories(includeBufferId, [&](StringRef dir) {
     // Don't try to resolve modules that reside within a package.
     if (Filesystem::isMojoSourcePackagePath(dir.str())) {
@@ -1130,18 +1089,13 @@ std::optional<std::string> SharedState::resolveModulePath(StringRef moduleName,
       // package.
       return WalkResult::advance();
     }
-    if ((result = ::resolveModulePath(*this, includeLoc, moduleName, dir,
-                                      disablePrebuiltPackages)))
+    if ((result = resolveModulePath(moduleName, includeLoc, dir,
+                                    disablePrebuiltPackages)))
       return WalkResult::interrupt();
     return WalkResult::advance();
   });
-  return result;
-}
 
-/// Given a path to a mojo source package, return the path of its __init__ file.
-static std::string
-getPackageInitPath(const std::filesystem::path &packagePathStr) {
-  return (packagePathStr / "__init__.mojo").string();
+  return result;
 }
 
 ASTDecl &SharedState::importModule(StringRef name, PackageOp currentPackage,
@@ -1180,27 +1134,21 @@ void SharedState::registerSourcePackageChildren(ASTDecl &packageDecl) {
 
   // Collect the directory entries and sort them, so children are registered in
   // a deterministic order across platforms.
-  std::map<std::string, std::pair<std::filesystem::path, MojoImportKind>>
-      packageChildren;
+  std::map<std::string, ModuleSpec> packageChildren;
   for (const auto &entry : std::filesystem::directory_iterator(directory, ec)) {
-    std::optional<MojoImportKind> kind = classifyMojoImportKind(entry.path());
-    if (!kind)
-      continue;
-    std::string name =
-        entry.path().filename().replace_extension().generic_string();
-    auto it = packageChildren.find(name);
-    if (it == packageChildren.end() ||
-        takesImportPrecedence(*kind, entry.path(), it->second.second,
-                              it->second.first)) {
-      packageChildren[name] = {entry.path(), *kind};
+    if (auto moduleSpec = ModuleSpec::classify(entry.path())) {
+      std::string name =
+          entry.path().filename().replace_extension().generic_string();
+      if (auto it = packageChildren.find(name);
+          it == packageChildren.end() ||
+          moduleSpec->takesImportPrecedence(it->second)) {
+        packageChildren[name] = *moduleSpec;
+      }
     }
   }
 
   for (const auto &[name, value] : packageChildren) {
-    std::filesystem::path path = value.first;
-    MojoImportKind kind = value.second;
-    if (kind == MojoImportKind::Precompiled ||
-        kind == MojoImportKind::LegacyPkg)
+    if (value.isPrecompiled())
       continue;
     // The package's own __init__ is resolved separately by resolveBody.
     if (name == "__init__")
@@ -1210,18 +1158,14 @@ void SharedState::registerSourcePackageChildren(ASTDecl &packageDecl) {
     // __init__, or __init__ itself).
     if (parentState->nestedModules.count(nameAttr))
       continue;
-    auto fileLoc = createLocation(kind == MojoImportKind::SourcePackage
-                                      ? getPackageInitPath(path.string())
-                                      : path.string(),
-                                  /*line=*/1, /*column=*/1);
-    if (kind == MojoImportKind::SourcePackage ||
-        kind == MojoImportKind::SourceDir) {
+    if (value.isSourcePackageLike()) {
       // Registered by the directory scan so it gets no import location here.
       // We'll resolve that location if/when it's actually resolved.
-      createPackageState(nameAttr, path.string(), *parentState, fileLoc,
-                         /*importLoc=*/{});
+      createPackageState(nameAttr, *parentState, value, /*importLoc=*/{});
     } else {
-      createDeferredModuleState(nameAttr, path.string(), *parentState, fileLoc);
+      auto loc = createLocation(value.path.string(), /*line=*/1, /*column=*/1);
+      createDeferredModuleState(nameAttr, value.path.string(), *parentState,
+                                loc);
     }
   }
 }
@@ -1359,12 +1303,12 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
     return rememberImportLoc(it->second);
 
   // Resolve the path for this module.
-  std::optional<std::string> modulePath;
+  std::optional<ModuleSpec> modulePath;
   if (parentState->decl != impl->topLevelDecl) {
     if (!parentState->sourcePath)
       return notFound("unable to locate module '" + name + "'");
-    modulePath = ::resolveModulePath(*this, loc, name, *parentState->sourcePath,
-                                     disablePrebuiltPackages);
+    modulePath = resolveModulePath(name, loc, *parentState->sourcePath,
+                                   disablePrebuiltPackages);
   } else {
     // Otherwise, go through the normal import path.
     modulePath = resolveModulePath(name, loc);
@@ -1372,27 +1316,28 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
   if (!modulePath)
     return notFound("unable to locate module '" + name + "'");
 
-  // If the path was a directory, we're importing a source package. Record the
-  // import location so the package's __init__ is opened "included from" here.
-  std::error_code ec;
-  if (std::filesystem::is_directory(*modulePath, ec) && !ec) {
-    auto fileLoc = createLocation(getPackageInitPath(*modulePath), /*line=*/1,
-                                  /*column=*/1);
-    return &createPackageState(declNameAttr, *modulePath, *parentState, fileLoc,
+  // If the path was a source package, record the import location so the
+  // package's __init__ is opened "included from" here.
+  if (modulePath->isSourcePackageLike()) {
+    return &createPackageState(declNameAttr, *parentState, *modulePath,
                                /*importLoc=*/loc);
   }
 
+  const auto &pathRef = modulePath->path;
+
   // Check if the path is a precompiled file or binary package.
-  if (Filesystem::isMojoBinaryPackagePath(*modulePath))
-    return &createBinaryPackageState(loc, declNameAttr, *modulePath,
-                                     *parentState);
+  if (modulePath->isPrecompiled())
+    return &createBinaryPackageState(loc, declNameAttr, pathRef, *parentState);
 
   // Open + lex the module source file.
+  assert(modulePath->isSourceModule() && "Unexpected import kind");
   SMLoc openLoc =
       parentState->importLoc.isValid() ? parentState->importLoc : loc;
-  const llvm::MemoryBuffer *moduleBuffer = openModuleFile(*modulePath, openLoc);
+  const llvm::MemoryBuffer *moduleBuffer =
+      openModuleFile(pathRef.string(), openLoc);
   if (!moduleBuffer)
-    return notFound("unable to resolve imported module '" + *modulePath + "'");
+    return notFound("unable to resolve imported module '" + pathRef.string() +
+                    "'");
   auto fileLoc = createLocation(moduleBuffer->getBufferIdentifier(), /*line=*/1,
                                 /*column=*/1);
   return &createModuleState(declNameAttr, moduleBuffer, *parentState, fileLoc);
@@ -1706,20 +1651,19 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
 }
 
 ASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
-  auto fileLoc = createLocation(getPackageInitPath(path.str()),
-                                /*line=*/1, /*column=*/1);
   // Note the importLoc here is empty as this is a top-level package and so
   // isn't imported from anywhere.
-  ModuleState &state =
-      createPackageState(StringAttr::get(getContext(), name), path,
-                         *impl->topLevelModuleState, fileLoc, /*importLoc=*/{});
+  ModuleSpec spec{path.str(), ModuleSpec::Kind::SourcePackage};
+  ModuleState &state = createPackageState(StringAttr::get(getContext(), name),
+                                          *impl->topLevelModuleState, spec,
+                                          /*importLoc=*/{});
   return *state.decl;
 }
 
 ASTDecl &SharedState::createBinaryPackage(StringRef path, StringRef name) {
   ModuleState &state =
       createBinaryPackageState(SMLoc(), StringAttr::get(getContext(), name),
-                               path, *impl->topLevelModuleState);
+                               path.str(), *impl->topLevelModuleState);
   return *state.decl;
 }
 
@@ -1810,14 +1754,19 @@ LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl, SMLoc loc) {
 }
 
 SharedState::ModuleState &
-SharedState::createPackageState(StringAttr declName, StringRef packagePath,
-                                ModuleState &parentState, FileLineColLoc loc,
-                                SMLoc importLoc) {
+SharedState::createPackageState(StringAttr declName, ModuleState &parentState,
+                                ModuleSpec moduleSpec, SMLoc importLoc) {
   // Create a new decl for this module. We use createUnlistedDecl instead of
   // addDecl so the package is NOT added to parentState.decl->declsInScope.
   // This prevents "leaky imports" where importing a sub-module makes the
   // parent package globally accessible. The package is still navigable via
   // ModuleState::nestedModules (populated by insertNestedModule below).
+  assert(moduleSpec.isSourcePackageLike() && "Invalid package kind");
+  auto loc = createLocation((moduleSpec.isSourcePackage()
+                                 ? moduleSpec.path / "__init__.mojo"
+                                 : moduleSpec.path)
+                                .string(),
+                            /*line=*/1, /*column=*/1);
   auto moduleBuilder = parentState.decl->getDeclEndBuilder();
   auto packageOp = PackageOp::create(moduleBuilder, loc, declName);
   // Note we intentionally don't set a valid 'loc' here. The real loc is set
@@ -1831,7 +1780,7 @@ SharedState::createPackageState(StringAttr declName, StringRef packagePath,
 
   // Insert the newly created module state.
   ModuleState &moduleState = parentState.insertNestedModule(
-      declName, std::make_unique<ModuleState>(&decl, packagePath));
+      declName, std::make_unique<ModuleState>(&decl, moduleSpec.path.string()));
   moduleState.importLoc = importLoc;
   impl->moduleStates[&decl] = &moduleState;
   impl->packageStates[packageOp] = &moduleState;
@@ -1841,16 +1790,17 @@ SharedState::createPackageState(StringAttr declName, StringRef packagePath,
 
 SharedState::ModuleState &
 SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
-                                      StringRef packagePath,
+                                      std::filesystem::path path,
                                       ModuleState &parentState) {
+  std::string pathStr = path.string();
   auto makeError = [&](const Twine &msg) -> ModuleState & {
     return createErrorModuleState(loc, declName, *parentState.decl, msg);
   };
 
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> packageBuffer =
-      llvm::MemoryBuffer::getFile(packagePath);
+      llvm::MemoryBuffer::getFile(pathStr);
   if (!packageBuffer)
-    return makeError("unable to open package file '" + packagePath + "'");
+    return makeError("unable to open package file '" + pathStr + "'");
 
   // Read the cached package.
   OpBuilder builder = parentState.decl->getDeclEndBuilder();
@@ -1883,10 +1833,10 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
 
     // Read in the cached bytecode.
     if (failed(bytecodeReader->readTopLevel(block)))
-      return makeError("unable to load package '" + packagePath + "'");
+      return makeError("unable to load package '" + pathStr + "'");
 
     // Add the package path to the set of included files.
-    impl->includedFiles.emplace_back(packagePath.str());
+    impl->includedFiles.emplace_back(pathStr);
   }
 
   // The bytecode module includes the package module and any function stubs.

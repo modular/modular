@@ -346,10 +346,63 @@ public:
   traverseImportDirectories(unsigned importBufferFileId,
                             function_ref<WalkResult(StringRef)> callback) const;
 
+  struct ModuleSpec {
+    /// Mojo import kinds. Enumerator order defines resolution priority: a
+    /// lower value outranks a higher one when several candidates share a stem.
+    enum class Kind {
+      SourcePackage,
+      Precompiled,
+      SourceModule,
+      LegacyPkg,
+      SourceDir,
+    };
+
+    std::filesystem::path path;
+    Kind kind;
+
+    static std::optional<ModuleSpec>
+    classify(const std::filesystem::path &path);
+
+    /// Return true if the import candidate (kind, path) takes precedence over
+    /// the other. Higher-priority kinds win; between candidates of
+    /// the same kind (e.g. directories foo and foo.bar, which share the stem
+    /// 'foo'), the lexicographically smaller filename wins so the result does
+    /// not depend on the platform's directory iteration order.
+    bool takesImportPrecedence(ModuleSpec other) {
+      if (kind != other.kind)
+        return kind < other.kind;
+      return path.filename() < other.path.filename();
+    }
+
+    bool isPrecompiled() const {
+      return kind == ModuleSpec::Kind::Precompiled ||
+             kind == ModuleSpec::Kind::LegacyPkg;
+    }
+
+    bool isSourcePackage() const {
+      return kind == ModuleSpec::Kind::SourcePackage;
+    }
+
+    bool isSourcePackageLike() const {
+      return kind == ModuleSpec::Kind::SourcePackage ||
+             kind == ModuleSpec::Kind::SourceDir;
+    }
+
+    bool isSourceModule() const {
+      return kind == ModuleSpec::Kind::SourceModule;
+    }
+  };
+
   /// Resolve the absolute path for a given module name. Returns nullopt if the
   /// module cannot be found.
-  std::optional<std::string> resolveModulePath(StringRef moduleName,
-                                               llvm::SMLoc includeLoc);
+  std::optional<ModuleSpec> resolveModulePath(StringRef moduleName,
+                                              llvm::SMLoc includeLoc);
+
+  /// Resolve the absolute path for a given module name within the provided
+  /// directory. Returns nullopt if the module cannot be found.
+  std::optional<SharedState::ModuleSpec>
+  resolveModulePath(StringRef moduleName, llvm::SMLoc includeLoc,
+                    StringRef includeDir, bool ignorePrebuilt);
 
   //===--------------------------------------------------------------------===//
   // Debug Info
@@ -629,14 +682,14 @@ private:
 
   /// Create a new module state for a package with the given name, location,
   /// and body. The importLoc, if valid, is the location of the `import` that
-  /// pulled the package in.
-  ModuleState &createPackageState(StringAttr declName, StringRef packagePath,
-                                  ModuleState &parentState, FileLineColLoc loc,
-                                  SMLoc importLoc);
+  /// pulled the package in. The moduleSpec's kind must be a SourcePackage or
+  /// SourceDir.
+  ModuleState &createPackageState(StringAttr declName, ModuleState &parentState,
+                                  ModuleSpec moduleSpec, SMLoc importLoc);
 
   /// Create a new module state for a binary package with the given name.
   ModuleState &createBinaryPackageState(SMLoc loc, StringAttr declName,
-                                        StringRef packagePath,
+                                        std::filesystem::path path,
                                         ModuleState &parentState);
 
   /// Create an error module state and emit the given error message.
