@@ -94,6 +94,7 @@ comptime index_kv_params = KVCacheStaticParams(
 
 
 def execute_dual_cache_fused[
+    hidden: Int = 256,
     rtol: Float64 = 0.0,
     atol: Float64 = 0.0,
 ](
@@ -103,8 +104,16 @@ def execute_dual_cache_fused[
     ctx: DeviceContext,
 ) raises:
     """Build small fake weights/caches and assert the dual-cache fused output
-    bit-matches the two single-cache fused ops."""
-    comptime hidden = 256  # K, multiple of SF_VECTOR_SIZE * SF_ATOM_K (128)
+    bit-matches the two single-cache fused ops.
+
+    `hidden` is the contraction dim K; it must be a multiple of
+    `SF_VECTOR_SIZE * SF_ATOM_K` (128) so the rank-5 scale layout is valid. The
+    matmul config (and thus the in-kernel store-redirect epilogue's coordinate
+    mapping) is selected from (M, N, K): M < 32 -> cta_group=1 AB_swapped
+    (transpose_c=True, decode); M >= 32 -> cta_group=2 non-swapped
+    (transpose_c=False, prefill). Both regimes must scatter bit-exactly.
+    """
+    comptime assert hidden % (SF_VECTOR_SIZE * SF_ATOM_K) == 0
     comptime q_dim = NUM_Q_HEADS * HEAD_SIZE  # 1024
     comptime kv_dim = MAIN_KV_HEADS * HEAD_SIZE  # 128
     comptime iq_dim = NUM_INDEX_HEADS * HEAD_SIZE  # 128
@@ -392,30 +401,70 @@ def execute_dual_cache_fused[
     var index_host = index_blocks.tensor[update=True]()
     var index_ref_host = index_blocks_ref.tensor[update=True]()
 
-    # Q / IndexQ output regions must be bit-exact (these matched in the first
-    # GPU run; keep them strict).
+    # A slot counts as a mismatch only when it exceeds the tolerance band
+    #   |a - b| > atol + rtol * max(|a|, |b|).
+    # Every case here uses the defaults (rtol == atol == 0), i.e. strict
+    # bit-exactness: the concatenated-N and split-N matmuls resolve to the same
+    # SM100 Mojo config in both the decode (cta_group=1 AB_swapped) and prefill
+    # (cta_group=2) regimes, so they reduce K in identical order. The tolerance
+    # band is a documented safety valve for a future shape whose concat/split
+    # configs legitimately diverge (e.g. a different `k_group_size`), which would
+    # flip a few outputs to the adjacent bf16 value (1 ULP); it would NOT be a
+    # property of the in-kernel store-redirect epilogue.
+    var rtol_f = Float32(rtol)
+    var atol_f = Float32(atol)
+
+    # Q / IndexQ output regions. `q_maxdiff`/`iq_maxdiff` track the raw max abs
+    # diff over ALL slots (reported even when inside tolerance).
+    var q_mm = 0
+    var q_maxdiff = Float32(0.0)
+    var iq_mm = 0
+    var iq_maxdiff = Float32(0.0)
     for m in range(total_length):
         for c in range(q_dim):
-            assert_equal(fused_host[m, c], q_host[m, c])
-        # IndexQ region (columns [q_dim, q_dim+iq_dim)) == single-cache IndexQ.
+            var a = fused_host.ptr[m * combined_out + c].cast[DType.float32]()
+            var b = q_host.ptr[m * q_dim + c].cast[DType.float32]()
+            if abs(a - b) > atol_f + rtol_f * max(abs(a), abs(b)):
+                q_mm += 1
+            q_maxdiff = max(q_maxdiff, abs(a - b))
         for c in range(iq_dim):
-            assert_equal(fused_host[m, q_dim + c], iq_host[m, c])
+            var a = fused_host.ptr[m * combined_out + q_dim + c].cast[
+                DType.float32
+            ]()
+            var b = iq_host.ptr[m * iq_dim + c].cast[DType.float32]()
+            if abs(a - b) > atol_f + rtol_f * max(abs(a), abs(b)):
+                iq_mm += 1
+            iq_maxdiff = max(iq_maxdiff, abs(a - b))
+    print(
+        "Q out: ",
+        q_mm,
+        " over-tol / ",
+        total_length * q_dim,
+        ", max_abs_diff=",
+        q_maxdiff,
+        "  IndexQ out: ",
+        iq_mm,
+        " over-tol / ",
+        total_length * iq_dim,
+        ", max_abs_diff=",
+        iq_maxdiff,
+        sep="",
+    )
+    assert_equal(q_mm, 0)
+    assert_equal(iq_mm, 0)
 
-    # Cache comparisons: count mismatches and track the max abs diff across ALL
-    # slots (do not stop at the first). With both buffers zero-initialized, a
-    # benign accumulation-order/denormal difference shows O(1) tiny diffs; a
-    # mis-route would show O(written-elements) diffs. We assert bit-exactness
-    # since QKV->main and IndexQK->index run the same block-scaled matmul over
-    # the same per-band scales, but report the stats either way.
+    # Cache comparisons (K/V main + IndexK) with the same tolerance band. With
+    # both buffers zero-initialized, a mis-route would show O(written-elements)
+    # large diffs; a benign reduction-order difference shows O(1) 1-ULP diffs.
     var main_n = main_host.runtime_layout.size()
     var main_mismatches = 0
     var main_max_diff = Float32(0.0)
     for i in range(main_n):
         var a = main_host.ptr[i].cast[DType.float32]()
         var b = main_ref_host.ptr[i].cast[DType.float32]()
-        if a != b:
+        if abs(a - b) > atol_f + rtol_f * max(abs(a), abs(b)):
             main_mismatches += 1
-            main_max_diff = max(main_max_diff, abs(a - b))
+        main_max_diff = max(main_max_diff, abs(a - b))
 
     var index_n = index_host.runtime_layout.size()
     var index_mismatches = 0
@@ -423,14 +472,14 @@ def execute_dual_cache_fused[
     for i in range(index_n):
         var a = index_host.ptr[i].cast[DType.float32]()
         var b = index_ref_host.ptr[i].cast[DType.float32]()
-        if a != b:
+        if abs(a - b) > atol_f + rtol_f * max(abs(a), abs(b)):
             index_mismatches += 1
-            index_max_diff = max(index_max_diff, abs(a - b))
+        index_max_diff = max(index_max_diff, abs(a - b))
 
     print(
         "main cache: ",
         main_mismatches,
-        " mismatches / ",
+        " over-tol / ",
         main_n,
         " slots, max_abs_diff=",
         main_max_diff,
@@ -439,7 +488,7 @@ def execute_dual_cache_fused[
     print(
         "index cache: ",
         index_mismatches,
-        " mismatches / ",
+        " over-tol / ",
         index_n,
         " slots, max_abs_diff=",
         index_max_diff,
@@ -457,6 +506,7 @@ def execute_dual_cache_fused[
 def main() raises:
     seed(42)
     with DeviceContext() as ctx:
+        # ---- K=256 (fast) coverage of both regimes ----
         # Context-encoding (prefill): a couple of small ragged prompts.
         var ce_lens = List[Int]()
         for _ in range(2):
@@ -468,4 +518,34 @@ def main() raises:
         for _ in range(4):
             tg_lens.append(1)
         execute_dual_cache_fused(tg_lens, 4, 2, ctx)
+
+        # ---- K=6144 (M3-scale) coverage of BOTH in-kernel-epilogue regimes ----
+        # The store-redirect epilogue maps fragment (row, col) to output coords
+        # differently per config, so the K/V/IndexK scatter must be bit-exact in
+        # both.
+        #
+        #   Decode: M=4 (< 32) -> cta_group=1 AB_swapped (transpose_c=True).
+        var tg_lens_k6144 = List[Int]()
+        for _ in range(4):
+            tg_lens_k6144.append(1)
+        execute_dual_cache_fused[hidden=6144](tg_lens_k6144, 4, 3, ctx)
+
+        #   Small-M decode regime (M < 32 -> cta_group=1): M in {1, 8, 16}. Here
+        # the epilogue is un-fused (separate elementwise pass, not in-kernel), so
+        # the K/V/IndexK scatter must still land exactly once and bit-match the
+        # split ops. M=1 also takes the is_small_bn GEMV branch; M=8/16 take the
+        # heuristic cta_group=1 swapped config.
+        for tg_m in [1, 8, 16]:
+            var tg_lens_small = List[Int]()
+            for _ in range(tg_m):
+                tg_lens_small.append(1)
+            execute_dual_cache_fused[hidden=6144](tg_lens_small, 4, 2, ctx)
+
+        #   Prefill: M=256 (>= 32) -> cta_group=2 non-swapped (transpose_c=False).
+        # Bit-exact: the concatenated (N=1408) and split (N=1280/256) matmuls
+        # resolve to the same SM100 Mojo config, so they reduce K identically.
+        var ce_lens_k6144 = List[Int]()
+        for _ in range(4):
+            ce_lens_k6144.append(64)
+        execute_dual_cache_fused[hidden=6144](ce_lens_k6144, 4, 1, ctx)
     print("\n=== ALL TESTS PASSED ===\n")

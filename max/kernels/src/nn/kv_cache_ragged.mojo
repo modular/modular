@@ -49,9 +49,7 @@ from layout import (
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
-from linalg.fp4_quantization import (
-    block_scaled_matmul_with_epilogue as blockwise_scaled_fp4_with_epilogue,
-)
+from linalg.fp4_quantization import block_scaled_matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.attention.cpu.mha import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
@@ -1363,7 +1361,9 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
     def write_to_cache[
         dtype: DType, width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
-        # blockwise quantization, we need to use the blockwise_scaled_fp4_with_epilogue kernel
+        # Blockwise-scaled matmul epilogue: scatter Q to `output` and K/V into
+        # the paged cache. Runs as the `elementwise_lambda_fn` of the
+        # block-scaled matmul (Mojo kernel when covered, vendor otherwise).
         var output_val_out: SIMD[output_dtype, width] = rebind[
             SIMD[output_dtype, width]
         ](val.cast[output_dtype]())
@@ -2436,24 +2436,37 @@ def _matmul_blockwise_scaled_fp4_common[
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     comptime N = Int(weight.layout.shape[0])
 
-    # Allocate an output-typed scratch buffer for the matmul result; the
-    # epilogue lambda reads from it and writes the final values to the KV
-    # cache.
+    # Scratch C for the matmul result. With the fused (in-kernel) epilogue the
+    # SM100 Mojo kernel redirects its stores through `elementwise_lambda_fn` and
+    # never writes C; the buffer only backs the vendor DISPATCH_MISS fallback.
+    #
+    # C is built with a STATIC N dim (dynamic M): `block_scaled_matmul` picks its
+    # SM100 config from `c.static_shape[1]`. A fully-dynamic layout leaves
+    # static_N unknown, which makes `choose_block_scaled_config` select MMA_N=0
+    # for the cta_group=2 (prefill) regime -- a config that
+    # `build_block_scaled_configs` never enumerates -- so every prefill QKV GEMM
+    # would DISPATCH_MISS to vendor cuBLASLt instead of MAX's own kernel. (The
+    # decode cta_group=1 regime does not use N to pick MMA_N, so it reached the
+    # Mojo kernel regardless.)
     var scratch_buffer = context.enqueue_create_buffer[output_dtype](
         TOTAL_SEQ_LEN * N
     )
+    # `Idx[N]` keeps the N dim STATIC (M stays dynamic).
     var c_tt = TileTensor(
         scratch_buffer.unsafe_ptr(),
-        row_major((Int64(TOTAL_SEQ_LEN), Int64(N))),
+        row_major(TOTAL_SEQ_LEN, Idx[N]),
     )
 
     var a_scales_tt = lt_to_tt(input_scale)
     var b_scales_tt = lt_to_tt(weight_scale)
 
-    blockwise_scaled_fp4_with_epilogue[
+    # Try MAX's own SM100 Mojo block-scaled kernel first; vendor cuBLASLt only
+    # on DISPATCH_MISS. The K/V-scatter epilogue rides `elementwise_lambda_fn`.
+    block_scaled_matmul[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
+        target=target,
     ](
         c_tt,
         lt_to_tt(hidden_state),
