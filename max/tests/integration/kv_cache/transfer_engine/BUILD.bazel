@@ -1,9 +1,15 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
 
+# The NIXL drag race (//utils/benchmarking/nixl) reuses the cross-node harness
+# here as its per-role engine, so extend the inherited default visibility to
+# that package. Set via a gazelle directive so gazelle keeps it stable.
+# gazelle:default_visibility //max/tests:__subpackages__,//:__pkg__,//oss/modular/max/tests:__subpackages__,//utils/benchmarking/nixl:__pkg__
+
 package(default_visibility = [
     "//:__pkg__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
+    "//utils/benchmarking/nixl:__pkg__",
 ])
 
 modular_py_binary(
