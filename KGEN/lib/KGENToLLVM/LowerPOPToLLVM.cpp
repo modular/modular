@@ -2010,10 +2010,10 @@ void LowerPOPToLLVMPass::runOnOperation() {
 
   // Ops the target lowers in the global pass are left legal (skipped) here.
   target.addDynamicallyLegalOp<POP::MaxOp, POP::MinOp, POP::AtomicRMWOp,
-                               POP::CastOp, CallLLVMIntrinsicOp>(
-      [&](Operation *op) {
-        return lowering && lowering->isLoweredInGlobalPOPPass(op);
-      });
+                               POP::AtomicCmpXchgOp, POP::CastOp,
+                               CallLLVMIntrinsicOp>([&](Operation *op) {
+    return lowering && lowering->isLoweredInGlobalPOPPass(op);
+  });
 
   POPToLLVMTypeConverter typeConverter(targetInfo);
 
@@ -2469,10 +2469,10 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
 
   // Ops the target lowers in this pass are illegal here so they get converted.
   target.addDynamicallyLegalOp<POP::MaxOp, POP::MinOp, POP::AtomicRMWOp,
-                               POP::CastOp, CallLLVMIntrinsicOp>(
-      [&](Operation *op) {
-        return !(lowering && lowering->isLoweredInGlobalPOPPass(op));
-      });
+                               POP::AtomicCmpXchgOp, POP::CastOp,
+                               CallLLVMIntrinsicOp>([&](Operation *op) {
+    return !(lowering && lowering->isLoweredInGlobalPOPPass(op));
+  });
 
   // Convert external calls.
   target.addIllegalOp<GlobalAllocOp, ExternalCallOp, ExternPointerSymbolOp>();
