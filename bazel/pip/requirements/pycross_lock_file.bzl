@@ -172,6 +172,7 @@ PINS = {
     "uvicorn": "uvicorn@0.51.0",
     "uvloop": "uvloop@0.22.1",
     "vllm": "vllm@multiple",
+    "weasyprint": "weasyprint@69.0",
     "wheel": "wheel@0.45.1",
     "zstandard": "zstandard@0.25.0",
 }
@@ -1683,6 +1684,23 @@ def targets():
         testonly = "cryptography" in _TESTONLY_DEPS,
     )
 
+    _cssselect2_0_9_0_deps = [
+        ":tinycss2@1.5.1",
+        ":webencodings@0.5.1",
+    ]
+
+    native.alias(
+        name = "_wheel_cssselect2@0.9.0",
+        actual = "@pycross_lock_file_wheel_cssselect2_0.9.0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "cssselect2@0.9.0",
+        deps = _cssselect2_0_9_0_deps,
+        wheel = ":_wheel_cssselect2@0.9.0",
+        testonly = "cssselect2" in _TESTONLY_DEPS,
+    )
+
     _cuda_bindings_12_9_4_deps = [
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
@@ -2781,33 +2799,39 @@ def targets():
         testonly = "flask-cors" in _TESTONLY_DEPS,
     )
 
+    _fonttools_4_63_0_deps = [
+        ":brotli@1.2.0",
+        ":zopfli@0.4.3",
+    ]
+
     native.alias(
-        name = "_wheel_fonttools@4.53.0",
+        name = "_wheel_fonttools@4.63.0",
         actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_fonttools_4.53.0_cp310_cp310_macosx_11_0_arm64//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.53.0_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.53.0_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_fonttools_4.53.0_cp311_cp311_macosx_11_0_arm64//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.53.0_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.53.0_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_fonttools_4.53.0_cp312_cp312_macosx_11_0_arm64//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.53.0_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.53.0_cp312_cp312_manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_fonttools_4.53.0_py3_none_any//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.53.0_py3_none_any//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.53.0_py3_none_any//file",
-            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_fonttools_4.53.0_py3_none_any//file",
-            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_fonttools_4.53.0_py3_none_any//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.53.0_py3_none_any//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_fonttools_4.53.0_py3_none_any//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.53.0_py3_none_any//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_fonttools_4.53.0_py3_none_any//file",
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_fonttools_4.63.0_cp310_cp310_macosx_10_9_universal2//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.63.0_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.63.0_cp310_cp310_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_fonttools_4.63.0_cp311_cp311_macosx_10_9_universal2//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.63.0_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.63.0_cp311_cp311_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_fonttools_4.63.0_cp312_cp312_macosx_10_13_universal2//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.63.0_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.63.0_cp312_cp312_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_fonttools_4.63.0_cp313_cp313_macosx_10_13_universal2//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.63.0_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.63.0_cp313_cp313_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_fonttools_4.63.0_cp314_cp314_macosx_10_15_universal2//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_fonttools_4.63.0_cp314_cp314t_macosx_10_15_universal2//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.63.0_cp314_cp314_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_fonttools_4.63.0_cp314_cp314t_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_fonttools_4.63.0_cp314_cp314_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_fonttools_4.63.0_cp314_cp314t_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
         }),
     )
 
     pycross_wheel_library(
-        name = "fonttools@4.53.0",
-        wheel = ":_wheel_fonttools@4.53.0",
+        name = "fonttools@4.63.0",
+        deps = _fonttools_4_63_0_deps,
+        wheel = ":_wheel_fonttools@4.63.0",
         testonly = "fonttools" in _TESTONLY_DEPS,
     )
 
@@ -4513,7 +4537,7 @@ def targets():
     _matplotlib_3_10_7_deps = [
         ":contourpy@1.3.0",
         ":cycler@0.12.1",
-        ":fonttools@4.53.0",
+        ":fonttools@4.63.0",
         ":kiwisolver@1.4.9",
         ":numpy@multiple",
         ":packaging@25.0",
@@ -7442,6 +7466,17 @@ def targets():
         testonly = "pydantic-settings" in _TESTONLY_DEPS,
     )
 
+    native.alias(
+        name = "_wheel_pydyf@0.12.1",
+        actual = "@pycross_lock_file_wheel_pydyf_0.12.1_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "pydyf@0.12.1",
+        wheel = ":_wheel_pydyf@0.12.1",
+        testonly = "pydyf" in _TESTONLY_DEPS,
+    )
+
     _pygame_ce_2_5_6_build_deps = [
         ":setuptools",
         ":wheel",
@@ -7612,6 +7647,17 @@ def targets():
         name = "pyparsing@3.1.2",
         wheel = ":_wheel_pyparsing@3.1.2",
         testonly = "pyparsing" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_pyphen@0.17.2",
+        actual = "@pycross_lock_file_wheel_pyphen_0.17.2_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "pyphen@0.17.2",
+        wheel = ":_wheel_pyphen@0.17.2",
+        testonly = "pyphen" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -10023,6 +10069,38 @@ def targets():
         deps = _timm_1_0_16_deps,
         wheel = ":_wheel_timm@1.0.16",
         testonly = "timm" in _TESTONLY_DEPS,
+    )
+
+    _tinycss2_1_5_1_deps = [
+        ":webencodings@0.5.1",
+    ]
+
+    native.alias(
+        name = "_wheel_tinycss2@1.5.1",
+        actual = "@pycross_lock_file_wheel_tinycss2_1.5.1_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "tinycss2@1.5.1",
+        deps = _tinycss2_1_5_1_deps,
+        wheel = ":_wheel_tinycss2@1.5.1",
+        testonly = "tinycss2" in _TESTONLY_DEPS,
+    )
+
+    _tinyhtml5_2_1_0_deps = [
+        ":webencodings@0.5.1",
+    ]
+
+    native.alias(
+        name = "_wheel_tinyhtml5@2.1.0",
+        actual = "@pycross_lock_file_wheel_tinyhtml5_2.1.0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "tinyhtml5@2.1.0",
+        deps = _tinyhtml5_2_1_0_deps,
+        wheel = ":_wheel_tinyhtml5@2.1.0",
+        testonly = "tinyhtml5" in _TESTONLY_DEPS,
     )
 
     _tokenicer_0_0_4_deps = [
@@ -12977,6 +13055,40 @@ def targets():
         testonly = "wcwidth" in _TESTONLY_DEPS,
     )
 
+    _weasyprint_69_0_deps = [
+        ":cffi@2.0.0",
+        ":cssselect2@0.9.0",
+        ":fonttools@4.63.0",
+        ":pillow@12.0.0",
+        ":pydyf@0.12.1",
+        ":pyphen@0.17.2",
+        ":tinycss2@1.5.1",
+        ":tinyhtml5@2.1.0",
+    ]
+
+    native.alias(
+        name = "_wheel_weasyprint@69.0",
+        actual = "@pycross_lock_file_wheel_weasyprint_69.0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "weasyprint@69.0",
+        deps = _weasyprint_69_0_deps,
+        wheel = ":_wheel_weasyprint@69.0",
+        testonly = "weasyprint" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_webencodings@0.5.1",
+        actual = "@pycross_lock_file_wheel_webencodings_0.5.1_py2.py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "webencodings@0.5.1",
+        wheel = ":_wheel_webencodings@0.5.1",
+        testonly = "webencodings" in _TESTONLY_DEPS,
+    )
+
     native.alias(
         name = "_wheel_websockets@15.0.1",
         actual = select({
@@ -13329,6 +13441,36 @@ def targets():
         name = "zope-interface@8.1.1",
         wheel = ":_wheel_zope-interface@8.1.1",
         testonly = "zope-interface" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_zopfli@0.4.3",
+        actual = select({
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_manylinux_2_24_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_manylinux_2_24_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_manylinux_2_24_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_manylinux_2_24_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_manylinux_2_24_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_manylinux_2_24_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+        }),
+    )
+
+    pycross_wheel_library(
+        name = "zopfli@0.4.3",
+        wheel = ":_wheel_zopfli@0.4.3",
+        testonly = "zopfli" in _TESTONLY_DEPS,
     )
 
     _zstandard_0_25_0_build_deps = [
@@ -15864,6 +16006,16 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_wheel_cssselect2_0.9.0_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/21/0e/8459ca4413e1a21a06c97d134bfaf18adfd27cea068813dc0faae06cbf00/cssselect2-0.9.0-py3-none-any.whl",
+        ],
+        sha256 = "6a99e5f91f9a016a304dd929b0966ca464bcfda15177b6fb4a118fc0fb5d9563",
+        downloaded_file_path = "cssselect2-0.9.0-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_wheel_cuda_bindings_12.9.4_cp310_cp310_manylinux_2_24_aarch64.manylinux_2_28_aarch64",
         urls = [
             "https://files.pythonhosted.org/packages/37/31/bfcc870f69c6a017c4ad5c42316207fc7551940db6f3639aa4466ec5faf3/cuda_bindings-12.9.4-cp310-cp310-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
@@ -16804,102 +16956,182 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_fonttools_4.53.0_cp310_cp310_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp310_cp310_macosx_10_9_universal2",
         urls = [
-            "https://files.pythonhosted.org/packages/4a/5d/cf58fe32c9ddc6e3189afd09a43de7e6380043e0edabcbfa9708457a36cf/fonttools-4.53.0-cp310-cp310-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/f2/c9/4141c90a90db20f807c7e10bfd689fe53eb8f7f4caff58ee4d4dfe46919f/fonttools-4.63.0-cp310-cp310-macosx_10_9_universal2.whl",
         ],
-        sha256 = "099634631b9dd271d4a835d2b2a9e042ccc94ecdf7e2dd9f7f34f7daf333358d",
-        downloaded_file_path = "fonttools-4.53.0-cp310-cp310-macosx_11_0_arm64.whl",
+        sha256 = "e3297a6a4059b4acc3a1e9a8b04741f240a80044eef08ebd32e8b5bcdddce75b",
+        downloaded_file_path = "fonttools-4.63.0-cp310-cp310-macosx_10_9_universal2.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_fonttools_4.53.0_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/2c/a8/235953d020fd7775939ea569ef4efb53c3bc580ecab44fb62600eb61cefd/fonttools-4.53.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/90/8f/bdca24a84c81d56fffed052229cdcff368f6e05882e526f4558891481f65/fonttools-4.63.0-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "e40013572bfb843d6794a3ce076c29ef4efd15937ab833f520117f8eccc84fd6",
-        downloaded_file_path = "fonttools-4.53.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "c0425b277a59cff3d80ca42162a8de360f318438a2ac83570842a678d826d579",
+        downloaded_file_path = "fonttools-4.63.0-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_fonttools_4.53.0_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp310_cp310_manylinux2014_x86_64.manylinux_2_17_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/7a/d0/010c65f46fb14333cdb537566d1532e64361eb981180ab73f1148e927382/fonttools-4.53.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/04/59/a639c0e136441ee91a65b56fdf89e5d075927e7a09c559d1b0f5276577db/fonttools-4.63.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
         ],
-        sha256 = "715b41c3e231f7334cbe79dfc698213dcb7211520ec7a3bc2ba20c8515e8a3b5",
-        downloaded_file_path = "fonttools-4.53.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "d7e5c9973aa04c95650c96e5f5ad865fbf42d62079163ecfab1e01cbc2504c22",
+        downloaded_file_path = "fonttools-4.63.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_fonttools_4.53.0_cp311_cp311_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp311_cp311_macosx_10_9_universal2",
         urls = [
-            "https://files.pythonhosted.org/packages/69/2d/8aa6f3ad5fa586d92b95aaa56376f6b20e0136128a99e6e80c811c5f5b4c/fonttools-4.53.0-cp311-cp311-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/75/2b/a7f1545bdf5da69c4bda0cea2a5781f0ad2a6623e0277267672db43c5fe6/fonttools-4.63.0-cp311-cp311-macosx_10_9_universal2.whl",
         ],
-        sha256 = "4f520d9ac5b938e6494f58a25c77564beca7d0199ecf726e1bd3d56872c59749",
-        downloaded_file_path = "fonttools-4.53.0-cp311-cp311-macosx_11_0_arm64.whl",
+        sha256 = "2b8ae05d9eacf6081414d759c0a352769ac28ce31280d6bb8e77b03f9e3c449f",
+        downloaded_file_path = "fonttools-4.63.0-cp311-cp311-macosx_10_9_universal2.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_fonttools_4.53.0_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/86/a9/3d8e7b63b45b48ec47a180e4e312e3db7d1d9a1ef520c51706ff1562edbf/fonttools-4.53.0-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/d8/38/6937fbd7f2dc3a6b48725851bc2c15ec949b9af14d9bbcb5fe83cdf9bdf9/fonttools-4.63.0-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "eceef49f457253000e6a2d0f7bd08ff4e9fe96ec4ffce2dbcb32e34d9c1b8161",
-        downloaded_file_path = "fonttools-4.53.0-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "2c14b4fd138c4bafcca294765c547914e1aa431ae1ca94ab99d8db08c958bd3b",
+        downloaded_file_path = "fonttools-4.63.0-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_fonttools_4.53.0_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp311_cp311_manylinux2014_x86_64.manylinux_2_17_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/0a/79/b5be063ea65d048a041ad8438fa1e8c7c4bf9dc3f4ac2794a850fe70c5c5/fonttools-4.53.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/0b/43/a81f20050a3115b57d62c8e781446949512eac36690dc384ccea65ff4cc1/fonttools-4.63.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
         ],
-        sha256 = "fa1f3e34373aa16045484b4d9d352d4c6b5f9f77ac77a178252ccbc851e8b2ee",
-        downloaded_file_path = "fonttools-4.53.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "d76ac49f929aecaf82d83250b8347e099d7aecba0f4726c1d9b6df3b8bb5fe18",
+        downloaded_file_path = "fonttools-4.63.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_fonttools_4.53.0_cp312_cp312_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp312_cp312_macosx_10_13_universal2",
         urls = [
-            "https://files.pythonhosted.org/packages/47/a4/8e17c52d95264c8532506c66a05cd1aef1b9b5db2a4b9d2c52911864b569/fonttools-4.53.0-cp312-cp312-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/08/ef/b3c6b9b5be2f82416d73fe2ed2e96e2793cd80e7510bd6a17ca79cdd88ec/fonttools-4.63.0-cp312-cp312-macosx_10_13_universal2.whl",
         ],
-        sha256 = "93156dd7f90ae0a1b0e8871032a07ef3178f553f0c70c386025a808f3a63b1f4",
-        downloaded_file_path = "fonttools-4.53.0-cp312-cp312-macosx_11_0_arm64.whl",
+        sha256 = "37dd23e621e3b0aef1baa70a303b80aaf38449632cfc8fd2a55fb285bbccfc02",
+        downloaded_file_path = "fonttools-4.63.0-cp312-cp312-macosx_10_13_universal2.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_fonttools_4.53.0_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/79/e8/5f4b41a54a737ca1d025eaea35c7ed6969d3144bd231b678356a9f410161/fonttools-4.53.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/44/04/0b91d8e916e92ad1fac9e4624760baf0fd5ff2ead614c2f68fb21373f03f/fonttools-4.63.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "bff98816cb144fb7b85e4b5ba3888a33b56ecef075b0e95b95bcd0a5fbf20f06",
-        downloaded_file_path = "fonttools-4.53.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "ef3048ef05dbb552b89817713d9cac912e00d0fde4a3105c00d29e52e10c89af",
+        downloaded_file_path = "fonttools-4.63.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_fonttools_4.53.0_cp312_cp312_manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp312_cp312_manylinux2014_x86_64.manylinux_2_17_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/3a/4a/9ad09a38b4ebdaead66ad8abd5d1a74fe6db7b62cb3d2f148898cfd2f37b/fonttools-4.53.0-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/77/c7/2342da9830e3e9d4870305ca5d2091d2a83284f2953079b7bdd3b5e029d8/fonttools-4.63.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
         ],
-        sha256 = "973d030180eca8255b1bce6ffc09ef38a05dcec0e8320cc9b7bcaa65346f341d",
-        downloaded_file_path = "fonttools-4.53.0-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "58dc6bb86a78d782f00f9190ca02c119cf5bbe2807536e361e18d42019f877d8",
+        downloaded_file_path = "fonttools-4.63.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_fonttools_4.53.0_py3_none_any",
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp313_cp313_macosx_10_13_universal2",
         urls = [
-            "https://files.pythonhosted.org/packages/f0/74/9244fda2577bccdaffd8a383be76c4c4d74730ecb56bc92ee4d655ea3ff1/fonttools-4.53.0-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/0f/8d/d8fec3dcde2963f8c908fb315e5ff2cd0ac34f82394bbbf73a2aa5145ce3/fonttools-4.63.0-cp313-cp313-macosx_10_13_universal2.whl",
         ],
-        sha256 = "6b4f04b1fbc01a3569d63359f2227c89ab294550de277fd09d8fca6185669fa4",
-        downloaded_file_path = "fonttools-4.53.0-py3-none-any.whl",
+        sha256 = "cd7e9857e5e63738b9d9fd707bc1f59c8b09e5177726d23664db393c59bb08bd",
+        downloaded_file_path = "fonttools-4.63.0-cp313-cp313-macosx_10_13_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/8e/40/e76320afa1df918e146155ef239b1719ee266092e96f5423bfd075affba1/fonttools-4.63.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "1e874792a8212b44583ea02189d9e693906b2f78b261f372f95d6c563210ac1d",
+        downloaded_file_path = "fonttools-4.63.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp313_cp313_manylinux2014_x86_64.manylinux_2_17_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/ce/36/0b805d8c485f872f65a509cbe3b58a5d0d17bee855333b54a150c79d3061/fonttools-4.63.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        ],
+        sha256 = "22135da48a348785c5e2d5d2d9d6bec5ed44adacbaeb9db12d9493bf6c6bfa68",
+        downloaded_file_path = "fonttools-4.63.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp314_cp314_macosx_10_15_universal2",
+        urls = [
+            "https://files.pythonhosted.org/packages/27/d2/23d25e3f247b328be58d04a4c9f894178a0d1eda7d42867cfb388adaf416/fonttools-4.63.0-cp314-cp314-macosx_10_15_universal2.whl",
+        ],
+        sha256 = "fd1e3094f42d806d3d7c79162fc59e5910fcbe3a7360c385b8da969bc4493745",
+        downloaded_file_path = "fonttools-4.63.0-cp314-cp314-macosx_10_15_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp314_cp314_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/dd/87/64cfa18a7a1621d17b7f4502b2b0ed8a135a90c3db51ea590ee99043e76b/fonttools-4.63.0-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "6b2248c5decb223562f7902ff6325077a073f608ee8e33e88ad88db734eb9f49",
+        downloaded_file_path = "fonttools-4.63.0-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp314_cp314_manylinux2014_x86_64.manylinux_2_17_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/36/e1/a8933a72c45a87177fbde2696e0d0755c8c9062f8c077a961c6215fa27b1/fonttools-4.63.0-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        ],
+        sha256 = "308f957cdeaf8abe4e5f2f124902ef405448af92c90f80e302a3b771c2e6116b",
+        downloaded_file_path = "fonttools-4.63.0-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp314_cp314t_macosx_10_15_universal2",
+        urls = [
+            "https://files.pythonhosted.org/packages/49/4e/652d1580c5f4e39f7d103b0c793e4773129ad633dce4addd0cf4dfebde02/fonttools-4.63.0-cp314-cp314t-macosx_10_15_universal2.whl",
+        ],
+        sha256 = "6db5140a60a5d731d21ec076745b40a310607731b0a565b50776393188649001",
+        downloaded_file_path = "fonttools-4.63.0-cp314-cp314t-macosx_10_15_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp314_cp314t_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/ea/2b/0aa8db70f18cf52e49b4ed5ecec68547f981160bf5ded3b5aed6faa0a6f9/fonttools-4.63.0-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "0eac00b9118c3c2f87d272e45341871c5b3066baa3c86897fa634a7c3fb59096",
+        downloaded_file_path = "fonttools-4.63.0-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_fonttools_4.63.0_cp314_cp314t_manylinux2014_x86_64.manylinux_2_17_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/7f/63/18e4369c25043096f1048e0c9915951adc4f842bd81c6b18155824d6fa99/fonttools-4.63.0-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        ],
+        sha256 = "51394295f1a51de8b5f30bdb1e1b9a4231536c7064ef5c6e211eec19fa36036f",
+        downloaded_file_path = "fonttools-4.63.0-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
     )
 
     maybe(
@@ -24154,6 +24386,16 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_wheel_pydyf_0.12.1_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/22/11/47efe2f66ba848a107adfd490b508f5c0cedc82127950553dca44d29e6c4/pydyf-0.12.1-py3-none-any.whl",
+        ],
+        sha256 = "ea25b4e1fe7911195cb57067560daaa266639184e8335365cc3ee5214e7eaadc",
+        downloaded_file_path = "pydyf-0.12.1-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp310_cp310_macosx_11_0_arm64",
         urls = [
             "https://files.pythonhosted.org/packages/23/65/95a6f958c21314cd48bb3d9c837f41b404a118377ff930c3ca474fc11d28/pygame_ce-2.5.6-cp310-cp310-macosx_11_0_arm64.whl",
@@ -24580,6 +24822,16 @@ def repositories():
         ],
         sha256 = "f9db75911801ed778fe61bb643079ff86601aca99fcae6345aa67292038fb742",
         downloaded_file_path = "pyparsing-3.1.2-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_pyphen_0.17.2_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/7b/1f/c2142d2edf833a90728e5cdeb10bdbdc094dde8dbac078cee0cf33f5e11b/pyphen-0.17.2-py3-none-any.whl",
+        ],
+        sha256 = "3a07fb017cb2341e1d9ff31b8634efb1ae4dc4b130468c7c39dd3d32e7c3affd",
+        downloaded_file_path = "pyphen-0.17.2-py3-none-any.whl",
     )
 
     maybe(
@@ -27490,6 +27742,26 @@ def repositories():
         ],
         sha256 = "a640e58f4ae41e0445517d1133b34be75bb2bd49cdb830d739925ce1fb7d2526",
         downloaded_file_path = "timm-1.0.16-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_tinycss2_1.5.1_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/60/45/c7b5c3168458db837e8ceab06dc77824e18202679d0463f0e8f002143a97/tinycss2-1.5.1-py3-none-any.whl",
+        ],
+        sha256 = "3415ba0f5839c062696996998176c4a3751d18b7edaaeeb658c9ce21ec150661",
+        downloaded_file_path = "tinycss2-1.5.1-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_tinyhtml5_2.1.0_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/52/48/01695a036b695f83fea7aef6955d735db0f517b1c8e25ddb399ac0bdbcbf/tinyhtml5-2.1.0-py3-none-any.whl",
+        ],
+        sha256 = "6e11cfff38515834268daf89d5f85bbde0b6dd02e8d9e212d1385c2289b89f0a",
+        downloaded_file_path = "tinyhtml5-2.1.0-py3-none-any.whl",
     )
 
     maybe(
@@ -30414,6 +30686,26 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_wheel_weasyprint_69.0_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/93/cb/208525c6bd5033d7b2589b55e07bec23d9c61bb00703cbaf20ef52c3811f/weasyprint-69.0-py3-none-any.whl",
+        ],
+        sha256 = "475951cfd917014de6d4d005caff48c6aa867e7e42b80cd5b16a0484a1609ee6",
+        downloaded_file_path = "weasyprint-69.0-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_webencodings_0.5.1_py2.py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/f4/24/2a3e3df732393fed8b3ebf2ec078f05546de641fe1b667ee316ec1dcf3b7/webencodings-0.5.1-py2.py3-none-any.whl",
+        ],
+        sha256 = "a0af1213f3c2226497a97e2b3aa01a7e4bee4f403f95be16fc9acd2947514a78",
+        downloaded_file_path = "webencodings-0.5.1-py2.py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_wheel_websockets_15.0.1_cp310_cp310_macosx_11_0_arm64",
         urls = [
             "https://files.pythonhosted.org/packages/d5/4f/b462242432d93ea45f297b6179c7333dd0402b855a912a04e7fc61c0d71f/websockets-15.0.1-cp310-cp310-macosx_11_0_arm64.whl",
@@ -31480,6 +31772,36 @@ def repositories():
         ],
         sha256 = "64a1ad7f4cb17d948c6bdc525a1d60c0e567b2526feb4fa38b38f249961306b8",
         downloaded_file_path = "zope_interface-8.1.1-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_macosx_10_9_universal2",
+        urls = [
+            "https://files.pythonhosted.org/packages/a5/5f/b7d81b670daf990e15a0f7551da96c3c0700f69ae6d96b0245d6a19f51f3/zopfli-0.4.3-cp310-abi3-macosx_10_9_universal2.whl",
+        ],
+        sha256 = "88f4fbe429aad72bc206275d81fab11a097e0f951a5848d1f51083c37ea73073",
+        downloaded_file_path = "zopfli-0.4.3-cp310-abi3-macosx_10_9_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/55/c8/d8d8d731e0b192024567b7198fb77b748821d355f3c8bf0109de27191f43/zopfli-0.4.3-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        ],
+        sha256 = "769875152d0625c46707bcca57d4b2233fe653482067acd55fbf6ec525cb9bdc",
+        downloaded_file_path = "zopfli-0.4.3-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_zopfli_0.4.3_cp310_abi3_manylinux_2_24_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/0e/2b/fbe8ba2ec40f5986b8983a4752f7a32672a80a10ea6e68213324a7055469/zopfli-0.4.3-cp310-abi3-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "eb0c9c1d40a8cb1d58762d7e57290ccb753e0828c4d01be8acb59aae5d0ca206",
+        downloaded_file_path = "zopfli-0.4.3-cp310-abi3-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
