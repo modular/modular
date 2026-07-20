@@ -15,7 +15,7 @@
 from std.collections.string.string_slice import get_static_string
 from std.math import align_down, ceildiv, iota
 from std.sys import align_of, simd_width_of, size_of
-from std.sys.info import CompilationTarget, _current_target
+from std.sys.info import CompilationTarget, _current_target, is_apple_gpu
 
 from std.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
 from std.algorithm.functional import tile
@@ -832,6 +832,13 @@ def _atomic_reduce[
     compares floats bitwise (via their integral representation), so NaN
     payloads cannot livelock the loop.
     """
+    comptime if is_apple_gpu():
+        # Metal has no atomic ops; fall back to a plain read-modify-write. This
+        # cannot fold duplicate-index updates atomically, matching the kernel's
+        # prior behavior on Apple GPU, but it is the only path Metal can lower.
+        ptr[] = reduction_fn[dtype, 1](ptr[], update)
+        return
+
     var expected = ptr[]
     while True:
         var desired = reduction_fn[dtype, 1](expected, update)
