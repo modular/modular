@@ -362,36 +362,44 @@ Type ASTDecl::computeSelfTypeForTrait(TraitDeclOp traitOp) {
 void ASTDecl::findExtensionsInScopeForStruct(
     SymbolRefAttr targetStruct, llvm::SmallPtrSetImpl<ASTDecl *> &results,
     std::optional<SymbolRefAttr> filterTrait) {
-  for (auto &[name, decls] : getDeclsInScope()) {
-    for (ASTDecl *decl : decls) {
-      if (auto extOp =
-              dyn_cast_or_null<ExtensionDeclOp>(decl->getIfOperation())) {
-        // Check if this extension targets our struct
-        if (extOp.getTargetStructAttr() &&
-            extOp.getTargetStructAttr() == targetStruct) {
-          // If no trait filter specified, add this extension
-          if (!filterTrait.has_value()) {
-            results.insert(decl);
-            continue;
-          }
+  // Extensions are registered in this scope under the name "extension:<leaf>"
+  // (see the ExtensionDeclOp case in SharedState::addDeclsForOp).
+  // The bucket is keyed by the target's leaf name only, so distinct structs
+  // that share a leaf name land together and the exact-symbol check below still
+  // filters them.
+  if (!declsInScope)
+    return;
 
-          // Check if this extension implements our trait or any trait that
-          // inherits from it
-          if (!extOp.getCanonicalTrait()) {
-            // Extension doesn't have canonicalTrait computed yet - skip it
-            // This happens during error conditions or early parsing phases
-            continue;
-          }
+  SmallString<64> extensionName("extension:");
+  extensionName += targetStruct.getLeafReference().getValue();
+  auto it = declsInScope->find(StringAttr::get(getContext(), extensionName));
+  if (it == declsInScope->end())
+    return;
 
-          // Use the extension's canonicalTrait (flattened hierarchy) to check
-          TraitType extCanonicalTrait = extOp.getCanonicalTrait().value();
-          for (SymbolRefAttr symbol : extCanonicalTrait.getSymbols()) {
-            if (symbol == filterTrait.value()) {
-              results.insert(decl);
-              break; // Found it, no need to check more symbols
-            }
-          }
-        }
+  for (ASTDecl *decl : it->second) {
+    auto extOp = dyn_cast_or_null<ExtensionDeclOp>(decl->getIfOperation());
+    if (!extOp || !extOp.getTargetStructAttr() ||
+        extOp.getTargetStructAttr() != targetStruct)
+      continue;
+
+    // If no trait filter specified, add this extension.
+    if (!filterTrait.has_value()) {
+      results.insert(decl);
+      continue;
+    }
+
+    // Extension doesn't have canonicalTrait computed yet - skip it. This
+    // happens during error conditions or early parsing phases.
+    if (!extOp.getCanonicalTrait())
+      continue;
+
+    // Use the extension's canonicalTrait (flattened hierarchy) to check
+    // whether it implements the filter trait.
+    for (SymbolRefAttr symbol :
+         extOp.getCanonicalTrait().value().getSymbols()) {
+      if (symbol == filterTrait.value()) {
+        results.insert(decl);
+        break; // Found it, no need to check more symbols.
       }
     }
   }
