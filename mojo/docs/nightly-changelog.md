@@ -928,6 +928,19 @@ This version is still a work in progress.
       )
   ```
 
+- `DeviceGraphBuilder.add_function` now covers every live
+  `DeviceContext.enqueue_function` form, so any kernel launchable on a device
+  context can also be recorded as a graph node:
+
+  - Added an overload accepting a `DeviceExternalFunction` loaded from
+    PTX/SASS via `DeviceContext.load_function()`.
+  - Added an overload taking a capturing kernel as a compile-time parameter
+    with runtime arguments, mirroring the capturing parameter-based
+    `DeviceContext.enqueue_function`.
+  - All `add_function` overloads now accept a `location` argument so wrappers
+    can attribute launch errors to their callers, and the closure overload now
+    accepts (and honors) a `func_attribute` argument.
+
 - `AddressSpace` is now target-extensible rather than a fixed, portable enum.
   The built-in GPU spaces (`GENERIC`, `GLOBAL`, `SHARED`, `CONSTANT`, `LOCAL`,
   `SHARED_CLUSTER`, `BUFFER_RESOURCE`) are unchanged, but accessing any other
