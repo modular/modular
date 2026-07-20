@@ -29,10 +29,13 @@ modular_py_binary(
         "no-sandbox",
         "requires-network",
     ],
+    # The all_pipelines dispatcher target pulls in every architecture (for the
+    # registry's lazy runtime imports), so the server can serve any supported
+    # model the user selects on the CLI.
     deps = [
         requirement("cyclopts"),
         "//max/python/max/experimental/cascade/deployment:context_config",
-        "//max/python/max/experimental/cascade/pipelines",
+        "//max/python/max/experimental/cascade/pipelines:all_pipelines",
         "//max/python/max/experimental/cascade/serve",
         "//max/python/max/pipelines/lib",
     ],

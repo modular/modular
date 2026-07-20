@@ -12,24 +12,41 @@
 # ===----------------------------------------------------------------------=== #
 """Top-level pipeline dispatch helpers for cascade.
 
-This is a temporary string-matching shim until cascade pipeline selection can
-integrate with the MAX architectures registry. For now it only knows how to
-build the in-process dummy pipelines used by the experimental CLI and tests.
+Selects and builds the correct :class:`CascadePipeline` for a
+:class:`PipelineConfig` by resolving the model's architecture against the MAX
+:obj:`~max.pipelines.PIPELINE_REGISTRY` and building the cascade pipeline class
+the architecture declares
+(:attr:`~max.pipelines.lib.registry.SupportedArchitecture.cascade_pipeline_factory`).
+There is no task-based routing: the resulting pipeline's interfaces (see
+``serve.all_routes``) determine which HTTP routes it serves.
+
+The ``dummy_textgen`` and ``dummy_imgen`` model paths are in-process test
+fixtures with no Hugging Face config, so they are selected by an exact
+model-path match and never touch the registry.
 """
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 from max.experimental.cascade.interfaces.pipeline import CascadePipeline
-from max.experimental.cascade.pipelines.common_textgen import (
-    build_common_textgen_pipeline,
-)
 from max.experimental.cascade.pipelines.dummy_imgen import (
     build_dummy_imgen_pipeline,
 )
 from max.experimental.cascade.pipelines.dummy_textgen import (
     build_dummy_textgen_pipeline,
 )
+from max.pipelines.architectures import register_all_models
+from max.pipelines.lib import PIPELINE_REGISTRY
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.registry import SupportedArchitecture
+
+# Dummy pipelines are in-process test fixtures selected by an exact model-path
+# sentinel; they have no Hugging Face config and never hit the registry.
+_DUMMY_BUILDERS: dict[str, Callable[[], Awaitable[CascadePipeline]]] = {
+    "dummy_textgen": build_dummy_textgen_pipeline,
+    "dummy_imgen": build_dummy_imgen_pipeline,
+}
 
 
 def count_unique_device_specs(config: PipelineConfig) -> int:
@@ -57,30 +74,70 @@ def count_unique_device_specs(config: PipelineConfig) -> int:
     return max(1, len(unique))
 
 
+def _resolve_architecture(config: PipelineConfig) -> SupportedArchitecture:
+    """Resolve the ``SupportedArchitecture`` for *config*'s main model.
+
+    Registers the built-in architectures (idempotent), reads the architecture
+    class name from the model's Hugging Face config, and looks it up in the
+    MAX registry.
+
+    Args:
+        config: Fully-specified ``PipelineConfig`` for a real (non-dummy) model.
+
+    Raises:
+        ValueError: If the architecture is unknown to the MAX registry.
+    """
+    register_all_models()
+    architecture_name = config.models.main_architecture_name
+    arch = PIPELINE_REGISTRY.retrieve_architecture(
+        architecture_name=architecture_name,
+        prefer_module_v3=config.runtime.prefer_module_v3,
+    )
+    if arch is None:
+        raise ValueError(
+            f"No MAX architecture found for {architecture_name!r}."
+        )
+    return arch
+
+
 async def build_pipeline(
     config: PipelineConfig,
 ) -> CascadePipeline:
     """Build the cascade pipeline described by *config*.
 
-    Routes to the correct builder based on the main ``model_path``.
+    Dummy fixtures (``dummy_textgen`` / ``dummy_imgen``) are matched by exact
+    model path. Every other model is resolved against the MAX architectures
+    registry, and its
+    :attr:`~max.pipelines.lib.registry.SupportedArchitecture.cascade_pipeline_factory`
+    class is constructed from *config*.
 
     Args:
         config: Fully-specified ``PipelineConfig``, typically constructed
             by cyclopts from ``--models.*`` CLI flags.
+
+    Raises:
+        ValueError: If no model is specified.
+        NotImplementedError: If the architecture declares no cascade pipeline.
     """
+    if not config.models:
+        raise ValueError(
+            "No models specified. Pass a model path via "
+            "--models.main.model-path <repo-id>."
+        )
+
     model_path = config.model.model_path
+    if dummy_builder := _DUMMY_BUILDERS.get(model_path):
+        return await dummy_builder()
 
-    if model_path == "dummy_textgen":
-        return await build_dummy_textgen_pipeline()
+    arch = _resolve_architecture(config)
+    factory = arch.cascade_pipeline_factory
+    if factory is None:
+        raise NotImplementedError(
+            f"Architecture {arch.name!r} (model {model_path!r}) has no cascade "
+            "pipeline. Set cascade_pipeline_factory on its "
+            "SupportedArchitecture to enable cascade serving."
+        )
 
-    if model_path == "dummy_imgen":
-        return await build_dummy_imgen_pipeline()
-
-    if "smollm" in model_path.lower():
-        return await build_common_textgen_pipeline(config)
-
-    raise ValueError(
-        f"Unsupported model {model_path!r}. "
-        "cascade currently supports the dummy_textgen and dummy_imgen "
-        "pipelines, and SmolLM via the common text-generation pipeline."
-    )
+    pipeline = factory(config)
+    assert isinstance(pipeline, CascadePipeline)
+    return pipeline

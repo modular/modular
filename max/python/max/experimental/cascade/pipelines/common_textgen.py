@@ -21,7 +21,6 @@ worker directly.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 
 from max.experimental.cascade.core import pipeline_method
 from max.experimental.cascade.interfaces.pipeline import CascadePipeline
@@ -35,12 +34,19 @@ from max.experimental.cascade.workers.max_tokenizer import MAXTokenizer
 from max.pipelines.lib.config import PipelineConfig
 
 
-@dataclass
 class CommonTextGenPipeline(CascadePipeline, TextGenInterface):
     """Cascade pipeline pairing ``MAXTokenizer`` and ``MAXModelWorker``."""
 
-    tokenizer: MAXTokenizer
-    model: MAXModelWorker
+    def __init__(self, config: PipelineConfig) -> None:
+        """Build the pipeline for *config*.
+
+        Args:
+            config: Fully-specified ``PipelineConfig``. Its ``model_path``
+                seeds the tokenizer worker and the whole config drives the
+                model worker.
+        """
+        self.tokenizer = MAXTokenizer(config.model.model_path)
+        self.model = MAXModelWorker(config)
 
     @pipeline_method
     async def generate_text(
@@ -53,18 +59,3 @@ class CommonTextGenPipeline(CascadePipeline, TextGenInterface):
         gen_tokens = await self.model.decode(req, tokens)
         async for chunk in gen_tokens:
             yield await (await self.tokenizer.decode(chunk))
-
-
-async def build_common_textgen_pipeline(
-    config: PipelineConfig,
-) -> CommonTextGenPipeline:
-    """Build the common text pipeline for *config*.
-
-    Args:
-        config: Fully-specified ``PipelineConfig``. Its ``model_path`` seeds the
-            tokenizer worker and the whole config drives the model worker.
-    """
-    return CommonTextGenPipeline(
-        tokenizer=MAXTokenizer(config.model.model_path),
-        model=MAXModelWorker(config),
-    )

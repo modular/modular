@@ -366,6 +366,22 @@ class SupportedArchitecture:
     diffusion pipelines that skip KV cache estimation entirely).
     """
 
+    cascade_pipeline_factory: Callable[[PipelineConfig], object] | None = None
+    """Optional cascade pipeline factory for this architecture.
+
+    A ``CascadePipeline`` subclass (from ``max.experimental.cascade``) that
+    accepts a :class:`PipelineConfig` in its constructor. The experimental
+    cascade server resolves the architecture and constructs
+    ``cascade_pipeline_factory(config)``, so cascade pipeline selection is
+    driven entirely by the architecture rather than by :class:`PipelineTask`.
+
+    The return is annotated ``object`` rather than ``CascadePipeline`` because
+    the cascade layer sits *above* :mod:`max.pipelines`; importing the base
+    class here to tighten the annotation would invert that dependency (the
+    cascade server narrows the constructed value back to ``CascadePipeline``).
+    ``None`` means the architecture has no cascade pipeline yet.
+    """
+
     pipeline_cls: type | None = None
     """Optional pipeline class overriding the task-based default from
     :func:`get_pipeline_for_task`.
