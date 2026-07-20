@@ -67,6 +67,18 @@ from .pipeline import ProducerConsumerPipeline, MbarPtr
 
 @fieldwise_init
 struct WarpRole[has_scheduler: Bool = True](TrivialRegisterPassable):
+    """Warp-role assignments for the SM100 warp-specialized matmul kernel.
+
+    Each warp is statically assigned to one of four roles: `Mma` computes
+    UMMA instructions using TCGEN05; `MainLoad` issues TMA requests to fill
+    the A/B shared-memory pipeline; `Scheduler` advances the tile work queue;
+    `Epilogue` writes accumulator results to global memory. The role indices
+    shift by one when `has_scheduler` is `True`.
+
+    Parameters:
+        has_scheduler: Whether a dedicated scheduler warp is present.
+    """
+
     var _role: Int32
 
     comptime Mma = Self(6) if Self.has_scheduler else Self(5)
@@ -208,6 +220,22 @@ def f32_frag_to_smem[
         _, DstLayout, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
 ):
+    """Writes an FP32 TCGEN05 accumulator fragment to a swizzled shared-memory tile.
+
+    Implements a manual 8×4 thread-to-element distribution for FP32 fragments,
+    since the compiler cannot prove `all_dims_known` through migrated layout types.
+    Each lane writes a pair of FP32 values at the correct swizzled row/column offset.
+
+    Parameters:
+        swizzle_mode: Shared memory swizzle mode to apply.
+        vec_dtype: Element type of the source fragment (must be FP32).
+        vec_size: Number of elements in the fragment (= 2 × frag_rows × frag_cols).
+        DstLayout: Layout of the destination shared-memory tile.
+
+    Args:
+        vec: Source accumulator fragment as a flat inline array.
+        dst: Destination tile in shared memory.
+    """
     # Manual implementation of dst.vectorize[1, 2]().distribute[row_major(8, 4)]
     # because the compiler can't prove `all_dims_known` through migrated layout types. See MSTDL-2422.
     comptime stride0: Int = dst.static_stride[0]
@@ -252,6 +280,26 @@ def stsm_helper[
     ],
     warp_offset: UInt32 = 0,
 ):
+    """Stores a TCGEN05 accumulator fragment to shared memory using st.matrix or scalar stores.
+
+    Routes to `f32_frag_to_smem` for FP32 fragments, or uses `st_matrix` hardware
+    instructions (`stsmx4` or `stsmx2`) for narrower types. Applies swizzle addressing
+    so the destination layout matches subsequent TMA-store or register-epilogue consumers.
+
+    Parameters:
+        swizzle: Swizzle descriptor for shared memory address computation.
+        stageN: Column stage dimension used to select stsmx4 vs stsmx2 path.
+        vec_dtype: Fragment element type.
+        vec_size: Number of elements in the fragment.
+        DstLayout: Static layout of the destination tile in shared memory.
+        transpose_c: Whether to transpose the C tile before writing (FP32 only).
+        swizzle_mode: TMA swizzle mode for FP32 fallback path.
+
+    Args:
+        vec: Accumulator fragment to write.
+        dst: Destination tile in shared memory.
+        warp_offset: Per-warp row offset within the tile (default 0).
+    """
     comptime if size_of[dst.dtype]() == 4:
         comptime assert not transpose_c, "transpose_c must be False"
         return f32_frag_to_smem[swizzle_mode](vec, dst)
@@ -342,6 +390,36 @@ def shared_memory_epilogue[
     c_smem_warp_tile_upper: TileTensor[mut=True, c_type, ...],
     c_smem_warp_tile_lower: TileTensor[mut=True, c_type, ...],
 ):
+    """Applies a compute epilogue to a C tile stored in shared memory for SM100 matmul.
+
+    Reads the upper and lower warp sub-tiles from shared memory, un-swizzles the
+    element addresses to recover (row, col) coordinates in the global C matrix,
+    and calls `compute_lambda_fn` with the resulting SIMD values. Supports both
+    MMA_M=128 and MMA_M=256 tensor-memory layouts.
+
+    Parameters:
+        MMA_M: M dimension of a single MMA tile (128 or 256).
+        data_paths: Number of TCGEN05 data paths used in the column layout.
+        num_stages: Number of epilogue pipeline stages in the N dimension.
+        stage: Current epilogue pipeline stage index.
+        stageN: N dimension of one epilogue stage.
+        c_type: Element type of the C tile in shared memory.
+        shared_n: Column count of the shared-memory C tile, used as the
+            row stride in elements.
+        simd_size: SIMD vector width used to distribute the shared-memory
+            fragment across lanes.
+        swizzle: Swizzle descriptor for shared memory address computation.
+        compute_lambda_fn: Elementwise lambda applied to each output element.
+        num_output_warps: Number of warps participating in the epilogue.
+
+    Args:
+        M: Total M dimension of the problem (used for bounds checking).
+        N: Total N dimension of the problem (used for bounds checking).
+        c_col: Global column offset for this output tile.
+        c_row: Global row offset for this output tile.
+        c_smem_warp_tile_upper: Upper warp half of the C tile in shared memory.
+        c_smem_warp_tile_lower: Lower warp half of the C tile in shared memory.
+    """
     # Here we start keeping track of the index / indices this thread is
     # responsible for in shared memory. This is represented with shared_memory_row
     # and shared_memory_column and the children of these values shared_memory_row_upper_half
@@ -572,6 +650,37 @@ def register_epilogue[
     c_col: UInt32,
     N: UInt32,
 ):
+    """Applies an elementwise compute epilogue to accumulator fragments held in tensor memory.
+
+    Computes the global (row, col) coordinate of each element in the upper and
+    lower accumulator fragments based on the TCGEN05 tensor-memory fragment
+    layout, the MMA_M tile shape, and the CTA group configuration, then invokes
+    `compute_lambda_fn` to transform each element in place. The lower fragment
+    is processed only when `is_lower_frag_required` is `True`.
+
+    Parameters:
+        MMA_M: M dimension of a single MMA tile (64, 128, or 256).
+        data_paths: Number of TCGEN05 data paths (must be 16).
+        num_stages: Number of epilogue pipeline stages in the N dimension.
+        bits: Tensor-memory load width in bits (must be 256).
+        stage: Current epilogue pipeline stage index.
+        stageN: N dimension of one epilogue stage.
+        compute_lambda_fn: Elementwise lambda applied to each output element.
+        num_output_warps: Number of warps participating in the epilogue.
+        epilogue_dtype: Element type of the output fragments.
+        frag_size: Number of elements per fragment.
+        repeats: Number of 16x256b loads repeated per fragment.
+        transpose_c: Whether the C tile is transposed.
+        cta_group: Number of CTAs in the UMMA group.
+        is_lower_frag_required: Whether the lower fragment needs processing.
+
+    Args:
+        upper_frag_casted: Upper accumulator fragment to transform in place.
+        lower_frag_casted: Lower accumulator fragment to transform in place.
+        c_row: Global row offset of the output tile.
+        c_col: Global column offset of the output tile.
+        N: Total N dimension of the problem (used for bounds checking).
+    """
     comptime assert (
         bits == 256 and data_paths == 16
     ), "Only 16x256b tensor memory load is supported"
@@ -661,6 +770,19 @@ def register_epilogue[
 def accum_arrive[
     cta_group: Int
 ](mma_output_pipeline: ProducerConsumerPipeline, mma_output_stage: UInt32):
+    """Signals arrival at the MMA output pipeline barrier for a given stage.
+
+    Dispatches between a plain `mbarrier_arrive` for single-CTA groups and
+    `umma_arrive_leader_cta` for multi-CTA UMMA groups, where only the leader
+    CTA signals arrival.
+
+    Parameters:
+        cta_group: Number of CTAs in the UMMA group.
+
+    Args:
+        mma_output_pipeline: Producer-consumer pipeline tracking MMA completion.
+        mma_output_stage: Pipeline stage index to arrive at.
+    """
     comptime if cta_group == 1:
         _ = mbarrier_arrive(
             rebind[MbarPtr](mma_output_pipeline.consumer_mbar(mma_output_stage))

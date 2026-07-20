@@ -100,6 +100,43 @@ def gemm_kernel_rdna[
     On RDNA 3+ (gfx11xx/gfx12xx), uses 16x16x16 WMMA instructions (see
     :func:`_wmma_matmul_kernel` for the K-loop strategies). On older RDNA
     (gfx10xx), falls back to a per-thread naive matmul.
+
+    Parameters:
+        c_type: Element type of the output tile `c`.
+        a_type: Element type of the input tile `a`.
+        b_type: Element type of the input tile `b`.
+        c_layout: Memory layout of the output tile `c`.
+        a_layout: Memory layout of the input tile `a`.
+        b_layout: Memory layout of the input tile `b`.
+        transpose_b: Whether `b` is stored as `(N, K)` instead of `(K, N)`
+            (defaults to `True`).
+        elementwise_lambda_fn: Optional per-element epilogue that replaces
+            the direct store to `c` (defaults to `None`).
+        s_type: Accumulation type used in the inner K-loop (defaults to
+            the natural accumulation type of `c_type`).
+        BLOCK_K: K-dimension tile size in elements processed per
+            K-iteration (defaults to 32).
+        BLOCK_M: M-dimension block size in rows of the output tile
+            (defaults to 128).
+        BLOCK_N: N-dimension block size in columns of the output tile
+            (defaults to 128).
+        WARPS_M: Number of warps along the M dimension of the warp grid
+            (defaults to 8).
+        WARPS_N: Number of warps along the N dimension of the warp grid
+            (defaults to 2).
+        WARP_TILE_M: Number of 16x16 MMA tiles each warp computes along M
+            (defaults to 1).
+        WARP_TILE_N: Number of 16x16 MMA tiles each warp computes along N
+            (defaults to 4).
+
+    Args:
+        c: Output tile of shape `(m, n)` holding the product `a @ b`.
+        a: Input tile of shape `(m, k)`.
+        b: Input tile of shape `(k, n)` when `transpose_b` is `False`,
+            or `(n, k)` when `True`.
+        m: Number of rows in the output and in `a`.
+        n: Number of columns in the output and in `b`.
+        k: Contraction dimension shared by `a` and `b`.
     """
     comptime assert c.flat_rank == 2, "c must have flat_rank == 2"
     comptime assert a.flat_rank == 2, "a must have flat_rank == 2"

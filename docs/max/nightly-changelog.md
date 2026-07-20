@@ -54,6 +54,14 @@ This version is still a work in progress.
   Apple FP4 (W4A16) decode GEMV with an f16-domain E2M1 decode plus a
   redesigned varlen causal-conv1d kernel. Verified on M5: the 30B-A3B MoE
   serves in bfloat16 at GSM8K 8-shot ~0.85.
+- Added an `enable_dp_cross_replica_prefix_copy` KV cache config flag
+  (default on). When serving with data parallelism, a prefix-cache hit
+  resident on another DP replica's GPU is normally served by a
+  device-to-device copy onto the request's replica. Disabling the flag turns
+  those copies off so cross-replica reuse is served only from the shared
+  host/disk tier via the KV connector (or recomputed), which can be
+  preferable when a connector is configured and GPU block-pool pressure
+  matters more than copy bandwidth.
 - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
 - Added tool-calling, reasoning, and structured-output (`response_format`)
   support to GLM-5.1 / GLM-5.2, enabled with
@@ -115,6 +123,16 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Image generation responses on the Open Responses endpoint now report
+  `usage`: `output_tokens` and `total_tokens` carry the total pixel count of
+  the generated images, counted from the actual output arrays, and
+  `input_tokens` is 0 (prompt text is not counted). Previously `usage` was
+  always `null`.
+- Added `InferenceSession.read` for loading a compiled-model artifact (a
+  `.mef` file) previously saved with `CompiledModel.export_mef`. It accepts a
+  path or a binary file-like object (such as `io.BytesIO`), deserializes
+  without invoking the graph compiler, and returns a `CompiledModel` ready to
+  pass to `InferenceSession.init`.
 - Added `--no-enable-tool-call-constrained-decode` (config key
   `sampling.enable_tool_call_constrained_decode`, default enabled) to decouple
   tool-call parsing from constrained decoding. When disabled, a configured
@@ -369,6 +387,14 @@ This version is still a work in progress.
 
 ### Python API
 
+- Added an optional `init_value` argument to `max.graph.ops.buffer_create`.
+  When set, the buffer becomes persistent state: it is allocated and filled
+  with the scalar `init_value` exactly once when the model is loaded, and the
+  same buffer (with its mutations preserved) is reused across every execution,
+  rather than being re-created per call. Use it for a buffer that a kernel
+  mutates in place and only needs initialized once, such as a counter a kernel
+  resets at the end of each call.
+
 - Added `max.graph.ops.floor_div` (and `F.floor_div`), element-wise floor
   division matching Python `//`. Unlike `ops.div`, integer operands stay in
   the integer domain instead of being promoted to `float64`, so integer floor
@@ -413,6 +439,27 @@ This version is still a work in progress.
   start with the profiler disabled and can call `start()` again; the parent
   retains its enabled state across the fork. (MAX itself launches
   workers with the `spawn` start method and is unaffected.)
+- `session.profiling.range(name)` is a new context manager that annotates a
+  named CPU span in the trace. The span appears as a `user_annotation` bar in
+  Perfetto/HTA with the GPU kernels launched inside it correlated to it, and
+  also records during Dynolog-initiated on-demand traces. When no trace is
+  live the calls reduce to a single predicted branch, so annotations are safe
+  to leave in production code. The companion `session.profiling.is_recording`
+  property reports whether a trace of either origin is live — the right gate
+  for eliding annotation work on hot paths (`is_enabled` reflects only the
+  session API and stays `False` during daemon-driven traces).
+- MAX processes launched with `KINETO_USE_DAEMON=1` now register with a
+  [Dynolog](https://github.com/facebookincubator/dynolog) daemon at device
+  initialization, so `dyno gputrace --pids <pid>` captures any such process
+  on demand with no profiling flags and no code changes. Set
+  `profiling_dynolog_enabled = False` (or
+  `MODULAR_MAX_DEBUG_PROFILING_DYNOLOG_ENABLED=0`) to opt a process out.
+- Profiling can now be armed and disarmed at runtime for CUDA-graph
+  (capture/replay) workloads: a mid-run `session.profiling.start()` or a
+  Dynolog `dyno gputrace` request captures kernels replayed from graphs that
+  were instantiated before profiling was enabled, and replay overhead reverts
+  when the trace stops. Enabling at session construction is no longer
+  required for these workloads.
 - This API is orthogonal to the existing `session.gpu_profiling()`
   (NVTX/Nsight) path. See `max/docs/profiling.md` in the repository for the
   full user guide.

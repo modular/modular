@@ -15,26 +15,28 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, TypeAlias
 
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn.common_layers.functional_kernels import (
+    fused_silu,
+    fused_silu_quantized,
     grouped_matmul_ragged,
 )
-from max.experimental.sharding import PlacementMapping
+from max.experimental.sharding import DeviceMesh, PlacementMapping
 from max.experimental.sharding.action import Action, ActionSet, AxisAssignment
 from max.experimental.sharding.cost import (
     P,
     R,
     build_action_set,
-    force_replicated_action_set,
 )
 from max.experimental.sharding.placements import Placement, Sharded
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
+from max.graph import TensorValue
 from max.nn.kernels import (
     dynamic_scaled_matmul as _dynamic_scaled_matmul,
 )
@@ -47,6 +49,7 @@ from max.nn.kernels import (
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
@@ -55,17 +58,6 @@ from max.nn.quant_config import (
 from .quant_tensor import FP8BlockTensor, all_fp8_block
 
 QuantAwareTensor: TypeAlias = Tensor | FP8BlockTensor
-
-
-def _replicated_rule(*layout_args: Any) -> ActionSet:
-    """Per-shard ``(R,…,R) -> R`` rule for FP8 kernels.
-
-    Used for the grouped (MoE) matmul, which is always dispatched per-device
-    inside :func:`~max.experimental.nn.common_layers.functional_kernels.local_map`
-    (so its inputs are never distributed and this rule never actually runs).
-    """
-    layouts = [a for a in layout_args if isinstance(a, TensorLayout)]
-    return force_replicated_action_set(*layouts)
 
 
 def _transpose2d_placement(p: Placement) -> Placement:
@@ -143,6 +135,38 @@ def _scaled_matmul_rule(
     return build_action_set(rows, layouts=layouts)
 
 
+def _grouped_scaled_matmul_rule(
+    hidden_states: TensorLayout,
+    weight: TensorLayout,
+    a_scales: TensorLayout,
+    b_scales: TensorLayout,
+    expert_start_indices: TensorLayout,
+    expert_ids: TensorLayout,
+    *unused_kwargs: Any,
+) -> ActionSet:
+    """Sharding rule for the FP8 block-scaled grouped (MoE) matmul."""
+    layouts = (
+        hidden_states,
+        weight,
+        a_scales,
+        b_scales,
+        expert_start_indices,
+        expert_ids,
+    )
+    rows = [
+        AxisAssignment((R, R, R, R, R, R), R),
+        # Column-parallel: weight's N (out) axis sharded -> output's N axis.
+        AxisAssignment((R, Sharded(1), R, Sharded(1), R, R), Sharded(1)),
+        # Row-parallel: weight's K (contraction) axis sharded, matched by
+        # hidden_states' K axis; a_scales is transposed relative to
+        # hidden_states, so its matching axis is 0 -> partial sum.
+        AxisAssignment(
+            (Sharded(1), Sharded(2), Sharded(0), Sharded(2), R, R), P
+        ),
+    ]
+    return build_action_set(rows, layouts=layouts)
+
+
 # Wrap raw graph ops so they accept ``Tensor`` and run inside an
 # ``ensure_context()``.
 quantize_dynamic_scaled_float8 = F.functional(
@@ -152,7 +176,7 @@ dynamic_scaled_matmul = F.functional(
     _dynamic_scaled_matmul, rule=_scaled_matmul_rule
 )
 grouped_dynamic_scaled_fp8_matmul = F.functional(
-    _grouped_dynamic_scaled_fp8_matmul, rule=_replicated_rule
+    _grouped_dynamic_scaled_fp8_matmul, rule=_grouped_scaled_matmul_rule
 )
 
 
@@ -174,6 +198,10 @@ def quantized_weight(
     parameter declaration inside a module ``__init__`` under
     :func:`~max.experimental.functional.lazy`.
     """
+    if quant_config and quant_config.format != QuantFormat.BLOCKSCALED_FP8:
+        raise ValueError(
+            f"Quant type {quant_config.format} is not yet supported."
+        )
     if is_block_quantized(quant_config):
         assert quant_config is not None
         block_size = quant_config.weight_scale.block_size
@@ -187,7 +215,7 @@ def quantized_weight(
 def stack(items: list[QuantAwareTensor], axis: int = 0) -> QuantAwareTensor:
     """Stack a homogeneous bundle along ``axis``, dispatching on quant type.
 
-    For FP8 items, both leaves (``data`` and ``scale_inv``) are stacked and
+    For FP8 items, both leaves (``data`` and ``weight_scale_inv``) are stacked and
     rewrapped in an :class:`FP8BlockTensor`; for plain tensors the list is
     stacked directly. Companion to :func:`concat_weights`.
 
@@ -205,7 +233,9 @@ def stack(items: list[QuantAwareTensor], axis: int = 0) -> QuantAwareTensor:
         assert all_fp8_block(items)
         return FP8BlockTensor(
             data=F.stack([w.data for w in items], axis=axis),
-            scale_inv=F.stack([w.scale_inv for w in items], axis=axis),
+            weight_scale_inv=F.stack(
+                [w.weight_scale_inv for w in items], axis=axis
+            ),
             block_size=first.block_size,
         )
     return F.stack(list(items), axis=axis)
@@ -219,10 +249,10 @@ def combine_quant_per_device(
 
     ``combine`` merges all items' tensors for one leaf into a per-device list
     (one tensor per mesh device) — e.g. a TP shard-and-stack.  For FP8 input,
-    ``combine`` is applied to the ``data`` and ``scale_inv`` leaves
+    ``combine`` is applied to the ``data`` and ``weight_scale_inv`` leaves
     independently and the per-device leaves are zipped back into one
     :class:`FP8BlockTensor` per device, so the FP8 invariant (``data`` and
-    ``scale_inv`` are each a single :class:`~max.experimental.tensor.Tensor`)
+    ``weight_scale_inv`` are each a single :class:`~max.experimental.tensor.Tensor`)
     is preserved without the caller transposing a struct-of-lists into a
     list-of-structs.  For plain tensors the per-device list is returned as-is.
 
@@ -238,21 +268,47 @@ def combine_quant_per_device(
 
     Returns:
         One :class:`QuantAwareTensor` per device. For FP8 input, each is an
-        :class:`FP8BlockTensor` whose ``data``/``scale_inv`` are that device's
+        :class:`FP8BlockTensor` whose ``data``/``weight_scale_inv`` are that device's
         leaves; for plain tensors, the per-device list is returned directly.
     """
     first = items[0]
     if isinstance(first, FP8BlockTensor):
         assert all_fp8_block(items)
         data = combine([w.data for w in items])
-        scale_inv = combine([w.scale_inv for w in items])
+        weight_scale_inv = combine([w.weight_scale_inv for w in items])
         return [
-            FP8BlockTensor(data=d, scale_inv=s, block_size=first.block_size)
-            for d, s in zip(data, scale_inv, strict=True)
+            FP8BlockTensor(
+                data=d, weight_scale_inv=s, block_size=first.block_size
+            )
+            for d, s in zip(data, weight_scale_inv, strict=True)
         ]
     plain = [w for w in items if isinstance(w, Tensor)]
     result: list[QuantAwareTensor] = [*combine(plain)]
     return result
+
+
+def stack_device_shards(
+    shards: Sequence[QuantAwareTensor], axis: int, mesh: DeviceMesh
+) -> QuantAwareTensor:
+    """Reassembles a per-device weight-shard bundle into one ``Sharded`` tensor."""
+    if len(shards) == 1:
+        return shards[0]
+    mapping = PlacementMapping(mesh, (Sharded(axis=axis),))
+    first = shards[0]
+    if isinstance(first, FP8BlockTensor):
+        assert all_fp8_block(shards)
+        return FP8BlockTensor(
+            data=Tensor.from_shard_values(
+                [TensorValue(s.data) for s in shards], mapping
+            ),
+            weight_scale_inv=Tensor.from_shard_values(
+                [TensorValue(s.weight_scale_inv) for s in shards], mapping
+            ),
+            block_size=first.block_size,
+        )
+    return Tensor.from_shard_values(
+        [TensorValue(s) for s in shards if isinstance(s, Tensor)], mapping
+    )
 
 
 def concat_weights(
@@ -318,13 +374,12 @@ def _matmul_fp8_block(x: Tensor, weight: FP8BlockTensor) -> Tensor:
     input_spec, weight_spec = _fp8_block_specs(
         (block_m, block_k), input_block=(1, block_k)
     )
-    # TODO: this forces the output to be replicated, which we want to avoid
-    # when the input is sharded, and weight is replicated (output should be
-    # sharded in this case)
+
     x_fp8, x_scales = quantize_dynamic_scaled_float8(
         x,
         input_spec,
         weight_spec,
+        group_size_or_per_token=block_k,
         scales_type=DType.float32,
         out_type=DType.float8_e4m3fn,
     )
@@ -333,7 +388,7 @@ def _matmul_fp8_block(x: Tensor, weight: FP8BlockTensor) -> Tensor:
         x_fp8,
         weight.data,
         x_scales,
-        weight.scale_inv,
+        weight.weight_scale_inv,
         input_spec,
         weight_spec,
         out_type=DType.bfloat16,
@@ -341,19 +396,20 @@ def _matmul_fp8_block(x: Tensor, weight: FP8BlockTensor) -> Tensor:
 
 
 def grouped_matmul(
-    x: Tensor,
+    x: QuantAwareTensor,
     weight: QuantAwareTensor,
     expert_start_indices: Tensor,
     expert_ids: Tensor,
     expert_usage_stats: Tensor,
+    *,
+    out_type: DType = DType.bfloat16,
 ) -> Tensor:
     """Grouped (MoE) matmul dispatching on the stacked-weight type.
 
     For a plain ``Tensor`` weight of shape ``[num_experts, N, K]``, this
     falls back to the standard ragged grouped matmul. For an
-    :class:`FP8BlockTensor` weight, it quantizes ``x`` per-token to FP8
-    with ``(1, 128)`` blocks and calls the block-scaled FP8 grouped matmul
-    kernel.
+    :class:`FP8BlockTensor` weight, it runs the block-scaled FP8 grouped
+    matmul kernel.
 
     Args:
         x: Ragged activations of shape ``[total_tokens, K]``.
@@ -364,30 +420,39 @@ def grouped_matmul(
             device tensor. The bf16 fallback requires it on-device (the SM100
             kernel reads ``num_active_experts`` there); the FP8 branch copies it
             to CPU itself.
+        out_type: Output dtype for the FP8 branch (bf16 by default).
     """
     if isinstance(weight, FP8BlockTensor):
-        return _grouped_matmul_fp8_block(
-            x, weight, expert_start_indices, expert_ids, expert_usage_stats
+        if isinstance(x, FP8BlockTensor):
+            # Activations already block-quantized (e.g. by the EP FP8 dispatch
+            # or a quantized SiLU); pass them through directly.
+            x_fp8, x_scales = x.data, x.weight_scale_inv
+        else:
+            x_fp8, x_scales = _quantize_activation_fp8(x, weight.block_size)
+        return _grouped_fp8_matmul(
+            x_fp8,
+            x_scales,
+            weight,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats,
+            out_type=out_type,
         )
+    assert isinstance(x, Tensor)
     return grouped_matmul_ragged(
         x, weight, expert_start_indices, expert_ids, expert_usage_stats
     )
 
 
-def _grouped_matmul_fp8_block(
-    x: Tensor,
-    weight: FP8BlockTensor,
-    expert_start_indices: Tensor,
-    expert_ids: Tensor,
-    expert_usage_stats: Tensor,
-) -> Tensor:
-    """Block-scaled FP8 grouped matmul for MoE expert weights."""
-    block_m, block_k = weight.block_size
+def _quantize_activation_fp8(
+    x: Tensor, weight_block: tuple[int, int]
+) -> tuple[Tensor, Tensor]:
+    """Per-token FP8 block quantization of ``x`` matching ``weight_block``."""
+    block_m, block_k = weight_block
     input_spec, weight_spec = _fp8_block_specs(
         (block_m, block_k), input_block=(1, block_k)
     )
-
-    x_fp8, x_scales = quantize_dynamic_scaled_float8(
+    return quantize_dynamic_scaled_float8(
         x,
         input_spec,
         weight_spec,
@@ -395,20 +460,57 @@ def _grouped_matmul_fp8_block(
         out_type=DType.float8_e4m3fn,
     )
 
+
+def _grouped_fp8_matmul(
+    x_fp8: Tensor,
+    x_scales: Tensor,
+    weight: FP8BlockTensor,
+    expert_start_indices: Tensor,
+    expert_ids: Tensor,
+    expert_usage_stats: Tensor,
+    *,
+    out_type: DType = DType.bfloat16,
+) -> Tensor:
+    """Block-scaled FP8 grouped matmul on already-quantized activations."""
+    block_m, block_k = weight.block_size
+    input_spec, weight_spec = _fp8_block_specs(
+        (block_m, block_k), input_block=(1, block_k)
+    )
     # This kernel reads the usage stats host-side, so copy to CPU here rather
     # than at the call site (the bf16 path needs them on-device).
     return grouped_dynamic_scaled_fp8_matmul(
         x_fp8,
         weight.data,
         x_scales,
-        weight.scale_inv,
+        weight.weight_scale_inv,
         expert_start_indices,
         expert_ids,
         expert_usage_stats.to(CPU()),
         input_spec,
         weight_spec,
-        out_type=DType.bfloat16,
+        out_type=out_type,
     )
+
+
+def grouped_silu(
+    x: Tensor,
+    expert_start_indices: Tensor,
+    out_weight: QuantAwareTensor | None = None,
+    quant_config: QuantConfig | None = None,
+) -> QuantAwareTensor:
+    """SiLU-gate a grouped gate/up output."""
+    if isinstance(out_weight, FP8BlockTensor):
+        assert quant_config is not None
+        _, block_k = out_weight.block_size
+        data, weight_scale_inv = fused_silu_quantized(
+            x, expert_start_indices, quant_config, DType.float8_e4m3fn
+        )
+        return FP8BlockTensor(
+            data=data,
+            weight_scale_inv=weight_scale_inv,
+            block_size=(1, block_k),
+        )
+    return fused_silu(x, expert_start_indices)
 
 
 def concat_fp8_block(*tensors: FP8BlockTensor, axis: int = 0) -> FP8BlockTensor:
@@ -428,5 +530,7 @@ def concat_fp8_block(*tensors: FP8BlockTensor, axis: int = 0) -> FP8BlockTensor:
             )
 
     data = F.concat([q.data for q in tensors], axis=0)
-    scale_inv = F.concat([q.scale_inv for q in tensors], axis=0)
-    return FP8BlockTensor(data=data, scale_inv=scale_inv, block_size=block_size)
+    weight_scale_inv = F.concat([q.weight_scale_inv for q in tensors], axis=0)
+    return FP8BlockTensor(
+        data=data, weight_scale_inv=weight_scale_inv, block_size=block_size
+    )

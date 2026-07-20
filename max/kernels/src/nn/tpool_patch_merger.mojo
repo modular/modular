@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the temporal-pool patch-merger kernel that reduces vision token sequences via average pooling."""
 
 from std.math import ceildiv, divmod
 from std.sys.info import simd_width_of
@@ -47,7 +48,7 @@ def tpool_patch_merger_kernel[
     """Temporal pooling patch merger kernel.
 
     Averages x across the temporal dimension for each video, rearranging
-    spatially according to the (kH, kW) merge kernel.  Each video's output
+    spatially according to the (kH, kW) merge kernel. Each video's output
     occupies H_i * W_i contiguous rows in the flat output tensor.
 
     Grid mapping:
@@ -55,6 +56,19 @@ def tpool_patch_merger_kernel[
         block_idx.y  = patch index within the video (max_pat upper bound)
         block_idx.x  = tile index along D
         thread_idx.x = lane within D tile
+
+    Parameters:
+        dtype: Element type of the input and output tensors.
+        XLayout: Memory layout of the input tensor `x_tile`.
+        x_origin: Immutable origin of the input tensor `x_tile`.
+        OutLayout: Memory layout of the output tensor `out_tile`.
+        out_origin: Mutable origin of the output tensor `out_tile`.
+        GridThwLayout: Memory layout of the grid dimensions tensor `grid_thws`.
+        grid_thw_origin: Immutable origin of the grid dimensions tensor
+            `grid_thws`.
+        vec_width: SIMD vector width for loads and stores along the hidden
+            dimension.
+        num_threads: Number of threads per block.
 
     Args:
         x_tile: Input tensor [n_tokens, D].
@@ -156,6 +170,12 @@ def tpool_patch_merger[
     ctx: DeviceContext,
 ) raises:
     """Temporal pooling patch merger entry point.
+
+    Parameters:
+        dtype: Element type of the input and output tensors.
+        output_layout: Memory layout of the output tensor.
+        x_layout: Memory layout of the input tensor.
+        bounds_layout: Memory layout of the bounds tensor.
 
     Args:
         output: Contiguous output tensor [total_output_patches, D].

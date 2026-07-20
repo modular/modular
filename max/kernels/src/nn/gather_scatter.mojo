@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements gather and scatter operations for CPU and GPU, including indexed reductions."""
 
 from std.collections.string.string_slice import get_static_string
 from std.math import align_down, ceildiv, iota
@@ -76,6 +77,17 @@ def normalize_neg_index[
     """Indices passed to gather and scatter ops may be negative. This performs
     a normalization so that they can be used to index into a buffer.
 
+    Parameters:
+        dtype: Integral element type of the input index vector.
+        width: SIMD vector width of the input index vector.
+        out_type: Element type of the normalized output vector (defaults to
+            `DType.int`).
+
+    Args:
+        idx: Vector of indices to normalize; values may be negative.
+        dim_size: Size of the dimension being indexed; valid indices are in
+            `[-dim_size, dim_size)`.
+
     Returns val + dim if val < 0 else val
     """
     comptime assert (
@@ -91,6 +103,12 @@ def normalize_neg_index[
 
 
 struct Axis(Indexer, Intable, TrivialRegisterPassable):
+    """Wraps a tensor axis index, optionally normalizing negative values against the tensor rank.
+
+    Used by gather and scatter kernels to carry a validated axis through the
+    call stack in a type-safe way.
+    """
+
     var axis: Int
 
     @always_inline
@@ -139,6 +157,23 @@ def gather_reduce[
     This provides similar functionality to Torch's EmbeddingBag layer. In that
     context, i is the batch dimension, j is the multi-hot dimension, and k is
     the embedding dimension.
+
+    Parameters:
+        dtype: Element type of `input`, `output`, and `reduce_init`.
+        gather_axis: Axis of `input` to gather along (must be 0).
+        reduce_axis: Axis of the gathered result to reduce across (must be 1).
+        simd_width: SIMD vector width used for tiling the embedding dimension.
+        reduce_fn: Binary reduction function combining accumulated and
+            gathered values into the output.
+
+    Args:
+        output: Output tensor holding the reduced embeddings, shape
+            [batch, embedding_dim].
+        input: Source embedding table, shape [num_embeddings, embedding_dim].
+        indices: Multi-hot indices, shape [batch, multi_hot], `int32`.
+        reduce_init: Initial accumulator value for the reduction.
+        ctx: Optional device context for parallel execution (defaults to
+            None).
     """
     comptime assert input.flat_rank == 2
     comptime assert indices.flat_rank == 2
@@ -307,6 +342,19 @@ def gather[
 
     Note that this is NOT the same as the default PyTorch gather (which is equivalent to
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
+
+    Parameters:
+        dtype: Element type of `input` and `output`.
+        indices_type: Element type of the `indices` tensor.
+        axis: Axis along which to gather from `input`.
+        target: Target backend to execute on, such as "cpu" or "cuda"
+            (defaults to "cpu").
+
+    Args:
+        output: Gathered values, shaped per the ONNX Gather spec.
+        input: Source tensor to gather values from.
+        indices: Indices to gather along `axis`.
+        context: Device context for execution.
     """
 
     comptime prefetch_offset = 12  # TODO: search
@@ -409,6 +457,20 @@ def gather_guards(
     indices_shape: IndexList,
     output_shape: IndexList,
 ) raises -> None:
+    """Validates that the input, indices, and output shapes are compatible for a gather operation.
+
+    Args:
+        axis: Axis along which the gather is performed; must be non-negative
+            and less than `input_shape` rank.
+        input_shape: Shape of the input tensor being gathered from.
+        indices_shape: Shape of the indices tensor.
+        output_shape: Shape of the output tensor; must match the gather
+            output shape derived from `input_shape` and `indices_shape`.
+
+    Raises:
+        If the axis is negative, out of range, or the output shape does not
+        match the expected gather shape derived from the input and indices.
+    """
     if Int(axis) < 0:
         raise Error("gather kernel does not support negative axis")
     for i in range(axis):
@@ -470,6 +532,44 @@ def gather_elementwise_fn_wrapper[
     coords: IndexList,
     error_index_ptr: OptionalReg[UnsafePointer[Int, MutAnyOrigin]] = None,
 ):
+    """Performs a single elementwise gather step for one output coordinate.
+
+    Loads the gather index from `indices` at the coordinate derived from
+    `coords`, normalizes it against the input axis size, reads the
+    corresponding value from `input`, and stores it into `output` at the
+    original coordinate. On CPU, out-of-bounds indices are recorded through
+    `error_index_ptr` for later reporting; on GPU, a debug assert traps
+    instead.
+
+    Parameters:
+        dtype: Element type of the input and output values.
+        indices_type: Element type of the indices buffer.
+        InputFnType: Function type that loads a SIMD vector from the input
+            tensor at given coordinates.
+        IndicesFnType: Function type that loads a SIMD vector of indices
+            from the indices buffer at given coordinates.
+        OutputFnType: Function type that stores a SIMD vector into the
+            output tensor at given coordinates.
+        simd_width: SIMD vector width for the elementwise load and store.
+        prefetch_fn: Optional prefetch callback for software index
+            prefetching (defaults to None).
+        target: Target backend to execute on, such as "cpu" or "cuda"
+            (defaults to "cpu").
+        element_alignment: Alignment factor for element loads and stores
+            (defaults to 1).
+
+    Args:
+        input_fn: Callback that loads values from the input tensor.
+        indices_fn: Callback that loads indices from the indices tensor.
+        output_fn: Callback that stores values into the output tensor.
+        axis: Validated axis along which to gather from the input tensor.
+        input_shape: Shape of the input tensor.
+        indices_shape: Shape of the indices tensor.
+        output_shape: Shape of the output tensor.
+        coords: Output coordinate being processed in this gather step.
+        error_index_ptr: Optional pointer to record an out-of-bounds index
+            for CPU error reporting (defaults to None).
+    """
     # out_coords consists of 3 chunks:
     #   out_coords[0:axis] = input coords[0:axis]
     #   out_coords[axis:axis+indices_rank] = indices_coords
@@ -574,6 +674,30 @@ def gather[
 
     Note that this is NOT the same as the default PyTorch gather (which is equivalent to
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
+
+    Parameters:
+        dtype: Element type of the input and output tensors.
+        indices_type: Element type of the `indices` tensor.
+        InputFnType: Function type that loads a SIMD vector from the input
+            tensor at given coordinates.
+        IndicesFnType: Function type that loads a SIMD vector of indices from
+            the indices buffer at given coordinates.
+        OutputFnType: Function type that stores a SIMD vector into the output
+            tensor at given coordinates.
+        prefetch_fn: Optional prefetch callback for software index prefetching
+            (defaults to None).
+        target: Target backend to execute on, such as "cpu" or "cuda"
+            (defaults to "cpu").
+
+    Args:
+        axis: Validated axis along which to gather from the input tensor.
+        input_shape: Shape of the input tensor.
+        indices_shape: Shape of the indices tensor.
+        output_shape: Shape of the output tensor.
+        input_fn: Callback that loads values from the input tensor.
+        indices_fn: Callback that loads indices from the indices tensor.
+        output_fn: Callback that stores values into the output tensor.
+        context: Device context for execution.
     """
     comptime compile_target = _current_target() if is_cpu[
         target
@@ -1090,7 +1214,24 @@ def scatter_nd[
     ],
     context: DeviceContext,
 ) raises:
-    """Scatter_nd operation without any reduction."""
+    """Scatter_nd operation without any reduction.
+
+    Parameters:
+        output_type: Element type of `data`, `updates`, and `output`.
+        indices_type: Element type of the `indices` tensor.
+        target: Target backend to execute on, such as "cpu" or "cuda".
+
+    Args:
+        data: Source tensor of rank at least 1 copied into `output` before
+            scattering.
+        indices: Tensor of indices addressing where to write `updates` into
+            `output`.
+        updates: Tensor of values to scatter into `output` at the positions
+            given by `indices`.
+        output: Output tensor, shaped the same as `data`, holding the copied
+            and scattered result.
+        context: Device context for execution.
+    """
     scatter_nd_generator[target=target](data, indices, updates, output, context)
 
 
@@ -1242,6 +1383,26 @@ def scatter_elements[
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
+
+    Parameters:
+        rank: Rank of the `input`, `indices`, `updates`, and `output` tensors.
+        input_type: Element type of `input`, `updates`, and `output`.
+        indices_type: Element type of `indices` (must be `int32` or `int64`).
+        ReduceFn: Binary reduction function type combining existing output
+            values with updates.
+
+    Args:
+        input: Source tensor copied into `output` before scattering.
+        indices: Indices along `_axis` selecting where updates land in
+            `output`.
+        updates: Values to scatter into `output` at positions given by
+            `indices`.
+        _axis: Axis along which to scatter; must be in `[-rank, rank)`.
+        output: Output tensor, same shape as `input`, receiving scattered
+            updates.
+        ctx: Device context for execution.
+        reduce_fn: Reduction function combining existing output values with
+            updates.
     """
     comptime assert (
         indices_type == DType.int32 or indices_type == DType.int64
@@ -1357,6 +1518,21 @@ def gather_elements[
 ) raises:
     """
     Implements ONNX GatherElements op which is equivalent to Pytorch gather.
+
+    Parameters:
+        input_type: Element type of `input` and `output`.
+        indices_type: Element type of the `indices` tensor, must be `int32`
+            or `int64`.
+
+    Args:
+        input: Source tensor to gather values from.
+        indices: Tensor of indices to gather along `_axis`, shaped the same
+            as `output`. Values must be in range [-dim, dim) along `_axis`.
+        _axis: Axis along which to gather from `input`, in range
+            [-rank, rank).
+        output: Destination tensor for gathered values, shaped the same as
+            `indices`.
+        ctx: Device context for execution.
     """
     comptime assert (
         indices_type == DType.int32 or indices_type == DType.int64
@@ -1630,7 +1806,12 @@ def scatter_set_constant[
                 [0, 0, 0],
                 [5, 0, 0]]
 
-    Arguments:
+    Parameters:
+        data_type: Element type of `data` and `fill_value`.
+        index_type: Integral element type of the `indices` tensor.
+        target: Target backend to execute on, such as "cpu" or "cuda".
+
+    Args:
         data: The data to scatter the updates into.
         indices: The indices to scatter the updates into.
         fill_value: The value to fill the data with.
@@ -1684,6 +1865,10 @@ def apply_packed_bitmask[
     is set, otherwise `output[b, v]` is set to `fill_value` (the masked-out
     sentinel, e.g. a large negative number). This replaces a CPU unpack +
     `ops.where` in constrained decoding.
+
+    Parameters:
+        dtype: Element type of `logits`, `output`, and `fill_value`.
+        target: Target backend to execute on, such as "cpu" or "cuda".
 
     Args:
         output: Masked logits, shape `[batch, vocab]`.

@@ -193,7 +193,7 @@ def run_one_case(
     # `vl_dev` across the launches (so a finding is the real OOB, not a UAF).
     var vl_dev = ctx.enqueue_create_buffer[DType.uint32](1)
     ctx.enqueue_memset(vl_dev, UInt32(spec.valid_length))
-    var vl = LayoutTensor[DType.uint32, Layout.row_major(1), MutAnyOrigin](
+    var vl = LayoutTensor[DType.uint32, Layout.row_major(1)](
         vl_dev.unsafe_ptr()
     )
     var mask = CausalPaddingMask(vl)
@@ -287,7 +287,7 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
 
     var vl_dev = ctx.enqueue_create_buffer[DType.uint32](1)
     ctx.enqueue_memset(vl_dev, UInt32(num_keys))  # full (no padding)
-    var vl = LayoutTensor[DType.uint32, Layout.row_major(1), MutAnyOrigin](
+    var vl = LayoutTensor[DType.uint32, Layout.row_major(1)](
         vl_dev.unsafe_ptr()
     )
     var mask = CausalPaddingMask(vl)
@@ -368,7 +368,7 @@ def run_determinism_case(
 
     var vl_dev = ctx.enqueue_create_buffer[DType.uint32](1)
     ctx.enqueue_memset(vl_dev, UInt32(num_keys))  # full (no padding)
-    var vl = LayoutTensor[DType.uint32, Layout.row_major(1), MutAnyOrigin](
+    var vl = LayoutTensor[DType.uint32, Layout.row_major(1)](
         vl_dev.unsafe_ptr()
     )
     var mask = CausalPaddingMask(vl)
@@ -517,7 +517,7 @@ def _run_mha_composition(
     )
     # Runtime-sized [batch_size] valid_lengths (mask indexes valid_lengths[b]).
     comptime vl_layout = Layout(UNKNOWN_VALUE)
-    var vl = LayoutTensor[DType.uint32, vl_layout, MutAnyOrigin](
+    var vl = LayoutTensor[DType.uint32, vl_layout](
         vl_dev.unsafe_ptr(),
         RuntimeLayout[vl_layout].row_major(IndexList[1](batch_size)),
     )

@@ -66,7 +66,12 @@ struct TmemAllocation[
     @staticmethod
     @always_inline("nodebug")
     def allocate(smem_addr: Self.SmemAddrStorage) -> Self:
-        """Allocate TMEM (MMA warp). Address stored in smem for epilogue."""
+        """Allocate TMEM (MMA warp). Address stored in smem for epilogue.
+
+        Args:
+            smem_addr: Shared memory slot that receives the allocated
+                TMEM address for cross-warp sharing with the epilogue.
+        """
         tcgen05_alloc[Int32(Self.cta_group)](
             smem_addr.ptr, UInt32(Self.max_cols)
         )
@@ -76,7 +81,12 @@ struct TmemAllocation[
     @staticmethod
     @always_inline
     def from_shared(smem_addr: Self.SmemAddrStorage) -> Self:
-        """Get handle from existing allocation (epilogue warp)."""
+        """Get handle from existing allocation (epilogue warp).
+
+        Args:
+            smem_addr: Shared memory slot holding the TMEM address
+                previously written by `allocate`.
+        """
         return Self(smem_addr.ptr[0])
 
     @always_inline
@@ -138,17 +148,30 @@ struct TmemAddress(TrivialRegisterPassable):
 
     @always_inline
     def __init__(out self, addr: Int):
-        """Create TmemAddress from integer column address."""
+        """Create TmemAddress from integer column address.
+
+        Args:
+            addr: TMEM column address as a plain integer.
+        """
         self.addr = UInt32(addr)
 
     @always_inline
     def __init__(out self, addr: UInt32):
-        """Create TmemAddress from hardware address (UInt32)."""
+        """Create TmemAddress from hardware address (UInt32).
+
+        Args:
+            addr: Raw TMEM hardware address as produced by
+                `tcgen05_alloc`.
+        """
         self.addr = addr
 
     @always_inline
     def __add__(self, offset: Int) -> Self:
-        """Create new TmemAddress with column offset added."""
+        """Create new TmemAddress with column offset added.
+
+        Args:
+            offset: Number of TMEM columns to advance the address by.
+        """
         return Self(Int(self.addr) + offset)
 
     @always_inline
@@ -169,7 +192,17 @@ struct TmemAddress(TrivialRegisterPassable):
         bits: Int = 256,
         repeat: Int = 1,
     ](self) -> InlineArray[Scalar[dtype], width]:
-        """Load upper accumulator fragment (rows 0-15)."""
+        """Load upper accumulator fragment (rows 0-15).
+
+        Parameters:
+            dtype: Element type to load from TMEM.
+            width: Total number of elements per row in the returned
+                `InlineArray`.
+            data_paths: Number of SM100 TMEM data paths (defaults to 16).
+            bits: Bits loaded per data path per repeat (defaults to 256).
+            repeat: Number of times to repeat the load pattern (defaults
+                to 1).
+        """
         return tcgen05_ld[
             datapaths=data_paths,
             bits=bits,
@@ -187,7 +220,17 @@ struct TmemAddress(TrivialRegisterPassable):
         bits: Int = 256,
         repeat: Int = 1,
     ](self) -> InlineArray[Scalar[dtype], width]:
-        """Load lower accumulator fragment (rows 16-31)."""
+        """Load lower accumulator fragment (rows 16-31).
+
+        Parameters:
+            dtype: Element type to load from TMEM.
+            width: Total number of elements per row in the returned
+                `InlineArray`.
+            data_paths: Number of SM100 TMEM data paths (defaults to 16).
+            bits: Bits loaded per data path per repeat (defaults to 256).
+            repeat: Number of times to repeat the load pattern (defaults
+                to 1).
+        """
         return tcgen05_ld[
             datapaths=data_paths,
             bits=bits,
@@ -205,7 +248,20 @@ struct TmemAddress(TrivialRegisterPassable):
         bits: Int = 256,
         repeat: Int = 1,
     ](self, data: InlineArray[Scalar[dtype], width]):
-        """Store upper accumulator fragment (rows 0-15)."""
+        """Store upper accumulator fragment (rows 0-15).
+
+        Parameters:
+            dtype: Element type to store to TMEM.
+            width: Total number of elements per row in the `data`
+                `InlineArray`.
+            data_paths: Number of SM100 TMEM data paths (defaults to 16).
+            bits: Bits stored per data path per repeat (defaults to 256).
+            repeat: Number of times to repeat the store pattern (defaults
+                to 1).
+
+        Args:
+            data: `InlineArray` of accumulator data to store.
+        """
         tcgen05_st[
             datapaths=data_paths,
             bits=bits,
@@ -221,7 +277,20 @@ struct TmemAddress(TrivialRegisterPassable):
         bits: Int = 256,
         repeat: Int = 1,
     ](self, data: InlineArray[Scalar[dtype], width]):
-        """Store lower accumulator fragment (rows 16-31)."""
+        """Store lower accumulator fragment (rows 16-31).
+
+        Parameters:
+            dtype: Element type to store to TMEM.
+            width: Total number of elements per row in the `data`
+                `InlineArray`.
+            data_paths: Number of SM100 TMEM data paths (defaults to 16).
+            bits: Bits stored per data path per repeat (defaults to 256).
+            repeat: Number of times to repeat the store pattern (defaults
+                to 1).
+
+        Args:
+            data: `InlineArray` of accumulator data to store.
+        """
         tcgen05_st[
             datapaths=data_paths,
             bits=bits,
@@ -296,12 +365,21 @@ struct TmemTensor[
 
     @always_inline
     def __init__(out self, col_addr: Int):
-        """Create TMEM tensor view at the given column address."""
+        """Create TMEM tensor view at the given column address.
+
+        Args:
+            col_addr: TMEM column address for the accumulator tile.
+        """
         self.col_addr = col_addr
 
     @always_inline
     def __init__(out self, addr: TmemAddress):
-        """Create TMEM tensor view from a TmemAddress."""
+        """Create TMEM tensor view from a TmemAddress.
+
+        Args:
+            addr: `TmemAddress` whose column address becomes the tensor
+                view base.
+        """
         self.col_addr = Int(addr.addr)
 
     @always_inline
@@ -526,7 +604,12 @@ struct TmemFragments[
         upper: InlineArray[Scalar[Self.dtype], Self.frag_size],
         lower: InlineArray[Scalar[Self.dtype], Self.frag_size],
     ):
-        """Initialize with provided fragments."""
+        """Initialize with provided fragments.
+
+        Args:
+            upper: `InlineArray` of accumulator data for rows 0-15.
+            lower: `InlineArray` of accumulator data for rows 16-31.
+        """
         self.upper = upper.copy()
         self.lower = lower.copy()
 
@@ -594,7 +677,11 @@ struct TmemFragments[
     ](self) -> TmemFragments[
         target_dtype, Self.frag_size, is_lower_required=Self.is_lower_required
     ]:
-        """Cast fragments to a different dtype."""
+        """Cast fragments to a different dtype.
+
+        Parameters:
+            target_dtype: Destination element type for the cast fragments.
+        """
         var result = TmemFragments[
             target_dtype,
             Self.frag_size,
@@ -678,12 +765,23 @@ struct TmemArrayType[
 
     @always_inline
     def __init__(out self, base_addr: Int):
-        """Initialize array at the given TMEM base address."""
+        """Initialize array at the given TMEM base address.
+
+        Args:
+            base_addr: Starting TMEM column address for the array.
+        """
         self.base_addr = base_addr
 
     @always_inline
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
-        """Get tile at the given index."""
+        """Get tile at the given index.
+
+        Parameters:
+            T: Int-like type used for the tile index.
+
+        Args:
+            index: Tile index in the range `[0, num_tiles)`.
+        """
         return Self.Tile(self.base_addr + Int(index) * Self.tile_stride)
 
 
@@ -788,7 +886,11 @@ struct BlockScaledTmem[
 
     @always_inline
     def __init__(out self, base_addr: Int):
-        """Create TMEM region view at the given base address."""
+        """Create TMEM region view at the given base address.
+
+        Args:
+            base_addr: Base TMEM column address for the region.
+        """
         comptime assert (
             Self.used_cols <= Self.total_cols
         ), "Block-scaled TMEM region exceeds capacity"
@@ -796,7 +898,12 @@ struct BlockScaledTmem[
 
     @always_inline
     def __init__(out self, addr: TmemAddress):
-        """Create TMEM region view from a TmemAddress."""
+        """Create TMEM region view from a TmemAddress.
+
+        Args:
+            addr: `TmemAddress` whose column address becomes the region
+                base.
+        """
         comptime assert (
             Self.used_cols <= Self.total_cols
         ), "Block-scaled TMEM region exceeds capacity"
@@ -806,7 +913,17 @@ struct BlockScaledTmem[
     def __init__[
         cta: Int, max_cols: Int
     ](out self, alloc: TmemAllocation[cta, max_cols]):
-        """Create TMEM region view from a TmemAllocation."""
+        """Create TMEM region view from a TmemAllocation.
+
+        Parameters:
+            cta: CTA group size of the source allocation (1 or 2).
+            max_cols: Maximum TMEM columns of the source allocation
+                (512 for SM100).
+
+        Args:
+            alloc: The `TmemAllocation` whose address becomes the region
+                base.
+        """
         comptime assert (
             Self.used_cols <= Self.total_cols
         ), "Block-scaled TMEM region exceeds capacity"
@@ -830,17 +947,38 @@ struct BlockScaledTmem[
     # Convenience accessors (delegate to arrays)
     @always_inline
     def accum[T: Intable](self, stage: T) -> Self.AccumTile:
-        """Get accumulator tile for the given pipeline stage."""
+        """Get accumulator tile for the given pipeline stage.
+
+        Parameters:
+            T: Int-like type for the stage index.
+
+        Args:
+            stage: Pipeline stage index into the accumulator array.
+        """
         return self.accum_tiles()[stage]
 
     @always_inline
     def sfa[T: Intable](self, index: T) -> Self.SFATile:
-        """Get SFA scaling factor tile for the given k-iteration index."""
+        """Get SFA scaling factor tile for the given k-iteration index.
+
+        Parameters:
+            T: Int-like type for the index value.
+
+        Args:
+            index: K-iteration index into the SFA tile array.
+        """
         return self.sfa_tiles()[index]
 
     @always_inline
     def sfb[T: Intable](self, index: T) -> Self.SFBTile:
-        """Get SFB scaling factor tile for the given k-iteration index."""
+        """Get SFB scaling factor tile for the given k-iteration index.
+
+        Parameters:
+            T: Int-like type for the index value.
+
+        Args:
+            index: K-iteration index into the SFB tile array.
+        """
         return self.sfb_tiles()[index]
 
 
@@ -880,7 +1018,13 @@ struct TmemStage[
 
     @always_inline
     def __init__(out self, addr: TmemAddress, index: Int):
-        """Create stage from TmemAddress and stage index."""
+        """Create stage from TmemAddress and stage index.
+
+        Args:
+            addr: `TmemAddress` whose column address becomes the stage
+                base.
+            index: Pipeline stage index (for barrier signaling).
+        """
         self.base_addr = Int(addr.addr)
         self.index = index
 
@@ -888,7 +1032,17 @@ struct TmemStage[
     def __init__[
         cta: Int, max_cols: Int
     ](out self, alloc: TmemAllocation[cta, max_cols], index: Int):
-        """Create stage from TmemAllocation and stage index."""
+        """Create stage from TmemAllocation and stage index.
+
+        Parameters:
+            cta: CTA group size of the source allocation (1 or 2).
+            max_cols: Maximum TMEM columns of the source allocation
+                (512 for SM100).
+
+        Args:
+            alloc: `TmemAllocation` whose address becomes the stage base.
+            index: Pipeline stage index (for barrier signaling).
+        """
         self.base_addr = Int(alloc.addr)
         self.index = index
 
@@ -951,7 +1105,17 @@ struct TmemStage[
         bits: Int = 256,
         repeat: Int = 4,
     ](self) -> InlineArray[Scalar[dtype], frag_size]:
-        """Load upper accumulator fragment (rows 0-15)."""
+        """Load upper accumulator fragment (rows 0-15).
+
+        Parameters:
+            dtype: Element type to load from TMEM.
+            frag_size: Total number of elements per row in the returned
+                `InlineArray`.
+            data_paths: Number of SM100 TMEM data paths (defaults to 16).
+            bits: Bits loaded per data path per repeat (defaults to 256).
+            repeat: Number of times to repeat the load pattern (defaults
+                to 4).
+        """
         return self.address().load_upper[
             dtype, frag_size, data_paths, bits, repeat
         ]()
@@ -964,7 +1128,17 @@ struct TmemStage[
         bits: Int = 256,
         repeat: Int = 4,
     ](self) -> InlineArray[Scalar[dtype], frag_size]:
-        """Load lower accumulator fragment (rows 16-31)."""
+        """Load lower accumulator fragment (rows 16-31).
+
+        Parameters:
+            dtype: Element type to load from TMEM.
+            frag_size: Total number of elements per row in the returned
+                `InlineArray`.
+            data_paths: Number of SM100 TMEM data paths (defaults to 16).
+            bits: Bits loaded per data path per repeat (defaults to 256).
+            repeat: Number of times to repeat the load pattern (defaults
+                to 4).
+        """
         return self.address().load_lower[
             dtype, frag_size, data_paths, bits, repeat
         ]()
@@ -986,6 +1160,9 @@ struct TmemDeallocBarrier[cta_group: Int](TrivialRegisterPassable):
 
     Handles cluster-aware synchronization patterns for TMEM deallocation,
     supporting both single-CTA and multi-CTA (cta_group=2) configurations.
+
+    Parameters:
+        cta_group: Number of cooperating CTAs (1 or 2).
     """
 
     comptime BarrierStorage = SMemArray[SharedMemBarrier, 1]
@@ -993,7 +1170,12 @@ struct TmemDeallocBarrier[cta_group: Int](TrivialRegisterPassable):
     var barrier: Self.BarrierStorage
 
     def __init__(out self, barrier: Self.BarrierStorage):
-        """Initialize with shared memory barrier array."""
+        """Initialize with shared memory barrier array.
+
+        Args:
+            barrier: Shared memory barrier storage used to coordinate
+                deallocation across warps and CTAs.
+        """
         self.barrier = barrier
 
     @always_inline
@@ -1027,6 +1209,13 @@ struct TmemDeallocBarrier[cta_group: Int](TrivialRegisterPassable):
 
         Releases the allocation lock, waits for epilogue completion,
         then deallocates the TMEM.
+
+        Parameters:
+            max_cols: TMEM columns to deallocate (defaults to 512 for
+                SM100).
+
+        Args:
+            tmem: `TmemAllocation` to release and deallocate.
         """
         tmem.release_lock()
         # SM100 warp-specialized matmul: hardware-suspend the MMA warp while it

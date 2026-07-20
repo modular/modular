@@ -15,6 +15,8 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
+"""Registers core tensor graph ops (range, copy, reshape, and related utilities)."""
+
 from std.collections import OptionalReg
 from std.math import align_up, ceildiv, iota
 from std.random import seed
@@ -223,6 +225,8 @@ def _unsafe_str_to_coord[
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
 @export
 def export() abi("Mojo"):
+    """Keeps the managed-tensor-slice load/store entry points alive for export when this package is linked.
+    """
     comptime _simd_load_from_managed_tensor_slice = simd_load_from_managed_tensor_slice
     comptime _simd_store_into_managed_tensor_slice = simd_store_into_managed_tensor_slice
 
@@ -234,6 +238,8 @@ def export() abi("Mojo"):
 
 @extensibility.register("mo.range")
 struct Range:
+    """Registers the `mo.range` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -266,6 +272,19 @@ def range_shape[
     stop: Scalar[dtype],
     step: Scalar[dtype],
 ) raises -> IndexList[1]:
+    """Computes the output shape for the `mo.range` graph op.
+
+    Parameters:
+        dtype: Element type of the range values.
+
+    Args:
+        start: First value of the range.
+        stop: Exclusive upper or lower bound of the range.
+        step: Spacing between consecutive values; must be non-zero.
+
+    Returns:
+        The output shape `[num_elements]` for the range tensor.
+    """
     return arange_shape(start, stop, step)
 
 
@@ -277,6 +296,8 @@ def range_shape[
 # useful for testing --> identity op that simply copies input into output
 @extensibility.register("copy")
 struct Copy:
+    """Registers the `copy` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -352,8 +373,8 @@ struct NanCheckRaiseOp:
 # ===-----------------------------------------------------------------------===#
 
 
-# Type-level transpose stride computation.  Permute input stride CoordLike types
-# according to a permutation IntTuple.  This avoids the interpreter heap limit
+# Type-level transpose stride computation. Permute input stride CoordLike types
+# according to a permutation IntTuple. This avoids the interpreter heap limit
 # that prevents direct IntTuple element access in comptime-for loops.
 comptime _TransposeStrideTypesTabulator[
     permutations: IntTuple,
@@ -410,6 +431,8 @@ comptime _SliceStrideTypes[
 
 @extensibility.register("mo.max_pool")
 struct MaxPool:
+    """Registers the `mo.max_pool` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -447,6 +470,28 @@ def max_pool_shape[
     dilations: InputTensor[dtype=int_type, rank=1, ...],
     paddings: InputTensor[dtype=int_type, rank=1, ...],
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.max_pool` graph op.
+
+    Parameters:
+        dtype: Element type of the pooling `input` tensor.
+        int_type: Element type of the `filter`, `strides`, `dilations`, and
+            `paddings` tensors.
+
+    Args:
+        input: Rank-4 batched image input to the pooling operator.
+        filter: One-dimensional tensor of filter sizes on the height and
+            width dimensions, `(filter_h, filter_w)`.
+        strides: One-dimensional tensor of strides on the height and width
+            dimensions, `(stride_h, stride_w)`.
+        dilations: One-dimensional tensor of dilations on the height and
+            width dimensions, `(dilation_h, dilation_w)`.
+        paddings: One-dimensional tensor of paddings on the height and
+            width dimensions, ``(pad_h_before, pad_h_after, pad_w_before,
+            pad_w_after)``.
+
+    Returns:
+        The output shape of the max pooling operation.
+    """
     return rebind[IndexList[input.rank]](
         pool_shape(
             input.to_tile_tensor[DType.int64](),
@@ -460,6 +505,9 @@ def max_pool_shape[
 
 @extensibility.register("mo.max_pool_ceil_mode_true")
 struct MaxPoolCeilModeTrue:
+    """Registers the `mo.max_pool_ceil_mode_true` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -497,6 +545,28 @@ def max_pool_ceil_mode_true_shape[
     dilations: InputTensor[dtype=int_type, rank=1, ...],
     paddings: InputTensor[dtype=int_type, rank=1, ...],
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.max_pool_ceil_mode_true` graph op.
+
+    Parameters:
+        dtype: Element type of the pooling `input` tensor.
+        int_type: Element type of the `filter`, `strides`, `dilations`, and
+            `paddings` tensors.
+
+    Args:
+        input: Rank-4 batched image input to the pooling operator.
+        filter: One-dimensional tensor of filter sizes on the height and
+            width dimensions, `(filter_h, filter_w)`.
+        strides: One-dimensional tensor of strides on the height and width
+            dimensions, `(stride_h, stride_w)`.
+        dilations: One-dimensional tensor of dilations on the height and
+            width dimensions, `(dilation_h, dilation_w)`.
+        paddings: One-dimensional tensor of paddings on the height and
+            width dimensions, ``(pad_h_before, pad_h_after, pad_w_before,
+            pad_w_after)``.
+
+    Returns:
+        The output shape of the max pooling operation with ceil mode enabled.
+    """
     return rebind[IndexList[input.rank]](
         pool_shape_ceil(
             input.to_tile_tensor[DType.int64](),
@@ -515,6 +585,9 @@ def max_pool_ceil_mode_true_shape[
 
 @extensibility.register("mo.non_maximum_suppression")
 struct NonMaximumSuppression:
+    """Registers the `mo.non_maximum_suppression` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType
@@ -550,6 +623,27 @@ def non_maximum_suppression_shape[
     iou_threshold: Float32,
     score_threshold: Float32,
 ) -> IndexList[2]:
+    """Computes the output shape for the `mo.non_maximum_suppression` graph op.
+
+    Parameters:
+        dtype: Element type of the `boxes` and `scores` tensors.
+
+    Args:
+        boxes: Rank-3 tensor of bounding boxes with shape
+            `(batch, num_boxes, 4)` where each box is
+            `[y1, x1, y2, x2]`.
+        scores: Rank-3 tensor of scores with shape
+            `(batch, num_classes, num_boxes)`.
+        max_output_boxes_per_class: Maximum number of boxes to select per
+            class.
+        iou_threshold: Intersection-over-union threshold for suppression;
+            boxes with IoU above this value are suppressed.
+        score_threshold: Minimum score for a box to be considered; boxes
+            with score below this value are filtered out.
+
+    Returns:
+        Two-element `IndexList` of shape `(num_selected_boxes, 3)`.
+    """
     var max_output_boxes_int = Int(max_output_boxes_per_class)
     var iou_threshold_float = iou_threshold
     var score_threshold_float = score_threshold
@@ -570,6 +664,8 @@ def non_maximum_suppression_shape[
 
 @extensibility.register("mo.roi_align")
 struct ROIAlign:
+    """Registers the `mo.roi_align` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         aligned: Bool,
@@ -604,6 +700,23 @@ def roi_align_shape(
     spatial_scale: Scalar,
     sampling_ratio: Scalar,
 ) -> IndexList[4]:
+    """Computes the output shape for the `mo.roi_align` graph op.
+
+    Args:
+        input: Rank-4 batched image input in NHWC format with shape
+            `(N, H, W, C)`.
+        rois: Rank-2 tensor of ROI box coordinates with shape `(M, 5)`
+            where each row is `(batch_idx, y0, x0, y1, x1)`.
+        output_height: Pooled output height, in elements.
+        output_width: Pooled output width, in elements.
+        spatial_scale: Scale factor remapping ROI coordinates to input
+            coordinates.
+        sampling_ratio: Number of sampling points in the interpolation
+            grid used to compute each pooled bin.
+
+    Returns:
+        The output shape `(num_rois, output_height, output_width, channels)`.
+    """
     var shape = IndexList[4]()
     # input shape is [N, H, W, C]
     # rois shape is [M, 5]
@@ -623,6 +736,8 @@ def roi_align_shape(
 
 @extensibility.register("repeat_interleave")
 struct RepeatInterleave:
+    """Registers the `repeat_interleave` graph op with the graph compiler."""
+
     @staticmethod
     def execute(
         output: OutputTensor,
@@ -648,6 +763,19 @@ struct RepeatInterleave:
 def repeat_interleave_kernel_shape(
     input: InputTensor, repeats: InputTensor[rank=1, ...], axis: Scalar
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `repeat_interleave` graph op.
+
+    Args:
+        input: Input tensor whose `axis` dimension is expanded by the
+            repeat counts.
+        repeats: One-dimensional integral tensor of per-element repeat
+            counts, either size 1 or equal to `input.dim(axis)`.
+        axis: Axis along which elements are repeated; negative values
+            index from the last dimension.
+
+    Returns:
+        The output shape with `axis` expanded by the repeat counts.
+    """
     comptime assert axis.dtype.is_integral(), "axis value must be integer type"
 
     var interleave_shape = repeat_interleave_shape(
@@ -666,6 +794,8 @@ def repeat_interleave_kernel_shape(
 
 @extensibility.register("mo.random.normal")
 struct RandomNormal:
+    """Registers the `mo.random.normal` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -707,6 +837,25 @@ def random_normal_shape[
     variance: Scalar,
     seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
 ) -> IndexList[output_rank]:
+    """Computes the output shape for the `mo.random.normal` graph op.
+
+    Parameters:
+        output_rank: Number of dimensions of the output tensor; must equal
+            the length of `shape`.
+
+    Args:
+        shape: One-dimensional tensor of output dimensions, length
+            `output_rank`.
+        mean: Mean of the normal distribution; does not affect the output
+            shape.
+        variance: Variance of the normal distribution; does not affect the
+            output shape.
+        seed_value: One-dimensional tensor holding the random seed; does not
+            affect the output shape.
+
+    Returns:
+        The output shape specified by `shape`.
+    """
     var unrolled_shape = IndexList[output_rank]()
     for i in range(output_rank):
         unrolled_shape[i] = Int(shape[i])
@@ -716,6 +865,8 @@ def random_normal_shape[
 
 @extensibility.register("mo.random.uniform")
 struct RandomUniform:
+    """Registers the `mo.random.uniform` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -757,6 +908,25 @@ def random_uniform_shape[
     variance: Scalar,
     seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
 ) -> IndexList[output_rank]:
+    """Computes the output shape for the `mo.random.uniform` graph op.
+
+    Parameters:
+        output_rank: Number of dimensions of the output tensor; must equal
+            the length of `shape`.
+
+    Args:
+        shape: One-dimensional tensor of output dimensions, length
+            `output_rank`.
+        mean: Scalar parameter from the uniform op; does not affect the
+            output shape.
+        variance: Scalar parameter from the uniform op; does not affect the
+            output shape.
+        seed_value: One-dimensional tensor holding the random seed; does not
+            affect the output shape.
+
+    Returns:
+        The output shape specified by `shape`.
+    """
     assert shape.dim_size[0]() == output_rank
 
     var unrolled_shape = IndexList[output_rank]()
@@ -777,6 +947,24 @@ def concat_shape_impl[
     axis0: Int,
     inputs: VariadicTensors[dtype=dtype, rank=rank, size, io_spec=io_spec, ...],
 ) raises -> IndexList[rank]:
+    """Computes the concatenated output shape from the input tensor shapes.
+
+    Parameters:
+        dtype: Element type of the input tensors.
+        rank: Number of dimensions in each input tensor.
+        size: Number of variadic input tensors.
+        io_spec: Input/output specification for the variadic tensors.
+
+    Args:
+        axis0: Axis along which to concatenate; negative values index
+            from the last dimension.
+        inputs: Variadic input tensors to concatenate, all matching in
+            shape except along the concat axis.
+
+    Returns:
+        The output shape with the concat axis dimension summed across
+        all inputs.
+    """
     var axis = normalize_neg_index(axis0, rank)
 
     @parameter
@@ -819,6 +1007,22 @@ def concat_from_list_shape_impl[
         ]
     ],
 ) raises -> IndexList[rank]:
+    """Computes the concatenated output shape for a variadic list of input tensors.
+
+    Parameters:
+        dtype: Element type of the input tensors.
+        rank: Number of dimensions in each input tensor.
+
+    Args:
+        axis0: Axis along which to concatenate; negative values index
+            from the last dimension.
+        inputs: List of input tensors to concatenate, all matching in
+            shape except along the concat axis.
+
+    Returns:
+        The output shape with the concat axis dimension summed across
+        all inputs.
+    """
     var axis = normalize_neg_index(axis0, rank)
 
     @parameter
@@ -868,6 +1072,8 @@ def concat_from_list_shape_impl[
 
 @extensibility.register("fold")
 struct Fold:
+    """Registers the `fold` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -921,6 +1127,28 @@ def fold_kernel_shape[
     output_size: InputTensor,
     kernel_size: InputTensor,
 ) raises -> IndexList[4]:
+    """Computes the output shape for the `fold` graph op.
+
+    Parameters:
+        dtype: Element type of the input tensor.
+        stride_h: Vertical stride of the sliding window, in elements.
+        stride_w: Horizontal stride of the sliding window, in elements.
+        dilation_h: Vertical dilation factor applied to the kernel.
+        dilation_w: Horizontal dilation factor applied to the kernel.
+        padding_h: Vertical padding applied to the output, in elements.
+        padding_w: Horizontal padding applied to the output, in elements.
+
+    Args:
+        input: Three-dimensional input tensor of shape
+            `(C, H * W, ...)` representing the unfolded feature map.
+        output_size: One-dimensional tensor holding the output
+            `(height, width)` pair.
+        kernel_size: One-dimensional tensor holding the kernel
+            `(height, width)` pair.
+
+    Returns:
+        The four-dimensional output shape of the folded tensor.
+    """
     comptime assert (
         kernel_size.dtype.is_integral() and output_size.dtype.is_integral()
     ), "kernel_size and output_size must have integral type"
@@ -940,6 +1168,8 @@ def fold_kernel_shape[
 
 @extensibility.register("irfft")
 struct IRFFT:
+    """Registers the `irfft` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -1019,6 +1249,39 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     output: ManagedTensorSlice[dtype=dtype, rank=2, ...],
     ctx: DeviceContext,
 ) raises:
+    """Implements the fused QKV matmul for ragged inputs, writing the K and V projections directly into a paged KV cache.
+
+    Parameters:
+        dtype: Element type of the `hidden_state` input and `output`
+            tensors.
+        weight_type: Element type of the `weight` tensor.
+        target: Target device identifier for kernel dispatch.
+        group_size: Block size for GPTQ-style quantization of `weight`;
+            when set, `weight` must be `uint8` (defaults to `None` for no
+            quantization).
+        has_zp: Whether the weight quantization uses a zero point;
+            currently must be falsy when `group_size` is set (defaults to
+            `None`).
+
+    Args:
+        hidden_state: Input tensor of shape
+            `(sum(seq_lens), num_heads * head_size)`.
+        input_row_offsets: One-dimensional tensor of shape
+            `(batch_size + 1)` whose value at each index is the start
+            offset of the corresponding batch in `hidden_state`.
+        weight: Weight matrix of shape
+            `(num_heads * head_size, num_kv_heads * head_size)`.
+        kv_collection: Paged KV cache collection holding the keys and
+            values; the cache for this layer is retrieved via
+            `layer_idx`.
+        layer_idx: Index of the layer whose K and V projections are
+            written into the cache.
+        output: Pre-allocated output buffer of shape
+            `(sum(seq_lens), num_heads * head_size)` for the Q
+            projections; K and V projections are written in place to the
+            cache.
+        ctx: Device context used for kernel dispatch.
+    """
     generic_fused_qkv_matmul_kv_cache_paged_ragged[
         target=target,
         group_size=group_size,
@@ -1051,6 +1314,42 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     bias: ManagedTensorSlice[dtype=dtype, rank=1, ...],
     ctx: DeviceContext,
 ) raises:
+    """Implements the fused QKV matmul with bias for ragged inputs, writing the K and V projections directly into a paged KV cache.
+
+    Parameters:
+        dtype: Element type of the `hidden_state`, `output`, and `bias`
+            tensors.
+        weight_type: Element type of the `weight` tensor.
+        target: Target device identifier for kernel dispatch.
+        group_size: Block size for GPTQ-style quantization of `weight`;
+            when set, `weight` must be `uint8` (defaults to `None` for no
+            quantization).
+        has_zp: Whether the weight quantization uses a zero point;
+            currently must be falsy when `group_size` is set (defaults to
+            `None`).
+
+    Args:
+        hidden_state: Input tensor of shape
+            `(sum(seq_lens), num_heads * head_size)`.
+        input_row_offsets: One-dimensional tensor of shape
+            `(batch_size + 1)` whose value at each index is the start
+            offset of the corresponding batch in `hidden_state`.
+        weight: Weight matrix of shape
+            `(num_heads * head_size, num_kv_heads * head_size)`.
+        kv_collection: Paged KV cache collection holding the keys and
+            values; the cache for this layer is retrieved via
+            `layer_idx`.
+        layer_idx: Index of the layer whose K and V projections are
+            written into the cache.
+        output: Pre-allocated output buffer of shape
+            `(sum(seq_lens), num_heads * head_size)` for the Q
+            projections; K and V projections are written in place to the
+            cache.
+        bias: One-dimensional bias tensor of length
+            `num_kv_heads * head_size` added to the K and V projections
+            before they are written to the cache.
+        ctx: Device context used for kernel dispatch.
+    """
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
         target=target,
         group_size=group_size,
@@ -1082,6 +1381,32 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged_kernel_api[
     output: ManagedTensorSlice[dtype=dtype, rank=3, ...],
     ctx: DeviceContext,
 ) raises:
+    """Implements the fused QKV matmul for BSHD inputs, writing the K and V projections directly into a paged KV cache.
+
+    Parameters:
+        dtype: Element type of the `hidden_state`, `weight`, and `output`
+            tensors.
+        target: Target device identifier for kernel dispatch.
+
+    Args:
+        hidden_state: Input tensor of shape
+            `(batch_size, seq_len, num_heads * head_size)`.
+        weight: Weight matrix of shape
+            `(num_heads * head_size, num_kv_heads * head_size)`.
+        kv_collection: Paged KV cache collection holding the keys and
+            values; the cache for this layer is retrieved via
+            `layer_idx`.
+        layer_idx: Index of the layer whose K and V projections are
+            written into the cache.
+        valid_lengths: One-dimensional tensor of shape `[batch]` giving
+            the valid length of each sequence; K and V are only written
+            to the cache for positions within these lengths.
+        output: Pre-allocated output buffer of shape
+            `(batch_size, seq_len, num_heads * head_size)` for the Q
+            projections; K and V projections are written in place to the
+            cache.
+        ctx: Device context used for kernel dispatch.
+    """
     generic_fused_qkv_matmul_kv_cache_bshd_paged[target=target,](
         hidden_state.to_layout_tensor(),
         weight.to_layout_tensor(),
@@ -1095,6 +1420,15 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged_kernel_api[
 
 @extensibility.register("mo.rope_split_store.ragged.paged")
 struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
+    """Registers the `mo.rope_split_store.ragged.paged` graph op with the graph compiler.
+
+    Parameters:
+        interleaved: Whether RoPE pairs adjacent real and imaginary
+            components (real, imag, real, imag, ...) as in GGUF, rather
+            than splitting them into halves (real, ..., real, imag, ...,
+            imag) as in safetensors.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1141,6 +1475,15 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
 
 @extensibility.register("mo.rope_split_store.ragged.paged.with_position_id")
 struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
+    """Registers the `mo.rope_split_store.ragged.paged.with_position_id` graph op with the graph compiler.
+
+    Parameters:
+        interleaved: Whether RoPE pairs adjacent real and imaginary
+            components (real, imag, real, imag, ...) as in GGUF, rather
+            than splitting them into halves (real, ..., real, imag, ...,
+            imag) as in safetensors.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1233,6 +1576,40 @@ def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     output: ManagedTensorSlice[dtype=dtype, rank=3, ...],
     context: DeviceContext,
 ) raises:
+    """Applies fused rotary position embedding to Q and K, updating keys in the paged KV cache.
+
+    Parameters:
+        dtype: Element type of the query projection and output tensors
+            (inferred).
+        freq_dtype: Element type of the `freqs_cis` RoPE frequency table
+            (inferred).
+        cache_dtype: Element type of the paged KV cache entries (inferred).
+        interleaved: Whether RoPE pairs adjacent real and imaginary
+            components rather than splitting them into halves.
+        has_position_ids: Whether per-token `position_ids` are supplied and
+            used for the rotation.
+        target: Target backend identifier for kernel dispatch.
+        mrope_types: Coordinate element types for the M-RoPE section split
+            (defaults to an empty `TypeList`).
+        mrope_section: Optional M-RoPE section coordinate describing how
+            the head dimension is partitioned across modalities (defaults
+            to `None`).
+
+    Args:
+        q_proj: Query projection tensor of shape
+            `[batch, seq, head_dim]`.
+        input_row_offsets: Cumulative row offsets per batch, shape
+            `[batch_size + 1]`.
+        kv_collection: Paged KV cache collection whose keys are read and
+            updated in place.
+        freqs_cis: RoPE frequency table applied to the query and key
+            projections.
+        position_ids: Per-token position ids used to index `freqs_cis`.
+        layer_idx: Index of the layer whose keys are updated in the cache.
+        output: Output tensor for the rotation-applied query projection,
+            shape `[batch, seq, head_dim]`.
+        context: Device context for kernel dispatch.
+    """
     generic_fused_qk_rope_bshd_paged_ragged[
         interleaved=interleaved,
         has_position_ids=has_position_ids,
@@ -1261,6 +1638,15 @@ def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
 
 @extensibility.register("mo.rope.ragged")
 struct Struct_rope_ragged_paged[interleaved: Bool]:
+    """Registers the `mo.rope.ragged` graph op with the graph compiler.
+
+    Parameters:
+        interleaved: Whether RoPE pairs adjacent real and imaginary
+            components (real, imag, real, imag, ...) as in GGUF, rather
+            than splitting them into halves (real, ..., real, imag, ...,
+            imag) as in safetensors.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1328,6 +1714,15 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
 
 @extensibility.register("mo.rope.ragged.with_position_id")
 struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
+    """Registers the `mo.rope.ragged.with_position_id` graph op with the graph compiler.
+
+    Parameters:
+        interleaved: Whether RoPE pairs adjacent real and imaginary
+            components (real, imag, real, imag, ...) as in GGUF, rather
+            than splitting them into halves (real, ..., real, imag, ...,
+            imag) as in safetensors.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1532,6 +1927,9 @@ def _execute_mha_ragged_paged_scalar_args[
 
 @extensibility.register("mo.moe.create.indices")
 struct Struct_moe_create_indices:
+    """Registers the `mo.moe.create.indices` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1558,6 +1956,9 @@ struct Struct_moe_create_indices:
 
 @extensibility.register("mo.moe.router.group.limited")
 struct Struct_moe_router_group_limited:
+    """Registers the `mo.moe.router.group.limited` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     @parameter
@@ -1610,6 +2011,9 @@ struct Struct_moe_router_group_limited:
 
 @extensibility.register("mo.moe.create.indices.with.scales.offset")
 struct Struct_moe_create_indices_with_scales_offset:
+    """Registers the `mo.moe.create.indices.with.scales.offset` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1638,6 +2042,9 @@ struct Struct_moe_create_indices_with_scales_offset:
 
 @extensibility.register("mo.moe.single.group.router.eplb")
 struct Struct_moe_single_group_router_eplb:
+    """Registers the `mo.moe.single.group.router.eplb` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     @parameter
@@ -1700,6 +2107,9 @@ struct Struct_moe_single_group_router_eplb:
 
 @extensibility.register("mo.moe.single.group.router")
 struct Struct_moe_single_group_router:
+    """Registers the `mo.moe.single.group.router` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     @parameter
@@ -1748,6 +2158,8 @@ struct Struct_moe_single_group_router:
 
 @extensibility.register("mo.moe.eplb.remap")
 struct Struct_moe_eplb_remap:
+    """Registers the `mo.moe.eplb.remap` graph op with the graph compiler."""
+
     @always_inline
     @staticmethod
     @parameter
@@ -1805,6 +2217,19 @@ def layout_transform_conv_transpose_filter_common[
     ],
     filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank, ...],
 ):
+    """Packs a transposed-convolution filter into the layout expected by the conv_transpose kernels.
+
+    Parameters:
+        dtype: Element type of the `filter` and `packed_filter` tensors.
+        filter_rank: Number of dimensions of the input `filter` tensor.
+        packed_filter_rank: Number of dimensions of the `packed_filter`
+            output tensor; must equal `filter_rank + 1`.
+
+    Args:
+        packed_filter: Output tensor holding the packed filter in the
+            layout expected by the conv_transpose kernels.
+        filter: Input transposed-convolution filter tensor to pack.
+    """
     comptime assert filter_rank + 1 == packed_filter_rank
     # last param is num_groups which is currently not an available
     # arg for the MO level op
@@ -1817,6 +2242,9 @@ def layout_transform_conv_transpose_filter_common[
 
 @extensibility.register("pack_conv_transpose_filter_shape")
 struct PackConvTransposeFilterShape:
+    """Registers the `pack_conv_transpose_filter_shape` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -1833,6 +2261,16 @@ def pack_conv_transpose_filter_shape_shape[
 ](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) -> IndexList[
     rank + 1
 ]:
+    """Computes the output shape for the `pack_conv_transpose_filter_shape` graph op.
+
+    Parameters:
+        rank: Number of dimensions of the input `filter_buf` tensor.
+        filter_type: Element type of the `filter_buf` tensor.
+
+    Args:
+        filter_buf: Input transposed-convolution filter tensor whose packed
+            output shape is computed.
+    """
     return rebind[IndexList[rank + 1]](
         pack_filter_shape_conv_transpose(
             filter_buf.to_tile_tensor[DType.int64](), 1
@@ -1849,6 +2287,21 @@ def layout_transform_conv_filter_common[
     packed_filter: ManagedTensorSlice[dtype=dtype, rank=packed_rank, ...],
     filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank, ...],
 ):
+    """Packs a convolution filter into the layout expected by the conv kernels.
+
+    Parameters:
+        dtype: Element type of the `filter` and `packed_filter` tensors.
+        filter_rank: Number of dimensions of the input `filter` tensor.
+        packed_rank: Number of dimensions of the `packed_filter` output
+            tensor; must equal `filter_rank + 1`.
+        num_groups: Number of convolution groups for groupwise
+            convolution.
+
+    Args:
+        packed_filter: Output tensor holding the packed filter in the
+            layout expected by the conv kernels.
+        filter: Input convolution filter tensor to pack.
+    """
     comptime assert packed_rank == filter_rank + 1
 
     # last param is num_groups which is currently not an available
@@ -1912,6 +2365,27 @@ def print_kv_cache_paged_generic_kernel_api[
     is_print_compact: InputTensor[dtype=DType.bool, rank=1, ...],
     context: DeviceContext,
 ) raises:
+    """Prints the contents of a paged KV cache for debugging.
+
+    Parameters:
+        dtype: Element type of the KV cache `blocks` tensor (inferred).
+        target: Target device identifier for kernel dispatch.
+        kv_params: Static KV cache parameters carrying `num_heads` and
+            `head_size`.
+        page_size: Number of tokens stored per page in the paged KV cache.
+
+    Args:
+        valid_lengths: One-dimensional tensor of shape `[batch]` giving the
+            valid length of each sequence; only positions within these
+            lengths are printed.
+        kv_collection: Paged KV cache collection holding the keys and values
+            to print; the cache for this layer is retrieved via `layer_idx`.
+        layer_idx: Index of the layer whose key and value caches are printed.
+        is_print_compact: One-element boolean tensor; when element zero is
+            true, abbreviates the output with ellipses (CPU only).
+        context: Device context used to copy device buffers to host on GPU
+            targets.
+    """
     comptime if is_gpu[target]():
         print_kv_cache_paged_generic_gpu[target](
             valid_lengths.to_layout_tensor(),
@@ -1953,6 +2427,9 @@ def print_kv_cache_paged_generic_kernel_api[
 
 @extensibility.register("sampler.fused_token_sampling")
 struct Struct_fused_token_sampling:
+    """Registers the `sampler.fused_token_sampling` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -2031,6 +2508,8 @@ struct Struct_fused_token_sampling:
 
 @extensibility.register("min_p_sampling")
 struct Struct_min_p_sampling:
+    """Registers the `min_p_sampling` graph op with the graph compiler."""
+
     @always_inline
     @staticmethod
     def execute[
@@ -2067,6 +2546,9 @@ struct Struct_min_p_sampling:
 
 @extensibility.register("sampler.apply_penalties")
 struct Struct_sampler_apply_penalties:
+    """Registers the `sampler.apply_penalties` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -2099,6 +2581,9 @@ struct Struct_sampler_apply_penalties:
 
 @extensibility.register("sampler.update_frequency_data")
 struct Struct_sampler_update_frequency_data:
+    """Registers the `sampler.update_frequency_data` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -2166,6 +2651,9 @@ def _partitioned_scratch_requirement[
 
 @extensibility.register("mo.bundled.allreduce.sum")
 struct BundledAllReduceSum:
+    """Registers the `mo.bundled.allreduce.sum` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -2186,6 +2674,12 @@ struct BundledAllReduceSum:
         this kernel handles a single GPU. The mo.parallel framework is
         responsible for launching one instance per device and passing all N
         input buffers to each launch.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Number of dimensions in the input and output tensors.
+            target: Target device identifier for code generation.
+            _trace_name: Trace name used for profiling and debugging.
 
         Args:
             output: Output tensor for THIS GPU.
@@ -2252,6 +2746,9 @@ struct BundledAllReduceSum:
 
 @extensibility.register("mo.composite.bundled.allreduce_add_rms_norm_quant_fp8")
 struct BundledAllReduceAddRMSNormQuantFP8:
+    """Registers the `mo.composite.bundled.allreduce_add_rms_norm_quant_fp8` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -2278,10 +2775,18 @@ struct BundledAllReduceAddRMSNormQuantFP8:
         """Per-device fused allreduce.sum + add + rms_norm + fp8 quantize.
 
         Single-device analog of `DistributedAllReduceAddRMSNormQuantFP8`, for
-        use inside `mo.parallel`.  The parallel framework launches one
+        use inside `mo.parallel`. The parallel framework launches one
         instance per GPU; this kernel invokes the same underlying primitive
         (`allreduce_residual_rmsnorm`) that the distributed variant calls
         from within `_launch_device_collective`, but for a single device.
+
+        Parameters:
+            dtype: Element type of the input and residual tensors.
+            output_type: Element type of the quantized output tensor.
+            scales_type: Element type of the per-token scale tensor.
+            rank: Number of dimensions in the input and output tensors.
+            target: Target device identifier for code generation.
+            _trace_name: Trace name used for profiling and debugging.
 
         Args:
             output: FP8 quantized output tensor for THIS GPU.
@@ -2373,6 +2878,9 @@ struct BundledAllReduceAddRMSNormQuantFP8:
 
 @extensibility.register("mo.eagle_prefill_shift_tokens")
 struct EaglePrefillShiftTokens:
+    """Registers the `mo.eagle_prefill_shift_tokens` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -2403,6 +2911,9 @@ struct EaglePrefillShiftTokens:
 
 @extensibility.register("learnable_2d_interp_pos_emb")
 struct Learnable2DInterpPosEmb:
+    """Registers the `learnable_2d_interp_pos_emb` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -2433,6 +2944,8 @@ struct Learnable2DInterpPosEmb:
 
 @extensibility.register("mo.spatial_merge")
 struct SpatialMerge:
+    """Registers the `mo.spatial_merge` graph op with the graph compiler."""
+
     @always_inline
     @staticmethod
     def execute[
@@ -2461,6 +2974,8 @@ struct SpatialMerge:
 
 @extensibility.register("tpool_patch_merger")
 struct TPoolPatchMerger:
+    """Registers the `tpool_patch_merger` graph op with the graph compiler."""
+
     @always_inline
     @staticmethod
     def execute[
@@ -2517,6 +3032,22 @@ def tpool_patch_merger_shape(
     _max_w: Int32,
     total_output_patches: Int32,
 ) -> IndexList[2]:
+    """Computes the output shape for the `tpool_patch_merger` graph op.
+
+    Args:
+        input: Rank-2 input tensor of shape `(n_tokens, D)`; the second
+            dimension is preserved as the output's second dimension.
+        _grid_thws: Rank-2 grid dimensions tensor of shape
+            `(n_vids, 3)` holding the `(T, H, W)` triple per video.
+        _kH: Merge kernel height, in elements.
+        _kW: Merge kernel width, in elements.
+        _max_h: Maximum `H` across all videos, used for launch grid
+            sizing.
+        _max_w: Maximum `W` across all videos, used for launch grid
+            sizing.
+        total_output_patches: Total number of output patches across all
+            videos; becomes the first dimension of the output shape.
+    """
     return IndexList[2](Int(total_output_patches), Int(input.dim_size(1)))
 
 
@@ -2530,11 +3061,11 @@ struct GatedDeltaConv1dFwd:
     """Gated DeltaNet causal conv1d forward pass (Pass 1 of two-pass prefill).
 
     Reads/writes a single mutable conv-state pool of shape
-    ``[max_slots, conv_dim, kernel_size-1]`` in place at slot
-    ``slot_idx[batch_item]``. No state-out tensor; the only output is the
+    `[max_slots, conv_dim, kernel_size-1]` in place at slot
+    `slot_idx[batch_item]`. No state-out tensor; the only output is the
     per-token conv output. The pool's dtype is independent of the working
     dtype, so the caller can keep the per-token tensors at fp32 while
-    storing the pool at the model's native dtype (typically bf16).
+    storing the pool at the model's native dtype (bf16).
 
     Tensor Shapes:
         - conv_output_ragged : [total_seq_len, conv_dim]                  (OUT)
@@ -2694,6 +3225,26 @@ def gated_delta_conv1d_fwd_shape[
     slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
     input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
 ) -> IndexList[2]:
+    """Computes the output shape for the `gated_delta_conv1d_fwd` graph op.
+
+    Parameters:
+        work_dtype: Element type of the per-token input and weight tensors
+            (inferred).
+        state_dtype: Element type of the persistent conv-state pool,
+            independent of `work_dtype` (inferred).
+
+    Args:
+        qkv_input_ragged: Ragged QKV input tensor of shape
+            `[total_seq_len, conv_dim]`.
+        conv_weight: Convolution filter of shape
+            `[conv_dim, kernel_size]`.
+        conv_state: Mutable conv-state pool of shape
+            `[max_slots, conv_dim, kernel_size-1]`.
+        slot_idx: Per-batch slot indices into the conv-state pool, shape
+            `[batch_size]`.
+        input_row_offsets: Cumulative row offsets per batch, shape
+            `[batch_size + 1]`.
+    """
     # conv_output_ragged has same shape as qkv_input_ragged
     return qkv_input_ragged.shape()
 
@@ -2703,8 +3254,8 @@ struct GatedDeltaRecurrenceFwd:
     """Gated DeltaNet recurrence forward pass (Pass 2 of two-pass prefill).
 
     Reads/writes a single mutable recurrent-state pool of shape
-    ``[max_slots, num_value_heads, key_head_dim, value_head_dim]`` in place
-    at slot ``slot_idx[batch_item]``. No state-out tensor; the only output
+    `[max_slots, num_value_heads, key_head_dim, value_head_dim]` in place
+    at slot `slot_idx[batch_item]`. No state-out tensor; the only output
     is the per-token recurrence output.
 
     Tensor Shapes:
@@ -2850,7 +3401,7 @@ struct GatedDeltaRecurrenceFwd:
         var num_blocks = batch_size * num_value_heads
 
         # NOTE: Only (key_head_dim=128, value_head_dim=128) is currently
-        # compiled (Qwen3.5 default).  To support a new model with different
+        # compiled (Qwen3.5 default). To support a new model with different
         # head dims, add a further elif branch here following the same pattern.
         if key_head_dim == 128 and value_head_dim == 128:
             comptime kKD = 128
@@ -2918,6 +3469,27 @@ def gated_delta_recurrence_fwd_shape[
     slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
     input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
 ) -> IndexList[2]:
+    """Computes the output shape for the `gated_delta_recurrence_fwd` graph op.
+
+    Parameters:
+        work_dtype: Element type of the per-token input tensors (inferred).
+        state_dtype: Element type of the persistent recurrent-state pool,
+            independent of `work_dtype` (inferred).
+
+    Args:
+        qkv_conv_output: Ragged conv output of shape
+            `[total_seq_len, conv_dim]`.
+        decay_per_token: Per-token decay factors of shape
+            `[total_seq_len, num_value_heads]`.
+        beta_per_token: Per-token beta gates of shape
+            `[total_seq_len, num_value_heads]`.
+        recurrent_state: Mutable recurrent-state pool of shape
+            `[max_slots, num_value_heads, key_head_dim, value_head_dim]`.
+        slot_idx: Per-batch slot indices into the recurrent-state pool,
+            shape `[batch_size]`.
+        input_row_offsets: Cumulative row offsets per batch, shape
+            `[batch_size + 1]`.
+    """
     # recurrence_output: [total_seq_len, value_dim]
     var total_seq_len = qkv_conv_output.dim_size(0)
     var num_value_heads = decay_per_token.dim_size(1)
@@ -3176,32 +3748,60 @@ def mamba2_ssd_chunk_scan_varlen_fwd_shape[
     query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
     has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
 ) -> IndexList[3]:
+    """Computes the output shape for the `mamba2_ssd_chunk_scan_varlen_fwd` graph op.
+
+    Parameters:
+        dtype: Element type of the SSM input and parameter tensors
+            (inferred).
+
+    Args:
+        x: Packed input tensor of shape
+            `(total_len, nheads, head_dim)`.
+        dt: Per-head time deltas of shape `(total_len, nheads)`.
+        A: Per-head scalar decay of shape `(nheads,)`.
+        B: Grouped input projection of shape
+            `(total_len, ngroups, dstate)`.
+        C: Grouped output projection of shape
+            `(total_len, ngroups, dstate)`.
+        D: Per-head skip connection of shape `(nheads,)`; may
+            be empty when unused.
+        dt_bias: Per-head bias added to `dt` of shape `(nheads,)`;
+            may be empty when unused.
+        initial_states: Optional initial SSM states of shape
+            `(batch, nheads, head_dim, dstate)` in `float32`; may
+            be empty when `has_initial_state` is all false.
+        query_start_loc: Cumulative sequence lengths of shape
+            `(batch + 1,)` in `int32`.
+        has_initial_state: Per-sequence flag of shape `(batch,)`
+            in `bool` indicating whether to load `initial_states`;
+            may be empty when no initial states are used.
+    """
     # y has the same shape as x: (total_len, nheads, head_dim).
     return x.shape()
 
 
 @extensibility.register("mamba2_ssd_chunk_scan_varlen_fwd_inplace")
 struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
-    """Varlen Mamba-2 SSD chunked-scan — in-place SSM-pool write-back.
+    """Varlen Mamba-2 SSD chunked-scan: in-place SSM-pool write-back.
 
-    Identical to ``Mamba2SSDChunkScanVarlenFwd`` except final states are
-    written **directly into** the ``ssm_pool`` buffer at
-    ``ssm_pool[cache_indices[b], ...]`` instead of producing a separate
-    ``final_states`` output tensor.  This eliminates the graph-side
-    ``buffer_load → gather → scatter_nd → buffer_store`` whole-pool RMW that
+    Identical to `Mamba2SSDChunkScanVarlenFwd` except final states are
+    written **directly into** the `ssm_pool` buffer at
+    `ssm_pool[cache_indices[b], ...]` instead of producing a separate
+    `final_states` output tensor. This eliminates the graph-side
+    `buffer_load → gather → scatter_nd → buffer_store` whole-pool RMW that
     otherwise dominates decode GPU time (~30 % wall-clock on B200).
 
-    The ``ssm_pool`` is declared as a ``MutableInputTensor`` (slot-indexed
-    in/out), matching the ``causal_conv1d_varlen_fwd`` / ``gated_delta_recurrence_fwd``
-    precedent.  ``initial_states`` is also read from ``ssm_pool`` when
-    ``has_initial_state[b]`` is true (no separate initial-states input needed).
+    The `ssm_pool` is declared as a `MutableInputTensor` (slot-indexed
+    in/out), matching the `causal_conv1d_varlen_fwd` / `gated_delta_recurrence_fwd`
+    precedent. `initial_states` is also read from `ssm_pool` when
+    `has_initial_state[b]` is true (no separate initial-states input needed).
 
     Parameters:
-        dt_softplus: If True (default), apply softplus to ``dt + dt_bias``.
+        dt_softplus: If True (default), apply softplus to `dt + dt_bias`.
 
     Tensor shapes:
-        - y: (total_len, nheads, head_dim) — output (dtype)  [OUT]
-        - x: (total_len, nheads, head_dim) — input (dtype)
+        - y: (total_len, nheads, head_dim), output (dtype)  [OUT]
+        - x: (total_len, nheads, head_dim), input (dtype)
         - dt: (total_len, nheads)
         - A: (nheads,)
         - B: (total_len, ngroups, dstate)
@@ -3212,7 +3812,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
           Apple GPUs (storage dtype only; the scan accumulates in fp32)  [MUT]
         - query_start_loc: (batch + 1,) int32
         - has_initial_state: (batch,) bool optional/empty
-        - cache_indices: (batch,) uint32 — slot indices into ssm_pool
+        - cache_indices: (batch,) uint32, slot indices into ssm_pool
     """
 
     @staticmethod
@@ -3598,6 +4198,41 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape[
     has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
     cache_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
 ) -> IndexList[3]:
+    """Computes the output shape for the `mamba2_ssd_chunk_scan_varlen_fwd_inplace` graph op.
+
+    Parameters:
+        dtype: Element type of the SSM input and parameter tensors
+            (inferred).
+        state_dtype: Element type of the SSM state pool tensor
+            (inferred).
+
+    Args:
+        x: Packed input tensor of shape
+            `(total_len, nheads, head_dim)`.
+        dt: Per-head time deltas of shape `(total_len, nheads)`.
+        A: Per-head scalar decay of shape `(nheads,)`.
+        B: Grouped input projection of shape
+            `(total_len, ngroups, dstate)`.
+        C: Grouped output projection of shape
+            `(total_len, ngroups, dstate)`.
+        D: Per-head skip connection of shape `(nheads,)`; may
+            be empty when unused.
+        dt_bias: Per-head bias added to `dt` of shape `(nheads,)`;
+            may be empty when unused.
+        ssm_pool: Mutable SSM state pool of shape
+            `(max_slots, nheads, head_dim, dstate)` in `float32`;
+            final states are written in place at the slots indexed
+            by `cache_indices`.
+        query_start_loc: Cumulative sequence lengths of shape
+            `(batch + 1,)` in `int32`.
+        has_initial_state: Per-sequence flag of shape `(batch,)`
+            in `bool` indicating whether to load the initial state
+            from `ssm_pool`; may be empty when no initial states are
+            used.
+        cache_indices: Per-sequence slot indices of shape
+            `(batch,)` in `uint32` selecting where in `ssm_pool`
+            the final states are written.
+    """
     # y has the same shape as x: (total_len, nheads, head_dim).
     return x.shape()
 
@@ -3834,6 +4469,25 @@ def causal_conv1d_varlen_fwd_shape[
     cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
     has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
 ) -> IndexList[2]:
+    """Computes the output shape for the `causal_conv1d_varlen_fwd` graph op.
+
+    Parameters:
+        dtype: Element type of the conv input, weight, bias, and conv state
+            tensors.
+
+    Args:
+        x: Input tensor of concatenated sequence elements with shape
+            (dim, total_seqlen).
+        weight: Convolution weight tensor with shape (dim, width).
+        bias: Per-channel bias tensor with shape (dim,).
+        conv_states: Slot-indexed in/out pool of conv states with shape
+            (batch, dim, width - 1).
+        query_start_loc: Cumulative sequence lengths with shape
+            (batch + 1,).
+        cache_indices: Indices into the conv_states pool with shape (batch,).
+        has_initial_state: Whether each sequence has an initial state with
+            shape (batch,).
+    """
     return x.shape()
 
 
@@ -3949,6 +4603,8 @@ def gated_group_rmsnorm_shape[
 
 @extensibility.register("mo.sleep")
 struct Sleep:
+    """Registers the `mo.sleep` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -3989,7 +4645,7 @@ struct Sleep:
 struct InplaceMemcpy[DstDevice: StaticString, SrcDevice: StaticString]:
     """Copies the contents of `src` into `dst` in place.
 
-    Semantically equivalent to ``Buffer.inplace_copy_from``, but exposed
+    Semantically equivalent to `Buffer.inplace_copy_from`, but exposed
     as a graph op so the copy can be scheduled as part of a compiled MAX
     graph. Both operands must have the same dtype, rank, and total
     element count.
@@ -3998,6 +4654,12 @@ struct InplaceMemcpy[DstDevice: StaticString, SrcDevice: StaticString]:
     `DeviceContext`: GPU-to-GPU on the same device, GPU-to-CPU,
     CPU-to-GPU, and CPU-to-CPU. Cross-GPU memcpy (different GPU ids) is
     rejected by the Python wrapper at graph build time.
+
+    Parameters:
+        DstDevice: Device type of the destination buffer, for example, `\"gpu\"` or
+            `\"cpu\"`.
+        SrcDevice: Device type of the source buffer, for example, `\"gpu\"` or
+            `\"cpu\"`.
     """
 
     @staticmethod

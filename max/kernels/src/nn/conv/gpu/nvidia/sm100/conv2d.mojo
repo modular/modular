@@ -157,10 +157,10 @@ def conv2d_fprop[
 
     # Zero-sized GEMM (e.g. zero output spatial from a ``(B, 0, 0, C)``
     # input flowing through a diffusion VAE encoder): nothing to
-    # compute.  The output buffer is pre-allocated zero-element by the
+    # compute. The output buffer is pre-allocated zero-element by the
     # caller, and a TMA im2col descriptor built with a zero ``M`` or
     # ``N`` extent is undefined behavior (the descriptor format has a
-    # 128-element alignment requirement on the spatial axes).  Early
+    # 128-element alignment requirement on the spatial axes). Early
     # return defends every downstream descriptor builder + kernel launch.
     if M == 0 or N == 0:
         return
@@ -569,6 +569,9 @@ def im2col[
 
     M = batch * out_h * out_w
     K = in_channels * filter_h * filter_w
+
+    Parameters:
+        dtype: Element data type of the activation and output tensors.
 
     Args:
         output: Output 2D buffer [M, K].

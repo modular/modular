@@ -59,16 +59,16 @@ from std.memory.unsafe_maybe_uninit import (
 # ===-----------------------------------------------------------------------===#
 
 
-def _inline_array_construction_checks[size: Int]():
+def _inline_array_construction_checks[length: Int]():
     """Checks if the properties in `InlineArray` are valid.
 
     Validity right now is just ensuring the number of elements is > 0.
 
     Parameters:
-        size: The number of elements.
+        length: The number of elements.
     """
     comptime assert (
-        size >= 0
+        length >= 0
     ), "number of elements in `InlineArray` must be >= 0"
 
 
@@ -77,7 +77,7 @@ struct _InlineArrayIter[
     mut: Bool,
     //,
     T: Copyable,
-    size: Int,
+    length: Int,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -86,7 +86,7 @@ struct _InlineArrayIter[
     Parameters:
         mut: A boolean to indicate if the iterator is mutable.
         T: The type of the elements in the iterator.
-        size: The size of the array.
+        length: The number of elements in the array.
         origin: The origin of the iterator.
         forward: A boolean to indicate if the iterator is forward.
     """
@@ -98,7 +98,7 @@ struct _InlineArrayIter[
     ]: Iterator = Self
 
     var index: Int
-    var src: Pointer[InlineArray[Self.T, Self.size], Self.origin]
+    var src: Pointer[InlineArray[Self.T, Self.length], Self.origin]
 
     @always_inline
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -108,7 +108,7 @@ struct _InlineArrayIter[
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
         comptime if Self.forward:
-            if self.index >= Self.size:
+            if self.index >= Self.length:
                 raise StopIteration()
             self.index += 1
             return self.src[][self.index - 1]
@@ -123,30 +123,30 @@ struct _InlineArrayIter[
         var iter_len: Int
 
         comptime if Self.forward:
-            iter_len = Self.size - self.index
+            iter_len = Self.length - self.index
         else:
             iter_len = self.index
 
         return (iter_len, {iter_len})
 
 
-struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, size: Int](
+struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for InlineArray.
 
     Parameters:
         T: The type of the elements in the array.
-        size: The size of the array.
+        length: The number of elements in the array.
     """
 
     comptime Element = Self.T
     comptime IteratorOwnedType = Self
 
-    var _array: InlineArray[Self.T, Self.size]
+    var _array: InlineArray[Self.T, Self.length]
     var _index: Int
 
-    def __init__(out self, var array: InlineArray[Self.T, Self.size]):
+    def __init__(out self, var array: InlineArray[Self.T, Self.length]):
         """Consume an array and create an iterator over its elements.
 
         Args:
@@ -167,11 +167,11 @@ struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, size: Int](
             move: The iterator to move from.
         """
         self._index = move._index
-        self._array = InlineArray[Self.T, Self.size](uninitialized=True)
+        self._array = InlineArray[Self.T, Self.length](uninitialized=True)
         uninit_move_n[overlapping=False](
             dest=self._array.unsafe_ptr() + move._index,
             src=move._array.unsafe_ptr() + move._index,
-            count=Self.size - move._index,
+            count=Self.length - move._index,
         )
 
     @always_inline
@@ -182,7 +182,7 @@ struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, size: Int](
 
         # Destroy the remaining elements that have not yet been
         # iterated over.
-        destroy_n(array.unsafe_ptr() + idx, Self.size - idx)
+        destroy_n(array.unsafe_ptr() + idx, Self.length - idx)
 
         # Mark the array as destroyed so InlineArray.__del__ doesn't
         # double-destroy the elements we already handled.
@@ -193,14 +193,14 @@ struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, size: Int](
         return self^
 
     def __next__(mut self) raises StopIteration -> Self.Element:
-        if self._index >= Self.size:
+        if self._index >= Self.length:
             raise StopIteration()
         self._index += 1
         return (self._array.unsafe_ptr() + self._index - 1).take_pointee()
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var remaining = Self.size - self._index
+        var remaining = Self.length - self._index
         return (remaining, {remaining})
 
 
@@ -208,7 +208,7 @@ struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, size: Int](
     "Use `deinit_with()` to explicitly destroy an `InlineArray` of"
     " non-`ImplicitlyDeletable` elements"
 )
-struct InlineArray[ElementType: Movable, size: Int](
+struct InlineArray[ElementType: Movable, length: Int](
     Copyable where conforms_to(ElementType, Copyable),
     Defaultable,
     DevicePassable where conforms_to(
@@ -237,7 +237,8 @@ struct InlineArray[ElementType: Movable, size: Int](
             `Movable`. Copy construction, `fill=` construction, and iteration
             additionally require `Copyable` and are enforced via conditional
             `where` clauses.
-        size: The size of the array. Must be a positive integer constant.
+        length: The number of elements in the array. Must be a positive integer
+            constant.
 
     Examples:
 
@@ -253,6 +254,10 @@ struct InlineArray[ElementType: Movable, size: Int](
     ```
     """
 
+    @deprecated("`InlineArray.size` is deprecated, use `InlineArray.length`.")
+    comptime size = Self.length
+    """The number of elements in the array. Deprecated alias for `length`."""
+
     comptime __del__is_trivial: Bool = is_trivially_deletable[
         Self.ElementType
     ]()
@@ -265,7 +270,7 @@ struct InlineArray[ElementType: Movable, size: Int](
 
     # Fields
     comptime type = __mlir_type[
-        `!pop.array<`, Self.size.__mlir_index__(), `, `, Self.ElementType, `>`
+        `!pop.array<`, Self.length.__mlir_index__(), `, `, Self.ElementType, `>`
     ]
     """The underlying MLIR array type."""
 
@@ -279,7 +284,7 @@ struct InlineArray[ElementType: Movable, size: Int](
     `DevicePassable`, otherwise the element type itself."""
 
     comptime device_type: AnyType = InlineArray[
-        Self._DeviceElementType, Self.size
+        Self._DeviceElementType, Self.length
     ]
     """The device-side type for this array.
 
@@ -291,7 +296,7 @@ struct InlineArray[ElementType: Movable, size: Int](
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _InlineArrayIter[
         downcast[Self.ElementType, Copyable],
-        Self.size,
+        Self.length,
         iterable_origin,
         True,
     ]
@@ -305,7 +310,7 @@ struct InlineArray[ElementType: Movable, size: Int](
     # TODO(MOCO-4308): Remove redundant 'Movable' constraint
     comptime IteratorOwnedType: Iterator where conforms_to(
         Self.ElementType, Movable & ImplicitlyDeletable
-    ) = _InlineArrayIterOwned[Self.ElementType, Self.size]
+    ) = _InlineArrayIterOwned[Self.ElementType, Self.length]
     """The owned iterator type for this array."""
 
     def _to_device_type(
@@ -335,7 +340,7 @@ struct InlineArray[ElementType: Movable, size: Int](
             "InlineArray[",
             reflect[Self.ElementType].name(),
             ", ",
-            Self.size,
+            Self.length,
             "]",
         )
 
@@ -374,14 +379,14 @@ struct InlineArray[ElementType: Movable, size: Int](
             array elements will be uninitialized and accessing them before
             initialization is undefined behavior.
         """
-        _inline_array_construction_checks[Self.size]()
+        _inline_array_construction_checks[Self.length]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     def __init__(
         out self,
         *,
         var unsafe_assume_initialized: InlineArray[
-            UnsafeMaybeUninit[Self.ElementType], Self.size
+            UnsafeMaybeUninit[Self.ElementType], Self.length
         ],
     ):
         """Constructs an `InlineArray` from an `InlineArray` of
@@ -403,7 +408,7 @@ struct InlineArray[ElementType: Movable, size: Int](
         """
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        for i in range(Self.size):
+        for i in range(Self.length):
             (self.unsafe_ptr() + i).init_pointee_move_from(
                 unsafe_assume_initialized[i].unsafe_ptr()
             )
@@ -447,10 +452,10 @@ struct InlineArray[ElementType: Movable, size: Int](
             further improve compilation speed while still maintaining good
             runtime performance.
         """
-        _inline_array_construction_checks[Self.size]()
+        _inline_array_construction_checks[Self.length]()
         self = Self(uninitialized=True)
 
-        comptime unroll_end = std.math.align_down(Self.size, batch_size)
+        comptime unroll_end = std.math.align_down(Self.length, batch_size)
 
         var base = self.unsafe_ptr()
         var ptr = base
@@ -461,11 +466,11 @@ struct InlineArray[ElementType: Movable, size: Int](
                 ptr += 1
 
         # Fill the remainder
-        comptime for _ in range(unroll_end, Self.size):
+        comptime for _ in range(unroll_end, Self.length):
             ptr.unsafe_write(copy=fill)
             ptr += 1
         debug_assert(
-            ptr == (base + Self.size),
+            ptr == (base + Self.length),
             "error during `InlineArray` initialization , please file a bug",
             " report.",
         )
@@ -489,18 +494,18 @@ struct InlineArray[ElementType: Movable, size: Int](
         ```
         """
         debug_assert[assert_mode="safe"](
-            len(elems) == Self.size,
+            len(elems) == Self.length,
             "InlineArray: expected ",
-            Self.size,
+            Self.length,
             " elements, received ",
             len(elems),
         )
-        _inline_array_construction_checks[Self.size]()
+        _inline_array_construction_checks[Self.length]()
         self = Self(uninitialized=True)
         var ptr = self.unsafe_ptr()
 
         # Move each element into the array storage.
-        comptime for i in range(Self.size):
+        comptime for i in range(Self.length):
             # Safety: We own the elements in the variadic list.
             ptr.init_pointee_move_from(UnsafePointer(to=elems[i]))
             ptr += 1
@@ -536,7 +541,7 @@ struct InlineArray[ElementType: Movable, size: Int](
         else:
             self = Self(uninitialized=True)
             var base = self.unsafe_ptr()
-            for idx in range(Self.size):
+            for idx in range(Self.length):
                 (base + idx).unsafe_write(copy=copy.unsafe_get(idx))
 
     def __init__(out self, *, deinit move: Self):
@@ -553,7 +558,7 @@ struct InlineArray[ElementType: Movable, size: Int](
             self._array = move._array
         else:
             self = Self(uninitialized=True)
-            for idx in range(Self.size):
+            for idx in range(Self.length):
                 var other_ptr = move.unsafe_ptr() + idx
                 (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
 
@@ -561,7 +566,7 @@ struct InlineArray[ElementType: Movable, size: Int](
         deinit self,
     ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
         """Destroys the array's elements."""
-        destroy_n(self.unsafe_ptr(), Self.size)
+        destroy_n(self.unsafe_ptr(), Self.length)
 
     def deinit_with(
         deinit self, deinit_func: Some[def(var Self.ElementType)], /
@@ -576,7 +581,7 @@ struct InlineArray[ElementType: Movable, size: Int](
             deinit_func: The deinitializing closure called on each array
                 element.
         """
-        for idx in range(Self.size):
+        for idx in range(Self.length):
             # TODO(MOCO-4111): `deinit_func` cannot convert to
             # `UnsafePointer.unsafe_deinit` since `UnsafePointer` is
             # bound on `T: AnyType` but `InlineArray` has `ElementType: Movable`.
@@ -647,7 +652,7 @@ struct InlineArray[ElementType: Movable, size: Int](
         comptime assert (
             index(idx) >= 0
         ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
-        comptime assert index(idx) < Self.size, "index is out of bounds"
+        comptime assert index(idx) < Self.length, "index is out of bounds"
         return self._unchecked_get(materialize[idx]())
 
     @always_inline
@@ -680,9 +685,9 @@ struct InlineArray[ElementType: Movable, size: Int](
 
         Notes:
             The length is a compile-time constant value determined by the
-            size parameter used when creating the array.
+            `length` parameter used when creating the array.
         """
-        return Self.size
+        return Self.length
 
     @always_inline
     def __eq__(
@@ -696,7 +701,7 @@ struct InlineArray[ElementType: Movable, size: Int](
         Returns:
             True if all elements are equal, False otherwise.
         """
-        comptime for i in range(Self.size):
+        comptime for i in range(Self.length):
             if self.unsafe_get(i) != other.unsafe_get(i):
                 return False
         return True
@@ -713,7 +718,7 @@ struct InlineArray[ElementType: Movable, size: Int](
         Returns:
             True if any elements are not equal, False otherwise.
         """
-        comptime for i in range(Self.size):
+        comptime for i in range(Self.length):
             if self.unsafe_get(i) != other.unsafe_get(i):
                 return True
         return False
@@ -729,7 +734,7 @@ struct InlineArray[ElementType: Movable, size: Int](
         Args:
             hasher: The hasher instance.
         """
-        comptime for i in range(Self.size):
+        comptime for i in range(Self.length):
             self.unsafe_get(i).__hash__(hasher)
 
     # ===------------------------------------------------------------------===#
@@ -835,7 +840,7 @@ struct InlineArray[ElementType: Movable, size: Int](
             element for equality with the given value. The element type must
             implement the `Equatable` trait to support equality comparison.
         """
-        comptime for i in range(Self.size):
+        comptime for i in range(Self.length):
             if self[i] == value:
                 return True
         return False
@@ -853,7 +858,7 @@ struct InlineArray[ElementType: Movable, size: Int](
 
         @parameter
         def iterate(mut w: Some[Writer]) raises StopIteration:
-            if index >= Self.size:
+            if index >= Self.length:
                 raise StopIteration()
             f(self.unsafe_get(index), w)
             index += 1
@@ -886,7 +891,7 @@ struct InlineArray[ElementType: Movable, size: Int](
 
         fmt.FormatStruct(writer, "InlineArray").params(
             fmt.TypeNames[Self.ElementType](),
-            Self.size,
+            Self.length,
         ).fields[FieldsFn=write_fields]()
 
     # TODO(MOCO-4308): Remove redundant 'Movable' constraint
@@ -919,7 +924,7 @@ struct InlineArray[ElementType: Movable, size: Int](
             rebind[
                 Pointer[
                     InlineArray[
-                        downcast[Self.ElementType, Copyable], Self.size
+                        downcast[Self.ElementType, Copyable], Self.length
                     ],
                     origin_of(self),
                 ]
@@ -931,7 +936,7 @@ struct InlineArray[ElementType: Movable, size: Int](
         ref self,
     ) -> _InlineArrayIter[
         Self.ElementType,
-        Self.size,
+        Self.length,
         origin_of(self),
         False,
     ] where conforms_to(Self.ElementType, Copyable):
@@ -943,6 +948,6 @@ struct InlineArray[ElementType: Movable, size: Int](
             order.
         """
         return _InlineArrayIter[forward=False](
-            Self.size,
+            Self.length,
             Pointer(to=self),
         )

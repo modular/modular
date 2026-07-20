@@ -220,6 +220,7 @@ def _compute_num_partitions_64[
     q_max_seq_len: Int,
     split_page_size: Int,
     sm_count: Int,
+    relax_split_floor: Bool = False,
 ) -> Int:
     """Wave-aligned split count for single head group (e.g. Kimi K2.5, 64 heads).
 
@@ -240,6 +241,11 @@ def _compute_num_partitions_64[
         q_max_seq_len: Max query sequence length (1 for decode).
         split_page_size: Page granularity for split-K (64 or 128).
         sm_count: Number of SMs on the target GPU.
+        relax_split_floor: When True, drop the per-split page floor to 1 so np
+            tracks the effective KV page count (~one page per split). Set by the
+            q_len=1 sparse FP8 split-K tuning (KERN-3217); the gating predicate
+            lives at the dispatch call site. Default False retains the previous
+            partition-selection logic (the production floor of 4).
 
     Returns:
         The number of split-K partitions.
@@ -280,8 +286,12 @@ def _compute_num_partitions_64[
     # excludes extra_kv/variable_topk/attn_sink): num_partitions is a tuning
     # knob, so a relaxed floor on a fallen-back unfolded launch is
     # correctness-neutral.
+    # relax_split_floor additionally relaxes the floor for the unfolded q_len=1
+    # sparse FP8 decode (KERN-3217), which is SM-underfilled at the floor of 4;
+    # the caller has already clamped effective_max_cache_len to the kernel's
+    # min(topk, cache+q) bound so np tracks the real page count (one per split).
     var _min_pages = 1 if (
-        fold_shared_index and fold_active
+        (fold_shared_index and fold_active) or relax_split_floor
     ) else _min_pages_per_split
     var max_np_for_min_pages = num_kv_cache_pages // _min_pages
 
@@ -479,6 +489,7 @@ def _compute_num_partitions[
     q_max_seq_len: Int,
     split_page_size: Int,
     sm_count: Int,
+    relax_split_floor: Bool = False,
 ) -> Int:
     """Routing function that dispatches to head-count-specific heuristics.
 
@@ -499,6 +510,12 @@ def _compute_num_partitions[
         q_max_seq_len: Max query sequence length (1 for decode).
         split_page_size: Page granularity for split-K (64 or 128).
         sm_count: Number of SMs on the target GPU.
+        relax_split_floor: When True, drop the per-split page floor to 1 in the
+            single-head-group heuristic so np tracks the effective KV page count
+            (KERN-3217 q_len=1 sparse FP8 split-K tuning; the gating predicate
+            lives at the dispatch call site). Default False retains the previous
+            partition-selection logic (the production floor); ignored by the
+            multi-head-group (128-head) path.
 
     Returns:
         The number of split-K partitions.
@@ -514,6 +531,7 @@ def _compute_num_partitions[
             q_max_seq_len,
             split_page_size,
             sm_count,
+            relax_split_floor=relax_split_floor,
         )
     else:
         return _compute_num_partitions_128[num_heads, is_fp8_kv, half_sms](
@@ -848,14 +866,50 @@ def mla_decode_sm100_dispatch[
     comptime sm_count = ctx.default_device_info.sm_count
     comptime _half_sms = sm_count // 2
     comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
+
+    # q_len=1 sparse FP8 split-K tuning (KERN-3217): the single-token sparse
+    # FP8 decode with no extra_kv / variable_topk / attn_sink is SM-underfilled
+    # under the default per-split page floor of 4 (e.g. bs8 launches 4*8 = 32
+    # CTAs on 148 SMs, ~0.2 waves). Scoped to the validated GLM-5.2 B200 regime:
+    # q_len == 1, batch_size <= 8, configured top-k == 2048 (indices_stride is
+    # the fixed top-k at this site; `not topk_lengths` confirms it is fixed, not
+    # variable), and RAW cache length max_cache_valid_length in [1024, 2048]
+    # (the raw dispatch arg, NOT effective_max_cache_len, so the guard bounds
+    # the scope, not the clamp). In scope: relax the floor to 1 so np tracks the
+    # effective KV page count (~one page per split), and clamp the split length
+    # to the kernel's own bound min(topk, cache+q) so np never over-splits when
+    # topk exceeds the live cache (the kernel clamps topk to actual_tokens =
+    # cache_length + seq_len; see OffsetPosition in mla_decode_utils.mojo). This
+    # is the unfolded-q1 analog of the fold_shared_index floor relax above.
+    # Out of scope -- batch_size > 8, q_len > 1, top-k != 2048, cache outside
+    # [1024, 2048], dense, BF16, and every unsupported sparse feature -- retains
+    # the previous partition-selection logic: the guard is false, so BOTH the
+    # floor (relax_split_floor=False) and the split-len clamp (_np_split_len =
+    # effective_split_len) use the prior computation.
+    var _relax_q1_sparse_floor = (
+        sparse
+        and _is_fp8_kv
+        and q_max_seq_len == 1
+        and batch_size <= 8
+        and indices_stride == 2048
+        and max_cache_valid_length >= 1024
+        and max_cache_valid_length <= 2048
+        and extra_indices_stride == 0
+        and not topk_lengths
+        and not attn_sink_ptr
+    )
+    var _np_split_len = min(
+        effective_split_len, effective_max_cache_len
+    ) if _relax_q1_sparse_floor else effective_split_len
     var num_partitions = _compute_num_partitions[
         num_heads, _is_fp8_kv, _half_sms, fold_shared_index
     ](
         batch_size,
-        effective_split_len,
+        _np_split_len,
         q_max_seq_len,
         split_page_size,
         sm_count,
+        relax_split_floor=_relax_q1_sparse_floor,
     )
 
     if num_partitions_in:

@@ -131,7 +131,7 @@ struct Counter[
         """
         self._data = Dict[Self.V, Int, Self.H]()
         for item in values:
-            self._data[item.copy()] = self._data.get(item, 0) + 1
+            self._data.setdefault(item.copy(), 0) += 1
 
     def __init__(out self, items: List[Self.V]):
         """Create a `Counter` from an input iterable.
@@ -151,7 +151,7 @@ struct Counter[
         """
         self._data = Dict[Self.V, Int, Self.H]()
         for item in items:
-            self._data[item.copy()] = self._data.get(item, 0) + 1
+            self._data.setdefault(item.copy(), 0) += 1
 
     @staticmethod
     def fromkeys(keys: List[Self.V], value: Int) -> Self:
@@ -970,9 +970,7 @@ struct Counter[
         ```
         """
         for item in other.items():
-            self._data[item.key.copy()] = (
-                self._data.get(item.key, 0) + item.value
-            )
+            self._data.setdefault(item.key.copy(), 0) += item.value
 
     def subtract(mut self, other: Self):
         """Subtract counts. Both inputs and outputs may be zero or negative.
@@ -993,7 +991,7 @@ struct Counter[
         ```
         """
         for item in other.items():
-            self[item.key] = self.get(item.key, 0) - item.value
+            self._data.setdefault(item.key.copy(), 0) -= item.value
 
 
 struct CountTuple[V: KeyElement & Copyable & ImplicitlyDeletable](

@@ -2557,7 +2557,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     def aligned_store[
         width: SIMDSize
-    ](self: Self._AsMut, m: Int, n: Int, val: SIMD[Self.dtype, width],):
+    ](self: Self._AsMut, m: Int, n: Int, val: SIMD[Self.dtype, width]):
         """Store a SIMD vector with alignment guarantees to the tensor.
 
         Performs an aligned vectorized store operation to the tensor's memory,

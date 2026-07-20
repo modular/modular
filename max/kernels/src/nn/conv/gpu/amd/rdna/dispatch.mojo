@@ -175,8 +175,37 @@ def dispatch_rdna_conv2d[
 
     When `has_residual=True`, folds `output = conv + beta * source` into the
     conv epilogue (the RDNA implicit-GEMM/im2col kernels have no native
-    residual path). `source_ptr` is NHWC-contiguous, same shape as output —
+    residual path). `source_ptr` is NHWC-contiguous, same shape as output:
     e.g. ResNet skip connections that the graph compiler fuses into the conv.
+
+    Parameters:
+        input_type: `DType` of the input tensor elements.
+        filter_type: `DType` of the filter tensor elements.
+        output_type: `DType` of the output tensor elements.
+        filter_is_fcrs: True if `filter` is laid out as FCRS, False for RSCF.
+        maybe_epilogue_func: Optional elementwise epilogue applied to each
+            output element (defaults to `None`).
+        has_residual: True to fold a scaled residual `beta * source_ptr` into
+            the conv epilogue (defaults to `False`).
+
+    Args:
+        input: Rank-4 NHWC input tensor.
+        filter: Rank-4 filter tensor in FCRS or RSCF layout per
+            `filter_is_fcrs`.
+        output: Rank-4 NHWC output tensor written by the convolution.
+        stride: Spatial stride `[stride_h, stride_w]`; only `[1, 1]` is
+            supported.
+        dilation: Spatial dilation `[dilation_h, dilation_w]`; only
+            `[1, 1]` is supported.
+        symmetric_padding: Symmetric spatial padding `[pad_h, pad_w]`
+            applied to the input.
+        num_groups: Number of convolution groups; only `1` is supported.
+        ctx: `DeviceContext` used to enqueue kernels and synchronize.
+        source_ptr: NHWC-contiguous residual source with the same shape as
+            `output`; read only when `has_residual=True` (defaults to a
+            dangling pointer).
+        beta: Scale factor applied to the residual source when
+            `has_residual=True` (defaults to `0.0`).
     """
 
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"

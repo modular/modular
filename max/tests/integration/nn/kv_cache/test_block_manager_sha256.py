@@ -150,7 +150,7 @@ def test_sha256_seed_isolation() -> None:
 
 
 def test_ahash64_default_unchanged() -> None:
-    """Default kv_hash_algo yields list[int]; legacy path unchanged."""
+    """Default kv_hash_algo yields canonical 8-byte hashes; legacy path unchanged."""
     bm = _make_block_manager()  # default = ahash64
 
     tokens = np.arange(33, dtype=np.int32)
@@ -159,7 +159,8 @@ def test_ahash64_default_unchanged() -> None:
     hashes = bm.req_to_hashes[RequestID("req-1")]
     assert len(hashes) == 4
     for h in hashes:
-        assert isinstance(h, int)
+        assert isinstance(h, bytes)
+        assert len(h) == 8
 
 
 def test_ahash64_with_cache_salt_drops_and_warns_once(

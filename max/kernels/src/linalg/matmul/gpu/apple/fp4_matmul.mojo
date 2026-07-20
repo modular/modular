@@ -184,6 +184,28 @@ struct AppleM5Fp4MatMul[
     ):
         """W4A16 GEMM kernel entry; `M`/`N`/`K` derive from C, A, and packed.
 
+        Parameters:
+            c_layout: Compile-time `TensorLayout` of the output tile `c`.
+            a_layout: Compile-time `TensorLayout` of the activation tile `a`.
+            packed_layout: Compile-time `TensorLayout` of the packed FP4
+                weight `packed`.
+            scale_layout: Compile-time `TensorLayout` of the FP8 block
+                scales `scales`.
+
+        Args:
+            c: Output tile `(M, N)` of dtype `c_type`, row-major; receives
+                the matmul result.
+            a: Activation tile `(M, K)` of `bfloat16`, row-major; the A
+                operand of `out = a @ W^T`.
+            packed: Packed FP4 weight `(N, K//2)` of `uint8`, lo-nibble
+                first; the transposed B operand.
+            scales: FP8-E4M3 block scales `(N, ceil(K/16))`; one scale per
+                16 K columns.
+            log2_grid_m: Base-2 log of the power-of-two M-side grid length
+                for the rectangular Morton scheduler.
+            log2_grid_n: Base-2 log of the power-of-two N-side grid length
+                for the rectangular Morton scheduler.
+
         C is `(M, N)` row-major, A is `(M, K)` row-major (bf16 activation),
         `packed` is the FP4 weight `(N, K//2)`, `scales` `(N, ceil(K/16))`. Grid
         is `(1<<log2_grid_m) * (1<<log2_grid_n)` threadgroups; OOB threadgroups
@@ -905,6 +927,16 @@ def enqueue_apple_fp4_matmul[
             future geometry. NOTE this override is ORTHOGONAL to the deep-K niche
             below, which routes to `matmul2d` BY DEFAULT (`use_matmul2d=False`)
             where it actually wins. See the `_M2D_*` threshold comments.
+
+    Args:
+        c: Output tile `(M, N)` of dtype `c_type`; receives the matmul
+            result.
+        a: Activation tile `(M, K)` of `bfloat16`; the A operand.
+        packed: Packed FP4 weight `(N, K//2)` of `uint8`, lo-nibble first;
+            the transposed B operand.
+        scales: FP8-E4M3 block scales `(N, ceil(K/16))`; one scale per 16 K
+            columns.
+        ctx: Device context used to enqueue the kernel(s).
 
     The default strategy (`use_matmul2d=False`) is chosen by (K, M) -- all paths
     produce bit-identical dequant (the E2M1 * |scale| arithmetic is the same on

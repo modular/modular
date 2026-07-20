@@ -20,7 +20,7 @@ from std.base64 import b64encode
 """
 
 
-from std.memory import Span
+from std.collections import Span
 
 from ._b64encode import _b64encode
 

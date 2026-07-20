@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides batched matrix multiplication (BMM) for CPU and GPU targets."""
+
 from std.math import align_up, ceildiv, gcd
 from std.sys import align_of, size_of
 from std.sys.info import (
@@ -488,6 +490,29 @@ def naive_batched_matmul_kernel[
     b_tensor: TileTensor[b_type, BTensorType, ImmutAnyOrigin],  # 1 * k
     c_buff_nd_shape: IndexList[rank],
 ) -> None:
+    """
+    Computes one element per thread of a batched matrix multiplication using a
+    naive scalar accumulation loop over the contraction dimension.
+
+    Parameters:
+        rank: Rank of the original (un-collapsed) output tensor.
+        c_type: Output tensor element dtype.
+        a_type: LHS input tensor element dtype.
+        b_type: RHS input tensor element dtype.
+        CTensorType: Layout type of the output tensor.
+        ATensorType: Layout type of the LHS input tensor.
+        BTensorType: Layout type of the RHS input tensor.
+        transpose_b: Whether the RHS input is transposed.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+        accum_type: Accumulator dtype used during the contraction.
+
+    Args:
+        c_tensor: Rank-3 output tensor of shape `(batch, m, n)`.
+        a_tensor: Rank-3 LHS input tensor of shape `(batch, m, k)`.
+        b_tensor: Rank-3 RHS input tensor of shape `(batch, k, n)`.
+        c_buff_nd_shape: Shape of the original output tensor before collapsing
+            to 3D, used to un-collapse batch coordinates for the epilogue.
+    """
     comptime assert (
         c_tensor.rank == 3 and a_tensor.rank == 3 and b_tensor.rank == 3
     ), "expecting rank-3 TileTensor"
@@ -550,6 +575,27 @@ def batched_matmul_kernel_gpu[
     a_tensor: TileTensor[a_type, ATensorType, ImmutAnyOrigin],  # m * k
     b_tensor: TileTensor[b_type, BTensorType, ImmutAnyOrigin],  # 1 * k
 ):
+    """
+    Computes a single batch slice of a batched matrix multiplication on the
+    GPU by dispatching to the multistage GEMM kernel on NVIDIA or the
+    `AMDMatmul` kernel on AMD hardware.
+
+    Parameters:
+        c_type: Output tensor element dtype.
+        a_type: LHS input tensor element dtype.
+        b_type: RHS input tensor element dtype.
+        CTensorType: Layout type of the output tensor.
+        ATensorType: Layout type of the LHS input tensor.
+        BTensorType: Layout type of the RHS input tensor.
+        transpose_b: Whether the RHS input is transposed.
+        config: Matmul kernel configuration for the target hardware.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+
+    Args:
+        c_tensor: Rank-3 output tensor of shape `(batch, m, n)`.
+        a_tensor: Rank-3 LHS input tensor of shape `(batch, m, k)`.
+        b_tensor: Rank-3 RHS input tensor of shape `(batch, k, n)`.
+    """
     var batch_idx = block_idx.z
     var a_ptr = a_tensor.ptr + batch_idx * Int(
         a_tensor.layout.stride[0]().value()
@@ -893,7 +939,28 @@ def batched_matmul[
     *,
     context: Optional[DeviceContext] = None,
 ) raises:
-    """TileTensor primary implementation of `batched_matmul`."""
+    """TileTensor primary implementation of `batched_matmul`.
+
+    Parameters:
+        transpose_a: Whether the LHS input is transposed (defaults to
+            `False`; not yet supported).
+        transpose_b: Whether the RHS input is transposed (defaults to
+            `False`).
+        elementwise_epilogue_fn: Optional epilogue applied to each output
+            element (defaults to `None`).
+        saturated_vnni: Whether to use saturated VNNI accumulation on CPU
+            (defaults to `False`; not applicable on GPU).
+        target: Target hardware for the operation (defaults to `"cpu"`).
+
+    Args:
+        c_buf: Output tensor of shape `(..., m, n)`; rank must be at least
+            2 and match the inputs.
+        a_buf: LHS input tensor of shape `(..., m, k)`.
+        b_buf: RHS input tensor of shape `(..., k, n)`, or `(..., n, k)`
+            when `transpose_b` is set.
+        context: Optional device context used for dispatch and parallelism
+            (defaults to `None`).
+    """
     comptime assert c_buf.rank >= 2, "c must be at least rank 2"
     comptime assert (
         c_buf.rank == a_buf.rank == b_buf.rank
@@ -1173,6 +1240,33 @@ def bmm_sm100_blockwise_scaled_fp8[
     b_scales_: TileTensor[mut=False, b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
+    """
+    Computes a batched blockwise scaled FP8 matrix multiplication on SM100
+    (Blackwell) hardware by constructing TMA descriptors for the inputs and
+    scales and enqueuing the blockwise FP8 kernel per batch slice.
+
+    Parameters:
+        c_type: Output tensor element dtype.
+        a_type: LHS input tensor element dtype.
+        b_type: RHS input tensor element dtype.
+        a_scales_type: LHS scales tensor element dtype.
+        b_scales_type: RHS scales tensor element dtype.
+        transpose_b: Whether the RHS input is transposed (must be `True`).
+        umma_shape: UMMA instruction shape `(m, n, k)` used by the kernel.
+        block_tile_shape: CTA tile shape `(BM, BN, BK)`.
+        a_swizzle: TMA swizzle mode for the LHS input tensor.
+        b_swizzle: TMA swizzle mode for the RHS input tensor.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+        b_scaling_block_n: N-direction scale block size for the RHS scales.
+
+    Args:
+        c_: Rank-3 output tensor of shape `(batch, m, n)`.
+        a_: Rank-3 LHS input tensor of shape `(batch, m, k)`.
+        b_: Rank-3 RHS input tensor of shape `(batch, k, n)`.
+        a_scales_: Rank-3 LHS scales tensor.
+        b_scales_: Rank-3 RHS scales tensor.
+        ctx: Device context used to enqueue the kernel.
+    """
     # Convert to LayoutTensor for internal operations.
     var c = c_.to_layout_tensor()
     var a = a_.to_layout_tensor()
@@ -1354,6 +1448,29 @@ def batched_matmul_dynamic_scaled_fp8_naive[
     b_scales_: TileTensor[mut=False, b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
+    """
+    Computes a batched blockwise scaled FP8 matrix multiplication using a
+    naive per-batch loop that calls the 2D blockwise scaled FP8 kernel for
+    each batch slice.
+
+    Parameters:
+        c_type: Output tensor element dtype.
+        a_type: LHS input tensor element dtype.
+        b_type: RHS input tensor element dtype.
+        a_scales_type: LHS scales tensor element dtype.
+        b_scales_type: RHS scales tensor element dtype.
+        scales_granularity_mnk: Scale granularity `(m, n, k)`; only
+            `(1, 128, 128)` is currently supported.
+        transpose_b: Whether the RHS input is transposed.
+
+    Args:
+        c_: Rank-3 output tensor of shape `(batch, m, n)`.
+        a_: Rank-3 LHS input tensor of shape `(batch, m, k)`.
+        b_: Rank-3 RHS input tensor of shape `(batch, k, n)`.
+        a_scales_: Rank-3 LHS scales tensor.
+        b_scales_: Rank-3 RHS scales tensor.
+        ctx: Device context used to dispatch the per-batch kernels.
+    """
     comptime assert (
         scales_granularity_mnk[0] == 1
         and scales_granularity_mnk[1] == scales_granularity_mnk[2] == 128
@@ -1466,6 +1583,35 @@ def batched_matmul_dynamic_scaled_fp8[
     b_scales: TileTensor[mut=False, b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
+    """
+    Dispatches a batched blockwise scaled FP8 matrix multiplication to the
+    SM100 blockwise kernel on Blackwell hardware or falls back to the naive
+    per-batch implementation on H100.
+
+    Parameters:
+        c_type: Output tensor element dtype.
+        a_type: LHS input tensor element dtype.
+        b_type: RHS input tensor element dtype.
+        a_scales_type: LHS scales tensor element dtype.
+        b_scales_type: RHS scales tensor element dtype.
+        input_scale_granularity: Scale granularity mode for the LHS input
+            (only `"block"` is supported).
+        weight_scale_granularity: Scale granularity mode for the RHS input
+            (only `"block"` is supported).
+        m_scale_granularity: M-direction scale granularity (must be `1`).
+        n_scale_granularity: N-direction scale granularity (`64` or `128`).
+        k_scale_granularity: K-direction scale granularity (`64` or `128`).
+        transpose_b: Whether the RHS input is transposed.
+        target: Target platform string.
+
+    Args:
+        c: Rank-3 output tensor of shape `(batch, m, n)`.
+        a: Rank-3 LHS input tensor of shape `(batch, m, k)`.
+        b: Rank-3 RHS input tensor of shape `(batch, k, n)`.
+        a_scales: Rank-3 LHS scales tensor.
+        b_scales: Rank-3 RHS scales tensor.
+        ctx: Device context used to dispatch the kernel.
+    """
     comptime assert (
         _is_sm10x_gpu(ctx.default_device_info)
         or ctx.default_device_info == H100

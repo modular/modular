@@ -115,21 +115,38 @@ def _require_apple_m5(ctx: DeviceContext) raises:
 
 @always_inline
 def frag_row_base(lane: Int) -> Int:
-    """Base MMA-tile row for `lane` (before the per-element row jump)."""
+    """Base MMA-tile row for `lane` (before the per-element row jump).
+
+    Args:
+        lane: Simdgroup lane index in `[0, 32)`; determines the lane's base
+            row in the 16x16 MMA tile.
+    """
     var qid = lane >> 2
     return (qid & 4) | ((lane >> 1) & 3)
 
 
 @always_inline
 def frag_col_base(lane: Int) -> Int:
-    """Base MMA-tile column for `lane` (before the per-element col offset)."""
+    """Base MMA-tile column for `lane` (before the per-element col offset).
+
+    Args:
+        lane: Simdgroup lane index in `[0, 32)`; determines the lane's base
+            column in the 16x16 MMA tile.
+    """
     var qid = lane >> 2
     return ((qid & 2) | (lane & 1)) * 4
 
 
 @always_inline
 def a_frag_coord(lane: Int, i: Int) -> IndexList[2]:
-    """(row, col) in the 16x16 A tile for this lane's A element `i` (0..7)."""
+    """(row, col) in the 16x16 A tile for this lane's A element `i` (0..7).
+
+    Args:
+        lane: Simdgroup lane index in `[0, 32)`; determines the lane's base
+            `(row, col)` in the 16x16 A tile.
+        i: A-fragment element index in `[0, 8)`; selects which of this lane's
+            8 held A elements to map to `(row, col)`.
+    """
     return IndexList[2](
         frag_row_base(lane) + (i >> 2) * 8, frag_col_base(lane) + (i % 4)
     )
@@ -137,7 +154,14 @@ def a_frag_coord(lane: Int, i: Int) -> IndexList[2]:
 
 @always_inline
 def bc_frag_coord(lane: Int, i: Int) -> IndexList[2]:
-    """(row, col) in the 16x32 B/C tile for this lane's element `i` (0..15)."""
+    """(row, col) in the 16x32 B/C tile for this lane's element `i` (0..15).
+
+    Args:
+        lane: Simdgroup lane index in `[0, 32)`; determines the lane's base
+            `(row, col)` in the 16x32 B/C tile.
+        i: B/C-fragment element index in `[0, 16)`; selects which of this
+            lane's 16 held B/C elements to map to `(row, col)`.
+    """
     var half = i // 8
     var sub = i % 8
     return IndexList[2](
@@ -159,6 +183,12 @@ def bt_frag_coord(lane: Int, i: Int) -> IndexList[2]:
     B gather). The C-store map is UNCHANGED (`bc_frag_coord`); transpose_right
     permutes only the right operand, not C. Matched bit-exact against a host
     oracle.
+
+    Args:
+        lane: Simdgroup lane index in `[0, 32)`; determines the lane's base
+            `(n, k)` in the 16x32 right operand.
+        i: B-fragment element index in `[0, 16)`; selects which of this lane's
+            16 held B elements to map to `(n, k)` under `transpose_right=1`.
     """
     var half = i // 8
     var sub = i % 8
@@ -298,6 +328,16 @@ struct Fp4WeightLoader[
 
         Rebases each view onto `ImmUntrackedOrigin` (the field-origin rule; the
         args outlive the K-loop), preserving layout/shape/stride.
+
+        Args:
+            a: Bf16 activation `TileTensor` view with shape `(M, K)`.
+            packed: Packed FP4 weight `TileTensor` view with shape `(N, K//2)`
+                (uint8, lo-nibble first).
+            scales: FP8-E4M3 block-scale `TileTensor` view with shape
+                `(N, ceil(K/16))`.
+            M: Number of rows in the activation and the output.
+            N: Number of columns in the output and rows of the weight.
+            K: Reduction dimension; inner size of `a` and the weight.
         """
         return Self(
             TileTensor(
@@ -335,6 +375,15 @@ struct Fp4WeightLoader[
         `M` zero-fill -- the ragged-M A over-read fix (a zero A element multiplies
         into nothing, matching the dense reference). K is always in-bounds
         (callers pass K % 16 == 0 tile-aligned strips).
+
+        Parameters:
+            bounded: Whether to bounds-check rows against `M` (edge tile).
+
+        Args:
+            arow0: Absolute M-origin (row) of the 16x16 A tile.
+            k0: Absolute K-origin of the current K strip (a multiple of 16).
+            a_rc: This lane's per-element `(row, col)` coords in the A tile
+                (the `_apple_frag_layout` map, 8 entries).
         """
         var v = SIMD[Self.in_type, 8](0)
         comptime for i in range(8):
@@ -363,6 +412,15 @@ struct Fp4WeightLoader[
         FP8 block scale. All addressing is TileTensor width-loads / indexing.
         Interior fast path: callers pass tile-aligned N and K % 16 == 0, so the
         4 N-rows and the K run are always in-bounds.
+
+        Args:
+            bcol0: Absolute N-origin of the simdgroup's 16x32 B tile in the
+                packed weight.
+            k0: Absolute K-origin of the current K strip (a multiple of 16).
+            rb: This lane's base N-row offset within the B tile
+                (`frag_row_base(lane)`, range 0..7).
+            cb: This lane's base K-column offset within the 16x16 sub-fragment
+                (`frag_col_base(lane)`, a multiple of 4).
         """
         var v = SIMD[Self.in_type, 16](0)
         comptime for blk in range(4):
@@ -419,6 +477,27 @@ struct Fp4WeightLoader[
         single TileTensor width-load; the SMEM write is a TileTensor width-store
         into `b_view` (no raw pointer arithmetic). All-in-bounds interior strip
         (callers pass tile-aligned N, K % BK == 0).
+
+        Parameters:
+            b_view_origin: Origin of the `b_view` SMEM store target.
+            b_view_layout: Layout of the `b_view` SMEM store target.
+            b_view_addr: Address space of the `b_view` SMEM store target.
+            bytes_per_thread: Packed bytes this thread loads in one width-load
+                (each byte yields two bf16 columns).
+            cols_per_thread: Number of bf16 columns this thread decodes and
+                stores (`2 * bytes_per_thread`; must be <= 16 for one scale
+                block).
+
+        Args:
+            b_view: SMEM `TileTensor` view of the `(BN, BK)` decoded weight
+                strip to store into.
+            n_abs: Absolute N-row index in the packed weight for this thread's
+                strip (threadgroup N-origin + local row).
+            n_local: Local N-row index within the `b_view` strip (the SMEM
+                store coordinate).
+            k0: Absolute K-origin of the current strip (a multiple of `BK`).
+            col0: First bf16 column this thread decodes in its row's strip
+                (a multiple of `COLS_PER_THREAD`).
         """
         var byte0 = col0 // 2  # first packed byte in this row's strip
         var bytes = self.packed.load[width=bytes_per_thread, alignment=1](
@@ -518,6 +597,23 @@ struct Matmul2dFp4[
     ):
         """W4A16 kernel entry. C `(M, N)`, A `(M, K)` bf16, packed `(N, K//2)`,
         scales `(N, ceil(K/16))`. Interior fast path (tile-aligned N, K%16==0).
+
+        Parameters:
+            c_layout: Layout of the output `C` `(M, N)` view.
+            a_layout: Layout of the activation `A` `(M, K)` view.
+            packed_layout: Layout of the packed FP4 weight `(N, K//2)` view.
+            scale_layout: Layout of the block scales `(N, ceil(K/16))` view.
+
+        Args:
+            c: Output `TileTensor` view with shape `(M, N)`.
+            a: Bf16 activation `TileTensor` view with shape `(M, K)`.
+            packed: Packed FP4 weight `TileTensor` view with shape `(N, K//2)`
+                (uint8, lo-nibble first).
+            scales: FP8-E4M3 block-scale `TileTensor` view with shape
+                `(N, ceil(K/16))`.
+            M: Number of rows in the activation and the output.
+            N: Number of columns in the output and rows of the weight.
+            K: Reduction dimension; inner size of `a` and the weight.
         """
         var lane = Int(lane_id())
         var sg_id = Int(thread_idx.x) // WARP_SIZE
@@ -638,6 +734,23 @@ struct Matmul2dFp4[
         from DRAM (base map, K contiguous). Bit-exact vs `run` / the materialize
         oracle (same `decode_e2m1_to_f32 * |scale|`, same MMA), modulo the fp32
         MMA reduction order (identical to `run`, so bit-exact vs `run`).
+
+        Parameters:
+            c_layout: Layout of the output `C` `(M, N)` view.
+            a_layout: Layout of the activation `A` `(M, K)` view.
+            packed_layout: Layout of the packed FP4 weight `(N, K//2)` view.
+            scale_layout: Layout of the block scales `(N, ceil(K/16))` view.
+
+        Args:
+            c: Output `TileTensor` view with shape `(M, N)`.
+            a: Bf16 activation `TileTensor` view with shape `(M, K)`.
+            packed: Packed FP4 weight `TileTensor` view with shape `(N, K//2)`
+                (uint8, lo-nibble first).
+            scales: FP8-E4M3 block-scale `TileTensor` view with shape
+                `(N, ceil(K/16))`.
+            M: Number of rows in the activation and the output.
+            N: Number of columns in the output and rows of the weight.
+            K: Reduction dimension; inner size of `a` and the weight.
         """
         comptime BN = Self.BN
         comptime BK = Self.BK
@@ -801,6 +914,26 @@ def enqueue_matmul2d_fp4[
     The 16x32x16 MMA is the native `matmul2d_mma_regc_bt_native` tiling (two
     `_mma_apple_transposable` calls); pure Mojo over `_mma_apple`.
 
+    Parameters:
+        c_type: Output element type; one of `fp16`, `bf16`, `fp32` (defaults
+            to `float32`). Accumulation is fp32.
+        elementwise_lambda_fn: Optional fused epilogue applying a per-element
+            transform to the output (defaults to `None`).
+        num_sg_m: Simdgroup rows per threadgroup (defaults to 2).
+        num_sg_n: Simdgroup cols per threadgroup (defaults to 2).
+        tm: Output 16x32 tiles per simdgroup along M (defaults to 2).
+        tn: Output 16x32 tiles per simdgroup along N (defaults to 2).
+            `tm*tn == 4` is the M5 register-cliff optimum.
+
+    Args:
+        c: Output `TileTensor` view with shape `(M, N)`.
+        a: Bf16 activation `TileTensor` view with shape `(M, K)`.
+        packed: Packed FP4 weight `TileTensor` view with shape `(N, K//2)`
+            (uint8, lo-nibble first).
+        scales: FP8-E4M3 block-scale `TileTensor` view with shape
+            `(N, ceil(K/16))`.
+        ctx: Device context used to enqueue the kernel.
+
     Raises:
         If the attached GPU is not Apple M5 (`compute_capability == 5`).
     """
@@ -901,6 +1034,27 @@ def enqueue_matmul2d_fp4_smem[
 
     The 16x32x16 MMA is the native `matmul2d_mma_regc_bt_native` tiling (two
     `_mma_apple_transposable` calls); pure Mojo over `_mma_apple`.
+
+    Parameters:
+        c_type: Output element type; one of `fp16`, `bf16`, `fp32` (defaults
+            to `float32`). Accumulation is fp32.
+        elementwise_lambda_fn: Optional fused epilogue applying a per-element
+            transform to the output (defaults to `None`).
+        num_sg_m: Simdgroup rows per threadgroup (defaults to 16).
+        num_sg_n: Simdgroup cols per threadgroup (defaults to 1).
+        tm: Output 16x32 tiles per simdgroup along M (defaults to 4).
+        tn: Output 16x32 tiles per simdgroup along N (defaults to 1).
+        smem_bk: Cooperative-decode strip depth in K; one decode feeds
+            `smem_bk//16` MMA K-steps (defaults to 256).
+
+    Args:
+        c: Output `TileTensor` view with shape `(M, N)`.
+        a: Bf16 activation `TileTensor` view with shape `(M, K)`.
+        packed: Packed FP4 weight `TileTensor` view with shape `(N, K//2)`
+            (uint8, lo-nibble first).
+        scales: FP8-E4M3 block-scale `TileTensor` view with shape
+            `(N, ceil(K/16))`.
+        ctx: Device context used to enqueue the kernel.
 
     Raises:
         If the attached GPU is not Apple M5 (`compute_capability == 5`).

@@ -21,7 +21,7 @@ from std.memory import is_trivially_copyable, is_trivially_deletable
 
 def global_constant[
     T: Copyable & ImplicitlyDeletable, //, value: T
-]() -> ref[StaticConstantOrigin] T:
+]() -> ref[ImmStaticOrigin] T:
     """Creates a reference to a compile-time constant value stored in static memory.
 
     This function stores the compile-time constant in the binary's read-only data
@@ -43,7 +43,7 @@ def global_constant[
         value: The compile-time constant value.
 
     Returns:
-        A reference to the global constant with `StaticConstantOrigin`.
+        A reference to the global constant with `ImmStaticOrigin`.
 
     Examples:
     ```mojo
@@ -71,6 +71,6 @@ def global_constant[
         " are not supported because their internal pointers would be"
         " invalid at runtime."
     )
-    return UnsafePointer[mut=False, origin=StaticConstantOrigin](
+    return UnsafePointer[mut=False, origin=ImmStaticOrigin](
         _mlir_value=__mlir_op.`pop.global_constant`[value=value]()
     )[]

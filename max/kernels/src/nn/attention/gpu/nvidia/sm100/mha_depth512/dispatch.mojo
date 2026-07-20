@@ -82,6 +82,52 @@ def mha_sm100_depth512_dispatch[
     partition: PartitionType,
     ctx: DeviceContext,
 ) raises:
+    """Dispatches the pair-CTA SM100 depth=256/512 MHA prefill kernel.
+
+    Builds the `Depth512SM100Config`, constructs TMA tile descriptors for the
+    Q, K, V, and output operands, creates a `TransientScheduler` with
+    `pair_cta=True`, and enqueues the `SM100MHADepth512` kernel with
+    `cluster_dim=(2, 1, 1)` so both CTAs in a cluster derive the same tile
+    index from `block_idx.x >> 1`. Only prefill is supported; decoding is
+    rejected at compile time.
+
+    Parameters:
+        q_type: The query tensor element type (inferred).
+        KVType: The paged KV cache operand type providing the tile factory
+            and page size (inferred).
+        MaskType: The attention mask type applied to the scores (inferred).
+        output_type: The output buffer element type (inferred).
+        MaxPromptLenType: The maximum prompt length as a static or runtime
+            value (inferred).
+        PartitionType: The KV cache partition scheme (inferred).
+        config: The MHA configuration with head count, depth, and swizzle
+            mode used to build the `Depth512SM100Config`.
+        group: Number of query heads per KV head for grouped-query attention.
+        ragged: Whether the batch uses ragged sequence lengths with a
+            non-null `valid_length` pointer.
+        _is_cache_length_accurate: Whether the per-batch cache length values
+            are exact.
+
+    Args:
+        output: Device buffer that receives the attention output.
+        q_arg: Pointer to the query tensor data.
+        k: Key operand providing the paged KV cache tile factory.
+        v: Value operand providing the paged KV cache tile factory.
+        num_rows_q: Number of query rows to process.
+        mask: Causal or padding mask applied to the attention scores.
+        valid_length: Per-batch pointer to valid cache lengths (used when
+            `ragged` is true).
+        max_prompt_len_arg: Maximum prompt length, static or runtime.
+        max_cache_valid_length_arg: Maximum valid cache length across the
+            batch.
+        scale: Scaling factor applied to the QK dot product.
+        kv_input_row_offsets: Optional ragged row-offset tensor for KV
+            input rows.
+        batch_size_arg: Number of sequences in the batch.
+        partition: Partition scheme for the KV cache.
+        ctx: Device context used to create TMA descriptors and enqueue the
+            kernel.
+    """
     comptime assert (
         config.dtype == KVType.dtype and config.dtype == q_type
     ), "config, kv, and q types must all match."

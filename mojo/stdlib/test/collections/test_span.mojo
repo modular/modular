@@ -16,7 +16,7 @@ from std.testing import assert_equal, assert_raises, assert_true, assert_false
 from test_utils import MoveOnly, check_write_to
 from std.math import iota
 from std.hashlib import Hasher
-from std.memory import ImmSpan, MutSpan
+from std.collections import ImmSpan, MutSpan
 
 
 def test_span_list_int() raises:

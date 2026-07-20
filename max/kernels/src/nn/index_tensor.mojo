@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements numpy-style advanced tensor indexing (getitem and setitem) for CPU and GPU."""
 
 from std.math import ceildiv
 from std.sys import simd_width_of
@@ -483,9 +484,9 @@ def advanced_indexing_getitem[
         input_tensor_fn: Fusion lambda for the input tensor.
         indices_fn: Fusion lambda for the indices tensors.
 
-    TODO(GEX-1951): Support boolean tensor mask support
-    TODO(GEX-1952): Support non-contiguous indexing tensor case
-    TODO(GEX-1953): Support fusion (especially view-fusion)
+    Note:
+        Currently supports contiguous indexing tensors only; boolean tensor
+        masks and view-fusion are not yet implemented.
     """
     comptime assert (
         out_tensor.rank == input_rank + index_rank - num_index_tensors
@@ -684,11 +685,10 @@ def advanced_indexing_setitem_inplace[
         updates_tensor_fn: Fusion lambda for the update tensor.
         indices_fn: Fusion lambda for the indices tensors.
 
-    TODO(GEX-1951): Support boolean tensor mask support
-    TODO(GEX-1952): Support non-contiguous indexing tensor case
-    TODO(GEX-1953): Support fusion (especially view-fusion)
-    TODO(GEX-1954): Unify getitem and setitem using generic views.
-                    (Requires non-strided view functions).
+    Note:
+        Currently supports contiguous indexing tensors only; boolean tensor
+        masks, view-fusion, and a unified getitem/setitem interface are not
+        yet implemented.
     """
 
     # First calculate

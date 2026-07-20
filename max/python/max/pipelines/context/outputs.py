@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from itertools import chain
 
 from max.pipelines.request import RequestID
-from max.pipelines.request.open_responses import OutputContent
+from max.pipelines.request.open_responses import OutputContent, Usage
 from pydantic import BaseModel, ConfigDict
 
 from .log_probabilities import LogProbabilities
@@ -127,6 +127,10 @@ class GenerationOutput(BaseModel):
 
     output: list[OutputContent]
     """List of OutputContent objects (text, images, etc.) representing generated content."""
+
+    usage: Usage | None = None
+    """Usage reported in the API response. Image generation reports generated
+    pixels as ``output_tokens``."""
 
     @property
     def is_done(self) -> bool:

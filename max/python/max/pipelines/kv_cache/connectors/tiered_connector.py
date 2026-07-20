@@ -299,6 +299,32 @@ class TieredConnector:
 
         return num_loaded
 
+    def count_cached_prefix(
+        self, block_hashes: Sequence[bytes]
+    ) -> tuple[int, int]:
+        """Counts contiguous leading blocks resident in the CPU or disk tier.
+
+        Read-only companion to ``load``: same tier walk (CPU first, then disk
+        per block) and the same last-level-cache-only override, but no
+        promotions, allocations, or LRU updates. Unlike ``load`` it does not
+        require free host blocks to count a disk hit, so it reflects index
+        presence rather than immediate serviceability.
+        """
+        host_cache = self._host_block_pool.prefix_cache
+        num_host_hits = 0
+        num_disk_hits = 0
+        for block_hash in block_hashes:
+            if (
+                not self._only_use_kv_connector_last_level_cache
+                and block_hash in host_cache
+            ):
+                num_host_hits += 1
+            elif self._disk_tier.contains(block_hash):
+                num_disk_hits += 1
+            else:
+                break
+        return (num_host_hits, num_disk_hits)
+
     @traced
     def wait_for_offloads(self) -> None:
         """Drain offloads posted this step and post disk writes.

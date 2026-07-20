@@ -490,7 +490,7 @@ def layer_norm_gpu_block[
 
 def layer_norm_reshape[
     rank: Int, //, output_rank: Int
-](shape: IndexList[rank, ...],) -> IndexList[output_rank]:
+](shape: IndexList[rank, ...]) -> IndexList[output_rank]:
     comptime if rank == output_rank:
         return rebind[IndexList[output_rank]](shape)
 

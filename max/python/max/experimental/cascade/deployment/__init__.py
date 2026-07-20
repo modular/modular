@@ -10,3 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Cascade deployment composition: routing and config-driven runtime assembly.
+
+Composes the transport runtimes (:mod:`~max.experimental.cascade.core`,
+:mod:`~max.experimental.cascade.grpc_runtime`,
+:mod:`~max.experimental.cascade.http_runtime`) into a device-routed, pooled
+deployment. Import from the submodules directly (``deployment.routing``,
+``deployment.context_config``) to keep import costs low.
+"""

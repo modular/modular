@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the tensor split operation, dividing a tensor into chunks along a specified axis."""
 
 from std.collections.string import StaticString
 from std.sys import simd_width_of
@@ -50,6 +51,31 @@ def split[
     ],
     ctx: DeviceContext,
 ) raises:
+    """Splits a tensor into multiple chunks along the specified axis.
+
+    Copies each input element into the output that owns the corresponding
+    slice of the split axis, dispatching at runtime to a compile-time index
+    into the `outputs` tuple so device-side stores marshal correctly on every
+    target. Vectorizes the copy when the split axis is not the last
+    dimension, and falls back to scalar stores otherwise.
+
+    Parameters:
+        OutputLayoutType: Layout shared by all output tensors.
+        dtype: Element type of the input and output tensors.
+        num_outputs: Number of output chunks to produce.
+        target: Target string used by the elementwise dispatch.
+        trace_description: Trace label propagated to the elementwise kernel.
+        output_origin: Mutability origin shared by the output tensors.
+        axis: Axis along which the input is divided.
+
+    Args:
+        input: Source tensor to split.
+        outputs: Tuple of output tensors whose concatenated axis extents match the input.
+        ctx: Device context used to launch the elementwise kernel.
+
+    Raises:
+        Error: If the outputs disagree on a non-split axis dimension.
+    """
     comptime assert (
         input.rank == OutputLayoutType.rank
     ), "Input and outputs must have the same rank."

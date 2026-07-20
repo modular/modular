@@ -341,9 +341,7 @@ struct Process:
             return self.status.value()
 
         var status: c_int = 0
-        var pid = waitpid(
-            self.child_pid, UnsafePointer(to=status), WaitFlags.WNOHANG
-        )
+        var pid = waitpid(self.child_pid, Pointer(to=status), WaitFlags.WNOHANG)
         var result = self._check_status(pid, status)
         if result.has_exited():
             self.status = result
@@ -365,7 +363,7 @@ struct Process:
             return self.status.value()
 
         var status: c_int = 0
-        var pid = waitpid(self.child_pid, UnsafePointer(to=status), 0)
+        var pid = waitpid(self.child_pid, Pointer(to=status), 0)
         var result = self._check_status(pid, status)
         if result.has_exited():
             self.status = result
@@ -421,7 +419,7 @@ struct Process:
         var pid: c_pid_t = 0
 
         var has_error_code = posix_spawnp(
-            UnsafePointer(to=pid),
+            Pointer(to=pid),
             path.as_c_string_slice(),
             # Safety: `argv_array_ptr_cstr_ptr` has at least 2 elements so is non-null
             argv_array_ptr_cstr_ptr.unsafe_ptr(),

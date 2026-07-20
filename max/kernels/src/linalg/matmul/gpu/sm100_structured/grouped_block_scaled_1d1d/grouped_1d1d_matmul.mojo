@@ -110,6 +110,40 @@ def grouped_matmul_block_scaled[
     This function sets up TMA descriptors and launches the kernel with the
     proper configuration for 1D-1D tensor layout.
 
+    Parameters:
+        a_type: Element dtype of the A (activations) operand.
+        b_type: Element dtype of the B (weights) operand.
+        c_type: Element dtype of the C (output) operand.
+        sfa_dtype: Scale-factor dtype for A. Must equal `sfb_dtype`
+            and be one of `NVFP4_SF_DTYPE`, `MXFP4_SF_DTYPE`, or
+            `MXFP8_SF_DTYPE`.
+        sfb_dtype: Scale-factor dtype for B. Must equal `sfa_dtype`.
+        transpose_b: Whether B is stored transposed. Must be `True`
+            (the only supported layout).
+        config: Compile-time tiling, swizzle, and pipeline config for
+            the matmul kernel.
+        pdl_level: Programmatic dependent launch level passed to the
+            kernel launch (defaults to `PDLLevel.ON`).
+        fuse_swiglu: When `True`, fuses SwiGLU plus per-block NVFP4
+            quantization into the matmul epilogue in place of the
+            BF16 GMEM store (defaults to `False`).
+        SwiGLUOutputT: Carrier type for the fused SwiGLU output.
+            Defaults to `NullSwiGLUOutput[]` for the non-fused path.
+        swiglu_match_bf16: When `True`, the fused epilogue mirrors the
+            BF16 SMEM round trip of the unfused path so precision
+            matches bit-for-bit (defaults to `True`).
+        swiglu_disable_compute: When `True`, zeroes the SwiGLU
+            cooperative compute iterations for structural-epilogue
+            cost isolation; output is invalid (defaults to `False`).
+        swiglu_enable_trace: When `True`, records per-CTA timing
+            events into `trace_buf` for the SwiGLU path (defaults to
+            `False`).
+        TraceBufT: Trace buffer type used when
+            `swiglu_enable_trace=True`. Defaults to `NullTrace`.
+        swiglu_use_inplace: When `True`, the SwiGLU epilogue writes
+            packed output in place via `store_packed_word` instead of
+            a separate store path (defaults to `False`).
+
     Args:
         c_device: Output tensor (total_tokens, N).
         a_device: Input A tensor (total_tokens, K).

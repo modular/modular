@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements tensor padding with constant or edge values for CPU and GPU."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -140,6 +141,12 @@ def pad_constant[
     Fill `output` with values from `input`, and edges padded with `constant`
     based on `paddings`.
 
+    Parameters:
+        dtype: DType of the `input` and `output` buffers.
+        paddings_type: DType of the `paddings` buffer.
+        constant_type: DType of the `constant` value before it is cast to
+            `dtype`.
+
     Args:
         output: The output buffer.
         input: The input buffer.
@@ -205,6 +212,10 @@ def pad_reflect[
     """
     Fill `output` with values from `input`, and edges padded with reflected
     values from the unpadded region.
+
+    Parameters:
+        dtype: DType of the `input` and `output` buffers.
+        paddings_type: DType of the `paddings` buffer.
 
     Args:
         output: The output buffer.

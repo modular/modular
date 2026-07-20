@@ -58,6 +58,23 @@ def test_matmul_sm90_swapAB_comparison[
     Both compute: C[M,N] = A[M,K] @ B[N,K]^T
     swapAB internally swaps A/B and transposes C on store, but result should match.
 
+    Parameters:
+        a_type: Element type of the A operand matrix `A[M,K]`.
+        b_type: Element type of the B operand matrix `B[N,K]`.
+        c_type: Element type of the output matrix `C[M,N]`.
+        config: Compile-time matmul configuration for the normal kernel,
+            including block tile shape, cluster shape, MMA shape, pipeline
+            stages, and consumer count.
+        config_swapAB: Compile-time matmul configuration for the swapAB
+            kernel, which internally swaps the A/B operands and transposes
+            the C tile on store.
+        MType: Type carrying the M dimension value, either static or
+            dynamic.
+        NType: Type carrying the N dimension value, either static or
+            dynamic.
+        KType: Type carrying the K dimension value, either static or
+            dynamic.
+
     Args:
         ctx: The device context.
         m: The M dimension (can be static or dynamic).

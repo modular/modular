@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Provides grouped matrix multiplication kernels for CPU, AMD, and NVIDIA GPU targets."""
+
 from std.collections import Optional
 from std.math import ceildiv
 from std.sys import align_of, simd_width_of, size_of
@@ -107,6 +110,11 @@ def naive_grouped_matmul_kernel[
         mut=False, DType.int32, ExpertIdsLayout, MutAnyOrigin
     ],
 ):
+    """Computes one element per thread of the grouped matmul product ``C[a_offsets[z]:a_offsets[z+1], :] = A[...] @ B[expert_ids[z], :, :].T`` for each active expert ``z``, with an optional elementwise epilogue.
+
+    Skips the matmul for ``expert == -1`` (inactive LoRA blocks) but still
+    invokes the elementwise lambda when provided.
+    """
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
     comptime assert c.flat_rank == 2, "c must be rank 2"
@@ -172,6 +180,8 @@ def naive_epilogue[
     c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
+    """Launches the ``naive_epilogue_kernel`` to apply an elementwise epilogue function across the output tensor ``c``.
+    """
     comptime kernel = naive_epilogue_kernel[
         c_type,
         type_of(c).LayoutType,
@@ -195,6 +205,8 @@ def naive_epilogue_kernel[
     *,
     elementwise_lambda_fn: elementwise_epilogue_type,
 ](c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],):
+    """Applies an elementwise epilogue function to each SIMD-vectorized element of the output tensor ``c``.
+    """
     comptime simd_size = simd_width_of[c_type]()
     comptime alignment = align_of[SIMD[c_type, simd_size]]()
     var n = global_idx.x * simd_size
@@ -261,6 +273,69 @@ def grouped_matmul_kernel_sm100[
     c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],
     num_iters: Int,
 ):
+    """Computes the SM100 (Blackwell) grouped matmul using TMA async copies into shared memory and tcgen05 tensor-memory MMA accumulation, with an optional elementwise epilogue.
+
+    Each block processes one expert tile; A tiles are loaded via TMA into
+    shared memory and accumulated in tensor memory (``tcgen05``), then
+    drained to registers and stored to global memory (or passed to the
+    elementwise epilogue).
+
+    Parameters:
+        a_type: Element `DType` of the A activation tensor.
+        b_type: Element `DType` of the B weight tensor.
+        c_type: Element `DType` of the C output tensor.
+        static_K: The contraction dimension K, known at
+            compile time.
+        a_tile_rank: Rank of the A TMA descriptor's tile
+            shape.
+        a_tile_shape: Per-copy tile shape for A TMA loads
+            from global to shared memory.
+        a_desc_shape: Global-tensor descriptor shape backing
+            the A TMA tile.
+        b_tile_rank: Rank of the B TMA descriptor's tile
+            shape.
+        b_tile_shape: Per-copy tile shape for B TMA loads
+            from global to shared memory.
+        b_desc_shape: Global-tensor descriptor shape backing
+            the B TMA tile.
+        CLayout: `TensorLayout` of the output tensor `c`.
+        AOffsetsLayout: `TensorLayout` of the `a_offsets`
+            tensor.
+        ExpertIdsLayout: `TensorLayout` of the `expert_ids`
+            tensor.
+        block_tile_shape: Per-block tile dimensions `(BM,`
+            BN, BK)` for the M, N, and K axes.
+        mma_shape: `tcgen05` MMA instruction shape `(MMA_M,
+            MMA_N, MMA_K)`.
+        a_swizzle: TMA swizzle mode for A shared-memory
+            loads (defaults to `SWIZZLE_128B`).
+        b_swizzle: TMA swizzle mode for B shared-memory
+            loads (defaults to `SWIZZLE_128B`).
+        c_swizzle: Swizzle mode for C output stores (defaults
+            to `SWIZZLE_NONE`).
+        transpose_b: Whether B is stored in transposed layout
+            (defaults to `True`).
+        num_threads: Number of threads per block, either 128
+            or 256 (defaults to 128).
+        elementwise_lambda_fn: Optional elementwise epilogue
+            applied to each output element (defaults to
+            `None`).
+    Args:
+        a_tma_op: TMA tensor tile descriptor for loading A
+            tiles from global into shared memory.
+        b_tma_op: TMA tensor tile descriptor for loading B
+            tiles from global into shared memory.
+        a_offsets: Rank-1 `uint32` tensor where
+            `[a_offsets[z], a_offsets[z+1])` gives expert
+            `z`'s row range in A and C.
+        expert_ids: Rank-1 `int32` tensor where
+            `expert_ids[z]` selects B's expert slice for
+            group `z`, or `-1` for an inactive block.
+        c: Output tensor of shape `(total_M, N)` accumulating
+            the grouped matmul results.
+        num_iters: Number of K-tile iterations to run
+            (`ceildiv(K, BK)`).
+    """
     comptime assert transpose_b, "Only support transposed B in layout"
     comptime assert num_threads == 128 or num_threads == 256
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
@@ -572,6 +647,8 @@ def grouped_matmul_sm100[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
+    """Launches the SM100 grouped matmul kernel with TMA descriptors for ragged MoE matrix multiplication on Blackwell GPUs.
+    """
     comptime num_experts = b.static_shape[0]
     comptime N = b.static_shape[1]
     comptime K = b.static_shape[2]
@@ -668,6 +745,13 @@ def grouped_matmul_amd_kernel_launcher[
     ],
     num_active_experts: Int,
 ):
+    """Computes the AMD GPU grouped matmul by dispatching per-expert tiles through ``AMDMatmul``, with separate zero-fill handling for inactive (``expert_id == -1``) blocks.
+
+    For active experts, delegates the per-tile matmul (and optional
+    elementwise epilogue) to ``AMDMatmul``. For inactive experts, zeroes the
+    output row range and invokes the epilogue with zero values so that
+    LoRA-style inactive blocks still produce a defined output.
+    """
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
     comptime assert transpose_b, "Only support transposed B in grouped matmul."
@@ -897,6 +981,8 @@ def grouped_matmul_amd[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
+    """Launches the AMD grouped matmul kernel, selecting the best block-tile configuration for the runtime M dimension via ``dispatch_amd_matmul_by_block_shape``.
+    """
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
     comptime assert b.flat_rank == 3, "b must be rank 3"
@@ -1488,6 +1574,14 @@ def grouped_matmul_rowwise_scaled_fp8_kernel[
         Storage=expert_ids_storage,
     ],
 ):
+    """Computes the naive grouped FP8 matmul with rowwise weight scales and per-token activation scales, accumulating in fp32 and applying a single post-reduction scale.
+
+    For each token ``t`` in group ``g``'s row range and output channel ``n``,
+    computes ``out[t, n] = (sum_k a[t, k] * b[expert, n, k]) * a_scale[t] * b_scale[expert, n]``.
+    The ``a_scale`` is indexed by the global ragged row and ``b_scale`` by the
+    real expert id, per the correctness invariants documented in the file
+    header. Skips the matmul for ``expert == -1`` (inactive LoRA blocks).
+    """
     comptime assert transpose_b, "Only support transposed B (B is [E, N, K])."
     comptime assert (
         accum_type == DType.float32

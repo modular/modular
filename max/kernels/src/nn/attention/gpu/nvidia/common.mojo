@@ -75,6 +75,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 @always_inline
 def elect() -> Int32:
+    """Elects a single lane in the warp via the `elect.sync` PTX instruction."""
     # CAUTION: This function cannot be used to guard a `print`, else it will
     # introduce a deadlock!
     return inlined_assembly[
@@ -123,6 +124,9 @@ comptime ImmutTileTensor1D[dtype: DType] = TileTensor[
 
 
 trait OptionalPointer(Copyable, TrivialRegisterPassable):
+    """Abstracts over nullable pointers, providing a uniform interface for `NonNullPointer` and `NullPointer`.
+    """
+
     comptime dtype: DType
     comptime is_null: Bool
     comptime address_space: AddressSpace
@@ -139,6 +143,14 @@ trait OptionalPointer(Copyable, TrivialRegisterPassable):
 struct NonNullPointer[
     dtype_: DType, address_space_: AddressSpace = AddressSpace.GENERIC
 ](OptionalPointer):
+    """A pointer with a compile-time guarantee of being non-null.
+
+    Parameters:
+        dtype_: Element type of the pointed-to values.
+        address_space_: GPU address space of the pointer (defaults to
+            `AddressSpace.GENERIC`).
+    """
+
     comptime dtype: DType = Self.dtype_
     comptime is_null: Bool = False
     comptime address_space: AddressSpace = Self.address_space_
@@ -170,6 +182,14 @@ struct NonNullPointer[
 struct NullPointer[
     dtype_: DType, address_space_: AddressSpace = AddressSpace.GENERIC
 ](OptionalPointer):
+    """A pointer known at compile time to be null, used when an optional pointer argument is absent.
+
+    Parameters:
+        dtype_: Element type of the pointed-to values.
+        address_space_: GPU address space of the pointer (defaults to
+            `AddressSpace.GENERIC`).
+    """
+
     comptime dtype: DType = Self.dtype_
     comptime is_null: Bool = True
     comptime address_space: AddressSpace = Self.address_space_
@@ -197,6 +217,21 @@ struct Pack[
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
 ](Copyable, DevicePassable, TrivialRegisterPassable):
+    """Bundles MHA kernel parameters into a single device-passable struct.
+
+    Parameters:
+        MaskType: Mask type applied to the attention score tiles.
+        SchedulerType: Tile scheduler that assigns work to CTAs.
+        ValidLengthType: Optional pointer type for the per-batch
+            valid-length tensor.
+        SinkType: Optional pointer type for the attention-sink weights.
+        KVRowOffsetsType: Optional pointer type for the KV row-offsets
+            tensor.
+        MaxSeqLenType: Type of the maximum sequence length, which may be
+            static or dynamic.
+        PartitionType: KV-cache partitioning scheme.
+    """
+
     var mask: Self.MaskType
     var scheduler: Self.SchedulerType
     var valid_length: Self.ValidLengthType
@@ -249,6 +284,17 @@ struct MHAPosition[
     Position of the MHA-kernel.
     When `decoding=False`, `q_head_stride == q_num_heads`.
     When `decoding=True`, `q_head_stride == 1`.
+
+    Parameters:
+        BM: Tile block size in the query (row) dimension, in elements.
+        BN: Tile block size in the key (column) dimension, in elements.
+        depth: Head dimension of the attention layer, in elements.
+        padded_depth: Head dimension padded to the tensor-core alignment
+            boundary, in elements.
+        q_num_heads: Number of query attention heads.
+        group: Grouped-query attention group size, in query heads per KV
+            head.
+        decoding: Whether the kernel runs in single-token decoding mode.
     """
 
     var q_row: UInt32
@@ -502,6 +548,28 @@ def get_seq_info[
     valid_length: ValidLengthType,
     partition: PartitionType,
 ) -> SeqInfo:
+    """Computes the `SeqInfo` for the current CTA by querying the transient tile scheduler.
+
+    Parameters:
+        MaxSeqLenType: Type of the maximum sequence length, which may be
+            static or dynamic.
+        ValidLengthType: Optional pointer type for the per-batch
+            valid-length tensor.
+        PartitionType: KV-cache partitioning scheme.
+        BM: Tile block size in the query (row) dimension, in elements.
+        num_heads: Number of query attention heads.
+        flip_prompt_idx: Whether to reverse the prompt-index ordering.
+        pair_cta: Whether to schedule paired CTAs per tile (defaults to
+            `False`).
+        splitk_partitions: Number of split-K partitions to schedule across
+            (defaults to 1).
+
+    Args:
+        batch_size: Number of sequences in the batch.
+        max_seq_len: Maximum sequence length across the batch.
+        valid_length: Per-batch valid (non-padded) sequence lengths.
+        partition: KV-cache partition descriptor for the current launch.
+    """
     var tile_summary = MHATileSummary[ValidLengthType](
         batch_size,
         ceildiv(max_seq_len.as_uint32(), UInt32(BM))
@@ -533,6 +601,9 @@ def get_seq_info[
 
 
 struct PositionSummary(TrivialRegisterPassable):
+    """Holds the computed number of keys and the score row index for an attention tile.
+    """
+
     var num_keys: UInt32
     var score_row: UInt32
 
@@ -652,6 +723,21 @@ def q_smem_shape[
     fuse_gqa: Bool = False,
     num_qk_stages: Int = 1,
 ](out res: IndexList[4 if (decoding or fuse_gqa) else 3]):
+    """Computes the shared-memory shape for a Q tensor TMA tile based on the tile configuration.
+
+    Parameters:
+        dtype: Element type of the Q tensor.
+        swizzle_mode: TMA swizzle mode for the Q tensor tile.
+        BM: Tile block size in the query (row) dimension, in elements.
+        group: Grouped-query attention group size, in query heads per KV
+            head.
+        depth: Head dimension of the attention layer, in elements.
+        decoding: Whether the kernel runs in single-token decoding mode.
+        fuse_gqa: Whether to fuse grouped-query attention into the tile
+            shape (defaults to `False`).
+        num_qk_stages: Number of pipeline stages used to split the Q
+            shared-memory tile along the depth dimension (defaults to 1).
+    """
     comptime L = res.size
     comptime assert L in (3, 4)
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
@@ -689,6 +775,19 @@ def q_gmem_shape[
     decoding: Bool,
     fuse_gqa: Bool = False,
 ](out res: IndexList[4 if (decoding or fuse_gqa) else 3]):
+    """Computes the global-memory shape for a Q tensor TMA tile based on the tile configuration.
+
+    Parameters:
+        dtype: Element type of the Q tensor.
+        swizzle_mode: TMA swizzle mode for the Q tensor tile.
+        group: Grouped-query attention group size, in query heads per KV
+            head.
+        q_num_heads: Number of query attention heads.
+        depth: Head dimension of the attention layer, in elements.
+        decoding: Whether the kernel runs in single-token decoding mode.
+        fuse_gqa: Whether to fuse grouped-query attention into the tile
+            shape (defaults to `False`).
+    """
     comptime L = res.size
     comptime assert L in (3, 4)
 
@@ -763,6 +862,28 @@ def q_tma[
     fuse_gqa=fuse_gqa,
     num_qk_stages=num_qk_stages,
 ]:
+    """Creates a split TMA descriptor for the Q tensor, pairing the shared-memory tile shape with the global-memory layout.
+
+    Parameters:
+        dtype: Element type of the Q tensor (inferred).
+        swizzle_mode: TMA swizzle mode for the Q tensor tile.
+        BM: Tile block size in the query (row) dimension, in elements.
+        depth: Head dimension of the attention layer, in elements.
+        q_num_heads: Number of query attention heads.
+        group: Grouped-query attention group size, in query heads per KV
+            head.
+        decoding: Whether the kernel runs in single-token decoding mode.
+        fuse_gqa: Whether to fuse grouped-query attention into the tile
+            shape (defaults to `False`).
+        num_qk_stages: Number of pipeline stages used to split the Q
+            shared-memory tile along the depth dimension (defaults to 1).
+
+    Args:
+        ctx: Device context used to create the TMA descriptor.
+        ptr: Base pointer to the Q tensor in global memory.
+        rows: Number of rows in the Q tensor exposed via the TMA
+            descriptor.
+    """
     comptime smem_dim = q_smem_shape[
         dtype,
         swizzle_mode,
@@ -799,6 +920,10 @@ def q_coord[
     Returns the coordinates for a tma load on the `Q` matrix.
     This load can be 3D, 4D, or 5D.
 
+    Parameters:
+        depth: Head dimension of the attention layer, in elements.
+        decoding: Whether the kernel runs in single-token decoding mode.
+
     Arguments:
         row: the row to load from.
         head_idx: q_head_idx if prefill, kv_head_idx if decoding.
@@ -819,6 +944,15 @@ def q_coord[
 def kv_coord[
     *, depth: Int
 ](row: UInt32, head_idx: UInt32) -> StaticTuple[UInt32, 3]:
+    """Returns the 3D TMA coordinates for a KV tensor load.
+
+    Parameters:
+        depth: Head dimension of the attention layer, in elements.
+
+    Args:
+        row: Row index along the sequence dimension of the KV tensor.
+        head_idx: KV head index for the tensor load.
+    """
     return {0, head_idx, row}
 
 
@@ -839,6 +973,33 @@ def output_reg_to_smem_st_matrix[
     output_reg_tile: _LocalTT[accum_type, row_major[num_m_mmas, o_frag_size]()],
     accum_smem_tile: _SharedMemTT[output_type, row_major[BM, padded_depth]()],
 ):
+    """Stores output register fragments to shared memory using the `stmatrix` PTX instruction.
+
+    Parameters:
+        output_type: Element type of the values stored to shared memory
+            (inferred). Must be `bf16` or `f16`.
+        accum_type: Element type of the accumulator fragments held in
+            registers (inferred).
+        num_m_mmas: Number of MMA operations along the M dimension
+            (inferred).
+        padded_depth: Head dimension padded to the tensor-core alignment
+            boundary, in elements (inferred).
+        o_frag_size: Number of elements per output fragment produced by
+            each MMA (inferred).
+        BM: Tile block size in the row dimension, in elements.
+        swizzle: Swizzle layout mapping `stmatrix` coordinates to shared
+            memory offsets.
+        num_consumer: Number of consumer warp groups participating in the
+            store.
+
+    Args:
+        warp_group_thread_idx: Thread index within the warp group.
+        local_warp_group_idx: Local index of this warp group among the
+            consumer warp groups.
+        output_reg_tile: Register tile holding the output fragments to
+            store.
+        accum_smem_tile: Shared-memory tile receiving the stored output.
+    """
     # The store packs 8 elements per lane through bitcast<f32x4>, which is
     # well-defined only when output_type is exactly bf16/f16.
     comptime assert (

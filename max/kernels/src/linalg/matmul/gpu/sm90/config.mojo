@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides static configuration and heuristic config builders for SM90 (Hopper) GPU warp-specialized matmul kernels."""
+
 from std.hashlib.hasher import Hasher
 
 from std.collections.set import Set
@@ -30,7 +32,20 @@ struct MatmulConfig[
     c_type: DType,
     transpose_b: Bool = True,
 ](Copyable, Equatable, Hashable, TrivialRegisterPassable, Writable):
-    """Static configuration of SM90 GPU matmul."""
+    """Static configuration for SM90 (Hopper) GPU warp-specialized matmul.
+
+    Encapsulates all compile-time parameters that define a matmul kernel
+    variant: tile shapes, MMA instruction shape, cluster dimensions, pipeline
+    depth, consumer warp group count, and scheduling options. Used by the
+    dispatch layer to select and instantiate `HopperMatmulSM90Kernel`.
+
+    Parameters:
+        a_type: Element `DType` of the A input matrix.
+        b_type: Element `DType` of the B input matrix.
+        c_type: Element `DType` of the output C matrix.
+        transpose_b: Whether `B` is stored transposed (K-major layout)
+            (defaults to `True`).
+    """
 
     # Mandatory parameters
     var block_tile_shape: IndexList[3]
@@ -55,7 +70,24 @@ struct MatmulConfig[
         pdl_level: PDLLevel,
         k_group_size: Int,
     ):
-        """Initialize MatmulConfig with explicit values for all fields."""
+        """Initialize MatmulConfig with explicit values for all fields.
+
+        Args:
+            block_tile_shape: The `(BM, BN, BK)` tile shape per CTA in the
+                M, N, and K dimensions.
+            mma_shape: The `(m, n, k)` shape of a single MMA instruction.
+            cluster_shape: The thread block cluster dimensions in
+                `(M, N, K)`.
+            num_pipeline_stages: Number of pipeline stages for
+                double-buffering loads.
+            num_k_partitions: Number of partitions to split the K dimension
+                into.
+            num_consumer: Number of consumer warp groups.
+            partitioned_multicast: Whether to use partitioned TMA multicast.
+            pdl_level: Programmatic dependent launch level for grid
+                controls.
+            k_group_size: Number of K iterations grouped per pipeline stage.
+        """
         self.block_tile_shape = block_tile_shape
         self.mma_shape = mma_shape
         self.cluster_shape = cluster_shape
@@ -333,6 +365,37 @@ def build_configs[
     consumer_groups: Optional[Int] = None,
     swapAB: Bool = False,
 ]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:
+    """Builds the set of unique SM90 `MatmulConfig` instances for a fixed (N, K) and all M values.
+
+    Sweeps M from 8 to 8192 to enumerate the distinct configs the heuristic
+    produces for the given (N, K). Duplicate configs (same tile/cluster shape)
+    are deduplicated via set membership.
+
+    Parameters:
+        a_type: Element `DType` of the A input matrix.
+        b_type: Element `DType` of the B input matrix.
+        c_type: Element `DType` of the output C matrix.
+        N: The N dimension (columns) of the matmul, fixed across the M
+            sweep.
+        K: The K dimension (contraction axis) of the matmul.
+        transpose_b: Whether `B` is stored transposed (K-major layout)
+            (defaults to `True`).
+        num_k_partitions: Number of partitions to split the K dimension into
+            (defaults to 1).
+        partitioned_multicast: Whether to use partitioned TMA multicast
+            (defaults to `False`).
+        pdl_level: Programmatic dependent launch level for grid controls
+            (defaults to `PDLLevel.OFF`).
+        k_groups: Optional override for the K-grouping size; `None` lets
+            the heuristic decide (defaults to `None`).
+        consumer_groups: Optional override for the number of consumer warp
+            groups; `None` lets the heuristic decide (defaults to `None`).
+        swapAB: Whether to swap the A and B roles, treating `N` as `M`
+            (defaults to `False`).
+
+    Returns:
+        A set of unique `MatmulConfig` values covering the M sweep.
+    """
     var set = Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]()
 
     for m in range(8, 128, 8):  # [8, 128]
@@ -386,6 +449,45 @@ def swapAB_smallM[
     k_group_size: Int = 0,
     num_pipeline_stages: Int = 0,
 ) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
+    """Selects an SM90 `MatmulConfig` for small-M problems by swapping A and B roles.
+
+    When M is small compared to N, treating N as the leading dimension and
+    swapping A/B improves SM utilization. Sweeps MMA-N values and picks the
+    configuration that maximizes SM wave occupancy or compute ratio.
+
+    Parameters:
+        a_type: Element `DType` of the A input matrix.
+        b_type: Element `DType` of the B input matrix.
+        c_type: Element `DType` of the output C matrix.
+        prioritize_compute_over_ctas: Whether to select MMA-N by minimizing
+            wasted compute ratio rather than maximizing CTAs used (defaults
+            to `False`).
+        transpose_b: Whether `B` is stored transposed (K-major layout)
+            (defaults to `True`).
+
+    Args:
+        m: The M dimension of the matmul (mapped to N after the A/B
+            swap).
+        n: The N dimension of the matmul (mapped to M after the A/B
+            swap).
+        k: The K dimension (contraction axis) of the matmul.
+        cluster_shape: The thread block cluster dimensions in
+            `(M, N, K)`.
+        num_k_partitions: Number of partitions to split the K dimension
+            into.
+        num_consumer: Number of consumer warp groups.
+        partitioned_multicast: Whether to use partitioned TMA multicast.
+        pdl_level: Programmatic dependent launch level for grid
+            controls.
+        k_group_size: Number of K iterations grouped per pipeline stage,
+            or 0 to auto-compute (defaults to 0).
+        num_pipeline_stages: Number of pipeline stages for
+            double-buffering loads, or 0 to maximize by default
+            (defaults to 0).
+
+    Returns:
+        A `MatmulConfig` with swapped AB dimensions tuned for small-M inputs.
+    """
     var M = n
     var N = m
     var K = k
@@ -470,6 +572,18 @@ def swapAB_smallM_ceildiv[
     Pattern:
         - BN = ceildiv(m, 8) * 8  (rounds up to next multiple of 8)
         - stages = 12, cluster = (1,1,1), swapAB = True
+
+    Parameters:
+        a_type: Element `DType` of the A input matrix.
+        b_type: Element `DType` of the B input matrix.
+        c_type: Element `DType` of the output C matrix.
+        transpose_b: Whether `B` is stored transposed (K-major layout)
+            (defaults to `True`).
+
+    Args:
+        m: The M dimension of the matmul, less than 41.
+        pdl_level: Programmatic dependent launch level for grid
+            controls.
     """
     var bn = ualign_up(m, 8)
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
@@ -498,6 +612,18 @@ def swapAB_midM_linear[
     Pattern:
         - BN = 40 + ((m - 65) // 16) * 8
         - stages = 8, cluster = (1,1,1), swapAB = True
+
+    Parameters:
+        a_type: Element `DType` of the A input matrix.
+        b_type: Element `DType` of the B input matrix.
+        c_type: Element `DType` of the output C matrix.
+        transpose_b: Whether `B` is stored transposed (K-major layout)
+            (defaults to `True`).
+
+    Args:
+        m: The M dimension of the matmul, in the range [65, 128].
+        pdl_level: Programmatic dependent launch level for grid
+            controls.
     """
     var bucket = ufloordiv(m - 65, 16)
     var bn = 40 + bucket * 8
@@ -528,6 +654,18 @@ def swapAB_largeM_clustered[
         - BN = 72 + ((m - 129) // 16) * 8
         - Stages: 12 for m<=160, 10 for m<=224, 8 otherwise
         - cluster = (2,1,1), k_group_size = 2, swapAB = True
+
+    Parameters:
+        a_type: Element `DType` of the A input matrix.
+        b_type: Element `DType` of the B input matrix.
+        c_type: Element `DType` of the output C matrix.
+        transpose_b: Whether `B` is stored transposed (K-major layout)
+            (defaults to `True`).
+
+    Args:
+        m: The M dimension of the matmul, in the range [129, 240].
+        pdl_level: Programmatic dependent launch level for grid
+            controls.
     """
     var bucket = ufloordiv(m - 129, 16)
     var bn = 72 + bucket * 8
@@ -565,6 +703,24 @@ def build_configs_generic[
     & def(Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b],
     config_fn: ConfigFnType,
 ]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:
+    """Builds the set of unique SM90 `MatmulConfig` instances over a user-supplied M range and config function.
+
+    Iterates M from `M_start` to `M_end` (exclusive), calls `config_fn(m)`
+    for each, and deduplicates via set membership.
+
+    Parameters:
+        a_type: Element `DType` of the A input matrix.
+        b_type: Element `DType` of the B input matrix.
+        c_type: Element `DType` of the output C matrix.
+        transpose_b: Whether `B` is stored transposed (K-major layout).
+        M_start: Starting value of the M sweep (inclusive).
+        M_end: Ending value of the M sweep (exclusive).
+        ConfigFnType: The config function type (inferred).
+        config_fn: Function mapping an M value to a `MatmulConfig`.
+
+    Returns:
+        A set of unique `MatmulConfig` values produced by `config_fn` over the M range.
+    """
     var set = Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]()
 
     for m in range(M_start, M_end):

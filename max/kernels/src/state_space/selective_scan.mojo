@@ -11,6 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Selective scan kernel implementations for Mamba SSM prefill and decode.
+
+Provides GPU and CPU forward-pass and update-step kernels for the selective
+scan (SSM) recurrence used by Mamba and Mamba-2, including the SSD
+(state-space duality) combined scan for variable-length batched prefill.
+"""
+
 from std.gpu import (
     block_dim,
     block_idx,
@@ -110,7 +117,53 @@ def selective_scan_fwd_gpu[
 ):
     """GPU kernel for selective scan forward pass.
 
-    Each thread processes one (batch, dim) pair and iterates through the sequence.
+    Each thread processes one (batch, dim) pair and iterates through the
+    sequence.
+
+    Parameters:
+        kernel_dtype: Element type of the input and output tensors.
+        DSTATE: Number of SSM state elements per (batch, dim) pair.
+        output_LT: Memory layout of the `output` tensor.
+        x_LT: Memory layout of the `x` checkpoint tensor.
+        out_z_LT: Memory layout of the `out_z` gated output tensor.
+        u_LT: Memory layout of the `u` input tensor.
+        delta_LT: Memory layout of the `delta` time-step tensor.
+        A_LT: Memory layout of the `A` recurrence matrix.
+        B_LT: Memory layout of the `B` input projection tensor.
+        C_LT: Memory layout of the `C` output projection tensor.
+        D_LT: Memory layout of the `D` skip connection tensor.
+        z_LT: Memory layout of the `z` gating tensor.
+        delta_bias_LT: Memory layout of the `delta_bias` tensor.
+
+    Args:
+        total_batch_dim: Total `(batch, dim)` pairs launched.
+        batch: Number of sequences.
+        dim: Hidden dimension (channels per sequence position).
+        seqlen: Sequence length.
+        group_size: Dims per group sharing `B` and `C`.
+        delta_softplus: When nonzero, apply `softplus` to `delta`.
+        output: Output tensor `(batch, dim, seqlen)`.
+        x: Checkpoint tensor `(batch, dim, n_chunks, 2*DSTATE)`.
+        out_z: Gated output `(batch, dim, seqlen)` when `z` is present.
+        u: Input tensor `(batch, dim, seqlen)`.
+        delta: Time-step tensor `(batch, dim, seqlen)`.
+        A: Recurrence matrix `(dim, DSTATE)`.
+        B: Input projection `(batch, n_groups, DSTATE, seqlen)`.
+        C: Output projection `(batch, n_groups, DSTATE, seqlen)`.
+        D: Skip vector `(dim,)`.
+        z: Gating tensor `(batch, dim, seqlen)`.
+        delta_bias: Bias vector `(dim,)`.
+        output_strides: Stride tuple for `output`.
+        x_strides: Stride tuple for `x`.
+        out_z_strides: Stride tuple for `out_z`.
+        u_strides: Stride tuple for `u`.
+        delta_strides: Stride tuple for `delta`.
+        A_strides: Stride tuple for `A`.
+        B_strides: Stride tuple for `B`.
+        C_strides: Stride tuple for `C`.
+        D_strides: Stride tuple for `D`.
+        z_strides: Stride tuple for `z`.
+        delta_bias_strides: Stride tuple for `delta_bias`.
     """
     # Calculate which (batch, dim) this thread is responsible for
     var thread_id = block_dim.x * block_idx.x + thread_idx.x
@@ -473,6 +526,58 @@ def selective_scan_fwd_gpu_minimal[
     C_strides: Strides4D,
 ):
     """Minimal GPU kernel for selective scan forward - no D, z, or delta_bias.
+
+    Each thread processes one (batch, dim) pair and iterates through the
+    sequence. Omits the `D` skip connection, `z` gating, and `delta_bias`
+    supported by `selective_scan_fwd_gpu`.
+
+    Parameters:
+        kernel_dtype: Element type of the input and output tensors.
+        DSTATE: Number of SSM state elements per (batch, dim) pair.
+        output_LT: Memory layout of the `output` tensor.
+        x_LT: Memory layout of the `x` checkpoint tensor.
+        u_LT: Memory layout of the `u` input tensor.
+        delta_LT: Memory layout of the `delta` time-step tensor.
+        A_LT: Memory layout of the `A` recurrence matrix.
+        B_LT: Memory layout of the `B` input projection tensor.
+        C_LT: Memory layout of the `C` output projection tensor.
+
+    Args:
+        total_batch_dim: Total number of (batch, dim) pairs launched,
+            equal to `batch * dim`, used for thread bounds checking.
+        batch: Number of sequences processed in parallel.
+        dim: Hidden dimension, equal to the number of channels per
+            sequence position.
+        seqlen: Number of timesteps in each sequence.
+        group_size: Number of dims per group; dims in the same group
+            share `B` and `C` inputs.
+        delta_softplus: Nonzero applies `softplus` to `delta` before
+            the scan recurrence.
+        output: Output tensor of shape `(batch, dim, seqlen)`, written.
+        x: Checkpoint tensor of shape `(batch, dim, n_chunks,
+            2*DSTATE)` storing per-chunk cumulative `A` and `B`
+            values, written.
+        u: Selective scan input tensor of shape `(batch, dim,
+            seqlen)`, read.
+        delta: Time-step tensor of shape `(batch, dim, seqlen)`, read.
+        A: SSM recurrence matrix of shape `(dim, DSTATE)`, read.
+        B: SSM input projection of shape `(batch, n_groups, DSTATE,
+            seqlen)`, read.
+        C: SSM output projection of shape `(batch, n_groups, DSTATE,
+            seqlen)`, read.
+        output_strides: 3D strides `(batch, dim, seqlen)` for
+            indexing `output`.
+        x_strides: 4D strides `(batch, dim, n_chunks, 2*DSTATE)` for
+            indexing `x`.
+        u_strides: 3D strides `(batch, dim, seqlen)` for indexing
+            `u`.
+        delta_strides: 3D strides `(batch, dim, seqlen)` for
+            indexing `delta`.
+        A_strides: 2D strides `(dim, DSTATE)` for indexing `A`.
+        B_strides: 4D strides `(batch, n_groups, DSTATE, seqlen)` for
+            indexing `B`.
+        C_strides: 4D strides `(batch, n_groups, DSTATE, seqlen)` for
+            indexing `C`.
     """
     var thread_id = block_dim.x * block_idx.x + thread_idx.x
     if thread_id >= total_batch_dim:
@@ -653,6 +758,67 @@ def selective_scan_update_gpu[
 
     Each thread processes one (batch, dim) pair.
     Reads initial state from state_in, writes updated state to state_out.
+
+    Parameters:
+        kernel_dtype: Element type of the input and output tensors.
+        DSTATE: Number of SSM state elements per (batch, dim) pair.
+        state_out_LT: Memory layout of the `state_out` tensor.
+        output_LT: Memory layout of the `output` tensor.
+        state_in_LT: Memory layout of the `state_in` tensor.
+        x_LT: Memory layout of the `x` input tensor.
+        dt_LT: Memory layout of the `dt` time-step tensor.
+        A_LT: Memory layout of the `A` recurrence matrix.
+        B_LT: Memory layout of the `B` input projection tensor.
+        C_LT: Memory layout of the `C` output projection tensor.
+        D_LT: Memory layout of the `D` skip connection tensor.
+        z_LT: Memory layout of the `z` gating tensor.
+        dt_bias_LT: Memory layout of the `dt_bias` tensor.
+
+    Args:
+        total_batch_dim: Total number of (batch, dim) pairs launched,
+            equal to `batch * dim`, used for thread bounds checking.
+        batch: Number of sequences processed in parallel.
+        dim: Hidden dimension, equal to the number of channels per
+            sequence position.
+        group_size: Number of dims per group; dims in the same group
+            share `B` and `C` inputs.
+        delta_softplus: Nonzero applies `softplus` to `dt` before the
+            scan recurrence.
+        state_out: Updated SSM state tensor of shape `(batch, dim,
+            DSTATE)`, written.
+        output: Step output tensor of shape `(batch, dim)`, written.
+        state_in: Previous SSM state tensor of shape `(batch, dim,
+            DSTATE)`, read.
+        x: Input value tensor of shape `(batch, dim)` for the current
+            timestep, read.
+        dt: Time-step tensor of shape `(batch, dim)`, read.
+        A: SSM recurrence matrix of shape `(dim, DSTATE)`, read.
+        B: SSM input projection of shape `(batch, n_groups, DSTATE)`,
+            read.
+        C: SSM output projection of shape `(batch, n_groups, DSTATE)`,
+            read.
+        D: Skip connection vector of shape `(dim,)`, read; added as
+            `D * x` to the output when present.
+        z: Gating tensor of shape `(batch, dim)`, read; gates the
+            output via `z * sigmoid(z)` when present.
+        dt_bias: Bias vector of shape `(dim,)`, read; added to `dt`
+            before `softplus` when present.
+        state_out_strides: 3D strides `(batch, dim, DSTATE)` for
+            indexing `state_out`.
+        output_strides: 2D strides `(batch, dim)` for indexing
+            `output`.
+        state_in_strides: 3D strides `(batch, dim, DSTATE)` for
+            indexing `state_in`.
+        x_strides: 2D strides `(batch, dim)` for indexing `x`.
+        dt_strides: 2D strides `(batch, dim)` for indexing `dt`.
+        A_strides: 2D strides `(dim, DSTATE)` for indexing `A`.
+        B_strides: 3D strides `(batch, n_groups, DSTATE)` for indexing
+            `B`.
+        C_strides: 3D strides `(batch, n_groups, DSTATE)` for indexing
+            `C`.
+        D_strides: 1D strides `(dim,)` for indexing `D`.
+        z_strides: 2D strides `(batch, dim)` for indexing `z`.
+        dt_bias_strides: 1D strides `(dim,)` for indexing `dt_bias`.
     """
     # Calculate which (batch, dim) this thread is responsible for
     var thread_id = block_dim.x * block_idx.x + thread_idx.x
@@ -819,7 +985,63 @@ def selective_scan_update_cpu[
     dt_bias_strides: Strides1D,
     ctx: Optional[DeviceContext] = None,
 ):
-    """CPU kernel for selective scan update (single step)."""
+    """CPU kernel for selective scan update (single step).
+
+    Each worker processes one (batch, dim) pair and advances the SSM
+    recurrence by a single autoregressive timestep, reading the previous
+    state from `state_in` and writing the updated state to `state_out`
+    and the step output to `output`.
+
+    Parameters:
+        kernel_dtype: Element type of the input and output tensors.
+        DSTATE: Number of SSM state elements per (batch, dim) pair.
+
+    Args:
+        batch: Number of sequences processed in parallel.
+        dim: Hidden dimension, equal to the number of channels per
+            sequence position.
+        group_size: Number of dims per group; dims in the same group
+            share `B` and `C` inputs.
+        delta_softplus: Nonzero applies `softplus` to `dt` before the
+            scan recurrence.
+        state_out: Updated SSM state tensor of shape `(batch, dim,
+            DSTATE)`, written.
+        output: Step output tensor of shape `(batch, dim)`, written.
+        state_in: Previous SSM state tensor of shape `(batch, dim,
+            DSTATE)`, read.
+        x: Input value tensor of shape `(batch, dim)` for the current
+            timestep, read.
+        dt: Time-step tensor of shape `(batch, dim)`, read.
+        A: SSM recurrence matrix of shape `(dim, DSTATE)`, read.
+        B: SSM input projection of shape `(batch, n_groups, DSTATE)`,
+            read.
+        C: SSM output projection of shape `(batch, n_groups, DSTATE)`,
+            read.
+        D: Skip connection vector of shape `(dim,)`, read; added as
+            `D * x` to the output when present.
+        z: Gating tensor of shape `(batch, dim)`, read; gates the
+            output via `z * sigmoid(z)` when present.
+        dt_bias: Bias vector of shape `(dim,)`, read; added to `dt`
+            before `softplus` when present.
+        state_out_strides: 3D strides `(batch, dim, DSTATE)` for
+            indexing `state_out`.
+        output_strides: 2D strides `(batch, dim)` for indexing
+            `output`.
+        state_in_strides: 3D strides `(batch, dim, DSTATE)` for
+            indexing `state_in`.
+        x_strides: 2D strides `(batch, dim)` for indexing `x`.
+        dt_strides: 2D strides `(batch, dim)` for indexing `dt`.
+        A_strides: 2D strides `(dim, DSTATE)` for indexing `A`.
+        B_strides: 3D strides `(batch, n_groups, DSTATE)` for indexing
+            `B`.
+        C_strides: 3D strides `(batch, n_groups, DSTATE)` for indexing
+            `C`.
+        D_strides: 1D strides `(dim,)` for indexing `D`.
+        z_strides: 2D strides `(batch, dim)` for indexing `z`.
+        dt_bias_strides: 1D strides `(dim,)` for indexing `dt_bias`.
+        ctx: Device context used to drive the parallel worker loop
+            (defaults to `None`).
+    """
     var has_dt_bias = Int(dt_bias.dim[0]()) > 0
     var has_D = Int(D.dim[0]()) > 0
     var has_z = Int(z.dim[0]()) > 0
@@ -1300,6 +1522,45 @@ def selective_scan_fwd_cpu_minimal[
     ctx: Optional[DeviceContext] = None,
 ):
     """Minimal CPU kernel for selective scan forward - no D, z, or delta_bias.
+
+    Parameters:
+        kernel_dtype: Element type of the input and output tensors.
+        DSTATE: Number of SSM state elements per (batch, dim) pair.
+
+    Args:
+        batch: Number of sequences processed in parallel.
+        dim: Hidden dimension, equal to the number of channels per
+            sequence position.
+        seqlen: Number of timesteps in each sequence.
+        group_size: Number of dims per group; dims in the same group
+            share `B` and `C` inputs.
+        delta_softplus: Nonzero applies `softplus` to `delta` before the
+            scan recurrence.
+        output: Output tensor of shape `(batch, dim, seqlen)`, written.
+        x: Checkpoint tensor of shape `(batch, dim, n_chunks,`
+            `2*DSTATE)` storing per-chunk cumulative `A` and `B`
+            values, written.
+        u: Selective scan input tensor of shape `(batch, dim, seqlen)`,
+            read.
+        delta: Time-step tensor of shape `(batch, dim, seqlen)`, read.
+        A: SSM recurrence matrix of shape `(dim, DSTATE)`, read.
+        B: SSM input projection of shape `(batch, n_groups, DSTATE,
+            seqlen)`, read.
+        C: SSM output projection of shape `(batch, n_groups, DSTATE,
+            seqlen)`, read.
+        output_strides: 3D strides `(batch, dim, seqlen)` for indexing
+            `output`.
+        x_strides: 4D strides `(batch, dim, n_chunks, 2*DSTATE)` for
+            indexing `x`.
+        u_strides: 3D strides `(batch, dim, seqlen)` for indexing `u`.
+        delta_strides: 3D strides `(batch, dim, seqlen)` for indexing
+            `delta`.
+        A_strides: 2D strides `(dim, DSTATE)` for indexing `A`.
+        B_strides: 4D strides `(batch, n_groups, DSTATE, seqlen)` for
+            indexing `B`.
+        C_strides: 4D strides `(batch, n_groups, DSTATE, seqlen)` for
+            indexing `C`.
+        ctx: Device context for parallel execution (defaults to `None`).
     """
 
     @parameter
@@ -1470,6 +1731,66 @@ def ssd_combined_gpu[
 
     Combines selective scan with normalization and residual connection.
     Performs: norm(residual + selective_scan(input))
+
+    Parameters:
+        kernel_dtype: Element type of the input and output tensors.
+        DSTATE: Number of SSM state elements per (batch, dim) pair.
+        output_LT: Memory layout of the `output` tensor.
+        x_LT: Memory layout of the `x` checkpoint tensor.
+        out_z_LT: Memory layout of the `out_z` gated output tensor.
+        residual_LT: Memory layout of the `residual` tensor.
+        u_LT: Memory layout of the `u` input tensor.
+        delta_LT: Memory layout of the `delta` time-step tensor.
+        A_LT: Memory layout of the `A` recurrence matrix.
+        B_LT: Memory layout of the `B` input projection tensor.
+        C_LT: Memory layout of the `C` output projection tensor.
+        D_LT: Memory layout of the `D` skip connection tensor.
+        z_LT: Memory layout of the `z` gating tensor.
+        delta_bias_LT: Memory layout of the `delta_bias` tensor.
+        gamma_LT: Memory layout of the `gamma` normalization scale
+            tensor.
+
+    Args:
+        total_batch_dim: Total number of (batch, dim) pairs launched,
+            equal to `batch * dim`, used for thread bounds checking.
+        batch: Number of sequences processed in parallel.
+        dim: Hidden dimension, equal to the number of channels per
+            sequence position.
+        seqlen: Number of timesteps in each sequence.
+        group_size: Number of dims per group; dims in the same group
+            share `B` and `C` inputs.
+        delta_softplus: Nonzero applies `softplus` to `delta` before
+            the scan recurrence.
+        output: Output tensor of shape `(batch, dim, seqlen)` holding
+            the normalized result, written.
+        x: Checkpoint tensor of shape `(batch, dim, n_chunks,
+            2*DSTATE)` storing per-chunk cumulative `A` and `B`
+            values, written.
+        out_z: Gated output tensor of shape `(batch, dim, seqlen)`
+            holding `output * silu(z)`, written when `z` is present.
+        residual: Residual input tensor of shape `(batch, dim,
+            seqlen)` added to the scan output before normalization,
+            read.
+        u: Selective scan input tensor of shape `(batch, dim,
+            seqlen)`, read.
+        delta: Time-step tensor of shape `(batch, dim, seqlen)`, read.
+        A: SSM recurrence matrix of shape `(dim, DSTATE)`, read.
+        B: SSM input projection of shape `(batch, n_groups, DSTATE,
+            seqlen)`, read.
+        C: SSM output projection of shape `(batch, n_groups, DSTATE,
+            seqlen)`, read.
+        D: Skip connection vector of shape `(dim,)`, read; added as
+            `D * u` to the output when present.
+        z: Gating tensor of shape `(batch, dim, seqlen)`, read; gates
+            the output via `silu(z)` when present.
+        delta_bias: Bias vector of shape `(dim,)`, read; added to
+            `delta` before `softplus` when present.
+        gamma: Normalization scale vector of shape `(dim,)`, read;
+            scales the combined residual and scan output.
+        epsilon: Small constant for numerical stability in
+            normalization.
+        weight_offset: Scalar offset added to `gamma` before scaling
+            the combined output.
     """
     # Compute row-major strides from dimensions
     var n_groups = dim // group_size
@@ -1883,7 +2204,74 @@ def ssd_combined_cpu[
     weight_offset: Scalar[kernel_dtype],
     ctx: Optional[DeviceContext] = None,
 ):
-    """CPU kernel for SSD combined operation."""
+    """CPU kernel for SSD combined operation.
+
+    Each worker processes one (batch, dim) pair, runs the selective
+    scan recurrence over the sequence, adds the residual, scales by
+    `gamma + weight_offset`, and optionally gates the result by `silu(z)`.
+
+    Parameters:
+        kernel_dtype: Element type of the input and output tensors.
+        DSTATE: Number of SSM state elements per (batch, dim) pair.
+        output_LT: Memory layout of the `output` tensor.
+        x_LT: Memory layout of the `x` checkpoint tensor.
+        out_z_LT: Memory layout of the `out_z` gated output tensor.
+        residual_LT: Memory layout of the `residual` tensor.
+        u_LT: Memory layout of the `u` input tensor.
+        delta_LT: Memory layout of the `delta` time-step tensor.
+        A_LT: Memory layout of the `A` recurrence matrix.
+        B_LT: Memory layout of the `B` input projection tensor.
+        C_LT: Memory layout of the `C` output projection tensor.
+        D_LT: Memory layout of the `D` skip connection tensor.
+        z_LT: Memory layout of the `z` gating tensor.
+        delta_bias_LT: Memory layout of the `delta_bias` tensor.
+        gamma_LT: Memory layout of the `gamma` normalization scale
+            tensor.
+
+    Args:
+        batch: Number of sequences processed in parallel.
+        dim: Hidden dimension, equal to the number of channels per
+            sequence position.
+        seqlen: Number of timesteps in each sequence.
+        group_size: Number of dims per group; dims in the same group
+            share `B` and `C` inputs.
+        delta_softplus: Nonzero applies `softplus` to `delta` before
+            the scan recurrence.
+        output: Normalized output tensor of shape `(batch, dim,
+            seqlen)`, written.
+        x: Checkpoint tensor of shape `(batch, dim, n_chunks,
+            2*DSTATE)` storing per-chunk cumulative `A` and `B`
+            values, written.
+        out_z: Gated output tensor of shape `(batch, dim, seqlen)`
+            holding `normalized * silu(z)`, written when `z` is
+            present.
+        residual: Residual input tensor of shape `(batch, dim,
+            seqlen)`, read; added to the scan output before
+            normalization.
+        u: Selective scan input tensor of shape `(batch, dim,
+            seqlen)`, read.
+        delta: Time-step tensor of shape `(batch, dim, seqlen)`, read.
+        A: SSM recurrence matrix of shape `(dim, DSTATE)`, read.
+        B: SSM input projection of shape `(batch, n_groups, DSTATE,
+            seqlen)`, read.
+        C: SSM output projection of shape `(batch, n_groups, DSTATE,
+            seqlen)`, read.
+        D: Skip connection vector of shape `(dim,)`, read; added as
+            `D * u` to the scan output when present.
+        z: Gating tensor of shape `(batch, dim, seqlen)`, read; gates
+            the normalized output via `silu(z)` when present.
+        delta_bias: Bias vector of shape `(dim,)`, read; added to
+            `delta` before `softplus` when present.
+        gamma: Per-dim normalization scale vector of shape `(dim,)`,
+            read; added to `weight_offset` to form the per-dim
+            scale applied to the combined output.
+        epsilon: RMSNorm smoothing constant added inside the
+            `rsqrt` for numerical stability.
+        weight_offset: Scalar added to `gamma` to form the per-dim
+            normalization scale applied to the combined output.
+        ctx: Device context used to drive the parallel worker loop
+            (defaults to `None`).
+    """
     # Compute row-major strides from dimensions
     var n_groups = dim // group_size
     var n_chunks = ceildiv(seqlen, 2048)

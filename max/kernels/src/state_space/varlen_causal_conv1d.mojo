@@ -236,24 +236,45 @@ struct VarlenConvIO[
 
     @always_inline
     def load_x(self, d: Int, s: Int) -> Scalar[Self.x_dtype]:
-        """Load `x[d, s]`: windowed history read of the input."""
+        """Load `x[d, s]`: windowed history read of the input.
+
+        Args:
+            d: The channel index into the `(dim, seqlen)` input view.
+            s: The sequence position index into the `(dim, seqlen)` input view.
+        """
         return self.x.load(Coord(d, s))[0]
 
     @always_inline
     def load_weight(self, d: Int, w: Int) -> Scalar[Self.weight_dtype]:
-        """Load `weight[d, w]`: per-channel conv tap."""
+        """Load `weight[d, w]`: per-channel conv tap.
+
+        Args:
+            d: The channel index into the `(dim, width)` weight view.
+            w: The convolution tap index in `[0, width)`.
+        """
         # `[0]` extracts lane 0: generic `Storage` makes `load()` non-scalar.
         return self.weight.load(Coord(d, w))[0]
 
     @always_inline
     def load_bias(self, d: Int) -> Scalar[Self.bias_dtype]:
-        """Load `bias[d]`: per-channel bias."""
+        """Load `bias[d]`: per-channel bias.
+
+        Args:
+            d: The channel index into the `(dim,)` bias view.
+        """
         # `[0]` extracts lane 0 (generic `Storage`, as in `load_weight`).
         return self.bias.load(Coord(d))[0]
 
     @always_inline
     def store_out(self, d: Int, s: Int, val: Scalar[Self.out_dtype]):
-        """Store `output[d, s] = val`: convolution output."""
+        """Store `output[d, s] = val`: convolution output.
+
+        Args:
+            d: The channel index into the `(dim, seqlen)` output view.
+            s: The sequence position index into the `(dim, seqlen)` output
+                view.
+            val: The convolution result to store at `output[d, s]`.
+        """
         self.output.store(Coord(d, s), val)
 
 
@@ -404,6 +425,55 @@ def causal_conv1d_varlen_fwd_cpu[
     Performs causal 1D convolution on variable length sequences that are
     concatenated together. Uses cumulative sequence lengths to identify
     sequence boundaries.
+
+    This is the CPU reference implementation for causal_conv1d_varlen_fwd.
+
+    Parameters:
+        x_dtype: Data type of the input tensor.
+        weight_dtype: Data type of the weight tensor.
+        bias_dtype: Data type of the bias tensor.
+        output_dtype: Data type of the output tensor.
+        cu_seqlens_dtype: Data type of the cumulative sequence lengths.
+        cache_indices_dtype: Data type of the cache indices.
+        has_initial_state_dtype: Data type of the initial-state flags.
+        conv_states_dtype: Data type of the convolution states.
+
+    Args:
+        dim: Number of channels in the convolution.
+        total_seqlen: Total length of the concatenated sequences.
+        width: Convolution width (number of taps).
+        batch: Number of sequences in the batch.
+        x: Input tensor of shape `(dim, total_seqlen)`.
+        weight: Weight tensor of shape `(dim, width)`.
+        bias: Bias tensor of shape `(dim,)`.
+        query_start_loc: Cumulative sequence lengths of shape `(batch + 1,)`.
+        cache_indices: Per-sequence indices into `conv_states` of shape
+            `(batch,)`.
+        has_initial_state: Per-sequence flags of shape `(batch,)` indicating
+            whether to use the initial state.
+        conv_states: Convolution states of shape `(..., dim, width - 1)`,
+            updated in place.
+        output: Output tensor of shape `(dim, total_seqlen)`.
+        x_dim_stride: Stride for the channel dimension in `x`.
+        x_seqlen_stride: Stride for the sequence dimension in `x`.
+        weight_dim_stride: Stride for the channel dimension in `weight`.
+        weight_width_stride: Stride for the tap dimension in `weight`.
+        out_dim_stride: Stride for the channel dimension in `output`.
+        out_seqlen_stride: Stride for the sequence dimension in `output`.
+        conv_states_batch_stride: Stride for the batch dimension in
+            `conv_states`.
+        conv_states_dim_stride: Stride for the channel dimension in
+            `conv_states`.
+        conv_states_width_stride: Stride for the tap dimension in
+            `conv_states`.
+        silu_activation: Whether to apply the SiLU activation to the output.
+        pad_slot_id: Slot ID identifying padded entries to skip.
+        has_cache_indices: Whether to consult `cache_indices` for slot lookup.
+        has_initial_state_flag: Whether to consult `has_initial_state` per
+            sequence.
+        has_conv_states: Whether `conv_states` is provided and should be
+            updated.
+        has_bias: Whether to add `bias` to the convolution sum.
     """
     var width_minus_1 = width - 1
 

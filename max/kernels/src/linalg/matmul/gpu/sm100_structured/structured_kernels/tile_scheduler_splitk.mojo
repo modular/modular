@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Tile scheduler for split-K matmul kernels on SM100 structured hardware.
+
+Wraps the B200 tile scheduler to partition the K dimension into multiple
+splits, coordinating per-split workspace reductions and lock-based
+synchronization across CTAs that contribute to the same output tile.
+"""
+
 from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
@@ -35,6 +42,12 @@ from .tmem import TmemAddress, TmemTensor
 
 @fieldwise_init
 struct WorkInfo(TrivialRegisterPassable, Writable):
+    """Describes a unit of split-K work for a single output tile.
+
+    Holds the output-tile coordinates (m, n), the starting K index and
+    number of K tiles this split covers, and whether the tile is in bounds.
+    """
+
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -48,14 +61,26 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 
     @always_inline
     def is_valid(self) -> Bool:
+        """Returns whether this work tile is in bounds."""
         return self.is_valid_tile
 
     @always_inline
     def is_final_split(self, k_tiles_per_output_tile: UInt32) -> Bool:
+        """Returns whether this split covers the final K tiles of the output tile.
+
+        Args:
+            k_tiles_per_output_tile: Total number of K tiles for the output tile.
+        """
         return (self.k_start + self.num_k_tiles) == k_tiles_per_output_tile
 
     @no_inline
     def write_to(self, mut writer: Some[Writer]):
+        """Writes a parenthesized summary of this work info to the given writer.
+
+        Args:
+            writer: Sink the parenthesized `(m, n, k_start, is_valid_tile)`
+                summary is written to.
+        """
         writer.write(
             "(",
             self.m,
@@ -78,6 +103,9 @@ struct WaitAndAdvanceContextSplitK[
     - Construction: Waits for CLC response, fetches next work
     - __enter__: Returns current work_info for processing
     - __exit__: Assigns fetched work as current
+
+    Parameters:
+        work_origin: Memory origin of the work info pointer (inferred).
     """
 
     var work_info_ptr: Pointer[WorkInfo, Self.work_origin]
@@ -121,6 +149,16 @@ struct WorkIteratorSplitK[
         for current in work_iter:
             scheduler.throttle_signal(ctx.is_first_cta_in_cluster)
             do_work(current)
+
+    Parameters:
+        num_stages: Number of CLC pipeline stages for work distribution.
+        reduction_tile_shape: The `(BM, MMA_N, BK)` per-block reduction tile
+            shape used for the split-K workspace layout.
+        cluster_shape: Cluster tile counts as `(m, n, k)`.
+        rasterize_order: Order CLC rasterizes tiles across the cluster grid.
+        block_swizzle_size: Block swizzle factor for tile remapping, one of
+            0, 1, 2, 4, or 8.
+        num_split_k: Number of splits the K dimension is partitioned into.
     """
 
     comptime Element = WorkInfo
@@ -145,7 +183,12 @@ struct WorkIteratorSplitK[
 
     @always_inline
     def __init__(out self, scheduler: Self.SchedulerType, work_info: WorkInfo):
-        """Create work iterator with initial work_info."""
+        """Create work iterator with initial work_info.
+
+        Args:
+            scheduler: The split-K tile scheduler owning the CLC state.
+            work_info: Initial work descriptor for the first output tile.
+        """
         self.scheduler = scheduler
         self.work_info = work_info
         self.consumer_state = PipelineState[Self.num_stages]()
@@ -193,6 +236,18 @@ struct SchedulerWorkIteratorSplitK[
         for _ in sched_iter:
             sched_iter.signal_and_advance()
         sched_iter.drain()
+
+    Parameters:
+        num_stages: Number of CLC pipeline stages for work distribution.
+        reduction_tile_shape: The `(BM, MMA_N, BK)` per-block reduction tile
+            shape used for the split-K workspace layout.
+        cluster_shape: Cluster tile counts as `(m, n, k)` (defaults to
+            `(1, 1, 1)`).
+        rasterize_order: Order CLC rasterizes tiles across the cluster
+            grid (defaults to `RasterOrder.AlongM`).
+        block_swizzle_size: Block swizzle factor for tile remapping, one
+            of 0, 1, 2, 4, or 8 (defaults to 8).
+        num_split_k: Number of splits the K dimension is partitioned into.
     """
 
     comptime Element = WorkInfo
@@ -220,7 +275,12 @@ struct SchedulerWorkIteratorSplitK[
 
     @always_inline
     def __init__(out self, scheduler: Self.SchedulerType, work_info: WorkInfo):
-        """Create scheduler iterator. Throttle pipeline from scheduler."""
+        """Create scheduler iterator. Throttle pipeline from scheduler.
+
+        Args:
+            scheduler: The split-K tile scheduler owning the CLC state.
+            work_info: Initial work descriptor for the first output tile.
+        """
         self.scheduler = scheduler
         self.work_info = work_info
         self.consumer_state = PipelineState[Self.num_stages]()
@@ -279,6 +339,27 @@ struct TileScheduler[
     block_swizzle_size: Int = 8,
     num_split_k: Int = 1,
 ](TrivialRegisterPassable):
+    """Tile scheduler that partitions the K dimension into multiple splits.
+
+    Wraps the B200 tile scheduler and remaps its work info into split-K
+    coordinates, managing per-split workspace reductions and lock-based
+    synchronization so that CTAs contributing to the same output tile
+    accumulate correctly.
+
+    Parameters:
+        num_stages: Number of CLC pipeline stages for work distribution.
+        reduction_tile_shape: The `(BM, MMA_N, BK)` per-block reduction tile
+            shape used for the split-K workspace layout.
+        cluster_shape: Cluster tile counts as `(m, n, k)` (defaults to
+            `(1, 1, 1)`).
+        rasterize_order: Order CLC rasterizes tiles across the cluster
+            grid (defaults to `RasterOrder.AlongM`).
+        block_swizzle_size: Block swizzle factor for tile remapping, one
+            of 0, 1, 2, 4, or 8 (defaults to 8).
+        num_split_k: Number of splits the K dimension is partitioned into
+            (defaults to 1).
+    """
+
     comptime UnderlyingScheduler = B200TileScheduler[
         Self.num_stages,
         Self.cluster_shape,
@@ -310,6 +391,14 @@ struct TileScheduler[
         consumer_arv_count: Int32,
     ):
         """Initialize throttle pipeline barriers. Called once by elect_one thread.
+
+        Args:
+            storage_ptr: Pointer to shared memory backing the throttle
+                barriers.
+            producer_arv_count: Arrival count the producer waits for per
+                stage.
+            consumer_arv_count: Arrival count the consumer waits for per
+                stage.
         """
         Self.UnderlyingScheduler.init_throttle_barriers(
             storage_ptr, producer_arv_count, consumer_arv_count
@@ -326,7 +415,21 @@ struct TileScheduler[
         clc_throttle: Self.ThrottleBarrierArray,
         locks_ptr: UnsafePointer[UInt8, MutAnyOrigin],
     ):
-        """Initialize from typed barrier arrays."""
+        """Initialize from typed barrier arrays.
+
+        Args:
+            cluster_dim: Grid cluster dimensions as `(m, n, k)` used for
+                fast division rasterization.
+            mnk: Problem dimensions as `(M, N, K)`; `K` sets the total K
+                tile count.
+            clc_response: Shared memory array storing CLC response payloads.
+            clc_full: Barriers signaled when CLC response data is ready.
+            clc_empty: Barriers signaled when a response slot is available.
+            clc_throttle: Barriers for the throttle pipeline pacing the
+                scheduler against the load warp.
+            locks_ptr: Pointer to the per-output-tile lock buffer used to
+                synchronize split-K reductions across CTAs.
+        """
         self.scheduler = Self.UnderlyingScheduler(
             cluster_dim,
             clc_response,
@@ -415,6 +518,16 @@ struct TileScheduler[
             with scheduler.wait_and_advance_work(work_info, state) as current:
                 do_mma(current)
             # After: work_info updated to next value
+
+        Parameters:
+            work_origin: Memory origin of the `work_info` reference
+                (inferred).
+
+        Args:
+            work_info: Reference to the current work descriptor, updated to
+                the next work item on context exit.
+            consumer_state: CLC consumer pipeline state, advanced after the
+                fetch.
         """
         var next = self.fetch_next_work(work_info, consumer_state)
         consumer_state.step()
@@ -790,6 +903,16 @@ def get_num_tiles(
     block_tile_shape: IndexList[3],
     cluster_shape: IndexList[2],
 ) -> IndexList[2]:
+    """Computes the number of output tiles aligned up to the cluster shape.
+
+    Args:
+        problem_shape: The (M, N, K) problem dimensions.
+        block_tile_shape: The (BM, BN, BK) per-block tile dimensions.
+        cluster_shape: The (cluster_m, cluster_n) cluster dimensions.
+
+    Returns:
+        The aligned (num_blocks_m, num_blocks_n) tile grid.
+    """
     var num_block_m = ceildiv(problem_shape[0], block_tile_shape[0])
     var num_block_n = ceildiv(problem_shape[1], block_tile_shape[1])
 
@@ -807,6 +930,19 @@ def get_required_locks_buffer_size_bytes[
     block_tile_shape: IndexList[3],
     cluster_shape: IndexList[2],
 ) -> Int:
+    """Computes the byte size of the lock buffer needed for split-K reduction.
+
+    Parameters:
+        accum_type: Element type of the split-K reduction accumulator.
+
+    Args:
+        problem_shape: The (M, N, K) problem dimensions.
+        block_tile_shape: The (BM, BN, BK) per-block tile dimensions.
+        cluster_shape: The (cluster_m, cluster_n) cluster dimensions.
+
+    Returns:
+        The number of bytes required for the per-output-tile lock buffer.
+    """
     var problem_blocks = get_num_tiles(
         problem_shape, block_tile_shape, cluster_shape
     )

@@ -19,7 +19,6 @@ _MAX_PACKAGES = {
     "layout": "kernels/src/layout",
     "linalg": "kernels/src/linalg",
     "nn": "kernels/src/nn",
-    "nvml": "kernels/src/nvml",
     "profiling_range": "kernels/src/profiling_range",
     "shmem": "kernels/src/shmem",
     "quantization": "kernels/src/quantization",
@@ -35,16 +34,16 @@ _MAX_PACKAGES = {
     "testdata": "kernels/test/testdata",
     "_cublas": "kernels/src/_cublas",
     "_cufft": "kernels/src/_cufft",
-    "_curand": "kernels/src/_curand",
     "_cudnn": "kernels/src/_cudnn",
     "_rocblas": "kernels/src/_rocblas",
     "_miopen": "kernels/src/_miopen",
     "max_mojo": "mojo/max",
 }
 
-_INTERNAL_PACKAGES = [
+INTERNAL_PACKAGES = [
     "//Kernels/lib/matmul_rs",
     "//Kernels/lib/msa",
+    "//Kernels/src/mega_ffn",
 ]
 
 # Packages that are marked testonly and cannot be used by production targets
@@ -105,7 +104,7 @@ def max_aliases():
         ]),
         internal_packages = "\n".join([
             '    "{}",'.format(name)
-            for name in _INTERNAL_PACKAGES
+            for name in INTERNAL_PACKAGES
         ]),
         prod_packages = "\n".join([
             '    "@mojo//:{}",'.format(name)

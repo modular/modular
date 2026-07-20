@@ -27,7 +27,6 @@ from std.gpu.sync import (
     umma_arrive_leader_cta,
 )
 from std.gpu.primitives.cluster import block_rank_in_cluster
-from std.gpu.primitives.id import cluster_dim
 from std.gpu.compute.arch.tcgen05 import (
     tcgen05_dealloc,
     tcgen05_fence_after,
@@ -667,6 +666,13 @@ def fa4_splitk_combine_write[
     barrier because peers never wrote.)
     """
     comptime assert config.num_q == 1
+    # The SIMD-2 weight-normalize loop below strides `range(0, P, 2)` and reads
+    # `w[p+1]`, so P must be EVEN; the split-K whitelist
+    # (FA4Config.supported()) admits only even P (2,4,6,8,10,16). Fail loudly if
+    # a future odd P ever slips through instead of reading `w[P]` OOB.
+    comptime assert (
+        P % 2 == 0
+    ), "split-K combine requires an even partition count P"
     comptime o_sw_K = output_swizzle_mode.bytes() // size_of[output_type]()
     comptime iters = align_up(config.ov_depth, o_sw_K) // o_sw_K
     comptime assert iters_per_wg >= 1
@@ -852,7 +858,6 @@ def fa4_splitk_reduce_scatter_write[
     local_row: UInt32,
     local_warp_idx: UInt32,
     warp_group_idx: UInt32,
-    num_partitions: UInt32,
     partition_idx: UInt32,
     own_max: Float32,
     own_sum: Float32,
@@ -879,14 +884,12 @@ def fa4_splitk_reduce_scatter_write[
     out_row_idx: UInt32,
 ):
     """Split-K pass 2 dispatch (reduce-scatter): pick THIS partition's
-    depth-column band from the RUNTIME `num_partitions`/`partition_idx`, then
-    STAGE + publish + combine over it. The band's `wg_j_offset`/`iters_per_wg`
-    must be comptime (for the per-block TMA and for routing the own band into
-    registers), so lift both to comptime: `num_partitions` (in {2,4}; the 1Q
-    split path is compiled once at P_MAX=4) via a direct `if/else` selecting a
-    comptime `P_static`, and `partition_idx` via a comptime-for over the
-    P_static partitions -- one runtime branch taken, the band params comptime
-    per branch.
+    depth-column band from the STATIC partition count `P` and the runtime
+    `partition_idx`, then STAGE + publish + combine over it. `P` is
+    `config.splitk_partitions` (each split-K kernel is compiled once per static
+    `P`), so the band's `wg_j_offset`/`iters_per_wg` are already comptime; only
+    `partition_idx` is lifted via a comptime-for over the `P` partitions -- one
+    runtime branch taken, the band params comptime per branch.
 
     Per band (WG0), staging split so the publish lands between peers and own:
       1. `fa4_splitk_stage_partial[do_own=False]` stages only the PEER-visible
@@ -915,12 +918,11 @@ def fa4_splitk_reduce_scatter_write[
     comptime o_sw_K = output_swizzle_mode.bytes() // size_of[output_type]()
     comptime iters_total = align_up(config.ov_depth, o_sw_K) // o_sw_K
 
-    # `num_partitions` (the runtime cluster size) is 2 or 4: the 1Q split
-    # path is compiled once at P_MAX == 4 and launched only when
-    # num_partitions >= 2 (see dispatch.mojo). The band offsets must be
-    # comptime, so lift `num_partitions` to a comptime `P_static` with a
-    # direct if/else, then lift `partition_idx` via the comptime-for inside.
-    comptime assert P == 4, "P_MAX == 4, so num_partitions is 2 or 4"
+    # `P` (== `config.splitk_partitions`, the static cluster size) is EVEN, in
+    # {2,4,6,8,10,16}; only `partition_idx` (runtime) needs lifting to comptime,
+    # via the comptime-for below. The band split `bpp = ceildiv(iters_total, P)`
+    # is P-general: a non-pow2 P (6, 10) just yields uneven and/or empty
+    # trailing bands, both of which are already handled below.
 
     @parameter
     @always_inline
@@ -1042,10 +1044,7 @@ def fa4_splitk_reduce_scatter_write[
                             publish_mbar[].arrive_cluster(UInt32(pp))
                     publish_mbar[].wait(UInt32(0))
 
-    if num_partitions == 2:
-        reduce_scatter_p[2]()
-    else:
-        reduce_scatter_p[4]()
+    reduce_scatter_p[P]()
 
 
 @always_inline
@@ -1747,7 +1746,7 @@ def fa4_softmax[
         var part_cb: UInt32 = 0
         var part_ce: UInt32 = mask_ends[num_sets - 1]
         comptime if config.num_q == 1 and config.splitk_partitions > 1:
-            var _np: UInt32 = UInt32(cluster_dim.x)
+            var _np: UInt32 = UInt32(config.splitk_partitions)
             var _w = splitk_window(
                 mask_ends[num_sets - 1],
                 _np,
@@ -1885,8 +1884,7 @@ def fa4_softmax[
                         row,
                         warp_idx & 3,
                         warp_group_idx,
-                        UInt32(cluster_dim.x),
-                        splitk_partition_idx(UInt32(cluster_dim.x)),
+                        splitk_partition_idx(UInt32(config.splitk_partitions)),
                         min_or_neg_inf[DType.float32](),
                         Float32(0),
                         scale_log2e,
@@ -1933,7 +1931,9 @@ def fa4_softmax[
     # `mla_decode_combine.mojo`'s once-per-row sink accounting.)
     var fold_sink: Bool = True
     comptime if config.splitk_partitions > 1:
-        fold_sink = splitk_partition_idx(UInt32(cluster_dim.x)) == UInt32(0)
+        fold_sink = splitk_partition_idx(
+            UInt32(config.splitk_partitions)
+        ) == UInt32(0)
 
     comptime if not SinkType.is_null:
         var sink_weights_ptr = rebind[
@@ -2192,9 +2192,9 @@ def fa4_softmax[
             comptime SPLITK_WRITER = get_defined_int[
                 "FA4_1Q_SPLITK_WRITER", 0
             ]()
-            is_writer = splitk_partition_idx(UInt32(cluster_dim.x)) == UInt32(
-                SPLITK_WRITER
-            )
+            is_writer = splitk_partition_idx(
+                UInt32(config.splitk_partitions)
+            ) == UInt32(SPLITK_WRITER)
         if config.single_o or total_iters_combined == UInt32(1):
             # T==1 fast path AND the single-O all-T path: skip the
             # LSE-exchange entirely and reuse the 2Q row-scale + stmatrix
@@ -2245,8 +2245,7 @@ def fa4_softmax[
                     row,
                     warp_idx & 3,
                     warp_group_idx,
-                    UInt32(cluster_dim.x),
-                    splitk_partition_idx(UInt32(cluster_dim.x)),
+                    splitk_partition_idx(UInt32(config.splitk_partitions)),
                     row_max,
                     row_sum_total,
                     scale_log2e,
@@ -2470,8 +2469,7 @@ def fa4_softmax[
                 row,
                 warp_idx & 3,
                 warp_group_idx,
-                UInt32(cluster_dim.x),
-                splitk_partition_idx(UInt32(cluster_dim.x)),
+                splitk_partition_idx(UInt32(config.splitk_partitions)),
                 global_max,
                 global_sum,
                 scale_log2e,

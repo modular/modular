@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements the SM100 (Blackwell) warp-specialized FlashAttention-4 multi-head attention kernel with the two-query (2Q) variant.
+"""
+
 from std.math import align_up
 from std.sys import simd_width_of, size_of
 from std.gpu import (
@@ -87,6 +90,24 @@ struct SM100MHA2Q[
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
 ](TrivialRegisterPassable):
+    """Implements the two-query (2Q) FlashAttention-4 forward attention kernel for NVIDIA SM100 GPUs.
+
+    Bundles the comptime tile configuration, TMA operand types, and warp-specialized dispatch (softmax, correction, load, and MMA warps) that together compute scaled dot-product attention over a KV cache. When the configuration admits a type-compatible one-query (1Q) variant, short sequences are routed to the cheaper 1Q body at runtime.
+
+    Parameters:
+        KVLUTType: MHA operand describing the KV cache lookup table and dtype.
+        output_type: Output dtype of the attention result.
+        MaskType: Causal or unmasked attention mask type.
+        SchedulerType: Tile scheduler controlling iteration over KV tiles.
+        config: Comptime FA4 tile and pipeline configuration.
+        ValidLengthType: Optional pointer type for valid sequence lengths.
+        SinkType: Optional pointer type for attention sink weights.
+        KVRowOffsetsType: Optional pointer type for KV input row offsets.
+        _is_cache_length_accurate: Whether the cache length is known to be accurate.
+        MaxSeqLenType: Optionally-static maximum sequence length type.
+        PartitionType: KV cache partition scheme.
+    """
+
     comptime qkv_type = Self.KVLUTType.dtype
     comptime accum_type = DType.float32
     comptime simd_size: Int = simd_width_of[Self.qkv_type]()
@@ -265,53 +286,10 @@ struct SM100MHA2Q[
         pack: Self.PackType,
     ):
         # Static-cluster entry: the `nvvm.cluster_dim` metadata above bakes a
-        # *required* cluster size into the kernel (pair-CTA 2-SM width, or 1 for
-        # non-split). Used by every config EXCEPT the num_q==1 split-K path,
-        # which launches a runtime-sized cluster via `kernel_dyncluster` (no
-        # static cluster metadata — see `FA4Config.splitk_dynamic`).
-        Self._entry_body(
-            q_tma_op,
-            k_tma_op,
-            v_tma_op,
-            ragged_tma_store,
-            kv_lut,
-            scale,
-            batch_size,
-            num_keys_arg,
-            pack,
-        )
-
-    @staticmethod
-    @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
-    @__llvm_arg_metadata(k_tma_op, `nvvm.grid_constant`)
-    @__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
-    @__llvm_arg_metadata(ragged_tma_store, `nvvm.grid_constant`)
-    @__llvm_metadata(
-        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-            Int32(Self.config.num_threads)
-        )
-    )
-    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
-    @__name(
-        t"sm100_mha_{Self.config.num_q}q_depth{Self.config.qk_depth}_{Self.qkv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}_dyncluster",
-    )
-    def kernel_dyncluster(
-        q_tma_op: Self.QTMAOpType,
-        k_tma_op: Self.KTMAOpType,
-        v_tma_op: Self.VTMAOpType,
-        ragged_tma_store: Self.OTMAStoreType,
-        kv_lut: Self.KVLUTType,
-        scale: Float32,
-        batch_size: UInt32,
-        num_keys_arg: UInt32,
-        pack: Self.PackType,
-    ):
-        # Dynamic-cluster entry: deliberately NO `nvvm.cluster_dim` metadata, so
-        # the cluster size is supplied only at launch (`cluster_dim=Dim(P,1,1)`).
-        # Verified on B200 (`test_dsmem_dyncluster_smoke`): a metadata-less
-        # clustered kernel launches and `cluster_sync`/`mapa` DSMEM work. Used by
-        # the num_q==1 split-K path (cta_group==1) so one compiled kernel serves
-        # a runtime cluster size (plan §6 dynamic cluster dimensions).
+        # *required* cluster size into the kernel. This covers every config:
+        # pair-CTA (2-SM width), non-split (size 1), AND num_q==1 split-K, which
+        # is compiled once per static partition count `P` (cluster size `P`) and
+        # selected at dispatch (see `mha_sm100_dispatch`).
         Self._entry_body(
             q_tma_op,
             k_tma_op,

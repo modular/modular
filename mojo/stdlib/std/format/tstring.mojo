@@ -17,9 +17,9 @@ import std.format._utils as fmt
 
 
 @always_inline
-def _strlen(ptr: UnsafePointer[mut=False, Byte, _]) -> Int:
+def _strlen(ptr: Pointer[mut=False, Byte, _]) -> Int:
     var offset = 0
-    while ptr[offset]:
+    while ptr[unsafe_offset=offset]:
         offset += 1
     return offset
 

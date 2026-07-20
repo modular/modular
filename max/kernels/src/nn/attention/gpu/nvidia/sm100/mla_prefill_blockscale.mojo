@@ -11,6 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""
+Implements the SM100 (Blackwell) MLA prefill attention kernel with blockwise
+FP8 scaling, converting block-scaled FP8 K_rope tiles to BF16 in shared
+memory before the MMA stage.
+"""
+
 from std.sys import size_of
 from std.math import ceildiv, align_up
 from nn.attention.mha_operand import MHAOperand
@@ -86,6 +92,9 @@ from nn.attention.gpu.nvidia.sm100.smem import SM100AttentionSMem
 
 @fieldwise_init
 struct WarpRole(Equatable, TrivialRegisterPassable):
+    """Tags each warp with its specialized role in the warp-specialized MLA prefill kernel.
+    """
+
     var _role: Int32
     comptime Softmax0 = Self(0)
     comptime Softmax1 = Self(1)
@@ -101,6 +110,15 @@ struct WarpRole(Equatable, TrivialRegisterPassable):
 
 
 def warp_idx_to_role(warp_idx: UInt32) -> WarpRole:
+    """Maps a global warp index to its `WarpRole` based on warpgroup assignment.
+
+    Args:
+        warp_idx: Global warp index within the CTA, where each warpgroup
+            spans four consecutive warps. Determines the specialized role
+            (softmax, correction, MMA, load, or FP8-to-BF16 conversion) via
+            `warp_idx // 4` for warpgroup assignment and direct index checks
+            for warps 12 and above.
+    """
     var wg_idx = warp_idx // 4
     if wg_idx == 0:
         return WarpRole.Softmax0
@@ -695,7 +713,7 @@ __extension SM100MLA:
             signaling completion on the CVT producer mbar.
 
             `smem_base_ptr` is the FP8 base of this tile's K_rope smem
-            region — the caller pre-bitcasts (fused-KV) or pre-rebounds
+            region, the caller pre-bitcasts (fused-KV) or pre-rebounds
             (split-KV) so this closure can advance by `_p *
             k_rope_sub_elems` in FP8-element units. Folds in
             `expect_bytes_pred` for the CVT producer mbar so the byte
@@ -1067,7 +1085,7 @@ __extension SM100MLA:
 
                 Includes the `split_smem` decomposition into K_nope and
                 K_rope smem regions. Note: unlike generic split-KV,
-                blockscale's K_rope bytes are NOT on the K barrier — so
+                blockscale's K_rope bytes are NOT on the K barrier, so
                 the K-barrier expect only carries Q + K_nope.
                 """
                 # Q + K_nope bytes go on the K barrier.
@@ -1709,6 +1727,61 @@ def mla_sm100_prefill_blockscale[
     batch_size: Int,
     ctx: DeviceContext,
 ) raises:
+    """Launches the SM100 MLA prefill kernel with blockwise FP8 scaling.
+
+    Selects an FA4 MLA config, builds the TMA tiles for Q, K_nope, K_rope, and
+    V, then enqueues the warp-specialized `mla_prefill_kernel_blockscale` kernel
+    that converts block-scaled FP8 K_rope to BF16 before the MMA stage.
+
+    Parameters:
+        output_dtype: The element dtype of the output tensor.
+        q_type: The element dtype of the query tensor.
+        KVType: The `MHAOperand` type for K_nope, carrying gmem layout
+            and page-size metadata.
+        VType: The `MHAOperand` type for V, carrying gmem layout and
+            page-size metadata.
+        KRopeType: The `MHAOperand` type for K_rope, carrying gmem
+            layout, page-size, and dtype (FP8 for blockscale).
+        MaskType: The `MHAMask` type controlling causal and padding
+            behavior.
+        MaxPromptLenType: The `OptionallyStaticInt` type of
+            `max_prompt_len`, either a compile-time constant or a
+            runtime integer.
+        config: The `MHAConfig` holding tile sizes, stage counts, and
+            head counts (inferred).
+        group: The GQA group size, namely the number of query heads per
+            KV head (inferred).
+        q_depth: The total query head dimension, combining nope and rope
+            depth (inferred).
+        cache_depth: The total KV cache depth, combining nope and rope
+            depth (inferred).
+        _ndbuffer_mha_operand: Whether the MHA operand uses the ndbuffer
+            layout (inferred).
+        blockwise_scale: The blockwise FP8 scaling mode flag (defaults
+            to 0, inferred).
+        v_depth: The V and output head dimension, or -1 for the DeepSeek
+            shape where V width equals nope width (defaults to -1,
+            inferred).
+
+    Args:
+        output: The output tensor of shape
+            `[batch * num_rows, num_q_heads, ov_depth]`.
+        q: The query tensor of shape
+            `[batch * num_rows, num_q_heads, qk_depth]`.
+        k: The K_nope operand for the non-rotary part of the KV cache.
+        v: The V operand for the value part of the KV cache.
+        k_rope: The K_rope operand for the rotary-position-encoded part
+            of K, stored as block-scaled FP8.
+        mask_functor: The attention mask functor applied to the score
+            matrix.
+        valid_length: The per-sequence valid length tensor of shape
+            `[batch]` as `uint32`.
+        max_prompt_len: The maximum prompt length across the batch, as
+            a compile-time or runtime integer.
+        scale: The softmax scale factor applied to the Q@K' dot product.
+        batch_size: The number of sequences in the batch.
+        ctx: The `DeviceContext` used to enqueue the kernel.
+    """
     comptime assert (
         KVType.dtype == VType.dtype
     ), "k and v must share an element dtype for SM100 MLA prefill"

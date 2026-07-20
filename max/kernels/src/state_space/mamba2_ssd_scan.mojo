@@ -344,11 +344,73 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
     Identical to ``mamba2_ssd_chunk_scan_varlen_fwd_gpu`` except final states
     are written directly into ``ssm_pool[cache_indices[b], ...]`` (fp32,
     [max_slots, nheads, head_dim, dstate]) instead of a separate
-    ``final_states`` output tensor.  This eliminates the graph-side
+    ``final_states`` output tensor. This eliminates the graph-side
     gather/scatter_nd/buffer_store whole-pool round-trip.
 
     Grid: (ceildiv(head_dim, BLOCK), nheads, batch). Same launch shape as the
     non-inplace variant.
+
+    Parameters:
+        kernel_dtype: Element type of the input/output tensors `x`, `dt`,
+            `A`, `B`, `C`, `D`, `dt_bias`, and `y`.
+        DSTATE: State dimension per head; the `dstate` extent of `B`, `C`,
+            and the SSM state vector.
+        x_LT: Tensor layout of `x`.
+        dt_LT: Tensor layout of `dt`.
+        A_LT: Tensor layout of `A`.
+        B_LT: Tensor layout of `B`.
+        C_LT: Tensor layout of `C`.
+        D_LT: Tensor layout of `D`.
+        dt_bias_LT: Tensor layout of `dt_bias`.
+        y_LT: Tensor layout of `y`.
+        ssm_pool_LT: Tensor layout of `ssm_pool`.
+        query_start_loc_LT: Tensor layout of `query_start_loc`.
+        has_initial_state_LT: Tensor layout of `has_initial_state`.
+        cache_indices_LT: Tensor layout of `cache_indices`.
+        Storage: Storage policy shared by all tile operands (defaults to
+            `PointerStorage[element_width=1]`).
+
+    Args:
+        nheads: Number of attention heads.
+        head_dim: Channel dimension per head; the `p` extent of `x` and `y`.
+        ngroups: Number of B/C groups; `nheads // ngroups` heads share each
+            group.
+        nheads_ngroups_ratio: Ratio `nheads // ngroups` mapping head `h` to
+            group `h // nheads_ngroups_ratio`.
+        batch: Number of sequences in the varlen batch.
+        dt_softplus: Nonzero applies `softplus` to `dt + dt_bias`; zero
+            skips it.
+        x: Input sequence tensor of shape `(total_len, nheads, head_dim)`.
+        dt: Step-size tensor of shape `(total_len, nheads)`.
+        A: Per-head scalar recurrence diagonal of shape `(nheads,)`.
+        B: Input-projection tensor of shape `(total_len, ngroups, dstate)`.
+        C: Output-projection tensor of shape `(total_len, ngroups, dstate)`.
+        D: Skip-connection per head of shape `(nheads,)`; may be empty to
+            disable.
+        dt_bias: Per-head bias added to `dt` of shape `(nheads,)`; may be
+            empty to disable.
+        y: Output tensor of shape `(total_len, nheads, head_dim)`, written
+            in place.
+        ssm_pool: State pool of shape `(max_slots, nheads, head_dim,
+            dstate)` fp32; read for initial state and written in place at
+            `cache_indices[b]`.
+        query_start_loc: Cumulative sequence offsets of shape
+            `(batch + 1,)`; sequence `b` spans
+            `[query_start_loc[b], query_start_loc[b+1])`.
+        has_initial_state: Per-sequence flag of shape `(batch,)`; when true,
+            load the initial state from `ssm_pool[cache_indices[b]]`.
+        cache_indices: Slot index per sequence of shape `(batch,)` into
+            `ssm_pool` for the initial and final state.
+        x_strides: Strides of `x` along `(total_len, nheads, head_dim)`.
+        dt_strides: Strides of `dt` along `(total_len, nheads)`.
+        A_strides: Strides of `A` along `(nheads,)`.
+        B_strides: Strides of `B` along `(total_len, ngroups, dstate)`.
+        C_strides: Strides of `C` along `(total_len, ngroups, dstate)`.
+        D_strides: Strides of `D` along `(nheads,)`.
+        dt_bias_strides: Strides of `dt_bias` along `(nheads,)`.
+        y_strides: Strides of `y` along `(total_len, nheads, head_dim)`.
+        ssm_pool_strides: Strides of `ssm_pool` along `(max_slots, nheads,
+            head_dim, dstate)`.
     """
     var p = block_dim.x * block_idx.x + thread_idx.x
     var h = block_idx.y
@@ -1293,6 +1355,56 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
 
     Mirrors ``mamba2_ssd_chunk_scan_varlen_fwd_cpu`` but writes final states
     into ``ssm_pool[cache_indices[b], ...]`` directly.
+
+    Parameters:
+        kernel_dtype: Element type of the input/output tensors `x`, `dt`,
+            `A`, `B`, `C`, `D`, `dt_bias`, and `y`.
+        DSTATE: State dimension per head; the `dstate` extent of `B`, `C`,
+            and the SSM state vector.
+
+    Args:
+        nheads: Number of attention heads.
+        head_dim: Channel dimension per head; the `p` extent of `x` and `y`.
+        ngroups: Number of B/C groups; `nheads // ngroups` heads share each
+            group.
+        nheads_ngroups_ratio: Ratio `nheads // ngroups` mapping head `h` to
+            group `h // nheads_ngroups_ratio`.
+        batch: Number of sequences in the varlen batch.
+        dt_softplus: Nonzero applies `softplus` to `dt + dt_bias`; zero
+            skips it.
+        x: Input sequence tensor of shape `(total_len, nheads, head_dim)`.
+        dt: Step-size tensor of shape `(total_len, nheads)`.
+        A: Per-head scalar recurrence diagonal of shape `(nheads,)`.
+        B: Input-projection tensor of shape `(total_len, ngroups, dstate)`.
+        C: Output-projection tensor of shape `(total_len, ngroups, dstate)`.
+        D: Skip-connection per head of shape `(nheads,)`; may be empty to
+            disable.
+        dt_bias: Per-head bias added to `dt` of shape `(nheads,)`; may be
+            empty to disable.
+        y: Output tensor of shape `(total_len, nheads, head_dim)`, written
+            in place.
+        ssm_pool: State pool of shape `(max_slots, nheads, head_dim,
+            dstate)` fp32; read for initial state and written in place at
+            `cache_indices[b]`.
+        query_start_loc: Cumulative sequence offsets of shape
+            `(batch + 1,)`; sequence `b` spans
+            `[query_start_loc[b], query_start_loc[b+1])`.
+        has_initial_state: Per-sequence flag of shape `(batch,)`; when true,
+            load the initial state from `ssm_pool[cache_indices[b]]`.
+        cache_indices: Slot index per sequence of shape `(batch,)` into
+            `ssm_pool` for the initial and final state.
+        x_strides: Strides of `x` along `(total_len, nheads, head_dim)`.
+        dt_strides: Strides of `dt` along `(total_len, nheads)`.
+        A_strides: Strides of `A` along `(nheads,)`.
+        B_strides: Strides of `B` along `(total_len, ngroups, dstate)`.
+        C_strides: Strides of `C` along `(total_len, ngroups, dstate)`.
+        D_strides: Strides of `D` along `(nheads,)`.
+        dt_bias_strides: Strides of `dt_bias` along `(nheads,)`.
+        y_strides: Strides of `y` along `(total_len, nheads, head_dim)`.
+        ssm_pool_strides: Strides of `ssm_pool` along `(max_slots, nheads,
+            head_dim, dstate)`.
+        ctx: Device context for the parallel worker pool (defaults to
+            `None`).
     """
     var has_D = Int(D.dim[0]()) > 0
     var has_dt_bias = Int(dt_bias.dim[0]()) > 0

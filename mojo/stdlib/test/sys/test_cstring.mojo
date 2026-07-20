@@ -141,7 +141,7 @@ def test_c_string_external_call() raises:
     var string = "THIS-ENV-VAR-DOES-NOT-EXIST-MOJO-IS-COOL"
     var result = external_call[
         "getenv",
-        Optional[CStringSlice[StaticConstantOrigin]],
+        Optional[CStringSlice[ImmStaticOrigin]],
     ](string.as_c_string_slice())
     assert_false(result)
 

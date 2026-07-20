@@ -44,26 +44,26 @@ struct AMDIGLPStrategy(Equatable, Intable, TrivialRegisterPassable):
     non-MFMA region falls back gracefully but provides no constraints.
 
     Per AMD docs, mutually exclusive with `sched_group_barrier` in
-    the same scheduling region — pick one or the other per cluster.
+    the same scheduling region; pick one or the other per cluster.
     """
 
     var _value: Int32
 
     comptime MFMA_SMALL_GEMM = Self(0)
-    """`MFMASmallGemmOpt` — interleaves 2 DS reads per 1 MFMA."""
+    """`MFMASmallGemmOpt`: interleaves 2 DS reads per 1 MFMA."""
 
     comptime MFMA_SMALL_GEMM_SINGLE_WAVE = Self(1)
-    """`MFMASmallGemmSingleWaveOpt` — single-wave variant for small GEMMs."""
+    """`MFMASmallGemmSingleWaveOpt`: single-wave variant for small GEMMs."""
 
     comptime MFMA_EXP_INTERLEAVE = Self(2)
-    """`MFMAExpInterleaveOpt` — multi-phase attention preset (MFMA + `exp2`).
+    """`MFMAExpInterleaveOpt`: multi-phase attention preset (MFMA + `exp2`).
 
     Drives the MFMA/VALU/TRANS triple interleave that flash-attention-style
     softmax wants (used by `mla_prefill`).
     """
 
     comptime MFMA_EXP_SIMPLE_INTERLEAVE = Self(3)
-    """`MFMAExpSimpleInterleaveOpt` — interleaves 1 TRANS per 1 MFMA."""
+    """`MFMAExpSimpleInterleaveOpt`: interleaves 1 TRANS per 1 MFMA."""
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -77,7 +77,7 @@ struct AMDIGLPStrategy(Equatable, Intable, TrivialRegisterPassable):
 
 @always_inline
 def _iglp_opt[strategy: AMDIGLPStrategy]() -> None:
-    """Emits `llvm.amdgcn.iglp.opt(strategy)` — IGroupLP preset hint."""
+    """Emits `llvm.amdgcn.iglp.opt(strategy)`: IGroupLP preset hint."""
     llvm_intrinsic["llvm.amdgcn.iglp.opt", NoneType](Int32(Int(strategy)))
 
 
@@ -96,7 +96,7 @@ def sched_barrier_pairs[pairs: Int, valu_cnt: Int, group: Int]() -> None:
     not a VALU-to-MFMA ratio; LLVM derives the interleave from the
     group declaration. Mojo's underlying
     `schedule_group_barrier(mask, size, sync_id)` docstring labels
-    `size` as a "repeat count" — that is misleading; it is the
+    `size` as a "repeat count", that is misleading; it is the
     instruction count per group.
 
     Parameters:
@@ -122,7 +122,7 @@ def sched_dsread_valu_pairs[pairs: Int, valu_cnt: Int, group: Int]() -> None:
     """Emits `pairs` schedule groups of shape `[1 DS_READ, valu_cnt VALU]`.
 
     DS_READ variant of `sched_barrier_pairs` for clusters that have NO
-    MFMAs but want to interleave LDS-reads with VALU work — typically
+    MFMAs but want to interleave LDS-reads with VALU work, typically
     V-load + causal-mask clusters (the MHA kernel's C5 / EPI_C5 / EPI_C9). The
     interleave hides the v_cmp→v_cndmask wait state (5 cycles, gated by
     `s_nop 1` if not filled) behind useful `ds_read_b64_tr_b16` work.
@@ -155,14 +155,14 @@ def sched_barrier_exp_pairs[pairs: Int, exp_cnt: Int, group: Int]() -> None:
     transcendental work that issues on the AMDGPU TRANS unit
     (mask `0x400` per LLVM AMDGPU). Pair this with
     `sched_barrier_pairs` under the same `sync_id` to declare both
-    interleavings within one cluster — LLVM orders the declarations as
+    interleavings within one cluster; LLVM orders the declarations as
     a single sequence (see the reference
     `kernel.cpp:44-56` for the canonical pattern).
 
     Parameters:
         pairs: Number of (MFMA, TRANS) groups to emit.
         exp_cnt: TRANS instructions per group.
-        group: IGroupLP `sync_id` — must match the companion
+        group: IGroupLP `sync_id`, must match the companion
             `sched_barrier_pairs` call's `group` for combined ordering.
     """
     schedule_group_barrier(AMDScheduleBarrierMask.MFMA, Int32(1), Int32(group))

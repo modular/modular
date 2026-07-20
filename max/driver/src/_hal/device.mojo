@@ -130,6 +130,10 @@ struct Device[spec: DeviceSpec](ImplicitlyDeletable, Movable):
     ) raises HALError -> ArcPointer[Context[Self.spec]]:
         return Context[Self.spec]._create(self)
 
+    def get_attribute(self, attribute: Int32) raises HALError -> Int32:
+        """Queries a numeric device attribute by its CUDA-style ID."""
+        return self._raw[].get_device_attribute(self._handle, attribute)
+
     def get_dlpack_device(
         self, pinned: Bool
     ) raises HALError -> M_driver_dlpack_device:

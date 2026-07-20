@@ -15,7 +15,7 @@
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.format_int import _write_int
 from std.reflection import call_location
-from std.collections import check_bounds
+from std.collections import check_bounds, Span
 from std.collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -49,7 +49,6 @@ from std.sys.intrinsics import likely, unlikely
 from std.bit import count_trailing_zeros
 from std.bit.mask import is_negative, splat
 from std.memory import (
-    Span,
     memcmp,
     unsafe_memcpy,
     pack_bits,
@@ -58,7 +57,7 @@ from std.python import Python, PythonObject
 from std.format._utils import _write_hex
 
 
-comptime StaticString = StringSlice[StaticConstantOrigin]
+comptime StaticString = StringSlice[ImmStaticOrigin]
 """An immutable static string slice.
 
 This is a type of
@@ -193,7 +192,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var length: Int = Int(
             SIMDSize(mlir_value=__mlir_op.`pop.string.size`(_kgen))
         )
-        var ptr = UnsafePointer[mut=False, _, StaticConstantOrigin](
+        var ptr = UnsafePointer[mut=False, _, ImmStaticOrigin](
             _mlir_value=__mlir_op.`pop.string.address`(_kgen)
         ).bitcast[Byte]()
         self._slice = {ptr = ptr, length = length}
@@ -1122,7 +1121,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     @always_inline
     def as_c_string_slice(
         self: StaticString,
-    ) -> CStringSlice[StaticConstantOrigin]:
+    ) -> CStringSlice[ImmStaticOrigin]:
         """Return a CStringSlice for this StaticString.
 
         Returns:

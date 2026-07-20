@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides FP4 quantization kernels for dynamic block-scaled and MXFP4 formats."""
+
 from std.math import align_up, ceildiv
 from std.math.uutils import uceildiv, udivmod, ufloordiv
 from std.memory import stack_allocation
@@ -130,6 +132,42 @@ def quantize_dynamic_scaled_fp4fp8[
     num_cols_padded: Int,
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
 ) raises:
+    """Launches the SM100 kernel that quantizes BF16 input to NVFP4, MXFP4, or MXFP8 with per-block scale factors.
+
+    Each thread processes `ELEMENTS_PER_THREAD` elements, cooperatively
+    reduces the per-group maximum across warp lanes, derives the scale
+    factor, and writes the quantized output and scales tensors.
+
+    Parameters:
+        out_dtype: Element type of the quantized output tensor. Must
+            be `uint8` for NVFP4 or MXFP4, or `float8_e4m3fn` for MXFP8
+            (inferred).
+        scales_dtype: Element type of the block scale-factor tensor.
+            Must be `float8_e4m3fn` for NVFP4 or `float8_e8m0fnu` for
+            MXFP4 and MXFP8 (inferred).
+        in_dtype: Element type of the input activation tensor. Must
+            be `bfloat16` (inferred).
+        SF_VECTOR_SIZE: Number of input elements covered by each block
+            scale factor: 16 for NVFP4 or MXFP4, 32 for MXFP8
+            (defaults to 16).
+        num_max_threads: Maximum number of threads per block for the
+            launch grid (defaults to 512).
+    Args:
+        ctx: Device context used to enqueue the kernel.
+        output_tile: Output tile for the quantized elements of shape
+            `[num_rows, num_cols // 2]` for packed FP4 `uint8` or
+            `[num_rows, num_cols]` for MXFP8.
+        scales_tile: Output tile for the per-block scale factors.
+        input_tile: Input `bfloat16` activation tile of shape
+            `[num_rows, num_cols]`.
+        num_cols: Number of columns in the input tensor before
+            padding.
+        num_cols_padded: Number of columns in the input tensor after
+            padding to a multiple of `SF_VECTOR_SIZE`; padded columns
+            are zeroed in the output and scales.
+        tensor_sf: Tensor-wise scale factor applied to the
+            quantization (defaults to 1.0).
+    """
     var output = output_tile.to_layout_tensor()
     var scales = scales_tile.to_layout_tensor()
     var input = input_tile.to_layout_tensor()
@@ -236,6 +274,46 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
     num_cols_padded: Int,
     tensor_sf: Float32,
 ):
+    """GPU kernel that quantizes BF16 elements to NVFP4/MXFP4 or MXFP8 with per-block scale factors.
+
+    Each thread loads 8 elements, cooperatively reduces the per-group
+    maximum across warp lanes via shuffle, derives the scale factor, and
+    writes the quantized output and scales. Padded rows and columns are
+    zeroed out to satisfy tensor-core scale-factor expectations.
+
+    Parameters:
+        out_dtype: Element type of the quantized output tensor. Must
+            be `uint8` for NVFP4 or MXFP4, or `float8_e4m3fn` for MXFP8.
+        scales_dtype: Element type of the block scale-factor tensor.
+            Must be `float8_e4m3fn` for NVFP4 or `float8_e8m0fnu` for
+            MXFP4 and MXFP8.
+        in_dtype: Element type of the input activation tensor. Must
+            be `bfloat16`.
+        output_layout: Memory layout of the quantized output tensor.
+        scales_layout: Memory layout of the block scale-factor tensor.
+        input_layout: Memory layout of the input activation tensor.
+        SF_VECTOR_SIZE: Number of input elements covered by each block
+            scale factor: 16 for NVFP4 or MXFP4, 32 for MXFP8
+            (defaults to 16).
+        ELEMENTS_PER_THREAD: Number of input elements each thread loads
+            and quantizes per iteration (defaults to 8).
+        num_max_threads: Maximum number of threads per block for the
+            launch grid (defaults to 512).
+    Args:
+        output: Output tensor for the quantized elements of shape
+            `[num_rows, num_cols // 2]` for packed FP4 `uint8` or
+            `[num_rows, num_cols]` for MXFP8.
+        scales: Output tensor for the per-block scale factors.
+        input: Input `bfloat16` activation tensor of shape
+            `[num_rows, num_cols]`.
+        num_cols: Number of columns in the input tensor before
+            padding.
+        num_cols_padded: Number of columns in the input tensor after
+            padding to a multiple of `SF_VECTOR_SIZE`; padded columns
+            are zeroed in the output and scales.
+        tensor_sf: Tensor-wise scale factor applied to the
+            quantization.
+    """
     comptime assert SF_VECTOR_SIZE in (16, 32) and ELEMENTS_PER_THREAD == 8, (
         "Currently only supports NVFP4 (SF_VECTOR_SIZE = 16) and MXFP8"
         " (SF_VECTOR_SIZE = 32) with 8 elements per thread"
@@ -388,6 +466,25 @@ def block_scales_interleave_fp4[
         mut=True, scales_dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ) raises:
+    """Launches the SM100 kernel that reinterleaves rank-2 scale factors into the 5D TCGEN layout.
+
+    Converts the flat scale-factor tensor into the interleaved 5D layout
+    expected by the tensor-core scale-factor feed.
+
+    Parameters:
+        scales_dtype: Element type of the block scale-factor tensors
+            (inferred).
+        SF_VECTOR_SIZE: Number of elements covered by each block scale
+            factor (defaults to 16).
+        num_max_threads: Maximum number of threads per block for the
+            launch grid (defaults to 1024).
+    Args:
+        ctx: Device context used to enqueue the kernel.
+        input_scales_tile: Input rank-2 scale-factor tile in the flat
+            row-major layout.
+        output_scales_tile: Output rank-5 scale-factor tile in the 5D
+            TCGEN interleaved layout.
+    """
     var input_scales = input_scales_tile.to_layout_tensor()
     var output_scales = output_scales_tile.to_layout_tensor()
     comptime input_scales_layout = input_scales.layout
@@ -449,6 +546,26 @@ def block_scales_interleave_fp4_kernel[
         scales_dtype, output_scales_layout, MutAnyOrigin
     ],
 ):
+    """GPU kernel that reinterleaves rank-2 scale factors into the 5D TCGEN layout.
+
+    Each thread reads one scale factor from the flat input and writes it
+    into the interleaved output at the swizzled position required by the
+    tensor-core scale-factor feed.
+
+    Parameters:
+        scales_dtype: Element type of the scale-factor tensors.
+        input_scales_layout: Layout of the input scale-factor tensor.
+        output_scales_layout: Layout of the output scale-factor tensor.
+        SF_VECTOR_SIZE: Number of elements covered by each block scale
+            factor (defaults to 16).
+        num_max_threads: Maximum number of threads per block for the
+            launch grid (defaults to 1024).
+    Args:
+        input_scales: Input rank-2 scale-factor tensor in the flat
+            row-major layout.
+        output_scales: Output rank-5 scale-factor tensor in the 5D TCGEN
+            interleaved layout.
+    """
     var num_rows = input_scales.dim(0)
     var num_rows_padded = align_up(num_rows, SF_MN_GROUP_SIZE)
     var num_cols = input_scales.dim(1)
@@ -497,6 +614,45 @@ def naive_block_scaled_matmul[
     ctx: DeviceContext,
     alpha: Float32 = 1.0,
 ) raises:
+    """Reference block-scaled matmul that emulates TCGEN scale-factor accumulation on SM100 hardware.
+
+    Validates input and scale dimensions, then enqueues the
+    `naive_block_scaled_matmul_kernel` with a 16x16 thread block grid.
+
+    Parameters:
+        c_type: Element type of the output matrix (inferred).
+        a_type: Element type of the LHS input matrix (inferred).
+        b_type: Element type of the RHS input matrix (inferred).
+        a_scales_type: Element type of the `a_scales` block scale-factor
+            tensor (inferred).
+        b_scales_type: Element type of the `b_scales` block scale-factor
+            tensor (inferred).
+        scaling_kind: `UMMAKind` variant selecting the block-scaled MMA
+            instruction.
+        SF_VECTOR_SIZE: Number of elements covered by each block scale
+            factor.
+        accum_type: Accumulator element type (defaults to
+            `DType.float32`).
+        transpose_b: Whether `b` is stored transposed (defaults to
+            `True`).
+        elementwise_lambda_fn: Optional epilogue lambda applied to the
+            matmul result (defaults to `None`).
+        BLOCK_DIM: Thread block tile dimension in rows and columns
+            (defaults to 16).
+    Args:
+        c: Output matrix of shape `[M, N]`.
+        a: LHS input matrix of shape `[M, K]` for FP8 or `[M, K//2]`
+            for packed FP4 `uint8`.
+        b: RHS input matrix of shape `[N, K]` for FP8 or `[N, K//2]`
+            for packed FP4 `uint8`, stored transposed.
+        a_scales: Block scale factors for `a` in the 5D TCGEN
+            interleaved layout.
+        b_scales: Block scale factors for `b` in the 5D TCGEN
+            interleaved layout.
+        ctx: Device context used to enqueue the kernel.
+        alpha: Scalar multiplier applied to the matmul result
+            (defaults to 1.0).
+    """
     comptime assert transpose_b, "Only transpose_b = True is supported for now"
     comptime assert accum_type in (
         DType.float32,
@@ -703,6 +859,49 @@ def naive_block_scaled_matmul_kernel[
     b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
     alpha: Float32,
 ):
+    """Naive GPU kernel that emulates a block-scaled matmul using TCGEN scale factors.
+
+    Both A and B must be in K-major format with 5D TCGEN scale-factor
+    layouts. Each thread accumulates one output element by iterating over
+    K, applying per-block scale factors, and optionally invoking an
+    elementwise epilogue lambda.
+
+    Parameters:
+        c_type: Element type of the output matrix `c`.
+        a_type: Element type of the LHS input matrix `a`.
+        b_type: Element type of the RHS input matrix `b`.
+        a_scales_type: Element type of the `a_scales` block scale-factor
+            tensor.
+        b_scales_type: Element type of the `b_scales` block scale-factor
+            tensor.
+        accum_type: Element type used for the dot-product accumulator.
+        a_layout: Memory layout of the LHS input matrix `a`.
+        b_layout: Memory layout of the RHS input matrix `b`.
+        c_layout: Memory layout of the output matrix `c`.
+        a_scale_layout: Memory layout of the `a_scales` block
+            scale-factor tensor.
+        b_scale_layout: Memory layout of the `b_scales` block
+            scale-factor tensor.
+        scaling_kind: `UMMAKind` variant selecting the block-scaled MMA
+            instruction.
+        SF_VECTOR_SIZE: Number of elements covered by each block scale
+            factor.
+        transpose_b: Whether `b` is stored transposed (defaults to
+            `True`).
+        elementwise_lambda_fn: Optional epilogue lambda applied to the
+            matmul result (defaults to `None`).
+    Args:
+        c: Output matrix of shape `[M, N]`.
+        a: LHS input matrix of shape `[M, K]` for FP8 or `[M, K//2]`
+            for packed FP4 `uint8`.
+        b: RHS input matrix of shape `[N, K]` for FP8 or `[N, K//2]`
+            for packed FP4 `uint8`, stored transposed.
+        a_scales: Block scale factors for `a` in the 5D TCGEN
+            interleaved layout.
+        b_scales: Block scale factors for `b` in the 5D TCGEN
+            interleaved layout.
+        alpha: Scalar multiplier applied to the matmul result.
+    """
     # Note: This is a naive kernel that emulates a block scaled matmul with TCGEN scale factors.
     # Assumptions:
     # 1. both A and B should be in K-major format
@@ -811,6 +1010,41 @@ def quantize_dynamic_scaled_async_fp4_kernel[
     ],
     tensor_sf: Float32,  # tensor-wise scale factor
 ):
+    """GPU kernel that quantizes BF16 tiles to NVFP4 using TMA async copies and warp-specialized PDL.
+
+    One warpgroup issues TMA loads while another computes per-group scale
+    factors and packs FP4 elements, then stores results back via TMA
+    async stores.
+
+    Parameters:
+        input_dtype: Element type of the input activation tensor.
+        input_tile_rank: Rank of the input TMA tile descriptor.
+        input_tile_shape: Per-dimension shape of the input TMA tile.
+        input_desc_shape: Per-dimension descriptor shape of the input TMA
+            tile.
+        output_dtype: Element type of the quantized output tensor.
+        output_tile_rank: Rank of the output TMA tile descriptor.
+        output_tile_shape: Per-dimension shape of the output TMA tile.
+        output_desc_shape: Per-dimension descriptor shape of the output
+            TMA tile.
+        scales_dtype: Element type of the block scale-factor tensor.
+        scales_tile_rank: Rank of the scales TMA tile descriptor.
+        scales_tile_shape: Per-dimension shape of the scales TMA tile.
+        scales_desc_shape: Per-dimension descriptor shape of the scales
+            TMA tile.
+        input_swizzle_mode: `TensorMapSwizzle` mode for input TMA loads.
+        output_swizzle_mode: `TensorMapSwizzle` mode for output TMA stores.
+        scales_swizzle_mode: `TensorMapSwizzle` mode for scales TMA stores.
+        SF_VECTOR_SIZE: Number of elements covered by each block scale
+            factor.
+        NUM_PIPELINES_STAGES: Number of pipeline stages for TMA
+            double-buffered async copies.
+    Args:
+        input_tma_op: TMA tile descriptor for async input loads.
+        output_tma_op: TMA tile descriptor for async output stores.
+        scales_tma_op: TMA tile descriptor for async scale-factor stores.
+        tensor_sf: Tensor-wise scale factor applied to the quantization.
+    """
     var smem_storage = rebind[
         UnsafePointer[
             Scalar[input_dtype],
@@ -1062,6 +1296,32 @@ def quantize_dynamic_scaled_fp4_async[
     ],
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
 ) raises:
+    """Launches the TMA-based NVFP4 quantization kernel on SM100 hardware.
+
+    Sets up TMA tile descriptors for input, output, and scales, then
+    enqueues the `quantize_dynamic_scaled_async_fp4_kernel` with
+    warp-specialized PDL.
+
+    Parameters:
+        input_dtype: Element type of the input activation tensor. Must
+            be `bfloat16` (inferred).
+        output_dtype: Element type of the quantized output tensor. Must
+            be `uint8` for NVFP4 (inferred).
+        scales_dtype: Element type of the block scale-factor tensor.
+            Must be `float8_e4m3fn` for NVFP4 (inferred).
+        SF_VECTOR_SIZE: Number of input elements covered by each block
+            scale factor. Must be 16 for NVFP4.
+    Args:
+        ctx: Device context used to enqueue the kernel.
+        output_tensor_tile: Output tile for the quantized NVFP4 packed
+            `uint8` elements; the column count must be a multiple of
+            32 and half the input column count.
+        scales_tensor_tile: Output 5D scale-factor tile in the TCGEN
+            interleaved layout.
+        input_tensor_tile: Input `bfloat16` activation tile.
+        tensor_sf: Tensor-wise scale factor applied to the
+            quantization (defaults to 1.0).
+    """
     var output_tensor = output_tensor_tile.to_layout_tensor()
     var scales_tensor = scales_tensor_tile.to_layout_tensor()
     var input_tensor = input_tensor_tile.to_layout_tensor()
@@ -1236,6 +1496,58 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         DType.float32, sf_layout, ImmutAnyOrigin
     ],  # tensor-wise scale factor
 ):
+    """GPU kernel that quantizes per-expert BF16 activation tiles to NVFP4/MXFP4/MXFP8 with TMA-based scale-factor stores.
+
+    Each block locates its assigned expert via binary search on
+    `row_offsets` and `scales_offsets`, then quantizes the expert's
+    activation tile and writes scale factors back through TMA async
+    stores.
+
+    Parameters:
+        output_dtype: Element type of the quantized output tensor
+            (inferred).
+        scales_dtype: Element type of the block scale-factor tensor
+            (inferred).
+        input_dtype: Element type of the input activation tensor
+            (inferred).
+        scales_tile_rank: Rank of the scales TMA tile descriptor
+            (inferred).
+        scales_tile_shape: Per-dimension tile shape of the scales
+            TMA descriptor (inferred).
+        scales_desc_shape: Per-dimension descriptor shape of the
+            scales TMA descriptor (inferred).
+        scales_swizzle_mode: Swizzle mode applied to the scales TMA
+            descriptor (inferred).
+        output_layout: TileTensor layout of the quantized output
+            tensor (inferred).
+        input_layout: TileTensor layout of the input activation
+            tensor (inferred).
+        row_offsets_layout: TileTensor layout of the per-expert row
+            offsets tensor (inferred).
+        scales_offsets_layout: TileTensor layout of the per-expert
+            scales offsets tensor (inferred).
+        expert_ids_layout: TileTensor layout of the expert IDs
+            tensor (inferred).
+        sf_layout: TileTensor layout of the per-expert tensor-wise
+            scale factor tensor (inferred).
+        num_threads: Number of threads per block in the launch grid
+            (defaults to 128).
+    Args:
+        output_tensor: Output quantized tensor of packed FP4 `uint8`
+            or `float8_e4m3fn` for MXFP8.
+        scales_tma_op: TMA tile descriptor used for async stores of
+            the block scale factors.
+        input_tensor: Input BF16 activation tensor.
+        row_offsets: Contiguous row boundaries per expert of shape
+            `[num_experts + 1]` as `uint32`, where range `i` spans
+            rows `row_offsets[i]` through `row_offsets[i + 1]`.
+        scales_offsets: Per-expert offset into the scales tensor of
+            shape `[num_experts]` as `uint32`.
+        expert_ids: Expert ID for each active range of shape
+            `[num_experts]` as `int32`.
+        sf_tensor: Per-expert tensor-wise scale factor of shape
+            `[num_experts]` as `float32`.
+    """
     comptime assert row_offsets.flat_rank == 1, "row_offsets must be rank 1"
     comptime assert (
         scales_offsets.flat_rank == 1
@@ -1438,6 +1750,36 @@ def grouped_quantize_dynamic_scaled_fp4_async[
     ],
     ctx: DeviceContext,
 ) raises:
+    """Launches the grouped per-expert quantization kernel for NVFP4/MXFP4/MXFP8 on SM100 hardware.
+
+    Sets up the TMA scale-factor descriptor and enqueues the
+    `grouped_quantize_dynamic_scaled_fp4_async_kernel` over a grid
+    spanning the scale-factor tile dimensions.
+
+    Parameters:
+        input_dtype: Element type of the input activation tensor
+            (inferred).
+        output_dtype: Element type of the quantized output tensor
+            (inferred).
+        scales_dtype: Element type of the block scale-factor tensor
+            (inferred).
+    Args:
+        output_tensor: Output quantized tensor of packed FP4 `uint8`
+            or `float8_e4m3fn` for MXFP8.
+        scales_tensor: Output block scale-factor tensor in the 5D
+            TCGEN interleaved layout.
+        input_tensor: Input BF16 activation tensor.
+        row_offsets: Contiguous row boundaries per expert of shape
+            `[num_experts + 1]` as `uint32`, where range `i` spans
+            rows `row_offsets[i]` through `row_offsets[i + 1]`.
+        scales_offsets: Per-expert offset into `scales_tensor` of
+            shape `[num_experts]` as `uint32`.
+        expert_ids: Expert ID for each active range of shape
+            `[num_experts]` as `int32`.
+        sf_tensor: Per-expert tensor-wise scale factor of shape
+            `[num_experts]` as `float32`.
+        ctx: Device context used to enqueue the kernel.
+    """
     # The kernel masks columns at 8-element lane granularity, so a column
     # count that is not a multiple of 8 would still load and store partially
     # out of bounds within the straddling lane.
@@ -1547,6 +1889,30 @@ def block_scaled_matmul_with_epilogue[
     operations. Callers must allocate `c`; when an `elementwise_lambda_fn`
     is supplied the matmul result is written into `c` and then read back
     by the lambda.
+
+    Parameters:
+        c_type: Element type of the output matrix (inferred).
+        a_type: Element type of the LHS input matrix (inferred).
+        b_type: Element type of the RHS input matrix (inferred).
+        scales_dtype: Element type of the block scale-factor tensors
+            (inferred).
+        SF_VECTOR_SIZE: Number of elements covered by each block scale
+            factor: 16 for NVFP4 or 32 for MXFP8.
+        transpose_b: Whether `b` is stored transposed (defaults to `True`).
+        elementwise_lambda_fn: Optional epilogue lambda applied to the
+            matmul result after it is written to `c` (defaults to `None`).
+    Args:
+        c: Output matrix of shape `[M, N]`.
+        a: LHS input matrix of shape `[M, K]` for FP8 or `[M, K//2]` for
+            packed FP4 `uint8`.
+        b: RHS input matrix of shape `[N, K]` for FP8 or `[N, K//2]` for
+            packed FP4 `uint8`, stored transposed.
+        a_scales: Block scale factors for `a` in the 5D TCGEN interleaved
+            layout.
+        b_scales: Block scale factors for `b` in the 5D TCGEN interleaved
+            layout.
+        tensor_sf: Scalar multiplier applied to the matmul result.
+        ctx: Device context used to enqueue kernels.
     """
 
     comptime assert _is_sm10x_gpu(ctx.default_device_info) or _is_sm12x_gpu(
@@ -1702,6 +2068,49 @@ def block_scaled_matmul[
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
+    """Dispatches the SM100 block-scaled matmul for NVFP4 or MXFP8, selecting between the Mojo heuristic kernel and the vendor fallback.
+
+    For small M or MXFP8 shapes the Mojo `heuristic_and_outliers_dispatch`
+    kernel is tried first; on a dispatch miss the vendor (cuBLASLt)
+    block-scaled matmul is used as a fallback.
+
+    Parameters:
+        c_type: Element type of the output matrix (inferred).
+        a_type: Element type of the LHS input matrix (inferred).
+        b_type: Element type of the RHS input matrix (inferred).
+        scales_dtype: Element type of the block scale-factor tensors
+            (inferred).
+        SF_VECTOR_SIZE: Number of elements covered by each block scale
+            factor: 16 for NVFP4 or 32 for MXFP8.
+        transpose_b: Whether `b_device` is stored transposed (defaults
+            to `True`).
+        transpose_a: Whether `a_device` is stored transposed (defaults
+            to `False`).
+        elementwise_lambda_fn: Optional epilogue lambda applied to the
+            matmul result after it is written to `c_device` (defaults
+            to `None`).
+        elementwise_compute_lambda_fn: Optional compute lambda that
+            transforms the matmul result in-flight before storage
+            (defaults to `None`).
+        pdl_level: Programmatic dependency launch level for the
+            heuristic dispatch kernel (defaults to `PDLLevel.OFF`).
+        _trace_description: Extra label appended to the trace event
+            for profiling (defaults to `""`).
+        target: Trace target string identifying the device in
+            profiling output (defaults to `"cpu"`).
+    Args:
+        c_device: Output matrix of shape `[M, N]`.
+        a_device: LHS input matrix of shape `[M, K]` for FP8 or
+            `[M, K//2]` for packed FP4 `uint8`.
+        b_device: RHS input matrix of shape `[N, K]` for FP8 or
+            `[N, K//2]` for packed FP4 `uint8`, stored transposed.
+        a_scales_device: Block scale factors for `a_device` in the 5D
+            TCGEN interleaved layout.
+        b_scales_device: Block scale factors for `b_device` in the 5D
+            TCGEN interleaved layout.
+        tensor_sf: Scalar multiplier applied to the matmul result.
+        ctx: Device context used to enqueue kernels.
+    """
     comptime assert c_device.rank == 2 and c_device.flat_rank == 2
     comptime assert a_device.rank == 2 and a_device.flat_rank == 2
     comptime assert b_device.rank == 2 and b_device.flat_rank == 2
@@ -1979,6 +2388,36 @@ def quantize_dynamic_block_scaled[
     tensor_sf: Float32,  # tensor-wise scale factor
     ctx: DeviceContext,
 ) raises:
+    """Dispatches dynamic block-scaled quantization to the appropriate hardware-specific kernel.
+
+    Routes to the SM100 NVFP4 TMA-async path, the SM100
+    `quantize_dynamic_scaled_fp4fp8` path, or the AMD CDNA4 MXFP4 path
+    based on the target device and scale-factor format.
+
+    Parameters:
+        out_dtype: Element type of the quantized output tensor
+            (inferred). `uint8` for NVFP4/MXFP4 or `float8_e4m3fn`
+            for MXFP8.
+        scales_dtype: Element type of the block scale-factor tensor
+            (inferred). `float8_e4m3fn` for NVFP4 or
+            `float8_e8m0fnu` for MXFP8.
+        in_dtype: Element type of the input activation tensor
+            (inferred). Must be `bfloat16`.
+        SF_VECTOR_SIZE: Number of elements covered by each block scale
+            factor: 16 for NVFP4 or 32 for MXFP8.
+        target: Trace target string identifying the device in
+            profiling output (defaults to `"cpu"`).
+    Args:
+        output_device: Output quantized tensor of packed FP4 `uint8`
+            or `float8_e4m3fn` for MXFP8.
+        scales_device: Output block scale-factor tensor in the 5D
+            TCGEN interleaved layout on SM100 or rank-2 layout on AMD
+            CDNA4.
+        input_device: Input BF16 activation tensor.
+        tensor_sf: Tensor-wise scale factor multiplied into each
+            per-group scale factor.
+        ctx: Device context used to enqueue the kernel.
+    """
     comptime assert output_device.rank == 2 and output_device.flat_rank == 2
     comptime assert (
         scales_device.rank == 2 or scales_device.rank == 5
@@ -2095,6 +2534,25 @@ def block_scales_interleave[
     ],
     ctx: DeviceContext,
 ) raises:
+    """Reinterleaves rank-2 scale factors into the 5D TCGEN layout on SM100 hardware.
+
+    Delegates to `block_scales_interleave_fp4` after validating that the
+    output scales are rank-5 and the input scales are rank-2.
+
+    Parameters:
+        scales_dtype: Element type of the block scale-factor tensors
+            (inferred).
+        SF_VECTOR_SIZE: Number of elements covered by each block scale
+            factor: 16 for NVFP4 or 32 for MXFP4.
+        target: Trace target string identifying the device in
+            profiling output (defaults to `"cpu"`).
+    Args:
+        output_scales_device: Output rank-5 scale-factor tensor in the
+            5D TCGEN interleaved layout.
+        input_scales_device: Input rank-2 scale-factor tensor in the
+            flat row-major layout.
+        ctx: Device context used to enqueue kernels.
+    """
     comptime assert (
         output_scales_device.rank == 5 and output_scales_device.flat_rank == 5
     )
@@ -2225,6 +2683,15 @@ def quantize_mxfp4_amd[
     will likely be 6D (32x32 tiles) or 7D (16x16 tiles), mirroring how
     SM100 uses a 5D interleaved layout for its tensor core scale feed.
 
+    Parameters:
+        out_dtype: Element type of the quantized output tensor. Must
+            be `uint8` for packed MXFP4 (inferred).
+        scales_dtype: Element type of the block scale-factor tensor.
+            Must be `float8_e8m0fnu` (inferred).
+        in_dtype: Element type of the input activation tensor. Must
+            be `bfloat16` (inferred).
+        num_max_threads: Maximum number of threads per block for the
+            launch grid (defaults to 512).
     Args:
         ctx: Device context.
         output_tile: Output [M, K//2] uint8 (packed FP4).
@@ -2297,6 +2764,27 @@ def quantize_dynamic_block_scaled_mxfp4_kernel[
     input_ptr: UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin],
     num_elements: Int,
 ):
+    """GPU kernel that quantizes BF16 elements to packed MXFP4 with E8M0 block scales on AMD CDNA4.
+
+    Each thread processes `elements_per_thread` elements, cooperatively
+    reduces the per-group maximum via warp shuffle, and uses the
+    `V_CVT_SCALEF32_PK_FP4_BF16` intrinsic for hardware FP4 packing.
+
+    Parameters:
+        in_dtype: Element type of the input activation tensor
+            (inferred). Must be `bfloat16`.
+        elements_per_thread: Number of input elements each thread
+            loads and quantizes per iteration.
+    Args:
+        output_ptr: Pointer to the output packed MXFP4 buffer of
+            `uint8` values, where each byte holds two FP4-E2M1 values.
+        output_scales_ptr: Pointer to the output E8M0 block
+            scale-factor buffer, with one scale per
+            `MXFP4_SF_VECTOR_SIZE` (32) elements.
+        input_ptr: Pointer to the input BF16 activation buffer.
+        num_elements: Total number of input elements to quantize,
+            must be a multiple of `MXFP4_SF_VECTOR_SIZE` (32).
+    """
     comptime threads_per_group = MXFP4_SF_VECTOR_SIZE // elements_per_thread
 
     var n = global_idx.x * elements_per_thread
@@ -2330,6 +2818,22 @@ def quantize_dynamic_block_scaled_mxfp4[
     input: TileTensor[mut=False, in_dtype, ...],
     ctx: DeviceContext,
 ) raises:
+    """Launches the AMD CDNA4 MXFP4 quantization kernel over a flat input buffer.
+
+    Enqueues `quantize_dynamic_block_scaled_mxfp4_kernel` with a
+    512-thread block grid, emitting a trace event for profiling.
+
+    Parameters:
+        in_dtype: Element type of the input activation tensor
+            (inferred). Must be `bfloat16`.
+    Args:
+        output: Output packed MXFP4 buffer of `uint8` values, where
+            each byte holds two FP4-E2M1 values.
+        output_scales: Output E8M0 block scale-factor buffer, with
+            one scale per `MXFP4_SF_VECTOR_SIZE` (32) elements.
+        input: Input BF16 activation buffer.
+        ctx: Device context used to enqueue the kernel.
+    """
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "quantize_dynamic_block_scaled_mxfp4",
         task_id=get_safe_task_id(ctx),
@@ -2450,6 +2954,29 @@ def matmul_dynamic_block_scaled_mxfp4_kernel[
     N: Int,
     K: Int,
 ):
+    """GPU kernel that computes an MXFP4 block-scaled matmul on AMD CDNA4 using FP4 dot-product intrinsics.
+
+    Each thread computes `BLOCK_N` output elements for one row by
+    iterating over K in `MXFP4_SF_VECTOR_SIZE` groups, dequantizing FP4
+    pairs to BF16 and accumulating via the `llvm.amdgcn.fdot2` intrinsic.
+
+    Parameters:
+        out_dtype: Element type of the output matrix.
+        BLOCK_N: Number of output columns computed per thread.
+    Args:
+        c_ptr: Pointer to the output matrix of shape `[M, N]`.
+        a_ptr: Pointer to the LHS packed MXFP4 `uint8` matrix of shape
+            `[M, K//2]`.
+        b_ptr: Pointer to the RHS packed MXFP4 `uint8` matrix of shape
+            `[N, K//2]`.
+        a_scales_ptr: Pointer to the `float8_e8m0fnu` block scale
+            factors for `a`.
+        b_scales_ptr: Pointer to the `float8_e8m0fnu` block scale
+            factors for `b`.
+        M: Number of rows in the output matrix.
+        N: Number of columns in the output matrix.
+        K: Inner reduction dimension of the matmul.
+    """
     var n = global_idx.x * BLOCK_N
     var m = global_idx.y
 
@@ -2479,6 +3006,26 @@ def matmul_dynamic_block_scaled_mxfp4[
     b_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
     ctx: DeviceContext,
 ) raises:
+    """Launches the AMD CDNA4 MXFP4 block-scaled matmul kernel.
+
+    Selects a `BLOCK_N` of 16 when the N dimension is divisible by 16,
+    otherwise falls back to 1, and enqueues
+    `matmul_dynamic_block_scaled_mxfp4_kernel` over a 2D grid.
+
+    Parameters:
+        out_dtype: Element type of the output matrix `c`.
+    Args:
+        c: Output matrix of shape `[M, N]`.
+        a: LHS input matrix of packed MXFP4 `uint8` with shape
+            `[M, K//2]`.
+        b: RHS input matrix of packed MXFP4 `uint8` with shape
+            `[N, K//2]`.
+        a_scales: Block scale factors for `a` in `float8_e8m0fnu`
+            format.
+        b_scales: Block scale factors for `b` in `float8_e8m0fnu`
+            format.
+        ctx: Device context used to enqueue the kernel.
+    """
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "matmul_dynamic_block_scaled_mxfp4",
         task_id=get_safe_task_id(ctx),
@@ -2527,6 +3074,38 @@ def grouped_matmul_block_scaled_mxfp4_kernel[
     N: Int,
     K: Int,
 ):
+    """GPU kernel that computes a per-expert grouped MXFP4 block-scaled matmul on AMD CDNA4.
+
+    Each thread identifies its expert via linear search over
+    `row_offsets_ptr` and `expert_ids_ptr`, then dispatches to
+    `_mxfp4_dotprod` against the expert's weight slice.
+
+    Parameters:
+        out_dtype: Element type of the output matrix `c_ptr`.
+        BLOCK_N: Number of output columns computed per thread; must
+            divide `N` evenly or be 1.
+    Args:
+        c_ptr: Output matrix pointer of shape `[M, N]`.
+        a_ptr: LHS activation matrix of shape `[M, K//2]` as packed
+            MXFP4 `uint8`.
+        b_ptr: RHS expert weight matrix of shape `[E, N, K//2]` as
+            packed MXFP4 `uint8`, where `E` is the number of experts.
+        a_scales_ptr: Block scale factors for `a_ptr` of shape
+            `[M, K//32]` as `float8_e8m0fnu`.
+        b_scales_ptr: Block scale factors for `b_ptr` of shape
+            `[E, N, K//32]` as `float8_e8m0fnu`.
+        row_offsets_ptr: Contiguous row boundaries per expert of shape
+            `[num_active_experts + 1]` as `uint32`, where range `i`
+            spans rows `row_offsets_ptr[i]` through
+            `row_offsets_ptr[i + 1]`.
+        expert_ids_ptr: Expert ID for each active range of shape
+            `[num_active_experts]` as `int32`.
+        num_active_experts: Number of active experts to search over.
+        M: Number of rows in the output matrix.
+        N: Number of columns in the output matrix.
+        K: Inner contraction dimension in elements, must be a
+            multiple of `MXFP4_SF_VECTOR_SIZE` (32).
+    """
     var n = global_idx.x * BLOCK_N
     var m = global_idx.y
 
@@ -2569,6 +3148,32 @@ def grouped_matmul_block_scaled_mxfp4[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
+    """Launches the grouped per-expert MXFP4 block-scaled matmul kernel on AMD CDNA4.
+
+    Enqueues `grouped_matmul_block_scaled_mxfp4_kernel` over a 2D grid
+    sized by the output M and N dimensions, emitting a trace event for
+    profiling.
+
+    Parameters:
+        out_dtype: Element type of the output matrix.
+    Args:
+        c: Output matrix of shape `[M, N]`.
+        a: LHS activation matrix of shape `[M, K//2]` as packed MXFP4
+            `uint8`.
+        b: RHS expert weight matrix of shape `[E, N, K//2]` as packed
+            MXFP4 `uint8`, where `E` is the number of experts.
+        a_scales: Block scale factors for `a` of shape `[M, K//32]` as
+            `float8_e8m0fnu`.
+        b_scales: Block scale factors for `b` of shape `[E, N, K//32]`
+            as `float8_e8m0fnu`.
+        row_offsets: Contiguous row boundaries per expert of shape
+            `[num_active_experts + 1]` as `uint32`, where range `i`
+            spans rows `row_offsets[i]` through `row_offsets[i + 1]`.
+        expert_ids: Expert ID for each active range of shape
+            `[num_active_experts]` as `int32`.
+        num_active_experts: Number of active experts to search over.
+        ctx: Device context used to enqueue the kernel.
+    """
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "grouped_matmul_block_scaled_mxfp4",
         task_id=get_safe_task_id(ctx),

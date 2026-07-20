@@ -465,7 +465,24 @@ struct Conv2dFpropKernel[
         iter_idx: UInt32,
         k_start: UInt32,
     ):
-        """Execute MMA operations for one pipeline stage."""
+        """Execute MMA operations for one pipeline stage.
+
+        Parameters:
+            tiles_origin: Borrow origin of the consumer tile payload
+                (inferred).
+
+        Args:
+            tmem_stage: TMEM accumulator stage to accumulate results
+                into.
+            tiles: Consumer tile payload and barrier handle holding the
+                activation and filter tiles for the current stage.
+            mma_op: SM100 tensor core MMA operation object.
+            elect_one_warp: Whether this warp is elected for cluster-wide
+                operations.
+            iter_idx: K-dimension tile index of the current MMA iteration.
+            k_start: K-dimension tile index at which accumulation begins,
+                used to initialize the accumulator on the first tile.
+        """
         var accum = tmem_stage.tensor[Self.accum_type, Self.accum_layout]()
 
         if elect_one_sync():
@@ -500,7 +517,29 @@ struct Conv2dFpropKernel[
         epi_load_barriers: Self.SmemType.EpiLoadBarriers,
         load_order_barrier: Self.SmemType.LoadOrderBarriers,
     ):
-        """Initialize barriers and prefetch TMA descriptors."""
+        """Initialize barriers and prefetch TMA descriptors.
+
+        Args:
+            ctx: Kernel context holding per-CTA state and multicast masks.
+            act_tma_op: Im2col TMA descriptor for the activation tensor.
+            filter_tma_op: TMA descriptor for the filter tensor.
+            out_tma_op: TMA descriptor for the output tensor.
+            input_barriers: Producer-consumer barriers for the input tile
+                pipeline.
+            accum_barriers: Producer-consumer barriers for the TMEM
+                accumulator pipeline.
+            clc_throttle: Throttle barriers pacing the CLC scheduler against
+                the load warps.
+            clc_full: CLC barriers signalling tile slots are full, producer
+                to consumer.
+            clc_empty: CLC barriers signalling tile slots are empty,
+                consumer to producer.
+            tmem_dealloc: Barrier governing TMEM accumulator deallocation.
+            epi_load_barriers: Barriers for the epilogue load pipeline
+                (source C residual loading).
+            load_order_barrier: Barrier coordinating MainLoad completion
+                with EpilogueLoad.
+        """
         if ctx.elect_one_warp and ctx.elect_one_thread:
             # Prefetch TMA descriptors
             act_tma_op.prefetch_descriptor()
@@ -592,11 +631,31 @@ struct Conv2dFpropKernel[
     ):
         """Load activation (via im2col TMA) and filter tiles.
 
-        The im2col TMA descriptor handles coordinate transformation internally.
-        Coordinates are in GEMM space:
-        - work_m_coord: M coordinate (batch * H_out * W_out)
-        - work_n_coord: N coordinate (output channels)
-        - iter_idx: K dimension tile index (C * R * S)
+        The im2col TMA descriptor handles coordinate transformation
+        internally. Coordinates are in GEMM space.
+
+        Parameters:
+            act_tma_origin: Borrow origin of the activation TMA descriptor
+                (inferred).
+            filter_tma_origin: Borrow origin of the filter TMA descriptor
+                (inferred).
+            tiles_origin: Borrow origin of the producer tile payload
+                (inferred).
+
+        Args:
+            act_loader: Im2col TMA tile loader for activation tiles.
+            filter_loader: TMA tile loader for filter tiles.
+            tiles: Producer tile payload and barrier handle for the current
+                stage.
+            iter_idx: K-dimension tile index (C * R * S) of the current
+                load.
+            work_m_coord: M coordinate in GEMM space (batch * H_out * W_out).
+            work_n_coord: N coordinate in GEMM space (output channels).
+            peer_cta_coord: Peer CTA slicing coordinates as
+                `(peer_rank_n, peer_rank_m, peer_m_rank)` for
+                cluster-distributed tiles.
+            elect_one_cta: Whether this CTA is elected for cluster-wide
+                operations.
         """
         var peer_rank_n = peer_cta_coord[0]
         var peer_rank_m = peer_cta_coord[1]

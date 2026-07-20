@@ -180,6 +180,35 @@ def dispatch_im2col_matmul_conv2d[
     Skips on: non-bf16 dtype, grouped conv, dilation != 1, kernel size
     1x1 (the vectorized naive kernel wins on tiny shapes), and K too
     small for the matmul fast path.
+
+    Parameters:
+        input_type: Element `DType` of the input activation tensor
+            (inferred).
+        filter_type: Element `DType` of the filter tensor (inferred).
+        output_type: Element `DType` of the output tensor (inferred).
+        filter_is_fcrs: True if the filter is laid out as
+            `[F, C, R, S]`; False for `[R, S, C, F]` (defaults to `False`).
+        maybe_epilogue_func: Optional SIMD elementwise epilogue applied to
+            each output element in 4D `(batch, h, w, channel)` coordinates
+            (defaults to `None`).
+        m_tile_byte_budget: Byte budget cap for the im2col `[M, K]` scratch
+            tile used to chunk the M axis (defaults to
+            `_DEFAULT_M_TILE_BYTE_BUDGET`).
+
+    Args:
+        input: 4D NHWC input activation tensor of shape
+            `[batch, H, W, C_in]`.
+        filter: 4D filter tensor; `[R, S, C_in, C_out]` or
+            `[C_out, C_in, R, S]` depending on `filter_is_fcrs`.
+        output: 4D NHWC output tensor of shape
+            `[batch, H_out, W_out, C_out]` to write into.
+        stride: Spatial stride as `[stride_h, stride_w]`.
+        dilation: Spatial dilation as `[dilation_h, dilation_w]`; must be
+            `1` to dispatch.
+        symmetric_padding: Symmetric padding as `[pad_h, pad_w]`.
+        num_groups: Group count; must be `1` to dispatch.
+        ctx: Device context used to enqueue kernels and allocate scratch
+            buffers.
     """
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
@@ -402,6 +431,32 @@ def dispatch_fused_im2col_conv2d_apple[
     C_out=3 VAE->RGB shape). The MMA handles tiny N via the existing edge-tile
     mask (`b_valid_cols` zero-fill in the B load + `acol < n` in the epilogue),
     all comptime-fixed by SG_N=32 and independent of the runtime N.
+
+    Parameters:
+        input_type: Element `DType` of the input activation tensor
+            (inferred).
+        filter_type: Element `DType` of the filter tensor (inferred).
+        output_type: Element `DType` of the output tensor (inferred).
+        filter_is_fcrs: True if the filter is laid out as
+            `[F, C, R, S]`; False for `[R, S, C, F]` (defaults to `False`).
+        maybe_epilogue_func: Optional SIMD elementwise epilogue applied to
+            each output element in 4D `(batch, h, w, channel)` coordinates
+            (defaults to `None`).
+
+    Args:
+        input: 4D NHWC input activation tensor of shape
+            `[batch, H, W, C_in]`.
+        filter: 4D filter tensor; `[R, S, C_in, C_out]` or
+            `[C_out, C_in, R, S]` depending on `filter_is_fcrs`.
+        output: 4D NHWC output tensor of shape
+            `[batch, H_out, W_out, C_out]` to write into.
+        stride: Spatial stride as `[stride_h, stride_w]`.
+        dilation: Spatial dilation as `[dilation_h, dilation_w]`; must be
+            `1` to dispatch.
+        symmetric_padding: Symmetric padding as `[pad_h, pad_w]`.
+        num_groups: Group count; must be `1` to dispatch.
+        ctx: Device context used to enqueue kernels and allocate scratch
+            buffers.
     """
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
     comptime assert filter.flat_rank == 4, "filter must be rank 4"

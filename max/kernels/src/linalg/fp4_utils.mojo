@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Provides low-level FP4 encode/decode utilities and scale-factor helpers."""
+
 from std.sys._assembly import inlined_assembly
 from std.sys import is_nvidia_gpu, bit_width_of, llvm_intrinsic
 from std.sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer, align_of
@@ -304,6 +307,24 @@ def cast_uint_to_fp4e2m1[
     out_dtype: DType,
     out_width: Int,
 ](x: SIMD[in_dtype, in_width]) -> SIMD[out_dtype, out_width]:
+    """Unpacks FP4 E2M1 nibbles packed inside unsigned integers to floating-point values.
+
+    Each input integer (uint8, uint16, or uint32) holds multiple packed 4-bit E2M1 values.
+    The function extracts each nibble, looks up its float32 value in `E2M1_TO_FLOAT32`,
+    casts to `out_dtype`, and assembles the result vector.
+
+    Parameters:
+        in_dtype: Unsigned integer type holding packed FP4 nibbles (uint8, uint16, or uint32).
+        in_width: Number of input integer elements.
+        out_dtype: Output floating-point element type.
+        out_width: Total output elements; must equal `in_width * (bit_width(in_dtype) // 4)`.
+
+    Args:
+        x: Packed FP4 E2M1 input vector.
+
+    Returns:
+        Decoded floating-point vector of length out_width.
+    """
     comptime assert in_dtype in (
         DType.uint32,
         DType.uint16,
@@ -338,6 +359,22 @@ def cast_fp_to_fp4e2m1[
     width: SIMDSize,
     //,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    """Rounds each floating-point element to the nearest FP4 E2M1 representable value.
+
+    Implements nearest-even rounding into the 16 representable FP4 E2M1 values:
+    {±0, ±0.5, ±1, ±1.5, ±2, ±3, ±4, ±6}. Values outside [−6, 6] saturate to ±6.
+    The result is returned in the original dtype, not packed as nibbles.
+
+    Parameters:
+        dtype: Floating-point element type (float32, bfloat16, or float16).
+        width: SIMD lane count.
+
+    Args:
+        x: Input floating-point vector.
+
+    Returns:
+        Vector of the same dtype with each element rounded to the nearest FP4 E2M1 value.
+    """
     comptime assert dtype in (
         DType.float32,
         DType.bfloat16,
@@ -381,6 +418,23 @@ def cast_fp32_to_fp4e2m1[
     width: SIMDSize,
     //,
 ](x: SIMD[DType.float32, width]) -> UInt32:
+    """Converts eight float32 values to a packed FP4 E2M1 word using SM100 PTX instructions.
+
+    Issues four `cvt.rn.satfinite.e2m1x2.f32` PTX instructions to convert pairs of
+    float32 values to 4-bit FP4 E2M1, packing the results into a single UInt32.
+
+    Parameters:
+        width: Must be 8; each call converts exactly eight float32 values.
+
+    Args:
+        x: Eight float32 input values to convert.
+
+    Returns:
+        A UInt32 with the eight FP4 E2M1 nibbles packed in byte order.
+
+    Constraints:
+        Requires NVIDIA GPU with SM100 or newer (B200 and above).
+    """
     comptime assert (
         is_nvidia_gpu() and _is_sm_100x_or_newer()
     ), "only supported on NVIDIA GPUs with SM 100 or newer"
@@ -404,6 +458,20 @@ mov.b32 $0, {byte0, byte1, byte2, byte3};
 
 
 def cast_f4e2m1x2_to_fp16x2(x: Scalar[DType.uint8]) -> SIMD[DType.float16, 2]:
+    """Converts two FP4 E2M1 nibbles packed in one byte to two float16 values using SM100 PTX.
+
+    Issues the `cvt.rn.f16x2.e2m1x2` PTX instruction to decode both nibbles in a
+    single hardware operation.
+
+    Args:
+        x: A uint8 containing two packed FP4 E2M1 nibbles (low nibble = element 0).
+
+    Returns:
+        A two-element float16 SIMD vector with the decoded values.
+
+    Constraints:
+        Requires NVIDIA GPU with SM100 or newer (B200 and above).
+    """
     comptime assert (
         is_nvidia_gpu() and _is_sm_100x_or_newer()
     ), "only supported on NVIDIA GPUs with SM 100 or newer"
@@ -426,6 +494,25 @@ cvt.rn.f16x2.e2m1x2 $0, byte0;
 def cast_float_to_fp4e2m1_amd[
     dtype: DType, width: SIMDSize, //
 ](input: SIMD[dtype, width], scale: Float32) -> UInt32:
+    """Converts up to eight floating-point values to packed FP4 E2M1 using AMD CDNA4 intrinsics.
+
+    Applies the provided scale factor before quantization using the
+    `llvm.amdgcn.cvt.scalef32.pk.fp4.*` intrinsics, packing pairs of values per call.
+
+    Parameters:
+        dtype: Input element type (bfloat16 or float32).
+        width: Number of input elements; must be even and at most 8.
+
+    Args:
+        input: Input floating-point vector to convert.
+        scale: Scale factor applied before FP4 quantization.
+
+    Returns:
+        A UInt32 with the converted FP4 E2M1 nibbles packed in order.
+
+    Constraints:
+        Requires AMD CDNA4 or newer (MI355X and above).
+    """
     comptime assert (
         _cdna_4_or_newer()
     ), "only supported on AMD CDNA4 or newer (MI355X)"
@@ -464,6 +551,24 @@ def set_scale_factor[
     col_idx: Int,
     scale_value: SIMD[scales_dtype, width],
 ):
+    """Stores a scale factor into a 5D non-batched `LayoutTensor` at the given row and column.
+
+    Translates the linear `(row_idx, col_idx)` coordinates into the 5D
+    scale-factor layout used by MXFP4/NVFP4 block-scaled tensors and stores
+    `scale_value` there with natural alignment.
+
+    Parameters:
+        scales_dtype: Element type of the scales tensor.
+        scales_layout: Layout of the scales `LayoutTensor`.
+        SF_VECTOR_SIZE: Number of elements each scale factor covers.
+        width: SIMD width of the value to store; must not exceed `SF_ATOM_K`.
+
+    Args:
+        scales_tensor: Mutable 5D `LayoutTensor` holding the scale factors.
+        row_idx: Row index in the original (unscaled) tensor coordinates.
+        col_idx: Column index in the original (unscaled) tensor coordinates.
+        scale_value: Scale factor value(s) to store.
+    """
     comptime assert (
         scales_tensor.rank == 5
     ), "scales_tensor must be 5D for non-batched scales tensor"
@@ -495,6 +600,23 @@ def set_scale_factor[
     col_idx: Int,
     scale_value: SIMD[scales_dtype, width],
 ):
+    """Stores a scale factor into a 5D non-batched `TileTensor` at the given row and column.
+
+    TileTensor overload of `set_scale_factor` that translates the linear
+    `(row_idx, col_idx)` coordinates into the 5D scale-factor layout and
+    stores `scale_value` there.
+
+    Parameters:
+        scales_dtype: Element type of the scales tensor.
+        width: SIMD width of the value to store; must not exceed `SF_ATOM_K`.
+        SF_VECTOR_SIZE: Number of elements each scale factor covers.
+
+    Args:
+        scales_tensor: Mutable `TileTensor` (flat rank >= 5) holding the scale factors.
+        row_idx: Row index in the original (unscaled) tensor coordinates.
+        col_idx: Column index in the original (unscaled) tensor coordinates.
+        scale_value: Scale factor value(s) to store.
+    """
     comptime assert (
         width <= SF_ATOM_K
     ), "width must be less than or equal to SF_ATOM_K"
@@ -522,6 +644,25 @@ def get_scale_factor[
     row_idx: Int,
     col_idx: Int,
 ) -> Scalar[scales_dtype]:
+    """Loads a scale factor from a 5D non-batched `LayoutTensor` at the given row and column.
+
+    Translates the linear `(row_idx, col_idx)` coordinates into the 5D
+    scale-factor layout used by MXFP4/NVFP4 block-scaled tensors and returns
+    the stored scale factor.
+
+    Parameters:
+        scales_dtype: Element type of the scales tensor.
+        scales_layout: Layout of the scales `LayoutTensor`.
+        SF_VECTOR_SIZE: Number of elements each scale factor covers.
+
+    Args:
+        scales_tensor: 5D `LayoutTensor` holding the scale factors.
+        row_idx: Row index in the original (unscaled) tensor coordinates.
+        col_idx: Column index in the original (unscaled) tensor coordinates.
+
+    Returns:
+        The scale factor stored at the translated 5D coordinate.
+    """
     comptime assert (
         scales_tensor.rank == 5
     ), "scales_tensor must be 5D for non-batched scales tensor"
@@ -546,6 +687,24 @@ def get_scale_factor[
     row_idx: Int,
     col_idx: Int,
 ) -> Scalar[scales_dtype]:
+    """Loads a scale factor from a 5D non-batched `TileTensor` at the given row and column.
+
+    TileTensor overload of `get_scale_factor` that translates the linear
+    `(row_idx, col_idx)` coordinates into the 5D scale-factor layout and
+    returns the stored scale factor.
+
+    Parameters:
+        scales_dtype: Element type of the scales tensor.
+        SF_VECTOR_SIZE: Number of elements each scale factor covers.
+
+    Args:
+        scales_tensor: `TileTensor` (flat rank >= 5) holding the scale factors.
+        row_idx: Row index in the original (unscaled) tensor coordinates.
+        col_idx: Column index in the original (unscaled) tensor coordinates.
+
+    Returns:
+        The scale factor stored at the translated 5D coordinate.
+    """
     comptime assert (
         scales_tensor.flat_rank >= 5
     ), "scales_tensor must be 5D for non-batched scales tensor"
@@ -575,6 +734,24 @@ def set_batched_scale_factor[
     col_idx: Int,
     scale_value: Scalar[scales_dtype],
 ):
+    """Stores a scale factor into a 6D batched `LayoutTensor` at the given batch, row, and column.
+
+    Translates the linear `(batch_idx, row_idx, col_idx)` coordinates into the
+    6D scale-factor layout used by batched MXFP4/NVFP4 block-scaled tensors and
+    stores `scale_value` there.
+
+    Parameters:
+        scales_dtype: Element type of the scales tensor.
+        scales_layout: Layout of the scales `LayoutTensor`.
+        SF_VECTOR_SIZE: Number of elements each scale factor covers.
+
+    Args:
+        scales_tensor: Mutable 6D `LayoutTensor` holding the batched scale factors.
+        batch_idx: Batch index in the original (unscaled) tensor coordinates.
+        row_idx: Row index in the original (unscaled) tensor coordinates.
+        col_idx: Column index in the original (unscaled) tensor coordinates.
+        scale_value: Scale factor value to store.
+    """
     comptime assert (
         scales_tensor.rank == 6
     ), "scales_tensor must be 6D for batched scales tensor"
@@ -600,6 +777,23 @@ def set_batched_scale_factor[
     col_idx: Int,
     scale_value: Scalar[scales_dtype],
 ):
+    """Stores a scale factor into a 6D batched `TileTensor` at the given batch, row, and column.
+
+    TileTensor overload of `set_batched_scale_factor` that translates the
+    linear `(batch_idx, row_idx, col_idx)` coordinates into the 6D scale-factor
+    layout and stores `scale_value` there.
+
+    Parameters:
+        scales_dtype: Element type of the scales tensor.
+        SF_VECTOR_SIZE: Number of elements each scale factor covers.
+
+    Args:
+        scales_tensor: Mutable `TileTensor` (flat rank == 6) holding the batched scale factors.
+        batch_idx: Batch index in the original (unscaled) tensor coordinates.
+        row_idx: Row index in the original (unscaled) tensor coordinates.
+        col_idx: Column index in the original (unscaled) tensor coordinates.
+        scale_value: Scale factor value to store.
+    """
     comptime assert (
         scales_tensor.flat_rank == 6
     ), "scales_tensor must be 6D for batched scales tensor"
@@ -628,6 +822,26 @@ def get_batched_scale_factor[
     row_idx: Int,
     col_idx: Int,
 ) -> Scalar[scales_dtype]:
+    """Loads a scale factor from a 6D batched `LayoutTensor` at the given batch, row, and column.
+
+    Translates the linear `(batch_idx, row_idx, col_idx)` coordinates into the
+    6D scale-factor layout used by batched MXFP4/NVFP4 block-scaled tensors and
+    returns the stored scale factor.
+
+    Parameters:
+        scales_dtype: Element type of the scales tensor.
+        scales_layout: Layout of the scales `LayoutTensor`.
+        SF_VECTOR_SIZE: Number of elements each scale factor covers.
+
+    Args:
+        scales_tensor: 6D `LayoutTensor` holding the batched scale factors.
+        batch_idx: Batch index in the original (unscaled) tensor coordinates.
+        row_idx: Row index in the original (unscaled) tensor coordinates.
+        col_idx: Column index in the original (unscaled) tensor coordinates.
+
+    Returns:
+        The scale factor stored at the translated 6D coordinate.
+    """
     comptime assert (
         scales_tensor.rank == 6
     ), "scales_tensor must be 6D for batched scales tensor"
@@ -654,6 +868,25 @@ def get_batched_scale_factor[
     row_idx: Int,
     col_idx: Int,
 ) -> Scalar[scales_dtype]:
+    """Loads a scale factor from a 6D batched `TileTensor` at the given batch, row, and column.
+
+    TileTensor overload of `get_batched_scale_factor` that translates the
+    linear `(batch_idx, row_idx, col_idx)` coordinates into the 6D scale-factor
+    layout and returns the stored scale factor.
+
+    Parameters:
+        scales_dtype: Element type of the scales tensor.
+        SF_VECTOR_SIZE: Number of elements each scale factor covers.
+
+    Args:
+        scales_tensor: `TileTensor` (flat rank == 6) holding the batched scale factors.
+        batch_idx: Batch index in the original (unscaled) tensor coordinates.
+        row_idx: Row index in the original (unscaled) tensor coordinates.
+        col_idx: Column index in the original (unscaled) tensor coordinates.
+
+    Returns:
+        The scale factor stored at the translated 6D coordinate.
+    """
     comptime assert (
         scales_tensor.flat_rank == 6
     ), "scales_tensor must be 6D for batched scales tensor"
@@ -697,6 +930,37 @@ def convert_ref_scales_to_mxfp8_format[
     a_scales: LayoutTensor[scales_type, a_scales_layout, a_scales_origin],
     b_scales: LayoutTensor[scales_type, b_scales_layout, b_scales_origin],
 ):
+    """Converts reference float32 block scales into the 5D MXFP8 E8M0 scale-factor layout.
+
+    Reads the per-block float32 reference scales for the A (M x K) and
+    B (N x K) operands, converts each to `float8_e8m0fnu`, and writes them into
+    the corresponding 5D scale-factor tensors expected by block-scaled matmul
+    kernels.
+
+    Parameters:
+        MType: CoordLike type carrying the M dimension size.
+        NType: CoordLike type carrying the N dimension size.
+        KType: CoordLike type carrying the K dimension size.
+        ref_scales_type: Element type of the reference scales (must be float32).
+        scales_type: Element type of the output scales (must be float8_e8m0fnu).
+        ref_a_scales_layout: Layout of the 2D reference A scales tensor.
+        ref_b_scales_layout: Layout of the 2D reference B scales tensor.
+        a_scales_layout: Layout of the 5D output A scales tensor.
+        b_scales_layout: Layout of the 5D output B scales tensor.
+        a_scales_origin: Mutability origin of the output A scales tensor.
+        b_scales_origin: Mutability origin of the output B scales tensor.
+        REF_BLOCK_SIZE: Block size (in elements) used by the reference scales.
+        SF_VECTOR_SIZE: Number of elements each scale factor covers in the output layout.
+
+    Args:
+        m: M dimension size of the operands.
+        n: N dimension size of the operands.
+        k: K dimension size of the operands.
+        ref_a_scales: 2D float32 reference scales for the A operand, indexed as `[k // REF_BLOCK_SIZE, m]`.
+        ref_b_scales: 2D float32 reference scales for the B operand, indexed as `[n // REF_BLOCK_SIZE, k // REF_BLOCK_SIZE]`.
+        a_scales: Mutable 5D output tensor receiving the converted A scales.
+        b_scales: Mutable 5D output tensor receiving the converted B scales.
+    """
     comptime assert (
         ref_scales_type == DType.float32
     ), "Only support float32 reference scales"
@@ -747,6 +1011,20 @@ def get_scaling_kind[
     scales_dtype: DType,
     SF_VECTOR_SIZE: Int,
 ]() -> UMMAKind:
+    """Selects the SM100 UMMA kind matching the operand and scale-factor types.
+
+    Maps the combination of operand dtype, scale-factor dtype, and scale-factor
+    vector size to the corresponding `UMMAKind` used by SM100 block-scaled
+    matmul instructions.
+
+    Parameters:
+        a_type: Operand element type (uint8 for MXFP4/NVFP4, float8_e4m3fn for MXFP8).
+        scales_dtype: Scale-factor element type.
+        SF_VECTOR_SIZE: Number of elements each scale factor covers.
+
+    Returns:
+        The `UMMAKind` matching the provided type combination.
+    """
     comptime if a_type == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE:
         return UMMAKind.KIND_MXF4NVF4
     elif a_type == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE:

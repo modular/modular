@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements shard-and-stack: shards a tensor across devices and stacks the shards into a higher-rank output."""
 
 from std.algorithm import parallelize, sync_parallelize
 from std.collections import InlineArray

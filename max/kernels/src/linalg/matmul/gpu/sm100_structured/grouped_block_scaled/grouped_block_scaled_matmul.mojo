@@ -95,6 +95,16 @@ def validate_grouped_gemm_constraints[
     - Cluster M/N: Power of 2, <=4 per axis (for SF multicast)
     - Total cluster size: <=16
     - 16-byte alignment on contiguous dimensions
+
+    Parameters:
+        a_type: Element type of the A operand matrices.
+        b_type: Element type of the B operand matrices.
+        c_type: Element type of the C output matrices.
+        sfa_dtype: Element type of the A scaling factors.
+        sfb_dtype: Element type of the B scaling factors.
+        transpose_b: Whether B operands are stored transposed (must be True).
+        config: Block-scaled matmul configuration carrying tile, cluster, and
+            pipeline parameters.
     """
     # MMA tiler constraints
     comptime assert config.mma_shape[0] in (
@@ -484,6 +494,16 @@ def grouped_smem_size[
     ],
 ]() -> Int:
     """Calculate shared memory size for grouped block-scaled kernel.
+
+    Parameters:
+        a_type: Element type of the A operand matrices.
+        b_type: Element type of the B operand matrices.
+        c_type: Element type of the C output matrices.
+        sfa_dtype: Element type of the A scaling factors.
+        sfb_dtype: Element type of the B scaling factors.
+        transpose_b: Whether B operands are stored transposed (must be True).
+        config: Block-scaled matmul configuration carrying tile, cluster, and
+            pipeline parameters.
 
     Returns:
         SMEM size in bytes, including tensormap descriptor storage.

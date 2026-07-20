@@ -32,6 +32,7 @@ from ..model_config import DeepseekV3Config
 from .moe_gate import DeepseekV3TopKRouter
 from .quant_linear import QuantizedMLP, tensor_parallel_mlp
 from .quant_mla import (
+    MLAPrefillMetadata,
     QuantizedLatentAttentionWithRope,
     tensor_parallel_latent_attention_with_rope,
 )
@@ -145,7 +146,8 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
 
         if self.mode not in (ParallelismMode.TP_TP, ParallelismMode.TP_EP):
             raise NotImplementedError(
-                f"Multi-device parallelism mode {self.mode.value} not yet implemented"
+                f"Multi-device parallelism mode {self.mode.value} not yet"
+                " implemented"
             )
 
         self.self_attn = QuantizedLatentAttentionWithRope(
@@ -180,6 +182,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
         freqs_cis: Tensor,
+        mla_prefill_metadata: MLAPrefillMetadata | None = None,
     ) -> Tensor:
         residual = x
         norm_x = self.input_layernorm(x)
@@ -189,6 +192,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
             freqs_cis,
             layer_idx,
             input_row_offsets,
+            mla_prefill_metadata,
         )
 
         hidden_states = self._post_attention(residual, attn_out)

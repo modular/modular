@@ -56,6 +56,7 @@ PINS = {
     "flashinfer-cubin": "flashinfer-cubin@0.6.8.post1",
     "flashinfer-python": "flashinfer-python@0.6.8.post1",
     "flask": "flask@3.0.3",
+    "flask-compress": "flask-compress@1.24",
     "gguf": "gguf@0.17.1",
     "google-auth": "google-auth@2.48.0",
     "google-cloud-bigquery": "google-cloud-bigquery@3.40.1",
@@ -970,6 +971,55 @@ def targets():
         testonly = "babel" in _TESTONLY_DEPS,
     )
 
+    _backports_zstd_1_6_0_build_deps = [
+        ":setuptools",
+        ":wheel",
+    ]
+
+    native.alias(
+        name = "_sdist_backports-zstd@1.6.0",
+        actual = "@pycross_lock_file_sdist_backports_zstd_1.6.0//file",
+    )
+
+    pycross_wheel_build(
+        name = "_build_backports-zstd@1.6.0",
+        sdist = ":_sdist_backports-zstd@1.6.0",
+        target_environment = _target,
+        deps = _backports_zstd_1_6_0_build_deps,
+        testonly = "backports-zstd" in _TESTONLY_DEPS,
+        **extra_build_args
+    )
+
+    native.alias(
+        name = "_wheel_backports-zstd@1.6.0",
+        actual = select({
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_backports_zstd_1.6.0_cp310_cp310_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_backports_zstd_1.6.0_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_backports_zstd_1.6.0_cp310_cp310_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_backports_zstd_1.6.0_cp311_cp311_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_backports_zstd_1.6.0_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_backports_zstd_1.6.0_cp311_cp311_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_backports_zstd_1.6.0_cp312_cp312_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_backports_zstd_1.6.0_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_backports_zstd_1.6.0_cp312_cp312_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_backports_zstd_1.6.0_cp313_cp313_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_backports_zstd_1.6.0_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_backports_zstd_1.6.0_cp313_cp313_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": ":_build_backports-zstd@1.6.0",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": ":_build_backports-zstd@1.6.0",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": ":_build_backports-zstd@1.6.0",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": ":_build_backports-zstd@1.6.0",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": ":_build_backports-zstd@1.6.0",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": ":_build_backports-zstd@1.6.0",
+        }),
+    )
+
+    pycross_wheel_library(
+        name = "backports-zstd@1.6.0",
+        wheel = ":_wheel_backports-zstd@1.6.0",
+        testonly = "backports-zstd" in _TESTONLY_DEPS,
+    )
+
     _blake3_1_0_8_deps = [
     ] + select({
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
@@ -1172,6 +1222,41 @@ def targets():
         name = "brotli@1.2.0",
         wheel = ":_wheel_brotli@1.2.0",
         testonly = "brotli" in _TESTONLY_DEPS,
+    )
+
+    _brotlicffi_1_2_0_1_deps = [
+        ":cffi@2.0.0",
+    ]
+
+    native.alias(
+        name = "_wheel_brotlicffi@1.2.0.1",
+        actual = select({
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp314_cp314t_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp314_cp314t_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp314_cp314t_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
+        }),
+    )
+
+    pycross_wheel_library(
+        name = "brotlicffi@1.2.0.1",
+        deps = _brotlicffi_1_2_0_1_deps,
+        wheel = ":_wheel_brotlicffi@1.2.0.1",
+        testonly = "brotlicffi" in _TESTONLY_DEPS,
     )
 
     _build_1_4_3_deps = [
@@ -2623,6 +2708,61 @@ def targets():
         deps = _flask_basicauth_0_2_0_deps,
         wheel = ":_wheel_flask-basicauth@0.2.0",
         testonly = "flask-basicauth" in _TESTONLY_DEPS,
+    )
+
+    _flask_compress_1_24_deps = [
+        ":brotli@1.2.0",
+        ":flask@3.0.3",
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":backports-zstd@1.6.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":backports-zstd@1.6.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":backports-zstd@1.6.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":backports-zstd@1.6.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":backports-zstd@1.6.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":backports-zstd@1.6.0",
+        ],
+        ":_env_python_3.12_aarch64-apple-darwin": [
+            ":backports-zstd@1.6.0",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":backports-zstd@1.6.0",
+        ],
+        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":backports-zstd@1.6.0",
+        ],
+        ":_env_python_3.13_aarch64-apple-darwin": [
+            ":backports-zstd@1.6.0",
+        ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":backports-zstd@1.6.0",
+        ],
+        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":backports-zstd@1.6.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_flask-compress@1.24",
+        actual = "@pycross_lock_file_wheel_flask_compress_1.24_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "flask-compress@1.24",
+        deps = _flask_compress_1_24_deps,
+        wheel = ":_wheel_flask-compress@1.24",
+        testonly = "flask-compress" in _TESTONLY_DEPS,
     )
 
     _flask_cors_5_0_0_deps = [
@@ -13254,6 +13394,16 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_sdist_backports_zstd_1.6.0",
+        urls = [
+            "https://files.pythonhosted.org/packages/8e/b5/5a873da082bd08acd6a497f7aae224e94a7c27fa8f24488089cc50a16c84/backports_zstd-1.6.0.tar.gz",
+        ],
+        sha256 = "80a7859ffe70bf239d7a2ce15293bdeb5b4280ff7dc326ffab312b0e254dbb24",
+        downloaded_file_path = "backports_zstd-1.6.0.tar.gz",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_sdist_brotli_1.2.0",
         urls = [
             "https://files.pythonhosted.org/packages/f7/16/c92ca344d646e71a43b8bb353f0a6490d7f6e06210f8554c8f874e454285/brotli-1.2.0.tar.gz",
@@ -14214,6 +14364,126 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_wheel_backports_zstd_1.6.0_cp310_cp310_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/db/14/4700047713a60131efcb3977a9892fab60bc9dd6634272550b8f1c5a427d/backports_zstd-1.6.0-cp310-cp310-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "d6e78d5e28f812b39f92397806ecddd4a6f3bf35531a8c039a1f187abc931af8",
+        downloaded_file_path = "backports_zstd-1.6.0-cp310-cp310-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_backports_zstd_1.6.0_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/5a/95/ed5b8b026c6df1a59681a73396f63cfd10e17ccfbc6315974745a8b7d834/backports_zstd-1.6.0-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "83415af3c64550a56cc20b4cce59bbaa81f21d28466d7adf98feff011ecbc66d",
+        downloaded_file_path = "backports_zstd-1.6.0-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_backports_zstd_1.6.0_cp310_cp310_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/58/a3/8f5737bdb02576577a018c10a4c345a5b4b2e63cc3811baeecc054f71c00/backports_zstd-1.6.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "a4ae7ed5a6d813450cc2d818284ea3db9721edcef50a56aae42ea06feec38c6e",
+        downloaded_file_path = "backports_zstd-1.6.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_backports_zstd_1.6.0_cp311_cp311_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/ef/48/768edf21fe33bae8d874470b1be136681d4d32eb820a32e1c98262ebe39b/backports_zstd-1.6.0-cp311-cp311-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "83391ef5935cc0f329b1abca414ae20ffe40d335fc21a4b5e664f08a74317d5f",
+        downloaded_file_path = "backports_zstd-1.6.0-cp311-cp311-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_backports_zstd_1.6.0_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/b9/cb/af58363b0dd0b497282ecef1fa99789b03cc1885a01a41394cad42ceeff6/backports_zstd-1.6.0-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "0308990ffc998df3c7ed35276bde049728b5c3956203cae40d80893576a41459",
+        downloaded_file_path = "backports_zstd-1.6.0-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_backports_zstd_1.6.0_cp311_cp311_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/4d/25/a9e37dd035027565fa0b7e367da50e88a6ab26e7fd413269aa118e25258b/backports_zstd-1.6.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "7293fefe15f0e5852bdb4ad1e0e26f3cbd4d3e61c19f751ecc4ff34bc1eb237d",
+        downloaded_file_path = "backports_zstd-1.6.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_backports_zstd_1.6.0_cp312_cp312_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/0c/76/f7c02efde81ebb9993586f9e435d2fd1191a6f806f640e4eeb8d004493ed/backports_zstd-1.6.0-cp312-cp312-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "1d146926e997d2d3de8212bdcbf4985344a2622ca3bec458d8908000a84fd883",
+        downloaded_file_path = "backports_zstd-1.6.0-cp312-cp312-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_backports_zstd_1.6.0_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/03/95/7ed25c90369360f96f8bfa961540845e063377c32a43b775201af66a588c/backports_zstd-1.6.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "7c2b1f4a640c51130caa92cef5bf72bd3c3dbbcfbf814c37403aa0601b1811b0",
+        downloaded_file_path = "backports_zstd-1.6.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_backports_zstd_1.6.0_cp312_cp312_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/6b/b2/d17b2722c636d64b4e77ddc68d8d0625719d39f94021be8719a218af4c0a/backports_zstd-1.6.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "1a99710fbb225d459d66def4dc2bb2cd4a9a0bdc8b799fc0621cfdd863be9c93",
+        downloaded_file_path = "backports_zstd-1.6.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_backports_zstd_1.6.0_cp313_cp313_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/5e/b6/9479e6f0f18824ad38e8d7dd85161ab0842a198be669421232925bb30960/backports_zstd-1.6.0-cp313-cp313-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "4b6c8b02ab0ccb2431bb7bc238be91d158b308915e7b07937388e540466fe7e7",
+        downloaded_file_path = "backports_zstd-1.6.0-cp313-cp313-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_backports_zstd_1.6.0_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/69/f5/392bb7dce7363b77bc5403060f418fad438b9cfdd3edd10d65cee7d8fd11/backports_zstd-1.6.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "2ba9ac10fc393e5123a08802e0e895a107cb4a66b9973d2844dbd8a343111e59",
+        downloaded_file_path = "backports_zstd-1.6.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_backports_zstd_1.6.0_cp313_cp313_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/38/26/ce90e9eed6f25aaa4a4fa305a2aaf2d2ad81fd69de8eb248ddd91c80d1e0/backports_zstd-1.6.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "e39258a09b1c7ca70b5e94a5c5ccfe4700b4250b8077cfeab31d0f79565d4c9b",
+        downloaded_file_path = "backports_zstd-1.6.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_wheel_blake3_1.0.8_cp310_cp310_macosx_11_0_arm64",
         urls = [
             "https://files.pythonhosted.org/packages/20/bc/f4b88873054aa87b8c36398775713bf674807e7449a9c7fefe35d3cf1dc5/blake3-1.0.8-cp310-cp310-macosx_11_0_arm64.whl",
@@ -14590,6 +14860,66 @@ def repositories():
         ],
         sha256 = "cf9cba6f5b78a2071ec6fb1e7bd39acf35071d90a81231d67e92d637776a6a63",
         downloaded_file_path = "brotli-1.2.0-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp314_cp314t_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/ef/f9/dfa56316837fa798eac19358351e974de8e1e2ca9475af4cb90293cd6576/brotlicffi-1.2.0.1-cp314-cp314t-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "2c85e65913cf2b79c57a3fdd05b98d9731d9255dc0cb696b09376cc091b9cddd",
+        downloaded_file_path = "brotlicffi-1.2.0.1-cp314-cp314t-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp314_cp314t_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/4a/f5/f8f492158c76b0d940388801f04f747028971ad5774287bded5f1e53f08d/brotlicffi-1.2.0.1-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "535f2d05d0273408abc13fc0eebb467afac17b0ad85090c8913690d40207dac5",
+        downloaded_file_path = "brotlicffi-1.2.0.1-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp314_cp314t_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/3b/e1/ff87af10ac419600c63e9287a0649c673673ae6b4f2bcf48e96cb2f89f60/brotlicffi-1.2.0.1-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "ce17eb798ca59ecec67a9bb3fd7a4304e120d1cd02953ce522d959b9a84d58ac",
+        downloaded_file_path = "brotlicffi-1.2.0.1-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/9a/9f/b98dcd4af47994cee97aebac866996a006a2e5fc1fd1e2b82a8ad95cf09c/brotlicffi-1.2.0.1-cp38-abi3-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "91ba5f0ccc040f6ff8f7efaf839f797723d03ed46acb8ae9408f99ffd2572cf4",
+        downloaded_file_path = "brotlicffi-1.2.0.1-cp38-abi3-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/b1/7a/ac4ee56595a061e3718a6d1ea7e921f4df156894acffb28ed88a1fd52022/brotlicffi-1.2.0.1-cp38-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "be9a670c6811af30a4bd42d7116dc5895d3b41beaa8ed8a89050447a0181f5ce",
+        downloaded_file_path = "brotlicffi-1.2.0.1-cp38-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_brotlicffi_1.2.0.1_cp38_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/99/39/e7410db7f6f56de57744ea52a115084ceb2735f4d44973f349bb92136586/brotlicffi-1.2.0.1-cp38-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "6f3314a3476f59e5443f9f72a6dff16edc0c3463c9b318feaef04ae3e4683f5a",
+        downloaded_file_path = "brotlicffi-1.2.0.1-cp38-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(
@@ -16450,6 +16780,16 @@ def repositories():
         ],
         sha256 = "34e815dfaa43340d1d15a5c3a02b8476004037eb4840b34910c6e21679d288f3",
         downloaded_file_path = "flask-3.0.3-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_flask_compress_1.24_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/4c/0f/fe51e0b2301bbd429af44273a923ff92127b18d13abba5ae5a1d60e8e497/flask_compress-1.24-py3-none-any.whl",
+        ],
+        sha256 = "1e63668eb6e3242bd4f6ad98825a924e3984409be90c125477893d586007d00c",
+        downloaded_file_path = "flask_compress-1.24-py3-none-any.whl",
     )
 
     maybe(

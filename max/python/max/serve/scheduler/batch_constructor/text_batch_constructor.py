@@ -52,6 +52,21 @@ logger = logging.getLogger("max.serve")
 
 
 @dataclass
+class _PendingCERequest:
+    """A CE request awaiting DP-balanced placement, not yet bound to a replica.
+
+    ``weights`` holds the request's estimated post-prefix-cache CE length in
+    tokens, per replica, from a read-only probe of the device and shared
+    (host/disk) cache tiers at enqueue time. The shared tiers give the same
+    answer on every replica; per-replica differences come from device-cache
+    residency only.
+    """
+
+    ctx: TextContext
+    weights: list[int]
+
+
+@dataclass
 class ReplicaRequests:
     """This class tracks the requests assigned to each replica.
 
@@ -422,6 +437,25 @@ class TextBatchConstructor:
         self._request_id_to_replica_idx: dict[RequestID, int] = {}
         self._request_id_to_lora_name: dict[RequestID, str | None] = {}
 
+        # DP-balanced CE deferral state. New CE requests wait in
+        # ``_ce_pending`` unbound to any replica (insertion order == arrival
+        # order); binding happens at the step the planner first schedules
+        # them. ``_ce_arrival`` keeps each pooled request's arrival time even
+        # after binding, so mid-prefill tails share the same deferral
+        # deadline; entries are dropped at release. ``_ce_deferred_replicas``
+        # is recomputed by ``_plan_ce_step`` every iteration and consumed by
+        # ``_identify_priority`` / ``_add_ce_requests``.
+        self._dp_ce_balance_enabled = (
+            scheduler_config.dp_ce_balance_timeout_ms >= 0
+            and self.num_replicas > 1
+        )
+        self._ce_pending: OrderedDict[RequestID, _PendingCERequest] = (
+            OrderedDict()
+        )
+        self._ce_arrival: dict[RequestID, float] = {}
+        self._ce_deferred_replicas: set[int] = set()
+        self._probe_failure_logged = False
+
         self.total_preemption_count: int = 0
         self.last_preemption_logging_time: float = time.monotonic()
 
@@ -496,9 +530,28 @@ class TextBatchConstructor:
                 If None, the next replica index will be automatically chosen.
         """
 
+        # DP-balanced CE deferral: fresh CE requests enter an unbound pool and
+        # are bound to a replica by the per-step planner, which prices them by
+        # estimated post-prefix-cache length. Caller-pinned requests and
+        # already-generating requests bypass the pool.
+        if (
+            self._dp_ce_balance_enabled
+            and replica_idx is None
+            and ctx.tokens.generated_length == 0
+        ):
+            self._ce_pending[ctx.request_id] = _PendingCERequest(
+                ctx=ctx, weights=self._post_cache_weights(ctx)
+            )
+            self._ce_arrival[ctx.request_id] = time.monotonic()
+            return
+
         # Pick the replica to enqueue the request to.
         if replica_idx is None:
             replica_idx = self.get_next_replica_idx()
+        self._bind_request(ctx, replica_idx)
+
+    def _bind_request(self, ctx: TextContext, replica_idx: int) -> None:
+        """Binds a request to a replica and enqueues it in the right queue."""
         replica = self.replicas[replica_idx]
         self._request_id_to_replica_idx[ctx.request_id] = replica_idx
         self._request_id_to_lora_name[ctx.request_id] = (
@@ -512,6 +565,36 @@ class TextBatchConstructor:
             replica.ce_reqs[ctx.request_id] = ctx
         else:
             replica.tg_reqs[ctx.request_id] = ctx
+
+    def _post_cache_weights(self, ctx: TextContext) -> list[int]:
+        """Estimates per-replica post-prefix-cache CE length for a new request.
+
+        Probes the prefix caches read-only (device tier per replica, shared
+        host/disk tiers once) and subtracts the contiguous cached prefix from
+        the request's unprocessed length. Fails open: on any probe error the
+        request is weighted at its full unprocessed length everywhere
+        (pre-cache behavior), and the first failure is logged.
+        """
+        active_length = ctx.tokens.active_length
+        try:
+            hits = self.kv_cache.get_prefix_cache_hit_counts(ctx)
+        except Exception:
+            if not self._probe_failure_logged:
+                self._probe_failure_logged = True
+                logger.exception(
+                    "Prefix-cache probe for DP CE balancing failed; weighting"
+                    " by full prompt length (logged once per process)."
+                )
+            return [active_length] * self.num_replicas
+
+        assert len(hits) == self.num_replicas, (
+            f"expected hit counts for {self.num_replicas} replicas,"
+            f" got {len(hits)}"
+        )
+        page_size = self.kv_cache.params.page_size
+        return [
+            max(1, active_length - page_size * h.total_blocks) for h in hits
+        ]
 
     def advance_requests(
         self, inputs: TextGenerationInputs[TextContext]
@@ -567,7 +650,10 @@ class TextBatchConstructor:
 
     def contains(self, request_id: RequestID) -> bool:
         """Checks if a request is in the batch constructor for any replica."""
-        return request_id in self._request_id_to_replica_idx
+        return (
+            request_id in self._request_id_to_replica_idx
+            or request_id in self._ce_pending
+        )
 
     def release_request(self, request_id: RequestID) -> None:
         """
@@ -582,6 +668,16 @@ class TextBatchConstructor:
         """
         if not self.contains(request_id):
             raise ValueError(f"Request {request_id} not found in any replica.")
+
+        # Pooled CE requests are not bound to a replica yet: nothing was
+        # claimed in the KV cache and no replica queue holds them.
+        if request_id in self._ce_pending:
+            del self._ce_pending[request_id]
+            self._ce_arrival.pop(request_id, None)
+            self.pipeline.release(request_id)
+            return
+
+        self._ce_arrival.pop(request_id, None)
 
         # Retrieve the replica index for the request
         replica_idx = self._request_id_to_replica_idx[request_id]
@@ -642,12 +738,20 @@ class TextBatchConstructor:
 
     @property
     def all_ce_reqs(self) -> dict[RequestID, TextContext]:
-        """Returns a dictionary of all CE requests from all replicas."""
-        return {
+        """Returns a dictionary of all CE requests from all replicas.
+
+        Includes pooled CE requests not yet bound to a replica.
+        """
+        reqs = {
             req_id: ctx
             for replica in self.replicas
             for req_id, ctx in replica.ce_reqs.items()
         }
+        reqs.update(
+            (req_id, pending.ctx)
+            for req_id, pending in self._ce_pending.items()
+        )
+        return reqs
 
     @property
     def all_tg_reqs(self) -> dict[RequestID, TextContext]:
@@ -703,6 +807,11 @@ class TextBatchConstructor:
             )
 
     def _identify_priority(self, replica_idx: int) -> RequestType:
+        # DP CE balancing deferred this replica's CE work for this iteration;
+        # run TG instead (the planner only defers replicas that have TG work).
+        if replica_idx in self._ce_deferred_replicas:
+            return RequestType.TG
+
         # If there are no CE requests, prioritize TG
         if len(self.replicas[replica_idx].ce_reqs) == 0:
             return RequestType.TG
@@ -724,6 +833,11 @@ class TextBatchConstructor:
         return 0
 
     def _add_ce_requests(self, batch: ReplicaBatch, replica_idx: int) -> None:
+        # Deferred by the DP CE balancer this iteration (also covers paths
+        # that bypass _identify_priority, e.g. in-flight batching).
+        if replica_idx in self._ce_deferred_replicas:
+            return
+
         replica_requests = self.replicas[replica_idx]
         max_batch_size = self.scheduler_config.max_batch_size
 
@@ -940,8 +1054,157 @@ class TextBatchConstructor:
 
         return batch
 
+    def _plan_ce_step(self) -> None:
+        """Plans this iteration's CE work across DP replicas.
+
+        Prices CE work in post-prefix-cache tokens and greedily assembles the
+        most balanced CE step it can, deferring the rest:
+
+        - Work that must run — deferral deadline expired, no deadline on
+          record, or its replica has no TG work to run instead — forms the
+          step's floor. Expired pooled requests bind immediately, in arrival
+          order, so out-of-order balancing can never starve an old request.
+        - Deferrable mid-prefill tails (per replica, all-or-nothing) and then
+          pooled unbound requests are added largest-first wherever they
+          strictly improve the step's occupancy (mean/max of per-replica CE
+          tokens, capped at the CE chunk budget).
+        - Pooled requests bind to ``argmin(total_load + weight)`` at the moment the
+          planner schedules them: binding is deferred until first run so it
+          uses fresh loads.
+
+        The assembled step is committed when the floor is non-empty (those
+        tokens run regardless, so riders only improve the step), when its
+        occupancy meets ``dp_ce_balance_threshold``, or when the fleet has
+        nothing else to do. Otherwise every deferrable piece waits: deferred
+        replicas run TG this iteration and pooled requests stay unbound.
+        """
+        self._ce_deferred_replicas.clear()
+        if not self._dp_ce_balance_enabled:
+            return
+        if not self._ce_pending and not any(
+            replica.ce_reqs for replica in self.replicas
+        ):
+            return
+
+        target = self.scheduler_config.target_tokens_per_batch_ce
+        timeout_s = self.scheduler_config.dp_ce_balance_timeout_ms / 1000.0
+        now = time.monotonic()
+
+        def _expired(request_id: RequestID) -> bool:
+            arrival = self._ce_arrival.get(request_id)
+            return arrival is None or now - arrival >= timeout_s
+
+        # The floor: per-replica step CE tokens that run no matter what. A
+        # replica's tails are deferrable only when all of them have deadline
+        # budget left AND the replica has TG work to run instead (deferring
+        # into idleness loses throughput for nothing).
+        #
+        # ``step_load`` is this step's projection (capped at the CE chunk
+        # budget), used for occupancy. ``total_load`` is the uncapped
+        # per-replica queue total, used for binding decisions.
+        floor = [0] * self.num_replicas
+        total_load = [0] * self.num_replicas
+        deferrable_tails: list[tuple[int, int]] = []  # (step_tokens, replica)
+        for replica_idx, replica in enumerate(self.replicas):
+            tokens = sum(
+                ctx.tokens.active_length for ctx in replica.ce_reqs.values()
+            )
+            total_load[replica_idx] = tokens
+            if tokens == 0:
+                continue
+            can_defer = bool(replica.tg_reqs) and not any(
+                _expired(req_id) for req_id in replica.ce_reqs
+            )
+            if can_defer:
+                deferrable_tails.append((min(tokens, target), replica_idx))
+            else:
+                floor[replica_idx] = min(tokens, target)
+
+        step_load = list(floor)
+
+        # Expired pooled requests bind now and join the floor.
+        for req_id in [r for r in self._ce_pending if _expired(r)]:
+            pending = self._ce_pending.pop(req_id)
+            replica_idx = min(
+                range(self.num_replicas),
+                key=lambda i: total_load[i] + pending.weights[i],
+            )
+            total_load[replica_idx] += pending.weights[replica_idx]
+            step_load[replica_idx] = min(
+                step_load[replica_idx] + pending.weights[replica_idx], target
+            )
+            floor[replica_idx] = step_load[replica_idx]
+            self._bind_request(pending.ctx, replica_idx)
+
+        def _occupancy(loads: list[int]) -> float:
+            max_load = max(loads)
+            if max_load == 0:
+                return 1.0
+            return sum(loads) / len(loads) / max_load
+
+        # Greedy valley-fill, largest-first, accepting work only where it
+        # strictly improves the step's occupancy (or seeds an empty step).
+        deferred = {replica_idx for _, replica_idx in deferrable_tails}
+        for step_tokens, replica_idx in sorted(deferrable_tails, reverse=True):
+            trial = list(step_load)
+            trial[replica_idx] = min(trial[replica_idx] + step_tokens, target)
+            if max(step_load) == 0 or _occupancy(trial) > _occupancy(step_load):
+                step_load = trial
+                deferred.discard(replica_idx)
+
+        # Pooled requests may only bind to replicas running CE this step
+        # (otherwise they would queue behind a deferred tail).
+        pool_binds: list[tuple[RequestID, int]] = []
+        for req_id, pending in sorted(
+            self._ce_pending.items(),
+            key=lambda item: min(item[1].weights),
+            reverse=True,
+        ):
+            eligible = [
+                i
+                for i in range(self.num_replicas)
+                if i not in deferred and step_load[i] < target
+            ]
+            if not eligible:
+                continue
+            replica_idx = min(
+                eligible, key=lambda i: total_load[i] + pending.weights[i]
+            )
+            trial = list(step_load)
+            trial[replica_idx] = min(
+                trial[replica_idx] + pending.weights[replica_idx], target
+            )
+            if max(step_load) == 0 or _occupancy(trial) > _occupancy(step_load):
+                step_load = trial
+                total_load[replica_idx] += pending.weights[replica_idx]
+                pool_binds.append((req_id, replica_idx))
+
+        floor_exists = any(floor)
+        fleet_idle = not floor_exists and all(
+            not replica.tg_reqs for replica in self.replicas
+        )
+        if (
+            floor_exists
+            or fleet_idle
+            or _occupancy(step_load)
+            >= self.scheduler_config.dp_ce_balance_threshold
+        ):
+            for req_id, replica_idx in pool_binds:
+                pending = self._ce_pending.pop(req_id)
+                self._bind_request(pending.ctx, replica_idx)
+            self._ce_deferred_replicas = deferred
+        else:
+            # Hold everything deferrable for a better-balanced step.
+            self._ce_deferred_replicas = {
+                replica_idx for _, replica_idx in deferrable_tails
+            }
+
     def construct_batch(self) -> TextGenerationInputs[TextContext]:
         """Constructs Pipeline Inputs which includes a batch for each replica."""
+
+        # DP-balanced CE deferral: decide this iteration's CE work (late
+        # binding + per-replica deferral) before priorities are identified.
+        self._plan_ce_step()
 
         priority_override = None
         replica_priorities: set[RequestType] | list[RequestType]

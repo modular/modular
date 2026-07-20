@@ -22,6 +22,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParams,
+    KVConnectorType,
     MHAKVCacheParams,
     MultiKVCacheParams,
     compute_max_seq_len_fitting_in_cache,
@@ -622,3 +623,120 @@ class TestParallelismValidation:
         tp_leaf = create_leaf_params(n_devices=2, dp_degree=1)
         with pytest.raises(ValueError, match="same data parallel degree"):
             MultiKVCacheParams.from_params({"dp": dp_leaf, "tp": tp_leaf})
+
+
+class TestPerLayerBuffers:
+    """Symbolic-ABI tests for the gated ``per_layer_buffers`` flag.
+
+    A per-layer pool appends one single-layer buffer per layer at the *tail* of
+    the flattened inputs, keeping the leading fields byte-identical for every
+    non-per-layer cache. These are CPU-only (symbolic types; no device
+    allocation or execution).
+    """
+
+    def _mha(
+        self,
+        *,
+        num_layers: int,
+        per_layer_buffers: bool,
+        n_devices: int = 1,
+    ) -> KVCacheParams:
+        return MHAKVCacheParams(
+            dtype=DType.bfloat16,
+            n_kv_heads=8,
+            head_dim=128,
+            num_layers=num_layers,
+            devices=[DeviceRef.GPU()] * n_devices,
+            page_size=128,
+            per_layer_buffers=per_layer_buffers,
+        )
+
+    def test_default_off_is_byte_identical(self) -> None:
+        """Off by default: no per-layer field and 6 flat items per device."""
+        params = self._mha(num_layers=4, per_layer_buffers=False)
+        symbolic = params.get_symbolic_inputs()
+        assert symbolic.inputs[0].kv_blocks_per_layer is None
+        assert len(symbolic.flatten()) == 6
+
+    def test_per_layer_appends_num_layers_at_tail(self) -> None:
+        """On: ``num_layers`` single-layer buffers appended after the 6 fields."""
+        num_layers = 4
+        params = self._mha(num_layers=num_layers, per_layer_buffers=True)
+        symbolic = params.get_symbolic_inputs()
+        per_device = symbolic.inputs[0]
+        assert per_device.kv_blocks_per_layer is not None
+        assert len(per_device.kv_blocks_per_layer) == num_layers
+        # kv_blocks matches a single-layer buffer (layer dim pinned to 1) so it
+        # stays a valid single-buffer alias for kv_blocks_per_layer[0].
+        assert (
+            per_device.kv_blocks.shape
+            == per_device.kv_blocks_per_layer[0].shape
+        )
+        assert int(per_device.kv_blocks.shape[2]) == 1
+        assert len(symbolic.flatten()) == 6 + num_layers
+
+    def test_per_layer_flatten_unflatten_roundtrip(self) -> None:
+        """flatten -> unflatten fully consumes the iterator and rebuilds tail."""
+        num_layers = 3
+        params = self._mha(num_layers=num_layers, per_layer_buffers=True)
+        symbolic = params.get_symbolic_inputs()
+        it = iter(symbolic.flatten())
+        reconstructed = symbolic.unflatten(it)
+        assert list(it) == [], "unflatten left unconsumed elements"
+        rec = reconstructed.inputs[0]
+        assert rec.kv_blocks_per_layer is not None
+        assert len(rec.kv_blocks_per_layer) == num_layers
+
+    def test_multi_tree_only_flagged_child_extends(self) -> None:
+        """In a tree, only the per-layer child grows; others stay 6 per device."""
+        sliding = self._mha(num_layers=2, per_layer_buffers=True)
+        full = self._mha(num_layers=5, per_layer_buffers=False)
+        root = MultiKVCacheParams.from_params(
+            {"sliding": sliding, "full": full}
+        )
+        # sliding: 6 + 2 (per-layer tail); full: 6; one device each.
+        assert len(root.get_symbolic_inputs().flatten()) == (6 + 2) + 6
+
+    def test_allocate_zero_layers_raises(self) -> None:
+        """``num_layers == 0`` fails fast with a clear error, not IndexError.
+
+        The guards raise before any device buffer is materialized, so this runs
+        without a GPU.
+        """
+        params = self._mha(num_layers=0, per_layer_buffers=True)
+        with pytest.raises(ValueError, match="num_layers >= 1"):
+            params.allocate_buffers(total_num_pages=4)
+
+    def test_allocate_with_offload_connector_raises(self) -> None:
+        """An off-device connector is rejected: ``all_buffers`` sees only layer 0."""
+        params = MHAKVCacheParams(
+            dtype=DType.bfloat16,
+            n_kv_heads=8,
+            head_dim=128,
+            num_layers=4,
+            devices=[DeviceRef.GPU()],
+            page_size=128,
+            per_layer_buffers=True,
+            kv_connector=KVConnectorType.local,
+            enable_prefix_caching=True,
+            host_kvcache_swap_space_gb=1.0,
+        )
+        with pytest.raises(
+            NotImplementedError, match="off-device KV connector"
+        ):
+            params.allocate_buffers(total_num_pages=4)
+
+    def test_allocate_with_data_parallelism_raises(self) -> None:
+        """Data parallelism is rejected: cross-replica copy sees only layer 0."""
+        params = MHAKVCacheParams(
+            dtype=DType.bfloat16,
+            n_kv_heads=8,
+            head_dim=128,
+            num_layers=4,
+            devices=[DeviceRef.GPU()] * 2,
+            page_size=128,
+            per_layer_buffers=True,
+            data_parallel_degree=2,
+        )
+        with pytest.raises(NotImplementedError, match="data parallelism"):
+            params.allocate_buffers(total_num_pages=4)

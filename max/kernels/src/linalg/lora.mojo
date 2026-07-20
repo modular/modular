@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides LoRA (Low-Rank Adaptation) grouped matmul kernels for SM100 GPUs."""
 
 from std.gpu.host import DeviceContext
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul

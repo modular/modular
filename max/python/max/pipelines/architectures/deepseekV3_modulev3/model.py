@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from typing import Any, ClassVar, cast
 
 from max.driver import Buffer, Device, is_virtual_device_mode
@@ -49,9 +50,28 @@ from .model_config import DeepseekV3Config
 logger = logging.getLogger("max.pipelines")
 
 
-# DeepseekV3 reuses the same input layout as DeepseekV2 (tokens,
-# input_row_offsets, return_n_logits, kv_cache_inputs).
-DeepseekV3Inputs = DeepseekV2Inputs
+@dataclass
+class DeepseekV3Inputs(DeepseekV2Inputs):
+    batch_context_length: Buffer = field(kw_only=True)
+    """Host (CPU) total page-aligned KV context length for the MLA prefill plan.
+
+    Substituted for the planner's device-resident ``buffer_lengths`` so the
+    per-layer ``.to(CPU())`` stays host-to-host and the graph is capturable.
+    """
+
+    ep_inputs: tuple[Buffer, ...] = field(default=(), kw_only=True)
+
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        """Flat graph inputs in compile ABI order."""
+        return (
+            self.tokens,
+            self.return_n_logits,
+            self.input_row_offsets,
+            self.batch_context_length,
+            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
+            *self.ep_inputs,
+        )
 
 
 class DeepseekV3Model(DeepseekV2Model):
@@ -76,8 +96,6 @@ class DeepseekV3Model(DeepseekV2Model):
         # Capture the session so _init_distributed_runtime() can initialize EP
         # communication, and default the EP buffers so execute() works without EP.
         self.session = session
-        self._ep_model_inputs: list[Buffer] = []
-        self._ep_batch_manager: EPBatchManager | None = None
         super().__init__(
             pipeline_config,
             session,
@@ -110,13 +128,15 @@ class DeepseekV3Model(DeepseekV2Model):
             # Only enable shared expert fusion if the shared expert is of
             # the same shape as routed experts.
             fused_shared_expert = True
+
+        fp8_dispatch = self.dtype == DType.float8_e4m3fn
         return EPConfig(
-            # Dispatch tokens in bf16 regardless of weight dtype; FP8 experts
-            # quantize the activations locally in the grouped matmul. This
-            # avoids FP8-on-the-wire dispatch (and its dispatch_quant_config),
-            # so ``dispatch_quant_config`` stays ``None`` (required by
-            # ``call_ep_init`` for a bf16 dispatch dtype).
-            dispatch_dtype=DType.bfloat16,
+            dispatch_dtype=(
+                DType.float8_e4m3fn if fp8_dispatch else DType.bfloat16
+            ),
+            dispatch_quant_config=(
+                model_config.quant_config if fp8_dispatch else None
+            ),
             combine_dtype=DType.bfloat16,
             hidden_size=model_config.hidden_size,
             top_k=model_config.num_experts_per_tok,
@@ -208,7 +228,6 @@ class DeepseekV3Model(DeepseekV2Model):
     def _init_distributed_runtime(self, model_config: Any) -> None:
         super()._init_distributed_runtime(model_config)
         self._ep_batch_manager = None
-        self._ep_model_inputs = []
 
         ep_size = self.pipeline_config.runtime.ep_size
         if ep_size <= 1:
@@ -223,10 +242,9 @@ class DeepseekV3Model(DeepseekV2Model):
         self._ep_batch_manager = EPBatchManager(ep_config)
         self._modulev3_extra_input_types = self._ep_batch_manager.input_types()
         if not is_virtual_device_mode():
-            ep_comm_initializer = EPCommInitializer(ep_config)
-            ep_comm_initializer.ep_init(self.session)
-            ep_config.node_id = ep_comm_initializer.config.node_id
-            self._ep_model_inputs = ep_comm_initializer.model_inputs()
+            self.ep_comm_initializer = EPCommInitializer(ep_config)
+            self.ep_comm_initializer.ep_init(self.session)
+            ep_config.node_id = self.ep_comm_initializer.config.node_id
 
     @override
     def _instantiate_module(self, model_config: Any) -> Any:
@@ -239,16 +257,7 @@ class DeepseekV3Model(DeepseekV2Model):
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Execute the model."""
-        assert isinstance(model_inputs, DeepseekV3Inputs)
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs
-        assert curr_kv_cache_inputs is not None
-        model_outputs = self.model(
-            model_inputs.tokens,
-            model_inputs.return_n_logits,
-            model_inputs.input_row_offsets,
-            *curr_kv_cache_inputs.flatten(),
-            *self._ep_model_inputs,
-        )
+        model_outputs = self.model(*model_inputs.buffers)
         if len(model_outputs) == 3:
             return ModelOutputs(
                 logits=cast(Buffer, model_outputs[1].driver_tensor),

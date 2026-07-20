@@ -36,7 +36,16 @@ description: {% if decl.overloads[0].summary
 {% if decl.signature %}
 <div class="mojo-function-sig">
 
-{% if decl.isStatic %}`static` {% endif %}``{{ decl.signature | pad_backticks }}``
+{% set _sig = decl.signature | format_signature %}
+{% if "\n" in _sig %}
+
+```mojo
+{% if decl.isStatic %}static {% endif %}{{ _sig }}
+```
+
+{% else %}
+{% if decl.isStatic %}`static` {% endif %}``{{ _sig | pad_backticks }}``
+{% endif %}
 {# for function overloads, show stability marker. #}
 {% if overload %}
 {{ macros.stability_marker(decl) }}
@@ -81,7 +90,7 @@ description: {% if decl.overloads[0].summary
         {%- else -%}
             ``{{ param.type | pad_backticks }}``
         {%- endif -%}
-    {%- endif %}): {{ param.description }}
+    {%- endif %}){{ (": " + param.description) if param.description else "" }}
 {% endfor %}
 {% endif %}
 {% if decl.args %}
@@ -91,7 +100,7 @@ description: {% if decl.overloads[0].summary
 {% for arg in decl.args -%}
 *   ​<b>{{ arg.name }}</b> ({% if arg.path
         %}[``{{ arg.type | pad_backticks }}``]({{ api_href(arg.path) }}){% else
-        %}``{{ arg.type | pad_backticks }}``{% endif %}): {{ arg.description }}
+        %}``{{ arg.type | pad_backticks }}``{% endif %}){{ (": " + arg.description) if arg.description else "" }}
 {% endfor %}
 {% endif %}
 {% if (decl.returns and decl.returns.type != 'Self') or (decl.returns and decl.returns.doc) %}

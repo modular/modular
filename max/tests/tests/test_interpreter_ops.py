@@ -38,7 +38,7 @@ from max._interpreter_ops.handlers import (
     _handle_index_to_tensor,
     _handle_shape_from_tensor,
 )
-from max.driver import CPU, Buffer
+from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random as max_random
@@ -8956,12 +8956,22 @@ class TestLazyGCModelCompilation:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """ensure_swept force-loads an adoptable manifest, skipping the stamp sweep."""
-        family = gc_compile.GCOpFamily(
-            name="test",
-            build_module=lambda: Module(),
-            build_module_for_device=lambda device: Module(),
-            sweep_devices=lambda: [],
-        )
+
+        class _FakeFamily(gc_compile.GCFamilySpec):
+            name = "test"
+
+            def build_module(self) -> Module:
+                return Module()
+
+            def build_module_for_device(
+                self, device: Device, module: Module | None = None
+            ) -> Module:
+                return Module()
+
+            def sweep_devices(self) -> list[Device]:
+                return []
+
+        family = gc_compile.GCOpFamily(_FakeFamily())
         calls: list[str] = []
 
         def fake_adopt(manifest: object) -> bool:
@@ -8982,12 +8992,22 @@ class TestLazyGCModelCompilation:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """With no manifest but a matching warm stamp, ensure_swept batch-sweeps."""
-        family = gc_compile.GCOpFamily(
-            name="test",
-            build_module=lambda: Module(),
-            build_module_for_device=lambda device: Module(),
-            sweep_devices=lambda: [],
-        )
+
+        class _FakeFamily(gc_compile.GCFamilySpec):
+            name = "test"
+
+            def build_module(self) -> Module:
+                return Module()
+
+            def build_module_for_device(
+                self, device: Device, module: Module | None = None
+            ) -> Module:
+                return Module()
+
+            def sweep_devices(self) -> list[Device]:
+                return []
+
+        family = gc_compile.GCOpFamily(_FakeFamily())
         calls: list[str] = []
         monkeypatch.setattr(gc_compile, "read_manifest", lambda: None)
         monkeypatch.setattr(gc_compile, "warm_stamp_matches", lambda: True)

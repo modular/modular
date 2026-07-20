@@ -33,6 +33,7 @@ from std.ffi import (
 from std.memory import (
     alloc,
     ImmPointer,
+    MutOpaquePointer,
     MutPointer,
     OpaquePointer,
     UnsafePointer,
@@ -61,7 +62,7 @@ struct M_driver_slice[origin: ImmOrigin](TrivialRegisterPassable):
 @fieldwise_init
 struct M_driver_static_bundle[origin: ImmOrigin](TrivialRegisterPassable):
     var mapped_data: M_driver_slice[Self.origin]
-    var file_type: ImmPointer[Int8, StaticConstantOrigin]
+    var file_type: ImmPointer[Int8, ImmStaticOrigin]
     var file_type_len: UInt64
 
 
@@ -79,11 +80,13 @@ struct M_driver_dlpack_device(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct M_driver_queue_execute_config_gpu(TrivialRegisterPassable):
+struct M_driver_queue_execute_config_gpu[attr_origin: MutOrigin](
+    TrivialRegisterPassable
+):
     var grid: M_driver_dim
     var block: M_driver_dim
     var shared_mem_bytes: UInt32
-    var attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]]
+    var attributes: OptionalReg[OpaquePointer[Self.attr_origin]]
     var num_attributes: UInt32
 
 
@@ -95,9 +98,9 @@ struct M_driver_queue_execute_mode(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct M_driver_queue_execute_config:
+struct M_driver_queue_execute_config[attr_origin: MutOrigin]:
     var mode: M_driver_queue_execute_mode
-    var config: UnsafeUnion[M_driver_queue_execute_config_gpu]
+    var config: UnsafeUnion[M_driver_queue_execute_config_gpu[Self.attr_origin]]
 
 
 @fieldwise_init
@@ -293,6 +296,23 @@ struct RawDriver(Movable):
             raise err^
 
         return num_devices.unsafe_assume_init_ref()
+
+    def get_device_attribute(
+        self, device: DeviceHandle, attribute: Int32
+    ) raises HALError -> Int32:
+        var value = UnsafeMaybeUninit[Int32]()
+        var status = self._raw.device_attribute.f(
+            device, attribute, OutParam[Int32](to=value)
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to get device attribute {attribute}: {err.message}"
+                ),
+            )
+        return value.unsafe_assume_init_ref()
 
     # ===-------------------------------------------------------------------===#
     # Queue operations
@@ -785,6 +805,26 @@ struct RawDriver(Movable):
                 message=String(t"failed to fill memory: {err.message}"),
             )
 
+    def queue_launch_host_func[
+        origin: MutOrigin
+    ](
+        self,
+        queue: QueueHandle,
+        func: def(OpaquePointer[origin]) thin -> None,
+        user_data: OpaquePointer[origin],
+    ) raises HALError:
+        """Enqueues a host function callback on the queue (e.g.
+        cuLaunchHostFunc)."""
+        var status = self._raw.queue_launch_host_func.f(queue, func, user_data)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to enqueue host function: {err.message}"
+                ),
+            )
+
     def synchronize_queue(self, queue: QueueHandle) raises HALError:
         var status = self._raw.queue_synchronize.f(queue)
         if status != STATUS_SUCCESS:
@@ -909,6 +949,119 @@ struct RawDriver(Movable):
             )
         return func.unsafe_assume_init_ref()
 
+    def function_occupancy_max_active_blocks(
+        self,
+        context: ContextHandle,
+        func: FunctionHandle,
+        block_size: Int32,
+        dynamic_shared_memory_bytes: UInt64,
+    ) raises HALError -> Int32:
+        var num_blocks = UnsafeMaybeUninit[Int32]()
+        var status = self._raw.function_occupancy_max_active_blocks.f(
+            context,
+            func,
+            block_size,
+            dynamic_shared_memory_bytes,
+            OutParam[Int32](to=num_blocks),
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to query function occupancy: {err.message}"
+                ),
+            )
+        return num_blocks.unsafe_assume_init_ref()
+
+    def tensor_map_encode_tiled(
+        self,
+        context: ContextHandle,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_device_address: UInt64,
+        global_dim: UnsafePointer[mut=False, UInt64, _],
+        global_strides: UnsafePointer[mut=False, UInt64, _],
+        box_dim: UnsafePointer[mut=False, UInt32, _],
+        element_strides: UnsafePointer[mut=False, UInt32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises HALError:
+        """Encodes a tiled TMA descriptor into `tensor_map` (128 host bytes)."""
+        var status = self._raw.tensor_map_encode_tiled.f(
+            context,
+            tensor_map,
+            data_type,
+            rank,
+            global_device_address,
+            global_dim,
+            global_strides,
+            box_dim,
+            element_strides,
+            interleave,
+            swizzle,
+            l2_promotion,
+            oob_fill,
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to encode tiled tensor map: {err.message}"
+                ),
+            )
+
+    def tensor_map_encode_im2col(
+        self,
+        context: ContextHandle,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_device_address: UInt64,
+        global_dim: UnsafePointer[mut=False, UInt64, _],
+        global_strides: UnsafePointer[mut=False, UInt64, _],
+        pixel_box_lower_corner: UnsafePointer[mut=False, Int32, _],
+        pixel_box_upper_corner: UnsafePointer[mut=False, Int32, _],
+        channels_per_pixel: Int32,
+        pixels_per_column: Int32,
+        element_strides: UnsafePointer[mut=False, UInt32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises HALError:
+        """Encodes an im2col TMA descriptor into `tensor_map`."""
+        var status = self._raw.tensor_map_encode_im2col.f(
+            context,
+            tensor_map,
+            data_type,
+            rank,
+            global_device_address,
+            global_dim,
+            global_strides,
+            pixel_box_lower_corner,
+            pixel_box_upper_corner,
+            channels_per_pixel,
+            pixels_per_column,
+            element_strides,
+            interleave,
+            swizzle,
+            l2_promotion,
+            oob_fill,
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to encode im2col tensor map: {err.message}"
+                ),
+            )
+
     def unload_function(
         self,
         context: ContextHandle,
@@ -932,16 +1085,20 @@ struct RawDriver(Movable):
         arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
         shared_mem_bytes: UInt32 = 0,
+        attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]] = None,
+        num_attributes: UInt32 = 0,
     ) raises HALError:
-        var config = M_driver_queue_execute_config(
+        var config = M_driver_queue_execute_config[MutUntrackedOrigin](
             mode=M_driver_queue_execute_mode.GPU,
-            config=UnsafeUnion[M_driver_queue_execute_config_gpu](
-                M_driver_queue_execute_config_gpu(
+            config=UnsafeUnion[
+                M_driver_queue_execute_config_gpu[MutUntrackedOrigin]
+            ](
+                M_driver_queue_execute_config_gpu[MutUntrackedOrigin](
                     grid=M_driver_dim(x=grid[0], y=grid[1], z=grid[2]),
                     block=M_driver_dim(x=block[0], y=block[1], z=block[2]),
                     shared_mem_bytes=shared_mem_bytes,
-                    attributes={},
-                    num_attributes=UInt32(0),
+                    attributes=attributes,
+                    num_attributes=num_attributes,
                 )
             ),
         )
@@ -1326,6 +1483,71 @@ struct RawPlugin(Movable):
             context: ContextHandle, function: FunctionHandle
         ) thin -> PluginResultCode,
     ]
+    var function_occupancy_max_active_blocks: HALFunction[
+        "M_driver_function_occupancy_max_active_blocks",
+        def(
+            context: ContextHandle,
+            function: FunctionHandle,
+            block_size: Int32,
+            dynamic_shared_memory_bytes: UInt64,
+            num_blocks: OutParam[Int32, _],
+        ) thin -> PluginResultCode,
+    ]
+    # The array parameters mirror the C header's `const uint64_t *` /
+    # `const uint32_t *` types; the device address is a `uint64_t` like the
+    # other device-address parameters in the ABI.
+    var tensor_map_encode_tiled: HALFunction[
+        "M_driver_tensor_map_encode_tiled",
+        def[
+            tensor_map_origin: MutOrigin,
+            global_dim_origin: ImmOrigin,
+            global_strides_origin: ImmOrigin,
+            box_dim_origin: ImmOrigin,
+            element_strides_origin: ImmOrigin,
+        ](
+            context: ContextHandle,
+            tensor_map: OpaquePointer[tensor_map_origin],
+            data_type: Int32,
+            rank: Int32,
+            global_device_address: UInt64,
+            global_dim: UnsafePointer[UInt64, global_dim_origin],
+            global_strides: UnsafePointer[UInt64, global_strides_origin],
+            box_dim: UnsafePointer[UInt32, box_dim_origin],
+            element_strides: UnsafePointer[UInt32, element_strides_origin],
+            interleave: Int32,
+            swizzle: Int32,
+            l2_promotion: Int32,
+            oob_fill: Int32,
+        ) thin -> PluginResultCode,
+    ]
+    var tensor_map_encode_im2col: HALFunction[
+        "M_driver_tensor_map_encode_im2col",
+        def[
+            tensor_map_origin: MutOrigin,
+            global_dim_origin: ImmOrigin,
+            global_strides_origin: ImmOrigin,
+            lower_corner_origin: ImmOrigin,
+            upper_corner_origin: ImmOrigin,
+            element_strides_origin: ImmOrigin,
+        ](
+            context: ContextHandle,
+            tensor_map: OpaquePointer[tensor_map_origin],
+            data_type: Int32,
+            rank: Int32,
+            global_device_address: UInt64,
+            global_dim: UnsafePointer[UInt64, global_dim_origin],
+            global_strides: UnsafePointer[UInt64, global_strides_origin],
+            pixel_box_lower_corner: UnsafePointer[Int32, lower_corner_origin],
+            pixel_box_upper_corner: UnsafePointer[Int32, upper_corner_origin],
+            channels_per_pixel: Int32,
+            pixels_per_column: Int32,
+            element_strides: UnsafePointer[UInt32, element_strides_origin],
+            interleave: Int32,
+            swizzle: Int32,
+            l2_promotion: Int32,
+            oob_fill: Int32,
+        ) thin -> PluginResultCode,
+    ]
     var device_property: HALFunction[
         "M_driver_device_property",
         def[
@@ -1334,6 +1556,14 @@ struct RawPlugin(Movable):
             device: DeviceHandle,
             property_name: CStringSlice[_],
             value: OpaquePointer[value_origin],
+        ) thin -> PluginResultCode,
+    ]
+    var device_attribute: HALFunction[
+        "M_driver_device_attribute",
+        def(
+            device: DeviceHandle,
+            attribute: Int32,
+            value: OutParam[Int32, _],
         ) thin -> PluginResultCode,
     ]
     var memory_property: HALFunction[
@@ -1349,6 +1579,7 @@ struct RawPlugin(Movable):
     var queue_execute: HALFunction[
         "M_driver_queue_execute",
         def[
+            attr_origin: MutOrigin,
             config_origin: MutOrigin,
             args_origin: MutOrigin,
             arg_sizes_origin: MutOrigin,
@@ -1356,7 +1587,7 @@ struct RawPlugin(Movable):
             queue: QueueHandle,
             function: FunctionHandle,
             config: InternalHandle[
-                M_driver_queue_execute_config, config_origin
+                M_driver_queue_execute_config[attr_origin], config_origin
             ],
             args: UnsafePointer[OpaquePointer[MutUntrackedOrigin], args_origin],
             arg_sizes: UnsafePointer[UInt64, arg_sizes_origin],
@@ -1395,6 +1626,16 @@ struct RawPlugin(Movable):
             queue: QueueHandle,
             property_name: CStringSlice[_],
             value: OpaquePointer[value_origin],
+        ) thin -> PluginResultCode,
+    ]
+    var queue_launch_host_func: HALFunction[
+        "M_driver_queue_launch_host_func",
+        def[
+            origin: MutOrigin
+        ](
+            queue: QueueHandle,
+            func: def(OpaquePointer[origin]) thin -> None,
+            user_data: OpaquePointer[origin],
         ) thin -> PluginResultCode,
     ]
     var bundle_load: HALFunction[
@@ -1502,8 +1743,21 @@ struct RawPlugin(Movable):
         )
         self.is_event_ready = type_of(self.is_event_ready)(handle, so_path)
         self.function_load = type_of(self.function_load)(handle, so_path)
+        self.queue_launch_host_func = type_of(self.queue_launch_host_func)(
+            handle, so_path
+        )
         self.function_unload = type_of(self.function_unload)(handle, so_path)
+        self.function_occupancy_max_active_blocks = type_of(
+            self.function_occupancy_max_active_blocks
+        )(handle, so_path)
+        self.tensor_map_encode_tiled = type_of(self.tensor_map_encode_tiled)(
+            handle, so_path
+        )
+        self.tensor_map_encode_im2col = type_of(self.tensor_map_encode_im2col)(
+            handle, so_path
+        )
         self.device_property = type_of(self.device_property)(handle, so_path)
+        self.device_attribute = type_of(self.device_attribute)(handle, so_path)
         self.memory_property = type_of(self.memory_property)(handle, so_path)
         self.queue_execute = type_of(self.queue_execute)(handle, so_path)
         self.queue_record_event = type_of(self.queue_record_event)(

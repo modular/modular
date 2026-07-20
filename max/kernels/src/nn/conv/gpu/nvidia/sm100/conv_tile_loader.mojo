@@ -81,6 +81,10 @@ struct TileLoaderTMAIm2col[
     ):
         """Load a TileTensor tile using im2col TMA.
 
+        Parameters:
+            LayoutType: `TensorLayout` of the destination shared-memory
+                tile.
+
         Args:
             dest: Destination SMEM TileTensor tile.
             barrier: Memory barrier for TMA completion signaling.

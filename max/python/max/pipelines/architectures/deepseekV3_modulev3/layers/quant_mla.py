@@ -29,6 +29,7 @@ from max.experimental.nn.common_layers.functional_kernels import (
     mla_prefill_decode_graph,
     mla_prefill_graph,
 )
+from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
     assign_columnwise_mapping,
@@ -38,7 +39,7 @@ from max.experimental.nn.common_layers.multi_latent_attention import (
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import QuantConfig
 
 from . import quant_ops
@@ -54,7 +55,9 @@ def _data(weight: Tensor | FP8BlockTensor) -> Tensor:
 
 def _scale(weight: Tensor | FP8BlockTensor) -> Tensor | None:
     """Per-block inverse scales of a weight, or ``None`` for bf16 weights."""
-    return weight.scale_inv if isinstance(weight, FP8BlockTensor) else None
+    return (
+        weight.weight_scale_inv if isinstance(weight, FP8BlockTensor) else None
+    )
 
 
 class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
@@ -179,7 +182,7 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
 
     @property
     def w_uk(self) -> tuple[Tensor, Tensor | None]:
-        """Decode K-projection ``(data, scale_inv|None)``."""
+        """Decode K-projection ``(data, weight_scale_inv|None)``."""
         w_uk_base = self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
         w_uk = w_uk_base.transpose(0, 1)
         if not self.quantized:
@@ -191,7 +194,7 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
 
     @property
     def w_uv(self) -> tuple[Tensor, Tensor | None]:
-        """Decode V-projection ``(data, scale_inv|None)``."""
+        """Decode V-projection ``(data, weight_scale_inv|None)``."""
         w_uv = self._kv_b_proj_weight[..., self.qk_nope_head_dim :].permute(
             [1, 2, 0]
         )
@@ -204,7 +207,7 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
 
     @property
     def w_k(self) -> tuple[Tensor, Tensor | None]:
-        """Prefill K-projection ``(data, scale_inv|None)``."""
+        """Prefill K-projection ``(data, weight_scale_inv|None)``."""
         w_uk_base = self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
         w_k = w_uk_base.permute([1, 2, 0]).reshape((-1, self.kv_lora_rank))
         if not self.quantized:
@@ -363,7 +366,7 @@ def _assign_quant_aware(
     """Apply a placement-assignment to a (possibly quantized) weight."""
     if isinstance(weight, FP8BlockTensor):
         assign(weight.data)
-        assign(weight.scale_inv)
+        assign(weight.weight_scale_inv)
     else:
         assign(weight)
 

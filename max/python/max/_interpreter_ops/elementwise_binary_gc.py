@@ -129,10 +129,6 @@ def _supported_dtypes(dtype_class: DTypeClass, device: Device) -> list[DType]:
     raise ValueError(f"Unknown dtype_class: {dtype_class!r}")
 
 
-# Discovered at import so a missing driver fails here, not at first dispatch.
-_DEVICES = gc_compile.discover_devices()
-
-
 def _graph_name(
     op_type: type[_core.Operation], device: Device, dtype: DType
 ) -> str:
@@ -144,7 +140,7 @@ def _graph_name(
 canonical_shape = gc_compile.canonical_shape_rank1
 
 
-def _build_binary_graph(
+def _binary_graph(
     module: Module,
     op_type: type[_core.Operation],
     spec: BinarySpec,
@@ -152,16 +148,16 @@ def _build_binary_graph(
     dtype: DType,
 ) -> None:
     """Adds one fully-symbolic rank-1 binary graph into *module* in-place."""
-    dev_ref = DeviceRef.from_device(device)
-    in_type = TensorType(dtype, ["n"], device=dev_ref)
-    g = Graph(
+    device_ref = DeviceRef.from_device(device)
+    in_type = TensorType(dtype, ["n"], device=device_ref)
+    graph = Graph(
         _graph_name(op_type, device, dtype),
         input_types=[in_type, in_type],
         module=module,
     )
-    with g:
-        lhs, rhs = g.inputs
-        g.output(spec.builder(lhs.tensor, rhs.tensor))
+    with graph:
+        lhs, rhs = graph.inputs
+        graph.output(spec.builder(lhs.tensor, rhs.tensor))
 
 
 def _is_supported(
@@ -169,10 +165,11 @@ def _is_supported(
 ) -> bool:
     """Whether (op, device, dtype) is in the conservatively-supported set.
 
-    Single source of truth for the swept matrix: :func:`build_binary_module`
-    filters its candidates through this predicate, and lazy mode uses it as the
-    support guard in :func:`binary_model`, so the two can't diverge. Each op
-    supports only its ``dtype_class``'s dtypes.
+    Single source of truth for the swept matrix:
+    :meth:`_BinaryFamily.build_module_for_device` filters its candidates
+    through this predicate, and lazy mode uses it as the support guard in
+    :func:`binary_model`, so the two can't diverge. Each op supports only
+    its ``dtype_class``'s dtypes.
     """
     spec = _spec_for(op_type)
     if spec is None:
@@ -180,33 +177,30 @@ def _is_supported(
     return dtype in _supported_dtypes(spec.dtype_class, device)
 
 
-def build_binary_module() -> Module:
-    """Batched module: every supported (op, device, dtype), all devices."""
-    module = Module()
-    for op_type, spec in _BINARY_OPS.items():
-        for device in _DEVICES:
+class _BinaryFamily(gc_compile.GCFamilySpec):
+    name = "binary"
+
+    def build_module(self) -> Module:
+        """Batched module: every supported (op, device, dtype), all devices."""
+        module = Module()
+        for device in self.sweep_devices():
+            self.build_module_for_device(device, module)
+        return module
+
+    def build_module_for_device(
+        self, device: Device, module: Module | None = None
+    ) -> Module:
+        """Per-slot counterpart of :meth:`build_module`: one *device* only."""
+        if module is None:
+            module = Module()
+        for op_type, spec in _BINARY_OPS.items():
             for dtype in _supported_dtypes(spec.dtype_class, device):
                 if _is_supported(op_type, device, dtype):
-                    _build_binary_graph(module, op_type, spec, device, dtype)
-    return module
+                    _binary_graph(module, op_type, spec, device, dtype)
+        return module
 
 
-def build_binary_module_for_device(device: Device) -> Module:
-    """Per-slot counterpart of :func:`build_binary_module`: one *device* only."""
-    module = Module()
-    for op_type, spec in _BINARY_OPS.items():
-        for dtype in _supported_dtypes(spec.dtype_class, device):
-            if _is_supported(op_type, device, dtype):
-                _build_binary_graph(module, op_type, spec, device, dtype)
-    return module
-
-
-_FAMILY = gc_compile.GCOpFamily(
-    name="binary",
-    build_module=build_binary_module,
-    build_module_for_device=build_binary_module_for_device,
-    sweep_devices=lambda: list(_DEVICES),
-)
+_FAMILY = gc_compile.GCOpFamily(_BinaryFamily())
 gc_compile.register_family(_FAMILY)
 
 
@@ -234,38 +228,27 @@ def binary_model(
             a supported target was not swept.
     """
     key = _graph_name(op_type, device, dtype)
+    # Cache-check before building the closures below: this runs on every
+    # eager op dispatch, so a hit must not pay for closures it won't use.
     model = _FAMILY.cache.get(key)
     if model is not None:
         return model
-    if not _is_supported(op_type, device, dtype):
+
+    def check_supported() -> str | None:
+        if _is_supported(op_type, device, dtype):
+            return None
         spec = _spec_for(op_type)
         supported = _supported_dtypes(spec.dtype_class, device) if spec else []
-        raise KeyError(
+        return (
             f"Unsupported binary op/device/dtype for key {key!r}."
             f"  Supported dtypes for this op/device: {supported}"
         )
-    if gc_compile.should_precompile():
-        # TODO(MXF-510): raise UnsupportedGraphError so executors fall back.
-        raise KeyError(
-            f"No pre-compiled binary model for key {key!r}."
-            f"  Available: {sorted(_FAMILY.cache)}."
-            f"  Unset {gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR} (the default)"
-            " to compile targets lazily on first use."
-        )
-    with gc_compile.COMPILE_LOCK:
-        model = _FAMILY.cache.get(key)
-        if model is not None:
-            return model
-        _FAMILY.ensure_swept()
-        model = _FAMILY.cache.get(key)
-        if model is not None:
-            return model
 
-        def build(module: Module) -> None:
-            spec = _spec_for(op_type)
-            assert spec is not None, (
-                f"unsupported op {op_type!r} reached compile"
-            )
-            _build_binary_graph(module, op_type, spec, device, dtype)
+    def build(module: Module) -> None:
+        spec = _spec_for(op_type)
+        assert spec is not None, f"unsupported op {op_type!r} reached compile"
+        _binary_graph(module, op_type, spec, device, dtype)
 
-        return gc_compile.compile_single_target(_FAMILY, key, device, build)
+    return _FAMILY.model_for(
+        key, device, build, unsupported_reason=check_supported
+    )

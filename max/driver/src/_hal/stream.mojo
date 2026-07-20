@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .plugin import OpaquePointer, FunctionHandle, OutParam
+from std.collections import OptionalReg
 from .buffer import Buffer, BufferView
 from .context import Context
 from .queue import Queue
@@ -109,6 +110,8 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
         shared_mem_bytes: UInt32 = 0,
+        attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]] = None,
+        num_attributes: UInt32 = 0,
     ) raises HALError:
         """Enqueues a function execution. Runs after all previous Stream ops."""
         self._chain_wait()
@@ -120,6 +123,8 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             arg_sizes,
             num_args,
             shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes,
+            num_attributes=num_attributes,
         )
         self._chain_signal()
 
@@ -133,6 +138,8 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         args: UnsafePointer[mut=True, OpaquePointer[MutUntrackedOrigin], _],
         arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
+        attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]] = None,
+        num_attributes: UInt32 = 0,
     ) raises HALError:
         """Enqueues a function execution. Runs after all previous Stream ops."""
         self._chain_wait()
@@ -142,6 +149,8 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             args,
             arg_sizes,
             num_args,
+            attributes=attributes,
+            num_attributes=num_attributes,
         )
         self._chain_signal()
 
@@ -234,7 +243,7 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,
-    ](mut self,) raises HALError -> Event[flags]:
+    ](mut self) raises HALError -> Event[flags]:
         """Returns an event signaled when all previous stream ops complete.
 
         Parameters:
@@ -246,12 +255,25 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def wait_for_events[
         *EventTypes: Waitable,
-    ](mut self, *events: *EventTypes,) raises HALError:
+    ](mut self, *events: *EventTypes) raises HALError:
         """Inserts a wait for cross-stream events into the in-order chain.
 
         Accepts any combination of events with different flag combos.
         """
         self._queue[].wait_for_events(*events)
+        self._chain_signal()
+
+    def enqueue_host_func[
+        origin: MutOrigin
+    ](
+        mut self,
+        func: def(OpaquePointer[origin]) thin -> None,
+        user_data: OpaquePointer[origin],
+    ) raises HALError:
+        """Enqueues a host function callback. Runs after all previous Stream
+        ops."""
+        self._chain_wait()
+        self._queue[].launch_host_func(func, user_data)
         self._chain_signal()
 
     def synchronize(self) raises HALError:

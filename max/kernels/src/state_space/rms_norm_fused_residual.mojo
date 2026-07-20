@@ -220,6 +220,37 @@ def rms_norm_fused_residual_cpu[
 
     Creates 2D wrapper lambdas that translate (row, col) to IndexList[rank]
     at runtime, avoiding compile-time evaluation issues with _lambda_load.
+
+    Parameters:
+        dtype: Element data type of the tensors (inferred).
+        rank: Tensor rank of `shape` (inferred).
+        InputFnType: Type of the `input_fn` lambda (inferred).
+        ResidualInputFnType: Type of the `residual_input_fn` lambda (inferred).
+        OutputFnType: Type of the `output_fn` lambda (inferred).
+        OutputResidualFnType: Type of the `output_residual_fn` lambda
+            (inferred).
+        ResidualReadFnType: Type of the `residual_read_fn` lambda (inferred).
+        multiply_before_cast: When `True`, multiplies by `gamma` before
+            casting to the output dtype (defaults to `True`).
+
+    Args:
+        input_fn: Lambda that loads the primary input `SIMD[dtype, width]`
+            at a given `IndexList[rank]`.
+        residual_input_fn: Lambda that loads the residual input at a given
+            index.
+        output_fn: Lambda that stores the normalized output at a given
+            index.
+        output_residual_fn: Lambda that stores the summed residual (input
+            plus residual) before normalization.
+        residual_read_fn: Lambda that re-reads the summed residual during
+            the second normalization pass.
+        shape: Shape of the tensors; the last dimension is normalized over.
+        gamma: Scale (weight) vector with shape `(last_dim,)`.
+        epsilon: Small constant added to the RMS denominator.
+        weight_offset: Scalar added to each `gamma` element before scaling.
+        dropout_p: Dropout probability applied to the primary input before
+            the residual add (defaults to 0.0, which disables dropout).
+        seed: RNG seed for dropout.
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
@@ -422,6 +453,38 @@ def rms_norm_fused_residual_gpu_block[
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ):
+    """GPU block kernel: fused residual add, optional dropout, and RMS normalization.
+
+    Processes one row per thread block. Each block cooperatively computes the
+    RMS over `num_cols` elements using a warp-level reduction, then normalizes
+    and scales by `gamma + weight_offset`. Input, residual, output, and
+    residual-output are accessed through caller-supplied lambda functions so the
+    kernel can be composed with arbitrary fused load/store patterns.
+
+    Parameters:
+        dtype: Element data type.
+        GammaLayout: Layout of the `gamma` `TileTensor`.
+        simd_width: SIMD vector width used for memory access.
+        max_warps_per_block: Maximum number of warps per block, used to size
+            shared memory.
+        input_fn: Lambda that loads a `SIMD[dtype, width]` vector for
+            `(row, col)`.
+        residual_input_fn: Lambda that loads the residual vector for
+            `(row, col)`.
+        output_fn: Lambda that stores the normalized output vector.
+        output_residual_fn: Lambda that stores the updated residual vector
+            (input + residual, before normalization).
+        multiply_before_cast: When `True`, multiplies by `gamma` before
+            casting to the output dtype.
+
+    Args:
+        gamma: Scale vector with shape `(num_cols,)`.
+        epsilon: Small constant added to the RMS denominator.
+        weight_offset: Scalar added to each `gamma` element before scaling.
+        num_cols: Number of columns in the input row.
+        dropout_p: Dropout probability; 0.0 disables dropout.
+        seed: RNG seed for dropout.
+    """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     var shared_mem = external_memory[
@@ -527,6 +590,35 @@ def rms_norm_fused_residual_gpu[
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
+    """Dispatches the fused RMS-norm-plus-residual kernel on GPU.
+
+    Selects the optimal SIMD width and warp count for `shape`, then enqueues
+    `rms_norm_fused_residual_gpu_block` on `ctx`. Input, residual, normalized
+    output, and residual output are all accessed through caller-supplied
+    lambdas, enabling fusion with arbitrary prologue/epilogue patterns.
+
+    Parameters:
+        dtype: Element data type.
+        rank: Tensor rank of `shape`.
+        input_fn: Lambda that loads a `SIMD[dtype, width]` for a given index.
+        residual_input_fn: Lambda that loads the residual value for a given index.
+        output_residual_fn: Lambda that stores the summed residual value.
+        output_fn: Lambda that stores the normalized output value.
+        multiply_before_cast: When `True`, multiplies by `gamma` before
+            casting to the output dtype.
+
+    Args:
+        shape: Shape of the input tensor (the last dim is normalized over).
+        gamma: Scale vector with shape `(last_dim,)`.
+        epsilon: Small constant added to the RMS denominator.
+        weight_offset: Scalar added to each `gamma` element before scaling.
+        ctx: Device context for GPU execution.
+        dropout_p: Dropout probability; 0.0 disables dropout.
+        seed: RNG seed for dropout.
+
+    Raises:
+        If the GPU kernel launch fails.
+    """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     if rank == 0:
@@ -718,6 +810,41 @@ def rms_norm_fused_residual[
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
+    """Applies fused residual add and RMS layer normalization.
+
+    Computes `output = rms_norm(input + residual) * (gamma + weight_offset)`
+    and writes the updated residual `input + residual` to `output_residual_fn`.
+    Dispatches to a CPU or GPU implementation based on `target`.
+
+    All tensor accesses go through caller-supplied lambdas, which lets the
+    graph compiler fuse adjacent elementwise prologue/epilogue operations
+    without materializing intermediate buffers.
+
+    Parameters:
+        dtype: Element data type.
+        rank: Tensor rank of `shape`.
+        input_0_fn: Lambda that loads the primary input.
+        input_1_fn: Lambda that loads the residual input.
+        output_0_fn: Lambda that stores the normalized output.
+        output_residual_fn: Lambda that stores the summed residual before
+            normalization.
+        target: Compilation target, e.g. `"cpu"` or `"gpu"`.
+        multiply_before_cast: When `True`, multiplies by `gamma` before
+            casting to the output dtype.
+
+    Args:
+        shape: Shape of the tensors; the last dimension is normalized over.
+        gamma: Scale (weight) vector with shape `(last_dim,)`.
+        epsilon: Small constant added to the RMS denominator.
+        weight_offset: Scalar added to each `gamma` element before scaling.
+        ctx: Device context for GPU execution; unused on CPU.
+        dropout_p: Dropout probability applied to the primary input before the
+            residual add; 0.0 disables dropout.
+        seed: RNG seed for dropout.
+
+    Raises:
+        If the GPU kernel launch fails.
+    """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     @always_inline

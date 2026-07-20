@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides a persistent tile scheduler for grouped matmul GPU kernels."""
+
 from std.math import ceildiv
 
 from std.gpu import block_idx, grid_dim
@@ -22,6 +24,8 @@ from layout import Layout, LayoutTensor
 
 @fieldwise_init
 struct RasterOrder(TrivialRegisterPassable):
+    """Represents the rasterization order used when traversing output tiles."""
+
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -38,6 +42,9 @@ struct RasterOrder(TrivialRegisterPassable):
 
 @fieldwise_init
 struct WorkInfo(TrivialRegisterPassable, Writable):
+    """Holds the coordinates and validity state of a single output tile assigned to a CTA.
+    """
+
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -99,6 +106,24 @@ struct TileScheduler[
     swizzle: Bool = False,
     swapAB: Bool = True,
 ](TrivialRegisterPassable):
+    """Schedules output tiles across CTAs for a persistent grouped matmul kernel.
+
+    Parameters:
+        group_offsets_origin: Memory origin of `group_offsets` (inferred).
+        offsets_layout: Memory layout of `group_offsets` (inferred).
+        static_MN: Size of the static (non-reducing) output dimension. When
+            `swapAB` is true this is M, otherwise N.
+        tile_shape: Per-tile shape `(M, N, K)` of output tiles in the
+            original non-swapped AB orientation.
+        cluster: CTA cluster multicast shape `(M, N, K)`. Only the M
+            dimension is supported; `cluster[1]` and `cluster[2]` must be 1.
+        cta_group: CTAs cooperating per tile group along M. Must equal
+            `cluster[0]`.
+        swizzle: Whether to swizzle block indices for improved L2 reuse.
+        swapAB: Whether to swap A and B operands. When true, the static
+            dimension is M; when false, it is N.
+    """
+
     var num_active_experts: Int
     var group_offsets: LayoutTensor[
         DType.uint32, Self.offsets_layout, Self.group_offsets_origin

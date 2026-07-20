@@ -248,42 +248,44 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     var src_info_layout = row_major((Idx[max_recv_num_tokens], Idx[2]))
 
     var topk_ids_t = TileTensor[
-        DType.int32, type_of(topk_ids_layout), ImmutAnyOrigin
+        mut=False, DType.int32, type_of(topk_ids_layout)
     ](ptr=topk_ids_dev.unsafe_ptr(), layout=topk_ids_layout)
     var input_tokens_t = TileTensor[
-        input_type, type_of(input_tokens_layout), ImmutAnyOrigin
+        mut=False, input_type, type_of(input_tokens_layout)
     ](ptr=input_tokens_dev.unsafe_ptr(), layout=input_tokens_layout)
-    var out_t = TileTensor[input_type, type_of(out_layout), MutAnyOrigin](
+    var out_t = TileTensor[input_type, type_of(out_layout)](
         ptr=dispatch_out_dev.unsafe_ptr(), layout=out_layout
     )
-    var row_offsets_t = TileTensor[
-        DType.uint32, type_of(row_offsets_layout), MutAnyOrigin
-    ](ptr=row_offsets_dev.unsafe_ptr(), layout=row_offsets_layout)
-    var expert_ids_t = TileTensor[
-        DType.int32, type_of(expert_ids_layout), MutAnyOrigin
-    ](ptr=expert_ids_dev.unsafe_ptr(), layout=expert_ids_layout)
-    var src_info_t = TileTensor[
-        DType.int32, type_of(src_info_layout), MutAnyOrigin
-    ](ptr=src_info_dev.unsafe_ptr(), layout=src_info_layout)
+    var row_offsets_t = TileTensor[DType.uint32, type_of(row_offsets_layout)](
+        ptr=row_offsets_dev.unsafe_ptr(), layout=row_offsets_layout
+    )
+    var expert_ids_t = TileTensor[DType.int32, type_of(expert_ids_layout)](
+        ptr=expert_ids_dev.unsafe_ptr(), layout=expert_ids_layout
+    )
+    var src_info_t = TileTensor[DType.int32, type_of(src_info_layout)](
+        ptr=src_info_dev.unsafe_ptr(), layout=src_info_layout
+    )
 
     var format_handler = token_fmt_type(out_t)
 
     var recv_bufs = InlineArray[UnsafePointer[UInt8, MutAnyOrigin], n_ranks](
         uninitialized=True
     )
-    recv_bufs[0] = dispatch_recv.unsafe_ptr()
+    recv_bufs[0] = dispatch_recv.unsafe_ptr().as_unsafe_any_origin()
     var recv_count_bufs = InlineArray[
         UnsafePointer[UInt64, MutAnyOrigin], n_ranks
     ](uninitialized=True)
-    recv_count_bufs[0] = dispatch_recv_count.unsafe_ptr()
+    recv_count_bufs[0] = dispatch_recv_count.unsafe_ptr().as_unsafe_any_origin()
     var combine_recv_bufs = InlineArray[
         UnsafePointer[UInt8, MutAnyOrigin], n_ranks
     ](uninitialized=True)
-    combine_recv_bufs[0] = combine_recv.unsafe_ptr()
+    combine_recv_bufs[0] = combine_recv.unsafe_ptr().as_unsafe_any_origin()
     var combine_recv_count_bufs = InlineArray[
         UnsafePointer[UInt64, MutAnyOrigin], n_ranks
     ](uninitialized=True)
-    combine_recv_count_bufs[0] = combine_recv_count.unsafe_ptr()
+    combine_recv_count_bufs[
+        0
+    ] = combine_recv_count.unsafe_ptr().as_unsafe_any_origin()
 
     var counters = EPLocalSyncCounters[n_experts](atomic_counters.unsafe_ptr())
 

@@ -14,9 +14,9 @@
 
 A custom kernel's entry-point signature uses these:
 
-- `ManagedTensorSlice` — view of a tensor argument.
-- `IOSpec` (and `IO`) — input/output/mutability annotations.
-- `StaticTensorSpec` — runtime + compile-time tensor
+- `ManagedTensorSlice`: view of a tensor argument.
+- `IOSpec` (and `IO`): input/output/mutability annotations.
+- `StaticTensorSpec`: runtime + compile-time tensor
   metadata.
 - Fusion traits (`InputFusion`, `OutputFusion`, ...) and their `_NoFusion*`
   sentinels.
@@ -67,6 +67,13 @@ from .decorators import register_internal
 
 
 struct IO(TrivialRegisterPassable):
+    """Tags the direction and fusion kind of a tensor argument to a DPS kernel.
+
+    An `IO` value distinguishes plain inputs, outputs, mutable inputs, and the
+    fused variants (input, output, and compute-output) that the graph compiler
+    wires into a custom kernel's fusion lambdas.
+    """
+
     var value: SIMDSize
 
     # TODO: either rename or get rid of this
@@ -430,6 +437,14 @@ struct StaticTensorSpec[
     ComputeFusion: ComputeOutputFusion = _NoComputeFusion,
     ComputeFusionTile: ComputeOutputFusionTile = _NoComputeFusionTile,
 ](ImplicitlyCopyable):
+    """Carries the compile-time and runtime metadata describing a tensor argument.
+
+    The compile-time parameters encode the element `dtype`, tensor `rank`,
+    static layout, and optional fusion traits. The runtime fields store the
+    alignment and address space of the backing memory. Custom kernels receive
+    `ManagedTensorSlice` instances parameterized by a `StaticTensorSpec`.
+    """
+
     # IntTuple aliases for static shape/strides.
     comptime shape_tuple = coord_to_int_tuple[
         *Self.static_layout._shape_types
@@ -706,6 +721,12 @@ struct StaticTensorSpec[
 
 @fieldwise_init
 struct StaticTensorSpecInternal[dtype: DType, rank: Int](ImplicitlyCopyable):
+    """Stores the runtime-only portion of a `StaticTensorSpec`.
+
+    Holds the alignment and address space fields, providing a device-passable
+    view that drops the compile-time layout and fusion type parameters.
+    """
+
     var alignment: Int
     var address_space: AddressSpace
 
@@ -2312,7 +2333,7 @@ struct _FusedInputVariadicTensors[
     Tensor data (ptr, shape, strides) is stored in a homogeneous StaticTuple.
     Per-element fusion structs are stored in a _FusionPack, where each
     element conforms to InputFusion. Every element must have a real fusion
-    struct — use plain VariadicTensors for unfused variadics.
+    struct; use plain VariadicTensors for unfused variadics.
     """
 
     var _tensors: StaticTuple[DynamicTensor[Self.dtype, Self.rank], Self.size]
@@ -2401,7 +2422,7 @@ struct _FusedOutputVariadicTensors[
 
     Tensor data is stored in a homogeneous StaticTuple. Per-element fusion
     structs are stored in a _FusionPack, where each element conforms
-    to OutputFusion. Every element must have a real fusion struct — use
+    to OutputFusion. Every element must have a real fusion struct; use
     plain VariadicTensors for unfused variadics.
     """
 
@@ -2510,12 +2531,12 @@ def get_kernel_tile_shape[dtype: DType, target: StaticString]() -> IndexList[2]:
     The tile analog of `get_kernel_simd_width`: returns the `(rows, cols)` of
     the register / on-chip tile a tile-based kernel (e.g. `Add.elementwise` on a
     `TileTensor`) operates on for `target`. It is returned as an `IndexList[2]`
-    — the same lightweight, comptime-materializable shape descriptor used for
-    tensor shapes elsewhere in this file — so a driver can splat it into e.g.
+    (the same lightweight, comptime-materializable shape descriptor used for
+    tensor shapes elsewhere in this file) so a driver can splat it into e.g.
     `row_major[s[0], s[1]]()`.
 
-    TODO(GEX-3905): currently hardcoded for CPU/GPU, needs to be extended to
-    derive from the target device.
+    Currently hardcoded for CPU/GPU; support for additional target devices will
+    be added in a future update.
     """
     comptime if _is_gpu[target]():
         return IndexList[2](16, 16)

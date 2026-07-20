@@ -404,14 +404,17 @@ class OpenAIChatResponseGenerator(
         # schema-conformance logging (see tool_call_validation). The raw
         # client schema is kept so it matches what callers validate against.
         self._tool_schemas: dict[str, dict[str, Any]] = {}
+        # Every declared tool name, including parameter-less tools that have no
+        # schema. The conformance check uses this to tell a legitimate call to a
+        # schemaless tool apart from a hallucinated (unknown) tool.
+        self._tool_names: set[str] = set()
         for t in tools or []:
             name = maybe_name_from_tool(t)
+            if not name:
+                continue
+            self._tool_names.add(name)
             fn = t.get("function")
-            if (
-                name
-                and isinstance(fn, dict)
-                and isinstance(fn.get("parameters"), dict)
-            ):
+            if isinstance(fn, dict) and isinstance(fn.get("parameters"), dict):
                 self._tool_schemas[name] = fn["parameters"]
         # Per-call streaming accumulators for end-of-stream conformance check.
         self._stream_tool_names: dict[int, str] = {}
@@ -423,10 +426,15 @@ class OpenAIChatResponseGenerator(
         request_id: str,
         is_streaming: bool,
     ) -> None:
-        results = check_tool_call_conformance(calls, self._tool_schemas)
+        results = check_tool_call_conformance(
+            calls, self._tool_schemas, self._tool_names
+        )
         for result in results:
             if result.outcome == "valid":
                 continue
+            # Count by the bounded outcome only; the function name and failing
+            # JSON paths stay in the log line to keep label cardinality bounded.
+            METRICS.tool_call_conformance_error(result.outcome)
             logger.warning(
                 "tool_call_conformance req=%s stream=%s fn=%s outcome=%s errors=%s",
                 request_id,
@@ -1720,7 +1728,11 @@ async def openai_create_chat_completion(
             and response_format.type == "grammar"
             and response_format.grammar is not None
         ):
-            grammar_validator.check_tool_grammar(response_format.grammar)
+            try:
+                grammar_validator.check_tool_grammar(response_format.grammar)
+            except InputError:
+                METRICS.structured_output_grammar_rejection("tool_grammar")
+                raise
 
         stream_options = None
         if completion_request.stream:
@@ -2051,7 +2063,11 @@ def _create_response_format(
     # Fall back to the backend-agnostic check when there is no validator.
     if json_schema:
         if grammar_validator is not None:
-            grammar_validator.check_json_schema(json.dumps(json_schema))
+            try:
+                grammar_validator.check_json_schema(json.dumps(json_schema))
+            except InputError:
+                METRICS.structured_output_grammar_rejection("json_schema")
+                raise
         else:
             _validate_json_schema(json_schema)
 

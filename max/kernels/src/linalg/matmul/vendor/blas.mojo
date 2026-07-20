@@ -11,6 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Vendor BLAS matmul wrappers for cuBLAS, cuBLASLt, rocBLAS, and hipBLASLt.
+
+Exposes a backend-agnostic `matmul` entry point plus `Backend` and `Handle`
+types that abstract over the NVIDIA and AMD vendor libraries so callers can
+dispatch GEMM operations without binding to a specific vendor API.
+"""
+
 from std.sys import has_amd_gpu_accelerator, size_of
 from std.math import ceildiv
 from std.ffi import _get_global_or_null, external_call
@@ -31,6 +38,7 @@ from _cublas.cublas import (
     cublasOperation_t,
     cublasSetMathMode,
     cublasSetStream,
+    cublasSetWorkspace,
 )
 from _cublas.cublaslt import (
     Preference,
@@ -123,6 +131,13 @@ from linalg.fp4_utils import (
 
 
 struct Backend(Equatable, TrivialRegisterPassable, Writable):
+    """Identifies which vendor BLAS library backs a matmul operation.
+
+    Acts as a comptime-selectable tag (`AUTOMATIC`, `CUBLAS`, `CUBLASLT`,
+    `ROCBLAS`, `HIPBLASLT`) used to parameterize `Handle` and dispatch to the
+    matching vendor implementation.
+    """
+
     var _value: Int32
 
     comptime AUTOMATIC = Self(0)
@@ -188,6 +203,14 @@ def _resolve_backend[
 struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
     ImplicitlyCopyable
 ):
+    """Owns a vendor BLAS library handle for a resolved `Backend`.
+
+    Parameterized by a `Backend` (defaulting to the automatically resolved
+    backend) and stores the underlying cuBLAS, rocBLAS, or hipBLASLt handle in
+    a `Variant`. Construction creates the vendor handle and `__exit__` destroys
+    it, so instances should be used as context managers.
+    """
+
     comptime resolved_backend = _resolve_backend[Self.backend]()
     comptime _cublas_type = Optional[OpaquePointer[AnyOrigin[mut=True]]]
     comptime _rocblas_type = _rocblas.Handle
@@ -748,8 +771,22 @@ def _cublas_matmul[
     # transformation. To be rigorous though, we should set `c_is_row_major = True`
     # for accuracy validations and uses default column-major in benchmark.
 
+    # cuBLAS's default internal workspace pool is uninitialized memory that
+    # its split-K reduction kernel reads from, which trips initcheck. Supply
+    # our own zeroed workspace instead to pass in.
+    var workspace_size = 32 * 1024 * 1024
+    var workspace = ctx.enqueue_create_buffer[DType.uint8](workspace_size)
+    ctx.enqueue_memset(workspace, UInt8(0))
+    check_cublas_error(
+        cublasSetWorkspace(
+            handle,
+            workspace.unsafe_ptr().bitcast[NoneType]().as_unsafe_any_origin(),
+            workspace_size,
+        )
+    )
+
     if c_row_major:
-        return check_cublas_error(
+        check_cublas_error(
             cublasGemmEx(
                 handle,
                 _convert_to_cublas_transpose(transpose_b),
@@ -792,6 +829,8 @@ def _cublas_matmul[
                 b_type,
             ),
         )
+        _ = workspace^
+        return
     # Default column-major.
     check_cublas_error(
         cublasGemmEx(
@@ -836,6 +875,7 @@ def _cublas_matmul[
             b_type,
         ),
     )
+    _ = workspace^
 
 
 # ===----------------------------------------------------------------------===#

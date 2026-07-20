@@ -147,7 +147,7 @@ trait FauxEquatable(ImplicitlyDeletable):
     def __eq__(self, other: Self) -> Bool:
         comptime r = reflect[Self]
 
-        comptime for i in range(r.field_names().size):
+        comptime for i in range(r.field_names().length):
             comptime assert conforms_to(r.field_types()[i], Equatable)
             if r.field_ref[i](self) != r.field_ref[i](other):
                 return False

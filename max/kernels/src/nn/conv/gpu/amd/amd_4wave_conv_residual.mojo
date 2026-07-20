@@ -25,7 +25,7 @@ the main loop so the HBM read latency overlaps with the MFMAs. No
 extra HBM round-trip, no separate elementwise launch.
 
 When `has_residual=False` (or `beta == 0.0`), the call routes to
-`amd_4wave_conv` directly — same code path, no residual cost.
+`amd_4wave_conv` directly: same code path, no residual cost.
 
 Epilogue ordering matches SM100: `D = lambda(Conv(A,B)) + beta * C`,
 i.e. `elementwise_compute_lambda_fn` (pre-residual: bias / ReLU /

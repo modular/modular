@@ -128,7 +128,7 @@ def test_keep() raises:
     var val = SIMD[DType.int, 4](1, 2, 3, 4)
     keep(val)
 
-    var ptr = UnsafePointer(to=val)
+    var ptr = Pointer(to=val)
     keep(ptr)
 
     var s0 = SomeStruct()

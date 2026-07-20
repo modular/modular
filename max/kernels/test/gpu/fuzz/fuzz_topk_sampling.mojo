@@ -305,9 +305,9 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
         Float32(1.0),
         in_tt,
         out_tt,
-        k=k_tt.as_any_origin().as_immut(),
-        temperature=temp_tt.as_any_origin().as_immut(),
-        seed=rng_tt.as_any_origin().as_immut(),
+        k=k_tt.as_unsafe_any_origin().as_immut(),
+        temperature=temp_tt.as_unsafe_any_origin().as_immut(),
+        seed=rng_tt.as_unsafe_any_origin().as_immut(),
     )
 
     # The oracle read: copy the int64 output row(s) back to host.

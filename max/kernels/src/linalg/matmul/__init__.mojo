@@ -69,7 +69,35 @@ def matmul[
 
     `use_tf32=False` (GPU only) requires IEEE-fp32 multiplies for fp32
     inputs instead of TF32 tensor-core truncation; see `_matmul_gpu`. The
-    CPU path is always IEEE fp32."""
+    CPU path is always IEEE fp32.
+
+    Parameters:
+        transpose_a: Transpose `a` before the matmul (defaults to `False`);
+            currently unsupported.
+        transpose_b: Transpose `b` before the matmul (defaults to `False`).
+        b_packed: `b` is already in a CPU-friendly packed layout (CPU only;
+            defaults to `False`).
+        elementwise_lambda_fn: Epilogue lambda applied to each stored tile of
+            `c` (defaults to `None`).
+        elementwise_compute_lambda_fn: Compute lambda transforming each result
+            tile before store; on CPU it is wrapped as an epilogue (defaults
+            to `None`).
+        saturated_vnni: Use the saturating VNNI variant on x86 (CPU only;
+            defaults to `False`).
+        _trace_description: Extra string folded into the op trace label
+            (defaults to an empty string).
+        target: Target platform string such as `"cpu"` or a GPU target
+            (defaults to `"cpu"`).
+        use_tf32: On GPU, allow TF32 tensor-core truncation for fp32 inputs
+            (defaults to `True`).
+
+    Args:
+        c: Rank-2 output `TileTensor` accumulating the matmul result.
+        a: Rank-2 LHS `TileTensor` of the matmul.
+        b: Rank-2 RHS `TileTensor` of the matmul.
+        ctx: Optional `DeviceContext` required for GPU targets and used for
+            CPU tracing (defaults to `None`).
+    """
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"
     comptime assert b.rank == 2, "b must be rank 2"

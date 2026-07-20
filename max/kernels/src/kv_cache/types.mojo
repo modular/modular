@@ -65,6 +65,18 @@ from std.gpu import thread_idx
 
 @always_inline
 def swizzle_granularity[dtype: DType, swizzle_mode: TensorMapSwizzle]() -> Int:
+    """Returns the TMA swizzle granularity measured in elements of `dtype`.
+
+    The granularity is the swizzle mode's byte width divided by the size of a
+    single `dtype` element, yielding the number of contiguous elements that one
+    swizzle atom covers.
+
+    Parameters:
+        dtype: The element dtype whose byte size scales the swizzle byte width
+            into an element count.
+        swizzle_mode: The TMA swizzle mode whose byte width determines the
+            granularity.
+    """
     comptime sg = swizzle_mode.bytes() // size_of[dtype]()
     return sg
 
@@ -73,6 +85,19 @@ def swizzle_granularity[dtype: DType, swizzle_mode: TensorMapSwizzle]() -> Int:
 def padded_depth[
     dtype: DType, swizzle_mode: TensorMapSwizzle, depth: Int
 ]() -> Int:
+    """Aligns `depth` up to the nearest multiple of the swizzle granularity.
+
+    The returned depth is the smallest value greater than or equal to `depth`
+    that is evenly divisible by `swizzle_granularity[dtype, swizzle_mode]`,
+    ensuring the inner dimension satisfies TMA swizzle alignment requirements.
+
+    Parameters:
+        dtype: The element dtype used to convert the swizzle byte width into an
+            element-count granularity.
+        swizzle_mode: The TMA swizzle mode whose byte width determines the
+            alignment granularity.
+        depth: The inner-dimension depth in elements to align upward.
+    """
     comptime padded_depth = align_up(
         depth, swizzle_mode.bytes() // size_of[dtype]()
     )
@@ -148,6 +173,13 @@ def _make_cache_tt[
 
 
 struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
+    """Compile-time shape parameters shared across all layers of a KV cache.
+
+    Groups the attention-head count and per-head size that are fixed for the
+    entire model lifetime, along with the Multi-head Latent Attention flag that
+    changes the KV layout from two caches (K + V) to one (K only).
+    """
+
     var num_heads: Int
     var head_size: Int
     var is_mla: Bool
@@ -192,6 +224,10 @@ def kv_sub_tile_rows(tile_BN: Int, page_size: Int) -> Int:
     When `page_size` is zero (non-paged) or at least `tile_BN`, returns
     `tile_BN` (no splitting). Otherwise returns `page_size`, so that each
     sub-tile TMA load stays within one page.
+
+    Args:
+        tile_BN: Total number of rows in the tile to copy.
+        page_size: KV cache page size in rows; `0` means non-paged.
     """
     if page_size <= 0 or page_size >= tile_BN:
         return tile_BN
@@ -199,7 +235,12 @@ def kv_sub_tile_rows(tile_BN: Int, page_size: Int) -> Int:
 
 
 def kv_num_sub_tiles(tile_BN: Int, page_size: Int) -> Int:
-    """Number of sub-tile TMA copies needed for `tile_BN` rows."""
+    """Number of sub-tile TMA copies needed for `tile_BN` rows.
+
+    Args:
+        tile_BN: Total number of rows in the V tile to copy.
+        page_size: KV cache page size in rows; `0` means non-paged.
+    """
     return tile_BN // kv_sub_tile_rows(tile_BN, page_size)
 
 
@@ -223,7 +264,7 @@ def _kv_fold_base_ok(bk: Int, gran: Int, head_size: Int) -> Bool:
     them (something to fold), and tiles the full `head_size` exactly (so the
     folded descriptor's `[head_size // gran, gran]` chunk axis is well-formed).
 
-    Takes plain runtime `Int`s — not comptime params — so the runtime accessors
+    Takes plain runtime `Int`s (not comptime params) so the runtime accessors
     can call it (a `def` method cannot feed `self.field` into a comptime param);
     when all args are comptime it folds to a comptime `Bool`."""
     return bk % gran == 0 and bk // gran >= 2 and head_size % bk == 0
@@ -254,12 +295,12 @@ def kv_tma_fold_chunks[
 
     The fold is byte-equivalent to the per-chunk loop ONLY when the folded box's
     per-chunk SMEM stride (`box_rows * gran`) equals the producer chunk stride
-    (`smem_BN * gran`) — i.e. `box_rows == smem_BN` — AND the tile occupies a
+    (`smem_BN * gran`), i.e. `box_rows == smem_BN`, AND the tile occupies a
     single page (`pages_per_iter == 1`, encoded as `page_size == 0` or
     `page_size >= box_rows`). Both conditions are checked here so a caller cannot
     request an illegal fold. The fold is a pure producer-side instruction-count
     rewrite: it writes byte-identical SMEM to the loop, so it is correct for both
-    the K-major (K) and mn-major (V) consumers — the caller just supplies the
+    the K-major (K) and mn-major (V) consumers: the caller just supplies the
     side-correct `smem_BN` (K: `k_rows_per_cta`; V: `tile_rows = BN //
     num_v_sub_tiles`).
 
@@ -332,14 +373,22 @@ struct PagedRowIndices[
     peer reuses `rows[0]` but adds `BN/2` to the issued row.
 
     When `page_size >= BN` (or `page_size == 0` for non-paged), stores a
-    single entry — zero overhead compared to a single `row_idx` call.
+    single entry: zero overhead compared to a single `row_idx` call.
 
     Under `pair_cta=True`, K's TMA covers `num_pages // 2` entries
     (the CTA-rank-specific half) when `num_pages >= 2`, or the full
     single entry when `num_pages == 1`; V's TMA covers all `num_pages`.
     Storage is sized to V (`num_pages = BN / eff_page`) regardless of
-    `pair_cta` — K populates the full range so V can reuse the rows
+    `pair_cta`: K populates the full range so V can reuse the rows
     without any lazy LUT lookup.
+
+    Parameters:
+        BN: V's tile row count; the total number of rows the V-side TMA covers.
+        page_size: KV cache page size in rows; `0` means non-paged.
+        pair_cta: When `True`, two CTAs share the K-side TMA work and each
+            covers `BN / 2` rows (defaults to `False`).
+        is_leader: When `pair_cta` is `True`, selects the first (`True`) or
+            second (`False`) half of K rows for this CTA (defaults to `True`).
     """
 
     comptime eff_page: Int = kv_sub_tile_rows(Self.BN, Self.page_size)
@@ -362,6 +411,9 @@ struct PagedRowIndices[
         For depth-512 V: `get_row(pv_stage * BK1)` avoids re-reading the LUT.
         Requires the base `kv_row` that was passed to `populate` to be
         page-aligned (guaranteed by mask alignment).
+
+        Args:
+            offset: A row offset within the `BN`-row range, in elements.
         """
         comptime if Self.num_pages == 1:
             return self.rows[0] + offset
@@ -416,11 +468,11 @@ struct PagedRowIndices[
         True, after dispatching the `valid_pages` valid-block TMAs, also
         dispatch deliberately out-of-bounds TMAs for the remaining
         `[valid_pages, pages_per_iter)` page slots. With `OOBFill.NONE`
-        (the default for our descriptors — see
+        (the default for our descriptors, see
         `mojo/stdlib/std/gpu/host/nvidia/tma.mojo:431`), OOB coordinates
         return 0, so the corresponding SMEM rows are zero-initialized.
         This is required by callers whose downstream MMA reads the full
-        `pages_per_iter` row range regardless of mask — e.g. depth-512
+        `pages_per_iter` row range regardless of mask, e.g. depth-512
         FA4's `O += P * V` reads the full BN V-tile so masked rows must
         contain 0 (not stale `+inf`/`NaN` from prior compute) to avoid
         `0 * non-finite = NaN` propagation. Callers opting in MUST set
@@ -746,7 +798,7 @@ struct PagedRowIndices[
         the BN tile when V is split across multiple SMEM slots (e.g.
         depth512's `num_pv_stages=2` split: `BK1 = BN/2` rows per
         slot). Default `(1, 0)` loads the full `Self.BN` rows into a
-        single SMEM slot of row stride `Self.BN` — byte-identical to
+        single SMEM slot of row stride `Self.BN`: byte-identical to
         fa4's previous behavior.
 
         With `num_v_sub_tiles > 1`:
@@ -761,10 +813,10 @@ struct PagedRowIndices[
           `v_sub_tile_idx * v_rows_per_sub_tile` as intra-page row
           offset.
 
-        `needs_partial=False` — comptime-unrolled over `num_iters`
+        `needs_partial=False`: comptime-unrolled over `num_iters`
         sub-tile entries (default `v_pages_per_sub_tile`).
 
-        `needs_partial=True` — comptime-unrolls a runtime dispatch that
+        `needs_partial=True`: comptime-unrolls a runtime dispatch that
         tests `num_valid_pages` against each `_p in [1,
         v_pages_per_sub_tile)` and tail-calls the `needs_partial=False`
         form with `num_iters=_p` so the actual TMA issues always emit
@@ -783,11 +835,11 @@ struct PagedRowIndices[
         `[num_valid_pages, v_pages_per_sub_tile)` page slots. The TMA
         descriptor's `OOBFill.NONE` policy zero-fills SMEM for OOB
         coordinates, ensuring the full V-tile region holds finite (0)
-        data — required by depth-512 FA4 whose `O += P * V` reads the
+        data, required by depth-512 FA4 whose `O += P * V` reads the
         full BN V-tile and would otherwise propagate
         `0 * non-finite = NaN` from uninitialized SMEM (the bug only
         materializes when this is the very first write to the SMEM
-        slot — typically `seq_len <= BN` so the only iter is partial).
+        slot, typically `seq_len <= BN` so the only iter is partial).
         Callers opting in MUST predicate `expect_bytes` on the full
         (non-partial) byte count; every
         `v_pages_per_sub_tile * num_depth_chunks` TMA arrives at the
@@ -808,8 +860,46 @@ struct PagedRowIndices[
         `elect` is the raw `Int32` returned by `elect()`. Each
         `cp_async_bulk_tensor_shared_cluster_global_elect` call predicates
         its TMA issue in-PTX on `elect`, so no Mojo-level `if elect != 0:`
-        branch is needed here — all lanes follow the same PTX control
+        branch is needed here; all lanes follow the same PTX control
         flow and only the elected lane actually issues the TMA.
+
+        Parameters:
+            dtype: The KV element dtype.
+            tile_shape: The 3D TMA tile shape as an `IndexList[3]`.
+            desc_shape: The 3D TMA descriptor shape as an `IndexList[3]`.
+            needs_partial: When `True`, emit a runtime partial-page dispatch
+                that tests `num_valid_pages` against each page slot.
+            num_v_sub_tiles: Number of V sub-tiles the `BN` tile is split
+                across when V spans multiple SMEM slots (defaults to `1`).
+            v_sub_tile_idx: Index of the V sub-tile to load, selecting a row
+                sub-range of the `BN` tile (defaults to `0`).
+            eviction_policy: The L2 cache eviction policy (defaults to
+                `CacheEviction.EVICT_NORMAL`).
+            num_iters: Internal dispatch knob controlling the unrolled
+                iteration count; `-1` means unroll all `v_pages_per_sub_tile`
+                entries (defaults to `-1`).
+            oob_fill_pages: When `True` with `needs_partial`, issue OOB TMAs
+                for the remaining page slots to zero-fill SMEM (defaults to
+                `False`).
+            fold_chunks: Depth-chunk fold factor; `1` emits a per-chunk loop,
+                `>= 2` folds all depth chunks into one rank-4 TMA (defaults to
+                `1`).
+            row_major: When `True` with `fold_chunks >= 2`, predicates the
+                chunk-inner rank-5 fold that spans multiple pages (defaults to
+                `False`).
+
+        Args:
+            tma_op: The TMA tensor tile descriptor to copy from.
+            stage_base: Pointer to the destination SMEM buffer.
+            mbar: Shared memory barrier for tracking TMA completion.
+            kv_head_idx: The KV cache head index to read from.
+            elect: The raw `Int32` from `elect()` used for PTX-level TMA
+                issue predication.
+            num_valid_pages: Number of valid pages to copy; only consulted
+                when `needs_partial` is `True` (defaults to `num_pages //
+                num_v_sub_tiles`).
+            depth_offset: Offset within the depth dimension, in elements
+                (defaults to `0`).
         """
         self._tma_copy_kv_impl[
             is_k=False,
@@ -886,11 +976,11 @@ struct PagedRowIndices[
         and the issue-time coord rank agree; a comptime backstop assert in
         `_tma_copy_kv_impl` rejects a fold paired with an unfoldable geometry.
 
-        `needs_partial=False` — comptime-unrolled over `num_iters`
+        `needs_partial=False`: comptime-unrolled over `num_iters`
         entries (default `k_pages_per_cta`); `k_num_valid_pages` is
         unused.
 
-        `needs_partial=True` — comptime-unrolls a runtime dispatch that
+        `needs_partial=True`: comptime-unrolls a runtime dispatch that
         tests `k_num_valid_pages` against each `_p_k in [1,
         k_pages_per_cta)` and tail-calls the `needs_partial=False`
         form with `num_iters=_p_k` so the actual TMA issues always
@@ -904,13 +994,45 @@ struct PagedRowIndices[
         wrapper sets it, when it recurses.
 
         In non-pair_cta mode, `k_pages_per_cta == num_pages` and the
-        comptime offsets are zero — full-range behavior.
+        comptime offsets are zero: full-range behavior.
 
         `elect` is the raw `Int32` returned by `elect()`. Each
         `cp_async_bulk_tensor_shared_cluster_global_elect` call predicates
         its TMA issue in-PTX on `elect`, so no Mojo-level `if elect != 0:`
-        branch is needed — all lanes follow the same PTX control flow and
+        branch is needed; all lanes follow the same PTX control flow and
         only the elected lane actually issues the TMA.
+
+        Parameters:
+            dtype: The KV element dtype.
+            tile_shape: The 3D TMA tile shape as an `IndexList[3]`.
+            desc_shape: The 3D TMA descriptor shape as an `IndexList[3]`.
+            needs_partial: When `True`, emit a runtime partial-page dispatch
+                that tests `k_num_valid_pages` against each page slot.
+            smem_BN: The SMEM depth-chunk stride in rows (defaults to `Self.BN`).
+            eviction_policy: The L2 cache eviction policy (defaults to
+                `CacheEviction.EVICT_NORMAL`).
+            num_iters: Internal dispatch knob controlling the unrolled
+                iteration count; `-1` means unroll all `k_pages_per_cta`
+                entries (defaults to `-1`).
+            fold_chunks: Depth-chunk fold factor; `1` emits a per-chunk loop,
+                `>= 2` folds all depth chunks into one rank-4 TMA (defaults to
+                `1`).
+            row_major: When `True` with `fold_chunks >= 2`, predicates the
+                chunk-inner rank-5 fold that spans multiple pages (defaults to
+                `False`).
+
+        Args:
+            tma_op: The TMA tensor tile descriptor to copy from.
+            stage_base: Pointer to the destination SMEM buffer.
+            mbar: Shared memory barrier for tracking TMA completion.
+            kv_head_idx: The KV cache head index to read from.
+            elect: The raw `Int32` from `elect()` used for PTX-level TMA
+                issue predication.
+            k_num_valid_pages: Number of valid pages to copy; only consulted
+                when `needs_partial` is `True` (defaults to `num_pages // 2` if
+                `pair_cta` else `num_pages`).
+            depth_offset: Offset within the depth dimension, in elements
+                (defaults to `0`).
         """
         self._tma_copy_kv_impl[
             is_k=True,
@@ -1127,7 +1249,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         """Populate a full `PagedRowIndices[BN, ...]` for a BN-row tile.
 
         `base_alignment` is a comptime promise that
-        `base_kv_row % base_alignment == 0` at runtime — typically
+        `base_kv_row % base_alignment == 0` at runtime, typically
         `mask.start_column_alignment[...]()`. The `PagedKVCache`
         override uses it to pick the largest legal SIMD chunk for its
         LUT vector load and to skip the intra-page divmod when
@@ -1152,7 +1274,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
 
         For paged caches the encoded index is
         ``physical_block * page_size + offset`` and this method returns
-        ``physical_block * stride + offset``.  Non-paged caches return
+        ``physical_block * stride + offset``. Non-paged caches return
         the encoded index unchanged.
         """
         ...
@@ -1519,6 +1641,15 @@ struct ContinuousBatchingKVCache[
         """Loads a quantization scale from the given index.
 
         Note: ContinuousBatchingKVCache does not support KVCache quantization.
+
+        Parameters:
+            width: The SIMD vector width in elements.
+
+        Args:
+            bs: The batch index selecting which request in the batch.
+            head_idx: The attention head index.
+            tok_idx: The token index within the sequence.
+            head_dim_idx: The element offset within the head dimension.
         """
         return SIMD[Self.scale_dtype, width](0)
 
@@ -1554,6 +1685,15 @@ struct ContinuousBatchingKVCache[
         """Loads a quantized element from the given index.
 
         Note: ContinuousBatchingKVCache does not support KVCache quantization.
+
+        Parameters:
+            width: The SIMD vector width in elements.
+
+        Args:
+            bs: The batch index selecting which request in the batch.
+            head_idx: The attention head index.
+            tok_idx: The token index within the sequence.
+            head_dim_idx: The element offset within the head dimension.
         """
         return SIMD[Self.dtype, width](0)
 
@@ -1584,6 +1724,9 @@ struct ContinuousBatchingKVCache[
 
         For non-paged caches the encoded index is already the row, so
         this is an identity operation.
+
+        Args:
+            encoded_index: The encoded sparse index to convert.
         """
         return encoded_index
 
@@ -1617,7 +1760,23 @@ struct ContinuousBatchingKVCache[
         IndexList[3](BN, 1, BK),
         swizzle_mode,
     ]:
-        """Creates a TMA tile for this KV cache."""
+        """Creates a TMA tile for this KV cache.
+
+        Parameters:
+            swizzle_mode: TMA swizzle mode for shared memory access pattern.
+            BN: Number of rows in the SMEM tile box.
+            BK: Contiguous depth of the tile in elements. Defaults to
+                `head_size` aligned up to the swizzle granularity.
+            fold_chunks: Depth-chunk fold factor. `1` (default) keeps the
+                original 3D descriptor; `>= 2` folds the depth chunks into one
+                rank-4 `cp.async.bulk.tensor`.
+            row_major: When `True` with `fold_chunks >= 2`, builds the rank-5
+                chunk-inner box; `False` (default) builds the rank-4 chunk-outer
+                box.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA descriptor.
+        """
         comptime assert (
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()
         ) == 0, "BK must be a multiple of swizzle granularity"
@@ -1731,7 +1890,17 @@ struct ContinuousBatchingKVCache[
             swizzle_mode,
         ],
     ) raises:
-        """Not supported for ContinuousBatchingKVCache."""
+        """Not supported for ContinuousBatchingKVCache.
+
+        Parameters:
+            swizzle_mode: TMA swizzle mode for shared memory access pattern.
+            BN: Number of rows in the SMEM tile box.
+            BK: Number of BF16 rope elements per row (the rope depth).
+            padded_depth: Byte offset from row start to the rope data.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA descriptor.
+        """
         comptime assert (
             False
         ), "create_rope_tma_tile is not supported for ContinuousBatchingKVCache"
@@ -2014,7 +2183,7 @@ struct PagedKVCache[
     def get_tma_row(self, encoded_index: Int32) -> Int32:
         """Convert an encoded sparse index to a physical TMA row.
 
-        The encoded index is ``physical_block * page_size + offset``.  This
+        The encoded index is ``physical_block * page_size + offset``. This
         method decomposes it and returns
         ``physical_block * stride + offset`` where *stride* is the distance
         (in rows) between consecutive physical blocks in the flattened
@@ -2081,7 +2250,7 @@ struct PagedKVCache[
           - `base_kv_row % base_alignment == 0` holds at runtime
             (typically `mask.start_column_alignment[...]()`).
             For `num_pages > 1`, `base_alignment` must be at least
-            `page_size` — required so `tok_in_block_idx == 0` and the
+            `page_size`, required so `tok_in_block_idx == 0` and the
             SIMD `multiply-add` collapses to a `multiply`. Larger
             `base_alignment` values let us pick a wider SIMD chunk
             (`chunk * page_size` must divide `base_alignment`).
@@ -2093,6 +2262,22 @@ struct PagedKVCache[
         min(num_pages & -num_pages, 8)`. With looser alignments
         (e.g. `ChunkedMask` providing only `page_size` alignment when
         `BN > page_size`), the chunk degrades to 1 (scalar loads).
+
+        Parameters:
+            BN: Tile row count of the V sub-tile to populate indices for.
+            base_alignment: Comptime promise that
+                ``base_kv_row % base_alignment == 0`` at runtime; must
+                be at least ``page_size`` when ``num_pages > 1``. Larger
+                values enable wider SIMD LUT loads.
+            pair_cta: Whether this CTA is one of a pair sharing the K
+                tile (defaults to `False`).
+            is_leader: When ``pair_cta`` is `True`, whether this CTA is
+                the leader half (defaults to `True`).
+
+        Args:
+            batch_idx: Index of the request in the batch.
+            base_kv_row: Base virtual row of the ``BN``-row tile; must
+                satisfy ``base_kv_row % base_alignment == 0``.
         """
         comptime Result = PagedRowIndices[
             BN, Self.page_size_, pair_cta, is_leader
@@ -2358,7 +2543,7 @@ struct PagedKVCache[
         Total row bytes = padded_depth + BK * 2.
 
         The TMA descriptor points at the rope data by offsetting `blocks.ptr`
-        by `padded_depth` bytes, then reinterpreting as BF16.  The global
+        by `padded_depth` bytes, then reinterpreting as BF16. The global
         memory stride dimension (last dim of gmem_shape) is the total row size
         expressed in BF16 units: (padded_depth + BK * 2) // 2.
         """
@@ -2556,7 +2741,7 @@ struct PagedKVCache[
         """Stores an element at the given index.
 
         Skips the write when the LUT entry for ``(bs, tok_idx // page_size)``
-        is the unassigned-slot sentinel — i.e. when the resolved
+        is the unassigned-slot sentinel, i.e. when the resolved
         ``block_idx`` is outside ``[0, total_num_blocks)``. The cache
         manager fills LUT columns past a request's allocated block count
         with the sentinel value ``total_num_pages`` (see
@@ -2603,7 +2788,22 @@ struct PagedKVCache[
     ) -> SIMD[
         Self.scale_dtype, width
     ]:
-        """Loads a quantization scale from the given index."""
+        """Loads a quantization scale from the given index.
+
+        Parameters:
+            width: SIMD vector width of the returned scale values in
+                elements.
+
+        Args:
+            bs: Index of the request in the batch, in
+                ``[0, num_requests)``.
+            head_idx: Attention head index in
+                ``[0, kv_params.num_heads)``.
+            tok_idx: Token position within the request's sequence.
+            head_dim_idx: Starting element offset within the head
+                dimension, in ``[0, kv_params.head_size)``; the scale
+                slot is ``head_dim_idx // quantization_granularity``.
+        """
         comptime assert (
             Self.quantization_enabled
         ), "Scales only exist for quantized KVCache"
@@ -2955,6 +3155,16 @@ struct PagedKVCacheCollection[
     scale_dtype_: Optional[DType] = None,
     quantization_granularity_: Int = 1,
 ](KVCollectionT):
+    """Paged pair of key and value caches backed by a block-allocated tensor.
+
+    Stores both the K and V caches in a single 6D block tensor of shape
+    `[total_num_blocks, 2, num_layers, page_size, num_heads, head_size]`
+    (the `2` collapses to `1` under Multi-head Latent Attention), along with
+    per-request cache lengths and a lookup table mapping logical batches to
+    physical blocks. Supports optional quantization scales stored in a parallel
+    tensor with `head_dim_granularity` as the inner dimension.
+    """
+
     comptime name_str = "paged"
     comptime dtype = Self.dtype_
     comptime kv_params = Self.kv_params_

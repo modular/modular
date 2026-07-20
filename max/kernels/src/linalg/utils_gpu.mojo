@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides GPU matmul configuration selection, block-swizzling, and Hilbert-curve tile-ordering utilities."""
+
 from std.hashlib.hasher import Hasher
 from std.math import ceildiv
 from std.math.uutils import uceildiv
@@ -43,6 +45,18 @@ from std.utils.numerics import get_accum_type
 def block_swizzle(
     block_idx: IndexList[2, ...], grid_dim: type_of(block_idx)
 ) -> type_of(block_idx):
+    """Remaps a linear block index into a swizzled two-dimensional block coordinate.
+
+    Applies CUTLASS-style block swizzling along the N dimension to improve L2
+    cache locality for tall-and-narrow matmul grids.
+
+    Args:
+        block_idx: The original two-dimensional block coordinate.
+        grid_dim: The grid dimensions matching `block_idx`.
+
+    Returns:
+        The swizzled two-dimensional block coordinate.
+    """
     return _block_swizzle_by_scale[3](block_idx, grid_dim)
 
 
@@ -105,7 +119,15 @@ struct MatmulConfig[
     c_type: DType,
     transpose_b: Bool = False,
 ](TrivialRegisterPassable, Writable):
-    """Static configuration of GPU matmul."""
+    """Static configuration of GPU matmul.
+
+    Parameters:
+        a_type: The `DType` of the left-hand operand `A`.
+        b_type: The `DType` of the right-hand operand `B`.
+        c_type: The `DType` of the output `C`.
+        transpose_b: Whether `B` is supplied transposed (defaults to
+            `False`).
+    """
 
     var block_tile_shape: IndexList[3]
 
@@ -331,6 +353,13 @@ struct MatmulKernels[
 
     The configurations are named as: <arch>_<BNxBM>_<stages>.
     BK, mma shape, and warp tile shape are decided internally.
+
+    Parameters:
+        a_type: The `DType` of the left-hand operand `A`.
+        b_type: The `DType` of the right-hand operand `B`.
+        c_type: The `DType` of the output `C`.
+        transpose_b: Whether `B` is supplied transposed (defaults to
+            `False`).
     """
 
     comptime hopper_128x128_4 = MatmulConfig[
@@ -391,6 +420,28 @@ def select_config[
 ](M: Int, N: Int, K: Int, ctx: DeviceContext) -> MatmulConfig[
     a_type, b_type, c_type, transpose_b
 ]:
+    """Selects a heuristic-optimal `MatmulConfig` for the given problem shape and device.
+
+    Evaluates candidate block tile shapes and split-K partition counts, then
+    chooses the configuration that minimizes estimated work per streaming
+    multiprocessor while keeping the wave count bounded.
+
+    Parameters:
+        a_type: The `DType` of the left-hand operand `A`.
+        b_type: The `DType` of the right-hand operand `B`.
+        c_type: The `DType` of the output `C`.
+        transpose_b: Whether `B` is supplied transposed (defaults to
+            `False`).
+
+    Args:
+        M: The M dimension of the matmul.
+        N: The N dimension of the matmul.
+        K: The K dimension of the matmul.
+        ctx: The device context used to query GPU properties.
+
+    Returns:
+        The selected `MatmulConfig` for the given problem.
+    """
     # Select an optimal matmul config by heuristic.
     # The heuristic is to choose the parameters leading to min workload per SM.
     # The work load is estimated as
@@ -528,6 +579,11 @@ def create_hilbert_lut(
         grid_x * grid_y.
     For linear (row-major) block id `id`, the packed value at `lut[id]`
     encodes the swizzled coordinates:  upper 16-bits = y, lower 16-bits = x.
+
+    Args:
+        ctx: The device context used to allocate the device buffer.
+        grid_x: The number of blocks along the x dimension of the grid.
+        grid_y: The number of blocks along the y dimension of the grid.
     """
     var num_blocks = grid_x * grid_y
     # Allocate temporary host buffer.
@@ -577,7 +633,14 @@ def create_hilbert_lut(
 def get_hilbert_lut_with_cache(
     ctx: DeviceContext, grid_x: Int, grid_y: Int
 ) raises -> DeviceBuffer[DType.uint32]:
-    """Get Hilbert lookup table using global cache (no struct needed)."""
+    """Get Hilbert lookup table using global cache (no struct needed).
+
+    Args:
+        ctx: The device context used to allocate or reference the device
+            buffer.
+        grid_x: The number of blocks along the x dimension of the grid.
+        grid_y: The number of blocks along the y dimension of the grid.
+    """
     var key_str = String("hilbert_lut_", grid_x, "_", grid_y)
 
     # use runtime lookup since key is computed at runtime

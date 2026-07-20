@@ -11,6 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements persistent warp-specialized matmul kernels for NVIDIA SM90 (Hopper) GPUs.
+
+Extends `HopperMatmulSM90Kernel` with two entry points: `run_persistent`, which
+uses TMA-based async tile loading for aligned K dimensions, and `run_unaligned`,
+which falls back to `cp.async` loading when K alignment does not meet TMA
+requirements. Both kernels split thread blocks into producer and consumer warp
+groups that iterate over a persistent tile schedule assigned by a
+`TileScheduler`.
+"""
+
 from std.math import ceildiv
 from std.sys import size_of
 

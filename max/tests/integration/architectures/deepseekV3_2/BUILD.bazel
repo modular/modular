@@ -45,6 +45,11 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     imports = ["."],
+    # Each sparse test compiles its own graph (~120-220s under CI contention);
+    # shard so those compiles run in parallel instead of serially timing out.
+    per_test_shard_count = {
+        "test_mla_sparse_decode_graph_gpu.py": 4,
+    },
     tags = [
         "gpu",
     ],

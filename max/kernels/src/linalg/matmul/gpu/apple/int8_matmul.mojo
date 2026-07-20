@@ -109,6 +109,18 @@ struct Int8DequantWriter[
     The `_apple_frag_layout` maps a lane's 8-element fragment to rows
     `{rb, rb+8}` x cols `{cb, cb+1, cb+2, cb+3}`: `frag[0:4]` = row `rb`,
     `frag[4:8]` = row `rb+8` (matching `MmaOpApple._store_fragment`).
+
+    Parameters:
+        c_origin: Mutable `MutOrigin` of the C output write view (inferred).
+        s_origin: Immutable `ImmutOrigin` shared by the scale and bias read
+            views (inferred).
+        c_type: Output element type (`bf16` / `fp16` / `fp32`).
+        c_layout: `TensorLayout` of the C output `TileTensor`.
+        as_layout: `TensorLayout` of the per-row activation scale `TileTensor`.
+        bs_layout: `TensorLayout` of the per-column weight scale `TileTensor`.
+        bias_layout: `TensorLayout` of the per-column bias `TileTensor`.
+        has_bias: If `True`, add `bias[col]` to each output element after
+            dequant.
     """
 
     var c: TileTensor[Self.c_type, Self.c_layout, Self.c_origin]
@@ -131,6 +143,19 @@ struct Int8DequantWriter[
 
         Bounds-guards rows `< M` and cols `< N` for the partial last tile;
         width-4 store when the 4 cols are in-bounds, scalar on the N-edge.
+
+        Args:
+            frag: This lane's 8 int32 accumulator elements from the 16x16
+                MMA fragment (`frag[0:4]` = row `rb`, `frag[4:8]` = row
+                `rb+8`).
+            tile_r0: Absolute row origin of the 16x16 accumulator tile in
+                the C output.
+            tile_c0: Absolute column origin of the 16x16 accumulator tile
+                in the C output.
+            rb: In-fragment row base offset for this lane; selects rows
+                `rb` and `rb+8` within the tile.
+            cb: In-fragment column base offset for this lane; selects the
+                4-column group `{cb, cb+1, cb+2, cb+3}` within the tile.
         """
         comptime for half in range(2):
             var r = tile_r0 + rb + half * 8
@@ -653,6 +678,29 @@ struct AppleM5Int8MatMul[
         (`transpose_b`), `a_scale` `(M,)`, `b_scale` `(N,)`, `bias` `(N,)` (used
         iff `has_bias`). Grid is `(1<<log2_grid_m) * (1<<log2_grid_n)`
         threadgroups; OOB threadgroups early-return after Morton decode.
+
+        Parameters:
+            c_layout: `TensorLayout` of the C output `TileTensor`.
+            a_layout: `TensorLayout` of the int8 A `TileTensor`.
+            b_layout: `TensorLayout` of the int8 B `TileTensor`.
+            as_layout: `TensorLayout` of the per-row activation scale
+                `TileTensor`.
+            bs_layout: `TensorLayout` of the per-column weight scale
+                `TileTensor`.
+            bias_layout: `TensorLayout` of the per-column bias `TileTensor`.
+
+        Args:
+            c: Output `TileTensor` of shape `(M, N)` in `c_type`.
+            a: Int8 activation `TileTensor` of shape `(M, K)`.
+            b: Int8 weight `TileTensor` of shape `(N, K)` (used transposed).
+            a_scale: Per-row fp32 activation scale, shape `(M,)`.
+            b_scale: Per-column fp32 weight scale, shape `(N,)`.
+            bias: Per-column bias in `c_type`, shape `(N,)` (used iff
+                `has_bias`).
+            log2_grid_m: Base-2 log of the power-of-two-padded M-side grid
+                extent.
+            log2_grid_n: Base-2 log of the power-of-two-padded N-side grid
+                extent.
         """
         var m = Int32(c.dim[0]())
         var n = Int32(c.dim[1]())
@@ -797,6 +845,20 @@ def enqueue_apple_int8_matmul[
         c_type: Output element type (bf16 / fp16 / fp32).
         has_bias: If True, add `bias[col]` after dequant.
 
+    Args:
+        c: Output `TileTensor` of shape `(M, N)` in `c_type`, written
+            mutable.
+        a: Int8 activation `TileTensor` of shape `(M, K)`.
+        b: Int8 weight `TileTensor` of shape `(N, K)` (used transposed).
+        a_scale: Per-row fp32 activation scale, shape `(M,)`.
+        b_scale: Per-column fp32 weight scale, shape `(N,)`.
+        bias: Per-column bias in `c_type`, shape `(N,)` (used iff
+            `has_bias`; pass a length-1 dummy otherwise).
+        ctx: Device context used to enqueue the kernel.
+        _use_i32_override: Optional internal override forcing (`True`) or
+            disabling (`False`) the int32 accumulation path; auto-selected
+            when `None`.
+
     Raises:
         If the attached GPU is not Apple M5 (`compute_capability == 5`).
     """
@@ -898,6 +960,12 @@ struct AppleInt8ActQuant[in_type: DType = DType.bfloat16, *, THREADS: Int = 64]:
     no zero-point) but as a GPU row kernel. No SMEM reduction primitive is
     assumed; the absmax reduction is a two-pass strided scan (the row fits in
     L1/L2 and is re-read cheaply -- K <= 12288 for FLUX).
+
+    Parameters:
+        in_type: Element type of the input activation tensor (defaults to
+            `bfloat16`).
+        THREADS: Number of threads per threadgroup cooperating on the per-row
+            reduction (defaults to 64).
     """
 
     @__name("apple_int8_act_quant")
@@ -975,6 +1043,17 @@ def enqueue_apple_int8_quantize_activation[
 
     One threadgroup per row (M threadgroups, 64 threads each). Symmetric
     absmax/127, no zero-point. Raises if the GPU is not Apple M5.
+
+    Parameters:
+        in_type: Element type of the input activation tensor (defaults to
+            `bfloat16`).
+
+    Args:
+        q: Output int8 `TileTensor` of shape `(M, K)`, written mutable.
+        a: Input activation `TileTensor` of shape `(M, K)` in `in_type`.
+        a_scale: Output per-row fp32 scale `TileTensor` of shape `(M,)`,
+            written mutable.
+        ctx: Device context used to enqueue the kernel.
     """
     _require_apple_m5(ctx)
     var m = Int(a.dim[0]())

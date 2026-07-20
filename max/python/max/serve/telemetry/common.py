@@ -348,6 +348,7 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "maxserve.dkv.rpc_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     # Percentages
     "maxserve.dp_active_token_occupancy": HISTOGRAM_PERCENT_BUCKETS,
+    "maxserve.dp_context_token_occupancy": HISTOGRAM_PERCENT_BUCKETS,
     "maxserve.cache.hit_rate": HISTOGRAM_PERCENT_BUCKETS,
     "maxserve.cache.used_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
     "maxserve.cache.used_host_kv_pct": HISTOGRAM_PERCENT_BUCKETS,

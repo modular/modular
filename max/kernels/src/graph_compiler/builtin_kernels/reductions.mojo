@@ -16,6 +16,8 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
+"""Registers reduction graph ops (sum, mean, argmax, and related) over tensor axes."""
+
 from std.sys.info import simd_width_of
 import extensibility
 
@@ -58,6 +60,7 @@ from extensibility import (
 from std.logger import Logger
 
 comptime logger = Logger()
+"""Logger for the reductions module."""
 
 from std.utils import IndexList, StaticTuple
 from std.utils.coord import Coord
@@ -69,6 +72,8 @@ from .kernels import *
 
 @extensibility.register("mo.reduce.arg_max")
 struct ArgMax:
+    """Registers the `mo.reduce.arg_max` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -80,6 +85,22 @@ struct ArgMax:
         input: InputTensor[rank=rank, ...],
         ctx: DeviceContext,
     ) raises:
+        """Executes the `mo.reduce.arg_max` graph op.
+
+        Parameters:
+            target: Compilation target string.
+            rank: Tensor rank of the input and output tensors.
+            axis: Dimension along which to reduce.
+            _trace_name: Name used for tracing and debugging.
+
+        Args:
+            output: Output tensor receiving the result.
+            input: Input tensor to reduce.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
         var axis_val = normalize_neg_index(axis, rank)
 
         comptime if target == "cpu":
@@ -105,6 +126,8 @@ struct ArgMax:
 
 @extensibility.register("mo.reduce.arg_min")
 struct ArgMin:
+    """Registers the `mo.reduce.arg_min` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -116,6 +139,22 @@ struct ArgMin:
         input: InputTensor[rank=rank, ...],
         ctx: DeviceContext,
     ) raises:
+        """Executes the `mo.reduce.arg_min` graph op.
+
+        Parameters:
+            target: Compilation target string.
+            rank: Tensor rank of the input and output tensors.
+            axis: Dimension along which to reduce.
+            _trace_name: Name used for tracing and debugging.
+
+        Args:
+            output: Output tensor receiving the result.
+            input: Input tensor to reduce.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
         var axis_val = normalize_neg_index(axis, rank)
 
         comptime if target == "cpu":
@@ -139,11 +178,19 @@ struct ArgMin:
 
 @extensibility.register("mo.arg_nonzero")
 struct ArgNonZero:
+    """Registers the `mo.arg_nonzero` graph op with the graph compiler."""
+
     @staticmethod
     def execute(
         output_buffer: OutputTensor[rank=2, ...],
         input_buffer: InputTensor,
     ) raises:
+        """Executes the `mo.arg_nonzero` graph op.
+
+        Args:
+            output_buffer: Output tensor receiving the nonzero indices.
+            input_buffer: Input tensor whose nonzero indices are found.
+        """
         arg_nonzero.arg_nonzero(
             input_buffer.to_tile_tensor[DType.int64](),
             output_buffer.to_tile_tensor[DType.int64](),
@@ -152,6 +199,14 @@ struct ArgNonZero:
 
 @extensibility.register_shape_function("mo.arg_nonzero")
 def arg_nonzero_shape(input_buffer: InputTensor) -> IndexList[2]:
+    """Computes the output shape for the `mo.arg_nonzero` graph op.
+
+    Args:
+        input_buffer: Input tensor whose nonzero element indices are returned.
+
+    Returns:
+        The output shape as a rank-2 `IndexList` of nonzero element indices.
+    """
     return arg_nonzero.arg_nonzero_shape(
         input_buffer.to_tile_tensor[DType.int64]()
     )
@@ -159,6 +214,8 @@ def arg_nonzero_shape(input_buffer: InputTensor) -> IndexList[2]:
 
 @extensibility.register("mo.reduce.mean")
 struct Mean:
+    """Registers the `mo.reduce.mean` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -168,6 +225,21 @@ struct Mean:
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
+        """Executes the `mo.reduce.mean` graph op.
+
+        Parameters:
+            target: Compilation target string.
+            axis: Dimension along which to reduce.
+
+        Args:
+            output: Output tensor receiving the result.
+            input: Input tensor to reduce.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
+
         @parameter
         @always_inline
         def input_fn[
@@ -204,6 +276,20 @@ def reduce_mean_shape[
 ](
     input: InputTensor[dtype=input_type, rank=input_rank, ...],
 ) raises -> IndexList[input_rank]:
+    """Computes the output shape for the `mo.reduce.mean` graph op.
+
+    Parameters:
+        input_rank: Number of dimensions in the `input` and output
+            tensors.
+        input_type: Element type of the `input` tensor.
+        axis: Dimension along which to average the elements of `input`.
+
+    Args:
+        input: Input tensor reduced along `axis` by averaging.
+
+    Returns:
+        The output shape after reducing `input` along `axis` by averaging.
+    """
     return reduce_shape(input, axis)
 
 
@@ -225,6 +311,20 @@ struct RowMeanOfSquares:
         input: FusedInputTensor[rank=2, ...],
         ctx: DeviceContext,
     ) capturing raises:
+        """Executes the `mo.reduce.row_mean_of_squares` graph op.
+
+        Parameters:
+            target: Compilation target string.
+
+        Args:
+            output: Output tensor of shape `[M, 1]` receiving the per-row
+                mean of squares.
+            input: Input tensor of shape `[M, N]` to compute over.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If `output` does not have shape `[input_rows, 1]`.
+        """
         if output.shape()[0] != input.shape()[0] or output.shape()[1] != 1:
             raise Error("output must have shape [input_rows, 1]")
 
@@ -251,6 +351,16 @@ struct RowMeanOfSquares:
 def reduce_row_mean_of_squares_shape(
     input: InputTensor[rank=2, ...],
 ) -> IndexList[2]:
+    """Computes the output shape for the `mo.reduce.row_mean_of_squares` graph op.
+
+    Args:
+        input: Two-dimensional input tensor of shape `[M, N]` whose
+            per-row mean of squares produces a `[M, 1]` output.
+
+    Returns:
+        The output shape `[M, 1]` after computing the per-row
+        mean of squares.
+    """
     return Index(input.shape()[0], 1)
 
 
@@ -275,6 +385,18 @@ struct RowMeanOfSquaresQK:
         k: InputTensor[rank=2, ...],
         ctx: DeviceContext,
     ) capturing raises:
+        """Executes the `mo.reduce.row_mean_of_squares_qk` graph op.
+
+        Parameters:
+            target: Compilation target string.
+
+        Args:
+            output: Output tensor of shape `[M, 2]` receiving the per-row
+                mean of squares for `q` and `k`.
+            q: Query tensor of shape `[M, Nq]`.
+            k: Key tensor of shape `[M, Nk]`.
+            ctx: Device context used to enqueue the kernel.
+        """
         comptime assert q.dtype == k.dtype, "q and k must share a dtype"
         if (
             output.shape()[0] != q.shape()[0]
@@ -301,6 +423,18 @@ def reduce_row_mean_of_squares_qk_shape(
     q: InputTensor[rank=2, ...],
     k: InputTensor[rank=2, ...],
 ) -> IndexList[2]:
+    """Computes the output shape for the `mo.reduce.row_mean_of_squares_qk` graph op.
+
+    Args:
+        q: Query tensor of shape `[M, Nq]` whose per-row mean of squares
+            forms output column 0.
+        k: Key tensor of shape `[M, Nk]` whose per-row mean of squares
+            forms output column 1; must share row count with `q`.
+
+    Returns:
+        The output shape `[M, 2]` with per-row mean of squares
+        for `q` and `k`.
+    """
     return Index(q.shape()[0], 2)
 
 
@@ -338,6 +472,25 @@ struct ApplyQKRMSNorm:
         epsilon: Float32,
         ctx: DeviceContext,
     ) capturing raises:
+        """Executes the `mo.norm.apply_qk_rms_norm` graph op.
+
+        Parameters:
+            target: Compilation target string.
+
+        Args:
+            q_out: Output tensor receiving the normalized `q`.
+            k_out: Output tensor receiving the normalized `k`.
+            q: Query input tensor.
+            k: Key input tensor.
+            qk_var: Per-row variance tensor of shape `[M, 2]`.
+            gamma_q: Per-column scale weights for `q`.
+            gamma_k: Per-column scale weights for `k`.
+            epsilon: Small constant for numerical stability.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If output shapes do not match the corresponding inputs.
+        """
         comptime assert q.dtype == k.dtype, "q and k must share a dtype"
         comptime assert (
             q_out.dtype == q.dtype and k_out.dtype == q.dtype
@@ -379,6 +532,8 @@ struct ApplyQKRMSNorm:
 
 @extensibility.register("mo.reduce.add")
 struct ReduceAdd:
+    """Registers the `mo.reduce.add` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -389,6 +544,22 @@ struct ReduceAdd:
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
+        """Executes the `mo.reduce.add` graph op.
+
+        Parameters:
+            target: Compilation target string.
+            axis: Dimension along which to reduce.
+            _trace_name: Name used for tracing and debugging.
+
+        Args:
+            output: Output tensor receiving the result.
+            input: Input tensor to reduce.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
+
         @parameter
         @always_inline
         def input_fn[
@@ -425,11 +596,27 @@ def reduce_add_shape[
 ](
     input: InputTensor[dtype=input_type, rank=input_rank, ...],
 ) raises -> IndexList[input_rank]:
+    """Computes the output shape for the `mo.reduce.add` graph op.
+
+    Parameters:
+        input_rank: Number of dimensions in the `input` and output
+            tensors.
+        input_type: Element type of the `input` tensor.
+        axis: Dimension along which to sum the elements of `input`.
+
+    Args:
+        input: Input tensor reduced along `axis` by summation.
+
+    Returns:
+        The output shape after reducing `input` along `axis` by summation.
+    """
     return reduce_shape(input, axis)
 
 
 @extensibility.register("mo.reduce.mul")
 struct ReduceMul:
+    """Registers the `mo.reduce.mul` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -440,6 +627,22 @@ struct ReduceMul:
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
+        """Executes the `mo.reduce.mul` graph op.
+
+        Parameters:
+            target: Compilation target string.
+            axis: Dimension along which to reduce.
+            _trace_name: Name used for tracing and debugging.
+
+        Args:
+            output: Output tensor receiving the result.
+            input: Input tensor to reduce.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
+
         @parameter
         @always_inline
         def input_fn[
@@ -476,11 +679,28 @@ def reduce_mul_shape[
 ](
     input: InputTensor[dtype=input_type, rank=input_rank, ...],
 ) raises -> IndexList[input_rank]:
+    """Computes the output shape for the `mo.reduce.mul` graph op.
+
+    Parameters:
+        input_rank: Number of dimensions in the `input` and output
+            tensors.
+        input_type: Element type of the `input` tensor.
+        axis: Dimension along which to multiply the elements of `input`.
+
+    Args:
+        input: Input tensor reduced along `axis` by multiplication.
+
+    Returns:
+        The output shape after reducing `input` along `axis`
+        by multiplication.
+    """
     return reduce_shape(input, axis)
 
 
 @extensibility.register("mo.reduce.max")
 struct ReduceMax:
+    """Registers the `mo.reduce.max` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -491,6 +711,22 @@ struct ReduceMax:
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
+        """Executes the `mo.reduce.max` graph op.
+
+        Parameters:
+            target: Compilation target string.
+            axis: Dimension along which to reduce.
+            _trace_name: Name used for tracing and debugging.
+
+        Args:
+            output: Output tensor receiving the result.
+            input: Input tensor to reduce.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
+
         @parameter
         @always_inline
         def input_fn[
@@ -527,11 +763,27 @@ def reduce_max_shape[
 ](
     input: InputTensor[dtype=input_type, rank=input_rank, ...],
 ) raises -> IndexList[input_rank]:
+    """Computes the output shape for the `mo.reduce.max` graph op.
+
+    Parameters:
+        input_rank: Number of dimensions in the `input` and output
+            tensors.
+        input_type: Element type of the `input` tensor.
+        axis: Dimension along which to take the maximum of `input`.
+
+    Args:
+        input: Input tensor reduced along `axis` by maximum.
+
+    Returns:
+        The output shape after reducing `input` along `axis` by maximum.
+    """
     return reduce_shape(input, axis)
 
 
 @extensibility.register("mo.reduce.min")
 struct ReduceMin:
+    """Registers the `mo.reduce.min` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -542,6 +794,22 @@ struct ReduceMin:
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
+        """Executes the `mo.reduce.min` graph op.
+
+        Parameters:
+            target: Compilation target string.
+            axis: Dimension along which to reduce.
+            _trace_name: Name used for tracing and debugging.
+
+        Args:
+            output: Output tensor receiving the result.
+            input: Input tensor to reduce.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
+
         @parameter
         @always_inline
         def input_fn[
@@ -578,11 +846,27 @@ def reduce_min_shape[
 ](
     input: InputTensor[dtype=input_type, rank=input_rank, ...],
 ) raises -> IndexList[input_rank]:
+    """Computes the output shape for the `mo.reduce.min` graph op.
+
+    Parameters:
+        input_rank: Number of dimensions in the `input` and output
+            tensors.
+        input_type: Element type of the `input` tensor.
+        axis: Dimension along which to take the minimum of `input`.
+
+    Args:
+        input: Input tensor reduced along `axis` by minimum.
+
+    Returns:
+        The output shape after reducing `input` along `axis` by minimum.
+    """
     return reduce_shape(input, axis)
 
 
 @extensibility.register("mo.reduce.layer_norm")
 struct LayerNorm:
+    """Registers the `mo.reduce.layer_norm` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -596,6 +880,24 @@ struct LayerNorm:
         epsilon: Float32,
         ctx: DeviceContext,
     ) capturing raises:
+        """Executes the `mo.reduce.layer_norm` graph op.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Tensor rank of the input and output tensors.
+            target: Compilation target string.
+
+        Args:
+            output: Output tensor receiving the result.
+            input: Input tensor to reduce.
+            gamma: Per-column scale weights.
+            beta: Per-column shift weights.
+            epsilon: Small constant for numerical stability.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
@@ -654,11 +956,29 @@ def reduce_layer_norm_shape[
     beta: InputTensor[dtype=dtype, rank=1, ...],
     epsilon: Float32,
 ) -> IndexList[rank]:
+    """Computes the output shape for the `mo.reduce.layer_norm` graph op.
+
+    Parameters:
+        dtype: Element type of the `input`, `gamma`, and `beta` tensors.
+        rank: Number of dimensions in the `input` and output tensors.
+
+    Args:
+        input: Input tensor normalized across the last dimension.
+        gamma: Per-column scale weights applied after normalization.
+        beta: Per-column shift weights applied after scaling.
+        epsilon: Small constant added inside the normalization variance
+            for numerical stability.
+
+    Returns:
+        The output shape, which matches the `input` shape.
+    """
     return input.shape()
 
 
 @extensibility.register("mo.reduce.rms_norm")
 struct ReduceRMSNorm:
+    """Registers the `mo.reduce.rms_norm` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -673,6 +993,25 @@ struct ReduceRMSNorm:
         weight_offset: Scalar[dtype=dtype],
         ctx: DeviceContext,
     ) capturing raises:
+        """Executes the `mo.reduce.rms_norm` graph op.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Tensor rank of the input and output tensors.
+            target: Compilation target string.
+            multiply_before_cast: See the graph op signature.
+
+        Args:
+            output: Output tensor receiving the result.
+            input: Input tensor to reduce.
+            gamma: Per-column scale weights.
+            epsilon: Small constant for numerical stability.
+            weight_offset: Scalar offset added to the weight.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
@@ -726,6 +1065,22 @@ def reduce_rms_norm_shape[
     epsilon: Float32,
     weight_offset: Scalar[dtype=dtype],
 ) -> IndexList[rank]:
+    """Computes the output shape for the `mo.reduce.rms_norm` graph op.
+
+    Parameters:
+        dtype: Element type of the `input` and `gamma` tensors.
+        rank: Number of dimensions in the `input` and output tensors.
+
+    Args:
+        input: Input tensor normalized across the last dimension.
+        gamma: Per-column scale weights applied after normalization.
+        epsilon: Small constant added inside the RMS normalization square
+            root for numerical stability.
+        weight_offset: Scalar offset added to `gamma` before scaling.
+
+    Returns:
+        The output shape, which matches the `input` shape.
+    """
     return input.shape()
 
 
@@ -826,11 +1181,36 @@ def composite_rms_norm_rope_shape[
     cos_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
     sin_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
 ) -> IndexList[rank]:
+    """Computes the output shape for the `mo.composite.rms_norm_rope` graph op.
+
+    Parameters:
+        dtype: Element type of the `input` and `weight` tensors.
+        cos_sin_dtype: Element type of the `cos_vals` and `sin_vals` RoPE
+            tables.
+        rank: Number of dimensions in the `input` and output tensors.
+
+    Args:
+        input: Activation tensor normalized by RMS then rotated by RoPE;
+            the last dimension must be even.
+        weight: Per-column scale weights applied after RMS normalization.
+        epsilon: Small constant added inside the RMS normalization square
+            root for numerical stability.
+        weight_offset: Scalar offset added to `weight` before scaling.
+        cos_vals: Cosine table used by the RoPE rotation, matching
+            `input` rank.
+        sin_vals: Sine table used by the RoPE rotation, matching `input`
+            rank.
+
+    Returns:
+        The output shape, which matches the `input` shape.
+    """
     return input.shape()
 
 
 @extensibility.register("mo.reduce.group_norm")
 struct ReduceGroupNorm:
+    """Registers the `mo.reduce.group_norm` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -845,6 +1225,26 @@ struct ReduceGroupNorm:
         num_groups: Int32,
         ctx: DeviceContext,
     ) capturing raises:
+        """Executes the `mo.reduce.group_norm` graph op.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Tensor rank of the input and output tensors.
+            target: Compilation target string.
+
+        Args:
+            output: Output tensor receiving the result.
+            input: Input tensor to reduce.
+            gamma: Per-column scale weights.
+            beta: Per-column shift weights.
+            epsilon: Small constant for numerical stability.
+            num_groups: Number of groups for group normalization.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
+
         @parameter
         @always_inline
         def input_fn[
@@ -884,11 +1284,32 @@ def reduce_group_norm_shape[
     epsilon: Float32,
     num_groups: Int32,
 ) -> IndexList[rank]:
+    """Computes the output shape for the `mo.reduce.group_norm` graph op.
+
+    Parameters:
+        dtype: Element type of the `input`, `gamma`, and `beta` tensors.
+        rank: Number of dimensions in the `input` and output tensors.
+
+    Args:
+        input: Input tensor normalized across grouped channels.
+        gamma: Per-channel scale weights applied after normalization.
+        beta: Per-channel shift weights applied after scaling.
+        epsilon: Small constant added inside the normalization variance
+            for numerical stability.
+        num_groups: Number of groups the channel dimension is split
+            into for computing mean and variance.
+
+    Returns:
+        The output shape, which matches the `input` shape.
+    """
     return input.shape()
 
 
 @extensibility.register("mo.reduce.reduce_min_and_max")
 struct ReduceMinAndMax:
+    """Registers the `mo.reduce.reduce_min_and_max` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -1001,6 +1422,17 @@ struct ReduceMinAndMax:
 def reduce_reduce_min_and_max_shape[
     axis: Int,
 ](input: InputTensor) -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.reduce.reduce_min_and_max` graph op.
+
+    Parameters:
+        axis: Dimension along which to compute the min and max reduction.
+
+    Args:
+        input: Input tensor reduced along `axis` by minimum and maximum.
+
+    Returns:
+        The output shape with `axis` replaced by 2 (for min and max).
+    """
     var new_shape = input.shape()
     new_shape[_unsafe_normalize_neg_index(axis, input.rank)] = 2
 
@@ -1009,6 +1441,9 @@ def reduce_reduce_min_and_max_shape[
 
 @extensibility.register("mo.composite.rms_norm_fused_residual_add")
 struct ReduceRMSNormFusedResidualAdd:
+    """Registers the `mo.composite.rms_norm_fused_residual_add` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -1028,6 +1463,30 @@ struct ReduceRMSNormFusedResidualAdd:
         weight_offset2: Scalar[dtype=dtype],
         ctx: DeviceContext,
     ) capturing raises:
+        """Executes the `mo.composite.rms_norm_fused_residual_add` graph op.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Tensor rank of the input and output tensors.
+            target: Compilation target string.
+            multiply_before_cast: See the graph op signature.
+
+        Args:
+            output: Output tensor receiving the result.
+            residual_output: See the graph op signature.
+            input: Input tensor to reduce.
+            residual_input: Residual tensor added to the normalized input.
+            gamma1: Scale weights for the first normalization.
+            gamma2: Scale weights for the second normalization.
+            epsilon1: Stability constant for the first normalization.
+            epsilon2: Stability constant for the second normalization.
+            weight_offset1: Scalar offset for the first weight.
+            weight_offset2: Scalar offset for the second weight.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
@@ -1109,11 +1568,39 @@ def composite_rms_norm_fused_residual_add_shape[
     weight_offset1: Scalar[dtype=dtype],
     weight_offset2: Scalar[dtype=dtype],
 ) -> IndexList[rank]:
+    """Computes the output shape for the `mo.composite.rms_norm_fused_residual_add` graph op.
+
+    Parameters:
+        dtype: Element type of the `input`, `residual_input`, and weight
+            tensors.
+        rank: Number of dimensions in the `input` and output tensors.
+
+    Args:
+        input: Primary input tensor whose shape the output mirrors.
+        residual_input: Residual tensor added to the normalized `input`.
+        gamma1: Per-column scale weights applied to the first RMS
+            normalization.
+        gamma2: Per-column scale weights applied to the second RMS
+            normalization.
+        epsilon1: Small constant added inside the first RMS normalization
+            square root for numerical stability.
+        epsilon2: Small constant added inside the second RMS normalization
+            square root for numerical stability.
+        weight_offset1: Scalar offset added to `gamma1` before scaling the
+            first normalization.
+        weight_offset2: Scalar offset added to `gamma2` before scaling the
+            second normalization.
+
+    Returns:
+        The output shape, which matches the `input` shape.
+    """
     return input.shape()
 
 
 @extensibility.register("mo.bottom_k")
 struct BottomK:
+    """Registers the `mo.bottom_k` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -1128,6 +1615,25 @@ struct BottomK:
         sorted: Scalar[DType.bool],
         ctx: DeviceContext,
     ) raises:
+        """Executes the `mo.bottom_k` graph op.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Tensor rank of the input and output tensors.
+            target: Compilation target string.
+
+        Args:
+            values: See the graph op signature.
+            indices: See the graph op signature.
+            input: Input tensor to reduce.
+            k: Number of elements to select.
+            axis: See the graph op signature.
+            sorted: Whether to sort the selected elements.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
         top_k[largest=False, target=target](
             input.to_tile_tensor[DType.int64](),
             Int(k),
@@ -1146,6 +1652,17 @@ def bottom_k_shape(
     axis: Scalar,
     sorted: Scalar[DType.bool],
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.bottom_k` graph op.
+
+    Args:
+        input: Input tensor to select the bottom-k values from.
+        k: Number of smallest elements to select along `axis`.
+        axis: Dimension along which to select the bottom-k elements.
+        sorted: Whether to sort the selected elements in ascending order.
+
+    Returns:
+        The output shape after selecting the bottom-k values along `axis`.
+    """
     return rebind[IndexList[input.rank]](
         top_k_shape_impl(
             input.to_tile_tensor[DType.int64](),
@@ -1157,6 +1674,8 @@ def bottom_k_shape(
 
 @extensibility.register("mo.top_k")
 struct TopK:
+    """Registers the `mo.top_k` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -1172,6 +1691,26 @@ struct TopK:
         sorted: Scalar[DType.bool],
         ctx: DeviceContext,
     ) raises:
+        """Executes the `mo.top_k` graph op.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Tensor rank of the input and output tensors.
+            target: Compilation target string.
+            _trace_name: Name used for tracing and debugging.
+
+        Args:
+            values: See the graph op signature.
+            indices: See the graph op signature.
+            input: Input tensor to reduce.
+            k: Number of elements to select.
+            axis: See the graph op signature.
+            sorted: Whether to sort the selected elements.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
         top_k[largest=True, target=target](
             input.to_tile_tensor[DType.int64](),
             Int(k),
@@ -1190,6 +1729,17 @@ def top_k_shape(
     axis: Scalar,
     sorted: Scalar[DType.bool],
 ) raises -> IndexList[input.rank]:
+    """Computes the output shape for the `mo.top_k` graph op.
+
+    Args:
+        input: Input tensor to select the top-k values from.
+        k: Number of largest elements to select along `axis`.
+        axis: Dimension along which to select the top-k elements.
+        sorted: Whether to sort the selected elements in descending order.
+
+    Returns:
+        The output shape after selecting the top-k values along `axis`.
+    """
     return rebind[IndexList[input.rank]](
         top_k_shape_impl(
             input.to_tile_tensor[DType.int64](),
@@ -1201,6 +1751,8 @@ def top_k_shape(
 
 @extensibility.register("mo.reduce.softmax")
 struct Softmax:
+    """Registers the `mo.reduce.softmax` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -1211,6 +1763,22 @@ struct Softmax:
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
+        """Executes the `mo.reduce.softmax` graph op.
+
+        Parameters:
+            target: Compilation target string.
+            axis: Dimension along which to reduce.
+            has_prologue_fusion: See the graph op signature.
+
+        Args:
+            output: Output tensor receiving the result.
+            input: Input tensor to reduce.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
+
         # For adapting input fusion lambda required by call
         @parameter
         @always_inline
@@ -1238,6 +1806,8 @@ struct Softmax:
 
 @extensibility.register("mo.reduce.logsoftmax")
 struct LogSoftmax:
+    """Registers the `mo.reduce.logsoftmax` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString,
@@ -1248,6 +1818,22 @@ struct LogSoftmax:
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
+        """Executes the `mo.reduce.logsoftmax` graph op.
+
+        Parameters:
+            target: Compilation target string.
+            axis: Dimension along which to reduce.
+            has_prologue_fusion: See the graph op signature.
+
+        Args:
+            output: Output tensor receiving the result.
+            input: Input tensor to reduce.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
+
         # For adapting input fusion lambda required by call
         @parameter
         @always_inline
@@ -1271,6 +1857,8 @@ struct LogSoftmax:
 
 @extensibility.register("mo.cumsum")
 struct CumSum:
+    """Registers the `mo.cumsum` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -1283,6 +1871,20 @@ struct CumSum:
         input: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
     ):
+        """Executes the `mo.cumsum` graph op.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Tensor rank of the input and output tensors.
+            exclusive: See the graph op signature.
+            reverse: See the graph op signature.
+            axis: Dimension along which to reduce.
+
+        Args:
+            output: Output tensor receiving the result.
+            input: Input tensor to reduce.
+            ctx: Device context used to enqueue the kernel.
+        """
         cumsum[dtype, Bool(exclusive), Bool(reverse), axis=axis](
             output.to_tile_tensor[DType.int64](),
             input.to_tile_tensor[DType.int64](),
@@ -1291,6 +1893,8 @@ struct CumSum:
 
 @extensibility.register("mx.argsort")
 struct ArgSort[*, ascending: Bool]:
+    """Registers the `mx.argsort` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         target: StaticString
@@ -1299,6 +1903,19 @@ struct ArgSort[*, ascending: Bool]:
         input: InputTensor[rank=1, ...],
         ctx: DeviceContext,
     ) raises:
+        """Executes the `mx.argsort` graph op.
+
+        Parameters:
+            target: Compilation target string.
+
+        Args:
+            indices: See the graph op signature.
+            input: Input tensor to reduce.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
         var indices_tensor = indices.to_tile_tensor[DType.int64]()
         var input_tensor = input.to_tile_tensor[DType.int64]()
 

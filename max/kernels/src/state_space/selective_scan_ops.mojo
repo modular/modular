@@ -320,6 +320,27 @@ def selective_scan_fwd_shape[
     z: InputTensor[dtype=dtype, rank=3, ...],
     delta_bias: InputTensor[dtype=dtype, rank=1, ...],
 ) -> IndexList[3]:
+    """Returns the output shape for the `selective_scan_fwd` op.
+
+    The output of a selective scan forward pass has the same shape as the
+    input sequence `u`: `(batch, dim, seqlen)`.
+
+    Parameters:
+        dtype: Element type of the input tensors (inferred).
+
+    Args:
+        u: Input sequence tensor with shape `(batch, dim, seqlen)`.
+        delta: Time-step tensor with shape `(batch, dim, seqlen)`.
+        A: State transition matrix with shape `(dim, dstate)`.
+        B: Input projection with shape `(batch, n_groups, dstate, seqlen)`.
+        C: Output projection with shape `(batch, n_groups, dstate, seqlen)`.
+        D: Skip connection with shape `(dim,)`.
+        z: Gating tensor with shape `(batch, dim, seqlen)`.
+        delta_bias: Delta bias with shape `(dim,)`.
+
+    Returns:
+        The shape of the output tensor `(batch, dim, seqlen)`.
+    """
     return u.shape()
 
 
@@ -545,6 +566,21 @@ def selective_scan_fwd_minimal_shape[
     B: InputTensor[dtype=dtype, rank=4, ...],
     C: InputTensor[dtype=dtype, rank=4, ...],
 ) -> IndexList[3]:
+    """Returns the output shape for the `selective_scan_fwd_minimal` op.
+
+    The output of the minimal selective scan forward pass has the same shape
+    as the input sequence `u`: `(batch, dim, seqlen)`.
+
+    Args:
+        u: Input sequence tensor with shape `(batch, dim, seqlen)`.
+        delta: Time-step tensor with shape `(batch, dim, seqlen)`.
+        A: State transition matrix with shape `(dim, dstate)`.
+        B: Input projection with shape `(batch, n_groups, dstate, seqlen)`.
+        C: Output projection with shape `(batch, n_groups, dstate, seqlen)`.
+
+    Returns:
+        The shape of the output tensor `(batch, dim, seqlen)`.
+    """
     return u.shape()
 
 
@@ -821,4 +857,24 @@ def selective_scan_update_shape[
     z: InputTensor[dtype=dtype, rank=2, ...],
     dt_bias: InputTensor[dtype=dtype, rank=1, ...],
 ) -> Tuple[IndexList[3], IndexList[2]]:
+    """Returns the output shapes for the `selective_scan_update` op.
+
+    The update step produces two tensors: the updated SSM state and the
+    single-step output for the new token.
+
+    Args:
+        state_in: Input SSM state with shape `(batch, dim, dstate)`.
+        x: Input token with shape `(batch, dim)`.
+        dt: Time-delta tensor with shape `(batch, dim)`.
+        A: State transition matrix with shape `(dim, dstate)`.
+        B: Input matrix with shape `(batch, n_groups, dstate)`.
+        C: Output matrix with shape `(batch, n_groups, dstate)`.
+        D: Skip connection with shape `(dim,)`.
+        z: Gating tensor with shape `(batch, dim)`.
+        dt_bias: Time-delta bias with shape `(dim,)`.
+
+    Returns:
+        A tuple of `(state_out_shape, output_shape)` where `state_out_shape`
+        matches `state_in.shape()` and `output_shape` matches `x.shape()`.
+    """
     return (state_in.shape(), x.shape())

@@ -11,24 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from nvml import Device
-from nvml.nvml import _get_nvml_library_paths
+# RUN: not %mojo %s 2>&1 | FileCheck %s
+
+# A `StringSlice` vended by a `String` carries an interior origin, so mutating
+# the string (which may reallocate its buffer) invalidates the slice at compile
+# time.
 
 
-def has_nvml_library() -> Bool:
-    try:
-        return len(_get_nvml_library_paths()) > 0
-    except:
-        return False
-
-
-def main() raises:
-    if not has_nvml_library():
-        return
-
-    var dev = Device(0)
-    for clock in dev.mem_clocks():
-        print("Clock =", clock)
-    var driver_version = dev.get_driver_version()
-    print("Driver version =", String(driver_version))
-    print("Driver major version =", driver_version.major())
+def main():
+    var s = String("hello world")
+    var sl = s[byte=0:5]
+    s += "some more text to force a reallocation"
+    # CHECK: use of invalidated interior reference 's["bytes"]'
+    print(sl)

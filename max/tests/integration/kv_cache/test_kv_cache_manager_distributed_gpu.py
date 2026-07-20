@@ -39,6 +39,11 @@ from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 from test_common.context_utils import create_text_context
 
 
+def _int_block_hash(n: int) -> bytes:
+    """Encode an int test hash as the canonical 8-byte signed-BE block hash."""
+    return n.to_bytes(8, "big", signed=True)
+
+
 def _create_kv_manager(
     data_parallel_degree: int,
     num_devices: int,
@@ -199,7 +204,7 @@ def test_get_metrics_aggregated_h2d_d2h() -> None:
     # hash, so use globally-distinct hashes per replica to avoid collisions.
     def hashes_for(replica_idx: int) -> list[bytes]:
         base = 1000 * (replica_idx + 1)
-        return [to_block_hash_bytes(base + 1), to_block_hash_bytes(base + 2)]
+        return [_int_block_hash(base + 1), _int_block_hash(base + 2)]
 
     # Offload 2 blocks from each replica's device buffers → D2H copies.
     connector = manager._replica[0].connector
@@ -274,8 +279,8 @@ def test_get_metrics_aggregated_disk_ops() -> None:
         def hashes_for(replica_idx: int, base: int) -> list[bytes]:
             start = base + 1000 * (replica_idx + 1)
             return [
-                to_block_hash_bytes(start + 1),
-                to_block_hash_bytes(start + 2),
+                _int_block_hash(start + 1),
+                _int_block_hash(start + 2),
             ]
 
         # Offload 2 blocks from each replica → D2H + write-through to disk.
@@ -386,7 +391,7 @@ def test_cross_replica_gpu_prefix_cache_hit() -> None:
     num_prompt_tokens = 2 * page_size + 1
     ctx = create_text_context(np.arange(num_prompt_tokens))
     bm.compute_hashes_for_request(ctx)
-    hashes = cast("list[int | bytes]", list(bm.req_to_hashes[ctx.request_id]))
+    hashes = cast("list[bytes]", list(bm.req_to_hashes[ctx.request_id]))
     assert len(hashes) == 2
 
     # Seed replica 0's device prefix cache with the two blocks, each holding a
@@ -468,7 +473,7 @@ def test_cross_replica_host_prefix_cache_hit() -> None:
     num_prompt_tokens = 2 * page_size + 1
     ctx = create_text_context(np.arange(num_prompt_tokens))
     bm.compute_hashes_for_request(ctx)
-    hashes = cast("list[int | bytes]", list(bm.req_to_hashes[ctx.request_id]))
+    hashes = cast("list[bytes]", list(bm.req_to_hashes[ctx.request_id]))
     assert len(hashes) == 2
     hash_bytes = [to_block_hash_bytes(h) for h in hashes]
 

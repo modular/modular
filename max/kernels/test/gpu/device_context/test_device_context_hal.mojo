@@ -11,9 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import List
+from std.collections import InlineArray, List, Span
+from std.sys import size_of
 
 from std.gpu import global_idx, thread_idx
+from std.gpu.host.device_attribute import DeviceAttribute
+from std.gpu.host._tensormap import (
+    DataType,
+    InterleaveMode,
+    L2Promotion,
+    OOBFill,
+    SwizzleMode,
+    TensorMap,
+)
+from std.gpu.host.dim import Dim
 from std.gpu.memory import external_memory
 from std.gpu.sync import barrier
 from _device_context_hal import (
@@ -24,7 +35,8 @@ from _device_context_hal import (
     DeviceStream,
     HostBuffer,
 )
-from std.memory import alloc, AddressSpace, Span, UnsafePointer
+from std.atomic import Atomic
+from std.memory import alloc, AddressSpace, OpaquePointer, UnsafePointer
 from std.testing import assert_equal, assert_true
 from std.gpu.host.dim import Dim
 from _hal.execution_config import (
@@ -830,6 +842,105 @@ def test_external_shared_mem_execution_config(ctx: DeviceContext) raises:
     _ = res_device
 
 
+def test_tensor_map_encode(ctx: DeviceContext) raises:
+    # TMA descriptor encoding requires an NVIDIA sm_90+ device.
+    comptime info = DeviceContext.default_device_info
+
+    comptime if not (info.api == "cuda" and info.compute >= 9.0):
+        return
+
+    comptime dim = 64
+    var buf = ctx.enqueue_create_buffer[DType.float32](dim * dim)
+    ctx.synchronize()
+
+    var tensormap = TensorMap()
+    var global_dim_arg = InlineArray[Int64, 2](fill=Int64(dim))
+    var global_strides_arg = InlineArray[Int64, 2](uninitialized=True)
+    global_strides_arg[0] = Int64(size_of[DType.float32]())
+    global_strides_arg[1] = Int64(dim * size_of[DType.float32]())
+    var box_dim_arg = InlineArray[Int32, 2](fill=Int32(16))
+    var element_stride_arg = InlineArray[Int32, 2](fill=Int32(1))
+
+    buf._tensor_map_encode_tiled(
+        UnsafePointer(to=tensormap).bitcast[NoneType](),
+        DataType.from_dtype[DType.float32]()._value,
+        Int32(2),
+        global_dim_arg.unsafe_ptr(),
+        global_strides_arg.unsafe_ptr() + 1,
+        box_dim_arg.unsafe_ptr(),
+        element_stride_arg.unsafe_ptr(),
+        InterleaveMode.NONE._value,
+        SwizzleMode.NONE._value,
+        L2Promotion.NONE._value,
+        OOBFill.NONE._value,
+    )
+
+
+def test_device_attributes(ctx: DeviceContext) raises:
+    comptime info = DeviceContext.default_device_info
+
+    comptime if info.api == "metal":
+        return
+
+    assert_true(ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT) > 0)
+    assert_true(ctx.compute_capability() > 0)
+
+
+def test_cluster_launch(ctx: DeviceContext) raises:
+    # Cluster launches require an NVIDIA sm_90+ device; the degenerate
+    # (1, 1, 1) cluster exercises the launch-attribute plumbing.
+    comptime info = DeviceContext.default_device_info
+
+    comptime if not (info.api == "cuda" and info.compute >= 9.0):
+        return
+
+    comptime length = 64
+    var dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var host_in = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var host_out = ctx.enqueue_create_host_buffer[DType.float32](length)
+    ctx.synchronize()
+    for i in range(length):
+        host_in[i] = Float32(i)
+
+    ctx.enqueue_copy(dev, host_in)
+    ctx.enqueue_function[_vec_add_kernel](
+        dev,
+        dev,
+        dev,
+        length,
+        1,
+        grid_dim=(length // 32),
+        block_dim=32,
+        cluster_dim=Dim(1),
+    )
+    ctx.enqueue_copy(host_out, dev)
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_out[i], Float32(i) + Float32(i) + Float32(1))
+
+
+def _bump_counter[origin: MutOrigin](user_data: OpaquePointer[origin]):
+    var counter_ptr = user_data.bitcast[Scalar[DType.int32]]()
+    _ = Atomic[DType.int32].fetch_add(counter_ptr, 1)
+
+
+def test_enqueue_host_func(ctx: DeviceContext) raises:
+    var stream = ctx.stream()
+
+    var counter = Atomic[DType.int32](0)
+    var counter_ptr = UnsafePointer(to=counter.value).bitcast[NoneType]()
+
+    comptime N = 4
+    for _ in range(N):
+        stream.enqueue_host_func(
+            _bump_counter[type_of(counter_ptr).origin], counter_ptr
+        )
+
+    stream.synchronize()
+    assert_equal(Int(counter.load()), N)
+
+
 def test_memory_info(ctx: DeviceContext) raises:
     free_bytes, total_bytes = ctx.get_memory_info()
     assert_true(total_bytes > 0)
@@ -840,6 +951,14 @@ def test_push_context(ctx: DeviceContext) raises:
     ctx.set_as_current()
     with ctx.push_context() as active_ctx:
         active_ctx.synchronize()
+
+
+def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
+    var compiled = ctx.compile_function[_vec_add_kernel]()
+    var num_blocks = compiled.occupancy_max_active_blocks_per_multiprocessor(
+        32, 0
+    )
+    assert_true(num_blocks > 0)
 
 
 def test_stream_enqueue_function(ctx: DeviceContext) raises:
@@ -911,6 +1030,11 @@ def main() raises:
         test_move(ctx)
         test_memory_info(ctx)
         test_push_context(ctx)
+        test_occupancy_max_active_blocks(ctx)
+        test_enqueue_host_func(ctx)
+        test_cluster_launch(ctx)
+        test_device_attributes(ctx)
+        test_tensor_map_encode(ctx)
         test_id(ctx)
         test_synchronize(ctx)
         test_default_stream(ctx)

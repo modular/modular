@@ -40,7 +40,7 @@ from std.sys import size_of
 from std.sys._libc_errno import ErrNo, get_errno
 from std.sys.info import platform_map
 
-from std.memory import Span
+from std.collections import Span
 
 # ===----------------------------------------------------------------------=== #
 # open() syscall flags
@@ -302,7 +302,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         var file = open(file_name, "r")
 
         # Allocate and load 8 elements
-        var buffer = InlineArray[Float32, size=8](fill=0)
+        var buffer = InlineArray[Float32, length=8](fill=0)
         var bytes = file.read(buffer)
         print("bytes read", bytes)
 
@@ -313,7 +313,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         _ = file.seek(2 * size_of[DType.float32](), SEEK_CUR)
 
         # Allocate and load 8 more elements from file handle seek position
-        var buffer2 = InlineArray[Float32, size=8](fill=0)
+        var buffer2 = InlineArray[Float32, length=8](fill=0)
         var bytes2 = file.read(buffer2)
 
         var eleventh_element = buffer2[0]

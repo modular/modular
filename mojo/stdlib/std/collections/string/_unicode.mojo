@@ -22,7 +22,7 @@ from std.collections.string._unicode_lookups import (
     uppercase_mapping3,
 )
 
-from std.memory import Span
+from std.collections import Span
 
 
 def _uppercase_mapping_index(rune: Codepoint) -> Int:
@@ -61,7 +61,7 @@ def _to_index[lookup: List[UInt32]](rune: Codepoint) -> Int:
 
 
 # TODO:
-#   Refactor this to return a Span[Codepoint, StaticConstantOrigin], so that the
+#   Refactor this to return a Span[Codepoint, ImmStaticOrigin], so that the
 #   return `Int` count and fixed-size `InlineArray` are not necessary.
 def _get_uppercase_mapping(
     char: Codepoint,
