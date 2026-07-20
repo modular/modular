@@ -71,6 +71,6 @@ def global_constant[
         " are not supported because their internal pointers would be"
         " invalid at runtime."
     )
-    return UnsafePointer[mut=False, origin=ImmStaticOrigin](
+    return Pointer[mut=False, origin=ImmStaticOrigin](
         _mlir_value=__mlir_op.`pop.global_constant`[value=value]()
     )[]

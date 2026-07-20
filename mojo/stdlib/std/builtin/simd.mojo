@@ -2398,7 +2398,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
         Returns:
             The integer value.
         """
-        var ptr = bytes.unsafe_ptr().bitcast[Self]()
+        var ptr = bytes.unsafe_ptr().unsafe_bitcast[Self]()
         var value = ptr[]
 
         comptime if is_big_endian() != big_endian:
@@ -2423,11 +2423,11 @@ struct SIMD[dtype: DType, size: SIMDSize](
         comptime if is_big_endian() != big_endian:
             value = byte_swap(value)
 
-        var ptr = UnsafePointer(to=value)
+        var ptr = Pointer(to=value)
         var array = InlineArray[Byte, size_of[Self]()](uninitialized=True)
         unsafe_memcpy(
             dest=array.unsafe_ptr(),
-            src=ptr.bitcast[Byte](),
+            src=ptr.unsafe_bitcast[Byte](),
             count=size_of[Self](),
         )
         return array^

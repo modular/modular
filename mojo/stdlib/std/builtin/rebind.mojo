@@ -104,7 +104,7 @@ def rebind_var[
         An owned value rebound as `dest_type`.
     """
     ref dest_ref = rebind[dest_type](src)
-    dest = UnsafePointer(to=dest_ref).take_pointee()
+    dest = Pointer(to=dest_ref).unsafe_take_pointee()
     std.memory.forget_deinit(src^)
 
 

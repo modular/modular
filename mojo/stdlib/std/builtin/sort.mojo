@@ -42,17 +42,21 @@ def _insertion_sort[
     var size = len(span)
 
     for i in range(1, size):
-        var value = (array + i).take_pointee()
+        var value = array.unsafe_offset(i).unsafe_take_pointee()
         var j = i
 
         # Find the placement of the value in the array, shifting as we try to
         # find the position. Throughout, we assume array[start:i] has already
         # been sorted.
-        while j > 0 and cmp_fn(value, array[j - 1]):
-            (array + j).init_pointee_move_from(array + j - 1)
+        while j > 0 and cmp_fn(value, array[unsafe_offset=j - 1]):
+            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
+            # method.
+            array.unsafe_offset(j).init_pointee_move_from(
+                array.unsafe_offset(j - 1)
+            )
             j -= 1
 
-        (array + j).unsafe_write(value^)
+        array.unsafe_offset(j).unsafe_write(value^)
 
 
 # put everything that's "<" to the left of pivot
@@ -230,7 +234,7 @@ def _quicksort[
         # already have array[-1] <= array[0]
         var interval_ptr = interval.unsafe_ptr()
         if interval_ptr > span.unsafe_ptr() and not cmp_fn(
-            interval_ptr[-1], interval_ptr[0]
+            interval_ptr[unsafe_offset=-1], interval_ptr[unsafe_offset=0]
         ):
             var pivot = _quicksort_partition_left[cmp_fn](interval)
             if len > pivot + 2:
@@ -301,23 +305,32 @@ def _merge[
     var i = 0
     var j = 0
     var k = 0
+    # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_ method.
     while i < span1_size:
         if j == span2_size:
             while i < span1_size:
-                (res_ptr + k).init_pointee_move_from(span1_ptr + i)
+                res_ptr.unsafe_offset(k).init_pointee_move_from(
+                    span1_ptr.unsafe_offset(i)
+                )
                 k += 1
                 i += 1
             return
         if cmp_fn(span2.unsafe_get(j), span1.unsafe_get(i)):
-            (res_ptr + k).init_pointee_move_from(span2_ptr + j)
+            res_ptr.unsafe_offset(k).init_pointee_move_from(
+                span2_ptr.unsafe_offset(j)
+            )
             j += 1
         else:
-            (res_ptr + k).init_pointee_move_from(span1_ptr + i)
+            res_ptr.unsafe_offset(k).init_pointee_move_from(
+                span1_ptr.unsafe_offset(i)
+            )
             i += 1
         k += 1
 
     while j < span2_size:
-        (res_ptr + k).init_pointee_move_from(span2_ptr + j)
+        res_ptr.unsafe_offset(k).init_pointee_move_from(
+            span2_ptr.unsafe_offset(j)
+        )
         k += 1
         j += 1
 
@@ -351,8 +364,12 @@ def _stable_sort_impl[
             )
             _merge[cmp_fn](span1, span2, temp_buff)
             for i in range(merge_size + len(span2)):
-                UnsafePointer(to=span.unsafe_get(j + i)).init_pointee_move_from(
-                    UnsafePointer(to=temp_buff.unsafe_get(i))
+                # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
+                # method.
+                MutUnsafePointer(
+                    Pointer(to=span.unsafe_get(j + i))
+                ).init_pointee_move_from(
+                    MutUnsafePointer(Pointer(to=temp_buff.unsafe_get(i)))
                 )
             j += 2 * merge_size
         merge_size *= 2

@@ -407,9 +407,11 @@ def test_issue_20421() raises:
     var a_layout = Layout[UInt8](count=16 * 64, alignment=64)
     var ptr = alloc(a_layout).unsafe_leak()
     for i in range(16 * 64):
-        ptr[i] = UInt8(i & 255)
+        ptr[unsafe_offset=i] = UInt8(i & 255)
     var av16 = (
-        (ptr + 128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
+        ptr.unsafe_offset(128 + 64 + 4)
+        .unsafe_bitcast[Int32]()
+        .unsafe_load[width=4, alignment=1]()
     )
     dealloc(
         ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(a_layout)

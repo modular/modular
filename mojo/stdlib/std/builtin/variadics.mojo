@@ -797,7 +797,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         # Map it into a runtime constant.
         ref static_array = global_constant[array]()
         # Get a pointer to the first element, not the whole array.
-        var first_elt = UnsafePointer(to=static_array).bitcast[Self.type]()
+        var first_elt = Pointer(to=static_array).unsafe_bitcast[Self.type]()
         return Span(ptr=first_elt, length=Self.size)
 
     @always_inline
@@ -1265,17 +1265,17 @@ struct VariadicList[
         Args:
             value: The raw reference to the array of element pointers.
         """
-        # Convert the !lit.ref to an UnsafePointer, then cast to a pointer to
+        # Convert the !lit.ref to a pointer, then cast to a pointer to
         # the first element.
-        var array_up = UnsafePointer(
+        var array_up = Pointer(
             to=Pointer(_mlir_value=value)[]
         ).unsafe_origin_cast[UntrackedOrigin[mut=False]]()
-        var elt_ptr = UnsafePointer[_, UntrackedOrigin[mut=False]](
+        var elt_ptr = Pointer[_, UntrackedOrigin[mut=False]](
             _mlir_value=__mlir_op.`pop.array.gep`(
                 array_up._get_kgen_pointer(),
                 Int(0).__mlir_index__(),
             )
-        ).bitcast[Self._EltPointerType]()
+        ).unsafe_bitcast[Self._EltPointerType]()
         self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size))
 
     # The destructor for this type is trivial if not an "owned" list.
@@ -1299,9 +1299,7 @@ struct VariadicList[
 
             for i in reversed(range(len(self))):
                 # Safety: We own the elements in this list.
-                UnsafePointer(to=self[i]).mut_cast[
-                    True
-                ]().unsafe_deinit_pointee()
+                Pointer(to=self[i]).mut_cast[True]().unsafe_deinit_pointee()
 
     def consume_elements(
         deinit self,
@@ -1321,7 +1319,7 @@ struct VariadicList[
         ), "consume_elements may only be called on owned variadic lists"
 
         for i in range(len(self)):
-            var ptr = UnsafePointer(to=self[i])
+            var ptr = Pointer(to=self[i])
             # TODO: Cannot use UnsafePointer.take_pointee because it requires
             # the element to be Movable, which is not required here.
             elt_handler(
@@ -1570,9 +1568,7 @@ struct VariadicPack[
                 comptime assert conforms_to(element_type, ImplicitlyDeletable)
 
                 # Safety: We own the elements in this pack.
-                UnsafePointer(to=self[i]).mut_cast[
-                    True
-                ]().unsafe_deinit_pointee()
+                Pointer(to=self[i]).mut_cast[True]().unsafe_deinit_pointee()
 
     def consume_elements[
         elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
@@ -1591,7 +1587,7 @@ struct VariadicPack[
         ), "consume_elements may only be called on owned variadic packs"
 
         comptime for i in range(Self.__len__()):
-            var ptr = UnsafePointer(to=self[i])
+            var ptr = Pointer(to=self[i])
             # TODO: Cannot use UnsafePointer.take_pointee because it requires
             # the element to be Movable, which is not required here.
             elt_handler[i](

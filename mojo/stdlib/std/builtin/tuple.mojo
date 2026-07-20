@@ -98,7 +98,7 @@ struct Tuple[*element_types: Movable](
                 "Tuple default-construction requires all element types to"
                 " conform to `Defaultable`"
             )
-            UnsafePointer(to=self[i]).unsafe_write({})
+            Pointer(to=self[i]).unsafe_write({})
 
     @always_inline("nodebug")
     def __init__(out self, var *args: *Self.element_types):
@@ -115,7 +115,7 @@ struct Tuple[*element_types: Movable](
         # Move each element into the tuple storage.
         @parameter
         def init_elt[idx: Int](var elt: Self.element_types[idx]):
-            UnsafePointer(to=self[idx]).unsafe_write(elt^)
+            Pointer(to=self[idx]).unsafe_write(elt^)
 
         args^.consume_elements[init_elt]()
 
@@ -132,7 +132,7 @@ struct Tuple[*element_types: Movable](
         # Run the destructor on each member, the destructor of !kgen.struct is
         # trivial and won't do anything.
         comptime for i in range(Self.__len__()):
-            UnsafePointer(to=self[i]).unsafe_deinit_pointee()
+            Pointer(to=self[i]).unsafe_deinit_pointee()
 
     def deinit_with[
         deinit_func: def[idx: Int](var elt: Self.element_types[idx]) capturing
@@ -164,7 +164,7 @@ struct Tuple[*element_types: Movable](
             comptime assert conforms_to(Self.element_types[i], Copyable)
             # TODO: We should not use self[i] as this returns a reference to
             # uninitialized memory.
-            UnsafePointer(to=self[i]).unsafe_write(copy=copy[i])
+            Pointer(to=self[i]).unsafe_write(copy=copy[i])
 
     @always_inline("nodebug")
     def __init__(out self, *, deinit move: Self):
@@ -181,8 +181,10 @@ struct Tuple[*element_types: Movable](
         comptime for i in range(Self.__len__()):
             # TODO: We should not use self[i] as this returns a reference to
             # uninitialized memory.
-            UnsafePointer(to=self[i]).init_pointee_move_from(
-                UnsafePointer(to=move[i])
+            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
+            # method.
+            MutUnsafePointer(Pointer(to=self[i])).init_pointee_move_from(
+                MutUnsafePointer(Pointer(to=move[i]))
             )
         # Note: The destructor on `move` is auto-disabled in a moveinit.
 
@@ -219,16 +221,14 @@ struct Tuple[*element_types: Movable](
         """
         # Return a reference to an element at the specified index, propagating
         # mutability of self.
-        var storage_kgen_ptr = UnsafePointer(
-            to=self._mlir_value
-        )._get_kgen_pointer()
+        var storage_kgen_ptr = Pointer(to=self._mlir_value)._get_kgen_pointer()
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
             index=idx.__mlir_index__(),
-            _type=UnsafePointer[Self.element_types[idx]]._mlir_type,
+            _type=Pointer[Self.element_types[idx]]._mlir_type,
         ](storage_kgen_ptr)
-        return UnsafePointer[_, origin_of(self)](_mlir_value=elt_kgen_ptr)[]
+        return Pointer[_, origin_of(self)](_mlir_value=elt_kgen_ptr)[]
 
     @always_inline("nodebug")
     def __contains__[T: Equatable](self, value: T) -> Bool:
@@ -468,9 +468,11 @@ struct Tuple[*element_types: Movable](
         )
 
         comptime for i in range(type_of(result).__len__()):
-            UnsafePointer(to=result[i]).init_pointee_move_from(
-                rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
-                    UnsafePointer(to=self[Self.element_types.size - 1 - i])
+            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
+            # method.
+            MutUnsafePointer(Pointer(to=result[i])).init_pointee_move_from(
+                rebind[Pointer[type_of(result[i]), origin_of(self)]](
+                    Pointer(to=self[Self.element_types.size - 1 - i])
                 )
             )
 
@@ -513,19 +515,23 @@ struct Tuple[*element_types: Movable](
         comptime self_len = Self.__len__()
 
         comptime for i in range(self_len):
-            UnsafePointer(to=result[i]).init_pointee_move_from(
-                rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
-                    UnsafePointer(to=self[i])
+            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
+            # method.
+            MutUnsafePointer(Pointer(to=result[i])).init_pointee_move_from(
+                rebind[Pointer[type_of(result[i]), origin_of(self)]](
+                    Pointer(to=self[i])
                 )
             )
 
         comptime for i in range(type_of(other).__len__()):
-            UnsafePointer(to=result[self_len + i]).init_pointee_move_from(
+            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
+            # method.
+            MutUnsafePointer(
+                Pointer(to=result[self_len + i])
+            ).init_pointee_move_from(
                 rebind[
-                    UnsafePointer[
-                        type_of(result[self_len + i]), origin_of(other)
-                    ]
-                ](UnsafePointer(to=other[i]))
+                    Pointer[type_of(result[self_len + i]), origin_of(other)]
+                ](Pointer(to=other[i]))
             )
 
     @always_inline("nodebug")
@@ -566,7 +572,7 @@ struct Tuple[*element_types: Movable](
         # destructor is trivial, so moving every element out and letting `self`
         # die leaks nothing.
         comptime for i in range(Self.__len__()):
-            var ptr = UnsafePointer(to=self[i])
+            var ptr = Pointer(to=self[i])
             elt_handler[i](
                 __get_address_as_owned_value(ptr._get_kgen_pointer())
             )
