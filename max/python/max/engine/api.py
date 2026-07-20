@@ -24,7 +24,7 @@ from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Literal, cast
+from typing import Any, BinaryIO, Literal, cast
 from unittest import mock
 
 import numpy as np
@@ -1056,6 +1056,26 @@ class InferenceSession:
         if isinstance(model, (Graph, Module)):
             raise RuntimeError(self._compile_failure_message()) from exception
         raise exception
+
+    def read(self, source: str | os.PathLike[str] | BinaryIO) -> CompiledModel:
+        """Reads a previously exported compiled-model artifact (a ``.mef``).
+
+        Args:
+            source: The path to a ``.mef`` file, or a binary file-like object.
+
+        Returns:
+            A :class:`CompiledModel` ready to pass to :meth:`init` or
+            :meth:`init_all`.
+
+        Raises:
+            RuntimeError: If the artifact is missing or cannot be
+                deserialized.
+        """
+        if isinstance(source, (str, os.PathLike)):
+            handle = self._impl.read(source)
+        else:
+            handle = self._impl.read(source.read())
+        return CompiledModel(compiled=handle, expected_weights=None)
 
     def init(
         self,

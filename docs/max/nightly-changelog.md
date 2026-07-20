@@ -128,6 +128,11 @@ This version is still a work in progress.
   the generated images, counted from the actual output arrays, and
   `input_tokens` is 0 (prompt text is not counted). Previously `usage` was
   always `null`.
+- Added `InferenceSession.read` for loading a compiled-model artifact (a
+  `.mef` file) previously saved with `CompiledModel.export_mef`. It accepts a
+  path or a binary file-like object (such as `io.BytesIO`), deserializes
+  without invoking the graph compiler, and returns a `CompiledModel` ready to
+  pass to `InferenceSession.init`.
 - Added `--no-enable-tool-call-constrained-decode` (config key
   `sampling.enable_tool_call_constrained_decode`, default enabled) to decouple
   tool-call parsing from constrained decoding. When disabled, a configured

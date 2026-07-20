@@ -544,6 +544,36 @@ class InferenceSession:
             with weights via :meth:`_load_all`.
         """
 
+    @overload
+    def read(
+        self, path: str | os.PathLike
+    ) -> max._core.mlrt.AsyncValue[CompiledModels]:
+        """
+        Reads a compiled-model artifact (``.mef``) from a file path.
+
+        Returns:
+            AsyncValue[CompiledModels]: already-resolved handle to the
+            artifact, ready to be initialized via :meth:`_load_all`.
+
+        Raises:
+            RuntimeError: if the file is missing or is not a valid MEF
+            for this engine build.
+        """
+
+    @overload
+    def read(self, data: bytes) -> max._core.mlrt.AsyncValue[CompiledModels]:
+        """
+        Reads a compiled-model artifact (``.mef``) from bytes.
+
+        Returns:
+            AsyncValue[CompiledModels]: already-resolved handle to the
+            artifact, ready to be initialized via :meth:`_load_all`.
+
+        Raises:
+            RuntimeError: if the bytes are not a valid MEF for this
+            engine build.
+        """
+
     def set_debug_print_options(
         self, style: PrintStyle, precision: int, directory: str
     ) -> None:
