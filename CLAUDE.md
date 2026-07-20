@@ -171,7 +171,7 @@ python max/kernels/benchmarks/autotune/kbench.py benchmarks/gpu/linalg/bench_mat
 - Install nightly VS Code extension
 - Avoid deprecated types like `Tensor` (use modern alternatives)
 - Follow value semantics and ownership conventions
-- Use `Reference` types with explicit lifetimes in APIs
+- Use `Origin` parameters (`ImmutableOrigin`/`MutableOrigin`) with `Pointer`/`UnsafePointer` in APIs
 
 ### MAX Kernel Development
 
