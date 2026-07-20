@@ -18,7 +18,6 @@ modular_py_library(
         requirement("tiktoken"),
     ],
     deps = [
-        requirement("av"),
         requirement("llguidance"),
         requirement("numpy"),
         requirement("pillow"),

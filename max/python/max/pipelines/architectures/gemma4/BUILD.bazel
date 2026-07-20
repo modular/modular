@@ -16,7 +16,6 @@ modular_py_library(
         "//max/python/max/nn/hooks",
     ],
     deps = [
-        requirement("av"),
         requirement("huggingface-hub"),
         requirement("numpy"),
         requirement("pillow"),
