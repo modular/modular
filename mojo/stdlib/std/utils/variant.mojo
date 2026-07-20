@@ -67,13 +67,13 @@ trait _VariantStorage(Copyable, ImplicitlyDeletable):
 
     def take[U: Movable](deinit self) -> U:
         """Consume this storage and return the held value as type `U`."""
-        return self.unsafe_ptr[U]().take_pointee()
+        return self.unsafe_ptr[U]().unsafe_take_pointee()
 
     def isa[U: AnyType](self) -> Bool:
         """Return `True` if the currently active type is `U`."""
         ...
 
-    def unsafe_ptr[U: AnyType](ref self) -> UnsafePointer[U, origin_of(self)]:
+    def unsafe_ptr[U: AnyType](ref self) -> Pointer[U, origin_of(self)]:
         """Return a raw pointer to the stored data interpreted as type `U`.
 
         Safety: the caller must ensure `U` matches the active type."""
@@ -85,7 +85,7 @@ trait _NicheStorage(Defaultable, ImplicitlyCopyable, ImplicitlyDeletable):
 
     def as_uninit[
         T: AnyType
-    ](ref self) -> UnsafePointer[UnsafeMaybeUninit[T], origin_of(self)]:
+    ](ref self) -> Pointer[UnsafeMaybeUninit[T], origin_of(self)]:
         ...
 
 
@@ -102,11 +102,11 @@ struct _DefaultNicheStorage[T: AnyType](Defaultable, _NicheStorage):
     @always_inline
     def as_uninit[
         U: AnyType
-    ](ref self) -> UnsafePointer[UnsafeMaybeUninit[U], origin_of(self)]:
+    ](ref self) -> Pointer[UnsafeMaybeUninit[U], origin_of(self)]:
         comptime assert Self.T == U
         return (
-            UnsafePointer(to=self._memory)
-            .bitcast[UnsafeMaybeUninit[U]]()
+            Pointer(to=self._memory)
+            .unsafe_bitcast[UnsafeMaybeUninit[U]]()
             .unsafe_origin_cast[origin_of(self)]()
         )
 
@@ -127,7 +127,7 @@ struct _CustomNicheStorage[Storage: UnsafeCustomNicheStorage](
     @always_inline
     def as_uninit[
         T: AnyType
-    ](ref self) -> UnsafePointer[UnsafeMaybeUninit[T], origin_of(self)]:
+    ](ref self) -> Pointer[UnsafeMaybeUninit[T], origin_of(self)]:
         comptime assert (
             size_of[Self.Storage.NicheStorage]()
             == size_of[UnsafeMaybeUninit[T]]()
@@ -137,8 +137,8 @@ struct _CustomNicheStorage[Storage: UnsafeCustomNicheStorage](
             == align_of[UnsafeMaybeUninit[T]]()
         ), "Custom storage must have the the same alignment as Self"
         return (
-            UnsafePointer(to=self._memory)
-            .bitcast[UnsafeMaybeUninit[T]]()
+            Pointer(to=self._memory)
+            .unsafe_bitcast[UnsafeMaybeUninit[T]]()
             .unsafe_origin_cast[origin_of(self)]()
         )
 
@@ -198,7 +198,7 @@ struct _NichedOptionalStorage[
     def __init__(out self, *, deinit move: Self):
         comptime assert conforms_to(Self.T, Movable)
         if move.isa[Self.T]():
-            self = Self(move.unsafe_ptr[Self.T]().take_pointee())
+            self = Self(move.unsafe_ptr[Self.T]().unsafe_take_pointee())
         else:
             self = Self()
 
@@ -227,11 +227,11 @@ struct _NichedOptionalStorage[
             return not is_some
 
     @always_inline
-    def unsafe_ptr[U: AnyType](ref self) -> UnsafePointer[U, origin_of(self)]:
+    def unsafe_ptr[U: AnyType](ref self) -> Pointer[U, origin_of(self)]:
         Self._check[U]()
         return (
             self._memory.as_uninit[U]()
-            .bitcast[U]()
+            .unsafe_bitcast[U]()
             .unsafe_origin_cast[origin_of(self)]()
         )
 
@@ -293,8 +293,10 @@ struct _DefaultVariantStorage[*Ts: AnyType](
             comptime assert conforms_to(T, Movable)
 
             if self.get_discriminant() == UInt8(i):
-                self.unsafe_ptr[T]().init_pointee_move_from(
-                    move.unsafe_ptr[T]()
+                # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
+                # method
+                MutUnsafePointer(self.unsafe_ptr[T]()).init_pointee_move_from(
+                    MutUnsafePointer(move.unsafe_ptr[T]())
                 )
                 return
 
@@ -312,10 +314,10 @@ struct _DefaultVariantStorage[*Ts: AnyType](
     def get_discriminant(ref self) -> ref[self] UInt8:
         var discr_ptr = __mlir_op.`pop.variant.discr_gep`[
             _type=__mlir_type.`!kgen.pointer<scalar<ui8>>`
-        ](UnsafePointer(to=self._impl)._get_kgen_pointer())
-        return UnsafePointer[_, origin_of(self)](_mlir_value=discr_ptr).bitcast[
-            UInt8
-        ]()[]
+        ](Pointer(to=self._impl)._get_kgen_pointer())
+        return Pointer[_, origin_of(self)](
+            _mlir_value=discr_ptr
+        ).unsafe_bitcast[UInt8]()[]
 
     @always_inline("nodebug")
     def isa[T: AnyType](self) -> Bool:
@@ -323,13 +325,13 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         return self.get_discriminant() == discriminant
 
     @always_inline("nodebug")
-    def unsafe_ptr[T: AnyType](ref self) -> UnsafePointer[T, origin_of(self)]:
+    def unsafe_ptr[T: AnyType](ref self) -> Pointer[T, origin_of(self)]:
         comptime idx = _get_type_index[T, *Self.Ts]()
         return {
             _mlir_value = __mlir_op.`pop.variant.bitcast`[
-                _type=UnsafePointer[T, origin_of(self)]._mlir_type,
+                _type=Pointer[T, origin_of(self)]._mlir_type,
                 index=idx.__mlir_index__(),
-            ](UnsafePointer(to=self._impl)._get_kgen_pointer())
+            ](Pointer(to=self._impl)._get_kgen_pointer())
         }
 
 
@@ -568,9 +570,12 @@ struct Variant[*Ts: Movable](
         if not self.isa[T]():
             abort("get: wrong variant type", location=call_location())
 
-        return self._storage.unsafe_ptr[
-            T
-        ]()._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
+        # `_get_ref_with_unsafe_interior_origin` is unsafe-pointer-only, so
+        # bridge the safe storage pointer through UnsafePointer, as List, Deque,
+        # and String do.
+        return UnsafePointer(
+            self._storage.unsafe_ptr[T]()
+        )._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
 
     @always_inline
     def __eq__(
