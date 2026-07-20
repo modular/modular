@@ -393,10 +393,24 @@ This version is still a work in progress.
 ## Library changes
 
 - Various datatypes have adopted interior origins for increased memory safety,
-  including `List`, `Deque`, `Variant` and `String`. `String`'s view-returning
-  accessors (`as_bytes()`, `s[byte=...]`, `s[codepoint=...]`, and similar) now
-  return `StringSlice`/`Span` views bound to an interior origin of the string,
-  so such a view is invalidated when the string is mutated:
+  including `List`, `Deque`, `Variant`, `String` and `Dict`. `Dict`'s
+  reference-returning accessors (`d[key]`, `setdefault()`) now return a
+  reference bound to an interior origin of the dictionary, so such a reference
+  is invalidated by any mutating operation, including an insert via
+  `setdefault()`:
+
+  ```mojo
+  var d = Dict[String, Int]()
+  d["a"] = 1
+  ref value = d["a"]
+  _ = d.setdefault("b", 2)  # inserts (mutates), invalidating `value`
+  print(value)              # error: use of invalidated interior reference
+  ```
+
+  `String`'s view-returning accessors (`as_bytes()`, `s[byte=...]`,
+  `s[codepoint=...]`, and similar) now return `StringSlice`/`Span` views bound
+  to an interior origin of the string, so such a view is invalidated when the
+  string is mutated:
 
   ```mojo
   var s = String("hello world")

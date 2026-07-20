@@ -907,9 +907,12 @@ struct Dict[
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
+    @__unsafe_nested_origins_read_only
     def __getitem__(
         ref self, ref key: Self.K
-    ) raises DictKeyError[Self.K] -> ref[self] Self.V:
+    ) raises DictKeyError[Self.K] -> ref[
+        origin_of(self)._get_owned_interior["value"]
+    ] Self.V:
         """Retrieve a value out of the dictionary.
 
         Args:
@@ -1268,9 +1271,12 @@ struct Dict[
         except:
             return Optional[Self.V](None)
 
+    @__unsafe_nested_origins_read_only
     def _find_ref(
         ref self, ref key: Self.K
-    ) raises DictKeyError[Self.K] -> ref[self] Self.V:
+    ) raises DictKeyError[Self.K] -> ref[
+        origin_of(self)._get_owned_interior["value"]
+    ] Self.V:
         """Find a value in the dictionary by key.
 
         Args:
@@ -1287,7 +1293,9 @@ struct Dict[
             assert is_occupied(
                 self._table._ctrl[slot_idx]
             ), "_find_slot returned found=True but ctrl byte is not occupied"
-            return (self._table._slots + slot_idx)[].value
+            return UnsafePointer(
+                to=(self._table._slots + slot_idx)[].value
+            )._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
 
         raise DictKeyError[Self.K]()
 
@@ -1707,9 +1715,11 @@ struct Dict[
 
     def setdefault(
         mut self, var key: Self.K, var default: Self.V
-    ) -> ref[self] Self.V where conforms_to(
-        Self.K, ImplicitlyDeletable
-    ) and conforms_to(Self.V, ImplicitlyDeletable):
+    ) -> ref[
+        origin_of(self)._get_owned_interior["value"]
+    ] Self.V where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
+        Self.V, ImplicitlyDeletable
+    ):
         """Get a value from the dictionary by key, or set it to a default if it
         doesn't exist.
 
@@ -1751,7 +1761,9 @@ struct Dict[
             assert is_occupied(
                 self._table._ctrl[slot_idx]
             ), "_find_slot returned found=True but ctrl byte is not occupied"
-        return (self._table._slots + slot_idx)[].value
+        return UnsafePointer(
+            to=(self._table._slots + slot_idx)[].value
+        )._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
 
     # ===-------------------------------------------------------------------===#
     # Internal methods

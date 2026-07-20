@@ -213,7 +213,9 @@ def test_basic() raises:
     assert_equal(1, dict["a"])
     assert_equal(2, dict["b"])
 
-    ptr = Pointer(to=dict["a"])
+    # TODO(MOCO-4374): use `var` here; a bare (implicit) declaration of a
+    # `Pointer` to an interior reference false-positives in CheckLifetimes.
+    var ptr = Pointer(to=dict["a"])
     assert_equal(1, ptr[])
     ptr[] = 17
     assert_equal(17, dict["a"])
