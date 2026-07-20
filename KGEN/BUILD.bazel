@@ -1130,6 +1130,7 @@ modular_cc_library(
     deps = [
         ":HLCFDialectAnalysis",
         ":KGENDialect",
+        ":ObjectCompiler.headers",  # For MetalAddressSpace.h
         ":TargetLowering",
         ":ToolCommon",
         "//Support:DebugInfoTransforms",
