@@ -830,10 +830,13 @@ struct String(
     def __len__(self) -> Int:
         ...
 
+    @__unsafe_nested_origins_read_only
     @always_inline
     def __getitem__[
         I: Indexer, //
-    ](self, *, byte: I) -> StringSlice[origin_of(self)]:
+    ](self, *, byte: I) -> StringSlice[
+        origin_of(self)._get_owned_interior["bytes"]
+    ]:
         """Gets a single byte at the specified byte index.
 
         This performs byte-level indexing, not character (codepoint) indexing.
@@ -850,13 +853,16 @@ struct String(
         Returns:
             A StringSlice containing a single byte at the specified position.
         """
-        var string_slice = StringSlice(self)
+        var string_slice = self._interior_slice()
         var idx = index(byte)
         string_slice._check_valid_index(idx)
         return string_slice._unchecked_get_byte(idx)
 
+    @__unsafe_nested_origins_read_only
     @always_inline
-    def __getitem__(self, *, byte: IntLiteral) -> StringSlice[origin_of(self)]:
+    def __getitem__(
+        self, *, byte: IntLiteral
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Gets a single byte at the specified byte index.
 
         This performs byte-level indexing, not character (codepoint) indexing.
@@ -874,13 +880,14 @@ struct String(
             "negative indexing is not supported, use e.g."
             " `string[byte=string.byte_length() - 1]`"
         )
-        var string_slice = StringSlice(self)
+        var string_slice = self._interior_slice()
         string_slice._check_valid_index(byte)
         return string_slice._unchecked_get_byte(byte)
 
+    @__unsafe_nested_origins_read_only
     def __getitem__(
         self, *, byte: ContiguousSlice
-    ) -> StringSlice[origin_of(self)]:
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Gets a substring at the specified byte positions.
 
         This performs byte-level slicing, not character (codepoint) slicing.
@@ -894,11 +901,14 @@ struct String(
         Returns:
             A StringSlice containing the bytes in the specified range.
         """
-        return StringSlice(self)[byte=byte]
+        return self._interior_slice()[byte=byte]
 
+    @__unsafe_nested_origins_read_only
     def __getitem__[
         I: Indexer, //
-    ](self, *, codepoint: I) -> StringSlice[origin_of(self)]:
+    ](self, *, codepoint: I) -> StringSlice[
+        origin_of(self)._get_owned_interior["bytes"]
+    ]:
         """Gets the character at the specified position.
 
         Parameters:
@@ -911,12 +921,13 @@ struct String(
             A `StringSlice` view containing the unicode codepoint at the
             specified position.
         """
-        return StringSlice(self)[codepoint=codepoint]
+        return self._interior_slice()[codepoint=codepoint]
 
+    @__unsafe_nested_origins_read_only
     @always_inline
     def __getitem__(
         self, *, codepoint: ContiguousSlice
-    ) -> StringSlice[origin_of(self)]:
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Gets a substring at the specified codepoint positions.
 
         Args:
@@ -926,12 +937,13 @@ struct String(
         Returns:
             A StringSlice containing the codepoints in the specified range.
         """
-        return StringSlice(self)[codepoint=codepoint]
+        return self._interior_slice()[codepoint=codepoint]
 
+    @__unsafe_nested_origins_read_only
     @always_inline
     def __getitem__(
         self, *, grapheme: Some[Indexer]
-    ) -> StringSlice[origin_of(self)]:
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Gets the character at the specified position.
 
         Args:
@@ -941,7 +953,7 @@ struct String(
             A `StringSlice` view containing the unicode grapheme at the
             specified position.
         """
-        return StringSlice(self)[grapheme=grapheme]
+        return self._interior_slice()[grapheme=grapheme]
 
     def __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
@@ -1457,16 +1469,38 @@ struct String(
         # Safety: we ensure the string is null-terminated above.
         return CStringSlice(unsafe_from_ptr=self.unsafe_ptr().bitcast[c_char]())
 
-    def as_bytes(self) -> Span[Byte, origin_of(self)]:
+    @__unsafe_nested_origins_read_only
+    def as_bytes(
+        ref self,
+    ) -> Span[Byte, origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a contiguous slice of the bytes owned by this string.
 
         Returns:
             A contiguous slice pointing to the bytes owned by this string.
+
+        Notes:
+            The returned span carries an interior origin derived from this
+            string, so mutating the string (which may reallocate its buffer)
+            invalidates the span at compile time.
         """
 
-        return Span[Byte, origin_of(self)](
-            ptr=self.unsafe_ptr(), length=self.byte_length()
+        return Span(
+            ptr=UnsafePointer(
+                to=self.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
+                    "bytes", origin_of(self)
+                ]()
+            ),
+            length=self.byte_length(),
         )
+
+    @__unsafe_nested_origins_read_only
+    def _interior_slice(
+        ref self,
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        # Canonical interior-origin string-slice view of the whole string. All
+        # view-returning accessors derive from this so element/substring views
+        # are invalidated when the string is mutated.
+        return StringSlice(unsafe_from_utf8=self.as_bytes())
 
     def unsafe_as_bytes_mut(mut self) -> Span[Byte, origin_of(self)]:
         """Returns a mutable contiguous slice of the bytes owned by this string.
@@ -1485,13 +1519,16 @@ struct String(
         )
 
     @deprecated("Use `StringSlice(str)` instead.")
-    def as_string_slice(self) -> StringSlice[origin_of(self)]:
+    @__unsafe_nested_origins_read_only
+    def as_string_slice(
+        ref self,
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a string slice of the data owned by this string.
 
         Returns:
             A string slice pointing to the data owned by this string.
         """
-        return StringSlice(self)
+        return self._interior_slice()
 
     def byte_length(self) -> Int:
         """Get the string length in bytes.

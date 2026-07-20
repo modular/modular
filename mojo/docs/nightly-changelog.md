@@ -393,7 +393,17 @@ This version is still a work in progress.
 ## Library changes
 
 - Various datatypes have adopted interior origins for increased memory safety,
-  including `List`, `Deque` and `Variant`.
+  including `List`, `Deque`, `Variant` and `String`. `String`'s view-returning
+  accessors (`as_bytes()`, `s[byte=...]`, `s[codepoint=...]`, and similar) now
+  return `StringSlice`/`Span` views bound to an interior origin of the string,
+  so such a view is invalidated when the string is mutated:
+
+  ```mojo
+  var s = String("hello world")
+  var view = s[byte=0:5]
+  s += "!"      # may reallocate, invalidating `view`
+  print(view)   # error: use of invalidated interior reference
+  ```
 
 - Added `Tuple.consume_elements`, which moves each element out of a tuple into a
   caller-provided closure one at a time. Destructuring such as `a, b = t^`
