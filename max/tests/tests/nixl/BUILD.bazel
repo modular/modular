@@ -32,10 +32,14 @@ modular_py_test(
     data = ["//max/python/max/pipelines/kv_cache:nixl_host_plugins"],
     gpu_constraints = [
         "//:has_gpu",
-        "//:nvidia_gpu",
     ],
     tags = [
         "gpu",
+    ],
+    # NVIDIA or AMD, never Apple: Apple GPUs only exist on the macOS
+    # platform, and NIXL/UCX is Linux-only.
+    target_compatible_with = [
+        "@platforms//os:linux",
     ],
     deps = [
         ":nixl_plugin_env",

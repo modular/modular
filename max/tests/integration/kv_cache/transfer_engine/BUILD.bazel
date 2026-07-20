@@ -174,13 +174,17 @@ modular_py_test(
     gpu_constraints = [
         "//:has_gpu",
         "//:has_multi_gpu",
-        "//:nvidia_gpu",
     ],
     imports = ["."],
     per_test_tags = {
         "test_send_recv_multi_process_gpu.py": ["manual"],  # FIXME: Times out intermittently (SERVOPT-1326)
     },
     tags = ["gpu"],
+    # NVIDIA or AMD, never Apple: Apple GPUs only exist on the macOS
+    # platform, and NIXL/UCX is Linux-only.
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines/kv_cache",
