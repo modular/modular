@@ -505,6 +505,31 @@ This version is still a work in progress.
   widths, repeat counts, split/slice bounds) stay runtime operands, so one
   compiled graph per `(op, device, dtype[, rank])` serves every shape.
 
+- The eager interpreter's pooling ops (`max_pool`/`avg_pool`, floor and
+  ceil-mode variants) now run through pre-compiled graph-compiler models
+  instead of hand-written Mojo bindings. Window shape, strides, dilations,
+  and paddings are runtime operands, so one compiled graph per `(op, device,
+  dtype[, count_boundary])` serves every configuration. CPU float16 isn't
+  supported (a graph-compiler limitation); GPU float16 still works.
+
+- The eager interpreter's `conv2d` op now runs through a pre-compiled
+  graph-compiler model instead of a hand-written Mojo binding. Filter
+  shape, input shape, stride, dilation, and padding are runtime operands,
+  so one compiled graph per `(device, dtype)` serves every conv shape.
+  Dilation != 1 and grouped convolution now raise a clear error instead of
+  computing silently. `conv2d_transpose` is no longer supported: its old
+  Mojo binding depended on cuDNN, which crashed on Apple GPUs and failed on
+  CUDA, and has been removed rather than kept as a broken fallback.
+
+- The eager interpreter's `resize` ops (`resize_linear` and
+  `resize_nearest`) now run through pre-compiled graph-compiler models
+  instead of hand-written Mojo bindings, with output size as a runtime
+  operand, so one compiled graph per `(op, device, dtype, rank, variant)`
+  serves every output size. `resize_bicubic` is no longer supported: its
+  old Mojo binding has been removed rather than kept as a fallback, due to
+  a graph-compiler gap. CPU float16 isn't supported (a graph-compiler
+  limitation); GPU float16 still works.
+
 - Added a `max warm-interpreter-cache` command that batch-compiles the full
   eager interpreter model matrix into the on-disk cache for the current
   machine's devices and drops a stamp. A later lazy eager process on the same

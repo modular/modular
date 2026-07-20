@@ -6152,40 +6152,38 @@ class TestConv2dOp:
         )
 
     def test_dilation(self) -> None:
-        """Test 3x3 conv with dilation 2."""
+        """Dilation != 1 is not supported after the GC migration (MXF-529):
+        the GC-compiled conv kernel raises rather than silently
+        computing a wrong result."""
         x_np = np.arange(1 * 7 * 7 * 1, dtype=np.float32).reshape(1, 7, 7, 1)
         f_np = np.ones((3, 3, 1, 1), dtype=np.float32)
 
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            y = F.conv2d(x, f, dilation=(2, 2))
-
-        expected = self._conv2d_ref(x_np, f_np, (1, 1), (2, 2), (0, 0, 0, 0), 1)
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
-        )
+        with pytest.raises(NotImplementedError, match="dilation"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.conv2d(x, f, dilation=(2, 2))
+                assert y is not None
 
     def test_groups(self) -> None:
-        """Test grouped convolution (groups=2)."""
+        """Grouped conv (groups > 1) is not supported after the GC migration
+        (MXF-529): it needs a pre-packed filter layout the eager
+        interpreter never has, and there's no way to pack it from Python."""
         x_np = np.arange(1 * 4 * 4 * 4, dtype=np.float32).reshape(1, 4, 4, 4)
         f_np = np.ones((3, 3, 2, 4), dtype=np.float32)
 
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            y = F.conv2d(x, f, groups=2)
-
-        expected = self._conv2d_ref(x_np, f_np, (1, 1), (1, 1), (0, 0, 0, 0), 2)
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
-        )
+        with pytest.raises(NotImplementedError, match="groups"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.conv2d(x, f, groups=2)
+                assert y is not None
 
     def test_1x1_conv(self) -> None:
         """Test pointwise (1x1) convolution."""
@@ -6223,143 +6221,47 @@ class TestConv2dOp:
             np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
         )
 
+    def test_float16_unsupported(self) -> None:
+        """float16 doesn't compile through the GC conv path on CPU.
+
+        conv_gc._supported_dtypes excludes float16 on CPU (fails to compile
+        there; compiles fine on GPU), matching pooling_gc's and resize_gc's
+        own CPU+float16 exclusion.
+        """
+        x_np = np.arange(1 * 5 * 5 * 1, dtype=np.float16).reshape(1, 5, 5, 1)
+        f_np = np.ones((3, 3, 1, 1), dtype=np.float16)
+
+        x = Tensor.from_dlpack(x_np)
+        f = Tensor.from_dlpack(f_np)
+        with pytest.raises(KeyError, match="float16"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.conv2d(x, f)
+                assert y is not None
+
 
 class TestConvTranspose2dOp:
     """Tests for the mo.conv_transpose (2D transposed conv) handler."""
 
-    @staticmethod
-    def _conv_transpose2d_ref(
-        x: np.ndarray,
-        filt: np.ndarray,
-        stride: tuple[int, int],
-        dilation: tuple[int, int],
-        padding: tuple[int, int, int, int],
-        output_padding: tuple[int, int],
-    ) -> np.ndarray:
-        """Pure-numpy 2D transposed conv reference (NHWC, RSCF filter).
-
-        Filter layout for conv_transpose: [kH, kW, out_c, in_c].
-        """
-        n, in_h, in_w, in_c = x.shape
-        kh, kw, out_c, filt_in_c = filt.shape
-        assert filt_in_c == in_c
-        sh, sw = stride
-        dh, dw = dilation
-        ph0, ph1, pw0, pw1 = padding
-        oph, opw = output_padding
-
-        oh = (in_h - 1) * sh - ph0 - ph1 + dh * (kh - 1) + 1 + oph
-        ow = (in_w - 1) * sw - pw0 - pw1 + dw * (kw - 1) + 1 + opw
-
-        out = np.zeros((n, oh, ow, out_c), dtype=x.dtype)
-        for b in range(n):
-            for ohi in range(oh):
-                for owi in range(ow):
-                    for oci in range(out_c):
-                        acc = np.float64(0)
-                        for fi in range(kh):
-                            h_cand = ohi + ph0 - fi * dh
-                            if h_cand < 0 or h_cand % sh != 0:
-                                continue
-                            ih = h_cand // sh
-                            if ih >= in_h:
-                                continue
-                            for fj in range(kw):
-                                w_cand = owi + pw0 - fj * dw
-                                if w_cand < 0 or w_cand % sw != 0:
-                                    continue
-                                iw = w_cand // sw
-                                if iw >= in_w:
-                                    continue
-                                for ic in range(in_c):
-                                    acc += float(x[b, ih, iw, ic]) * float(
-                                        filt[fi, fj, oci, ic]
-                                    )
-                        out[b, ohi, owi, oci] = acc
-        return out
-
-    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
-    def test_basic_3x3(self, dtype: DType) -> None:
-        """Test basic 3x3 conv_transpose, stride 1, no padding."""
-        np_dt = dtype.to_numpy()
-        x_np = np.arange(1 * 3 * 3 * 1, dtype=np_dt).reshape(1, 3, 3, 1)
-        f_np = np.ones((3, 3, 1, 1), dtype=np_dt)
-
-        x = Tensor.from_dlpack(x_np)
-        f = Tensor.from_dlpack(f_np)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            y = F.conv2d_transpose(x, f)
-
-        expected = self._conv_transpose2d_ref(
-            x_np, f_np, (1, 1), (1, 1), (0, 0, 0, 0), (0, 0)
-        )
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
-        )
-
-    def test_stride_2(self) -> None:
-        """Test conv_transpose with stride 2 (upsampling)."""
-        x_np = np.arange(1 * 2 * 2 * 1, dtype=np.float32).reshape(1, 2, 2, 1)
-        f_np = np.ones((3, 3, 1, 1), dtype=np.float32)
-
-        x = Tensor.from_dlpack(x_np)
-        f = Tensor.from_dlpack(f_np)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            y = F.conv2d_transpose(x, f, stride=(2, 2))
-
-        expected = self._conv_transpose2d_ref(
-            x_np, f_np, (2, 2), (1, 1), (0, 0, 0, 0), (0, 0)
-        )
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
-        )
-
-    def test_padding(self) -> None:
-        """Test conv_transpose with non-zero padding."""
-        x_np = np.arange(1 * 4 * 4 * 1, dtype=np.float32).reshape(1, 4, 4, 1)
-        f_np = np.ones((3, 3, 1, 1), dtype=np.float32)
-        padding = (1, 1, 1, 1)
-
-        x = Tensor.from_dlpack(x_np)
-        f = Tensor.from_dlpack(f_np)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            y = F.conv2d_transpose(x, f, padding=padding)
-
-        expected = self._conv_transpose2d_ref(
-            x_np, f_np, (1, 1), (1, 1), padding, (0, 0)
-        )
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
-        )
-
-    def test_dilation(self) -> None:
-        """Test conv_transpose with dilation."""
+    def test_unsupported(self) -> None:
+        """conv_transpose has no supported kernel (KERN-3233): the old Mojo
+        binding's GPU path crashed on Apple/CUDA and it was never migrated
+        to the graph compiler, so the handler now raises rather than
+        falling back to a broken kernel."""
         x_np = np.arange(1 * 3 * 3 * 1, dtype=np.float32).reshape(1, 3, 3, 1)
         f_np = np.ones((3, 3, 1, 1), dtype=np.float32)
 
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            y = F.conv2d_transpose(x, f, dilation=(2, 2))
-
-        expected = self._conv_transpose2d_ref(
-            x_np, f_np, (1, 1), (2, 2), (0, 0, 0, 0), (0, 0)
-        )
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
-        )
+        with pytest.raises(NotImplementedError, match="conv_transpose"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.conv2d_transpose(x, f)
+                assert y is not None
 
 
 class TestMaxPoolOp:
@@ -6547,6 +6449,24 @@ class TestMaxPoolOp:
             x_np, (2, 2), (2, 2), (1, 1), (0, 0, 0, 0)
         )
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_float16_unsupported(self) -> None:
+        """float16 doesn't compile through the GC pooling path on CPU.
+
+        pooling_gc._supported_dtypes excludes float16 on CPU (fails to
+        compile there; compiles fine on GPU), matching resize_gc's
+        CPU+float16 exclusion.
+        """
+        x_np = np.arange(16, dtype=np.float16).reshape(1, 4, 4, 1)
+        x = Tensor.from_dlpack(x_np)
+
+        with pytest.raises(KeyError, match="float16"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.max_pool2d(x, kernel_size=(2, 2))
+                assert y is not None
 
 
 class TestTileOp:
@@ -6919,6 +6839,24 @@ class TestAvgPool2dOp:
         np.testing.assert_allclose(
             np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
         )
+
+    def test_float16_unsupported(self) -> None:
+        """float16 doesn't compile through the GC pooling path on CPU.
+
+        pooling_gc._supported_dtypes excludes float16 on CPU (fails to
+        compile there; compiles fine on GPU), matching resize_gc's
+        CPU+float16 exclusion.
+        """
+        x_np = np.arange(16, dtype=np.float16).reshape(1, 4, 4, 1)
+        x = Tensor.from_dlpack(x_np)
+
+        with pytest.raises(KeyError, match="float16"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.avg_pool2d(x, kernel_size=(2, 2))
+                assert y is not None
 
 
 class TestRoiAlignOp:
@@ -8147,7 +8085,7 @@ class TestResizeLinearOp:
 
     Routes through F.resize_linear -> ops.resize_linear ->
     rmo.MoResizeLinearOp -> mo.ResizeLinearOp -> _handle_resize_linear ->
-    resize_ops.ResizeLinear.  CPU-only (MO_HostOnly).
+    resize_gc.resize_model.  CPU-only (MO_HostOnly).
 
     The reference is a pure-numpy separable 1-D linear interpolation along
     each spatial dimension (dimensions 2 and beyond).  Four coordinate
@@ -8369,9 +8307,10 @@ class TestResizeLinearOp:
         )
         np.testing.assert_allclose(out_np, ref, rtol=1e-3, atol=1e-3)
 
-    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_dtypes(self, dtype: DType) -> None:
-        """Resize works for float32 and float16 inputs."""
+        """Resize works for every dtype resize_gc supports on CPU
+        (resize_gc._RESIZE_DTYPES == FLOAT_DTYPES)."""
         rng = np.random.default_rng(4)
         np_dtype = dtype.to_numpy()
         x_np = rng.standard_normal((1, 2, 4, 4)).astype(np_dtype)
@@ -8385,8 +8324,32 @@ class TestResizeLinearOp:
             out = F.resize_linear(x, out_shape)
 
         ref = self._resize_linear_ref(x_np, out_shape)
-        tol = 1e-2 if dtype == DType.float16 else 1e-4
-        np.testing.assert_allclose(np.from_dlpack(out), ref, rtol=tol, atol=tol)
+        np.testing.assert_allclose(
+            np.from_dlpack(out), ref, rtol=1e-4, atol=1e-4
+        )
+
+    def test_float16_unsupported(self) -> None:
+        """float16 doesn't compile through the GC resize path on CPU.
+
+        Unlike the old hand-written Mojo kernel, the graph-compiler CPU
+        backend has no float16 kernel (resize_gc._RESIZE_DTYPES excludes it,
+        matching gc_compile.CPU_FLOAT_DTYPES's exclusion for other families).
+        """
+        rng = np.random.default_rng(4)
+        x_np = rng.standard_normal((1, 2, 4, 4)).astype(np.float16)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 2, 6, 6]
+
+        with pytest.raises(KeyError, match="float16"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                # Keep a reference alive through context exit (where
+                # realize_all -> the handler -> resize_model actually raises)
+                # -- an unassigned call's Tensor can get GC'd first.
+                out = F.resize_linear(x, out_shape)
+                assert out is not None
 
     def test_3d_input(self) -> None:
         """Resize a rank-3 (NCW) input using 1-D linear interpolation."""
@@ -8412,7 +8375,7 @@ class TestResizeNearestOp:
 
     Routes through F.resize_nearest -> ops.resize_nearest ->
     rmo.MoResizeNearestOp -> mo.ResizeNearestOp -> _handle_resize_nearest ->
-    resize_ops.ResizeNearest.  CPU-only (MO_HostOnly).
+    resize_gc.resize_model.  CPU-only (MO_HostOnly).
 
     The reference is a pure-numpy nearest-neighbor lookup applied to every
     dimension.  Four coordinate transformation modes and four rounding modes
@@ -8589,9 +8552,10 @@ class TestResizeNearestOp:
         )
         np.testing.assert_allclose(np.from_dlpack(out), ref)
 
-    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_dtypes(self, dtype: DType) -> None:
-        """Resize works for float32 and float16 inputs."""
+        """Resize works for every dtype resize_gc supports on CPU
+        (resize_gc._RESIZE_DTYPES == FLOAT_DTYPES)."""
         rng = np.random.default_rng(104)
         np_dtype = dtype.to_numpy()
         x_np = rng.standard_normal((1, 2, 4, 4)).astype(np_dtype)
@@ -8606,6 +8570,29 @@ class TestResizeNearestOp:
 
         ref = self._resize_nearest_ref(x_np, out_shape)
         np.testing.assert_allclose(np.from_dlpack(out), ref)
+
+    def test_float16_unsupported(self) -> None:
+        """float16 doesn't compile through the GC resize path on CPU.
+
+        Unlike the old hand-written Mojo kernel, the graph-compiler CPU
+        backend has no float16 kernel (resize_gc._RESIZE_DTYPES excludes it,
+        matching gc_compile.CPU_FLOAT_DTYPES's exclusion for other families).
+        """
+        rng = np.random.default_rng(104)
+        x_np = rng.standard_normal((1, 2, 4, 4)).astype(np.float16)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 2, 6, 6]
+
+        with pytest.raises(KeyError, match="float16"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                # Keep a reference alive through context exit (where
+                # realize_all -> the handler -> resize_model actually raises)
+                # -- an unassigned call's Tensor can get GC'd first.
+                out = F.resize_nearest(x, out_shape)
+                assert out is not None
 
     def test_3d_input(self) -> None:
         """Resize a rank-3 (NCW) input using nearest-neighbor."""
@@ -8625,128 +8612,25 @@ class TestResizeNearestOp:
 
 
 class TestResizeBicubicOp:
-    """Tests for bicubic resize interpreter op (mo.resize.bicubic).
+    """Tests for bicubic resize interpreter op (mo.resize.bicubic)."""
 
-    The kernel uses half_pixel coordinate mapping, a=-0.75 Catmull-Rom
-    cubic filter, rank-4 NCHW only.  The numpy reference below reproduces
-    the exact algorithm from ``cpu_bicubic_kernel`` in ``nn/bicubic.mojo``.
-    """
-
-    @staticmethod
-    def _cubic_kernel(x: float) -> float:
-        """Catmull-Rom cubic kernel with a = -0.75."""
-        a = -0.75
-        abs_x = abs(x)
-        abs_x2 = abs_x * abs_x
-        abs_x3 = abs_x2 * abs_x
-        if abs_x <= 1.0:
-            return (a + 2) * abs_x3 - (a + 3) * abs_x2 + 1
-        elif abs_x < 2.0:
-            return a * abs_x3 - 5 * a * abs_x2 + 8 * a * abs_x - 4 * a
-        return 0.0
-
-    @staticmethod
-    def _resize_bicubic_ref(x: np.ndarray, out_shape: list[int]) -> np.ndarray:
-        """Numpy reference matching ``cpu_bicubic_kernel`` in nn/bicubic.mojo."""
-        b, c, in_h, in_w = x.shape
-        _, _, out_h, out_w = out_shape
-
-        scale_h = in_h / out_h
-        scale_w = in_w / out_w
-
-        out = np.zeros(out_shape, dtype=np.float32)
-
-        for bi in range(b):
-            for ci in range(c):
-                for y_out in range(out_h):
-                    in_y = (y_out + 0.5) * scale_h - 0.5
-                    y_floor = int(np.floor(in_y))
-                    dy = in_y - y_floor
-
-                    for x_out in range(out_w):
-                        in_x = (x_out + 0.5) * scale_w - 0.5
-                        x_floor = int(np.floor(in_x))
-                        dx = in_x - x_floor
-
-                        val = 0.0
-                        for i in range(4):
-                            y_pos = min(max(y_floor + i - 1, 0), in_h - 1)
-                            wy = TestResizeBicubicOp._cubic_kernel(i - 1.0 - dy)
-                            for j in range(4):
-                                x_pos = min(max(x_floor + j - 1, 0), in_w - 1)
-                                wx = TestResizeBicubicOp._cubic_kernel(
-                                    j - 1.0 - dx
-                                )
-                                val += float(x[bi, ci, y_pos, x_pos]) * wy * wx
-                        out[bi, ci, y_out, x_out] = val
-        return out
-
-    def test_2d_upsample(self) -> None:
-        """Upsample a 4x4 spatial input to 8x8 using bicubic."""
+    def test_unsupported(self) -> None:
+        """resize_bicubic has no supported kernel (GEX-3990): its old Mojo
+        binding has been deleted and the graph compiler has no
+        shape-fallback registration for MO::ResizeBicubicOp, so the handler
+        now raises rather than falling back to a Mojo kernel."""
         rng = np.random.default_rng(200)
         x_np = rng.standard_normal((1, 1, 4, 4)).astype(np.float32)
         x = Tensor.from_dlpack(x_np)
         out_shape = [1, 1, 8, 8]
 
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            out = F.resize_bicubic(x, out_shape)
-
-        ref = self._resize_bicubic_ref(x_np, out_shape)
-        np.testing.assert_allclose(np.from_dlpack(out), ref, atol=1e-5)
-
-    def test_2d_downscale(self) -> None:
-        """Downscale an 8x8 spatial input to 4x4 using bicubic."""
-        rng = np.random.default_rng(201)
-        x_np = rng.standard_normal((1, 1, 8, 8)).astype(np.float32)
-        x = Tensor.from_dlpack(x_np)
-        out_shape = [1, 1, 4, 4]
-
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            out = F.resize_bicubic(x, out_shape)
-
-        ref = self._resize_bicubic_ref(x_np, out_shape)
-        np.testing.assert_allclose(np.from_dlpack(out), ref, atol=1e-5)
-
-    def test_multichannel(self) -> None:
-        """Resize a multi-batch, multi-channel NCHW tensor."""
-        rng = np.random.default_rng(202)
-        x_np = rng.standard_normal((2, 3, 6, 6)).astype(np.float32)
-        x = Tensor.from_dlpack(x_np)
-        out_shape = [2, 3, 10, 10]
-
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            out = F.resize_bicubic(x, out_shape)
-
-        ref = self._resize_bicubic_ref(x_np, out_shape)
-        np.testing.assert_allclose(np.from_dlpack(out), ref, atol=1e-5)
-
-    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
-    def test_dtypes(self, dtype: DType) -> None:
-        """Bicubic resize preserves the requested dtype."""
-        rng = np.random.default_rng(203)
-        np_dtype = dtype.to_numpy()
-        x_np = rng.standard_normal((1, 1, 4, 4)).astype(np_dtype)
-        x = Tensor.from_dlpack(x_np)
-        out_shape = [1, 1, 6, 6]
-
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            out = F.resize_bicubic(x, out_shape)
-
-        ref = self._resize_bicubic_ref(x_np.astype(np.float32), out_shape)
-        out_np = np.from_dlpack(out).astype(np.float32)
-        np.testing.assert_allclose(out_np, ref, atol=1e-2)
+        with pytest.raises(NotImplementedError, match="resize_bicubic"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                out = F.resize_bicubic(x, out_shape)
+                assert out is not None
 
 
 class TestDistributedScatterSimulated:

@@ -37,10 +37,6 @@ EXTRA_DEPS = {
         "//max:builtin_kernels",
         "//max:extensibility",
     ],
-    "resize_ops": [
-        "//max:nn",
-        "//max:layout",
-    ],
     "rms_norm_ops": [
         "//max:nn",
         "//max:extensibility",
