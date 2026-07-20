@@ -1067,8 +1067,9 @@ _MHA_CAUSAL_MASK_AMD_DTYPES = {
 # page_size < BK1 requires threading `kv_sub_tile_rows(BK1, page_size)`
 # through the kernel TMA signatures — follow-up work.
 _MLA_DECODE_PAGED_CONFIGS = [
-    "256",
-    "128",
+    # "256",  # QUA-777 / KERN-3237: disabled due to nondeterminism
+    # "128",  # QUA-777 / KERN-3237: disabled due to nondeterminism
+    # Re-enable tracking: https://linear.app/modularml/issue/KERN-3237
     # "64",  # QUA-375 / KERN-2912: disabled due to nondeterminism
 ]
 
@@ -1108,6 +1109,34 @@ _MLA_DECODE_PAGED_CONFIGS = [
     )
     for page_size in _MLA_DECODE_PAGED_CONFIGS
 ]
+
+# Disabled due to nondeterminism. Tracking: QUA-777
+# Re-enable tracking: https://linear.app/modularml/issue/KERN-3237
+mojo_test(
+    name = "test_mla_decode_paged_variable_ps128.mojo.test",
+    size = "large",
+    srcs = ["test_mla_decode_paged_variable.mojo"],
+    copts = [
+        "-D",
+        "page_size=128",
+    ],
+    enable_assertions = select({
+        "//:amd_gpu": False,
+        "//conditions:default": True,
+    }),
+    exec_properties = {
+        "test.resources:gpu-memory": "6",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["@platforms//:incompatible"],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
 
 # MLA prefill paged-KV tests. These are a NEW set of tests that
 # exercise the production MLA prefill code path: ``flare_mla_prefill``
