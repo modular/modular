@@ -93,6 +93,8 @@ common --experimental_propagate_custom_flag=@rules_cc//cc/toolchains/args/archiv
 # Always use llvm-ar which works fine for macOS
 common --@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos=false
 
+common --features=skip_virtual_includes --host_features=skip_virtual_includes
+
 # Enable parse_headers when the feature is added (only applies to first party code)
 common --process_headers_in_dependencies
 
