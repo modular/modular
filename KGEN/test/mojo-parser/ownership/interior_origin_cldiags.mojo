@@ -204,6 +204,19 @@ struct StructWithList:
 def test_struct_with_list(var thing: StructWithList):
     _ = thing.add_type()
 
+
+struct KeyErr(ErrorConversionTrait):
+    pass
+def access_or_raise_custom_error(a: MyList[Int])raises KeyErr -> ref[a[]] Int :
+    return a[]
+
+# MOCO-4371
+def test_access_or_raise_custom_error_convert_to_error() raises:
+    var l = MyList[Int]()
+    # This should be valid.
+    var x = access_or_raise_custom_error(l)
+    _ = x
+
 # ===----------------------------------------------------------------------=== #
 # Closures
 # ===----------------------------------------------------------------------=== #

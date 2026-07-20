@@ -134,12 +134,21 @@ comptime SomeTypeList[Trait: type_of(AnyType)] = __SomeTypeListImpl[Trait, ...]
 comptime KeyElement = Copyable  # & Hashable & Equatable
 
 
+# This trait is used to test types that auto-convert to Error.
+trait ErrorConversionTrait:
+    pass
+
+
 struct Error(Copyable):
     def __init__(out self):
         pass
 
     @implicit
     def __init__(out self, value: StringLiteral):
+        pass
+
+    @implicit
+    def __init__(out self, value: Some[ErrorConversionTrait]):
         pass
 
     def __del__(deinit self):
