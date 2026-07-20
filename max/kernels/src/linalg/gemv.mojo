@@ -1213,7 +1213,7 @@ def gemv_gpu_dispatch[
             m,
             n,
             k,
-            grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+            grid_dim=ceildiv(n, WARP_SIZE),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
             attributes=pdl_launch_attributes(pdl_level),
         )
