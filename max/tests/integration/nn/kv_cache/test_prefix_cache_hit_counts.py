@@ -72,7 +72,7 @@ def _make_block_manager(
 
 
 def _seed_device_prefix_cache(
-    bm: BlockManager, hashes: Sequence[int | bytes]
+    bm: BlockManager, hashes: Sequence[bytes]
 ) -> None:
     """Commit blocks with the given hashes into the device prefix cache."""
     for h in hashes:

@@ -116,7 +116,7 @@ async def test_explicit_seed_is_deterministic() -> None:
 
 @pytest.mark.asyncio
 async def test_ahash64_default_produces_int_hashes() -> None:
-    """Default kv_hash_algo yields legacy int hashes."""
+    """Default kv_hash_algo yields canonical 8-byte hashes."""
     kv_manager = _make_kv_manager()  # default = ahash64
     ctx = _drive_one_request(kv_manager)
 
@@ -125,4 +125,5 @@ async def test_ahash64_default_produces_int_hashes() -> None:
 
     assert len(hashes) >= 1
     for h in hashes:
-        assert isinstance(h, int)
+        assert isinstance(h, bytes)
+        assert len(h) == 8

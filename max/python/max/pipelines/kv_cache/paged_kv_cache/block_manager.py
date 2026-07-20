@@ -234,9 +234,9 @@ class BlockManager:
         # onto parent_seq_hash (None = root). Ordering and parentage are
         # preserved so connectors that chain sequences (dKV) can reconstruct the
         # prefix; hash-keyed connectors (host/disk) ignore the parent.
-        self._pending_offloads: list[
-            list[tuple[int | bytes | None, list[int] | list[bytes]]]
-        ] = [[] for _ in range(self.num_replicas)]
+        self._pending_offloads: list[list[tuple[bytes | None, list[bytes]]]] = [
+            [] for _ in range(self.num_replicas)
+        ]
 
         # One pool of device blocks per replica.
         self.device_block_pools: list[BlockPool] = [
@@ -263,9 +263,7 @@ class BlockManager:
         # Mapping from request ID to kv block hashes.
         # This is to avoid recomputing the block hashes for each call of
         # `get_computed_blocks` or `allocate_slots`.
-        self.req_to_hashes: dict[RequestID, list[int] | list[bytes]] = (
-            defaultdict(list)
-        )
+        self.req_to_hashes: dict[RequestID, list[bytes]] = defaultdict(list)
 
         # Mapping from request ID to committed index (number of tokens
         # committed into the prefix cache). This replaces reliance on
@@ -328,14 +326,14 @@ class BlockManager:
         """Computes the block hashes for the request."""
         hashes = self.req_to_hashes[ctx.request_id]
         new_hashes = self.compute_block_hashes(ctx, hashes)
-        hashes.extend(new_hashes)  # type: ignore[arg-type]
+        hashes.extend(new_hashes)
 
     @traced
     def compute_block_hashes(
         self,
         ctx: TextContext,
-        existing_hashes: Sequence[int] | Sequence[bytes],
-    ) -> list[int] | list[bytes]:
+        existing_hashes: Sequence[bytes],
+    ) -> list[bytes]:
         """Computes block hashes for the request beyond ``existing_hashes``.
 
         Unlike :meth:`compute_hashes_for_request`, this reads and writes no
@@ -362,7 +360,7 @@ class BlockManager:
         if num_unhashed_tokens < self.block_size:
             return []
 
-        parent_hash_value: int | bytes | None = None
+        parent_hash_value: bytes | None = None
         if len(existing_hashes) > 0:
             parent_hash_value = existing_hashes[-1]
 
@@ -490,7 +488,7 @@ class BlockManager:
     @traced
     def _count_full_blocks_from_prefix_cache(
         self,
-        desired_hashes: Sequence[int | bytes],
+        desired_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> int:
         """Returns the count of device blocks with the desired hashes.
@@ -526,7 +524,7 @@ class BlockManager:
         return device_prefix_cache_hit_count
 
     def _find_block_in_any_replica(
-        self, block_hash: int | bytes, preferred_replica: int
+        self, block_hash: bytes, preferred_replica: int
     ) -> tuple[int, KVCacheBlock | None]:
         """Finds a committed block for ``block_hash`` on any replica.
 
@@ -551,7 +549,7 @@ class BlockManager:
     @traced
     def _get_full_blocks_from_device_prefix_cache(
         self,
-        desired_hashes: Sequence[int | bytes],
+        desired_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> list[KVCacheBlock]:
         """Returns device blocks on ``replica_idx`` with the desired hashes.
@@ -635,7 +633,7 @@ class BlockManager:
     @traced
     def _get_full_blocks_from_host_prefix_cache(
         self,
-        desired_hashes: Sequence[int | bytes],
+        desired_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> list[KVCacheBlock]:
         """Returns a list of device blocks with the desired hashes.
@@ -707,7 +705,7 @@ class BlockManager:
 
     @traced
     def count_cached_prefix_blocks(
-        self, block_hashes: Sequence[int] | Sequence[bytes]
+        self, block_hashes: Sequence[bytes]
     ) -> PrefixCacheHits:
         """Counts contiguous leading blocks resident in this replica's caches.
 

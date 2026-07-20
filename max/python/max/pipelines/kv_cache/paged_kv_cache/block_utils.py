@@ -33,7 +33,7 @@ class InsufficientBlocksError(Exception):
     """Exception raised when there are insufficient free blocks to satisfy an allocation."""
 
 
-DEFAULT_PARENT_HASH = 0
+DEFAULT_PARENT_HASH: bytes = b"\x00" * 8
 _ZERO_SEED: bytes = b"\x00" * 32
 """The zero seed for the SHA-256 algorithm.
 Deterministic behaviour across restarts for benchmarking.
@@ -74,34 +74,34 @@ def _truncate_to_signed64(digest: bytes) -> int:
     return n
 
 
-# ahash64 overload returning ints
+# ahash64 overload returning bytes
 @overload
 def hash_request_tokens(
     token_ids: npt.NDArray[np.integer[Any]],
     block_size: int,
-    parent_hash: int | None = ...,
+    parent_hash: bytes | None = ...,
     prefix_length: int = ...,
     token_hash_overrides: list[TokenHashOverride] | None = ...,
     *,
     algo: Literal["ahash64"] = ...,
     seed: bytes | None = ...,
     salt: str | None = ...,
-) -> list[int]: ...
+) -> list[bytes]: ...
 
 
-# sha256_64 overload returning ints
+# sha256_64 overload returning bytes
 @overload
 def hash_request_tokens(
     token_ids: npt.NDArray[np.integer[Any]],
     block_size: int,
-    parent_hash: int | bytes | None = ...,
+    parent_hash: bytes | None = ...,
     prefix_length: int = ...,
     token_hash_overrides: list[TokenHashOverride] | None = ...,
     *,
     algo: Literal["sha256_64"],
     seed: bytes | None = ...,
     salt: str | None = ...,
-) -> list[int]: ...
+) -> list[bytes]: ...
 
 
 # sha256 overload returning bytes
@@ -109,7 +109,7 @@ def hash_request_tokens(
 def hash_request_tokens(
     token_ids: npt.NDArray[np.integer[Any]],
     block_size: int,
-    parent_hash: int | bytes | None = ...,
+    parent_hash: bytes | None = ...,
     prefix_length: int = ...,
     token_hash_overrides: list[TokenHashOverride] | None = ...,
     *,
@@ -123,28 +123,28 @@ def hash_request_tokens(
 def hash_request_tokens(
     token_ids: npt.NDArray[np.integer[Any]],
     block_size: int,
-    parent_hash: int | bytes | None = ...,
+    parent_hash: bytes | None = ...,
     prefix_length: int = ...,
     token_hash_overrides: list[TokenHashOverride] | None = ...,
     *,
     algo: KVHashAlgo,
     seed: bytes | None = ...,
     salt: str | None = ...,
-) -> list[int] | list[bytes]: ...
+) -> list[bytes]: ...
 
 
 @traced
 def hash_request_tokens(
     token_ids: npt.NDArray[np.integer[Any]],
     block_size: int,
-    parent_hash: int | bytes | None = None,
+    parent_hash: bytes | None = None,
     prefix_length: int = -1,
     token_hash_overrides: list[TokenHashOverride] | None = None,
     *,
     algo: KVHashAlgo = "ahash64",
     seed: bytes | None = None,
     salt: str | None = None,
-) -> list[int] | list[bytes] | None:
+) -> list[bytes] | None:
     """Hash the tokens of a request using the Mojo implementation.
 
     Token hash overrides let callers replace one placeholder token per media
@@ -182,13 +182,12 @@ def hash_request_tokens(
             token_to_reset[idx] = token_ids[idx]
             token_ids[idx] = token_hash
 
-        hash_vals: list[int] | list[bytes]
+        hash_vals: list[bytes]
         if algo == "ahash64":
-            ph_int = DEFAULT_PARENT_HASH if parent_hash is None else parent_hash
-            assert isinstance(ph_int, int), (
-                f"ahash64 algo requires int parent_hash, got{type(parent_hash)}"
+            ph_bytes_ahash = (
+                DEFAULT_PARENT_HASH if parent_hash is None else parent_hash
             )
-            hash_vals = block_hasher(token_ids, block_size, ph_int)
+            hash_vals = block_hasher(token_ids, block_size, ph_bytes_ahash)
 
         elif algo in ("sha256", "sha256_64"):
             if parent_hash is None:
@@ -212,7 +211,7 @@ def hash_request_tokens(
             if algo == "sha256":
                 hash_vals = full_digests
             else:
-                hash_vals = [_truncate_to_signed64(d) for d in full_digests]
+                hash_vals = [d[:8] for d in full_digests]
         else:
             raise ValueError(f"unknown algo={algo}")
 
@@ -234,7 +233,7 @@ class KVCacheBlock:
     ref_cnt: int = 0
     # The hash of the block composed of (block hash, tuple of token IDs).
     # It is only available when the block is full.
-    block_hash: int | bytes | None = None
+    block_hash: bytes | None = None
     # Whether the block is the null block.
     is_null: bool = False
 

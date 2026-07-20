@@ -22,35 +22,29 @@ from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 
 
-def to_block_hash_bytes(h: int | bytes) -> bytes:
-    """Coerces a block hash to the canonical bytes form for connector calls.
+def to_block_hash_bytes(h: bytes) -> bytes:
+    """Validates a block hash is in the canonical bytes form for connector calls.
 
-    Block hashes flow through the prefix-caching layer as ``int | bytes``
-    because each algo defines its own natural Python type at hash production
-    (ahash64-family produces ``int``, SHA-256 produces ``bytes``). Below the
-    ``KVConnector`` boundary every connector sees a single type. This shim
-    is the only int->bytes coercion site and lives next to the Protocol it
-    serves.
+    Block hashes flow through the prefix-caching layer as ``bytes`` in their
+    canonical encoding: 8 big-endian signed bytes for ahash64-family algos
+    (including ``sha256_64``), 32 bytes for full SHA-256 digests. This shim is
+    a defensive validator at the ``KVConnector`` boundary and lives next to the
+    Protocol it serves.
 
     Args:
-        h: A block hash. ``int`` is encoded as 8 big-endian signed bytes,
-            which covers the negative range produced by the ``sha256_64``
-            truncation path. ``bytes`` must already be in canonical 8- or
-            32-byte form and is returned unchanged.
+        h: A block hash in canonical 8- or 32-byte form.
 
     Returns:
-        The 8-byte (ahash64-family) or 32-byte (SHA-256) canonical encoding.
+        The validated block hash, returned unchanged.
 
     Raises:
-        ValueError: If ``h`` is ``bytes`` with a length other than 8 or 32.
+        ValueError: If ``h`` has a length other than 8 or 32.
     """
-    if isinstance(h, bytes):
-        if len(h) not in (8, 32):
-            raise ValueError(
-                f"block hash bytes must be length 8 or 32, got {len(h)}"
-            )
-        return h
-    return h.to_bytes(8, "big", signed=True)
+    if len(h) not in (8, 32):
+        raise ValueError(
+            f"block hash bytes must be length 8 or 32, got {len(h)}"
+        )
+    return h
 
 
 @runtime_checkable
@@ -65,9 +59,9 @@ class KVConnector(Protocol):
     8 big-endian bytes for ahash64-family algos (including ``sha256_64``),
     32 bytes for full SHA-256 digests. ``parent_seq_hash`` is ``None`` to
     denote the root of the chain; otherwise it is in the same bytes form
-    as each element of ``block_hashes``. The ``BlockManager`` is
-    responsible for any int->bytes coercion (see ``to_block_hash_bytes``);
-    connectors never see Python ``int`` hashes.
+    as each element of ``block_hashes``. Hashes are already ``bytes`` at
+    production; ``to_block_hash_bytes`` validates the canonical form at this
+    boundary.
 
     Required call ordering per inference step:
       1. connector.load()            # post loads on the main stream

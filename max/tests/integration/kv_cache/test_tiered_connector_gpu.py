@@ -35,15 +35,17 @@ from max.nn.kv_cache import (
 )
 from max.nn.kv_cache.cache_params import KVCacheQuantizationConfig
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
-from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
     PagedKVCacheManager,
 )
 
+
 # Test-fixture helpers for the bytes-only connector boundary: tests pre-date
-# Option A and used int hashes directly; ``_b`` wraps a single int and ``_hs``
-# wraps a variadic sequence into the canonical 8-byte signed-BE encoding.
-_b = to_block_hash_bytes
+# the bytes-only migration and used int hashes directly; ``_b`` wraps a single
+# int and ``_hs`` wraps a variadic sequence into the canonical 8-byte
+# signed-BE encoding.
+def _b(h: int) -> bytes:
+    return h.to_bytes(8, "big", signed=True)
 
 
 def _hs(*ns: int) -> list[bytes]:

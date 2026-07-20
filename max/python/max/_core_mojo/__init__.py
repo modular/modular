@@ -28,22 +28,28 @@ from .mojo_module import (  # type: ignore
 
 
 def block_hasher(
-    tokens: npt.NDArray[np.integer[Any]], block_size: int, parent_hash: int
-) -> list[int]:
+    tokens: npt.NDArray[np.integer[Any]],
+    block_size: int,
+    parent_hash: bytes = b"\x00" * 8,
+) -> list[bytes]:
     """Hash tokens into blocks for prefix caching.
 
     The token list is partitioned into blocks of size `block_size`. The tokens in
     each block are hashed together with the hash of the previous block.
 
     This calls into the `mojo_block_hasher` function defined in `mojo_module.mojo`.
+    The Mojo ABI (`mojo_block_hasher`) operates on signed 64-bit ints; this
+    wrapper decodes the 8-byte parent to a signed int and encodes the int
+    results back to the canonical 8-byte big-endian signed form.
 
     Args:
         tokens: A 1D numpy array of token IDs.
         block_size: The number of tokens per block. Must be greater than 0.
-        parent_hash: The hash value of the parent block.
+        parent_hash: The hash value of the parent block, as 8 big-endian
+            signed bytes.
 
     Returns:
-        A list of block hash values.
+        A list of block hash values, each 8 big-endian signed bytes.
     """
     if tokens.ndim != 1:
         raise ValueError(
@@ -53,10 +59,16 @@ def block_hasher(
         raise ValueError(
             f"block_size must be greater than 0, found {block_size}"
         )
+    if len(parent_hash) != 8:
+        raise ValueError(
+            f"parent_hash must be exactly 8 bytes, got {len(parent_hash)}"
+        )
+    ph_int = int.from_bytes(parent_hash, "big", signed=True)
     # Cast the array to int32 as that is what the mojo block hasher expects.
     if tokens.dtype != np.int32:
         tokens = tokens.astype(np.int32)
-    return mojo_block_hasher(tokens, block_size, parent_hash)
+    result = mojo_block_hasher(tokens, block_size, ph_int)
+    return [h.to_bytes(8, "big", signed=True) for h in result]
 
 
 def block_hasher_sha256(

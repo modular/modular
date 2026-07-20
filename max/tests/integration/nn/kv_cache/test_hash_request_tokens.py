@@ -32,7 +32,7 @@ def test_default_algo_matches_legacy() -> None:
     legacy = hash_request_tokens(tokens, 128)
     explicit = hash_request_tokens(tokens, 128, algo="ahash64")
     assert legacy == explicit
-    assert all(isinstance(h, int) for h in legacy)
+    assert all(isinstance(h, bytes) and len(h) == 8 for h in legacy)
 
 
 def test_ahash64_rejects_seed_or_salt() -> None:
@@ -147,18 +147,24 @@ def test_sha256_no_salt_no_seed_is_deterministic() -> None:
 # --- sha256_64 truncated path ---------------------------------------------
 
 
-def test_sha256_64_returns_int() -> None:
+def test_sha256_64_returns_bytes() -> None:
     tokens = np.arange(640, dtype=np.int32)
     out = hash_request_tokens(tokens, 128, algo="sha256_64")
-    assert all(isinstance(h, int) for h in out)
+    assert all(isinstance(h, bytes) and len(h) == 8 for h in out)
 
 
 def test_sha256_64_truncates_full_sha256() -> None:
-    """sha256_64[i] must equal _truncate_to_signed64(sha256_full[i])."""
+    """sha256_64[i] must equal the first 8 bytes of sha256_full[i]."""
     tokens = np.arange(640, dtype=np.int32)
     full = cast(list[bytes], hash_request_tokens(tokens, 128, algo="sha256"))
-    short = cast(list[int], hash_request_tokens(tokens, 128, algo="sha256_64"))
-    assert short == [_truncate_to_signed64(d) for d in full]
+    short = cast(
+        list[bytes], hash_request_tokens(tokens, 128, algo="sha256_64")
+    )
+    assert short == [d[:8] for d in full]
+    # Equivalent to the legacy int truncation, now expressed as bytes.
+    assert short == [
+        _truncate_to_signed64(d).to_bytes(8, "big", signed=True) for d in full
+    ]
 
 
 def test_sha256_64_uses_full_chain_internally() -> None:
@@ -173,9 +179,11 @@ def test_sha256_64_uses_full_chain_internally() -> None:
     """
     tokens = np.arange(640 * 4, dtype=np.int32)
     full = cast(list[bytes], hash_request_tokens(tokens, 128, algo="sha256"))
-    short = cast(list[int], hash_request_tokens(tokens, 128, algo="sha256_64"))
+    short = cast(
+        list[bytes], hash_request_tokens(tokens, 128, algo="sha256_64")
+    )
     for f, s in zip(full, short, strict=False):
-        assert s == _truncate_to_signed64(f)
+        assert s == f[:8]
 
 
 # --- helpers ---------------------------------------------------------------
