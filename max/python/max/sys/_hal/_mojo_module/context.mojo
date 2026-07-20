@@ -187,7 +187,7 @@ struct Context(Movable, Writable):
         )
 
     @staticmethod
-    def copy_to_device_sync(
+    def copy_to_device(
         py_self: PythonObject,
         dst_obj: PythonObject,
         src_addr_obj: PythonObject,
@@ -197,10 +197,10 @@ struct Context(Movable, Writable):
         var src_ptr = UnsafePointer[UInt8, ImmutAnyOrigin](
             unsafe_from_address=Int(py=src_addr_obj)
         )
-        self_ptr[]._arc[].copy_to_device_sync(dst_view[]._hal, src_ptr)
+        self_ptr[]._arc[].copy_to_device(dst_view[]._hal, src_ptr)
 
     @staticmethod
-    def copy_from_device_sync(
+    def copy_from_device(
         py_self: PythonObject,
         dst_addr_obj: PythonObject,
         src_obj: PythonObject,
@@ -210,10 +210,10 @@ struct Context(Movable, Writable):
         var dst_ptr = UnsafePointer[UInt8, MutAnyOrigin](
             unsafe_from_address=Int(py=dst_addr_obj)
         )
-        self_ptr[]._arc[].copy_from_device_sync(dst_ptr, src_view[]._hal)
+        self_ptr[]._arc[].copy_from_device(dst_ptr, src_view[]._hal)
 
     @staticmethod
-    def copy_intra_device_sync(
+    def copy_intra_device(
         py_self: PythonObject,
         dst_obj: PythonObject,
         src_obj: PythonObject,
@@ -221,24 +221,20 @@ struct Context(Movable, Writable):
         var self_ptr = Self._self_ptr(py_self)
         var dst_view = dst_obj.downcast_value_ptr[BufferView]()
         var src_view = src_obj.downcast_value_ptr[BufferView]()
-        self_ptr[]._arc[].copy_intra_device_sync(
-            dst_view[]._hal, src_view[]._hal
-        )
+        self_ptr[]._arc[].copy_intra_device(dst_view[]._hal, src_view[]._hal)
 
     @staticmethod
-    def set_memory_sync(
+    def set_memory(
         py_self: PythonObject,
         dst_obj: PythonObject,
         value_obj: PythonObject,
     ) raises:
         var self_ptr = Self._self_ptr(py_self)
         var dst_view = dst_obj.downcast_value_ptr[BufferView]()
-        self_ptr[]._arc[].set_memory_sync(
-            dst_view[]._hal, UInt8(Int(py=value_obj))
-        )
+        self_ptr[]._arc[].set_memory(dst_view[]._hal, UInt8(Int(py=value_obj)))
 
     @staticmethod
-    def fill_sync(
+    def fill(
         py_self: PythonObject,
         dst_obj: PythonObject,
         value_obj: PythonObject,
@@ -246,7 +242,7 @@ struct Context(Movable, Writable):
     ) raises:
         var self_ptr = Self._self_ptr(py_self)
         var dst_view = dst_obj.downcast_value_ptr[BufferView]()
-        self_ptr[]._arc[].fill_sync(
+        self_ptr[]._arc[].fill(
             dst_view[]._hal,
             UInt64(Int(py=value_obj)),
             UInt64(Int(py=value_size_obj)),

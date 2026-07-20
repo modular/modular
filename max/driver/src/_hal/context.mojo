@@ -168,7 +168,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     # Synchronous copies
     # ===-------------------------------------------------------------------===#
 
-    def copy_to_device_sync(
+    def copy_to_device(
         self,
         dst: BufferView,
         src: UnsafePointer[mut=False, UInt8, _],
@@ -177,7 +177,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         until complete."""
         self._raw[].copy_to_device_sync(self._handle, dst._view, src)
 
-    def copy_from_device_sync(
+    def copy_from_device(
         self,
         dst: UnsafePointer[mut=True, UInt8, _],
         src: BufferView,
@@ -186,7 +186,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         until complete."""
         self._raw[].copy_from_device_sync(self._handle, dst, src._view)
 
-    def copy_intra_device_sync(
+    def copy_intra_device(
         self,
         dst: BufferView,
         src: BufferView,
@@ -195,15 +195,15 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         complete."""
         debug_assert(
             src.byte_size() >= dst.byte_size(),
-            "copy_intra_device_sync source view smaller than destination",
+            "copy_intra_device source view smaller than destination",
         )
         self._raw[].copy_intra_device_sync(self._handle, dst._view, src._view)
 
-    def set_memory_sync(self, dst: BufferView, value: UInt8) raises HALError:
+    def set_memory(self, dst: BufferView, value: UInt8) raises HALError:
         """Sets every byte of `dst` to `value`, blocking until complete."""
         self._raw[].set_memory_sync(self._handle, dst._view, value)
 
-    def fill_sync(
+    def fill(
         self, dst: BufferView, value: UInt64, value_size: UInt64
     ) raises HALError:
         """Fills `dst` with a repeated `value_size`-byte `value`, blocking until

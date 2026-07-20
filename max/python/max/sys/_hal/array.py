@@ -270,7 +270,7 @@ class Array:
         dtype = DType.from_numpy(host.dtype)
         arr = cls.empty(context, dtype, host.shape)
         if host.nbytes:
-            context.copy_to_device_sync(arr._buffer.view(), host.ctypes.data)
+            context.copy_to_device(arr._buffer.view(), host.ctypes.data)
 
         return arr
 
@@ -376,7 +376,7 @@ class Array:
             host = np.memmap(
                 path, dtype=np.uint8, mode="r", offset=offset, shape=(nbytes,)
             )
-            context.copy_to_device_sync(arr._buffer.view(), host.ctypes.data)
+            context.copy_to_device(arr._buffer.view(), host.ctypes.data)
         return arr
 
     @classmethod
@@ -649,7 +649,7 @@ class Array:
                     view = self._buffer.view(
                         byte_offset=src_byte, byte_size=run_bytes
                     )
-                    self._context.set_memory_sync(view, 0)
+                    self._context.set_memory(view, 0)
         else:
             raw = np.array(value, dtype=self._dtype.to_numpy()).tobytes()
             packed, value_size = int.from_bytes(raw, "little"), len(raw)
@@ -665,7 +665,7 @@ class Array:
                     view = self._buffer.view(
                         byte_offset=src_byte, byte_size=run_bytes
                     )
-                    self._context.fill_sync(view, packed, value_size)
+                    self._context.fill(view, packed, value_size)
 
     def _enqueue_fill(self, sink: Queue | Stream, value: float | int) -> None:
         """Enqueues a fill of every element with ``value`` onto ``sink`` (a
@@ -709,7 +709,7 @@ class Array:
         src_byte = source._byte_offset
         for dst_byte, run_bytes in dst._runs():
             if run_bytes:
-                context.copy_intra_device_sync(
+                context.copy_intra_device(
                     dst._buffer.view(byte_offset=dst_byte, byte_size=run_bytes),
                     source._buffer.view(
                         byte_offset=src_byte, byte_size=run_bytes
@@ -788,7 +788,7 @@ class Array:
         source = self if self.is_contiguous else self.contiguous()
         out = np.empty(self._shape, dtype=self._dtype.to_numpy())
         if out.nbytes:
-            source._context.copy_from_device_sync(
+            source._context.copy_from_device(
                 out.ctypes.data,
                 source._buffer.view(
                     byte_offset=source._byte_offset, byte_size=out.nbytes
@@ -903,7 +903,7 @@ class Array:
         dst_byte = 0
         for src_byte, run_bytes in self._runs():
             if run_bytes:
-                context.copy_intra_device_sync(
+                context.copy_intra_device(
                     dst._buffer.view(byte_offset=dst_byte, byte_size=run_bytes),
                     self._buffer.view(
                         byte_offset=src_byte, byte_size=run_bytes
