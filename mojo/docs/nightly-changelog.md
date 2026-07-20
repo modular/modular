@@ -10,11 +10,27 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Mojo supports an (internal only for now) feature known as *interior origins*,
+  which allows collections to protect from a common class of memory unsafety
+  problems. `List`, for example, now returns element references bound
+  to an *interior origin* of the list instead of the whole-list origin, so an
+  element reference is invalidated when the list is mutated (for example by
+  `append()` or `pop()`). Code that holds an element reference across such a
+  mutation is now correctly rejected by the lifetime checker instead of
+  silently dangling after a reallocation:
+
+  ```mojo
+  var list = [1, 2, 3]
+  ref elem = list[0]
+  list.append(4)  # may reallocate, invalidating `elem`
+  print(elem)     # error: use of invalidated interior reference
+  ```
+
 - Mojo now support type inference from literals initializer.
 
   ```mojo
   var x : List[_] = [1, 2, 3]
-  var x : List[_] = [1.0, 2.0, 3.0]
+  var x : List = [1.0, 2.0, 3.0]
   ```
 
 - Mojo now support `==` and `!=` for type equality check, and `_type_is_eq` is
@@ -149,18 +165,6 @@ This version is still a work in progress.
 
 - `imm` is now the preferred spelling for the `read` argument and
   closure-capture convention. `read` still works but will soon be deprecated.
-
-- A file can now import another identically named module or package, assuming
-  it is found first during import resolution (#4534):
-
-  ```mojo
-  # -------- #
-  # foo.mojo #
-  # -------- #
-  from foo import bar   # a package on the system
-
-  bar()
-  ```
 
 ## Language changes
 
@@ -360,6 +364,7 @@ This version is still a work in progress.
   ```
 
 ## Library stabilizations
+<!-- rumdl-disable MD013 -->
 
 - `trait ImplicitlyDeletable`
 - `trait Movable`
@@ -370,21 +375,66 @@ This version is still a work in progress.
   - `def __init__(out self)`
   - `def __init__(out self, *, capacity: Int)`
   - `def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):`
+  - `def __init__(out self, *, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable):`
   - `def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):`
+  - `def reserve(mut self, capacity: Int):`
+  - `def resize(mut self, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):`
+  - `def __getitem__[origin: Origin, //](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:`
+  - `def __init__(out self, *, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable):`
+  - `def __iadd__(mut self, var other: Self, /) where conforms_to(Self.T, Copyable):`
 
-  - ```def __getitem__[
-        origin: Origin, //
-      ](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:
-    ```
-
+- Bool
 - Span
+  - `def __init__(out self):`
+  - `def __init__(other: Span, out self: ImmSpan[other.T, other.origin]):`
+
+<!-- rumdl-enable MD013 -->
 
 ## Library changes
+
+- Various datatypes have adopted interior origins for increased memory safety,
+  including `List`, `Deque`, `Variant` and `String`. `String`'s view-returning
+  accessors (`as_bytes()`, `s[byte=...]`, `s[codepoint=...]`, and similar) now
+  return `StringSlice`/`Span` views bound to an interior origin of the string,
+  so such a view is invalidated when the string is mutated:
+
+  ```mojo
+  var s = String("hello world")
+  var view = s[byte=0:5]
+  s += "!"      # may reallocate, invalidating `view`
+  print(view)   # error: use of invalidated interior reference
+  ```
+
+- Added `Tuple.consume_elements`, which moves each element out of a tuple into a
+  caller-provided closure one at a time. Destructuring such as `a, b = t^`
+  copies each element, so it cannot take apart a tuple whose elements are
+  `Movable` but not `ImplicitlyCopyable`; `consume_elements` transfers ownership
+  instead, mirroring `VariadicPack.consume_elements`.
+
+  ```mojo
+  var t = ([1, 2, 3], [4, 5, 6])  # `List` is not `ImplicitlyCopyable`
+
+  @parameter
+  def handler[idx: Int](var elt: t.element_types[idx]):
+      print(len(elt))
+
+  t^.consume_elements[handler]()
+  ```
+
+- `InlineArray`'s second parameter is renamed from `size` to `length`.
+  `InlineArray.size` remains as a deprecated alias for `InlineArray.length`;
+  update any explicit `InlineArray[T, size=N]` to `InlineArray[T, length=N]`,
+  and `.size` reads to `.length`.
 
 - `List.capacity` is now a `capacity()` method instead of a public field. This
   keeps the allocated capacity out of the stable public field surface, since it
   should only change indirectly through operations like `append()`. Replace
   `my_list.capacity` with `my_list.capacity()`.
+
+- Renamed `StaticConstantOrigin` to `ImmStaticOrigin`, to align with the
+  `Imm`-prefixed spelling used for the other immutable origins. The old name
+  is still available as a deprecated alias and will be removed in a future
+  release.
 
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
@@ -405,6 +455,10 @@ This version is still a work in progress.
   displaced = d.insert(1, 20)      # the displaced (1, 10) entry
   ```
 
+- `Dict.fromkeys(keys, value)` has been generalized from taking a `List` to
+  accepting any iterable of keys. Both forms require the key and
+  value types to be `ImplicitlyDeletable`.
+
 - By-reference `Dict` iteration (`for entry in dict`, `keys()`, `values()`,
   `items()`, and `reversed()`) no longer requires the key and value types to be
   `ImplicitlyDeletable`. These iterators only borrow references and never
@@ -412,6 +466,8 @@ This version is still a work in progress.
   `ImplicitlyDeletable`. Consuming iteration (`for entry in dict^` and
   `take_items()`) still requires `ImplicitlyDeletable`, since it drops the
   entries it does not yield.
+
+- `Span` has moved from `std.memory.span` to `std.collections.span`.
 
 - The container backing variadic `**kwargs` has been renamed from
   `OwnedKwargsDict` to `StringDict`. `StringDict` no longer
@@ -550,7 +606,7 @@ This version is still a work in progress.
   conforming only when their element type does. This lets a collection hold
   non-`ImplicitlyDeletable` elements at all (previously such a collection failed
   to compile); a collection of non-deletable elements is itself linear and must
-  be drained explicitly with the new `destroy_with()` method, which calls a
+  be drained explicitly with the new `deinit_with()` method, which calls a
   closure on each element:
 
   ```mojo
@@ -584,7 +640,7 @@ This version is still a work in progress.
       `setdefault`, `fromkeys`, `update`, `__or__`, `__ior__`, `pop`, `clear`)
       still require the `K` key and `V` value types to be `ImplicitlyDeletable`,
       so a `Dict` with non-`ImplicitlyDeletable` keys or values can currently be
-      constructed and torn down with `destroy_with()` but not populated or
+      constructed and torn down with `deinit_with()` but not populated or
       mutated. For deletable key/value types (the common case) this is
       transparent.
     - Consuming iteration (`for entry in dict^`) is likewise conditional,
@@ -592,7 +648,7 @@ This version is still a work in progress.
   - `LinkedList[ElementType]`
     - Unlike `Dict`, a `LinkedList` with non-`ImplicitlyDeletable` elements can
       be populated (`append`, `prepend`, `insert`, `extend`) and then torn down
-      with `destroy_with()`.
+      with `deinit_with()`.
     - Only `clear` still requires `ElementType` to be `ImplicitlyDeletable`. For
       deletable element types (the common case) this is transparent.
     - `LinkedList.insert()` no longer raises on an out-of-range index; like
@@ -600,6 +656,14 @@ This version is still a work in progress.
     - Consuming iteration (`for x in list^`, the `IterableOwned` conformance)
       is likewise conditional, requiring `ElementType` to be
       `ImplicitlyDeletable`.
+  - `Tuple[*element_types]`
+    - A tuple is now `ImplicitlyDeletable` only when every element type is. A
+      tuple with a non-`ImplicitlyDeletable` element is linear and must be torn
+      down with the new `deinit_with()` method (or fully consumed with
+      `consume_elements()`). For deletable element types (the common case) this
+      is transparent. Generic code that stores a `Tuple[*Ts]` with an unbounded
+      pack may need `& ImplicitlyDeletable` on the pack bound to keep dropping
+      the tuple implicitly.
 
 - Is is now possible to iterate over owned elements in
   `List`, `Dict`, `InlineArray`, `LinkedList`, and `Set`

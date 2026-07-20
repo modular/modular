@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides fused query/key rotary position embedding (RoPE) kernels with integrated KV-cache writes."""
 
 from std.collections import OptionalReg
 from std.math import gcd
@@ -41,6 +42,24 @@ def rope_value[
     freq_dtype: DType,
     width: SIMDSize,
 ](val: SIMD[dtype, width], freq: SIMD[freq_dtype, width]) -> SIMD[dtype, width]:
+    """Applies a rotary position embedding transformation to a SIMD vector.
+
+    Deinterleaves the input into real and imaginary parts, multiplies them as
+    complex numbers against the frequency coefficients, and reinterleaves the
+    result back into the original dtype.
+
+    Parameters:
+        dtype: Element type of the input and output SIMD vector (inferred).
+        freq_dtype: Element type of the frequency coefficients (inferred).
+        width: Number of elements in the SIMD vector (inferred).
+
+    Args:
+        val: The input SIMD vector with interleaved real and imaginary parts.
+        freq: The frequency coefficients with interleaved real and imaginary parts.
+
+    Returns:
+        The RoPE-transformed SIMD vector in the original dtype.
+    """
     x_re, x_im = val.cast[freq_dtype]().deinterleave()
     f_re, f_im = freq.deinterleave()
     var r = ComplexSIMD(x_re, x_im) * ComplexSIMD(f_re, f_im)
@@ -52,11 +71,36 @@ def rope_value[
 # This function return the indices for the real and imaginary part.
 @always_inline
 def get_safetensors_idx(head_dim_idx: Int, head_size: Int) -> Tuple[Int, Int]:
+    """Returns the real and imaginary element indices for a safetensors layout.
+
+    Safetensors stores RoPE weights as all real components followed by all
+    imaginary components, so the imaginary index is offset by half the head
+    size.
+
+    Args:
+        head_dim_idx: The dimension index within the head.
+        head_size: The total size of the head dimension.
+
+    Returns:
+        A tuple of the real index and the imaginary index.
+    """
     return (head_dim_idx // 2, head_dim_idx // 2 + head_size // 2)
 
 
 @always_inline
 def get_identity_rope_coeff[width: Int, dtype: DType]() -> SIMD[dtype, width]:
+    """Returns a SIMD vector representing an identity RoPE coefficient.
+
+    Creates a SIMD vector with real parts set to 1 and imaginary parts set to
+    0, effectively making the RoPE transformation an identity operation.
+
+    Parameters:
+        width: Number of elements in the returned SIMD vector.
+        dtype: Element type of the returned SIMD vector.
+
+    Returns:
+        A SIMD vector of interleaved 1.0 real and 0.0 imaginary coefficients.
+    """
     # Creates a SIMD vector with real parts set to 1 and imaginary parts to
     # 0, effectively making the RoPE transformation an identity operation.
     return rebind[SIMD[dtype, width]](
@@ -84,6 +128,37 @@ def rope_q_proj[
     freq_val: SIMD[freq_dtype, width],
     head_size: Int,
 ):
+    """Applies RoPE to a query projection tile and stores the result.
+
+    Loads the query projection values at the given coordinate, applies the
+    rotary position embedding via `rope_value`, and writes the transformed
+    result to the output tile. Supports both interleaved and split (real and
+    imaginary stored separately) layouts, and optionally leaves a nope prefix
+    region unrotated.
+
+    Parameters:
+        dtype: Element type of the `q_proj` tile tensor (inferred).
+        freq_dtype: Element type of the `freq_val` frequency
+            coefficients (inferred).
+        rank: Rank of the index list and tile tensors (inferred).
+        width: Number of elements per SIMD vector (inferred).
+        output_dtype: Element type of the `output` tile tensor (inferred).
+        interleaved: Whether the RoPE weights use interleaved real and
+            imaginary layout.
+        has_nope_prefix: Whether a leading prefix of the head dimension is
+            left unrotated (defaults to `False`).
+        rope_dim: Number of trailing head dimensions that undergo RoPE when
+            `has_nope_prefix` is set (defaults to 0).
+        alignment: Memory alignment in bytes for tile loads and stores
+            (defaults to the natural alignment of `SIMD[dtype, width]`).
+
+    Args:
+        q_proj: The query projection tile tensor to read from.
+        output: The mutable output tile tensor to write the rotated result.
+        idx: The index list identifying the load and store coordinate.
+        freq_val: The RoPE frequency coefficients for this position.
+        head_size: The size of each attention head dimension.
+    """
     comptime assert q_proj.flat_rank == rank
     comptime assert output.flat_rank == rank
     var coord = Coord(idx)
@@ -158,6 +233,36 @@ def rope_k_cache[
     freq_val: SIMD[freq_dtype, width],
     head_size: Int,
 ):
+    """Applies RoPE to a key cache entry and stores the result back in the cache.
+
+    Loads the key cache values at the given batch, head, sequence, and
+    dimension indices, applies the rotary position embedding via
+    `rope_value`, and writes the transformed result back to the cache.
+    Supports both interleaved and split layouts, and optionally leaves a nope
+    prefix region unrotated.
+
+    Parameters:
+        freq_dtype: Element type of the `freq_val` frequency
+            coefficients (inferred).
+        cache_t: KV cache view type used to load and store key cache
+            entries (inferred).
+        width: Number of elements per SIMD vector (inferred).
+        interleaved: Whether the RoPE weights use interleaved real and
+            imaginary layout.
+        has_nope_prefix: Whether a leading prefix of the head dimension is
+            left unrotated (defaults to `False`).
+        rope_prefix_dim: Number of trailing head dimensions that undergo
+            RoPE when `has_nope_prefix` is set (defaults to 0).
+
+    Args:
+        k_cache: The KV cache key view to read from and write to.
+        b_idx: The batch index into the cache.
+        h_idx: The head index into the cache.
+        s_idx: The sequence position index into the cache.
+        d_idx: The head dimension index into the cache.
+        freq_val: The RoPE frequency coefficients for this position.
+        head_size: The size of each attention head dimension.
+    """
     comptime width_2 = width // 2
     comptime cache_type = cache_t.dtype
     # TODO: Remove this once FP8 KVCache is supported (KERN-2394).
@@ -213,6 +318,16 @@ def fused_qk_rope[
     context: DeviceContext,
 ) raises:
     """Applies RoPE to query and key tensors.
+
+    Parameters:
+        dtype: The element type of `q_proj`, `freqs_cis`, and
+            `output` (inferred).
+        collection_t: The KV cache collection type holding the key
+            cache (inferred).
+        cache_t: The KV cache type used to store and load key cache entries.
+        interleaved: Whether the RoPE weights use interleaved real and
+            imaginary layout.
+        target: The compilation target string for the kernel.
 
     Args:
         q_proj: Query projection tensor of shape [batch, seq_len, n_heads, head_dim].
@@ -353,6 +468,35 @@ def fused_qk_rope_ragged[
     head, leaving the first `unroped_dim` elements unchanged. This is required
     for DeepSeek models where only part of each head undergoes rotary
     transformation.
+
+    Parameters:
+        dtype: The element type of `q_proj` and `output` (inferred).
+        freq_dtype: The element type of `freqs_cis` (inferred).
+        collection_t: The KV cache collection type holding the key
+            cache (inferred).
+        cache_t: The KV cache type used to store and load key cache entries.
+        interleaved: Whether the RoPE weights use interleaved real and
+            imaginary layout.
+        target: The compilation target string for the kernel.
+        mrope_types: The coordinate element types for multimodal RoPE
+            sections (defaults to a single `CoordLike` type).
+        mrope_section: Optional section boundaries splitting the head
+            dimension into position-id groups for multimodal RoPE
+            (defaults to `None`).
+        PositionIdsLayoutType: The tensor layout of the `position_ids`
+            tensor (defaults to `RowMajorLayout`).
+
+    Args:
+        q_proj: Query projection tensor of shape [total_tokens, n_heads, head_dim].
+        input_row_offsets: Tensor of shape [batch + 1] marking where each
+            batch's tokens start and end.
+        kv_collection: The KV cache collection containing the key cache.
+        freqs_cis: Frequency tensor for RoPE of shape [max_seq_len, rope_dim].
+        position_ids: Optional position ids overriding cache-derived
+            positions, of shape [n_sections, total_tokens].
+        layer_idx: The layer index for accessing the correct cache.
+        output: Output tensor for Q with RoPE applied, same shape as `q_proj`.
+        context: Device context for GPU execution.
     """
     comptime assert q_proj.flat_rank == 3, "q_proj must be rank 3"
     comptime assert freqs_cis.flat_rank == 2, "freqs_cis must be rank 2"

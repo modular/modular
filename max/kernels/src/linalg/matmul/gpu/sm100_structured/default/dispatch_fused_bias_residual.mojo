@@ -68,6 +68,32 @@ def fused_bias_residual_matmul_dispatch_sm100[
     ],
     ctx: DeviceContext,
 ) raises:
+    """Dispatches a fused matmul plus bias/residual on SM100 (Blackwell) GPUs.
+
+    Selects between a native TMA-epilogue GEMM path for aligned GEMM-shaped
+    problems and a fallback that applies the bias/residual as a normal
+    elementwise store epilogue through the generic `matmul_dispatch_sm100`
+    dispatcher (covering GEMV, small-MN, and vendor paths).
+
+    Parameters:
+        c_type: Output element dtype of `c`.
+        a_type: Element dtype of `a`; must equal `b_type` and be bfloat16.
+        b_type: Element dtype of `b`; must equal `a_type` and be bfloat16.
+        transpose_b: Whether `b` is transposed.
+        pdl_level: Persistent kernel launch grid control level.
+        epilogue_is_1d: Treats `epilogue_tensor` as a 1D bias broadcast across rows.
+        has_epilogue_tensor: Indicates an epilogue tensor is supplied for the TMA path.
+
+    Args:
+        c: Rank-2 output tile tensor accumulating `a @ b` plus the residual.
+        a: Rank-2 left-hand side input tile tensor.
+        b: Rank-2 right-hand side input tile tensor.
+        epilogue_tensor: Row-major bias/residual tensor added into `c`.
+        ctx: Device context used to launch the selected kernel.
+
+    Raises:
+        On comptime assertion failures for rank, dtype, or dtype-pair mismatches.
+    """
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"

@@ -50,21 +50,15 @@ _MACOS_INCOMPATIBLE_TESTS = [
     )
 ]
 
-# CPU test that needs UCX Transfer Engine requires an NVIDIA GPU (for libcuda)
-# TODO(GEX-3817): upstream NIXL only ships a CUDA-flavor libplugin_UCX.so;
-# CPU-only machines (e.g. m7i) lack libcuda so the plugin cannot load.
-# Gate to NVIDIA until ucx_cpu plugin variant is shipped.
+# CPU test that needs UCX Transfer Engine requires an NVIDIA GPU (for libcuda).
+# The NIXL plugins reach the runfiles tree via the kv_cache dep's
+# :nixl_host_plugins data; the conftest resolves NIXL_PLUGIN_DIR through
+# max._core.
 modular_py_test(
     name = "test_di",
     srcs = [
         "conftest.py",
         "test_di.py",
-    ],
-    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
-    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
-    data = [
-        "@nixl_upstream//:libplugin_LIBFABRIC.so",
-        "@nixl_upstream//:libplugin_UCX.so",
     ],
     gpu_constraints = ["//:nvidia_gpu"],
     imports = ["."],
@@ -89,6 +83,7 @@ modular_py_test(
         "//max/python/max/serve:scheduler_result",
         "//max/python/max/serve/scheduler",
         "//max/python/max/serve/worker_interface",
+        "//max/tests/tests/nixl:nixl_plugin_env",
         requirement("numpy"),
     ],
 )

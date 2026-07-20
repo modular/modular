@@ -11,6 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Expert-parallelism (EP) communication kernels for MoE token dispatch and combine.
+
+Implements the token dispatch (scatter) and combine (gather) collectives used
+in Mixture-of-Experts inference across multiple GPUs, including FP8 and FP4
+quantization paths for bandwidth-limited transfers.
+"""
+
 from std.math import align_up, ceildiv
 from std.math.uutils import uceildiv, udivmod, ufloordiv, umod
 from std.os import abort
@@ -166,6 +173,14 @@ def block_prefix_sum[
 ](_val: Scalar[dtype]) -> Scalar[dtype]:
     """
     Performs a prefix sum (scan) operation across all threads in a block.
+
+    Parameters:
+        dtype: Element type of the values being scanned (inferred).
+        num_elements: Number of active threads in the block that contribute
+            values to the scan.
+
+    Args:
+        _val: The per-thread value to contribute to the inclusive prefix sum.
     """
     comptime n_elements_aligned = align_up(num_elements, WARP_SIZE)
     comptime n_warps = n_elements_aligned // WARP_SIZE
@@ -285,6 +300,16 @@ def ep_signal_completion[
 
 @always_inline
 def get_device_alignment() -> Int:
+    """Returns the natural SIMD alignment in bytes for the current GPU target.
+
+    Computes the alignment of a full `SIMD[DType.uint8, gpu_simd_width]` vector,
+    which is the minimum alignment that avoids split transactions on the target
+    device. Token format structs use this as the default `alignment` when the
+    caller does not supply an explicit value.
+
+    Returns:
+        The alignment in bytes of the native SIMD byte vector for the target GPU.
+    """
     comptime gpu_target = get_gpu_target()
     comptime gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
     comptime gpu_alignment = align_of[
@@ -295,6 +320,18 @@ def get_device_alignment() -> Int:
 
 
 trait TokenFormat(DevicePassable, ImplicitlyDeletable):
+    """Specifies the wire format for a single MoE token in EP dispatch/combine.
+
+    Implementors encode how a token's hidden-state vector is packed for
+    cross-GPU transfer (quantization, scale placement, alignment) and how the
+    received bytes are unpacked into the output tensor. The graph compiler
+    selects a concrete implementation based on the model's quantization config.
+
+    All size and alignment properties are compile-time constants so the
+    dispatch kernel can allocate receive buffers and issue vectorized copies
+    without runtime branching.
+    """
+
     comptime hid_dim: Int
     comptime top_k: Int
     comptime alignment: Int
@@ -439,6 +476,21 @@ struct BF16TokenFormat[
     _top_k: Int,
     _alignment: Int = 0,
 ](TokenFormat, TrivialRegisterPassable):
+    """Token format that transmits the full hidden state in BFloat16.
+
+    Packs `hid_dim` BF16 elements directly into the wire buffer without
+    quantization. Used when bandwidth headroom is sufficient or when the model
+    does not apply EP quantization.
+
+    Parameters:
+        output_layout: Layout of the output `TileTensor` that receives decoded
+            tokens.
+        _hid_dim: Hidden dimension (number of BF16 elements per token).
+        _top_k: Number of experts each token is routed to.
+        _alignment: Override for the byte alignment of the wire buffer; 0
+            selects `get_device_alignment()`.
+    """
+
     comptime hid_dim = Self._hid_dim
     comptime top_k = Self._top_k
     comptime alignment = Self._alignment or get_device_alignment()
@@ -553,6 +605,24 @@ struct BlockwiseFP8TokenFormat[
     _top_k: Int,
     _alignment: Int = 0,
 ](TokenFormat, TrivialRegisterPassable):
+    """Token format that quantizes the hidden state to FP8 with block-wise scales.
+
+    Each token is packed as FP8 quantized values followed by per-group scale
+    factors (one scale per 128 elements). Reduces wire bandwidth by
+    approximately 2x compared to `BF16TokenFormat` with minimal accuracy loss.
+
+    Parameters:
+        fp8_dtype: FP8 data type used for quantized values (e.g.
+            `DType.float8_e4m3fn`).
+        scales_dtype: Data type for the block-wise scale factors.
+        output_layout: Layout of the FP8 output `TileTensor`.
+        scales_layout: Layout of the scales output `TileTensor`.
+        _hid_dim: Hidden dimension; must be divisible by the group size (128).
+        _top_k: Number of experts each token is routed to.
+        _alignment: Override for the byte alignment of the wire buffer; 0
+            selects `get_device_alignment()`.
+    """
+
     comptime hid_dim = Self._hid_dim
     comptime top_k = Self._top_k
     comptime alignment = Self._alignment or get_device_alignment()
@@ -787,6 +857,24 @@ struct NVBlockScaledTokenFormat[
     _top_k: Int,
     _alignment: Int = 0,
 ](ImplicitlyCopyable, TokenFormat):
+    """Token format for NVIDIA block-scaled FP4/FP8 quantization.
+
+    Supports NVFP4 (`quant_dtype=uint8`, `scales_dtype=float8_e4m3fn`),
+    MXFP4 (`quant_dtype=uint8`, `scales_dtype=float8_e8m0fnu`), and MXFP8
+    (`quant_dtype=float8_e4m3fn`, `scales_dtype=float8_e8m0fnu`) wire formats.
+    Uses TMA-based copies for scale preshuffle into the output tensor.
+
+    Parameters:
+        quant_dtype: Quantized element dtype (e.g. `DType.uint8` for FP4).
+        scales_dtype: Scale factor dtype (FP8 variant).
+        output_layout: Layout of the quantized output `TileTensor`.
+        scales_offset_layout: Layout of the per-expert scale offset tensor.
+        _hid_dim: Hidden dimension; must be divisible by the group size.
+        _top_k: Number of experts each token is routed to.
+        _alignment: Override for the byte alignment of the wire buffer; 0
+            selects `get_device_alignment()`.
+    """
+
     comptime hid_dim = Self._hid_dim
     comptime top_k = Self._top_k
     comptime alignment = Self._alignment or get_device_alignment()
@@ -1308,6 +1396,28 @@ struct MXFP4TokenFormat[
     *,
     fuse_a_scale_preshuffle: Bool = False,
 ](TokenFormat, TrivialRegisterPassable):
+    """Token format for MX (microscaling) FP4 quantization.
+
+    Packs each token as FP4 values with block-wise MX scale factors (one
+    `float8_e8m0fnu` scale per `MXFP4_SF_VECTOR_SIZE` elements). Achieves the
+    highest compression ratio of all built-in token formats. Setting
+    `fuse_a_scale_preshuffle=True` folds the grouped-matmul scale preshuffle
+    into the dispatch-wait copy path (KS224 up-projection fusion).
+
+    Parameters:
+        fp4_dtype: FP4 element dtype (e.g. `DType.uint8` with nibble packing).
+        scales_dtype: MX scale dtype (`DType.float8_e8m0fnu`).
+        output_layout: Layout of the FP4 output `TileTensor`.
+        scales_layout: Layout of the scale output `TileTensor`.
+        _hid_dim: Hidden dimension; must be divisible by the group size
+            (`MXFP4_SF_VECTOR_SIZE`).
+        _top_k: Number of experts each token is routed to.
+        _alignment: Override for the byte alignment of the wire buffer; 0
+            selects `get_device_alignment()`.
+        fuse_a_scale_preshuffle: When `True`, fuses the per-expert scale
+            preshuffle into the tile copy for reduced memory traffic.
+    """
+
     comptime hid_dim = Self._hid_dim
     comptime top_k = Self._top_k
     comptime alignment = Self._alignment or get_device_alignment()
@@ -4068,6 +4178,19 @@ def fused_silu_kernel[
     host. This kernel will read the row offsets to determine the actual number of
     received tokens in the input tensor.
 
+    Parameters:
+        output_dtype: Element type of the `output_tensor` (e.g.
+            `DType.bfloat16`).
+        input_dtype: Element type of the `input_tensor`; its accumulation type
+            must be floating-point.
+        output_layout: Layout of the `output_tensor` `TileTensor`.
+        input_layout: Layout of the `input_tensor` `TileTensor`.
+        row_offsets_layout: Layout of the 1D `row_offsets` `TileTensor`.
+        num_threads: Number of threads per block; sets the
+            `MAX_THREADS_PER_BLOCK` launch metadata.
+        num_sms: Number of streaming multiprocessors (SMs) used to scatter
+            processing across thread blocks.
+
     Arguments:
         output_tensor: The output tensor to store the result.
         input_tensor: The input tensor to perform the SILU operation.
@@ -4155,6 +4278,25 @@ def fused_silu_fp8_kernel[
 
     Once the SILU operation is performed, the output tensor will be quantized to
     the FP8 format. The scales tensor will be stored in a transposed way.
+
+    Parameters:
+        fp8_dtype: FP8 element type of the quantized `output_tensor` (e.g.
+            `DType.float8_e4m3fn`).
+        scales_dtype: Element type of the block-wise scale factors stored in
+            `scales_tensor`.
+        input_dtype: Element type of the `input_tensor`; its accumulation type
+            must be floating-point.
+        output_layout: Layout of the FP8 `output_tensor` `TileTensor`.
+        scales_layout: Layout of the `scales_tensor` `TileTensor`; scales are
+            stored transposed (group index in dim 0, token index in dim 1).
+        input_layout: Layout of the `input_tensor` `TileTensor`.
+        offsets_layout: Layout of the 1D `row_offsets` `TileTensor`.
+        num_threads: Number of threads per block; sets the
+            `MAX_THREADS_PER_BLOCK` launch metadata.
+        num_sms: Number of streaming multiprocessors (SMs) used to scatter
+            processing across thread blocks.
+        group_size: Number of elements per quantization group; the output
+            dimension must be divisible by this (defaults to 128).
 
     Arguments:
         output_tensor: The output tensor to store the result.

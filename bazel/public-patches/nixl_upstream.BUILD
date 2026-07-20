@@ -372,17 +372,24 @@ cc_library(
 # Upstream's plugin loader (nixl_plugin_manager.cpp) looks for files named
 # `libplugin_<NAME>.so` where <NAME> matches the plugin id (UCX, LIBFABRIC).
 # Use cc_binary with linkshared so Bazel emits exactly those filenames.
+#
+# The GPU-flavored plugins live in per-vendor cuda/ and rocm/ subdirectories
+# (the slash in the target name is what creates the subdir): NIXL discovers
+# plugins by the fixed filename in a single NIXL_PLUGIN_DIR, and one universal
+# linux_x86_64 package serves both GPU vendors, so max._core points that var
+# at the subdir matching the host GPU vendor. The plugin sources are
+# GPU-vendor-agnostic; the flavor difference is which static UCX/libfabric
+# gets folded in.
 cc_binary(
-    name = "libplugin_UCX.so",
+    name = "cuda/libplugin_UCX.so",
     linkopts = [
         "-Wl,-z,undefs",
-        "-Wl,-rpath,$$ORIGIN/../../lib",
+        # Installed layout: <root>/lib/nixl/cuda/ → <root>/lib.
+        "-Wl,-rpath,$$ORIGIN/../../../lib",
     ],
     linkshared = True,
     linkstatic = True,
     target_compatible_with = _LINUX_X86,
-    # Default to the CUDA flavor. Multi-variant selection happens in the
-    # parent BUILD via additional libplugin_*.so targets if needed.
     deps = [":ucx_plugin_lib_cuda"],
 )
 
@@ -404,8 +411,58 @@ cc_binary(
     deps = [":ucx_plugin_lib_cpu"],
 )
 
+# ROCm flavor for AMD-GPU hosts: carries the rocm_copy/rocm_ipc transports
+# (libuct_rocm.a resolves against libhsa-runtime64.so.1 at load time). The
+# non-verbs flavor keeps the plugin loadable on hosts without rdma-core
+# (intranode transfers only); the rocm-verbs flavor below is preferred where
+# rdma-core is present.
 cc_binary(
-    name = "libplugin_LIBFABRIC.so",
+    name = "rocm/libplugin_UCX.so",
+    linkopts = [
+        "-Wl,-z,undefs",
+        # Installed layout: <root>/lib/nixl/rocm/ → <root>/lib.
+        "-Wl,-rpath,$$ORIGIN/../../../lib",
+    ],
+    linkshared = True,
+    linkstatic = True,
+    target_compatible_with = _LINUX_X86,
+    deps = [":ucx_plugin_lib_rocm"],
+)
+
+# ROCm + verbs flavor: a strict superset of the rocm flavor that adds the
+# uct_ib RDMA transports for internode transfers (UCX picks transports per
+# connection at runtime — same-node peers still use rocm_ipc/shm). The verbs
+# libs make libibverbs.so.1 and libmlx5.so.1 hard load-time dependencies, so
+# max._core selects this flavor only when those resolve (rdma-core present)
+# and otherwise falls back to the plain rocm flavor above.
+cc_binary(
+    name = "rocm-verbs/libplugin_UCX.so",
+    linkopts = [
+        "-Wl,-z,undefs",
+        # Installed layout: <root>/lib/nixl/rocm-verbs/ → <root>/lib.
+        "-Wl,-rpath,$$ORIGIN/../../../lib",
+    ],
+    linkshared = True,
+    linkstatic = True,
+    target_compatible_with = _LINUX_X86,
+    deps = [
+        ":ucx_plugin_lib_rocm_verbs",
+        # Link against a real libibverbs.so.1 so the plugin's ibv_* undefined
+        # symbols are recorded WITH version info (@IBVERBS_1.1 etc.). Left
+        # unversioned (via -z undefs alone), the dynamic linker binds them to
+        # the IBVERBS_1.0 compat definitions, whose struct ibv_device ABI
+        # differs — device names read as garbage and UCX silently enumerates
+        # zero RDMA devices. The DT_NEEDED this adds is the verbs flavor's
+        # intended hard dependency on rdma-core.
+        "@efa_libfabric_prebuilt//:libibverbs_import",
+    ],
+)
+
+# In cuda/ because it is the CUDA-flavor libfabric build (EFA is an
+# NVIDIA/AWS path; no ROCm libfabric exists) and it must sit in the same
+# directory as the cuda UCX plugin for NIXL's single-dir discovery.
+cc_binary(
+    name = "cuda/libplugin_LIBFABRIC.so",
     linkopts = [
         "-Wl,-z,undefs",
     ],
@@ -505,8 +562,10 @@ cc_library(
     name = "nixl_runtime",
     data = select({
         "@@//:linux_x86_64": [
-            ":libplugin_LIBFABRIC.so",
-            ":libplugin_UCX.so",
+            ":cuda/libplugin_LIBFABRIC.so",
+            ":cuda/libplugin_UCX.so",
+            ":rocm-verbs/libplugin_UCX.so",
+            ":rocm/libplugin_UCX.so",
         ],
         "//conditions:default": [],
     }),

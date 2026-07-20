@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Generates tensors filled with values drawn from a uniform distribution for CPU and GPU."""
 
 from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext

@@ -113,7 +113,7 @@ exclaim(g^) # transfer: g uninitialized
         <section class="panel">
           <h2>Origins on references</h2>
           <div class="body">
-<pre class="code">def first[T: Movable](ref xs: List[T]) -> ref[origin_of(xs)] T:
+<pre class="code">def first[T: Movable](ref xs: List[T]) -> ref[xs[0]] T:
     return xs[0]
 
 ref x = first(xs) # len(xs) known to be > 0</pre>

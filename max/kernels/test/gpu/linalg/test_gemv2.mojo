@@ -56,7 +56,7 @@ def test[
     M: Optional[Int],
     N: Optional[Int],
     K: Optional[Int],
-](ctx: DeviceContext, m: Int, n: Int, k: Int,) raises:
+](ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
     comptime assert Bool(N) and Bool(
         K
     ), "This test currently requires static N and K."

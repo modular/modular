@@ -400,7 +400,7 @@ class DebugConfig:
     @property
     def profiling_dynolog_enabled(self) -> bool:
         """
-        Whether the Dynolog IPC listener is active. Defaults to ``True``. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_DYNOLOG_ENABLED`` environment variable. Currently a no-op; takes effect once Dynolog integration is available.
+        Opt a daemon-mode process out of Dynolog registration. Only has an effect when the process is launched with ``KINETO_USE_DAEMON=1`` -- that env var is what turns on-demand capture on (libkineto keys its IPC client on it), registering the PID at device creation so ``dyno gputrace`` works with no other setup. This knob then defaults to ``True`` and is the off switch. Mirrored by ``MODULAR_MAX_DEBUG_PROFILING_DYNOLOG_ENABLED``.
         """
 
     @profiling_dynolog_enabled.setter
@@ -542,6 +542,36 @@ class InferenceSession:
         Returns:
             CompiledModels: The compiled artifact, ready to be initialized
             with weights via :meth:`_load_all`.
+        """
+
+    @overload
+    def read(
+        self, path: str | os.PathLike
+    ) -> max._core.mlrt.AsyncValue[CompiledModels]:
+        """
+        Reads a compiled-model artifact (``.mef``) from a file path.
+
+        Returns:
+            AsyncValue[CompiledModels]: already-resolved handle to the
+            artifact, ready to be initialized via :meth:`_load_all`.
+
+        Raises:
+            RuntimeError: if the file is missing or is not a valid MEF
+            for this engine build.
+        """
+
+    @overload
+    def read(self, data: bytes) -> max._core.mlrt.AsyncValue[CompiledModels]:
+        """
+        Reads a compiled-model artifact (``.mef``) from bytes.
+
+        Returns:
+            AsyncValue[CompiledModels]: already-resolved handle to the
+            artifact, ready to be initialized via :meth:`_load_all`.
+
+        Raises:
+            RuntimeError: if the bytes are not a valid MEF for this
+            engine build.
         """
 
     def set_debug_print_options(

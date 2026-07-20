@@ -34,7 +34,7 @@ from std.collections.string._grapheme_break_lookups import (
     _INCB_RANGE_VALUES,
 )
 from std.collections.string._utf8 import _is_utf8_continuation_byte
-from std.memory import Span
+from std.collections import Span
 
 
 # ===----------------------------------------------------------------------=== #

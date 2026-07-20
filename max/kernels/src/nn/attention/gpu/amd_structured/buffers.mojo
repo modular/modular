@@ -50,7 +50,7 @@ def _cast_f32_to_fp8_raw[
     """Cast N f32 → N fp8 without the compiler's clamp + NaN-scrub wrapper.
 
     Chunks into groups of 4 and calls `cvt_pk_fp8_f32_raw` per chunk.
-    Only safe when inputs are provably bounded and finite — used by the
+    Only safe when inputs are provably bounded and finite, used by the
     P→PV cast where softmax output is in (0, 1].
     """
     comptime assert (
@@ -83,6 +83,36 @@ struct QRegisterBuffer[
     thread_rows: Int,
     thread_cols: Int,
 ]:
+    """Holds the Q query tile in register memory for gfx950 attention MMAs.
+
+    Loads the per-warp `[WM, depth]` Q sub-tile from DRAM into a row-major
+    register TileTensor tiled into `BK`-wide strips, with partial-tile
+    zero padding when `depth` is not a multiple of `BK`. Exposes MMA-sized
+    sub-tiles via `mma_tile`, in-place scaling via `scale`, and zeroing via
+    `zero`.
+
+    Parameters:
+        dtype: Element dtype of the Q tile stored in the register
+            TileTensor.
+        mma_shape: MFMA instruction shape `[M, N, K]` used for the QK
+            MMA; sets the A-operand fragment size and M-direction MMA
+            count.
+        WM: Warp tile size along the M (query) dimension; each warp owns
+            a `[WM, depth]` sub-tile of Q.
+        WN: Warp tile size along the N dimension; used with `BN` to
+            compute warp coordinates via `get_warp_coords[BN, WN]`.
+        BN: N block dimension of the attention tile; used with `WN` to
+            compute the warp's row coordinate via `get_warp_coords`.
+        BK: K block dimension; Q is tiled into `BK`-wide strips in
+            register memory.
+        depth: Head dimension of the Q tile; the per-warp Q sub-tile
+            spans `[WM, depth]`.
+        thread_rows: Per-thread fragment rows for the `RegTileLoader`
+            col-major thread distribution.
+        thread_cols: Per-thread fragment columns for the
+            `RegTileLoader` col-major thread distribution.
+    """
+
     comptime reg_dtype = Self.dtype
     comptime mma_dtype = Self.dtype
     comptime MMA_M = Self.mma_shape[0]
@@ -126,6 +156,10 @@ struct QRegisterBuffer[
         distribution (matching get_warp_layout[mma_shape]), then tiles
         it into BK-wide strips stored in register memory.
 
+        Parameters:
+            q_tile_layout: Compile-time `TensorLayout` of the input `q_tile`
+                DRAM tile.
+
         Args:
             q_tile: The full Q tile as a DRAM TileTensor.
         """
@@ -134,7 +168,7 @@ struct QRegisterBuffer[
         )
         # Zero before DMA: the partial-tile case (depth % BK != 0) loads OOB
         # cols via buffer_load whose OOB-clamp-to-zero behavior is the
-        # only thing keeping the rope-tail fragment zero.  Defensive: explicit
+        # only thing keeping the rope-tail fragment zero. Defensive: explicit
         # zero matches the K SMEM zero-init via buffer_load and is cheap.
         _ = self.reg_tile.fill(0)
 
@@ -165,9 +199,9 @@ struct QRegisterBuffer[
         # Q partial-tile pad zero (AITER-style, mirrors K's
         # `zero_partial_tile_pad` in `kv_buffer.mojo`).
         #
-        # NOTE: keep in sync with `KVBuffer.zero_partial_tile_pad`.  Both
+        # NOTE: keep in sync with `KVBuffer.zero_partial_tile_pad`. Both
         # sites compute the same `valid_per_lane` / `zero_per_lane` split
-        # and share the upper-half-is-pad assumption (asserted below).  A
+        # and share the upper-half-is-pad assumption (asserted below). A
         # future config that violates that assumption (`valid_cols >
         # BK/2`) needs a different zero pattern in both sites.
         #
@@ -182,11 +216,11 @@ struct QRegisterBuffer[
         # gets stored row-major: fragment element [0..load_width) is
         # the lower-K vector and [load_width..2*load_width) is the
         # upper-K vector, with the two vectors offset by `BK/2`
-        # source-cols.  So every lane's upper-half fragment elements
+        # source-cols. So every lane's upper-half fragment elements
         # correspond to MFMA-K positions in [BK/2, BK), and for the
         # partial tile those positions land at global depth >=
         # `BK/2 + valid_cols` -- the pad portion -- when
-        # `valid_cols <= BK/2`.  Zero the upper portion per lane.
+        # `valid_cols <= BK/2`. Zero the upper portion per lane.
         #
         # NOTE: zeroing whole lanes >= some thread_col threshold is
         # WRONG — it also clears valid data in those lanes' lower half
@@ -199,7 +233,7 @@ struct QRegisterBuffer[
             )
             # The upper-half-is-pad layout assumption above only holds
             # when the valid portion fits into the lower-K half of each
-            # lane's fragment.  Today (depth=576, BK=128) `valid_cols`
+            # lane's fragment. Today (depth=576, BK=128) `valid_cols`
             # is exactly BK/2; a future config with `valid_cols > BK/2`
             # would need a different zero pattern.
             comptime assert _valid_cols_in_partial <= Self.BK // 2, (
@@ -232,7 +266,13 @@ struct QRegisterBuffer[
         MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
-        """Return MMA-sized sub-tile for the given tile and k indices."""
+        """Return MMA-sized sub-tile for the given tile and k indices.
+
+        Parameters:
+            tile_idx: Index of the `BK`-wide Q strip within the depth
+                dimension.
+            k_idx: Index of the MMA-K strip within the `BK`-wide strip.
+        """
         return rebind[
             TileTensor[
                 Self.dtype,
@@ -253,6 +293,14 @@ struct QRegisterBuffer[
         Casts bf16 -> f32, multiplies by scale_factor, casts back to bf16.
         Used for pre-scaling Q by (1/sqrt(d) * log2e) so that QK matmul
         produces already-scaled scores, eliminating scale from the hot loop.
+
+        Parameters:
+            accum_type: Accumulator dtype used for the intermediate multiply
+                before casting back to `dtype`.
+
+        Args:
+            scale_factor: Multiplicative factor applied to every Q element
+                in-place.
         """
         comptime for tile in range(Self.num_tiles):
             comptime for k in range(Self.num_k_tiles):
@@ -276,6 +324,25 @@ struct OutputRegisterBuffer[
     num_n_mmas: Int,
     output_frag_size: Int,
 ]:
+    """Holds the attention output accumulator tile in register memory.
+
+    Stores the `num_m_mmas * num_n_mmas` MMA output fragments as a row-major
+    register TileTensor and applies the softmax row-sum denominator via
+    `apply_softmax_denominator`. Initialized zero-filled via `__init__` and
+    resettable via `zero`.
+
+    Parameters:
+        dtype: Element dtype of the output accumulator tile stored in
+            the register TileTensor.
+        num_m_mmas: Number of MMA tiles along the M (query) dimension
+            of the output accumulator.
+        num_n_mmas: Number of MMA tiles along the N (key/value)
+            dimension of the output accumulator.
+        output_frag_size: Per-lane element width of one MMA output
+            fragment; the register tile is laid out as
+            `[num_n_mmas * num_m_mmas, output_frag_size]`.
+    """
+
     comptime reg_dtype = Self.dtype
 
     comptime _total_rows = Self.num_n_mmas * Self.num_m_mmas
@@ -335,6 +402,56 @@ struct PRegisterBuffer[
     # VALU ops per iteration in the FP8 MLA prefill hot path.
     raw_fp8_cast: Bool = False,
 ]:
+    """Holds the P attention-score tile across register and shared memory.
+
+    Stores the softmax P scores as a multi-stage register TileTensor
+    (accumulator dtype) and, when `shared_memory_backed`, mirrors them into a
+    `BM x BN` shared-memory region carved into `BM x BK` blocks. Provides
+    `mma_tile` to cast and interleave P fragments into the MMA-operand dtype
+    and layout, `copy_to_shared` to spill register tiles to SMEM, and
+    per-stage `zero` and `stage_tile` accessors.
+
+    Parameters:
+        accum_type_: Accumulator dtype used to store P scores in the
+            register TileTensor, `float32`.
+        dtype: MMA-operand dtype that P is cast to before the PV MMA;
+            the SMEM tile stores elements in this dtype.
+        BM: M block dimension of the P tile; each SMEM block is a
+            `[BM, BK]` row-major region.
+        BN: N block dimension of the P tile; the SMEM region is `BM x
+            BN` carved into `BN // BK` blocks.
+        BK: K block dimension of the P tile; each SMEM block is
+            `[BM, BK]`.
+        WM: Warp tile size along the M dimension; each warp owns a
+            `[WM, BK]` slice of a SMEM block.
+        WN: Warp tile size along the N dimension; used to compute
+            warp coordinates via `get_warp_coords[BN, WN]`.
+        num_m_mmas: Number of MMA tiles along the M dimension of the
+            P tile.
+        num_n_mmas: Number of MMA tiles along the N dimension of the
+            P tile.
+        output_frag_size: Per-lane element width of one MMA output
+            fragment in the register tile.
+        shared_memory_backed: When True, mirror P scores into a `BM x
+            BN` SMEM region and read PV operands from SMEM; when
+            False, keep P in registers only.
+        mma_shape: MFMA instruction shape `[M, N, K]` used for the PV
+            MMA.
+        tr_load_enabled: When True, use the tiled-register-load path
+            in `mma_tile` (cast and slice or join from the stage tile)
+            instead of the interleave path (defaults to False).
+        num_stages: Number of pipeline stages in the register tile;
+            the staging dimension is `num_stages * num_n_mmas *
+            num_m_mmas` (defaults to 1).
+        p_swizzle: Optional SMEM swizzle pattern used to spread P rows
+            across LDS banks in `copy_to_shared` and
+            `get_mma_tile_shared` (defaults to None).
+        raw_fp8_cast: When True, use raw `v_cvt_pk_fp8_f32` without
+            the compiler's clamp + NaN-scrub wrapper for f32 to fp8
+            casts; only safe when inputs are bounded in (0, 1]
+            (defaults to False).
+    """
+
     comptime reg_dtype = Self.accum_type_
     comptime mma_dtype = Self.dtype
 
@@ -430,9 +547,9 @@ struct PRegisterBuffer[
             # C-output join (same as prefill's register path). With
             # warps_per_block=2, each P block is filled by 2 warps — warp
             # with n_mma_in_block=0 owns keys 0..31, warp with
-            # n_mma_in_block=1 owns keys 32..63.  copy_to_shared writes
+            # n_mma_in_block=1 owns keys 32..63. copy_to_shared writes
             # each warp's 32x32 MMA tile lane-contiguously (64 lanes x
-            # 16B).  Reader lane l's slots 0..15 come from warp0 lane l,
+            # 16B). Reader lane l's slots 0..15 come from warp0 lane l,
             # slots 16..31 from warp1 lane l — same lane_id across both
             # warps because C-output M=l%32 matches the B-operand K-slot.
             # So two ds_read_b128 + SIMD.join reconstruct the 32-fp8 fragment.
@@ -535,7 +652,12 @@ struct PRegisterBuffer[
 
     @always_inline
     def stage_tile[stage: Int = 0](self) -> Self.StageTileType:
-        """Return the TileTensor sub-tile for the given pipeline stage."""
+        """Return the TileTensor sub-tile for the given pipeline stage.
+
+        Parameters:
+            stage: Pipeline stage index into the register TileTensor
+                (defaults to 0).
+        """
         return rebind[Self.StageTileType](
             self.reg_tile.tile[Self._tiles_per_stage, Self.output_frag_size](
                 stage, 0
@@ -562,7 +684,14 @@ struct PRegisterBuffer[
         """TileTensor MMA operand with cast+interleave via SIMD whole-vector ops.
 
         Converts f32 accumulator rows to bf16 MMA fragments using SIMD cast,
-        interleave, and slice — no per-element [j] indexing needed.
+        interleave, and slice; no per-element [j] indexing needed.
+
+        Parameters:
+            tile_idx: Index of the P tile along the N dimension; selects
+                the SMEM block when `shared_memory_backed`.
+            k_idx: Index of the MMA-K strip within the tile.
+            stage: Pipeline stage index of the source register tile
+                (defaults to 0).
         """
         comptime if Self.shared_memory_backed:
             return self.get_mma_tile_shared[tile_idx, k_idx]()
@@ -632,7 +761,7 @@ struct PRegisterBuffer[
             elif Self.mma_shape[0] == 16:
                 # 16x16 MMA: cast two halves and join.
                 # reg_tile_split = stage[tile_idx * 2*num_m_mmas : ...], shape
-                # [2*num_m_mmas, output_frag_size].  Row m → first half,
+                # [2*num_m_mmas, output_frag_size]. Row m → first half,
                 # row m+num_m_mmas → second half.
                 comptime assert (
                     Self.output_frag_size == 4
@@ -705,7 +834,7 @@ struct PRegisterBuffer[
         `(m_mma, n_mma)` position of a `[WM, BK]` SMEM warp tile at
         `smem_base + byte_offset`.
 
-        Extracted from `copy_to_shared` — used by the non-swizzle paths
+        Extracted from `copy_to_shared`, used by the non-swizzle paths
         in both `WN < BK` and `WN >= BK` branches. Not a free function
         because it depends on half a dozen `Self.*` comptime params.
         """
@@ -796,11 +925,11 @@ struct PRegisterBuffer[
             1, Self.output_frag_size
         ]()
 
-        # MFMA 32x32x64 FP8: lane-contiguous SMEM layout.  Each lane
+        # MFMA 32x32x64 FP8: lane-contiguous SMEM layout. Each lane
         # packs its 16 fp32 C-output (cast to fp8 = 16 bytes) into ONE
-        # ds_write_b128.  Within each [BM, BK] P block, the two warps
+        # ds_write_b128. Within each [BM, BK] P block, the two warps
         # contributing (warps_per_block=2) write into disjoint 1024B
-        # regions.  Reader in get_mma_tile_shared pairs halves lane-by-
+        # regions. Reader in get_mma_tile_shared pairs halves lane-by-
         # lane — the MFMA C-output (M=l%32, N blocked) matches the MFMA
         # B-operand pattern the PV MMA needs, so no per-element
         # reordering is required.
@@ -876,7 +1005,7 @@ struct PRegisterBuffer[
             comptime if Self.p_swizzle:
                 # Match the reader's load_a granularity:
                 # `simd_w = num_matrix_reg(mma_m, mma_k)` elements per lane.
-                # Per row, 4 (= BK / simd_w) 32-element vecs.  Each vec is
+                # Per row, 4 (= BK / simd_w) 32-element vecs. Each vec is
                 # owned by ONE warp (`vec_idx = r * (BK/simd_w) +
                 # n_mma_in_block`) and filled by that warp's 4 lanes ×
                 # num_n_mmas fragments — lane offset within vec is

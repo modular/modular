@@ -170,6 +170,9 @@ struct EpiLoadPipeline[num_stages: Int]:
                 tma_load(c_tile, stage.mbar(), ...)
             # __exit__ advances producer stage
 
+        Parameters:
+            origin: Origin of the mutable borrow of `self` (inferred).
+
         Returns:
             Context that waits for consumer on enter, advances on exit.
         """
@@ -180,6 +183,9 @@ struct EpiLoadPipeline[num_stages: Int]:
         origin: MutOrigin, //
     ](ref[origin] self,) -> type_of(self.pipeline.acquire_producer()):
         """Acquire a producer stage handle.
+
+        Parameters:
+            origin: Origin of the mutable borrow of `self` (inferred).
 
         Returns:
             ProducerStage handle that must be released.
@@ -223,6 +229,9 @@ struct EpiLoadPipeline[num_stages: Int]:
                 # Use C tile for residual add
             # __exit__ signals consumption and advances
 
+        Parameters:
+            origin: Origin of the mutable borrow of `self` (inferred).
+
         Returns:
             Context that waits for producer on enter, signals+advances on exit.
         """
@@ -236,6 +245,9 @@ struct EpiLoadPipeline[num_stages: Int]:
 
         Use for lane-guarded signaling patterns.
 
+        Parameters:
+            origin: Origin of the mutable borrow of `self` (inferred).
+
         Returns:
             Context that waits on enter, advances only on exit.
         """
@@ -246,6 +258,9 @@ struct EpiLoadPipeline[num_stages: Int]:
         origin: MutOrigin, //
     ](ref[origin] self,) -> type_of(self.pipeline.acquire_consumer()):
         """Acquire a consumer stage handle.
+
+        Parameters:
+            origin: Origin of the mutable borrow of `self` (inferred).
 
         Returns:
             ConsumerStage handle that must be released.

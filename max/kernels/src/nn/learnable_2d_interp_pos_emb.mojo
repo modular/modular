@@ -194,6 +194,9 @@ def learnable_2d_interp_pos_emb[
     from (H, W) to (h, w), optionally adds temporal sincos embedding, and
     adds the result element-wise to ``x``.
 
+    Parameters:
+        dtype: Element type of ``x``, ``weight``, and ``output``.
+
     Args:
         output: (L, dim) output tensor.
         x: (L, dim) input patch embeddings.

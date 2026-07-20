@@ -47,9 +47,7 @@ struct _PythonGlobal(Defaultable, Movable):
         self.cpython.destroy()
 
 
-def _get_python_interface() raises -> (
-    UnsafePointer[CPython, StaticConstantOrigin]
-):
+def _get_python_interface() raises -> UnsafePointer[CPython, ImmStaticOrigin]:
     """Returns an immutable static pointer to the CPython global.
 
     The returned pointer is immutable to prevent invalid shared mutation of
@@ -60,7 +58,7 @@ def _get_python_interface() raises -> (
     var cpython_instance = (
         UnsafePointer(to=python[].cpython)
         .as_immutable()
-        .unsafe_origin_cast[StaticConstantOrigin]()
+        .unsafe_origin_cast[ImmStaticOrigin]()
     )
     return cpython_instance
 
@@ -68,7 +66,7 @@ def _get_python_interface() raises -> (
 struct Python(Defaultable, ImplicitlyCopyable):
     """Provides methods that help you use Python code in Mojo."""
 
-    var _impl: UnsafePointer[mut=False, CPython, StaticConstantOrigin]
+    var _impl: UnsafePointer[mut=False, CPython, ImmStaticOrigin]
     """The underlying implementation of Mojo's Python interface."""
 
     # ===-------------------------------------------------------------------===#
@@ -82,7 +80,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         except e:
             abort[prefix="ERROR:"](String(e))
 
-    def __init__(out self, ref[StaticConstantOrigin] cpython: CPython):
+    def __init__(out self, ref[ImmStaticOrigin] cpython: CPython):
         """Construct a `Python` instance from an existing reference
         to the lower-level singleton `CPython` instance.
 
@@ -91,10 +89,10 @@ struct Python(Defaultable, ImplicitlyCopyable):
         """
         self._impl = UnsafePointer[mut=False, CPython, MutAnyOrigin](
             to=cpython
-        ).unsafe_origin_cast[StaticConstantOrigin]()
+        ).unsafe_origin_cast[ImmStaticOrigin]()
 
     @always_inline
-    def cpython(self) -> ref[StaticConstantOrigin] CPython:
+    def cpython(self) -> ref[ImmStaticOrigin] CPython:
         """Handle to the low-level C API of the CPython interpreter present in
         the current process.
 

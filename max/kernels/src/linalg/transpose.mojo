@@ -349,6 +349,19 @@ def transpose_inplace[
     cols: Int,
     dtype: DType,
 ](buf: TileTensor[mut=True, dtype, ...]):
+    """Transposes a square `rows` x `cols` tile in place.
+
+    Dispatches to a specialized SIMD shuffle kernel for 4x4, 8x8, and 16x16
+    tiles, falling back to an element-swap loop for other sizes.
+
+    Parameters:
+        rows: Number of rows in the tile, equal to `cols`.
+        cols: Number of columns in the tile, equal to `rows`.
+        dtype: Element type of the tile.
+
+    Args:
+        buf: The mutable square tile to transpose in place.
+    """
     comptime assert buf.flat_rank == 2
     comptime assert rows == cols
     comptime assert rows == buf.static_shape[0]
@@ -709,6 +722,25 @@ def transpose_2d[
     offset: Int,
     ctx: Optional[DeviceContext] = None,
 ):
+    """Transposes the inner two dimensions of a simplified rank-2 tensor.
+
+    Selects a serial tiled implementation or a parallel tiled implementation
+    based on the problem size and available parallelism.
+
+    Parameters:
+        rank: Number of dimensions in the `simplified_input_shape` array
+            (inferred).
+        dtype: Element type of the `input` and `output` buffers (inferred).
+
+    Args:
+        output: The output buffer with the inner two dimensions swapped.
+        input: The input buffer.
+        perms: Permutation of the input axes.
+        simplified_input_shape: Shape of the tensor after simplification.
+        simplified_rank: Effective rank after simplification.
+        offset: Flat offset added to both input and output pointers.
+        ctx: The context to execute the work on.
+    """
     comptime if rank < 2:
         return
 
@@ -820,6 +852,24 @@ def transpose_4d_swap_middle[
     simplified_rank: Int,
     ctx: Optional[DeviceContext] = None,
 ):
+    """Transposes the middle two axes of a rank-4 tensor.
+
+    Maps an `LxMxNxK` input to an `LxNxMxK` output by swapping the `M` and `N`
+    axes while copying contiguous `K`-sized slices.
+
+    Parameters:
+        rank: Number of dimensions in the `simplified_input_shape` array
+            (inferred).
+        dtype: Element type of the `input` and `output` buffers (inferred).
+
+    Args:
+        output: The output buffer with the middle two axes swapped.
+        input: The input buffer.
+        perms: Permutation of the input axes.
+        simplified_input_shape: Shape of the tensor after simplification.
+        simplified_rank: Effective rank after simplification.
+        ctx: The context to execute the work on.
+    """
     comptime if rank < 4:
         return
     # The input tile is LxMxNxK, the output tile is LxNxMxK.
@@ -847,6 +897,23 @@ def transpose_3d_swap_outer[
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
+    """Transposes the outer two axes of a rank-3 tensor.
+
+    Maps an `MxNxK` input to an `NxMxK` output by delegating to the rank-4
+    middle-swap helper with an implicit outer dimension of size 1.
+
+    Parameters:
+        rank: Number of dimensions in the `simplified_input_shape` array
+            (inferred).
+        dtype: Element type of the `input` and `output` buffers (inferred).
+
+    Args:
+        output: The output buffer with the outer two axes swapped.
+        input: The input buffer.
+        perms: Permutation of the input axes.
+        simplified_input_shape: Shape of the tensor after simplification.
+        simplified_rank: Effective rank after simplification.
+    """
     comptime if rank < 3:
         return
     # The input tile is MxNxK, the output tile is NxMxK.
@@ -875,6 +942,24 @@ def transpose_3d_swap_inner[
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
+    """Transposes the inner two axes of a batched rank-3 tensor.
+
+    Iterates over the leading axis and applies the serial tiled 2D transpose
+    to each `MxN` slice, advancing the flat offset by the slice size each
+    iteration.
+
+    Parameters:
+        rank: Number of dimensions in the `simplified_input_shape` array
+            (inferred).
+        dtype: Element type of the `input` and `output` buffers (inferred).
+
+    Args:
+        output: The output buffer with the inner two axes swapped.
+        input: The input buffer.
+        perms: Permutation of the input axes.
+        simplified_input_shape: Shape of the tensor after simplification.
+        simplified_rank: Effective rank after simplification.
+    """
     comptime if rank < 3:
         return
     # simplified perms must be 0, 2, 1
@@ -907,6 +992,19 @@ def transpose_trivial_memcpy[
     ],
     ctx: Optional[DeviceContext] = None,
 ):
+    """Copies the input buffer to the output buffer as a trivial transpose.
+
+    Uses a single `memcpy` for small transfers and a parallel `memcpy` for
+    larger ones.
+
+    Parameters:
+        dtype: Element type of the `input` and `output` buffers (inferred).
+
+    Args:
+        output: The output buffer.
+        input: The input buffer.
+        ctx: The context to execute the work on.
+    """
     var src_ptr = input.ptr
     var dst_ptr = output.ptr
 
@@ -1091,6 +1189,21 @@ def transpose_strided[
     perms: UnsafePointer[Scalar[DType.int], _],
     ctx: Optional[DeviceContext] = None,
 ) raises:
+    """Transposes a tensor with arbitrary strides via a generic strided copy.
+
+    Computes row-major strides for the input, permutes them according to
+    `perms`, and recursively copies data into the row-major output buffer.
+
+    Parameters:
+        rank: Number of dimensions in the tensor shape.
+        dtype: Element type of the `input` and `output` buffers.
+
+    Args:
+        output: The output buffer.
+        input: The input buffer.
+        perms: Permutation of the input axes.
+        ctx: The context to execute the work on.
+    """
     # Compute row-major strides for input.
     var input_strides_arr = InlineArray[Scalar[DType.int], rank](
         uninitialized=True

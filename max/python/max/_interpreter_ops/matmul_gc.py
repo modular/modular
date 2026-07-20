@@ -95,67 +95,63 @@ def canonical_shape(shape: Sequence[int]) -> tuple[int, int, int]:
     return (prod(batch_dims), i, j)
 
 
-def _build_matmul_graph(
+def _matmul_graph(
     module: Module, compilation_target: CompilationTarget
 ) -> None:
     """Adds one fully-symbolic rank-3 matmul graph into *module* in-place."""
-    dev_ref = DeviceRef.from_device(compilation_target.device)
+    device_ref = DeviceRef.from_device(compilation_target.device)
     lhs_type = TensorType(
-        compilation_target.dtype, ["batch", "m", "k"], device=dev_ref
+        compilation_target.dtype, ["batch", "m", "k"], device=device_ref
     )
     rhs_type = TensorType(
-        compilation_target.dtype, ["batch", "k", "n"], device=dev_ref
+        compilation_target.dtype, ["batch", "k", "n"], device=device_ref
     )
     graph_name = compilation_target.graph_name
-    g = Graph(graph_name, input_types=[lhs_type, rhs_type], module=module)
-    with g:
-        lhs, rhs = g.inputs
-        g.output(graph_ops.matmul(lhs.tensor, rhs.tensor))
+    graph = Graph(graph_name, input_types=[lhs_type, rhs_type], module=module)
+    with graph:
+        lhs, rhs = graph.inputs
+        graph.output(graph_ops.matmul(lhs.tensor, rhs.tensor))
 
 
-def build_matmul_module() -> Module:
-    """Build the full batched matmul module: every ``_COMPILATION_TARGETS`` slot
-    (CPU + all accelerators, all dtypes) in one module.
+class _MatmulFamily(gc_compile.GCFamilySpec):
+    name = "matmul"
 
-    Host-ELF and cubins both embed self-contained in the exported MEF, so one
-    force-load populates every device class at once. Shared by the warm producer
-    (export) and the batched sweep (compile into cache).
-    """
-    module = Module()
-    for compilation_target in _COMPILATION_TARGETS:
-        _build_matmul_graph(module, compilation_target)
-    return module
+    def build_module(self) -> Module:
+        """Build the full batched matmul module: every ``_COMPILATION_TARGETS``
+        slot (CPU + all accelerators, all dtypes) in one module.
+
+        Host-ELF and cubins both embed self-contained in the exported MEF, so
+        one force-load populates every device class at once. Shared by the
+        warm producer (export) and the batched sweep (compile into cache).
+        """
+        module = Module()
+        for device in self.sweep_devices():
+            self.build_module_for_device(device, module)
+        return module
+
+    def build_module_for_device(
+        self, device: Device, module: Module | None = None
+    ) -> Module:
+        """Build the matmul module for a single device slot: every dtype
+        target on *device* (matched by label + id), and nothing else.
+
+        Per-slot counterpart of :meth:`build_module`. The warm producer
+        exports one MEF per slot so the warm is device-count-independent: a
+        k-GPU consumer force-loads only slots ``0..k-1``, letting a warm made
+        for a higher count still adopt.
+        """
+        if module is None:
+            module = Module()
+        for compilation_target in _COMPILATION_TARGETS:
+            if (
+                compilation_target.device.label == device.label
+                and compilation_target.device.id == device.id
+            ):
+                _matmul_graph(module, compilation_target)
+        return module
 
 
-def build_matmul_module_for_device(device: Device) -> Module:
-    """Build the matmul module for a single device slot: every dtype target on
-    *device* (matched by label + id), and nothing else.
-
-    Per-slot counterpart of :func:`build_matmul_module`. The warm producer
-    exports one MEF per slot so the warm is device-count-independent: a k-GPU
-    consumer force-loads only slots ``0..k-1``, letting a warm made for a higher
-    count still adopt.
-    """
-    module = Module()
-    for compilation_target in _COMPILATION_TARGETS:
-        if (
-            compilation_target.device.label == device.label
-            and compilation_target.device.id == device.id
-        ):
-            _build_matmul_graph(module, compilation_target)
-    return module
-
-
-# Discovered at import so a missing driver fails here, not at first dispatch.
-_DEVICES = gc_compile.discover_devices()
-
-
-_FAMILY = gc_compile.GCOpFamily(
-    name="matmul",
-    build_module=build_matmul_module,
-    build_module_for_device=build_matmul_module_for_device,
-    sweep_devices=lambda: list(_DEVICES),
-)
+_FAMILY = gc_compile.GCOpFamily(_MatmulFamily())
 gc_compile.register_family(_FAMILY)
 
 
@@ -182,25 +178,9 @@ def matmul_model(device: Device, dtype: DType) -> engine.Model:
     """
     target = CompilationTarget(_GRAPH_BASE_NAME, device, dtype)
     key = target.graph_name
+    # Cache-check before building the lambda below: this runs on every eager
+    # op dispatch, so a hit must not pay for a closure it won't use.
     model = _FAMILY.cache.get(key)
     if model is not None:
         return model
-    if gc_compile.should_precompile():
-        # TODO(MXF-510): raise UnsupportedGraphError so executors fall back.
-        raise KeyError(
-            f"No pre-compiled matmul model for key {key!r}."
-            f"  Available: {sorted(_FAMILY.cache)}."
-            f"  Unset {gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR} (the default)"
-            " to compile targets lazily on first use."
-        )
-    with gc_compile.COMPILE_LOCK:
-        model = _FAMILY.cache.get(key)
-        if model is not None:
-            return model
-        _FAMILY.ensure_swept()
-        model = _FAMILY.cache.get(key)
-        if model is not None:
-            return model
-        return gc_compile.compile_single_target(
-            _FAMILY, key, device, lambda m: _build_matmul_graph(m, target)
-        )
+    return _FAMILY.model_for(key, device, lambda m: _matmul_graph(m, target))

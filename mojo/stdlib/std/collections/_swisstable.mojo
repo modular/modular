@@ -272,6 +272,25 @@ struct SwissTableEntry[
         self.key = key^
         self.value = value^
 
+    @always_inline
+    def __init__(
+        out self, var key: Self.K, var value: Self.V, *, unsafe_hash: UInt64
+    ):
+        """Create an entry from a key and value using a caller-provided hash.
+
+        This skips recomputing the key's hash. Use it when the caller has
+        already computed `hash[H](key)`.
+
+        Args:
+            key: The key of the entry.
+            value: The value of the entry.
+            unsafe_hash: The precomputed hash of `key`. Must equal
+                `hash[H](key)`; passing any other value corrupts slot lookup.
+        """
+        self._hash = unsafe_hash
+        self.key = key^
+        self.value = value^
+
     # TODO(MOCO-4228): Let the compiler synthesize this method
     def __del__(
         deinit self,

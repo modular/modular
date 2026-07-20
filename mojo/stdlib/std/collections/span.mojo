@@ -16,7 +16,7 @@
 You can import these APIs from the `memory` module. For example:
 
 ```mojo
-from std.memory import Span
+from std.collections import Span
 ```
 """
 from std.builtin.builtin_slice import ContiguousSlice
@@ -162,7 +162,6 @@ struct Span[
     mut: Bool,
     //,
     T: AnyType,
-    /,
     origin: Origin[mut=mut],
 ](
     Boolable,
@@ -239,6 +238,7 @@ struct Span[
     # ===------------------------------------------------------------------===#
 
     @always_inline("nodebug")
+    @stable(since="1.0")
     def __init__(out self):
         """Create an empty / zero-length span."""
         self._data = Self._UnsafePointerType.unsafe_dangling()
@@ -247,6 +247,7 @@ struct Span[
     @doc_hidden
     @implicit
     @always_inline("nodebug")
+    @stable(since="1.0")
     def __init__(other: Span, out self: ImmSpan[other.T, other.origin]):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -389,19 +390,19 @@ struct Span[
     @always_inline
     def __reversed__(
         self,
-    ) -> _SpanIter[
-        Self.T,
-        Self.origin,
-        forward=False,
-    ] where conforms_to(
-        Self.T, Copyable
-    ):
+    ) -> _SpanIter[downcast[Self.T, Copyable], Self.origin, forward=False,]:
         """Iterate backwards over the `Span`.
 
         Returns:
             A reversed iterator of the `Span` elements.
         """
-        return _SpanIter[forward=False](len(self), self)
+        comptime assert conforms_to(
+            Self.T, Copyable
+        ), "Span iteration requires the element to be `Copyable`"
+        return _SpanIter[forward=False](
+            len(self),
+            rebind[Span[downcast[Self.T, Copyable], Self.origin]](self),
+        )
 
     # ===------------------------------------------------------------------===#
     # Trait implementations

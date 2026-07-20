@@ -281,6 +281,32 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    dp_ce_balance_timeout_ms: float = Field(
+        default=-1.0,
+        description=(
+            "Max time in milliseconds a context-encoding request's work may "
+            "be deferred, from arrival, while awaiting token-balanced "
+            "scheduling across data-parallel replicas. -1 disables the "
+            "balancer (requests bind to a replica on arrival; current "
+            "default behavior); 0 enables post-cache-weighted placement "
+            "with late binding but never defers; > 0 additionally defers "
+            "unbalanced CE work until ``dp_ce_balance_threshold`` is met, "
+            "the deadline expires, or there is nothing else to run."
+        ),
+    )
+    """Deferral deadline for DP-balanced CE scheduling (-1 = disabled)."""
+
+    dp_ce_balance_threshold: float = Field(
+        default=0.8,
+        description=(
+            "Per-step CE active-token occupancy across DP replicas "
+            "(mean/max, 0-1) at or above which CE work is scheduled without "
+            "further deferral. Only consulted when "
+            "``dp_ce_balance_timeout_ms`` > 0."
+        ),
+    )
+    """Occupancy threshold (0-1) that schedules CE work without deferral."""
+
     allow_unsupported_logprobs: bool = Field(
         default=False,
         description=(

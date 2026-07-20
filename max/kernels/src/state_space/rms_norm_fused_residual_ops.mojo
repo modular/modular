@@ -216,4 +216,22 @@ def rms_norm_fused_residual_shape[
     dropout_p: Scalar[dtype=dtype],
     seed: Scalar[dtype=DType.uint64],
 ) -> IndexList[rank]:
+    """Returns the output shape for the `rms_norm_fused_residual` op.
+
+    The fused RMS-norm-plus-residual op preserves the input shape; both the
+    normalized output and the updated residual have the same shape as `input`.
+
+    Args:
+        input: Input tensor to normalize.
+        residual_input: Residual tensor added before normalization.
+        gamma: Scale (weight) vector with shape `(last_dim,)`.
+        epsilon: Small constant added to the RMS for numerical stability.
+        weight_offset: Scalar offset added to `gamma` before scaling.
+        dropout_p: Dropout probability applied to `input` before the residual
+            add (0.0 disables dropout).
+        seed: RNG seed for dropout.
+
+    Returns:
+        The output shape, equal to `input.shape()`.
+    """
     return input.shape()

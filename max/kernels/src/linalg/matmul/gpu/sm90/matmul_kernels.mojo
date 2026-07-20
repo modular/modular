@@ -10,6 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements Hopper SM90 matrix multiplication kernels using TMA and WGMMA.
+
+Provides the `HopperMatmulSM90Kernel` struct and its shared-memory companion
+`HopperMatmulSM90Kernel_SMem`, together with producer-consumer pipeline
+routines that overlap asynchronous TMA loads with warp-group matrix
+multiply-accumulate (WGMMA) tensor-core operations. The module supplies
+standard, split-K, and grouped (MoE) kernel entry points targeting NVIDIA
+H100 GPUs.
+"""
 from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.uutils import udivmod
@@ -252,33 +261,50 @@ struct HopperMatmulSM90Kernel[
     k_group_size: Int = 1,
     swapAB: Bool = False,
 ]:
-    """Hopper SM90 Matrix Multiplication kernel optimized for NVIDIA H100 GPUs.
+    """Hopper SM90 GEMM for NVIDIA H100 GPUs.
 
-    This kernel implements a highly optimized matrix multiplication (GEMM) using:
-    - Tensor Memory Accelerator (TMA) for efficient global-to-shared memory transfers
-    - Warp Group Matrix Multiply Accumulate (WGMMA) instructions for tensor cores
-    - Multi-stage software pipelining for overlapping compute and memory operations
-    - Producer-consumer model with separate warp groups for loading and computing
+    Uses TMA loads, WGMMA tensor-core MMA, multi-stage pipelining, and a
+    producer-consumer warp-group layout.
 
-    Template Parameters:
-        a_type, b_type, c_type: Data types for input and output matrices
-        a_layout, b_layout, c_layout: Memory layouts for matrices
-        c_smem_layout: Shared memory layout for output tile
-        block_tile_shape: Tile dimensions [M, N, K] processed by each thread block
-        wgmma_shape: Dimensions for each WGMMA instruction [M, N, K]
-        cluster_shape: Thread block cluster dimensions for distributed shared memory
-        num_pipeline_stages: Number of stages in the software pipeline (typically 3-7)
-        num_threads: Number of threads per block (must be multiple of 128)
-        transpose_b: Whether B matrix is transposed (required to be True)
-        a_swizzle, b_swizzle: Memory swizzling for bank-conflict-free access
-        c_swizzle: Swizzling for output writes
-        partitioned_multicast: Enable partitioned multicast for large tiles
-        use_tma_store: Use TMA for storing output (vs regular stores)
-        promotion_frequency: How often to promote FP8 accumulation to higher precision
-        pdl_level: Programmatic Dependency Launch (PDL) level
-        elementwise_lambda_fn: Optional epilogue function
-        elementwise_compute_lambda_fn: Optional compute function
-        hilbert_swizzle: Use Hilbert curve for thread block scheduling
+    Parameters:
+        a_type: Data type of the A input matrix.
+        b_type: Data type of the B input matrix.
+        c_type: Data type of the C output matrix.
+        a_layout: Memory layout of the A matrix.
+        b_layout: Memory layout of the B matrix.
+        c_layout: Memory layout of the C matrix.
+        c_smem_layout: Shared memory layout for the output tile.
+        block_tile_shape: Tile dimensions `[M, N, K]` processed by each
+            thread block.
+        wgmma_shape: Dimensions for each WGMMA instruction `[M, N, K]`.
+        cluster_shape: Thread block cluster dimensions for distributed
+            shared memory.
+        num_pipeline_stages: Number of stages in the software pipeline
+            (3-7 in most configs).
+        num_threads: Number of threads per block (must be a multiple of
+            128).
+        transpose_b: Whether the B matrix is transposed (required to be
+            `True`).
+        a_swizzle: Memory swizzling for bank-conflict-free A tile access.
+        b_swizzle: Memory swizzling for bank-conflict-free B tile access.
+        c_swizzle: Swizzling mode for output writes.
+        partitioned_multicast: Whether partitioned multicast is enabled
+            for large tiles.
+        use_tma_store: Whether TMA is used for storing output (versus
+            regular stores).
+        promotion_frequency: How often FP8 accumulation is promoted to
+            higher precision.
+        pdl_level: Programmatic Dependency Launch (PDL) level.
+        elementwise_lambda_fn: Optional epilogue function.
+        elementwise_compute_lambda_fn: Optional compute function.
+        hilbert_swizzle: Whether Hilbert-curve thread block scheduling is
+            used.
+        k_group_size: Number of K-dimension tiles loaded and consumed per
+            pipeline stage; both `num_pipeline_stages` and the total K
+            extent must be multiples of this value (defaults to 1).
+        swapAB: Whether to swap the A and B operand roles in the output
+            writer for the small-M strategy, transposing the tile and
+            block coordinate mapping (defaults to `False`).
     """
 
     comptime BM = Self.block_tile_shape[0]
@@ -516,6 +542,12 @@ struct HopperMatmulSM90Kernel[
 
         Must be called by consumer warp groups before the main loop so
         the producer knows it can start filling stages.
+
+        Args:
+            warp_group_thread_idx: Thread index within the warp group,
+                used to select which threads signal the barrier.
+            pipeline: Producer-consumer pipeline whose empty barriers are
+                signaled (modified in place).
         """
 
         comptime for i in range(Self.adjusted_num_pipeline_stages):
@@ -585,7 +617,28 @@ struct HopperMatmulSM90Kernel[
         block_y: Int,
         block_x: Int,
     ):
-        """Handle consumer output by writing GEMM results to global memory."""
+        """Handle consumer output by writing GEMM results to global memory.
+
+        Parameters:
+            custom_elementwise_lambda_fn: Optional epilogue function applied
+                to output elements (defaults to the struct's
+                `elementwise_lambda_fn`).
+
+        Args:
+            c_tma_op: TMA descriptor for the output matrix C, used for TMA
+                stores.
+            c: Writable output matrix C tile tensor.
+            c_tile: Shared memory tile staging the output before the global
+                write.
+            output_reg_tile: Register tile holding the accumulated GEMM
+                result to write.
+            warp_group_thread_idx: Thread index within the warp group.
+            local_warp_group_idx: Index of this consumer warp group
+                (0-based).
+            local_thread_idx: Thread index within the consumer warp group.
+            block_y: Block-level M coordinate (row) of the output tile.
+            block_x: Block-level N coordinate (column) of the output tile.
+        """
         var matmul_tile_writer = MatmulTileWriter[
             BM=Self.BM,
             BN=Self.BN,
@@ -843,6 +896,26 @@ struct HopperMatmulSM90Kernel[
         The kernel uses software pipelining to overlap memory transfers with computation,
         achieving high throughput on Hopper GPUs.
 
+        Parameters:
+            a_tma_rank: Number of dimensions in the TMA descriptor for
+                matrix A.
+            b_tma_rank: Number of dimensions in the TMA descriptor for
+                matrix B.
+            c_tma_rank: Number of dimensions in the TMA descriptor for
+                matrix C.
+            a_tile_shape: Shape of each A tile loaded by TMA.
+            b_tile_shape: Shape of each B tile loaded by TMA.
+            c_tile_shape: Shape of each C tile stored by TMA.
+            a_desc_shape: Full shape of matrix A as described by the TMA
+                descriptor.
+            b_desc_shape: Full shape of matrix B as described by the TMA
+                descriptor.
+            c_desc_shape: Full shape of matrix C as described by the TMA
+                descriptor.
+            a_tensor_layout: Memory layout of input matrix A.
+            b_tensor_layout: Memory layout of input matrix B.
+            c_tensor_layout: Memory layout of output matrix C.
+
         Args:
             a_tma_op: TMA descriptor for matrix A.
             b_tma_op: TMA descriptor for matrix B.
@@ -996,6 +1069,40 @@ struct HopperMatmulSM90Kernel[
         problem_shape: IndexList[3],
     ):
         """Split-K variant of the kernel for better load balancing on small problems.
+
+        Parameters:
+            a_tma_rank: Number of dimensions in the TMA descriptor for
+                matrix A.
+            b_tma_rank: Number of dimensions in the TMA descriptor for
+                matrix B.
+            c_tma_rank: Number of dimensions in the TMA descriptor for
+                matrix C.
+            a_tile_shape: Shape of each A tile loaded by TMA.
+            b_tile_shape: Shape of each B tile loaded by TMA.
+            c_tile_shape: Shape of each C tile stored by TMA.
+            a_desc_shape: Full shape of matrix A as described by the TMA
+                descriptor.
+            b_desc_shape: Full shape of matrix B as described by the TMA
+                descriptor.
+            c_desc_shape: Full shape of matrix C as described by the TMA
+                descriptor.
+            splits: Number of equal chunks the K dimension is divided
+                into for parallel reduction. Each block processes one
+                chunk per output tile.
+            raster_order: Tile rasterization order used by the split-K
+                scheduler to assign output tiles to blocks.
+            c_tensor_layout: Memory layout of output matrix C.
+
+        Args:
+            a_tma_op: TMA descriptor for matrix A.
+            b_tma_op: TMA descriptor for matrix B.
+            c_tma_op: TMA descriptor for matrix C.
+            c: Output matrix C.
+            workspace_ptr: Pointer to the reduction workspace storing
+                partial accumulations from each split.
+            locks_ptr: Pointer to the lock array coordinating split-K
+                synchronization across blocks.
+            problem_shape: Full GEMM problem dimensions `[M, N, K]`.
         """
         comptime K = Self.b_layout.static_shape[1]
         comptime num_k_iters = K // Self.BK
@@ -1195,6 +1302,39 @@ struct HopperMatmulSM90Kernel[
 
         This variant handles multiple experts where each expert processes a subset of tokens.
         The a_offsets array indicates token boundaries for each expert.
+
+        Parameters:
+            a_tma_rank: Number of dimensions in the TMA descriptor for
+                matrix A.
+            b_tma_rank: Number of dimensions in the TMA descriptor for
+                matrix B.
+            c_tma_rank: Number of dimensions in the TMA descriptor for
+                matrix C.
+            a_tile_shape: Shape of each A tile loaded by TMA.
+            b_tile_shape: Shape of each B tile loaded by TMA.
+            c_tile_shape: Shape of each C tile stored by TMA.
+            a_desc_shape: Full shape of matrix A as described by the TMA
+                descriptor.
+            b_desc_shape: Full shape of matrix B as described by the TMA
+                descriptor.
+            c_desc_shape: Full shape of matrix C as described by the TMA
+                descriptor.
+            AOffsetsLayout: Memory layout of the `a_offsets` tensor.
+            ExpertIdsLayout: Memory layout of the `expert_ids` tensor.
+            c_tensor_layout: Memory layout of output matrix C.
+
+        Args:
+            a_tma_op: TMA descriptor for matrix A.
+            b_tma_op: TMA descriptor for matrix B.
+            c_tma_op: TMA descriptor for matrix C.
+            a_offsets: Starting row offsets into matrix A for each
+                expert. The token count for expert `i` is `a_offsets[i+1]
+                - a_offsets[i]`, indexed by `block_idx.z`.
+            expert_ids: Expert index selected by each block.
+                `expert_ids[block_idx.z]` picks the row block in B for
+                this block, and -1 marks an inactive block whose output
+                is zeroed.
+            c: Output matrix C.
         """
         comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
         comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
@@ -1366,6 +1506,10 @@ struct HopperMatmulSM90Kernel[
 
         This is an alternative implementation of consumer_main_loop that uses
         the SM100 ProducerConsumerPipeline for synchronization instead of RingBuffer.
+
+        Parameters:
+            num_k_iters: Number of K-dimension tiles the consumer processes
+                in this loop.
 
         Args:
             wgmma_op: Tensor core operator for matrix multiplication.

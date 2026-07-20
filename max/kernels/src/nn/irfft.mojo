@@ -36,6 +36,12 @@ from layout import TileTensor, coord_to_index_list
 
 @always_inline
 def global_cache_insert(key: String, value: OpaquePointer):
+    """Inserts a key-value pair into the global compiler runtime cache.
+
+    Args:
+        key: Cache key string.
+        value: Opaque pointer value to store under the key.
+    """
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(key),
         value,
@@ -321,6 +327,12 @@ def irfft[
     """Compute the inverse real FFT of the input tensor.
 
     Currently, only applies it to the last dimension.
+
+    Parameters:
+        input_type: Element `DType` of the input tensor; must be
+            `float32`.
+        output_type: Element `DType` of the output tensor; must be
+            `float32`.
 
     Args:
         input: Complex input tensor (TileTensor).

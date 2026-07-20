@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements tiled CPU matrix multiplication kernels and their dispatcher.
+
+Defines the `InnerMatmulKernel` trait and the `TiledMatmul` struct that drive
+the outer M/N/K tile loops, plus the `matmul` entry point that selects an
+inner microkernel (default, VNNI, NEON, or I8MM) or routes to Apple
+Accelerate and GEMV fast paths.
+"""
 from std.collections import Optional
 from std.math import align_up, ceildiv
 from std.sys.info import align_of, simd_width_of
@@ -59,6 +66,13 @@ from .vnni import Inner_matmul_vnni
 
 
 trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDeletable):
+    """Trait for CPU matmul microkernels operating on pre-packed tiles.
+
+    Conforming types implement `__inner_matmul__`, which accumulates a
+    (kernel_rows × TileN × TileK) block of the output matrix using a
+    packed B tile in cache-friendly layout.
+    """
+
     def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
@@ -73,6 +87,24 @@ trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDeletable):
         tile_n_k: IndexList[2],
         skip_boundary_check: Bool,
     ):
+        """Accumulates one packed `B` tile into the corresponding `C` tile.
+
+        Parameters:
+            kernel_rows: Number of `C` rows the microkernel accumulates per
+                tile.
+            kernel_cols: Number of `C` columns the microkernel accumulates per
+                tile.
+            simd_size: SIMD vector width used by the inner accumulation.
+
+        Args:
+            c: Output tile to accumulate into.
+            a: Non-transposed left operand tile.
+            b_packed: Pre-packed right operand panel (rank 3).
+            global_offset: `(M, N, K)` offset of this tile in the full problem.
+            global_bound: `(M, N, K)` bounds of the full problem.
+            tile_n_k: Dynamic `(N, K)` extent of the tile to process.
+            skip_boundary_check: Whether to skip partial-tile boundary handling.
+        """
         comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
         ...
 
@@ -88,6 +120,22 @@ def elementwise_epilogue_c_tile[
     tile_len: GemmShape,
     c: TileTensor[mut=False, c_type, address_space=AddressSpace.GENERIC, ...],
 ):
+    """Applies a vectorized epilogue function over a 2D C output tile.
+
+    Iterates column chunks of `tile_len.N` using SIMD width `simd_width`,
+    calling `func` with the global (m, n) coordinates and the loaded values.
+
+    Parameters:
+        simd_width: SIMD vector width for epilogue loads.
+        c_type: Data type of the C matrix.
+        func: Epilogue function called with coordinates and a SIMD value chunk.
+
+    Args:
+        offset: Starting (M, N, K) offset within the global matmul space.
+        tile_len: Number of rows and columns to process.
+        c: Read-only view of the C output tile.
+    """
+
     @always_inline
     def activation_on_col_chunk[col_chunk_size: Int](idx_n: Int) {imm}:
         var n_coord = idx_n + offset.N
@@ -127,6 +175,20 @@ def tiled_matmul_run[
     global_tile_offset: GemmShape,
 ):
     """Interface function to run tiled matmul on a given sub-tile.
+
+    Parameters:
+        config: Kernel configuration controlling tile dimensions and SIMD
+            width.
+        transpose_b: Whether the B operand is transposed.
+        b_packed: Whether B was pre-packed offline in the cache-friendly
+            layout.
+        simd_size: SIMD vector width for the elementwise epilogue.
+        elementwise_epilogue_enabled: Whether to apply the elementwise
+            epilogue on the last K tile.
+        kernel_id: Identifier of the inner microkernel to dispatch.
+        algorithm: Microkernel implementing the inner accumulate loop.
+        ElementwiseEpilogueFnType: Type of the elementwise epilogue function
+            applied to each output tile.
 
     Args:
         alg: InnerMatmulKernel algorithm for microkernel.
@@ -203,22 +265,48 @@ struct TiledMatmul[
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
 
-    TODO: add tag based implementation dispatch.
-    TODO: add fusion hooks.
+    Parameters:
+        config: Kernel configuration controlling tile dimensions and SIMD
+            width.
+        transpose_b: Whether the B operand is transposed.
+        b_packed: Whether B was pre-packed offline in the cache-friendly
+            layout.
+        elementwise_epilogue_enabled: Whether to apply the elementwise
+            epilogue on the last K tile.
+        kernel_id: Identifier of the inner microkernel to dispatch.
+        a_type: Element type of the A operand.
+        a_layout: Memory layout of the A operand.
+        a_origin: Memory origin provenance of the A operand.
+        b_type: Element type of the B operand.
+        b_layout: Memory layout of the B operand.
+        b_origin: Memory origin provenance of the B operand.
+        c_type: Element type of the C output.
+        c_layout: Memory layout of the C output.
+        c_origin: Memory origin provenance of the mutable C output.
+        algorithm: Microkernel implementing the inner accumulate loop.
+        ElementwiseEpilogueFnType: Type of the elementwise epilogue function
+            applied to each output tile.
     """
 
     var alg: Self.algorithm
+    """Inner microkernel conforming to `InnerMatmulKernel`."""
     var c: TileTensor[Self.c_type, Self.c_layout, Self.c_origin]
+    """Output `TileTensor` the result accumulates into."""
     var a: TileTensor[Self.a_type, Self.a_layout, Self.a_origin]
+    """Left operand `TileTensor`."""
     var b: TileTensor[Self.b_type, Self.b_layout, Self.b_origin]
+    """Right operand `TileTensor`."""
     # Dynamic tile parameter.
     var tile_n_k: IndexList[2]
+    """Dynamic `(N, K)` tile extents used to partition the problem."""
 
     # Tile starting points on the (M,N,K) coordinates.
     var global_tile_offset: GemmShape
+    """`(M, N, K)` offset of this routine's tile region."""
 
     # Tile sizes this routine will process on the (M,N,K) coordinates.
     var global_tile_shape: GemmShape
+    """`(M, N, K)` extent of this routine's tile region."""
 
     var b_tile_generator: BTileGenerator[
         Self.config,
@@ -230,8 +318,10 @@ struct TiledMatmul[
         Self.b_packed,
         Self.b_origin,
     ]
+    """Generator that packs `B` sub-tiles for the inner kernel."""
 
     var elementwise_epilogue_fn: Self.ElementwiseEpilogueFnType
+    """Fused elementwise epilogue applied to each output tile."""
 
     def _outer_m_loop[
         tile_kernel_cols: Int
@@ -576,7 +666,30 @@ def matmul[
     ctx: Optional[DeviceContext] = None,
 ) raises:
     """TileTensor matmul dispatcher. Selects kernel type and delegates to
-    `_matmul_cpu_impl`."""
+    `_matmul_cpu_impl`.
+
+    Parameters:
+        transpose_b: Whether the B operand is transposed (defaults to
+            `False`).
+        b_packed: Whether B was pre-packed offline in the cache-friendly
+            layout (defaults to `False`).
+        elementwise_lambda_fn: Optional elementwise epilogue applied to each
+            output tile (defaults to `None`).
+        saturated_vnni: When `True`, uses the saturating x86 variant, which
+            requires the `a` operand to lie in `[0, 127]`; it saves
+            instructions only on the AVX2 emulation path used when the target
+            lacks VNNI (defaults to `False`).
+
+    Args:
+        c: Output matrix buffer accumulating the matmul result.
+        a: Left operand of the matmul.
+        b: Right operand of the matmul.
+        kernel_type_m: M dimension used to select the kernel variant, or `0`
+            if unknown.
+        num_threads: Number of worker threads to use (defaults to `-1`,
+            which selects automatically).
+        ctx: Device context governing parallelism (defaults to `None`).
+    """
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"
     comptime assert b.rank == 2, "b must be rank 2"

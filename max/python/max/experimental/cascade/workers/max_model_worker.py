@@ -35,6 +35,7 @@ from max.pipelines.architectures import register_all_models
 from max.pipelines.context import (
     EOSTracker,
     SamplingParams,
+    SamplingParamsInput,
     TextAndVisionContext,
     TextContext,
     TextGenerationOutput,
@@ -56,6 +57,32 @@ Int32Array = npt.NDArray[np.int32]
 _ModelWorkerProxy = ModelWorkerProxy[
     TextAndVisionContext | TextContext, TextGenerationOutput
 ]
+
+
+def _sampling_params_input(req: GenerateRequest) -> SamplingParamsInput:
+    """Map a cascade :class:`GenerateRequest` onto ``SamplingParamsInput``.
+
+    Forwards every request-configurable sampling field so a request routed
+    through the cascade pipeline resolves the same parameters as one sent to
+    ``max.serve``'s OpenAI routes. ``None`` fields fall back to the model's
+    ``GenerationConfig`` defaults (then the ``SamplingParams`` class defaults).
+    """
+    return SamplingParamsInput(
+        max_new_tokens=req.num_tokens,
+        min_new_tokens=req.min_new_tokens,
+        ignore_eos=req.ignore_eos,
+        temperature=req.temperature,
+        top_k=req.top_k,
+        top_p=req.top_p,
+        min_p=req.min_p,
+        thinking_temperature=req.thinking_temperature,
+        seed=req.seed,
+        frequency_penalty=req.frequency_penalty,
+        presence_penalty=req.presence_penalty,
+        repetition_penalty=req.repetition_penalty,
+        stop=req.stop,
+        stop_token_ids=req.stop_token_ids,
+    )
 
 
 class MAXModelWorker(Worker):
@@ -167,10 +194,12 @@ class MAXModelWorker(Worker):
         request_id = RequestID()
 
         prompt_tokens = tokens.astype(np.int64)
-        sampling_params = SamplingParams(
-            max_new_tokens=req.num_tokens,
-            ignore_eos=req.ignore_eos,
-            temperature=req.temperature,
+        # Layer the request's fields over the model's GenerationConfig defaults,
+        # exactly as ``max.serve``'s OpenAI routes do, so the two paths resolve
+        # sampling parameters identically.
+        sampling_params = SamplingParams.from_input_and_generation_config(
+            _sampling_params_input(req),
+            sampling_params_defaults=self.pipeline_config.model.sampling_params_defaults,
         )
         request_max_length = min(
             self.max_length, int(prompt_tokens.shape[0]) + req.num_tokens

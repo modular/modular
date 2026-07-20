@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the ONNX Slice operator, selecting sub-tensors along specified axes with start, stop, and step."""
 
 from std.math import clamp
 
@@ -56,6 +57,18 @@ def slice_dim_as_view[
     tensor.origin,
     address_space=tensor.address_space,
 ]:
+    """Returns a view of `tensor` sliced along a single dimension.
+
+    The returned view shares the underlying data with `tensor` but adjusts the
+    offset, stride, and extent of `dim` to reflect the normalized `start`,
+    `end`, and `step` range.
+
+    Args:
+        tensor: Source tensor to slice.
+        start: Starting index along `dim` (negative values wrap from the end).
+        end: Stopping index along `dim` (exclusive; negative values wrap from the end).
+        step: Stride between selected indices along `dim`; must be non-zero.
+    """
     var new_shape = coord_to_index_list(tensor.layout.shape_coord())
     var new_stride = coord_to_index_list(tensor.layout.stride_coord())
 
@@ -115,6 +128,18 @@ def slice_as_view[
     tensor.origin,
     address_space=tensor.address_space,
 ]:
+    """Returns a view of `tensor` sliced along every dimension.
+
+    For each axis, the corresponding entries in `starts`, `ends`, and `steps`
+    are normalized and clamped, then the offset, stride, and extent of that
+    dimension are adjusted to produce a zero-copy view of the source data.
+
+    Args:
+        tensor: Source tensor to slice.
+        starts: One-dimensional tensor of starting indices, one per rank.
+        ends: One-dimensional tensor of stopping indices (exclusive), one per rank.
+        steps: One-dimensional tensor of strides, one per rank; each must be non-zero.
+    """
     comptime assert starts.flat_rank == 1
     comptime assert ends.flat_rank == 1
     comptime assert steps.flat_rank == 1
@@ -178,6 +203,20 @@ def copy_to_slice[
     step: TileTensor[mut=False, step_type, ...],
     context: DeviceContext,
 ) raises:
+    """Copies `in_slice` into the slice of `buffer` defined by `start`, `end`, and `step`.
+
+    The shape of `in_slice` must match the shape produced by slicing `buffer`
+    with the given indices; otherwise an error is raised. The copy is performed
+    element-wise over the sliced view of `buffer`.
+
+    Args:
+        buffer: Mutable destination tensor whose slice is overwritten.
+        in_slice: Source tensor whose data is copied into the slice.
+        start: One-dimensional tensor of starting indices, one per rank.
+        end: One-dimensional tensor of stopping indices (exclusive), one per rank.
+        step: One-dimensional tensor of strides, one per rank; each must be non-zero.
+        context: Device context for the target execution backend.
+    """
     var expected_shape = slice_shape(buffer, start, end, step)
 
     if expected_shape != rebind[IndexList[buffer.rank]](
@@ -223,6 +262,20 @@ def slice_as_copy[
     step: TileTensor[mut=False, index_type, ...],
     ctx: DeviceContext,
 ) raises:
+    """Copies a slice of `tensor` into `output` using the given start, end, and step indices.
+
+    The slice of `tensor` is materialized into `output` by loading from a
+    temporary view and storing element-wise; `output` must have the same rank
+    as `tensor`.
+
+    Args:
+        output: Mutable destination tensor that receives the sliced data.
+        tensor: Source tensor to slice.
+        start: One-dimensional tensor of starting indices, one per rank.
+        end: One-dimensional tensor of stopping indices (exclusive), one per rank.
+        step: One-dimensional tensor of strides, one per rank; each must be non-zero.
+        ctx: Device context for the target execution backend.
+    """
     comptime assert output.flat_rank == tensor.flat_rank
     # Apply slice to the tensor
     var sliced = slice_as_view(tensor, start, end, step)
@@ -253,6 +306,21 @@ def slice_shape[
     stop_buf: TileTensor[mut=False, stop_type, ...],
     step_buf: TileTensor[mut=False, step_type, ...],
 ) raises -> IndexList[input_buf.rank]:
+    """Computes the shape that results from slicing `input_buf` with the given start, stop, and step tensors.
+
+    Validates that the index tensors each have one entry per rank of
+    `input_buf` and that no step is zero, then normalizes and clamps the
+    indices per axis to determine the output extent along each dimension.
+
+    Args:
+        input_buf: Source tensor whose slice shape is computed.
+        start_buf: One-dimensional tensor of starting indices, one per rank.
+        stop_buf: One-dimensional tensor of stopping indices (exclusive), one per rank.
+        step_buf: One-dimensional tensor of strides, one per rank; each must be non-zero.
+
+    Returns:
+        An `IndexList` holding the extent of each dimension after slicing.
+    """
     comptime assert start_buf.flat_rank == 1, "start_buf.rank must be 1"
     comptime assert stop_buf.flat_rank == 1, "stop_buf.rank must be 1"
     comptime assert step_buf.flat_rank == 1, "step_buf.rank must be 1"

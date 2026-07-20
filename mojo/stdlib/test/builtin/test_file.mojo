@@ -215,7 +215,7 @@ def test_file_read_to_address() raises:
         _dir_of_current_file() / "test_file_dummy_input.txt",
         "r",
     ) as f:
-        var buffer = InlineArray[UInt8, size=1000](fill=0)
+        var buffer = InlineArray[UInt8, length=1000](fill=0)
         assert_equal(f.read(buffer), DUMMY_FILE_SIZE)
         assert_equal(buffer[0], 76)  # L
         assert_equal(buffer[1], 111)  # o
@@ -230,7 +230,7 @@ def test_file_read_to_address() raises:
         _dir_of_current_file() / "test_file_dummy_input.txt",
         "r",
     ) as f:
-        var buffer = InlineArray[UInt8, size=500](fill=0)
+        var buffer = InlineArray[UInt8, length=500](fill=0)
         assert_equal(f.read(buffer), 500)
 
     # Test buffer size == file size
@@ -238,7 +238,7 @@ def test_file_read_to_address() raises:
         _dir_of_current_file() / "test_file_dummy_input.txt",
         "r",
     ) as f:
-        var buffer = InlineArray[UInt8, size=DUMMY_FILE_SIZE](fill=0)
+        var buffer = InlineArray[UInt8, length=DUMMY_FILE_SIZE](fill=0)
         assert_equal(f.read(buffer), DUMMY_FILE_SIZE)
 
     # Test buffer size 0
@@ -254,11 +254,11 @@ def test_file_read_to_address() raises:
         _dir_of_current_file() / "test_file_dummy_input.txt",
         "r",
     ) as f:
-        var buffer_30 = InlineArray[UInt8, size=30](fill=0)
-        var buffer_1 = InlineArray[UInt8, size=1](fill=0)
-        var buffer_2 = InlineArray[UInt8, size=2](fill=0)
-        var buffer_100 = InlineArray[UInt8, size=100](fill=0)
-        var buffer_1000 = InlineArray[UInt8, size=1000](fill=0)
+        var buffer_30 = InlineArray[UInt8, length=30](fill=0)
+        var buffer_1 = InlineArray[UInt8, length=1](fill=0)
+        var buffer_2 = InlineArray[UInt8, length=2](fill=0)
+        var buffer_100 = InlineArray[UInt8, length=100](fill=0)
+        var buffer_1000 = InlineArray[UInt8, length=1000](fill=0)
         assert_equal(f.read(buffer_30), 30)
         assert_equal(f.read(buffer_1), 1)
         assert_equal(f.read(buffer_2), 2)
@@ -270,7 +270,7 @@ def test_file_read_to_address() raises:
         _dir_of_current_file() / "test_file_dummy_input.txt",
         "r",
     ) as f:
-        var buffer_1000 = InlineArray[UInt8, size=1000](fill=0)
+        var buffer_1000 = InlineArray[UInt8, length=1000](fill=0)
         assert_equal(f.read(buffer_1000), DUMMY_FILE_SIZE)
         assert_equal(f.read(buffer_1000), 0)
 
@@ -748,7 +748,7 @@ def test_file_read_bytes_to_span_from_closed() raises:
     f.close()
 
     # Try to read into a buffer from closed file - should get "invalid file handle"
-    var buffer = InlineArray[UInt8, size=10](fill=0)
+    var buffer = InlineArray[UInt8, length=10](fill=0)
     with assert_raises(contains="invalid file handle"):
         _ = f.read(buffer)
 

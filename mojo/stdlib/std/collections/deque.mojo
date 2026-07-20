@@ -504,8 +504,11 @@ struct Deque[ElementType: Movable](
         """
         return (self._tail - self._head) & (self._capacity - 1)
 
+    @__unsafe_nested_origins_read_only
     @always_inline
-    def __getitem__(ref self, idx: IntLiteral) -> ref[self] Self.ElementType:
+    def __getitem__(
+        ref self, idx: IntLiteral
+    ) -> ref[self._unchecked_get(idx)] Self.ElementType:
         """Gets the deque element at the given index.
 
         Args:
@@ -520,8 +523,11 @@ struct Deque[ElementType: Movable](
         check_bounds(idx, len(self))
         return self._unchecked_get(idx)
 
+    @__unsafe_nested_origins_read_only
     @always_inline
-    def __getitem__(ref self, idx: Int) -> ref[self] Self.ElementType:
+    def __getitem__(
+        ref self, idx: Int
+    ) -> ref[self._unchecked_get(idx)] Self.ElementType:
         """Gets the deque element at the given index.
 
         Args:
@@ -533,10 +539,15 @@ struct Deque[ElementType: Movable](
         check_bounds(idx, len(self))
         return self._unchecked_get(idx)
 
+    @__unsafe_nested_origins_read_only
     @always_inline
-    def _unchecked_get(ref self, idx: Int) -> ref[self] Self.ElementType:
+    def _unchecked_get(
+        ref self, idx: Int
+    ) -> ref[origin_of(self)._get_owned_interior["element"]] Self.ElementType:
         offset = self._physical_index(self._head + idx)
-        return self._data[offset]
+        return self._data.unsafe_offset(
+            offset
+        )._get_ref_with_unsafe_interior_origin["element", origin_of(self)]()
 
     def _write_self_to[
         f: def(Self.ElementType, mut Some[Writer]) thin
@@ -1160,18 +1171,28 @@ struct _DequeIter[
     def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
+        # Read the buffer directly with the whole-deque origin rather than
+        # through `Deque.__getitem__`, which vends an *interior* origin: an
+        # iterator's element reference stays valid for the whole iteration, so
+        # it needs the whole-deque origin, and an interior-origin reference
+        # cannot be widened to that on return (doing so would silently drop its
+        # invalidation-on-mutation guarantee).
         comptime if Self.forward:
             if self.index >= len(self.src[]):
                 raise StopIteration()
 
             var idx = self.index
             self.index += 1
-            return self.src[][idx]
+            var offset = self.src[]._physical_index(self.src[]._head + idx)
+            return self.src[]._data[offset]
         else:
             if self.index <= 0:
                 raise StopIteration()
             self.index -= 1
-            return self.src[][self.index]
+            var offset = self.src[]._physical_index(
+                self.src[]._head + self.index
+            )
+            return self.src[]._data[offset]
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:

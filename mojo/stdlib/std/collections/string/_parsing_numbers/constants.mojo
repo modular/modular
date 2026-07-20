@@ -51,7 +51,7 @@ comptime POWERS_OF_10: InlineArray[Float64, 23] = [
 
 # fmt: off
 def get_power_of_5(index: Int) -> UInt64:
-    comptime powers_of_5_table: InlineArray[ElementType=UInt64, size=1302] = [
+    comptime powers_of_5_table: InlineArray[ElementType=UInt64, length=1302] = [
         0xeef453d6923bd65a,0x113faa2906a13b3f,
         0x9558b4661b6565f8,0x4ac7ca59a424c507,
         0xbaaee17fa23ebf76,0x5d79bcf00d2df649,

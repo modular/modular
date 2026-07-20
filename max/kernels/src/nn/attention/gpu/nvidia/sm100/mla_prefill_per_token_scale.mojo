@@ -94,6 +94,19 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_utils import (
 struct MLASmemStorage[
     qkv_dtype: DType, rope_dtype: DType, num_mbars: Int, config: MLAConfig
 ]:
+    """Shared memory storage layout for the per-token-scale MLA prefill kernel.
+
+    Holds the Q (nope + rope), KV (nope + rope), q_scale, k_scale, correction,
+    and barrier buffers sized from `config` for one CTA's worth of tile data.
+
+    Parameters:
+        qkv_dtype: `DType` of the Q, K_nope, and V shared-memory buffers.
+        rope_dtype: `DType` of the Q_rope and K_rope shared-memory buffers.
+        num_mbars: Number of shared-memory barriers in the `mbar_base` array.
+        config: `MLAConfig` supplying tile sizes, depths, and pipeline stage
+            counts used to size each buffer.
+    """
+
     comptime q_nope_bytes = Self.config.BM * Self.config.nope_depth * size_of[
         Self.qkv_dtype
     ]()
@@ -1949,6 +1962,20 @@ def q_scale_tma[
     q_scale_tensor: LayoutTensor[dtype, ...],
     out tma: TMATensorTile[dtype, 2, Index(1, BM), Index(1, BM)],
 ) raises:
+    """Creates a 2-D TMA tile descriptor for the per-token Q scale tensor.
+
+    The tile box spans `BM` rows (one Q-tile) so 2Q configs issue two TMAs and
+    1Q configs issue one.
+
+    Parameters:
+        dtype: `DType` of the per-token Q scale tensor elements (inferred).
+        BM: Number of rows in one Q-tile; the TMA box spans `BM` rows.
+
+    Args:
+        ctx: `DeviceContext` used to create the TMA descriptor.
+        q_scale_tensor: `LayoutTensor` of per-token Q scale values, one
+            per Q row.
+    """
     var num_elements = q_scale_tensor.size()
     debug_assert(num_elements % 4 == 0, "num_elements must be divisible by 4")
     var tensor = TileTensor(
@@ -2002,6 +2029,54 @@ def mla_sm100_prefill_per_token_scale[
     batch_size: Int,
     ctx: DeviceContext,
 ) raises:
+    """Host-side entry point for the SM100 MLA prefill kernel with per-token scaling.
+
+    Builds the Q, K, V, and per-token Q/K scale TMA tile descriptors, selects the
+    supported 1Q or 2Q FA4 config, and enqueues the per-token-scale kernel.
+
+    Parameters:
+        output_dtype: `DType` of the attention output tensor (inferred).
+        q_dtype: `DType` of the Q nope query tensor (inferred).
+        rope_dtype: `DType` of the Q_rope and K_rope tensors (inferred).
+        scale_dtype: `DType` of the per-token Q and K scale tensors
+            (inferred).
+        KType: `MHAOperand` descriptor for the K_nope paged cache
+            (inferred).
+        VType: `MHAOperand` descriptor for the V paged cache (inferred).
+        KRopeType: `MHAOperand` descriptor for the K_rope paged cache
+            (inferred).
+        MaskType: `MHAMask` functor applied to attention scores (inferred).
+        MaxPromptLenType: `OptionallyStaticInt` for the max prompt length
+            (inferred).
+        config: `MHAConfig` with tile sizes, head counts, depths, and
+            pipeline stages.
+        group: Number of Q heads sharing each KV head (GQA group size).
+        q_depth: Total Q/K attention head depth, equal to nope depth plus
+            rope depth.
+        cache_depth: Total depth of the K cache; K_rope occupies the last
+            `rope_depth` rows.
+        _ndbuffer_mha_operand: When `True`, the MHA operand uses the
+            ndbuffer code path.
+        v_depth: V/output head dim; `-1` for the DeepSeek shape where
+            `v_head_dim == qk_nope_head_dim` (defaults to -1).
+
+    Args:
+        output: `TileTensor` receiving the attention output.
+        q_nope: `TileTensor` of the Q query, non-rotary (nope) portion.
+        q_rope: `LayoutTensor` of the Q query, rotary position embedding
+            portion.
+        q_scale: `LayoutTensor` of per-token Q scale values, one per Q row.
+        k_nope: K key operand for the non-rotary (nope) portion.
+        k_rope: K key operand for the rotary position embedding portion.
+        v: V value operand.
+        mask_functor: Mask functor applied to the attention score matrix.
+        valid_length: `TileTensor` of per-sequence valid lengths as `uint32`.
+        max_prompt_len: Maximum prompt length across the batch, used for
+            launch grid sizing.
+        scale: Softmax scale factor applied to the Q@K' score matrix.
+        batch_size: Number of sequences in the batch.
+        ctx: `DeviceContext` for enqueuing the GPU kernel.
+    """
     comptime assert (
         rope_dtype == KRopeType.dtype
     ), "q_rope and k_rope must have the same dtype"

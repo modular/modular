@@ -213,10 +213,6 @@ def _supported_dtypes(dtype_class: DTypeClass, device: Device) -> list[DType]:
     raise ValueError(f"Unknown dtype_class: {dtype_class!r}")
 
 
-# Discovered at import so a missing driver fails here, not at first dispatch.
-_DEVICES = gc_compile.discover_devices()
-
-
 def _variant_tag(variant: Variant) -> str:
     """Cache-key suffix for a variant; empty for the no-variant default."""
     if not variant:
@@ -257,7 +253,7 @@ def variant_for(op: _core.Operation) -> Variant:
     return _NO_VARIANT
 
 
-def _build_reduce_graph(
+def _reduce_graph(
     module: Module,
     op_type: type[_core.Operation],
     spec: ReduceSpec,
@@ -266,16 +262,16 @@ def _build_reduce_graph(
     variant: Variant,
 ) -> None:
     """Adds one fully-symbolic rank-3 reduce graph into *module* in-place."""
-    dev_ref = DeviceRef.from_device(device)
-    in_type = TensorType(dtype, ["d0", "d1", "d2"], device=dev_ref)
-    g = Graph(
+    device_ref = DeviceRef.from_device(device)
+    in_type = TensorType(dtype, ["d0", "d1", "d2"], device=device_ref)
+    graph = Graph(
         _graph_name(op_type, device, dtype, variant),
         input_types=[in_type],
         module=module,
     )
-    with g:
-        (x,) = g.inputs
-        g.output(spec.build(x.tensor, variant))
+    with graph:
+        (x,) = graph.inputs
+        graph.output(spec.build(x.tensor, variant))
 
 
 def _is_supported(
@@ -283,10 +279,11 @@ def _is_supported(
 ) -> bool:
     """Whether (op, device, dtype) is in the conservatively-supported set.
 
-    Single source of truth for the swept matrix: :func:`build_reduce_axis_module`
-    filters candidates through this predicate and lazy mode uses it as the
-    support guard in :func:`reduce_model`, so the two can't diverge. Variant does
-    not affect dtype support, so it is not an argument here.
+    Single source of truth for the swept matrix:
+    :meth:`_ReduceAxisFamily.build_module_for_device` filters candidates
+    through this predicate and lazy mode uses it as the support guard in
+    :func:`reduce_model`, so the two can't diverge. Variant does not affect
+    dtype support, so it is not an argument here.
     """
     spec = _spec_for(op_type)
     if spec is None:
@@ -294,43 +291,34 @@ def _is_supported(
     return dtype in _supported_dtypes(spec.dtype_class, device)
 
 
-def build_reduce_axis_module() -> Module:
-    """Batched module: every supported (op, device, dtype, variant), all
-    devices."""
-    module = Module()
-    for op_type, spec in _REDUCE_OPS.items():
-        for device in _DEVICES:
+class _ReduceAxisFamily(gc_compile.GCFamilySpec):
+    name = "reduce_axis"
+
+    def build_module(self) -> Module:
+        """Batched module: every supported (op, device, dtype, variant), all
+        devices."""
+        module = Module()
+        for device in self.sweep_devices():
+            self.build_module_for_device(device, module)
+        return module
+
+    def build_module_for_device(
+        self, device: Device, module: Module | None = None
+    ) -> Module:
+        """Per-slot counterpart of :meth:`build_module`: one *device*
+        only."""
+        if module is None:
+            module = Module()
+        for op_type, spec in _REDUCE_OPS.items():
             for dtype in _supported_dtypes(spec.dtype_class, device):
                 if not _is_supported(op_type, device, dtype):
                     continue
                 for variant in spec.variants:
-                    _build_reduce_graph(
-                        module, op_type, spec, device, dtype, variant
-                    )
-    return module
+                    _reduce_graph(module, op_type, spec, device, dtype, variant)
+        return module
 
 
-def build_reduce_axis_module_for_device(device: Device) -> Module:
-    """Per-slot counterpart of :func:`build_reduce_axis_module`: one *device*
-    only."""
-    module = Module()
-    for op_type, spec in _REDUCE_OPS.items():
-        for dtype in _supported_dtypes(spec.dtype_class, device):
-            if not _is_supported(op_type, device, dtype):
-                continue
-            for variant in spec.variants:
-                _build_reduce_graph(
-                    module, op_type, spec, device, dtype, variant
-                )
-    return module
-
-
-_FAMILY = gc_compile.GCOpFamily(
-    name="reduce_axis",
-    build_module=build_reduce_axis_module,
-    build_module_for_device=build_reduce_axis_module_for_device,
-    sweep_devices=lambda: list(_DEVICES),
-)
+_FAMILY = gc_compile.GCOpFamily(_ReduceAxisFamily())
 gc_compile.register_family(_FAMILY)
 
 
@@ -362,38 +350,31 @@ def reduce_model(
             swept.
     """
     key = _graph_name(op_type, device, dtype, variant)
+    # Cache-check before building the closures below: this runs on every
+    # eager op dispatch, so a hit must not pay for closures it won't use.
     model = _FAMILY.cache.get(key)
     if model is not None:
         return model
-    if not _is_supported(op_type, device, dtype):
+
+    def check_supported() -> str | None:
+        if _is_supported(op_type, device, dtype):
+            return None
         spec = _spec_for(op_type)
         supported = _supported_dtypes(spec.dtype_class, device) if spec else []
-        raise KeyError(
+        return (
             f"Unsupported reduce op/device/dtype for key {key!r}."
             f"  Supported dtypes for this op/device: {supported}"
         )
-    if gc_compile.should_precompile():
-        # TODO(MXF-510): raise UnsupportedGraphError so executors fall back.
-        raise KeyError(
-            f"No pre-compiled reduce model for key {key!r}."
-            f"  Available: {sorted(_FAMILY.cache)}."
-            f"  Unset {gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR} (the default)"
-            " to compile targets lazily on first use."
-        )
-    with gc_compile.COMPILE_LOCK:
-        model = _FAMILY.cache.get(key)
-        if model is not None:
-            return model
-        _FAMILY.ensure_swept()
-        model = _FAMILY.cache.get(key)
-        if model is not None:
-            return model
 
-        def build(module: Module) -> None:
-            spec = _spec_for(op_type)
-            assert spec is not None, (
-                f"unsupported op {op_type!r} reached compile"
-            )
-            _build_reduce_graph(module, op_type, spec, device, dtype, variant)
+    def build(module: Module) -> None:
+        spec = _spec_for(op_type)
+        assert spec is not None, f"unsupported op {op_type!r} reached compile"
+        _reduce_graph(module, op_type, spec, device, dtype, variant)
 
-        return gc_compile.compile_single_target(_FAMILY, key, device, build)
+    return _FAMILY.model_for(
+        key,
+        device,
+        build,
+        unsupported_reason=check_supported,
+        display_name="reduce",
+    )

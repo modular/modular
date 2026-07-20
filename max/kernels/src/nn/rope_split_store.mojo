@@ -14,7 +14,7 @@
 """Fused rope + split + KV store kernel.
 
 Reads a flat QKV matmul output, applies RoPE to Q and K regions, stores
-K/V to the paged KV cache, and writes roped Q to the output buffer — all
+K/V to the paged KV cache, and writes roped Q to the output buffer, all
 in a single GPU kernel to eliminate intermediate tensor round-trips.
 """
 
@@ -80,7 +80,7 @@ def _rope_split_store_ragged_impl[
 
     The ``get_freq_pos`` closure resolves a head-dimension index and
     token position to the row of ``freqs_cis`` that supplies the RoPE
-    coefficients.  Callers swap in different closures to get
+    coefficients. Callers swap in different closures to get
     cache-derived positions vs. explicit position-ID lookups.
 
     Args:
@@ -442,7 +442,30 @@ def rope_split_store_paged_ragged[
     q_output: TileTensor[mut=True, q_out_dtype, ...],
     ctx: DeviceContext,
 ) raises:
-    """Rope+split+store with paged KV cache collection."""
+    """Rope+split+store with paged KV cache collection.
+
+    Parameters:
+        dtype: Element type of the QKV input buffer.
+        freq_dtype: Element type of the ``freqs_cis`` RoPE frequency
+            table.
+        q_out_dtype: Element type of the roped Q output buffer (defaults
+            to ``dtype``).
+        target: Compile target backend, for example ``"gpu"`` or
+            ``"cpu"`` (defaults to ``"cpu"``).
+        interleaved: Whether RoPE uses the interleaved real/imag layout
+            (defaults to ``True``).
+
+    Args:
+        qkv: Flat matmul output
+            [total_seq_len, q_dim + k_dim + v_dim].
+        input_row_offsets: [batch_size + 1] ragged offsets.
+        freqs_cis: [max_seq_len, head_dim] interleaved rope frequencies.
+        kv_collection: Paged KV cache collection to store K and V into.
+        layer_idx: Index of the layer whose K/V caches in
+            ``kv_collection`` to store into.
+        q_output: Output buffer for roped Q [total_seq_len, q_dim].
+        ctx: DeviceContext for GPU.
+    """
     var cuda_ctx: Optional[DeviceContext] = None
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
@@ -501,7 +524,7 @@ def _rope_split_store_ragged_with_position_ids[
     store K/V to cache.
 
     Like ``_rope_split_store_ragged`` but looks up RoPE frequencies using
-    ``position_ids`` instead of ``cache_length + token_offset``.  When
+    ``position_ids`` instead of ``cache_length + token_offset``. When
     ``mrope_section`` is provided, different head-dimension sections use
     different rows of ``position_ids`` (multi-axis RoPE for VL models).
 
@@ -592,7 +615,37 @@ def rope_split_store_paged_ragged_with_position_ids[
     q_output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext,
 ) raises:
-    """Rope+split+store with paged KV cache and explicit position IDs."""
+    """Rope+split+store with paged KV cache and explicit position IDs.
+
+    Parameters:
+        dtype: Element type of the QKV input buffer.
+        freq_dtype: Element type of the ``freqs_cis`` RoPE frequency
+            table.
+        target: Compile target backend, for example ``"gpu"`` or
+            ``"cpu"`` (defaults to ``"cpu"``).
+        interleaved: Whether RoPE uses the interleaved real/imag layout
+            (defaults to ``True``).
+        mrope_types: Element types of the ``mrope_section`` coord
+            (defaults to an empty `TypeList`).
+        mrope_section: Optional head-dimension section boundaries for
+            multi-axis RoPE; when set, each section indexes a different
+            row of ``position_ids`` (defaults to `None`).
+        PositionIdsLayoutType: Tensor layout of the ``position_ids``
+            buffer (defaults to `RowMajorLayout`).
+
+    Args:
+        qkv: Flat matmul output
+            [total_seq_len, q_dim + k_dim + v_dim].
+        input_row_offsets: [batch_size + 1] ragged offsets.
+        freqs_cis: [max_seq_len, head_dim] interleaved rope frequencies.
+        kv_collection: Paged KV cache collection to store K and V into.
+        position_ids: [num_sections, total_seq_len] explicit position
+            IDs used to look up RoPE frequencies.
+        layer_idx: Index of the layer whose K/V caches in
+            ``kv_collection`` to store into.
+        q_output: Output buffer for roped Q [total_seq_len, q_dim].
+        ctx: DeviceContext for GPU.
+    """
     var cuda_ctx: Optional[DeviceContext] = None
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)

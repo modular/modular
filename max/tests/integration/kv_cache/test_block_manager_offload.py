@@ -31,16 +31,17 @@ from max.nn.kv_cache import KVHashAlgo
 from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.kv_cache.paged_kv_cache.block_pool import BlockPool
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import KVCacheBlock
 from max.pipelines.modeling.types import RequestID
 
-# Short alias for readability in test fixtures and assertions: maps an int
-# block hash to its canonical 8-byte big-endian signed encoding.
-_b = to_block_hash_bytes
+
+# Maps an int block hash to its canonical 8-byte big-endian signed encoding
+# for readability in test fixtures and assertions.
+def _b(h: int) -> bytes:
+    return h.to_bytes(8, "big", signed=True)
 
 
 class RecordingConnector:
@@ -91,6 +92,11 @@ class RecordingConnector:
     ) -> int:
         self.calls.append("load")
         return min(len(block_hashes), self.num_blocks_to_load)
+
+    def count_cached_prefix(
+        self, block_hashes: Sequence[bytes]
+    ) -> tuple[int, int]:
+        return (0, 0)
 
     def wait_for_loads(self) -> None: ...
     def wait_for_offloads(self) -> None: ...
@@ -158,6 +164,7 @@ def _make_block_manager(
     *,
     num_replicas: int = 1,
     connector: RecordingConnector | None = None,
+    enable_dp_cross_replica_prefix_copy: bool = True,
 ) -> tuple[BlockManager, RecordingConnector]:
     connector = connector if connector is not None else RecordingConnector()
     # Multi-replica needs per-replica memory units so a cross-replica hit can
@@ -178,6 +185,7 @@ def _make_block_manager(
         enable_prefix_caching=True,
         num_replicas=num_replicas,
         replica_kv_memory=replica_kv_memory,
+        enable_dp_cross_replica_prefix_copy=enable_dp_cross_replica_prefix_copy,
     )
     return bm, connector
 
@@ -208,7 +216,7 @@ def _commit_device_block(pool: BlockPool, block_hash: int) -> KVCacheBlock:
     corrupting it.
     """
     block, _ = pool.alloc_block()
-    pool.commit_into_prefix_cache(block_hash, block)
+    pool.commit_into_prefix_cache(_b(block_hash), block)
     pool.free_block(block)
     return block
 
@@ -318,7 +326,7 @@ def test_touch_fires_on_device_hit_with_full_root_anchored_hashes() -> None:
     """
     bm, connector = _make_block_manager(connector=_ExternalTierConnector())
     rid = RequestID("req-hit")
-    bm.req_to_hashes[rid] = [111, 222, 333, 444]
+    bm.req_to_hashes[rid] = [_b(111), _b(222), _b(333), _b(444)]
     # First two blocks already committed => num_committed_blocks == 2.
     bm.req_to_committed_idx[rid] = 2 * bm.block_size
     _commit_device_block(bm.device_block_pool, 333)
@@ -343,7 +351,10 @@ def test_touch_anchor_not_fired_on_fully_cold_request() -> None:
     """
     bm, connector = _make_block_manager(connector=_ExternalTierConnector())
     rid = RequestID("req-cold")
-    bm.req_to_hashes[rid] = [111, 222]  # nothing on device, nothing in host
+    bm.req_to_hashes[rid] = [
+        _b(111),
+        _b(222),
+    ]  # nothing on device, nothing in host
 
     served = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
 
@@ -365,7 +376,7 @@ def test_touch_fires_on_cross_replica_hit_keyed_to_serving_replica() -> None:
         num_replicas=2, connector=_ExternalTierConnector()
     )
     rid = RequestID("req-xrep")
-    bm.req_to_hashes[rid] = [111, 222]
+    bm.req_to_hashes[rid] = [_b(111), _b(222)]
     _commit_device_block(bm.device_block_pools[1], 111)
     _commit_device_block(bm.device_block_pools[1], 222)
 
@@ -375,6 +386,59 @@ def test_touch_fires_on_cross_replica_hit_keyed_to_serving_replica() -> None:
 
     assert len(device_blocks) == 2  # materialized onto replica 0
     assert connector.touches == [([_b(111), _b(222)], 0)]
+
+
+def test_cross_replica_copy_disabled_serves_from_external_tier() -> None:
+    """With enable_dp_cross_replica_prefix_copy off, a block resident only on
+    another replica's device is NOT materialized via a device-to-device copy:
+    the device lookup stops at the local miss and the prefix is served from
+    the shared external tier instead.
+    """
+    connector = _ExternalTierConnector()
+    connector.num_blocks_to_load = 2  # both blocks are warm in the tier
+    bm, _ = _make_block_manager(
+        num_replicas=2,
+        connector=connector,
+        enable_dp_cross_replica_prefix_copy=False,
+    )
+    rid = RequestID("req-xrep-off")
+    bm.req_to_hashes[rid] = [_b(111), _b(222)]
+    _commit_device_block(bm.device_block_pools[1], 111)
+    _commit_device_block(bm.device_block_pools[1], 222)
+
+    served = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid), replica_idx=0)
+
+    assert len(served) == 2  # served, but by the external tier
+    assert connector.calls == ["load", "touch"]  # host load, no device hit
+    assert bm.metrics.cross_replica_blocks_copied == 0
+    assert bm._replica_kv_memory is not None
+    for units in bm._replica_kv_memory:
+        assert cast(_FakeKVMemory, units[0]).copies == []  # no D2D issued
+
+
+def test_cross_replica_copy_disabled_count_is_local_only() -> None:
+    """With the flag off, the admission estimate must not count blocks the
+    reuse path can no longer serve by device-to-device copy: only the request
+    replica's own resident blocks count as device hits.
+    """
+    bm, _ = _make_block_manager(
+        num_replicas=2, enable_dp_cross_replica_prefix_copy=False
+    )
+    _commit_device_block(bm.device_block_pools[1], 111)
+    _commit_device_block(bm.device_block_pools[1], 222)
+
+    assert (
+        bm._count_full_blocks_from_prefix_cache(
+            [_b(111), _b(222)], replica_idx=0
+        )
+        == 0
+    )
+    assert (
+        bm._count_full_blocks_from_prefix_cache(
+            [_b(111), _b(222)], replica_idx=1
+        )
+        == 2
+    )
 
 
 def test_touch_not_fired_without_external_tier() -> None:
@@ -391,7 +455,7 @@ def test_touch_not_fired_without_external_tier() -> None:
         _make_block_manager()
     )  # RecordingConnector: no external tier
     rid = RequestID("req-null")
-    bm.req_to_hashes[rid] = [111, 222]
+    bm.req_to_hashes[rid] = [_b(111), _b(222)]
     _commit_device_block(bm.device_block_pool, 111)
     _commit_device_block(bm.device_block_pool, 222)
 
@@ -415,7 +479,10 @@ def test_touch_anchor_fires_after_load_on_host_only_hit() -> None:
     connector.num_blocks_to_load = 2  # both requested blocks load from host
     bm, _ = _make_block_manager(connector=connector)
     rid = RequestID("req-host")
-    bm.req_to_hashes[rid] = [111, 222]  # nothing committed, nothing on device
+    bm.req_to_hashes[rid] = [
+        _b(111),
+        _b(222),
+    ]  # nothing committed, nothing on device
 
     served = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
 
@@ -436,7 +503,7 @@ def test_touch_anchor_payload_trims_uncached_tail() -> None:
     """
     bm, connector = _make_block_manager(connector=_ExternalTierConnector())
     rid = RequestID("req-tail")
-    bm.req_to_hashes[rid] = [111, 222, 333]
+    bm.req_to_hashes[rid] = [_b(111), _b(222), _b(333)]
     # First block already committed => num_committed_blocks == 1.
     bm.req_to_committed_idx[rid] = 1 * bm.block_size
     _commit_device_block(bm.device_block_pool, 222)  # 333 stays uncached

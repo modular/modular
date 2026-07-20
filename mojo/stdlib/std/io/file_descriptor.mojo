@@ -39,7 +39,7 @@ from std.ffi import (
     get_errno,
 )
 
-from std.memory import Span
+from std.collections import Span
 
 
 struct FileDescriptor(TrivialRegisterPassable, Writer):

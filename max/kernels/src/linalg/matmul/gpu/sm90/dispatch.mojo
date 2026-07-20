@@ -11,6 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""
+Dispatches rank-2 matmuls to the SM90 (Hopper) warp-specialized kernel.
+
+Routes BF16, FP32, and FP8 (e4m3fn) problems to tuned configurations based on
+static N and K, falling back to a generic kernel for unsupported shapes.
+"""
+
 from std.math import ceildiv
 from std.sys import get_defined_bool, get_defined_int, size_of
 
@@ -64,6 +71,38 @@ def matmul_dispatch_sm90[
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
+    """Dispatches a rank-2 matmul to the SM90 (Hopper) warp-specialized kernel.
+
+    Checks static dtype and shape constraints (BF16, FP8, or FP32; transposed
+    B; K alignment), then routes to `matmul_dispatch_sm90_fp8`,
+    `matmul_dispatch_sm90_bf16_fp32`, or returns `DISPATCH_MISS` if the
+    problem does not meet SM90 requirements.
+
+    Parameters:
+        c_type: Element type of the output tensor `c`.
+        a_type: Element type of the input tensor `a`.
+        b_type: Element type of the input tensor `b`.
+        transpose_b: Whether `b` is stored transposed (defaults to `False`);
+            the SM90 kernel requires this to be `True` to dispatch.
+        elementwise_lambda_fn: Epilogue applied to each output tile after the
+            matmul, consuming the tile and returning nothing (defaults to
+            `None` for no epilogue).
+        elementwise_compute_lambda_fn: Compute lambda transforming each output
+            value before the epilogue, returning the transformed value
+            (defaults to `None` for no transform).
+        pdl_level: Programmatic dependent launch level for overlapping this
+            kernel with prior work (defaults to `PDLLevel()`).
+
+    Args:
+        c: Rank-2 output tensor of shape `(M, N)`.
+        a: Rank-2 input tensor of shape `(M, K)`.
+        b: Rank-2 input tensor of shape `(K, N)` when `transpose_b` is `True`.
+        ctx: Device context for the kernel launch.
+
+    Returns:
+        `DISPATCH_HIT` (1) if the kernel was launched, `DISPATCH_MISS` (0)
+        otherwise.
+    """
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"
     comptime assert b.rank == 2, "b must be rank 2"
@@ -513,6 +552,40 @@ def matmul_dispatch_sm90_fp8[
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
+    """Dispatches an FP8 (e4m3fn) rank-2 matmul to the SM90 warp-specialized kernel.
+
+    Searches the llama-405B and llama-8B FP8 tuning tables for matching static
+    N and K, then falls back to a generic kernel sized by
+    `_find_largest_bn_for_sm90_matmul` for other shapes. Honors the
+    `AUTOTUNING_MODE` compile-time flag to launch a single autotuning config.
+
+    Parameters:
+        c_type: Element type of the output tensor `c` (inferred).
+        a_type: Element type of the input tensor `a`; must be
+            `float8_e4m3fn` (inferred).
+        b_type: Element type of the input tensor `b`; must be
+            `float8_e4m3fn` (inferred).
+        transpose_b: Whether `b` is stored transposed (defaults to `True`);
+            the SM90 kernel requires this to be `True` to dispatch.
+        elementwise_lambda_fn: Epilogue applied to each output tile after the
+            matmul, consuming the tile and returning nothing (defaults to
+            `None` for no epilogue).
+        elementwise_compute_lambda_fn: Compute lambda transforming each output
+            value before the epilogue, returning the transformed value
+            (defaults to `None` for no transform).
+        pdl_level: Programmatic dependent launch level for overlapping this
+            kernel with prior work (defaults to `PDLLevel()`).
+
+    Args:
+        c: Rank-2 output tensor of shape `(M, N)`.
+        a: Rank-2 input tensor of shape `(M, K)`.
+        b: Rank-2 input tensor of shape `(K, N)` when `transpose_b` is `True`.
+        ctx: Device context for the kernel launch.
+
+    Returns:
+        `DISPATCH_HIT` (1) if the kernel was launched, `DISPATCH_MISS` (0)
+        otherwise.
+    """
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"
     comptime assert b.rank == 2, "b must be rank 2"
@@ -2135,6 +2208,38 @@ def matmul_dispatch_sm90_bf16_fp32[
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
+    """Dispatches a BF16 or FP32 rank-2 matmul to the SM90 warp-specialized kernel.
+
+    Searches the BF16 tuning table plus InternVL, llama-3.3-70B, gemma-3-27B,
+    and miscellaneous shape tables for matching static N and K, with special
+    case configs for small M and known shapes. Skips M=1 in favor of fast
+    GEMV. Honors the `AUTOTUNING_MODE` compile-time flag to launch a single
+    autotuning config.
+
+    Parameters:
+        c_type: Element type of the output tensor `c` (inferred).
+        a_type: Element type of the input tensor `a` (inferred).
+        b_type: Element type of the input tensor `b` (inferred).
+        transpose_b: Whether `b` is stored transposed (defaults to `True`).
+        elementwise_lambda_fn: Epilogue applied to each output tile after the
+            matmul, consuming the tile and returning nothing (defaults to
+            `None` for no epilogue).
+        elementwise_compute_lambda_fn: Compute lambda transforming each output
+            value before the epilogue, returning the transformed value
+            (defaults to `None` for no transform).
+        pdl_level: Programmatic dependent launch level for overlapping this
+            kernel with prior work (defaults to `PDLLevel()`).
+
+    Args:
+        c: Rank-2 output tensor of shape `(M, N)`.
+        a: Rank-2 input tensor of shape `(M, K)`.
+        b: Rank-2 input tensor of shape `(K, N)` when `transpose_b` is `True`.
+        ctx: Device context for the kernel launch.
+
+    Returns:
+        `DISPATCH_HIT` (1) if the kernel was launched, `DISPATCH_MISS` (0)
+        otherwise.
+    """
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"
     comptime assert b.rank == 2, "b must be rank 2"

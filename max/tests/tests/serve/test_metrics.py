@@ -206,6 +206,26 @@ def test_disk_block_counters_record() -> None:
         metrics.MaxMeasurement(name, 7).commit()  # Should not raise
 
 
+def test_tool_call_conformance_error_counter() -> None:
+    """The tool-call conformance counter records with a bounded 'outcome' tag."""
+    common.configure_metrics(Settings())
+    assert "maxserve.tool_call.conformance_errors" in metrics.SERVE_METRICS
+    for outcome in ("invalid_json", "unknown_tool", "schema_mismatch"):
+        metrics.METRICS.tool_call_conformance_error(outcome)  # Should not raise
+
+
+def test_structured_output_grammar_rejection_counter() -> None:
+    """The 400-rejection counter records with a bounded 'kind' tag."""
+    common.configure_metrics(Settings())
+    assert (
+        "maxserve.structured_output.grammar_rejections" in metrics.SERVE_METRICS
+    )
+    for kind in ("tool_grammar", "json_schema"):
+        metrics.METRICS.structured_output_grammar_rejection(
+            kind
+        )  # Should not raise
+
+
 def test_batch_metrics_with_batch_type_attribute() -> None:
     """Pins down the ``batch_type`` label on the new graduated batch histograms.
     ``maxserve.batch_prompt_throughput`` is representative of the batch-level

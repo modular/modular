@@ -110,8 +110,11 @@ def _build_smoke_cmd(role: str, args: argparse.Namespace) -> str:
     )
     cd_prefix = f"cd {repo_dir} && " if repo_dir else ""
 
+    # The env assignments must directly prefix the bazelw invocation: in
+    # `VAR=x cd repo && cmd`, the assignment binds to `cd` only and never
+    # reaches cmd.
     target = (
-        f"{cd_prefix}./bazelw run"
+        f"{cd_prefix}{env} ./bazelw run"
         " //max/tests/integration/kv_cache/transfer_engine:test_transfer_engine_cross_node"
         " --"
     )
@@ -128,7 +131,7 @@ def _build_smoke_cmd(role: str, args: argparse.Namespace) -> str:
         flag = "--" + key.replace("_", "-")
         passthrough.append(f"{flag} {value}")
 
-    return " ".join([env, target] + fixed + passthrough)
+    return " ".join([target] + fixed + passthrough)
 
 
 # ---------------------------------------------------------------------------

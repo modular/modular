@@ -22,11 +22,11 @@ writer can later move to a closed-source tree.
 `OutputWriter` is the policy the kernel takes as a comptime parameter
 (`output_writer_type`). It carries:
 
-- `needs_sync: Bool` — whether the epilogue must wrap the write in a cross-GPU
+- `needs_sync: Bool`: whether the epilogue must wrap the write in a cross-GPU
   barrier (reduce-scatter) or not (local store).
-- `num_peers: Int` — number of C TMA descriptors the kernel must supply in
+- `num_peers: Int`: number of C TMA descriptors the kernel must supply in
   `c_tma_ops` (1 for the local store, one per peer for reduce-scatter).
-- `write_batched[...]( c_tma_ops, c_tiles, stage, tile_coord, shape, alpha )` —
+- `write_batched[...]( c_tma_ops, c_tiles, stage, tile_coord, shape, alpha )`:
   a static method that *constructs the concrete writer and writes one batched
   output tile*. Construction lives inside the policy, where the concrete writer
   type is named and non-erased; the kernel only passes the `c_tma_ops` array
@@ -48,9 +48,9 @@ trait-typed writer *value*:
   and `c_tiles` / `stage` are the shared `SMemTileArray2DRowMajor[...]` /
   `OutputStage[opc]` types both writers already use.
 
-Note (temporary anti-pattern, KERN-2893 follow-up): folding construction +
-write into one policy static method is interim. It is expected to fold into the
-upstream TileConsumer/TileOperation traits once those land a non-erasing
+Note (interim design): folding construction + write into one policy static
+method is a temporary approach. It is expected to fold into the upstream
+TileConsumer/TileOperation traits once those land a non-erasing
 pluggable-writer shape.
 
 Target hardware: SM100 (B200).
@@ -138,6 +138,42 @@ trait OutputWriter:
         retains all `num_peers` descriptors. The `c_tiles` / `stage` argument
         types are the shared `SMemTileArray2DRowMajor[...]` / `OutputStage[opc]`
         both writers consume, so the kernel passes its `smem.c_tiles()` and
-        pipeline stage directly — no rebind needed.
+        pipeline stage directly, with no rebind needed.
+
+        Parameters:
+            tma_origin: Origin of the C TMA descriptor memory.
+            c_type: Element `DType` of the output C tensor.
+            c_rank: Rank (number of dimensions) of the C tensor.
+            c_tile_shape: Per-dimension tile shape of the C TMA descriptor.
+            c_desc_shape: Per-dimension shape of the C output tensor.
+            a_type: Element `DType` of the A operand.
+            accum_type: Element `DType` of the MMA accumulator.
+            block_tile_shape: `(BM, BN, BK)` block tile shape in elements.
+            mma_shape: `(MMA_M, MMA_N, MMA_K)` shape of one MMA instruction.
+            opc: Output pipeline config for TMEM accumulator staging.
+            c_swizzle: Swizzle mode of the C TMA descriptor.
+            transpose_c: Whether the C output is stored transposed (A/B
+                swapped).
+            c_smem_dim0: First dimension of the C SMEM tile array.
+            c_smem_dim1: Second dimension of the C SMEM tile array.
+            num_output_stages: Number of stages in the C SMEM tile array.
+            num_output_warps: Number of warps participating in the epilogue.
+            elementwise_lambda_fn: Optional fused elementwise epilogue that
+                writes the output tile to global memory, or `None`.
+            elementwise_compute_lambda_fn: Optional fused elementwise
+                compute applied to the accumulator before store, or `None`.
+            register_based_epilogue: Whether the epilogue runs from register
+                fragments instead of staging through SMEM.
+
+        Args:
+            c_tma_ops: Pointer to the array of C TMA descriptors, one per
+                peer.
+            c_tiles: Shared-memory C tile array staging the output tile.
+            stage: Acquired output pipeline stage holding the TMEM
+                accumulator to read.
+            tile_coord: `(m, n, k_start)` block coordinates of the output
+                tile.
+            shape: `(M, N)` problem dimensions for bounds checking.
+            alpha: Scaling factor applied to the accumulator (defaults to 1).
         """
         ...

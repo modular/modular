@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides warp-specialized persistent grouped GEMM kernels for SM100 (B200) GPUs."""
+
 from std.collections import Optional
 from std.math import ceildiv
 from std.math.uutils import umod, ufloordiv
@@ -85,6 +87,12 @@ from .grouped_matmul_tile_scheduler import TileScheduler
 
 @fieldwise_init
 struct WarpRole(TrivialRegisterPassable):
+    """Enumerates the role each warp plays in the warp-specialized kernel.
+
+    The main-load, MMA, and epilogue warps select their code path by
+    comparing the runtime warp id against these roles.
+    """
+
     var _role: Int32
 
     comptime Mma = Self(5)
@@ -174,6 +182,80 @@ def load_AB[
     scheduler: TileScheduler,
     qkv_plane_stride: Int = 0,
 ):
+    """Loads A and B tiles from global memory into shared memory via TMA multicast.
+
+    Issues asynchronous multicast TMA loads for the current pipeline stage,
+    addressing the expert-local slice of A and the shared B slice, then
+    signals completion through the TMA mbarrier.
+
+    Parameters:
+        a_type: Element type of the A operand tiles (inferred).
+        b_type: Element type of the B operand tiles (inferred).
+        a_tile_rank: Rank of the A TMA tile descriptor (inferred).
+        a_tile_shape: Element shape of one A TMA tile (inferred).
+        a_desc_shape: Descriptor shape of the A TMA tile, used to compute
+            per-load element counts and row stride (inferred).
+        b_tile_rank: Rank of the B TMA tile descriptor (inferred).
+        b_tile_shape: Element shape of one B TMA tile (inferred).
+        b_desc_shape: Descriptor shape of the B TMA tile, used to compute
+            per-load element counts and row stride (inferred).
+        a_dim0: Number of rows in one A shared-memory tile (inferred).
+        a_dim1: Number of columns in one A shared-memory tile (inferred).
+        a_num_tiles: Number of pipeline stages in the A shared-memory
+            tile array (inferred).
+        a_swizzle_bytes: Swizzle granularity in bytes for A shared-memory
+            tiles (inferred).
+        b_dim0: Number of rows in one B shared-memory tile (inferred).
+        b_dim1: Number of columns in one B shared-memory tile (inferred).
+        b_num_tiles: Number of pipeline stages in the B shared-memory
+            tile array (inferred).
+        b_swizzle_bytes: Swizzle granularity in bytes for B shared-memory
+            tiles (inferred).
+        num_pipeline_stages: Number of double-buffered pipeline stages
+            for A and B shared-memory tiles (inferred).
+        block_tile_shape: Block tile shape `[BM, BN, BK]` partitioning
+            the GEMM into work tiles.
+        mma_shape: MMA instruction shape `[MMA_M, MMA_N, MMA_K]`.
+        cta_group: Number of CTAs cooperating per MMA along the M
+            dimension (defaults to 1).
+        a_plane_splits: Per-plane split sizes for fused LoRA QKV A-plane
+            row offsetting; `(0, 0)` disables it (defaults to `(0, 0)`).
+
+    Args:
+        expert_ids: Pointer to the per-group expert id array; used to
+            offset the A global-memory slice by the expert's local M base.
+        a_tma_op: TMA tile descriptor for loading A tiles from global
+            to shared memory.
+        b_tma_op: TMA tile descriptor for loading B tiles from global
+            to shared memory.
+        a_smem_tiles: Shared-memory tile array of staged A tiles, one
+            per pipeline stage.
+        b_smem_tiles: Shared-memory tile array of staged B tiles, one
+            per pipeline stage.
+        mma_mbar: Pointer to the MMA mbarrier array, one per pipeline
+            stage, waited on to confirm the consumer has freed the prior
+            stage's shared memory.
+        tma_mbar: Pointer to the TMA mbarrier array, one per pipeline
+            stage, signaled when the TMA load for a stage is complete.
+        producer_phase: Producer pipeline state tracking the stage index
+            and phase bit.
+        peer_cta_coord: `(peer_id, mma_coord_m, mma_coord_n)` tuple
+            giving the peer CTA's coordinates within the cluster.
+        work_tile_coord: `(m, n)` element coordinates of the current
+            work tile returned by the scheduler.
+        a_multicast_mask: Bitmask of CTAs participating in the A TMA
+            multicast load.
+        b_multicast_mask: Bitmask of CTAs participating in the B TMA
+            multicast load.
+        iter_idx: Current K-dimension iteration index within the work
+            tile.
+        elect_one_cta: Whether this CTA is the elected leader that sets
+            the expected bytes on the TMA mbarrier.
+        scheduler: Tile scheduler providing the current group index and
+            static M/N bounds.
+        qkv_plane_stride: Row stride between fused QKV planes used to
+            compute the A-plane row offset (defaults to 0).
+    """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -297,6 +379,67 @@ def load_AB_cuda_core[
 
     Copies [BM, BK] and [BN, BK] tiles from gmem LayoutTensors into
     swizzled smem, zero-filling columns where k >= K_actual.
+
+    Parameters:
+        a_type: Element type of the A operand tiles (inferred).
+        b_type: Element type of the B operand tiles (inferred).
+        a_dim0: Number of rows in one A shared-memory tile (inferred).
+        a_dim1: Number of columns in one A shared-memory tile (inferred).
+        a_num_tiles: Number of pipeline stages in the A shared-memory
+            tile array (inferred).
+        a_swizzle_bytes: Swizzle granularity in bytes for A shared-memory
+            tiles (inferred).
+        b_dim0: Number of rows in one B shared-memory tile (inferred).
+        b_dim1: Number of columns in one B shared-memory tile (inferred).
+        b_num_tiles: Number of pipeline stages in the B shared-memory
+            tile array (inferred).
+        b_swizzle_bytes: Swizzle granularity in bytes for B shared-memory
+            tiles (inferred).
+        num_pipeline_stages: Number of double-buffered pipeline stages
+            for A and B shared-memory tiles (inferred).
+        K_actual: Actual K dimension in elements; columns where
+            `k >= K_actual` are zero-filled.
+        cta_group: Number of CTAs cooperating per MMA along the M
+            dimension (defaults to 1).
+        a_swizzle: TMA swizzle mode applied to A shared-memory tiles
+            (defaults to `SWIZZLE_32B`).
+        b_swizzle: TMA swizzle mode applied to B shared-memory tiles
+            (defaults to `SWIZZLE_32B`).
+        a_gmem_layout: Layout of the A global-memory tensor (defaults to
+            `Layout.row_major(1, 1)`).
+        b_gmem_layout: Layout of the B global-memory tensor (defaults to
+            `Layout.row_major(1, 1)`).
+        a_plane_splits: Per-plane split sizes for fused LoRA QKV A-plane
+            row offsetting; `(0, 0)` disables it (defaults to `(0, 0)`).
+
+    Args:
+        a_gmem: A operand tensor in global memory, source of the
+            `[BM, BK]` A tiles.
+        b_gmem: B operand tensor in global memory, source of the
+            `[BN, BK]` B tiles.
+        expert_ids: Pointer to the per-group expert id array; used to
+            offset the A global-memory slice by the expert's local M base.
+        a_smem_tiles: Shared-memory tile array of staged A tiles, one
+            per pipeline stage.
+        b_smem_tiles: Shared-memory tile array of staged B tiles, one
+            per pipeline stage.
+        mma_mbar: Pointer to the MMA mbarrier array, one per pipeline
+            stage, waited on to confirm the consumer has freed the prior
+            stage's shared memory.
+        tma_mbar: Pointer to the TMA mbarrier array, one per pipeline
+            stage, signaled when the copy for a stage is complete.
+        producer_phase: Producer pipeline state tracking the stage index
+            and phase bit.
+        peer_cta_coord: `(peer_id, mma_coord_m, mma_coord_n)` tuple
+            giving the peer CTA's coordinates within the cluster.
+        work_tile_coord: `(m, n)` element coordinates of the current
+            work tile returned by the scheduler.
+        iter_idx: Current K-dimension iteration index within the work
+            tile.
+        scheduler: Tile scheduler providing the current group index and
+            static M/N bounds.
+        qkv_plane_stride: Row stride between fused QKV planes used to
+            compute the A-plane row offset (defaults to 0).
     """
     comptime BM = a_dim0
     comptime BN = b_dim0
@@ -440,6 +583,67 @@ def consumer_main_loop[
     elect_one_warp: Bool,
     iter_idx: UInt32,
 ):
+    """Performs the MMA consumer step for one pipeline stage.
+
+    Waits on the TMA mbarrier for the current stage, issues the SM100 SS MMA
+    against the staged shared-memory tiles into tensor memory, and commits
+    the result to the MMA mbarrier.
+
+    Parameters:
+        accum_type: Accumulator dtype used for the MMA result in tensor
+            memory (inferred).
+        c_type: Element type of the C output matrix (inferred).
+        a_type: Element type of the A operand tiles (inferred).
+        b_type: Element type of the B operand tiles (inferred).
+        a_dim0: Number of rows in one A shared-memory tile (inferred).
+        a_dim1: Number of columns in one A shared-memory tile (inferred).
+        a_num_tiles: Number of pipeline stages in the A shared-memory
+            tile array (inferred).
+        a_swizzle_bytes: Swizzle granularity in bytes for A shared-memory
+            tiles (inferred).
+        b_dim0: Number of rows in one B shared-memory tile (inferred).
+        b_dim1: Number of columns in one B shared-memory tile (inferred).
+        b_num_tiles: Number of pipeline stages in the B shared-memory
+            tile array (inferred).
+        b_swizzle_bytes: Swizzle granularity in bytes for B shared-memory
+            tiles (inferred).
+        a_swizzle: TMA swizzle mode applied to A shared-memory tiles
+            (inferred).
+        b_swizzle: TMA swizzle mode applied to B shared-memory tiles
+            (inferred).
+        transpose_b: Whether B is stored transposed in global memory
+            (inferred).
+        pipeline_stages: Number of double-buffered pipeline stages for A
+            and B shared-memory tiles (inferred).
+        block_tile_shape: Block tile shape `[BM, BN, BK]` partitioning the
+            GEMM into work tiles.
+        mma_shape: MMA instruction shape `[MMA_M, MMA_N, MMA_K]`.
+        cta_group: Number of CTAs cooperating per MMA along the M
+            dimension (defaults to 1).
+        cluster_shape: Thread block cluster shape `[CLUSTER_M, CLUSTER_N,
+            CLUSTER_D]` (defaults to `Index(1, 1, 1)`).
+
+    Args:
+        tmem_addr: Tensor-memory base address where the MMA accumulates
+            results for this accumulator stage.
+        a_smem_tiles: Shared-memory tile array of staged A tiles, one
+            per pipeline stage.
+        b_smem_tiles: Shared-memory tile array of staged B tiles, one
+            per pipeline stage.
+        mma_mbar: Pointer to the MMA mbarrier array, one per pipeline
+            stage, signaled when the MMA for a stage completes.
+        tma_mbar: Pointer to the TMA mbarrier array, one per pipeline
+            stage, waited on to confirm the TMA load for a stage is
+            complete.
+        consumer_phase: Consumer pipeline state tracking the stage index
+            and phase bit.
+        mma_op: SM100 SS MMA operation object used to issue and commit the
+            tensor-memory multiply-accumulate.
+        elect_one_warp: Whether this warp is the elected MMA warp for the
+            current work tile.
+        iter_idx: Current K-dimension iteration index; when zero, the MMA
+            initializes the accumulator instead of accumulating.
+    """
     var stage = consumer_phase.index()
     var phase = consumer_phase.phase()
 
@@ -468,6 +672,27 @@ def stsm_helper[
     vec: InlineArray[Scalar[vec_dtype], vec_size],
     dst: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...],
 ):
+    """Stores a register fragment to shared memory using the stmatrix instruction.
+
+    Casts the loaded fragment to the destination dtype, applies the shared
+    memory swizzle, and emits `st_matrix` stores so the epilogue can drain
+    tensor memory through shared memory before the TMA store.
+
+    Parameters:
+        swizzle: Shared-memory swizzle applied to compute the store offset
+            from the lane offset.
+        vec_dtype: Element type of the input register fragment `vec`.
+        vec_size: Number of scalar elements in the input register fragment
+            `vec`.
+        transpose_c: Whether to transpose the fragment layout when computing
+            the store offset (defaults to False).
+
+    Args:
+        vec: Register fragment loaded from tensor memory to store to shared
+            memory.
+        dst: Destination shared-memory `LayoutTensor` where the fragment is
+            written via `st_matrix`.
+    """
     # Number of elements in one row per stsmx4 tile, a row is 32B.
     comptime stsmx4_row_size = 32 // size_of[dst.dtype]()
     # Number of elements owned by each lane, each lane has 16B
@@ -559,6 +784,72 @@ def multi_stage_store_C[
     M: UInt32,
     N: UInt32,
 ):
+    """Drains accumulated results from tensor memory and stores them to global memory.
+
+    Waits on the accumulator-full mbarrier, loads fragments from tensor
+    memory in stages, packs them into swizzled shared memory via
+    `stsm_helper`, and issues TMA async stores (or a scalar fallback for
+    unaligned tails) to write the output tile, optionally applying an
+    elementwise epilogue.
+
+    Parameters:
+        c_type: Element type of the C output matrix.
+        c_tile_rank: Rank of the C TMA tile descriptor.
+        c_tile_shape: Element shape of one C TMA tile.
+        c_desc_shape: Descriptor shape of the C TMA tile, used to compute
+            per-store element counts and row stride.
+        num_accum_pipeline_stages: Number of accumulator pipeline stages
+            used to double-buffer TMEM-to-global-memory C stores.
+        c_smem_layout: Layout of one C shared-memory output tile stage;
+            its shape determines the per-stage column width and tile size.
+        accum_type: Accumulator dtype loaded from tensor memory before
+            packing into shared memory.
+        block_tile_shape: Block tile shape `[BM, BN, BK]` partitioning the
+            GEMM into work tiles.
+        mma_shape: MMA instruction shape `[MMA_M, MMA_N, MMA_K]`.
+        stage_stride_cols: Per-stage column stride in tensor memory
+            between accumulator pipeline stages.
+        c_static_N: Static N dimension of the C output matrix; used as
+            the row stride and M-coordinate bound in the scalar fallback
+            store path.
+        c_swizzle: TMA swizzle mode applied to C shared-memory tiles
+            (defaults to `SWIZZLE_128B`).
+        cta_group: Number of CTAs cooperating per MMA along the M
+            dimension (defaults to 1).
+        num_output_warps: Number of warps participating in the epilogue
+            store (defaults to 4).
+        elementwise_lambda_fn: Optional elementwise epilogue applied to
+            stored C fragments (defaults to None).
+        transpose_c: Whether to transpose the C output tile in shared
+            memory before the TMA store (defaults to False).
+
+    Args:
+        c_smem_base: Base pointer to the C shared-memory buffer used for
+            double-buffered output tile staging.
+        c_tma_op: TMA tile descriptor for storing C tiles from shared to
+            global memory.
+        c_ptr: Base pointer to the row-major C output tensor in global
+            memory, used by the scalar fallback store path.
+        accum_pipeline_consumer_state: Consumer pipeline state tracking
+            the accumulator stage index and phase bit.
+        accum_full_mbar: Pointer to the accumulator-full mbarrier array,
+            one per pipeline stage, waited on to confirm the MMA has
+            filled the accumulator stage.
+        accum_empty_mbar: Pointer to the accumulator-empty mbarrier
+            array, arrived on to signal the consumer has drained an
+            accumulator stage.
+        tmem_addr: Tensor-memory base address where the MMA accumulated
+            results for this work tile reside.
+        work_tile_coord: `(m, n)` element coordinates of the current work
+            tile returned by the scheduler.
+        group_end_idx: Exclusive end of the current group's valid N
+            range, used to mask out-of-bound TMA stores and select the
+            scalar fallback for unaligned tails.
+        elect_one_warp: Whether this warp is the elected epilogue leader
+            for issuing TMA stores.
+        M: M dimension of the GEMM output in elements.
+        N: N dimension of the GEMM output in elements.
+    """
     # WAIT FOR MMA TO FINISH AND STORE RESULT
     # scheduler fetch next work
     comptime BM = block_tile_shape[0]
@@ -832,6 +1123,29 @@ def zero_output[
     coord: Tuple[UInt32, UInt32],
     group_end_idx: UInt32,
 ):
+    """Zero-fills an output tile for skipped or invalid expert assignments.
+
+    Each thread stores a SIMD vector of zeros per row across the output
+    tile width, masking out threads and rows that fall outside the valid
+    tile or group boundary.
+
+    Parameters:
+        c_type: Element type of the C output tensor.
+        output_tile_shape: Tile shape `[rows, cols]` of the output region to
+            zero-fill, where index 0 bounds the row count and index 1 bounds
+            the column count.
+        c_stride: Row stride of the C output tensor in elements; the store
+            pointer advances by this amount per row.
+        c_N: Total width of the C output tensor in elements; bounds the
+            column offset `coord[0]` to mask out-of-bound stores.
+
+    Args:
+        c_ptr: Base pointer to the C output tensor in global memory.
+        coord: `(m, n)` element coordinates of the output tile origin, where
+            `coord[0]` is the column offset and `coord[1]` is the row offset.
+        group_end_idx: Exclusive end of the current group's valid row range;
+            bounds the number of rows zeroed.
+    """
     comptime thread_num = 4 * WARP_SIZE
     comptime simd_size = min(2, simd_width_of[c_type]())
 
@@ -1003,6 +1317,90 @@ def blackwell_tma_umma_warp_specialized_kernel[
     a_gmem: LayoutTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
     b_gmem: LayoutTensor[b_type, b_gmem_layout, ImmutAnyOrigin],
 ):
+    """Implements the warp-specialized persistent grouped GEMM kernel for SM100.
+
+    Splits the CTA warps into main-load, MMA, and epilogue roles that
+    cooperate through mbarriers and a tile scheduler to iterate over
+    grouped GEMM work tiles, streaming A and B through shared memory via
+    TMA and accumulating into tensor memory before storing C back to
+    global memory.
+
+    Parameters:
+        a_type: Element type of the A operand matrix.
+        b_type: Element type of the B operand matrix.
+        c_type: Element type of the C output matrix.
+        expert_m: Static M dimension of each expert's local slice, used as the
+            C stride and row bound for contiguous row-major C output.
+        a_tile_rank: Rank of the A TMA tile descriptor.
+        a_tile_shape: Element shape of one A TMA tile.
+        a_desc_shape: Descriptor shape of the A TMA tile, used to compute per-
+            load element counts and row stride.
+        b_tile_rank: Rank of the B TMA tile descriptor.
+        b_tile_shape: Element shape of one B TMA tile.
+        b_desc_shape: Descriptor shape of the B TMA tile, used to compute per-
+            load element counts and row stride.
+        c_tile_rank: Rank of the C TMA tile descriptor.
+        c_tile_shape_param: Element shape of one C TMA tile.
+        c_desc_shape: Descriptor shape of the C TMA tile.
+        block_tile_shape: Block tile shape `[BM, BN, BK]` partitioning the GEMM
+            into work tiles.
+        mma_shape: MMA instruction shape `[MMA_M, MMA_N, MMA_K]`.
+        cluster_shape: Thread block cluster shape `[CLUSTER_M, CLUSTER_N,
+            CLUSTER_D]`.
+        num_pipeline_stages: Number of TMA producer and consumer pipeline stages
+            used to double-buffer A and B shared-memory tiles.
+        num_accum_pipeline_stages: Number of accumulator pipeline stages
+            used to double-buffer TMEM-to-global-memory C stores.
+        num_output_stages: Number of output shared-memory buffer stages for C
+            (defaults to 2).
+        output_tile_shape: Output tile shape `[OUT_M, OUT_N]` for one C shared-
+            memory stage (defaults to `Index(128, 32)`).
+        transpose_b: Whether B is stored transposed in global memory (defaults
+            to True).
+        a_swizzle: TMA swizzle mode applied to A shared-memory tiles (defaults
+            to `SWIZZLE_128B`).
+        b_swizzle: TMA swizzle mode applied to B shared-memory tiles (defaults
+            to `SWIZZLE_128B`).
+        c_swizzle: TMA swizzle mode applied to C shared-memory tiles (defaults
+            to `SWIZZLE_128B`).
+        cta_group: Number of CTAs cooperating per MMA along the M dimension
+            (defaults to 2).
+        elementwise_lambda_fn: Optional elementwise epilogue applied to stored
+            C fragments (defaults to None).
+        a_plane_splits: Per-plane split sizes for fused LoRA QKV A-plane row
+            offsetting; `(0, 0)` disables it (defaults to `(0, 0)`).
+        transpose_c: Whether to transpose the C output tile in shared memory
+            before the TMA store (defaults to False).
+        use_tma: Whether to use TMA for A and B loads; when False, use the
+            CUDA-core fallback (defaults to True).
+        K_actual: Actual K dimension in elements for the CUDA-core fallback
+            when `use_tma` is False (defaults to 0).
+        a_gmem_layout: Layout of the A global-memory tensor, used only by the
+            CUDA-core fallback (defaults to `Layout.row_major(1, 1)`).
+        b_gmem_layout: Layout of the B global-memory tensor, used only by the
+            CUDA-core fallback (defaults to `Layout.row_major(1, 1)`).
+
+    Args:
+        expert_usage_stats: Pointer to per-expert usage stats; index 1 holds
+            the active expert count.
+        a_tma_op: TMA tile descriptor for loading A tiles from global to shared
+            memory.
+        expert_ids: Pointer to the per-group expert id array; negative entries
+            skip the tile.
+        b_tma_op: TMA tile descriptor for loading B tiles from global to shared
+            memory.
+        b_offsets: Pointer to the per-expert B offset prefix sum, of length
+            `num_active_experts + 1`.
+        c_tma_op: TMA tile descriptor for storing C tiles from shared to global
+            memory.
+        c_ptr: Base pointer to the row-major C output tensor in global memory.
+        mnk: `[M, N, K]` dimensions of the grouped GEMM as unsigned 32-bit
+            integers.
+        a_gmem: A operand tensor used only by the CUDA-core fallback when
+            `use_tma` is False.
+        b_gmem: B operand tensor used only by the CUDA-core fallback when
+            `use_tma` is False.
+    """
     comptime assert c_type != DType.float32, "c_type cannot be float32"
     comptime if not use_tma:
         comptime assert (
@@ -1482,6 +1880,49 @@ def grouped_matmul_sm100_persistent[
     ],
     ctx: DeviceContext,
 ) raises:
+    """Launches the persistent grouped GEMM kernel for SM100 from host tensors.
+
+    Swaps A and B to match the kernel's transposed-B convention, delegates
+    to `_grouped_matmul_sm100_persistent` which builds TMA descriptors and
+    shared-memory layouts from the matmul config, selects the pipeline
+    depth from available shared memory, and enqueues the warp-specialized
+    kernel on the device context.
+
+    Parameters:
+        c_type: Element type of the C output matrix (inferred).
+        a_type: Element type of the A operand matrix (inferred).
+        b_type: Element type of the B operand matrix (inferred).
+        transpose_b: Whether B is stored transposed in global memory
+            (inferred).
+        config: Matmul config carrying the block tile shape, MMA shape,
+            and cluster shape.
+        cta_group: Number of CTAs cooperating per MMA along the M
+            dimension (defaults to 1).
+        num_pipeline_stages: Number of TMA producer and consumer
+            pipeline stages; when None, auto-selected from available
+            shared memory (defaults to None).
+        a_swizzle: TMA swizzle mode applied to A shared-memory tiles
+            (defaults to `SWIZZLE_128B`).
+        b_swizzle: TMA swizzle mode applied to B shared-memory tiles
+            (defaults to `SWIZZLE_128B`).
+        elementwise_lambda_fn: Optional elementwise epilogue applied to
+            stored C fragments (defaults to None).
+        a_plane_splits: Per-plane split sizes for fused LoRA QKV A-plane
+            row offsetting; `(0, 0)` disables it (defaults to `(0, 0)`).
+
+    Args:
+        c: Output C tile tensor in generic address space.
+        a: A operand tile tensor (activations); swapped to B by the
+            kernel's transposed-B convention.
+        a_offsets: Per-expert A offset prefix sum tile tensor.
+        b: B operand tile tensor (weights); swapped to A by the
+            kernel's transposed-B convention.
+        expert_ids: Per-group expert id tile tensor; negative entries
+            skip the tile.
+        expert_usage_stats: Per-expert usage stats tile tensor; index 1
+            holds the active expert count.
+        ctx: Device context used to enqueue the kernel.
+    """
     # swapAB by default
     comptime num_experts = b.static_shape[0]
     comptime M = b.static_shape[1]
@@ -1571,8 +2012,8 @@ def _grouped_matmul_sm100_persistent[
     comptime assert expert_m != 0 and K != 0, "expert_m and K must be non-zero"
 
     # TMA requires the global stride (K * sizeof) to be a multiple of
-    # 16 bytes.  When it is not, the kernel uses CUDA core copies
-    # instead.  We still create TMA descriptors (to satisfy the type
+    # 16 bytes. When it is not, the kernel uses CUDA core copies
+    # instead. We still create TMA descriptors (to satisfy the type
     # system) but use BK as the fake K so the stride is large enough.
     comptime use_tma = (K * size_of[a_type]()) % 16 == 0
     comptime tma_K = K if use_tma else BK

@@ -13,7 +13,7 @@
 """Per-lane DRAM->VGPR loaders for the preshuffled MXFP4 MoE matmul.
 
 Both loaders consume buffers produced by `mxfp4_preshuffle_layouts` and emit
-one `buffer_load_*` per call — no LDS round-trip. Each lane reads exactly the
+one `buffer_load_*` per call, no LDS round-trip. Each lane reads exactly the
 fragment / scale word the MFMA needs at its `(lane_nlane, lane_klane)` slot.
 
 `PreshuffledBLoader[N, K_BYTES]`:
@@ -60,7 +60,13 @@ struct PreshuffledBLoader[
 
     @always_inline
     def __init__(out self, b_gmem_tile: TileTensor[DType.uint8, ...]):
-        """Builds the V# from a preshuffled per-expert B byte buffer."""
+        """Builds the V# from a preshuffled per-expert B byte buffer.
+
+        Args:
+            b_gmem_tile: Preshuffled per-expert B byte buffer holding the
+                `[N, K_BYTES]` logical tile, as produced by
+                `mxfp4_preshuffle_layouts`.
+        """
         self.bc = make_amd_buffer_resource(b_gmem_tile)
 
     @always_inline
@@ -70,6 +76,10 @@ struct PreshuffledBLoader[
         For one MFMA dispatch a lane calls this with
         `(n = warp_n_off + n_mma * 16 + lane % 16,
           k_byte = k_tile * 64 + (lane // 16) * 16)`.
+
+        Args:
+            n: Logical N row index into the `[N, K_BYTES]` tile.
+            k_byte: Logical K byte index into the `[N, K_BYTES]` tile.
         """
         var byte_off = Int32(
             Shuffler[1].b_5d_grouped_layout[N=Self.N, K_BYTES=Self.K_BYTES](
@@ -92,27 +102,38 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
 
     Parameters:
         MN_padded: MN dimension rounded up to 32 (the scale-block stride).
-        K_SCALES: K // 32 — one E8M0 byte per 32 FP4 elements.
+        K_SCALES: K // 32 (one E8M0 byte per 32 FP4 elements).
     """
 
     var bc: AMDBufferResource
 
     @always_inline
     def __init__(out self, scale_gmem_tile: TileTensor[DType.uint8, ...]):
-        """Builds the V# from a preshuffled per-expert scale byte buffer."""
+        """Builds the V# from a preshuffled per-expert scale byte buffer.
+
+        Args:
+            scale_gmem_tile: Preshuffled per-expert scale byte buffer holding
+                the `[MN_padded, K_SCALES]` logical grid of E8M0 bytes, as
+                produced by `mxfp4_preshuffle_layouts`.
+        """
         self.bc = make_amd_buffer_resource(scale_gmem_tile)
 
     @always_inline
     def load_packed(self, mn: Int, k_scale: Int) -> Int32:
         """Loads the packed Int32 scale word containing logical `(mn, k_scale)`.
 
-        Pass `(mn, k_scale)` at `(mn_pack=0, k_pack=0)` — the cell base —
+        Pass `(mn, k_scale)` at `(mn_pack=0, k_pack=0)` (the cell base)
         and all 4 bytes of the cell come back in the returned i32. The
         MFMA's `opsel` then selects the byte for each sub-MMA.
 
         Per-lane usage:
             mn       = warp_mn_off + lane % 16            # mn_lane within block
             k_scale  = k_pair_idx * 8 + (lane // 16)      # k_lane within block
+
+        Args:
+            mn: Logical MN index into the `[MN_padded, K_SCALES]` scale grid.
+            k_scale: Logical K scale index into the `[MN_padded, K_SCALES]`
+                scale grid.
         """
         var byte_off = Int32(
             Shuffler[1].scale_4d_byte_off[

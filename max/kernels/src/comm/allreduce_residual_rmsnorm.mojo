@@ -14,12 +14,12 @@
 
 Combines P2P allreduce, RMSNorm normalization, and optional FP8 dynamic
 quantization into a single kernel launch. Data stays in registers
-throughout — no global memory intermediate between allreduce and RMSNorm.
+throughout, with no global memory intermediate between allreduce and RMSNorm.
 
 Quantization is fused in only when the output dtype differs from the input
 dtype (`out_dtype != in_dtype`). When `out_dtype == in_dtype` (e.g. a bf16
-input with a bf16 output) the FP8 phases — per-row max, dynamic scale, and
-quantize — are skipped at compile time, the normalized value is written
+input with a bf16 output) the FP8 phases (per-row max, dynamic scale, and
+quantize) are skipped at compile time, the normalized value is written
 directly in the input dtype, and no per-row scale is produced.
 
 Three dispatch paths:
@@ -32,11 +32,11 @@ Three dispatch paths:
   with two stages separated by a per-block barrier:
     Stage 1 (RS + RMSNorm + FP8): each block reduces rows in its partition
       from all GPUs in f32 registers, then normalizes and quantizes to FP8
-      immediately — no f32 scratch. Writes compact fp8 data + per-row scale
+      immediately, with no f32 scratch. Writes compact fp8 data + per-row scale
       (+ optional bf16 residual) to local scratch.
     Stage 2 (AG copy): each block reads compact fp8/scale/bf16 from the
       owning GPU's scratch (P2P) and writes to local output buffers. No
-      compute — just copies of data that is 4x smaller than f32.
+      compute, just copies of data that is 4x smaller than f32.
   Both stages use the same row-to-block mapping, so the per-block barrier
   correctly synchronizes all data dependencies. Total P2P traffic is
   N * sizeof(in_dtype) for Stage 1 (same as 1-stage) plus
@@ -44,7 +44,7 @@ Three dispatch paths:
   The AG phase copies fp8 (1 byte/elem) instead of f32 (4 bytes/elem),
   reducing Stage 2 bandwidth by ~4x for the non-residual case.
 
-Split (large residual payloads): Two separate kernel launches —
+Split (large residual payloads): Two separate kernel launches:
   allreduce with add epilogue followed by fused rmsnorm+fp8. Avoids
   carrying bf16 residual data through scratch buffers in both stages,
   which nearly doubles Stage 2 copy bandwidth in the fused path. The
@@ -362,7 +362,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     Stage 1 (RS + RMSNorm + FP8): Each block reduces rows in its partition
     from all GPUs in f32 registers, normalizes, quantizes to FP8, and writes
     compact results (fp8 + scale + optional bf16 residual) to local scratch.
-    No f32 scratch is written — data stays in registers through RS → Norm → FP8.
+    No f32 scratch is written: data stays in registers through RS → Norm → FP8.
 
     Inter-stage: Per-block barrier with release/acquire fence ensures all
     scratch writes from block B on every GPU are visible before block B
@@ -371,7 +371,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     Stage 2 (AG copy): Each block iterates over each GPU's partition and
     reads fp8/scale/bf16 from that GPU's scratch via P2P, then writes to
     local output buffers. Consecutive reads from the same peer improve
-    NVLink pipelining. No compute — just copies of compact data.
+    NVLink pipelining. No compute, just copies of compact data.
 
     Scratch layout per GPU (after Signal header):
       [fp8:      rows_per_rank * cols bytes]
@@ -1360,8 +1360,8 @@ def allreduce_rmsnorm[
 ) raises:
     """Fused allreduce + RMSNorm with optional FP8 quantization.
 
-    Combines a P2P allreduce across GPUs, RMSNorm, and — when the output dtype
-    differs from the input dtype — FP8 dynamic quantization into a single
+    Combines a P2P allreduce across GPUs, RMSNorm, and (when the output dtype
+    differs from the input dtype) FP8 dynamic quantization into a single
     kernel launch, eliminating the global memory round-trip between allreduce
     output and RMSNorm input. When `out_dtype == in_dtype` the quantization is
     skipped: the normalized value is written directly in the input dtype and
@@ -1490,8 +1490,8 @@ def allreduce_residual_rmsnorm[
 ) raises:
     """Fused allreduce + residual add + RMSNorm with optional FP8 quantization.
 
-    Combines a P2P allreduce, a residual add, RMSNorm, and — when the output
-    dtype differs from the input dtype — FP8 dynamic quantization into a fused
+    Combines a P2P allreduce, a residual add, RMSNorm, and (when the output
+    dtype differs from the input dtype) FP8 dynamic quantization into a fused
     kernel. When `out_dtype == in_dtype` the quantization is skipped: the
     normalized value is written directly in the input dtype and `scale_ub` and
     `scale_output` are ignored (the per-row scale is neither computed nor

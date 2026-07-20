@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements non-maximum suppression (NMS) for object detection bounding-box filtering."""
 
 from std.math import iota
 
@@ -208,6 +209,9 @@ def non_max_suppression_shape_func[
     selected, allowing proper output buffer allocation. Can be removed once the
     graph compiler supports value semantic kernels that allocate their own output.
 
+    Parameters:
+        dtype: The data type for box coordinates and scores.
+
     Args:
         boxes: Rank-3 tensor of bounding boxes with shape (batch, num_boxes, 4).
         scores: Rank-3 tensor of scores with shape (batch, num_classes, num_boxes).
@@ -254,6 +258,24 @@ def non_max_suppression[
     func: FuncType,
 ):
     """Implements the NonMaxSuppression operator from the ONNX spec https://github.com/onnx/onnx/blob/main/docs/Operators.md#nonmaxsuppression.
+
+    Parameters:
+        dtype: The data type for box coordinates and scores.
+        FuncType: Type of the `func` callback invoked for each selected box.
+
+    Args:
+        boxes: Rank-3 tensor of bounding boxes with shape (batch, num_boxes, 4).
+            Each box is [y1, x1, y2, x2].
+        scores: Rank-3 tensor of detection scores with shape (batch,
+            num_classes, num_boxes).
+        max_output_boxes_per_class: Maximum number of boxes to select per
+            class.
+        iou_threshold: IoU threshold for suppression. Boxes with IoU above
+            this value are suppressed.
+        score_threshold: Minimum score for a box to be considered. Boxes
+            below this are filtered out.
+        func: Callback invoked for each selected box with the batch index,
+            class index, and box index.
     """
     comptime assert boxes.rank == 3, "boxes must be of rank 3"
     comptime assert scores.rank == 3, "scores must be of rank 3"

@@ -115,6 +115,9 @@ from msa.amd.prefill import msa_amd_prefill_run
 
 @extensibility.register("mo.msa.indexer.ragged.paged")
 struct Struct_msa_indexer_ragged_paged:
+    """Registers the `mo.msa.indexer.ragged.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -293,6 +296,9 @@ struct Struct_msa_indexer_ragged_paged:
 
 @extensibility.register("mo.msa.attention.ragged.paged")
 struct Struct_msa_attention_ragged_paged:
+    """Registers the `mo.msa.attention.ragged.paged` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[

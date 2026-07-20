@@ -71,7 +71,7 @@ def _blackwell_matmul_swiglu[
                            (W pre-permuted on its N axis, gate/up adjacent)
         AB_swapped=True :  a_device = W [2H, K], b_device = X [M, K]
                            (W pre-permuted on its M axis with stride-8 row
-                            blocks — see _swiglu_epilogue_smem_tma docs)
+                             blocks: see _swiglu_epilogue_smem_tma docs)
 
     ``c_out`` is always [M, H] in user frame (H = N/2). The kernel computes
     A @ B^T in kernel frame and writes the SwiGLU-reduced output to

@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -31,6 +31,8 @@ _CPU_ONLY_TESTS = [
 # Tests with their own targets due to special configurations
 _SEPARATE_TARGET_TESTS = [
     "test_advanced_indexing.py",
+    "test_buffer_create_init.py",
+    "test_buffer_create_init_gpu.py",
     "test_debug_config.py",
     "test_debug_config_integration.py",
     "test_engine_device_graph.py",
@@ -39,6 +41,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_graph_telemetry.py",
     "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
+    "test_mega_ffn_nvfp4_fusion_gpu.py",
     "test_rowwise_reductions.py",
     "test_runtime_source_notes.py",
     "test_scatter.py",
@@ -51,6 +54,7 @@ modular_py_test(
     srcs = glob(
         ["*.py"],
         exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + [
+            "buffer_create_init_shared.py",
             "test_nan_check.py",
         ],
     ),
@@ -257,6 +261,50 @@ modular_py_test(
     ],
 )
 
+# Tests for `ops.buffer_create` with an init value (persistent, once-initialized
+# state buffers). The device-adaptive checks live in a shared library so the
+# same logic runs from both the CPU (`test_buffer_create_init`, on remote-intel)
+# and GPU (`test_buffer_create_init_gpu`, on remote-b200) targets, covering the
+# host and device paths of the one-time memset initialization.
+modular_py_library(
+    name = "buffer_create_init_shared",
+    testonly = True,
+    srcs = ["buffer_create_init_shared.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_buffer_create_init",
+    size = "small",
+    srcs = ["test_buffer_create_init.py"],
+    deps = [
+        ":buffer_create_init_shared",
+        "//max/python/max/engine",
+    ],
+)
+
+modular_py_test(
+    name = "test_buffer_create_init_gpu",
+    size = "small",
+    srcs = ["test_buffer_create_init_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":buffer_create_init_shared",
+        "//max/python/max/engine",
+    ],
+)
+
 # Row-wise reduction correctness tests (CPU). Each of the ~31 parametrizations
 # builds and compiles one symbolic-dimension graph, so the wall time is
 # compile-dominated; shard_count parallelizes those compiles across CI workers
@@ -349,6 +397,33 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mega_ffn_nvfp4_fusion",
+    size = "large",
+    srcs = [
+        "test_mega_ffn_nvfp4_fusion_gpu.py",
+    ],
+    # Disable the MEF compile cache so the `*_fires_in_mo_ir` tests always run
+    # the MO pipeline (and emit the IR dump they grep): the cache key is
+    # structural, so their graph would otherwise be a cache hit off the
+    # compiles-and-runs test's identical graph and skip the pipeline (no dump).
+    env = {"MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false"},
+    # B200-only: the fused MegaFFN NVFP4 kernel the fusion lowers to is SM100a
+    # (Blackwell) specific. Off SM100 the pattern does not fire and the legs
+    # run as standalone kernels, so there is nothing to exercise.
+    tags = ["gpu"],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 

@@ -56,6 +56,13 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     # Populated only for MLA paths; ``None`` otherwise.
     mla_num_partitions: _Tensor | None = None
     draft_mla_num_partitions: _Tensor | None = None
+    # One single-layer KV buffer per layer, used when the backing pool
+    # allocates a standalone buffer per layer (``KVCacheParams.per_layer_buffers``)
+    # instead of one multi-layer buffer. ``kv_blocks`` aliases
+    # ``kv_blocks_per_layer[0]`` so single-buffer consumers stay valid; a
+    # per-layer attention dispatch picks ``kv_blocks_per_layer[layer_idx]``.
+    # ``None`` (the default) for every non-per-layer cache.
+    kv_blocks_per_layer: list[_Buffer] | None = None
 
     def __post_init__(self) -> None:
         _verify_rank1_int64_tensor(
@@ -97,6 +104,9 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
                 if self.draft_mla_num_partitions
                 else ()
             ),
+            # Per-layer buffers are appended at the tail so the leading fields
+            # stay byte-identical for every non-per-layer cache (``None`` -> ()).
+            *(self.kv_blocks_per_layer or ()),
         ]
 
     # TODO: FIX THIS HACK!!!
@@ -110,6 +120,9 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             self.max_prompt_length,
             self.max_cache_length,
             *((self.kv_scales,) if self.kv_scales else ()),
+            # Tail per-layer buffers (see ``flatten``). Attention dispatch clears
+            # this field before calling an op, so this is ``()`` at op sites.
+            *(self.kv_blocks_per_layer or ()),
         ]
 
     def unflatten(
@@ -136,6 +149,12 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             mla_num_partitions=next(it) if self.mla_num_partitions else None,
             draft_mla_num_partitions=next(it)
             if self.draft_mla_num_partitions
+            else None,
+            # Consumed last, matching the tail append in ``flatten``.
+            kv_blocks_per_layer=[
+                next(it) for _ in range(len(self.kv_blocks_per_layer))
+            ]
+            if self.kv_blocks_per_layer
             else None,
         )
 

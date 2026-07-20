@@ -28,7 +28,6 @@ from pathlib import Path
 
 import pytest
 from max.pipelines.kv_cache.connectors.disk_tier import DiskTier
-from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 
 _META = "kv-disk-cache.meta.json"
 _BLOCK_NBYTES = 4096
@@ -160,39 +159,28 @@ def test_corrupt_meta_raises_with_remediation(tmp_path: Path) -> None:
 def test_sha256_64_negative_int_hash_filename_is_canonical(
     tmp_path: Path,
 ) -> None:
-    """Regression test for the connector-boundary signed-BE encoding.
+    """Regression test for the disk-tier filename of a high-bit-set hash.
 
     sha256_64 truncates a 32-byte SHA-256 digest to 8 bytes; for roughly
-    half of all inputs the resulting 8-byte hash, viewed as a signed
-    int64, is negative. The boundary coercion in
-    ``kv_connector.to_block_hash_bytes`` uses ``signed=True`` so the
-    encoding is total over the full int64 range. Without ``signed=True``,
-    a negative int hash would either raise ``OverflowError``
-    (``signed=False``) or alias onto a different bit-pattern, silently
-    producing cache misses against on-disk files written under the
-    canonical filename.
+    half of all inputs the resulting 8-byte hash has its high bit set (i.e.
+    is negative when viewed as a signed int64). Block hashes are now produced
+    as raw ``bytes`` upstream — the signed-int64 boundary coercion that used
+    to live in ``kv_connector.to_block_hash_bytes`` was removed — so the disk
+    tier receives the raw 8 bytes directly. This pins that the DiskTier maps
+    such a high-bit-set 8-byte key to the matching hex filename, i.e. the
+    on-disk schema that ``_load_existing`` has to round-trip across restarts.
 
-    This test pins down (a) the helper's encoding for the int64 boundary
-    sentinels (-1, INT64_MIN, INT64_MAX, 0) and the 8-/32-byte
-    pass-through cases, and (b) that the DiskTier maps the encoded bytes
-    to the matching hex filename — i.e. the on-disk schema that
-    ``_load_existing`` has to round-trip across restarts.
+    The former int64-boundary-sentinel and bytes-passthrough assertions only
+    exercised ``to_block_hash_bytes``'s removed int-encoding branch, so they
+    are dropped; the disk-tier filename derivation below is the code under
+    test.
     """
-    # int64-boundary sentinels: the encoding must be total and lossless.
-    assert to_block_hash_bytes(-1) == b"\xff" * 8
-    assert to_block_hash_bytes(-(1 << 63)) == b"\x80" + b"\x00" * 7
-    assert to_block_hash_bytes((1 << 63) - 1) == b"\x7f" + b"\xff" * 7
-    assert to_block_hash_bytes(0) == b"\x00" * 8
+    # A high-bit-set 8-byte hash (the bytes image of int64 -1), produced as
+    # raw bytes upstream rather than via an int->bytes coercion helper.
+    negative_hash = b"\xff" * 8
 
-    # Bytes inputs of canonical lengths pass through unchanged.
-    assert to_block_hash_bytes(b"\xff" * 8) == b"\xff" * 8
-    assert to_block_hash_bytes(b"\xab" * 32) == b"\xab" * 32
-
-    # The DiskTier maps the encoded bytes to the matching hex filename;
-    # this is what ``_load_existing`` has to round-trip across restarts.
     dt = _make_disk_tier(tmp_path, "sha256_64")
     try:
-        negative_hash = to_block_hash_bytes(-1)
         assert dt._hash_to_path(negative_hash).name == "ffffffffffffffff.bin"
     finally:
         _shutdown(dt)

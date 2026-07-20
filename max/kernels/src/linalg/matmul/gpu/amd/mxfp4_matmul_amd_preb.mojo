@@ -16,11 +16,11 @@ Variant of `MXFP4MatmulAMD` that skips LDS staging for both B and the
 A/B scales. B is preshuffled host-side via `Shuffler.preshuffle_b_5d`
 so each lane's 16-byte fragment lives at a known DRAM offset and is
 read with a single `buffer_load_dwordx4`. Scales are addressed by
-`Shuffler.scale_4d_byte_off` — each lane reads one Int32 covering a
+`Shuffler.scale_4d_byte_off`: each lane reads one Int32 covering a
 (mn_pack=2, k_pack=2) cell that feeds 4 sub-MMAs via the MFMA's
 OPSEL byte selector.
 
-Only suitable when `num_warps_m == 1` (BM == WM) — otherwise B would be
+Only suitable when `num_warps_m == 1` (BM == WM); otherwise B would be
 read multiply across the warps in the M direction without LDS reuse.
 
 Tile constraints:
@@ -80,6 +80,21 @@ from .mxfp4_preshuffle_loaders import PreshuffledBLoader, PreshuffledScaleLoader
 # log2(BK_BYTES)-4 = log2(BK_BYTES//16) = bits. BK_BYTES is pow-2 (64/128/256).
 @always_inline
 def a_lds_swizzle[BK_BYTES: Int]() -> Swizzle:
+    """Builds the XOR-16 LDS swizzle for a row-major [BM, BK_BYTES] uint8 A tile.
+
+    Returns a `Swizzle` on the flat in-tile byte offset that XORs the
+    `log2(BK_BYTES//16)` row bits sitting at flat-bit `log2(BK_BYTES)` down
+    into the column's 16B-granule bits (base=4), removing A LDS bank
+    conflicts. Applied identically at write (`copy_a_tile_to_smem`) and read
+    (`load_a_frag_from_smem`); a mismatch produces wrong logits. `BK_BYTES`
+    must be a power of two (64/128/256).
+
+    Parameters:
+        BK_BYTES: Width of the A tile in bytes, a power of two.
+
+    Returns:
+        The XOR-16 `Swizzle` for the A LDS tile.
+    """
     comptime bits = log2_floor(BK_BYTES // 16)
     return Swizzle(bits, 4, bits)
 
@@ -120,6 +135,18 @@ struct BlockScaledMmaOp_PreB[
     `num_n_mmas` may be odd; the constructor rotates the scale i32 per
     CTA so OPSEL keeps the same comptime formula. See module-level
     comment for the scale-cell byte ordering.
+
+    Parameters:
+        mma_shape: The MFMA instruction shape as `(M, N, K)` in
+            MFMA-native element units, for example `(16, 16, 128)` for
+            MXFP4.
+        warp_tile: The `(M, N, K)` region this warp computes per
+            outer-K iteration, in the same element units as
+            `mma_shape`. Per-warp MFMA counts are derived as
+            `warp_tile[i] // mma_shape[i]`.
+        num_b_slots: Number of `_b_reg` slots for software pipelining
+            (defaults to 1). Set to 2 to double-buffer B fragments
+            across outer-K iterations.
     """
 
     comptime MMA_M = Self.mma_shape[0]
@@ -263,6 +290,15 @@ struct BlockScaledMmaOp_PreB[
         flat in-tile byte offset before the `raw_load`. WM==BM so `a_smem_warp`
         IS the contiguous [BM, BK_BYTES] slot tile and `raw_load` indexes it
         directly.
+
+        Parameters:
+            mma_k_idx: Index of the MFMA step along K within the warp
+                tile, in `[0, num_k_mmas)`.
+
+        Args:
+            a_smem_warp: The shared-memory A tile for this warp, a
+                contiguous `[BM, BK_BYTES]` slot tile indexed directly
+                by `raw_load`.
         """
         # col_major 16x4 lane layout: decode lane -> (m, k_vec).
         comptime lane_layout = col_major[Self.MMA_M, WARP_SIZE // Self.MMA_M]()
@@ -294,6 +330,18 @@ struct BlockScaledMmaOp_PreB[
         k_byte_base: Int,
     ):
         """Load B fragments direct from preshuffled DRAM into b_reg slot `slot`.
+
+        Parameters:
+            mma_k_idx: Index of the MFMA step along K within the warp
+                tile, in `[0, num_k_mmas)`.
+            slot: The `_b_reg` slot to load into (defaults to 0).
+
+        Args:
+            b_loader: The `PreshuffledBLoader` for the preshuffled B
+                tensor.
+            warp_n_off: Global N offset of this warp's tile.
+            k_byte_base: Base byte offset along K for the current
+                outer-K tile.
         """
         comptime assert slot < Self.num_b_slots, "slot out of range"
 
@@ -341,6 +389,18 @@ struct BlockScaledMmaOp_PreB[
         Caller provides the absolute `k_pair_idx` (= `k_iter *
         (num_k_mmas / 2) + k_pair`); each step advances by 8 K-scales
         (= 2 MFMAs along K). One i32 per (mi_pair, k_pair) per lane.
+
+        Parameters:
+            k_pair: Index of the k_pair slot within the current outer-K
+                tile, in `[0, num_k_mmas // 2)`.
+
+        Args:
+            a_scale_loader: The `PreshuffledScaleLoader` for the A
+                scale tensor.
+            warp_m_off: Global M offset of this warp's tile.
+            k_pair_idx: Absolute k_pair index across all outer-K
+                iterations, equal to `k_iter * (num_k_mmas / 2) +
+                k_pair`; each step advances by 8 K-scales.
         """
         comptime assert k_pair < Self.num_k_mmas // 2, "k_pair out of range"
 
@@ -363,7 +423,20 @@ struct BlockScaledMmaOp_PreB[
         warp_n_off: Int,
         k_pair_idx: Int,
     ):
-        """Mirror of `load_a_scales_preshuffled` along N."""
+        """Mirror of `load_a_scales_preshuffled` along N.
+
+        Parameters:
+            k_pair: Index of the k_pair slot within the current outer-K
+                tile, in `[0, num_k_mmas // 2)`.
+
+        Args:
+            b_scale_loader: The `PreshuffledScaleLoader` for the B
+                scale tensor.
+            warp_n_off: Global N offset of this warp's tile.
+            k_pair_idx: Absolute k_pair index across all outer-K
+                iterations, equal to `k_iter * (num_k_mmas / 2) +
+                k_pair`; each step advances by 8 K-scales.
+        """
         comptime assert k_pair < Self.num_k_mmas // 2, "k_pair out of range"
 
         var lane_klane, lane_mn = udivmod(lane_id(), Self.MMA_N)
@@ -391,6 +464,12 @@ struct BlockScaledMmaOp_PreB[
         CTAs see only m=0 / n=0, so the constructor `shrui`
         (`_a_scale_shift` / `_b_scale_shift`) rotates the i32 to the right OPSEL
         byte.
+
+        Parameters:
+            mma_k_idx: Index of the MFMA step along K within the warp
+                tile, in `[0, num_k_mmas)`.
+            slot: The `_b_reg` slot to read B fragments from (defaults
+                to 0).
         """
         comptime assert slot < Self.num_b_slots, "slot out of range"
         var a_reg_v = self._a_reg.vectorize[1, 1, Self.mma_frag_width_bytes]()
@@ -471,7 +550,7 @@ struct MXFP4MatmulAMD_PreB[
     pinned by `sched_barrier(0)` + bracketed by `s_setprio`, and the
     end-of-tile sync is a bare `s_barrier` + `lgkmcnt`-only drain so in-flight
     B DMAs cross it. (deep_prime / the epilogue still use the per-cluster
-    `vmcnt` staircase, `mma_chain_scheduled`.) Default off — callers
+    `vmcnt` staircase, `mma_chain_scheduled`.) Default off: callers
     bit-identical unless opted in.
 
     `deep_prime` (b_prefetch only, num_tiles >= 2) deepens the A pipeline to
@@ -479,12 +558,39 @@ struct MXFP4MatmulAMD_PreB[
     into LDS so each steady iter reads an A tile that has had a full extra
     iteration of MFMA shadow to land. Iter i reads slot[i%2] and issues the
     A DMA for tile i+2 into that same (just-freed) slot. Reuses the existing
-    `num_a_slots=2` LDS buffers — no extra LDS/VGPR. Composes with cluster_drain_sched/mfma_cluster
+    `num_a_slots=2` LDS buffers: no extra LDS/VGPR. Composes with cluster_drain_sched/mfma_cluster
     (the MFMA chain is unchanged). Falls back to the 1-deep path when num_tiles < 2.
-    Default off — existing callers are bit-identical.
+    Default off: existing callers are bit-identical.
 
     MFMA consumption order is B-major (n-outer / m-inner): the B fragment is
     held resident across the m-loop for better MFMA ILP. See `mma`.
+
+    Parameters:
+        BM: CTA tile size along M in elements, either 16 or a multiple
+            of 32. `WM` is locked to `BM` (single warp along M).
+        BN: CTA tile size along N in elements, split across
+            `num_warps_n = BN // WN` warps.
+        BK_ELEMS: K tile size in MXFP4 elements per outer-K iteration;
+            must be a multiple of 256 so `num_k_mmas` is even.
+            `BK_BYTES = BK_ELEMS // 2`.
+        WN: Per-warp tile size along N in elements, either 16 or a
+            multiple of 32.
+        b_prefetch: Enables a depth-2 outer-K software pipeline that
+            double-buffers B fragments across iterations (defaults to
+            `False`).
+        b_cache_policy: `CacheOperation` hint applied to preshuffled B
+            DRAM loads (defaults to `CacheOperation.ALWAYS`).
+        dram_to_lds: Routes A loads through the shared swizzled
+            `TileLoaderLDS` DRAM-to-LDS path instead of a register
+            bounce (defaults to `False`).
+        cluster_drain_sched: Switches the prefetch steady loop to an
+            interleaved B-issue schedule with per-cluster `s_setprio`
+            and a partial-`vmcnt` staircase (defaults to `False`).
+        mfma_cluster: Number of MFMAs per cluster in the scheduled
+            MFMA chain used by `cluster_drain_sched` (defaults to 4).
+        deep_prime: Deepens the A pipeline to 2-tiles-ahead on the
+            prefetch path, staging two A tiles in the prologue
+            (defaults to `False`).
     """
 
     # WM is locked to BM — single warp along M for the preb (no-LDS-B) path.

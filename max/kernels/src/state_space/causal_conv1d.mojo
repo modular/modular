@@ -103,6 +103,12 @@ def causal_conv1d_channel_first_fwd_cpu[
     1. Parallelization across batch*channel dimensions using sync_parallelize.
     2. Pre-loaded weights in registers to reduce memory access.
 
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+        bias_dtype: Element type of the bias tensor `bias`.
+
     Args:
         batch: Batch size.
         dim: Number of channels.
@@ -240,6 +246,11 @@ def causal_conv1d_channel_first_fwd_cpu_no_bias[
     Optimizations:
     1. Parallelization across batch*channel dimensions using sync_parallelize.
     2. Pre-loaded weights in registers to reduce memory access.
+
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
 
     Args:
         batch: Batch size.
@@ -719,6 +730,22 @@ def causal_conv1d_channel_first_fwd_gpu[
     Grid: (ceildiv(seqlen, kNThreads * kNElts), dim, batch)
     Block: kNThreads
 
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+        kNThreads: Number of threads per block used to process the sequence
+            dimension.
+        kWidth: Compile-time convolution kernel width; must match the runtime
+            `width` argument.
+        kNElts: Number of sequence elements each thread processes, used for
+            SIMD vectorization and ILP.
+        bias_dtype: Element type of the bias tensor `bias`.
+        x_LT: TensorLayout of the input tensor `x`.
+        weight_LT: TensorLayout of the weight tensor `weight`.
+        output_LT: TensorLayout of the output tensor `output`.
+        bias_LT: TensorLayout of the bias tensor `bias`.
+
     Args:
         batch: Batch size.
         dim: Number of channels.
@@ -997,6 +1024,46 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias[
     3. Vectorized weight loading and computation
     4. Optimized activation function with SIMD operations
     5. Better thread utilization and memory bandwidth usage
+
+    Grid: (ceildiv(seqlen, kNThreads * kNElts), dim, batch)
+    Block: kNThreads
+
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+        kNThreads: Number of threads per block used to process the sequence
+            dimension.
+        kWidth: Compile-time convolution kernel width; must match the runtime
+            `width` argument.
+        kNElts: Number of sequence elements each thread processes, used for
+            SIMD vectorization and ILP.
+        x_LT: TensorLayout of the input tensor `x`.
+        weight_LT: TensorLayout of the weight tensor `weight`.
+        output_LT: TensorLayout of the output tensor `output`.
+
+    Args:
+        batch: Batch size.
+        dim: Number of channels.
+        seqlen: Sequence length.
+        width: Kernel width (must match kWidth compile-time parameter).
+        x: Input tensor of shape (B, C, L).
+        weight: Weight tensor of shape (C, W).
+        output: Output tensor of shape (B, C, L).
+        x_batch_stride: Stride for the batch dimension of the input tensor.
+        x_c_stride: Stride for the channel dimension of the input tensor.
+        x_l_stride: Stride for the sequence length dimension of the input
+            tensor.
+        weight_c_stride: Stride for the channel dimension of the weight
+            tensor.
+        weight_width_stride: Stride for the width dimension of the weight
+            tensor.
+        out_batch_stride: Stride for the batch dimension of the output
+            tensor.
+        out_c_stride: Stride for the channel dimension of the output tensor.
+        out_l_stride: Stride for the sequence length dimension of the output
+            tensor.
+        silu_activation: Whether to apply SiLU activation (Int8: 0 or 1).
     """
 
     var tidx: Int = thread_idx.x
@@ -1651,6 +1718,54 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
     5. Optimized activation function with SIMD operations
     6. Better thread utilization and memory bandwidth usage
     7. seq_idx support for conditional processing
+
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+        bias_dtype: Element type of the bias tensor `bias`.
+        seq_idx_dtype: Element type of the `seq_idx` tensor.
+        kNThreads: Number of threads per block used to process the sequence
+            dimension.
+        kWidth: Compile-time convolution kernel width; must match the runtime
+            `width` argument.
+        kNElts: Number of sequence elements each thread processes, used for
+            SIMD vectorization and ILP.
+        x_LT: TensorLayout of the input tensor `x`.
+        weight_LT: TensorLayout of the weight tensor `weight`.
+        output_LT: TensorLayout of the output tensor `output`.
+        bias_LT: TensorLayout of the bias tensor `bias`.
+        seq_idx_LT: TensorLayout of the `seq_idx` tensor.
+
+    Args:
+        batch: Batch size.
+        dim: Number of channels.
+        seqlen: Sequence length.
+        width: Kernel width (must match `kWidth` compile-time parameter).
+        x: Input tensor of shape (B, L, C).
+        weight: Weight tensor of shape (C, W).
+        output: Output tensor of shape (B, L, C).
+        bias: Bias tensor of shape (C,).
+        seq_idx: Per-position sequence id tensor of shape (B, L); a
+            convolution tap at position `input_l` only contributes when its
+            sequence id matches the id at the output position.
+        x_batch_stride: Stride for the batch dimension of the input tensor.
+        x_c_stride: Stride for the channel dimension of the input tensor.
+        x_l_stride: Stride for the sequence length dimension of the input
+            tensor.
+        weight_c_stride: Stride for the channel dimension of the weight
+            tensor.
+        weight_width_stride: Stride for the width dimension of the weight
+            tensor.
+        out_batch_stride: Stride for the batch dimension of the output tensor.
+        out_c_stride: Stride for the channel dimension of the output tensor.
+        out_l_stride: Stride for the sequence length dimension of the output
+            tensor.
+        seq_idx_batch_stride: Stride for the batch dimension of the `seq_idx`
+            tensor.
+        seq_idx_l_stride: Stride for the sequence length dimension of the
+            `seq_idx` tensor.
+        silu_activation: Whether to apply SiLU activation (Int8: 0 or 1).
     """
 
     var tidx: Int = thread_idx.x
@@ -3116,6 +3231,14 @@ def causal_conv1d_update_cpu[
     - conv_state holds the last (state_len) values
     - New x values are appended, old values are shifted out
 
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        conv_state_dtype: Element type of the convolution state tensor
+            `conv_state`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+        bias_dtype: Element type of the bias tensor `bias`.
+
     Args:
         batch: Batch size.
         dim: Number of channels.
@@ -3286,7 +3409,54 @@ def causal_conv1d_update_cpu_no_bias[
     out_l_stride: UInt32,
     silu_activation: Bool,
 ):
-    """CPU implementation of causal conv1d update without bias."""
+    """CPU implementation of causal conv1d update without bias.
+
+    Performs incremental convolution for autoregressive decode by treating
+    `conv_state` followed by `x` as a virtual sliding window, computing the
+    output for the new positions, then shifting the newest `state_len`
+    values back into `conv_state` in place.
+
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        conv_state_dtype: Element type of the convolution state tensor
+            `conv_state`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+
+    Args:
+        batch: Number of sequences processed in parallel.
+        dim: Number of channels per sequence position.
+        seqlen: Number of new input positions in `x` (1 for autoregressive
+            decode).
+        width: Convolution kernel width in positions.
+        state_len: Length of the rolling buffer stored in `conv_state`;
+            must be at least `width - 1`.
+        x: Input tensor of shape (B, C, L) holding the new positions to
+            convolve.
+        conv_state: Rolling convolution state of shape (B, C, S) that
+            holds the last `state_len` values; updated in place.
+        weight: Convolution weights of shape (C, W).
+        output: Output tensor of shape (B, C, L) receiving the convolved
+            values for the new positions.
+        x_batch_stride: Stride in elements between batches of `x`.
+        x_c_stride: Stride in elements between channels of `x`.
+        x_l_stride: Stride in elements between sequence positions of `x`.
+        conv_state_batch_stride: Stride in elements between batches of
+            `conv_state`.
+        conv_state_c_stride: Stride in elements between channels of
+            `conv_state`.
+        conv_state_l_stride: Stride in elements between state positions of
+            `conv_state`.
+        weight_c_stride: Stride in elements between channels of `weight`.
+        weight_width_stride: Stride in elements between taps of `weight`
+            along the kernel-width dimension.
+        out_batch_stride: Stride in elements between batches of `output`.
+        out_c_stride: Stride in elements between channels of `output`.
+        out_l_stride: Stride in elements between sequence positions of
+            `output`.
+        silu_activation: Whether to apply the SiLU activation to the
+            output values before storing.
+    """
     var width_minus_1: Int = width - 1
 
     for b in range(batch):
@@ -3436,6 +3606,22 @@ def causal_conv1d_update_gpu[
 
     Grid: (batch, ceildiv(dim, kNThreads))
     Block: kNThreads
+
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        conv_state_dtype: Element type of the convolution state tensor
+            `conv_state`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+        bias_dtype: Element type of the bias tensor `bias`.
+        kNThreads: Number of threads per block used to process the channel
+            dimension.
+        x_LT: TensorLayout of the input tensor `x`.
+        conv_state_LT: TensorLayout of the convolution state tensor
+            `conv_state`.
+        weight_LT: TensorLayout of the weight tensor `weight`.
+        output_LT: TensorLayout of the output tensor `output`.
+        bias_LT: TensorLayout of the bias tensor `bias`.
 
     Args:
         batch: Batch size.
@@ -3612,6 +3798,20 @@ def causal_conv1d_update_gpu_no_bias[
 
     Grid: (batch, ceildiv(dim, kNThreads))
     Block: kNThreads
+
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        conv_state_dtype: Element type of the convolution state tensor
+            `conv_state`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+        kNThreads: Number of threads per block used to process the channel
+            dimension.
+        x_LT: TensorLayout of the input tensor `x`.
+        conv_state_LT: TensorLayout of the convolution state tensor
+            `conv_state`.
+        weight_LT: TensorLayout of the weight tensor `weight`.
+        output_LT: TensorLayout of the output tensor `output`.
 
     Args:
         batch: Batch size.

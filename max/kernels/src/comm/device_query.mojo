@@ -22,16 +22,51 @@ comptime GB = 1 << 30
 
 
 trait CommTuningConfig(TuningConfig):
+    """Tuning-table entry for a multi-GPU communication collective.
+
+    Extends `TuningConfig` with the four dimensions that drive kernel-launch
+    selection: SM version, GPU count, total data size, and thread-block count.
+    Implement this trait to supply custom tuning tables to
+    `dispatch_select_comm_config`.
+    """
+
     def get_num_blocks(self) -> Int:
+        """Returns the number of thread blocks to launch for this configuration.
+
+        Returns:
+            The thread-block count, which must not exceed 512
+            (`MAX_NUM_BLOCKS_UPPER_BOUND`).
+        """
         ...
 
     def get_num_bytes(self) -> Int:
+        """Returns the maximum input size in bytes covered by this entry.
+
+        `dispatch_select_comm_config` selects the first entry whose
+        `get_num_bytes()` is at least the actual transfer size.
+
+        Returns:
+            The upper-bound byte count for this tuning entry, or -1 for the
+            default (catch-all) entry.
+        """
         ...
 
     def get_sm_version(self) -> StaticString:
+        """Returns the SM version string this entry targets.
+
+        Returns:
+            A string such as `"sm_90a"` or `"sm_100a"`, or `"default"` for
+            the architecture-agnostic fallback entry.
+        """
         ...
 
     def get_ngpus(self) -> Int:
+        """Returns the GPU count this entry targets.
+
+        Returns:
+            The number of participating GPUs, or -1 for the default
+            (catch-all) entry.
+        """
         ...
 
 
@@ -89,6 +124,16 @@ def dispatch_select_comm_config[
     Falls back to the arch-specific default (ngpus=-1, num_bytes=-1,
     matching sm_version), or if none exists, to the global default
     (ngpus=-1, num_bytes=-1, sm_version="default").
+
+    Parameters:
+        TuningTableType: The tuning-config entry type, constrained to
+            `CommTuningConfig`.
+        ngpus: Number of participating GPUs to select a config for.
+        sm_version: Target SM version string to match, such as `"sm_90a"`.
+        tuning_table: Compile-time table of tuning configs to search.
+
+    Args:
+        num_bytes: Actual transfer size in bytes to select a config for.
     """
 
     # Validate that every entry has num_blocks <= 512 (MAX_NUM_BLOCKS_UPPER_BOUND
@@ -175,5 +220,15 @@ def dispatch_select_comm_config[
 
 
 def get_sm_version() -> StaticString:
+    """Returns the SM version string for the current compile target.
+
+    Queries the GPU info for the default accelerator architecture and returns
+    its version identifier (e.g. `"sm_90a"` for Hopper, `"sm_100a"` for
+    Blackwell). The result is a comptime constant derived from
+    `GPUInfo.from_name`.
+
+    Returns:
+        The SM version string for the target GPU architecture.
+    """
     comptime default_device_info = GPUInfo.from_name[_accelerator_arch()]()
     return default_device_info.version

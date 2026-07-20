@@ -752,7 +752,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
                 t"{StringSlice(unsafe_from_utf8=CStringSlice(unsafe_from_ptr=cstr_name))}"
             )
 
-        return UnsafePointer(to=opaque_function_ptr.value()).bitcast[
+        return Pointer(to=opaque_function_ptr.value()).unsafe_bitcast[
             result_type
         ]()[]
 
@@ -879,14 +879,14 @@ def _get_dylib_function[
     var func_cache_name = String(t"{dylib_global.name}/{func_name}")
     var func_ptr = _get_global_or_null(func_cache_name)
     if func_ptr:
-        return UnsafePointer(to=func_ptr).bitcast[result_type]()[]
+        return Pointer(to=func_ptr).unsafe_bitcast[result_type]()[]
 
     var dylib = dylib_global.get_or_create_ptr()[].borrow()
     var new_func = dylib._get_function[func_name, result_type]()
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(func_cache_name),
-        UnsafePointer(to=new_func).bitcast[
+        Pointer(to=new_func).unsafe_bitcast[
             OpaquePointer[MutUntrackedOrigin]
         ]()[],
     )

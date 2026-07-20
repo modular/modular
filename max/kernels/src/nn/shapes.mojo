@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides output-shape computation utilities for sliding-window operations such as pooling and convolution."""
 
 from std.math import ceildiv
 from std.math.uutils import ufloordiv, umod

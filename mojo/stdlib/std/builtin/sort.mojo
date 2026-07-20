@@ -19,7 +19,7 @@ from std.math import ceil
 
 from std.sys import bit_width_of
 from std.bit import count_leading_zeros
-from std.memory import Span
+from std.collections import Span
 from std.memory.alloc import alloc, dealloc, Layout
 
 # ===-----------------------------------------------------------------------===#

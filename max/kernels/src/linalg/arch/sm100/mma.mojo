@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides SM100 (Blackwell) MMA operation structs for warp-specialized GEMM kernels using UMMA instructions."""
+
 from std.sys import size_of
 from std.math import align_up
 
@@ -52,6 +54,12 @@ def _create_mma_desc_k_major[
 
 @fieldwise_init("implicit")
 struct Major(TrivialRegisterPassable):
+    """Selects the major (contiguous) dimension for an MMA operand tile layout.
+
+    Used to configure whether the K dimension or the MN dimension is the
+    innermost (contiguous) axis of the tile in shared memory.
+    """
+
     var val: Int
 
     comptime K = Major(0)
@@ -120,6 +128,28 @@ def smem_descriptor[
 ](
     ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
 ) -> MMASmemDescriptorPair:
+    """Creates an MMASmemDescriptorPair for an SM100 MMA operand tile in shared memory.
+
+    Selects either K-major or MN-major tile layout based on `is_k_major`, builds the
+    canonical descriptor layout, and creates the corresponding pair of SMEM descriptors
+    used by the SM100 UMMA instructions.
+
+    Parameters:
+        dtype: Element type of the operand.
+        BMN: Block tile size along the M or N dimension.
+        BK: Block tile size along the K dimension.
+        swizzle_mode: Swizzle mode for the shared memory access pattern.
+        is_k_major: When True, uses K-major (A/Q@K') layout; when False, uses
+            MN-major (V/P@V) layout.
+        page_dense: When True, selects the page-dense (row-major atoms) variant
+            of the tile layout for the SM100 row-major page-fold path.
+
+    Args:
+        ptr: Pointer into shared memory for the operand tile.
+
+    Returns:
+        An `MMASmemDescriptorPair` ready for use with SM100 UMMA instructions.
+    """
     # `page_dense` selects the native chunk-inner (row-major atoms) layout
     # (SM100 row-major page-fold path) for the corresponding operand frame:
     # k-major (`is_k_major=True`, K / Q@K') and mn-major (`is_k_major=False`,
@@ -153,6 +183,27 @@ struct MmaOpSM100_SS[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = False,
 ](Defaultable, TrivialRegisterPassable):
+    """SM100 (Blackwell) warp-specialized MMA operation for standard (non-block-scaled) GEMM.
+
+    Encapsulates a UMMA instruction descriptor and multicast mask for issuing
+    asynchronous tensor-core MMA operations from shared memory to tensor memory
+    (TMEM) on NVIDIA SM100 GPUs. Supports optional CTA clustering for multicast.
+
+    Parameters:
+        c_type: Output accumulator element type.
+        a_type: A operand element type.
+        b_type: B operand element type; must match `a_type`.
+        block_tile_shape: (BM, BN, BK) shape of the shared-memory tile processed
+            per CTA.
+        mma_shape: (MMA_M, MMA_N, MMA_K) shape of a single UMMA instruction.
+        accum_type: Accumulator precision; defaults to float32.
+        cta_group: Number of CTAs collaborating on one tile (1 or 2).
+        cluster_shape: CTA cluster shape for multicast; defaults to (1, 1, 1).
+        a_swizzle: Swizzle mode for the A operand shared-memory layout.
+        b_swizzle: Swizzle mode for the B operand shared-memory layout.
+        transpose_b: Must be True; SM100 UMMA always uses transposed B.
+    """
+
     var idesc: UMMAInsDescriptor[Self._get_umma_kind[Self.a_type]()]
     var mask: UInt16
 
@@ -369,6 +420,30 @@ struct MmaOpSM100_BlockScaled_SS[
     transpose_b: Bool = False,
     enable_small_sfb: Bool = False,
 ](Defaultable, TrivialRegisterPassable):
+    """SM100 (Blackwell) warp-specialized MMA operation for block-scaled GEMM (MXFP4, MXFP8, NVFP4).
+
+    Extends `MmaOpSM100_SS` with per-block scale factor handling for quantized
+    formats. Copies scale factors from shared memory to TMEM via `tcgen05_cp`
+    and issues UMMA instructions with the appropriate scale index per K slice.
+
+    Parameters:
+        c_type: Output accumulator element type.
+        a_type: A operand element type (float8_e4m3fn or uint8 for FP4).
+        b_type: B operand element type; must match `a_type`.
+        sfa_dtype: Scale factor dtype for A; must match `sfb_dtype`.
+        sfb_dtype: Scale factor dtype for B.
+        scaling_kind: UMMA scaling kind (MXF8F6F4, MXF4, or MXF4NVF4).
+        block_tile_shape: (BM, BN, BK) shape of the shared-memory tile.
+        mma_shape: (MMA_M, MMA_N, MMA_K) shape of a single UMMA instruction.
+        accum_type: Accumulator precision; defaults to float32.
+        cta_group: Number of CTAs collaborating on one tile (1 or 2).
+        cluster_shape: CTA cluster shape for multicast; defaults to (1, 1, 1).
+        a_swizzle: Swizzle mode for the A operand.
+        b_swizzle: Swizzle mode for the B operand.
+        transpose_b: Must be True; SM100 UMMA always uses transposed B.
+        enable_small_sfb: Allow SFB loading for MMA_N < 64 via cooperative tcgen05_st.
+    """
+
     var idesc: UMMAInsDescriptor[Self.scaling_kind]
     var mask: UInt16
 

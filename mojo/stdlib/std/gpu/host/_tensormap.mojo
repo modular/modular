@@ -11,14 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.ffi import external_call
 from std.sys import size_of
 from std.gpu.host import DeviceBuffer
-from std.gpu.host.device_context import (
-    _checked,
-    _CString,
-    _DeviceBufferPtr,
-)
 from std.utils import IndexList, StaticTuple
 
 
@@ -316,49 +310,19 @@ def create_tensormap[
         global_strides_arg[0],
     )
 
-    # Call cuDriver function `cuTensorMapEncodeTiled` via AsyncRT.
-    # const char *AsyncRT_cuda_tensorMapEncodeTiled(
-    #     void *tensorMap, int32_t tensorDataType, uint32_t tensorRank,
-    #     const DeviceBuffer *globalAddress, const uint64_t *globalDim,
-    #     const uint64_t *globalStrides, const uint32_t *boxDim,
-    #     const uint32_t *elementStrides, int32_t interleave, int32_t swizzle,
-    #     int32_t l2Promotion, int32_t oobFill) {
-
-    _checked(
-        external_call[
-            "AsyncRT_cuda_tensorMapEncodeTiled",
-            _CString[],
-            OpaquePointer[tensormap_ptr.origin],  # tensorMap
-            Int32,  # tensorDataType
-            Int32,  # tensorRank
-            type_of(global_buf._handle),  #  globalAddress
-            UnsafePointer[Int64, origin_of(global_dim_arg)],  # globalDim
-            UnsafePointer[
-                Int64, origin_of(global_strides_arg)
-            ],  # globalStrides
-            UnsafePointer[Int32, origin_of(box_dim_arg)],  # boxDim
-            UnsafePointer[
-                Int32, origin_of(element_stride_arg)
-            ],  # elementStrides
-            Int32,  # interleave
-            Int32,  # swizzle
-            Int32,  # l2Promotion
-            Int32,  # oobFill
-        ](
-            tensormap_ptr,
-            DataType.from_dtype[dtype]()._value,
-            Int32(rank),
-            global_buf._handle,
-            global_dim_arg.unsafe_ptr(),
-            # global_strides_arg[0] is implicitly size_of[dtype]()
-            global_strides_arg.unsafe_ptr() + 1,
-            box_dim_arg.unsafe_ptr(),
-            element_stride_arg.unsafe_ptr(),
-            InterleaveMode.NONE._value,
-            swizzle_mode._value,
-            L2Promotion.NONE._value,
-            OOBFill.NONE._value,
-        )
+    global_buf._tensor_map_encode_tiled(
+        tensormap_ptr,
+        DataType.from_dtype[dtype]()._value,
+        Int32(rank),
+        global_dim_arg.unsafe_ptr(),
+        # global_strides_arg[0] is implicitly size_of[dtype]()
+        global_strides_arg.unsafe_ptr() + 1,
+        box_dim_arg.unsafe_ptr(),
+        element_stride_arg.unsafe_ptr(),
+        InterleaveMode.NONE._value,
+        swizzle_mode._value,
+        L2Promotion.NONE._value,
+        OOBFill.NONE._value,
     )
 
     return tensormap
@@ -445,29 +409,22 @@ def create_tensormap_im2col[
         lower_corner_arg[i] = Int32(lower_corner[spatial_rank - i - 1])
         upper_corner_arg[i] = Int32(upper_corner[spatial_rank - i - 1])
 
-    # Call cuTensorMapEncodeIm2col via AsyncRT
-    _checked(
-        external_call[
-            "AsyncRT_cuda_tensorMapEncodeIm2col",
-            _CString[],
-        ](
-            tensormap_ptr,
-            DataType.from_dtype[dtype]()._value,
-            Int32(rank),
-            global_buf._handle,
-            global_dim_arg.unsafe_ptr(),
-            # global_strides_arg[0] is implicitly size_of[dtype]()
-            global_strides_arg.unsafe_ptr() + 1,
-            lower_corner_arg.unsafe_ptr(),
-            upper_corner_arg.unsafe_ptr(),
-            Int32(channels_per_pixel),
-            Int32(pixels_per_column),
-            element_stride_arg.unsafe_ptr(),
-            InterleaveMode.NONE._value,
-            swizzle_mode._value,
-            L2Promotion.NONE._value,
-            OOBFill.NONE._value,  # OOB returns 0 (matches CUTLASS OOBFill::ZERO)
-        )
+    global_buf._tensor_map_encode_im2col(
+        tensormap_ptr,
+        DataType.from_dtype[dtype]()._value,
+        Int32(rank),
+        global_dim_arg.unsafe_ptr(),
+        # global_strides_arg[0] is implicitly size_of[dtype]()
+        global_strides_arg.unsafe_ptr() + 1,
+        lower_corner_arg.unsafe_ptr(),
+        upper_corner_arg.unsafe_ptr(),
+        Int32(channels_per_pixel),
+        Int32(pixels_per_column),
+        element_stride_arg.unsafe_ptr(),
+        InterleaveMode.NONE._value,
+        swizzle_mode._value,
+        L2Promotion.NONE._value,
+        OOBFill.NONE._value,  # OOB returns 0 (matches CUTLASS OOBFill::ZERO)
     )
 
     return tensormap

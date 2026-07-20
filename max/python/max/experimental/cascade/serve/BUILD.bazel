@@ -31,7 +31,7 @@ modular_py_binary(
     ],
     deps = [
         requirement("cyclopts"),
-        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/deployment:context_config",
         "//max/python/max/experimental/cascade/pipelines",
         "//max/python/max/experimental/cascade/serve",
         "//max/python/max/pipelines/lib",

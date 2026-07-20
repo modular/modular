@@ -358,7 +358,7 @@ def sleep(sec: Float64):
         Int(total_secs),
         Int((sec - total_secs) * NANOSECONDS_IN_SECOND),
     )
-    var req = UnsafePointer(to=tv_spec)
+    var req = Pointer(to=tv_spec)
     var rem = _CPointer[_CTimeSpec, MutUntrackedOrigin]()
     _ = external_call["nanosleep", Int32](req, rem)
 

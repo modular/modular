@@ -16,7 +16,8 @@ import extensibility
 import std.format
 from std.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUstream
-from std.memory import Span, stack_allocation
+from std.memory import stack_allocation
+from std.collections import Span
 from std.os import abort
 
 from std.ffi import OwnedDLHandle

@@ -57,6 +57,7 @@ from _hal.execution_config import (
 from std.builtin.variadics import TypeList
 
 from std.gpu.host.constant_memory_mapping import ConstantMemoryMapping
+from std.gpu.host.device_attribute import DeviceAttribute
 from std.gpu.host.dim import Dim
 from std.gpu.host.info import GPUInfo
 from std.gpu.host.launch_attribute import LaunchAttribute
@@ -325,6 +326,58 @@ struct DeviceContext(
         """
         var info = self._context[].get_memory_info()
         return (c_size_t(info[0]), c_size_t(info[1]))
+
+    @always_inline
+    def get_attribute(self, attr: DeviceAttribute) raises -> Int:
+        """Returns the specified attribute for this device.
+
+        Use the aliases defined by
+        [DeviceAttribute](/docs/std/gpu/host/device_attribute/DeviceAttribute/)
+        to specify attributes. For example:
+
+        ```mojo
+        from std.gpu.host import DeviceAttribute, DeviceContext
+
+        def main() raises:
+            var ctx = DeviceContext()
+            var attr = DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
+            var max_blocks = ctx.get_attribute(attr)
+            print(max_blocks)
+        ```
+
+        Args:
+            attr: The device attribute to query.
+
+        Returns:
+            The value for `attr` on this device.
+
+        Raises:
+            If the operation fails.
+        """
+        return Int(self._device[].get_attribute(attr._value))
+
+    @doc_hidden
+    @always_inline
+    def compute_capability(self) raises -> Int:
+        """Returns the compute capability of this NVIDIA GPU device.
+
+        This internal method retrieves the compute capability version of the current
+        NVIDIA GPU device. The compute capability is a version number that identifies
+        the features supported by the CUDA hardware.
+
+        Returns:
+            The compute capability as an integer (e.g., 70 for 7.0, 86 for 8.6).
+
+        Raises:
+            If there's an error retrieving the compute capability.
+
+        Notes:
+
+        This is a private method intended for internal use only.
+        """
+        var major = self.get_attribute(DeviceAttribute.COMPUTE_CAPABILITY_MAJOR)
+        var minor = self.get_attribute(DeviceAttribute.COMPUTE_CAPABILITY_MINOR)
+        return major * 10 + minor
 
     def set_as_current(self) raises:
         """For use with libraries that require a specific GPU context to be
@@ -1081,7 +1134,7 @@ struct DeviceContext(
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype],) raises:
+    ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -1103,7 +1156,7 @@ struct DeviceContext(
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: DeviceBuffer[dtype], src_buf: HostBuffer[dtype],) raises:
+    ](self, dst_buf: DeviceBuffer[dtype], src_buf: HostBuffer[dtype]) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -1125,7 +1178,7 @@ struct DeviceContext(
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: HostBuffer[dtype], src_buf: DeviceBuffer[dtype],) raises:
+    ](self, dst_buf: HostBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -1198,7 +1251,7 @@ struct DeviceContext(
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: HostBuffer[dtype], src_buf: HostBuffer[dtype],) raises:
+    ](self, dst_buf: HostBuffer[dtype], src_buf: HostBuffer[dtype]) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -1220,7 +1273,7 @@ struct DeviceContext(
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: DeviceBuffer[dtype], src: Span[Scalar[dtype], _],) raises:
+    ](self, dst_buf: DeviceBuffer[dtype], src: Span[Scalar[dtype], _]) raises:
         """Enqueues an async copy from a host `Span` to a device buffer.
 
         The number of bytes copied is determined by the size of the device
@@ -1275,7 +1328,7 @@ struct DeviceContext(
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: HostBuffer[dtype], src: Span[Scalar[dtype], _],) raises:
+    ](self, dst_buf: HostBuffer[dtype], src: Span[Scalar[dtype], _]) raises:
         """Enqueues an async copy from a host `Span` to a pinned host buffer.
 
         The number of bytes copied is determined by the size of the device
@@ -1520,19 +1573,14 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        # HAL doesn't yet support cluster launch or arbitrary launch
-        # attributes; the underlying Stream.execute primitive surfaces only
-        # `shared_mem_bytes`. Refuse non-default values rather than silently
-        # dropping them.
+        # Launch `attributes` (e.g. PDL / programmatic stream serialization,
+        # cluster dimensions) are forwarded to the plugin via the attribute
+        # array assembled below. `constant_memory` mappings DO change
+        # semantics and are not yet plumbed through, so refuse them rather
+        # than silently dropping them.
         if cluster_dim:
-            raise Error(
-                "HAL DeviceContext.enqueue_function does not support"
-                " `cluster_dim`."
-            )
-        if attributes:
-            raise Error(
-                "HAL DeviceContext.enqueue_function does not support launch"
-                " `attributes`."
+            attributes.append(
+                LaunchAttribute.from_cluster_dim(cluster_dim.value())
             )
         if constant_memory:
             raise Error(
@@ -1551,7 +1599,7 @@ struct DeviceFunction[
         )
 
         self._call_with_pack_checked[*Ts, ContextT=ContextT](
-            ctx, config, *args, location=location
+            ctx, config, *args, attributes=attributes^, location=location
         )
 
     @always_inline
@@ -1566,6 +1614,7 @@ struct DeviceFunction[
         ctx: ContextT,
         mut execution_config: ExecutionConfigType,
         *args: *Ts,
+        var attributes: List[LaunchAttribute] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
         _check_device_context_hal_only_supported_exec_config(execution_config)
@@ -1674,6 +1723,17 @@ struct DeviceFunction[
                 capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
             )
 
+        # Kernels that use `with PDL()` emit `griddepcontrol` instructions
+        # and require the launch to be configured with the matching attribute;
+        # dropping it faults the launch.
+        var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
+        if len(attributes) > 0:
+            attr_ptr = OptionalReg(
+                attributes.unsafe_ptr()
+                .bitcast[NoneType]()
+                .unsafe_origin_cast[MutUntrackedOrigin]()
+            )
+
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
             execution_config,
@@ -1684,6 +1744,8 @@ struct DeviceFunction[
                 dense_args_sizes
             ),
             num_args=UInt32(num_translated_args + num_captures),
+            attributes=attr_ptr,
+            num_attributes=UInt32(len(attributes)),
         )
 
         if num_captures > num_captures_static:
@@ -1715,15 +1777,14 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
+        # Launch `attributes` (e.g. PDL / programmatic stream serialization,
+        # cluster dimensions) are forwarded to the plugin via the attribute
+        # array assembled below. `constant_memory` mappings DO change
+        # semantics and are not yet plumbed through, so refuse them rather
+        # than silently dropping them.
         if cluster_dim:
-            raise Error(
-                "HAL DeviceContext.enqueue_function does not support"
-                " `cluster_dim`."
-            )
-        if attributes:
-            raise Error(
-                "HAL DeviceContext.enqueue_function does not support launch"
-                " `attributes`."
+            attributes.append(
+                LaunchAttribute.from_cluster_dim(cluster_dim.value())
             )
         if constant_memory:
             raise Error(
@@ -1785,6 +1846,17 @@ struct DeviceFunction[
                 capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
             )
 
+        # Kernels that use `with PDL()` emit `griddepcontrol` instructions and
+        # require the launch to be configured with the matching attribute;
+        # dropping it faults the launch.
+        var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
+        if len(attributes) > 0:
+            attr_ptr = OptionalReg(
+                attributes.unsafe_ptr()
+                .bitcast[NoneType]()
+                .unsafe_origin_cast[MutUntrackedOrigin]()
+            )
+
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
             grid=(
@@ -1805,6 +1877,8 @@ struct DeviceFunction[
             ),
             num_args=UInt32(num_args + num_captures),
             shared_mem_bytes=UInt32(shared_mem_bytes.or_else(0)),
+            attributes=attr_ptr,
+            num_attributes=UInt32(len(attributes)),
         )
 
         if num_captures > num_captures_static:
@@ -1912,6 +1986,32 @@ struct DeviceFunction[
                     unsafe_assume_ownership=dense_args_sizes
                 ).unsafe_with_layout({count = num_captures + num_args})
             )
+
+    @always_inline
+    def occupancy_max_active_blocks_per_multiprocessor(
+        self, block_size: Int, dynamic_shared_mem_size: Int
+    ) raises -> Int:
+        """Returns the maximum number of active blocks per multiprocessor for the given function.
+
+        Args:
+            block_size: The number of threads per block.
+            dynamic_shared_mem_size: The size of dynamically allocated shared memory in bytes.
+
+        Returns:
+            The maximum number of active blocks that can run concurrently per multiprocessor.
+
+        Raises:
+            If the occupancy calculation fails.
+        """
+        return Int(
+            self._inner[]
+            ._context[]
+            .function_occupancy_max_active_blocks(
+                self._inner[]._func_handle,
+                Int32(block_size),
+                UInt64(dynamic_shared_mem_size),
+            )
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1990,15 +2090,14 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
+        # Launch `attributes` (e.g. PDL / programmatic stream serialization,
+        # cluster dimensions) are forwarded to the plugin via the attribute
+        # array assembled below. `constant_memory` mappings DO change
+        # semantics and are not yet plumbed through, so refuse them rather
+        # than silently dropping them.
         if cluster_dim:
-            raise Error(
-                "HAL DeviceContext.enqueue_function does not support"
-                " `cluster_dim`."
-            )
-        if attributes:
-            raise Error(
-                "HAL DeviceContext.enqueue_function does not support launch"
-                " `attributes`."
+            attributes.append(
+                LaunchAttribute.from_cluster_dim(cluster_dim.value())
             )
         if constant_memory:
             raise Error(
@@ -2027,6 +2126,17 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         comptime for i in range(num_args):
             _populate_arg_sizes[i]()
 
+        # Kernels that use `with PDL()` emit `griddepcontrol` instructions
+        # and require the launch to be configured with the matching attribute;
+        # dropping it faults the launch.
+        var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
+        if len(attributes) > 0:
+            attr_ptr = OptionalReg(
+                attributes.unsafe_ptr()
+                .bitcast[NoneType]()
+                .unsafe_origin_cast[MutUntrackedOrigin]()
+            )
+
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
             grid=(
@@ -2047,6 +2157,8 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
             ),
             num_args=UInt32(num_args),
             shared_mem_bytes=UInt32(shared_mem_bytes.or_else(0)),
+            attributes=attr_ptr,
+            num_attributes=UInt32(len(attributes)),
         )
 
     @always_inline
@@ -2106,7 +2218,6 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
 
 struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
     """Represents a CUDA/HIP stream for asynchronous GPU operations.
-
     A DeviceStream provides a queue for GPU operations that can execute concurrently
     with operations in other streams. Operations within a single stream execute in
     the order they are issued, but operations in different streams may execute in
@@ -2186,6 +2297,38 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
         ```
         """
         self._stream[].synchronize()
+
+    def enqueue_host_func[
+        origin: MutOrigin
+    ](
+        self,
+        func: def(OpaquePointer[origin]) thin -> None,
+        user_data: OpaquePointer[origin],
+    ) raises:
+        """Enqueues a host callback to run on this stream.
+
+        This corresponds to CUDA's `cuLaunchHostFunc`. The callback `func`
+        runs on a driver thread once all preceding work on this stream has
+        completed, and receives `user_data` as its only argument. Per the
+        CUDA contract, the callback must not call any device APIs.
+
+        Currently only implemented for CUDA streams; other backends raise.
+
+        Parameters:
+            origin: The origin of `user_data`, shared with the callback's
+                argument so the two are coupled at the type level.
+
+        Args:
+            func: A `thin` C-compatible function pointer that accepts a
+                single `void*` argument.
+            user_data: An opaque pointer passed through to `func` when it
+                runs.
+
+        Raises:
+            If the underlying device does not support host callbacks, or if
+            the driver rejects the enqueue.
+        """
+        self._stream[].enqueue_host_func(func, user_data)
 
     def enqueue_wait_for(self, event: DeviceEvent) raises:
         """Makes this stream wait for the specified event.
@@ -2845,6 +2988,76 @@ struct DeviceBuffer[dtype: DType](
         """
         return UnsafePointer[Scalar[Self.dtype], MutAnyOrigin](
             unsafe_from_address=Int(self._inner[]._device_addr)
+        )
+
+    def _tensor_map_encode_tiled(
+        self,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_dim: UnsafePointer[mut=False, Int64, _],
+        global_strides: UnsafePointer[mut=False, Int64, _],
+        box_dim: UnsafePointer[mut=False, Int32, _],
+        element_strides: UnsafePointer[mut=False, Int32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises:
+        """Encodes a tiled TMA descriptor for this buffer via the HAL plugin.
+        Used by `std.gpu.host._tensormap.create_tensormap`."""
+        # Same-width reinterpret of the callers' signed arrays to the C ABI's
+        # unsigned element types.
+        self._ctx._context[].tensor_map_encode_tiled(
+            tensor_map,
+            data_type,
+            rank,
+            self._inner[]._device_addr,
+            global_dim.bitcast[UInt64](),
+            global_strides.bitcast[UInt64](),
+            box_dim.bitcast[UInt32](),
+            element_strides.bitcast[UInt32](),
+            interleave,
+            swizzle,
+            l2_promotion,
+            oob_fill,
+        )
+
+    def _tensor_map_encode_im2col(
+        self,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_dim: UnsafePointer[mut=False, Int64, _],
+        global_strides: UnsafePointer[mut=False, Int64, _],
+        pixel_box_lower_corner: UnsafePointer[mut=False, Int32, _],
+        pixel_box_upper_corner: UnsafePointer[mut=False, Int32, _],
+        channels_per_pixel: Int32,
+        pixels_per_column: Int32,
+        element_strides: UnsafePointer[mut=False, Int32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises:
+        """Encodes an im2col TMA descriptor for this buffer via the HAL
+        plugin. Used by `std.gpu.host._tensormap.create_tensormap_im2col`."""
+        self._ctx._context[].tensor_map_encode_im2col(
+            tensor_map,
+            data_type,
+            rank,
+            self._inner[]._device_addr,
+            global_dim.bitcast[UInt64](),
+            global_strides.bitcast[UInt64](),
+            pixel_box_lower_corner,
+            pixel_box_upper_corner,
+            channels_per_pixel,
+            pixels_per_column,
+            element_strides.bitcast[UInt32](),
+            interleave,
+            swizzle,
+            l2_promotion,
+            oob_fill,
         )
 
     def enqueue_copy_to(self, dst: HostBuffer[Self.dtype]) raises:

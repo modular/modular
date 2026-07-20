@@ -117,6 +117,28 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
     Uses 3-warp specialization (Load, MMA, Epilogue) with grid-constant TMAs.
     Work distribution via GroupedWorkIterator1D1D using offset-based addressing.
+
+    Parameters:
+        a_type: Element `DType` of the A input matrix.
+        b_type: Element `DType` of the B input matrix.
+        c_type: Element `DType` of the output C matrix.
+        a_scales_type: Element `DType` of the A-side blockwise scales;
+            must match `b_scales_type`.
+        b_scales_type: Element `DType` of the B-side blockwise scales;
+            must match `a_scales_type`.
+        b_scales_layout: Device `TensorLayout` of the B-scales `TileTensor`,
+            read from GMEM (not via TMA).
+        c_device_layout: Device `TensorLayout` of the output C `TileTensor`
+            used for bounds-checked stores.
+        transpose_b: Whether B is stored transposed; must be `True`.
+        config: Compile-time `MatmulConfig` carrying tile shapes, swizzles,
+            pipeline stage counts, and cluster shape.
+        static_N: Compile-time-known per-expert N dimension (output width,
+            columns of B).
+        static_K: Compile-time-known K contraction dimension; sets the
+            B-scales row stride as `static_K // 128`.
+        cluster_shape: Thread block cluster shape as a
+            `StaticTuple[Int32, 3]` (defaults to `(1, 1, 1)`).
     """
 
     # ========== Derived Constants ==========
@@ -385,7 +407,23 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         accum_barriers: Self.SmemType.Pipelines.AccumBarriers,
         tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
     ):
-        """Initialize barriers and prefetch TMA descriptors."""
+        """Initialize barriers and prefetch TMA descriptors.
+
+        Args:
+            elect_one_warp: True if this thread is in the elected warp
+                (warp 0) that prefetches TMA descriptors and inits barriers.
+            elect_one_thread: True for the single elected thread within the
+                elected warp; gates the one-time setup work.
+            a_tma_op: TMA operation descriptor for the A matrix loads.
+            b_tma_op: TMA operation descriptor for the B matrix loads.
+            a_scales_tma_op: TMA operation descriptor for the A-scales loads.
+            input_barriers: Input pipeline `mbarrier`s synchronizing
+                producer and consumer access to A, B, and A-scales tiles.
+            accum_barriers: Accumulator pipeline `mbarrier`s synchronizing
+                MMA producers and epilogue consumers of TMEM stages.
+            tmem_dealloc: TMEM deallocation barrier for releasing accumulator
+                stages back to the allocator.
+        """
         if elect_one_warp and elect_one_thread:
             a_tma_op.prefetch_descriptor()
             b_tma_op.prefetch_descriptor()
@@ -447,6 +485,25 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
         Uses grid-constant TMAs with offset-based addressing for 1D-1D layout.
         Accumulates in registers with per-K scaling in CUDA cores.
+
+        Args:
+            a_tma_op: Grid-constant TMA descriptor for the A matrix loads.
+            b_tma_op: Grid-constant TMA descriptor for the B matrix loads.
+            a_scales_tma_op: Grid-constant TMA descriptor for the A-side
+                blockwise scales loads.
+            b_scales: B-side blockwise scales `TileTensor` read from GMEM,
+                with shape `(num_experts * N // 128, K // 128)`.
+            a_offsets: Offset tensor for 1D-1D A tensor addressing, providing
+                per-expert token offsets.
+            expert_ids: Expert ID tensor mapping each work tile to its
+                expert.
+            expert_scales: Per-expert scale factors applied in the epilogue
+                output write.
+            c_device: Output C `TileTensor` used for bounds-checked stores.
+            num_active_experts: Number of active experts in the grouped
+                GEMM.
+            K: K contraction dimension; the inner reduction axis length used
+                to compute `ceildiv(K, BK)` K iterations.
         """
         Self.validate_config()
 
@@ -673,7 +730,28 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         iter_idx: Int,
         elect_one_cta: Bool,
     ):
-        """Load A, B, and A-scales tiles using TMA."""
+        """Load A, B, and A-scales tiles using TMA.
+
+        Parameters:
+            tiles_origin: Memory origin of the producer tile payload
+                (inferred).
+
+        Args:
+            a_tma_op: Grid-constant TMA descriptor for the A matrix loads.
+            b_tma_op: Grid-constant TMA descriptor for the B matrix loads.
+            a_scales_tma_op: Grid-constant TMA descriptor for the A-side
+                blockwise scales loads.
+            tiles: Producer pipeline stage holding the A, B, and A-scales
+                SMEM tiles and associated barrier.
+            peer_cta_coord: Peer CTA coordinates `(rank_n, rank_m, m_rank)`
+                used for multicast load addressing within the cluster.
+            work_ctx: Work context providing the current tile's `m`, `n`,
+                and `expert_id` coordinates.
+            iter_idx: K-iteration index; the K coordinate is
+                `iter_idx * BK`.
+            elect_one_cta: True if this CTA is the elected CTA in a two-CTA
+                cluster; gates `expect_bytes` setup.
+        """
         var peer_rank_n = peer_cta_coord[0]
         var peer_rank_m = peer_cta_coord[1]
         var peer_m_rank = peer_cta_coord[2]
@@ -759,6 +837,17 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         For blockwise FP8, each K iteration writes a fresh partial to TMEM.
         The epilogue accumulates across K in registers, not TMEM.
         Therefore init_c is always True.
+
+        Parameters:
+            tiles_origin: Memory origin of the input consumer tile payload
+                (inferred).
+
+        Args:
+            tiles: Input consumer stage holding the A and B SMEM tiles and
+                associated barrier.
+            mma_op: MMA operation object performing the tensor core
+                multiply-accumulate into TMEM.
+            tmem_addr: TMEM address offset where MMA writes partial results.
         """
         if elect_one_sync():
             # Loop through k_group_size tiles (typically 1)

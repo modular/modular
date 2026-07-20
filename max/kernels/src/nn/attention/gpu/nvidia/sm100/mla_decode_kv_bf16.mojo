@@ -11,6 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements the SM100 (Blackwell) MLA decode kernel operating on a BF16 key-value cache.
+
+Specializes the Multi-Latent Attention decode path for Blackwell (SM100)
+hardware, dispatching three warpgroups (softmax, correction, and
+load/MMA/store) that cooperate over shared-memory barriers and the TCGEN05
+tensor-memory pipeline. The `MLA_SM100_Decode_KV_BF16` struct carries the
+comptime configuration derived from `MLA_SM100_Decode_Config` and exposes the
+entry-point `kernel` along with the `load`, `mmaQK`, and `mmaPV` helper
+methods invoked by the individual warps.
+"""
+
 from std.math import ceildiv
 from std.sys import size_of
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, block_idx, warp_id
@@ -78,6 +89,29 @@ struct MLA_SM100_Decode_KV_BF16[
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
 ](TrivialRegisterPassable):
+    """Implements the SM100 MLA decode kernel over a BF16 paged KV cache, packaging the kernel entry point with its load and MMA helpers.
+
+    Parameters:
+        q_type: Element type of the Q and P operands stored in SMEM.
+        KVLUTType: `MHAOperand` providing the KV cache tensor and its
+            element type.
+        output_type: Element type of the output tile written back via TMA.
+        SplitAccumType: `OptionalPointer` type wrapping the split-K LSE
+            accumulator buffer.
+        MaskType: `MHAMask` type applied to the attention scores; only
+            `NullMask` and `CausalMask` are supported.
+        config: Decode config supplying tile sizes, swizzle modes, and
+            TMEM/SMEM layout.
+        ValidLengthType: `OptionalPointer` type wrapping the per-batch
+            valid-sequence-length tensor.
+        _is_cache_length_accurate: When `False`, the kernel adds the local
+            sequence length to the cache length to compute the total key
+            count (defaults to `False`).
+        ragged: When `True`, the valid-lengths tensor is interpreted as
+            input row offsets enabling ragged batching (defaults to
+            `False`).
+    """
+
     comptime kv_type = Self.KVLUTType.dtype
     comptime AccumType = get_accum_type[Self.q_type]()
     # 576 / 64 = 9
@@ -207,7 +241,7 @@ struct MLA_SM100_Decode_KV_BF16[
         ],
     ):
         # SlidingWindowCausalMask is supported ONLY by the native FP8 backend
-        # (MLA_SM100_Decode_QKV_FP8).  Reject it here at comptime.
+        # (MLA_SM100_Decode_QKV_FP8). Reject it here at comptime.
         comptime _mask_type_name: String = Self.MaskType.get_type_name()
         comptime assert (
             _mask_type_name == "NullMask" or _mask_type_name == "CausalMask"
@@ -249,7 +283,7 @@ struct MLA_SM100_Decode_KV_BF16[
         # Early exit for split-K: CTAs with no work (num_keys_this_split == 0)
         # must still write -inf LSE, zero o_accum_split, and call
         # launch_dependent_grids() to fulfill the PDL contract with the
-        # combine kernel.  Skipping launch_dependent_grids() causes the
+        # combine kernel. Skipping launch_dependent_grids() causes the
         # combine kernel to hang, leading to CUDA_ERROR_ILLEGAL_ADDRESS.
         comptime if Self.config.decoding_warp_split_k:
             if offset_position.num_keys_this_split == 0:

@@ -816,9 +816,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         return self._host_ptr[idx]
 
     @always_inline
-    def __setitem__(
-        self: HostBuffer[Self.dtype], idx: Int, val: Scalar[Self.dtype]
-    ):
+    def __setitem__(self, idx: Int, val: Scalar[Self.dtype]):
         """Sets the element at the specified index in the host buffer.
 
         This operator allows direct modification of individual elements in the host buffer
@@ -1845,6 +1843,78 @@ struct DeviceBuffer[dtype: DType](
             origin
         ]()
 
+    def _tensor_map_encode_tiled(
+        self,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_dim: UnsafePointer[mut=False, Int64, _],
+        global_strides: UnsafePointer[mut=False, Int64, _],
+        box_dim: UnsafePointer[mut=False, Int32, _],
+        element_strides: UnsafePointer[mut=False, Int32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises:
+        """Encodes a tiled TMA descriptor for this buffer via AsyncRT. Used by
+        `std.gpu.host._tensormap.create_tensormap`."""
+        _checked(
+            external_call["AsyncRT_cuda_tensorMapEncodeTiled", _CString[]](
+                tensor_map,
+                data_type,
+                rank,
+                self._handle,
+                global_dim,
+                global_strides,
+                box_dim,
+                element_strides,
+                interleave,
+                swizzle,
+                l2_promotion,
+                oob_fill,
+            )
+        )
+
+    def _tensor_map_encode_im2col(
+        self,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_dim: UnsafePointer[mut=False, Int64, _],
+        global_strides: UnsafePointer[mut=False, Int64, _],
+        pixel_box_lower_corner: UnsafePointer[mut=False, Int32, _],
+        pixel_box_upper_corner: UnsafePointer[mut=False, Int32, _],
+        channels_per_pixel: Int32,
+        pixels_per_column: Int32,
+        element_strides: UnsafePointer[mut=False, Int32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises:
+        """Encodes an im2col TMA descriptor for this buffer via AsyncRT. Used by
+        `std.gpu.host._tensormap.create_tensormap_im2col`."""
+        _checked(
+            external_call["AsyncRT_cuda_tensorMapEncodeIm2col", _CString[]](
+                tensor_map,
+                data_type,
+                rank,
+                self._handle,
+                global_dim,
+                global_strides,
+                pixel_box_lower_corner,
+                pixel_box_upper_corner,
+                channels_per_pixel,
+                pixels_per_column,
+                element_strides,
+                interleave,
+                swizzle,
+                l2_promotion,
+                oob_fill,
+            )
+        )
+
     def device_ptr(
         ref self,
     ) raises -> DevicePointer[Self.dtype, origin_of(self)]:
@@ -2761,9 +2831,9 @@ struct DeviceFunction[
                 _CString[],
                 UnsafePointer[_DeviceFunctionPtr[mut=True], origin_of(result)],
                 _DeviceContextPtr[mut=True],
-                CStringSlice[StaticConstantOrigin],
-                CStringSlice[StaticConstantOrigin],
-                CStringSlice[StaticConstantOrigin],
+                CStringSlice[ImmStaticOrigin],
+                CStringSlice[ImmStaticOrigin],
+                CStringSlice[ImmStaticOrigin],
                 c_size_t,
                 Int32,
                 CStringSlice[origin_of(debug_level)],
@@ -2794,7 +2864,7 @@ struct DeviceFunction[
                 "AsyncRT_DeviceFunction_copyToConstantMemory",
                 _CString[],
                 _DeviceFunctionPtr[mut=True],
-                CStringSlice[StaticConstantOrigin],
+                CStringSlice[ImmStaticOrigin],
                 c_size_t,
                 OpaquePointer[type_of(mapping.ptr).origin],
                 c_size_t,
@@ -3622,7 +3692,7 @@ struct DeviceExternalFunction:
                 _CString[],
                 UnsafePointer[_DeviceFunctionPtr[mut=True], origin_of(result)],
                 _DeviceContextPtr[mut=True],
-                CStringSlice[StaticConstantOrigin],
+                CStringSlice[ImmStaticOrigin],
                 CStringSlice[origin_of(function_name)],
                 CStringSlice[origin_of(asm)],
                 c_size_t,

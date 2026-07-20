@@ -11,6 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""
+Defines the SM90 (Hopper) matmul tuning configuration record and the
+pre-tuned BF16 lookup table of kernel hyperparameters for specific
+(M, N, K) problem shapes.
+"""
+
 from ..tile_scheduler import MatmulSchedule, RasterOrder
 from internal_utils import TuningConfig
 from std.utils.index import Index, IndexList
@@ -19,6 +25,14 @@ from std.gpu.host.info import H100
 
 
 struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
+    """Tuning record for a single (M, N, K) SM90 matmul configuration.
+
+    Stores the full set of kernel hyperparameters: MMA shape, block tile
+    shape, pipeline stages, cluster shape, consumer count, multicast flag,
+    optional grid shape, scheduling strategy, split-K count, and raster
+    order, corresponding to one entry in the pre-tuned BF16 lookup table.
+    """
+
     var M: Int
     var N: Int
     var K: Int

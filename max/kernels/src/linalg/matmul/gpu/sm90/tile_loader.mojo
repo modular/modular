@@ -260,7 +260,7 @@ struct TileLoaderTMA[
         """
         comptime assert type_of(dst).dtype == Self._dtype
         # Materialize the inferred destination as an exact TileTensor type for
-        # TMA overload resolution.  The trait method accepts any shared-memory
+        # TMA overload resolution. The trait method accepts any shared-memory
         # TileTensor, but TMATensorTile is parameterized on Self._dtype.
         var dst_exact = TileTensor[
             mut=True,
@@ -407,7 +407,7 @@ struct TileLoaderCPAsync[
             Coord(coords[0], coords[1])
         ).vectorize[1, Self.vector_size]()
 
-        # Perform the async copy with bounds checking and swizzling.  Rebind
+        # Perform the async copy with bounds checking and swizzling. Rebind
         # through an exact destination type so the dtype parameter can unify
         # across the source and destination TileTensor arguments.
         # Materialize an exact, any-origin destination tile from the raw
@@ -468,12 +468,15 @@ def async_copy_with_bound_check[
     The method also handles shared memory swizzling to avoid bank conflicts
     and maximize memory bandwidth utilization.
 
-    Template Parameters:
-        dtype: Data type of the elements.
-        src_layout: Layout of the source tile.
-        dst_layout: Layout of the destination tile.
-        thread_layout: Thread arrangement for distributed copying.
-        swizzle_mode: Swizzling pattern for bank conflict avoidance.
+    Parameters:
+        dtype: Element type of the source and destination tiles (inferred).
+        src_layout: Static layout of the source tile in global memory (inferred).
+        dst_layout: Static layout of the destination tile in shared memory
+            (inferred).
+        thread_layout: Thread mapping that partitions the source and
+            destination tiles across threads.
+        swizzle_mode: Shared memory swizzle pattern applied to avoid bank
+            conflicts.
 
     Args:
         src: Source tensor fragment in global memory.

@@ -13,7 +13,7 @@
 
 """SHA-256 (FIPS 180-4) implementation for KV cache prefix hashing."""
 
-from std.memory import Span
+from std.collections import Span
 from std.bit import rotate_bits_right
 from std.collections.inline_array import InlineArray
 

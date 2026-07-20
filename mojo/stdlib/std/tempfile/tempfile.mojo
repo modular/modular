@@ -32,7 +32,7 @@ from std.pathlib import Path
 from std.sys import CompilationTarget
 from std.random import random_ui64
 
-from std.memory import Span
+from std.collections import Span
 
 comptime TMP_MAX = 10_000
 """Maximum number of attempts when generating unique temporary file names."""

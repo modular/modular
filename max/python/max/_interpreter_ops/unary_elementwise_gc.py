@@ -147,10 +147,6 @@ def _supported_dtypes(dtype_class: DTypeClass, device: Device) -> list[DType]:
     raise ValueError(f"Unknown dtype_class: {dtype_class!r}")
 
 
-# Discovered at import so a missing driver fails here, not at first dispatch.
-_DEVICES = gc_compile.discover_devices()
-
-
 def _graph_name(
     op_type: type[_core.Operation], device: Device, dtype: DType
 ) -> str:
@@ -162,7 +158,7 @@ def _graph_name(
 canonical_shape = gc_compile.canonical_shape_rank1
 
 
-def _build_unary_graph(
+def _unary_graph(
     module: Module,
     op_type: type[_core.Operation],
     spec: UnarySpec,
@@ -170,16 +166,16 @@ def _build_unary_graph(
     dtype: DType,
 ) -> None:
     """Adds one fully-symbolic rank-1 unary graph into *module* in-place."""
-    dev_ref = DeviceRef.from_device(device)
-    in_type = TensorType(dtype, ["n"], device=dev_ref)
-    g = Graph(
+    device_ref = DeviceRef.from_device(device)
+    in_type = TensorType(dtype, ["n"], device=device_ref)
+    graph = Graph(
         _graph_name(op_type, device, dtype),
         input_types=[in_type],
         module=module,
     )
-    with g:
-        (x,) = g.inputs
-        g.output(spec.builder(x.tensor))
+    with graph:
+        (x,) = graph.inputs
+        graph.output(spec.builder(x.tensor))
 
 
 def _is_supported(
@@ -200,46 +196,44 @@ def _is_supported(
     return dtype in _supported_dtypes(spec.dtype_class, device)
 
 
-def build_unary_module() -> Module:
-    """Build the full batched unary module: every supported (op, device, dtype)
-    across CPU + all accelerators, in one module.
+class _UnaryFamily(gc_compile.GCFamilySpec):
+    name = "unary"
 
-    Host-ELF and cubins both embed self-contained in the exported MEF, so one
-    force-load populates every device class at once. Shared by the warm producer
-    (export) and the batched sweep. Unsupported (op, device, dtype) targets are
-    filtered out via :func:`_is_supported` (MXF-477).
-    """
-    module = Module()
-    for op_type, spec in _UNARY_OPS.items():
-        for device in _DEVICES:
+    def build_module(self) -> Module:
+        """Build the full batched unary module: every supported (op, device,
+        dtype) across CPU + all accelerators, in one module.
+
+        Host-ELF and cubins both embed self-contained in the exported MEF, so
+        one force-load populates every device class at once. Shared by the
+        warm producer (export) and the batched sweep. Unsupported (op,
+        device, dtype) targets are filtered out via :func:`_is_supported`
+        (MXF-477).
+        """
+        module = Module()
+        for device in self.sweep_devices():
+            self.build_module_for_device(device, module)
+        return module
+
+    def build_module_for_device(
+        self, device: Device, module: Module | None = None
+    ) -> Module:
+        """Build the unary module for a single device slot: every supported
+        (op, dtype) on *device*, and nothing else.
+
+        Per-slot counterpart of :meth:`build_module`. The warm producer
+        exports one MEF per slot so the warm is device-count-independent: a
+        k-GPU consumer force-loads only slots ``0..k-1``.
+        """
+        if module is None:
+            module = Module()
+        for op_type, spec in _UNARY_OPS.items():
             for dtype in _supported_dtypes(spec.dtype_class, device):
                 if _is_supported(op_type, device, dtype):
-                    _build_unary_graph(module, op_type, spec, device, dtype)
-    return module
+                    _unary_graph(module, op_type, spec, device, dtype)
+        return module
 
 
-def build_unary_module_for_device(device: Device) -> Module:
-    """Build the unary module for a single device slot: every supported (op,
-    dtype) on *device*, and nothing else.
-
-    Per-slot counterpart of :func:`build_unary_module`. The warm producer
-    exports one MEF per slot so the warm is device-count-independent: a k-GPU
-    consumer force-loads only slots ``0..k-1``.
-    """
-    module = Module()
-    for op_type, spec in _UNARY_OPS.items():
-        for dtype in _supported_dtypes(spec.dtype_class, device):
-            if _is_supported(op_type, device, dtype):
-                _build_unary_graph(module, op_type, spec, device, dtype)
-    return module
-
-
-_FAMILY = gc_compile.GCOpFamily(
-    name="unary",
-    build_module=build_unary_module,
-    build_module_for_device=build_unary_module_for_device,
-    sweep_devices=lambda: list(_DEVICES),
-)
+_FAMILY = gc_compile.GCOpFamily(_UnaryFamily())
 gc_compile.register_family(_FAMILY)
 
 
@@ -269,38 +263,27 @@ def unary_model(
             ``MAX_EAGER_OP_PRECOMPILE=1``, if a supported target was not swept.
     """
     key = _graph_name(op_type, device, dtype)
+    # Cache-check before building the closures below: this runs on every
+    # eager op dispatch, so a hit must not pay for closures it won't use.
     model = _FAMILY.cache.get(key)
     if model is not None:
         return model
-    if not _is_supported(op_type, device, dtype):
+
+    def check_supported() -> str | None:
+        if _is_supported(op_type, device, dtype):
+            return None
         spec = _spec_for(op_type)
         supported = _supported_dtypes(spec.dtype_class, device) if spec else []
-        raise KeyError(
+        return (
             f"Unsupported unary op/device/dtype for key {key!r}."
             f"  Supported dtypes for this op/device: {supported}"
         )
-    if gc_compile.should_precompile():
-        # TODO(MXF-510): raise UnsupportedGraphError so executors fall back.
-        raise KeyError(
-            f"No pre-compiled unary model for key {key!r}."
-            f"  Available: {sorted(_FAMILY.cache)}."
-            f"  Unset {gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR} (the default)"
-            " to compile targets lazily on first use."
-        )
-    with gc_compile.COMPILE_LOCK:
-        model = _FAMILY.cache.get(key)
-        if model is not None:
-            return model
-        _FAMILY.ensure_swept()
-        model = _FAMILY.cache.get(key)
-        if model is not None:
-            return model
 
-        def build(module: Module) -> None:
-            spec = _spec_for(op_type)
-            assert spec is not None, (
-                f"unsupported op {op_type!r} reached compile"
-            )
-            _build_unary_graph(module, op_type, spec, device, dtype)
+    def build(module: Module) -> None:
+        spec = _spec_for(op_type)
+        assert spec is not None, f"unsupported op {op_type!r} reached compile"
+        _unary_graph(module, op_type, spec, device, dtype)
 
-        return gc_compile.compile_single_target(_FAMILY, key, device, build)
+    return _FAMILY.model_for(
+        key, device, build, unsupported_reason=check_supported
+    )
