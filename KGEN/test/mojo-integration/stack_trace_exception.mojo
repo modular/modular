@@ -83,7 +83,7 @@ def main():
 # O3-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::collect_if_enabled(::SIMD[::DType(int), ::SIMDSize(1)])
 # O3-FULL:      #{{.*}} stack_trace_exception::main() {{.*}}/stack_trace_exception.mojo:
 # O3-FULL-NEXT: #{{.*}} std::builtin::_startup::__wrap_and_execute_main[def() thin -> None]
-# O3-FULL-NEXT: #{{.*}} main oss/modular/mojo/stdlib/std/builtin/_startup.mojo:
+# O3-FULL-NEXT: #{{.*}} main {{.*}}mojo/stdlib/std/builtin/_startup.mojo:
 
 # O3-FULL-LABEL: stack trace of nested gotcha!
 # O3-FULL:      #{{.*}} KGEN_CompilerRT_GetStackTrace
@@ -112,7 +112,7 @@ def main():
 
 # O0-FULL-LABEL: stack trace of gotcha!
 # O0-FULL:      #{{.*}} KGEN_CompilerRT_GetStackTrace
-# O0-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::collect_if_enabled(::SIMD[::DType(int), ::SIMDSize(1)]) oss/modular/mojo/stdlib/std/builtin/error.mojo:{{.*}}:{{.*}}
+# O0-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::collect_if_enabled(::SIMD[::DType(int), ::SIMDSize(1)]) {{.*}}mojo/stdlib/std/builtin/error.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT: #{{.*}} stack_trace_exception::foo() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT: #{{.*}} stack_trace_exception::main() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT: #{{.*}} std::builtin::_startup::__wrap_and_execute_main[def() thin -> None]
@@ -120,7 +120,7 @@ def main():
 
 # O0-FULL-LABEL: stack trace of nested gotcha!
 # O0-FULL:       #{{.*}} KGEN_CompilerRT_GetStackTrace
-# O0-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::collect_if_enabled(::SIMD[::DType(int), ::SIMDSize(1)]) oss/modular/mojo/stdlib/std/builtin/error.mojo:{{.*}}:{{.*}}
+# O0-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::collect_if_enabled(::SIMD[::DType(int), ::SIMDSize(1)]) {{.*}}mojo/stdlib/std/builtin/error.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT:  #{{.*}} stack_trace_exception::foo2() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT:  #{{.*}} stack_trace_exception::foo1() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT:  #{{.*}} stack_trace_exception::nested_func() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
