@@ -69,8 +69,11 @@ modular_py_test(
     # The NIXL plugins reach the runfiles tree via the kv_cache dep's
     # :nixl_host_plugins data; the conftest resolves NIXL_PLUGIN_DIR through
     # max._core.
-    # TODO(GEX-3817): the standard b200 CI machines lack proper RDMA config
-    # for the UCX IB path. Mark manual until a suitable runner is available.
+    # TODO(GEX-3817): fails deterministically on the b200 remote-exec
+    # workers — measured notification latency is ~10.3s against the test's
+    # 8s bound (10/10 runs, 2026-07-17), pointing at a real progress-thread
+    # delivery delay rather than machine flake. Keep manual until the
+    # latency is root-caused.
     gpu_constraints = ["//:nvidia_gpu"],
     imports = ["."],
     tags = [
@@ -129,13 +132,10 @@ modular_py_test(
     # The NIXL plugins reach the runfiles tree via the kv_cache dep's
     # :nixl_host_plugins data; the conftest resolves NIXL_PLUGIN_DIR through
     # max._core.
-    # TODO(GEX-3817): b200 CI machines have IB misconfiguration causing UCX
-    # transfers to timeout. Mark manual until a suitable runner is available.
     gpu_constraints = ["//:nvidia_gpu"],
     imports = ["."],
     tags = [
         "gpu",
-        "manual",
     ],
     # UCX currently only supports linux machines
     target_compatible_with = [
