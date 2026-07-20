@@ -54,6 +54,7 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_prefill_kv_cache_ragged,
     generic_flare_mla_prefill_ragged_paged_plan,
     generic_flash_attention_kv_cache_ragged,
+    generic_fused_qkv_index_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4,
@@ -1253,6 +1254,78 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
                 output.to_layout_tensor(),
                 ctx,
             )
+        )
+
+
+@extensibility.register("mo.fused_qkv_index_matmul.ragged.paged")
+struct Struct_fused_qkv_index_matmul_padded_ragged:
+    # BF16 (non-scaled) dual-cache fused QKV + index-QK matmul for MiniMax-M3.
+    # Non-scaled analog of the mxfp8 struct above: same dual-cache column routing
+    # (MAIN K/V scatter + INDEX IndexK scatter) and `IQ_DIM` parameter, but plain
+    # BF16 with no block-scaling operands (no input_scale / weight_scale /
+    # tensor_sf / SF_VECTOR_SIZE). Hardware-agnostic (AMD CDNA4 + NVIDIA).
+    #
+    # The MAIN cache operands (kv_blocks .. max_cache_length) drive the K/V
+    # scatter; the INDEX cache operands (index_kv_blocks .. index_max_cache_length)
+    # drive the IndexK scatter. Q and IndexQ are returned in the combined
+    # `output` tensor [M, q_dim + iq_dim].
+    #
+    # `IQ_DIM` is the IndexQ output-band width (num_index_heads * idx_head_dim).
+    # It is a parameter because, for the MLA index cache, it cannot be recovered
+    # from the index cache's `num_heads` (== 1 for the single latent head).
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        kv_type: DType,
+        index_kv_type: DType,
+        //,
+        IQ_DIM: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        index_kv_blocks: MutableInputTensor[dtype=index_kv_type, rank=6, ...],
+        index_cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        index_kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        index_max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        index_max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContext,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+        )
+        var index_kv_collection = generic_get_paged_cache(
+            index_kv_blocks,
+            index_cache_lengths,
+            index_kv_lookup_table,
+            index_max_prompt_length,
+            index_max_cache_length,
+        )
+        return generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
+            target=target,
+        ](
+            hidden_state.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            weight.to_layout_tensor(),
+            kv_collection,
+            index_kv_collection,
+            layer_idx,
+            IQ_DIM,
+            output.to_layout_tensor(),
+            ctx,
         )
 
 

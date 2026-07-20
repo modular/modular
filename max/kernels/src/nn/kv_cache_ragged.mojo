@@ -1864,6 +1864,357 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
     )
 
 
+# BF16 (non-scaled) analog of
+# `generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4`. Fuses the
+# main QKV projection with the sparse-indexer QKV projection into a single GEMM
+# over the stacked weight [Wq | Wk | Wv | Wiq | Wik]: Q and IndexQ go to the
+# combined `output`, K/V scatter into the MAIN paged cache and IndexK into the
+# INDEX paged cache. Hardware-agnostic (plain BF16 matmul; runs on AMD
+# CDNA4/MI355 and NVIDIA). Attention in M3 is BF16 — quantization applies only
+# to the MoE experts, not these projections, so there are no scale-factor
+# operands here. The column-band boundaries and the `write_to_caches` scatter
+# epilogue are identical to the `_scale_float4` variant above (see its comment
+# block for the detailed routing rationale); this variant only drops the
+# block-scaling machinery and swaps in the plain `_matmul_common` primitive used
+# by the single-cache `mo.fused_qkv_matmul.ragged.paged` kernel.
+#
+# Column routing over col in [0, N_total) with
+#   N_total = q_dim + 2*kv_dim + iq_dim + ik_dim:
+#   [0, q_dim)                       -> Q       : output[:, col]
+#   [q_dim, q_dim+kv_dim)            -> K       : main k_cache (head/dim from col)
+#   [q_dim+kv_dim, q_dim+2*kv_dim)   -> V       : main v_cache
+#   [q_dim+2*kv_dim, +iq_dim)        -> IndexQ  : output[:, q_dim + (col-base)]
+#   [+iq_dim, +ik_dim)               -> IndexK  : index k_cache (head=0, dim)
+def generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
+    dtype: DType,
+    weight_dtype: DType,
+    target: StaticString = "cpu",
+](
+    hidden_state: LayoutTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input_row_offsets: LayoutTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    weight: LayoutTensor[
+        mut=False, weight_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    kv_collection: PagedKVCacheCollection,
+    index_kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    iq_dim: Int,
+    output: LayoutTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    ctx: DeviceContext,
+) raises:
+    """Performs a fused QKV + index-QK matmul (BF16, non-scaled). Q and IndexQ
+    are written to the combined `output` buffer; K/V are scattered into the MAIN
+    `kv_collection` and IndexK into the INDEX `index_kv_collection`.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), hidden).
+        input_row_offsets: Tensor with shape (batch_size + 1,). The value at
+            each index is the start_idx of the corresponding batch in
+            hidden_state.
+        weight: Concatenated weight W = [Wq | Wk | Wv | Wiq | Wik], shape
+            (N_total, hidden) where N_total = q_dim + 2*kv_dim + iq_dim + ik_dim.
+        kv_collection: The MAIN KVCache collection (K, V) for this layer.
+        index_kv_collection: The INDEX KVCache collection (IndexK only,
+            single shared KV head) for this layer.
+        layer_idx: The current layer, used to retrieve the KVCache objects.
+        iq_dim: Width of the IndexQ output band (num_index_heads *
+            idx_head_dim). Passed explicitly because for an MLA index cache it
+            is not recoverable from the index cache's `num_heads`.
+        output: The pre-allocated combined output buffer for Q and IndexQ
+            projections. Shape: (sum(seq_lens), q_dim + iq_dim).
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+
+    @always_inline
+    @parameter
+    def description_fn() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg(
+                        "hidden_state", hidden_state.runtime_layout.shape.value
+                    ),
+                    trace_arg("weight", weight.runtime_layout.shape.value),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    "idx_num_heads="
+                    + String(index_kv_collection.kv_params.num_heads),
+                    "idx_head_size="
+                    + String(index_kv_collection.kv_params.head_size),
+                ]
+            )
+        )
+
+    comptime name = "mo.fused_qkv_index_matmul.ragged.paged.nhead_" + String(
+        kv_collection.kv_params.num_heads
+    ) + ".hdim_" + String(kv_collection.kv_params.head_size)
+    with Trace[TraceLevel.OP, target=target](
+        name,
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(ctx.id()),
+    ):
+        return _fused_qkv_index_matmul_kv_cache_ragged[target=target,](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            index_kv_collection,
+            layer_idx,
+            iq_dim,
+            output,
+            ctx,
+        )
+
+
+@always_inline
+def _fused_qkv_index_matmul_kv_cache_ragged[
+    dtype: DType,
+    weight_dtype: DType,
+    collection_t: KVCollectionT,
+    index_collection_t: KVCollectionT,
+    //,
+    *,
+    target: StaticString,
+](
+    hidden_state: LayoutTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input_row_offsets: LayoutTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    weight: LayoutTensor[
+        mut=False, weight_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    kv_collection: collection_t,
+    index_kv_collection: index_collection_t,
+    layer_idx: UInt32,
+    iq_dim: Int,
+    output: LayoutTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    context: DeviceContext,
+) raises:
+    """Resolves both KVCache objects from their collections and dispatches the
+    dual-cache impl. K/V come from the MAIN (non-MLA) collection, IndexK from
+    the INDEX (MLA, single latent head) collection."""
+    comptime kv_params = collection_t.kv_params
+
+    # The MAIN cache is GQA/MHA — it has a real K and V side scattered per
+    # head. The INDEX cache is MLA (K-only, single latent head); its scatter
+    # uses head 0, so MLA is supported there (the assert below only constrains
+    # the main cache). `get_value_cache` is therefore only taken on the main
+    # collection, which is always non-MLA.
+    comptime assert (
+        not kv_params.is_mla
+    ), "Dual-cache fused QKV+index: the MAIN (K/V) cache must be non-MLA."
+
+    var layer_idx_cast = Int(layer_idx)
+    var k_cache = kv_collection.get_key_cache(layer_idx_cast)
+    var v_cache = kv_collection.get_value_cache(layer_idx_cast)
+    var index_k_cache = index_kv_collection.get_key_cache(layer_idx_cast)
+
+    var cuda_ctx: Optional[DeviceContext] = None
+    comptime if is_gpu[target]():
+        cuda_ctx = context
+
+    return _fused_qkv_index_matmul_kv_cache_ragged_impl[target=target](
+        hidden_state,
+        input_row_offsets,
+        weight,
+        k_cache,
+        v_cache,
+        index_k_cache,
+        iq_dim,
+        output,
+        cuda_ctx,
+    )
+
+
+@always_inline
+def _fused_qkv_index_matmul_kv_cache_ragged_impl[
+    dtype: DType,
+    weight_dtype: DType,
+    cache_t: KVCacheT,
+    index_cache_t: KVCacheT,
+    //,
+    *,
+    target: StaticString,
+](
+    hidden_state: LayoutTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input_row_offsets: LayoutTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    weight: LayoutTensor[
+        mut=False, weight_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    k_cache: cache_t,
+    v_cache: cache_t,
+    index_k_cache: index_cache_t,
+    iq_dim: Int,
+    output: LayoutTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    context: Optional[DeviceContext],
+) raises:
+    """Dual-cache fused QKV + index matmul on ragged tensors (BF16, non-scaled).
+
+    Q and IndexQ are written to the combined `output` buffer (Q in
+    `[0, q_dim)`, IndexQ in `[q_dim, q_dim + iq_dim)`); K/V are scattered into
+    the main `k_cache`/`v_cache`; IndexK is scattered into the MLA
+    `index_k_cache` (single latent head, head 0).
+    """
+    comptime kv_type = cache_t.dtype
+    comptime kv_params = cache_t.kv_params
+    comptime index_kv_type = index_cache_t.dtype
+
+    comptime assert (
+        kv_type == index_kv_type == dtype
+    ), "Main/index KV cache dtype must match the QKV tensor dtype."
+
+    # Boundaries over the concatenated N dimension. `output` is the combined
+    # [M, q_dim + iq_dim] buffer (Q then IndexQ):
+    #   kv_dim = main num_heads * head_size      (K band == V band width)
+    #   iq_dim = num_index_heads * idx_head_dim  (IndexQ band; PASSED IN, since
+    #            for an MLA index cache the index cache's num_heads == 1 != it)
+    #   ik_dim = index head_size                 (IndexK band == single MLA
+    #            latent head width; not materialized as a var — nothing branches
+    #            on it, the scatter uses `col - iq_end`)
+    #   q_dim  = output_width - iq_dim           (Q band)
+    var kv_dim = kv_params.head_size * kv_params.num_heads
+    var output_width = output.dim[1]()
+    var q_dim = output_width - iq_dim
+
+    # Fail fast if the stacked weight width doesn't match the routed bands
+    # (q_dim + 2*kv_dim + iq_dim + ik_dim). A mismatched wqkv / iq_dim / output
+    # would otherwise silently mis-route or read out of bounds in the epilogue.
+    comptime ik_dim = index_cache_t.kv_params.head_size
+    var n_total = weight.dim[0]()
+    if n_total != q_dim + 2 * kv_dim + iq_dim + ik_dim:
+        raise Error(
+            "fused_qkv_index: stacked weight N (",
+            n_total,
+            ") != q_dim (",
+            q_dim,
+            ") + 2*kv_dim (",
+            kv_dim,
+            ") + iq_dim (",
+            iq_dim,
+            ") + ik_dim (",
+            ik_dim,
+            "); check the [Wq|Wk|Wv|Wiq|Wik] weight and iq_dim.",
+        )
+
+    # Column band boundaries (exclusive upper bounds).
+    var q_end = q_dim  # Q       : [0, q_end)
+    var k_end = q_end + kv_dim  # K       : [q_end, k_end)
+    var v_end = k_end + kv_dim  # V       : [k_end, v_end)
+    var iq_end = v_end + iq_dim  # IndexQ  : [v_end, iq_end)
+    # IndexK band is [iq_end, iq_end + ik_dim); no `ik_end` var is needed
+    # because nothing branches on the final upper bound (the matmul only emits
+    # columns up to it, so the IndexK else-branch is reached only within range).
+
+    var batch_size = input_row_offsets.dim[0]() - 1
+
+    if batch_size == 0:
+        return
+
+    @parameter
+    @__copy_capture(
+        q_end,
+        k_end,
+        v_end,
+        iq_end,
+        q_dim,
+    )
+    @always_inline
+    def write_to_caches[
+        _dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[_dtype, width]):
+        # The matmul produced the projections; the epilogue just routes and
+        # casts. `idx[1]` is the column in the concatenated N space.
+        var output_val_out: SIMD[dtype, width] = rebind[SIMD[dtype, width]](
+            val.cast[dtype]()
+        )
+
+        var col = idx[1]
+
+        # Q band -> output[:, col].
+        if col < q_end:
+            output.store[width=width](idx, output_val_out)
+            return
+
+        # IndexQ band -> output[:, q_dim + (col - v_end)]. Packed right after Q
+        # in the combined output. Checked before the cache scatters so the
+        # branch order matches the column layout (Q | K | V | IndexQ | IndexK).
+        if col >= v_end and col < iq_end:
+            output.store[width=width](
+                IndexList[2](idx[0], q_dim + (col - v_end)),
+                output_val_out,
+            )
+            return
+
+        var global_token_idx = idx[0]
+        var batch_idx: Int = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
+        )
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
+
+        # K / V bands -> main cache. IndexK band -> index cache.
+        if col < v_end:
+            var h_idx: Int
+            var hd_idx: Int
+            var cache: cache_t
+            if col < k_end:
+                cache = k_cache
+                h_idx, hd_idx = udivmod(col - q_end, kv_params.head_size)
+            else:
+                cache = v_cache
+                h_idx, hd_idx = udivmod(col - k_end, kv_params.head_size)
+            var cache_length = cache.cache_length(batch_idx)
+            var cache_token_idx = token_idx + cache_length
+            cache.store(
+                batch_idx,
+                h_idx,
+                cache_token_idx,
+                hd_idx,
+                rebind[SIMD[kv_type, width]](output_val_out.cast[kv_type]()),
+            )
+        else:
+            # IndexK band -> index cache, single shared head (head == 0).
+            var hd_idx = col - iq_end
+            var cache_length = index_k_cache.cache_length(batch_idx)
+            var cache_token_idx = token_idx + cache_length
+            index_k_cache.store(
+                batch_idx,
+                0,
+                cache_token_idx,
+                hd_idx,
+                rebind[SIMD[index_kv_type, width]](
+                    output_val_out.cast[index_kv_type]()
+                ),
+            )
+
+    comptime assert (
+        weight_dtype == dtype
+    ), "Mismatch in dtype between weight and QKV tensors"
+
+    _matmul_common[target=target, elementwise_lambda_fn=write_to_caches](
+        hidden_state, weight.bitcast[dtype](), context
+    )
+
+
 @always_inline
 def _matmul_common[
     dtype: DType,
