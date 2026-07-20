@@ -20,7 +20,13 @@ import queue
 import re
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, Iterable, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    Iterable,
+    Mapping,
+    MutableMapping,
+    Sequence,
+)
 from dataclasses import dataclass, field
 from datetime import datetime
 from json.decoder import JSONDecodeError
@@ -51,6 +57,7 @@ from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline_variants.structured_output_backend import (
     GrammarValidator,
 )
+from max.pipelines.lib.tokenizer import replace_unpaired_surrogates
 from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.pipelines.lib.tool_parsing import (
     maybe_name_from_tool,
@@ -1171,6 +1178,144 @@ def _coerce_optional_str(value: Any) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _sanitize_text(text: str, source: str, *, reject: bool) -> str:
+    """Returns ``text`` made UTF-8 encodable, or raises when ``reject`` is set.
+
+    A lone UTF-16 surrogate is valid in JSON and in a Python ``str`` but is not
+    encodable as UTF-8, so it would otherwise crash the fast tokenizer. When
+    ``reject`` is False each unpaired surrogate is replaced with U+FFFD; when
+    True the request is rejected with a client-facing ``InputError`` naming the
+    offending position. Well-formed text takes the fast path unchanged.
+    """
+    if text.isascii():
+        return text
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError as e:
+        if reject:
+            raise InputError(
+                f"{source} contains an unpaired UTF-16 surrogate at position "
+                f"{e.start}; the text is valid JSON but not valid UTF-8."
+            ) from None
+        return replace_unpaired_surrogates(text)
+    return text
+
+
+def _sanitize_message_in_place(
+    message: MutableMapping[str, Any], *, reject: bool
+) -> None:
+    """Sanitizes every text field of a chat message that reaches the tokenizer.
+
+    Mutates ``message`` (a per-request dict) so the sanitized text reaches every
+    model, including architectures whose tokenizer overrides the base encode
+    path. Normalizes by default; raises ``InputError`` when ``reject`` is set.
+    """
+    content = message.get("content")
+    if isinstance(content, str):
+        message["content"] = _sanitize_text(
+            content, "message content", reject=reject
+        )
+    elif isinstance(content, list):
+        for part in content:
+            if isinstance(part, MutableMapping) and part.get("type") == "text":
+                text = part.get("text")
+                if isinstance(text, str):
+                    part["text"] = _sanitize_text(
+                        text, "message content", reject=reject
+                    )
+    # ``tool_call_id`` is deliberately left untouched: it is an opaque
+    # correlation key matched against the assistant ``tool_calls[].id`` (which
+    # is not sanitized), so normalizing only one side would desync the match.
+    for key in ("reasoning_content", "reasoning"):
+        value = message.get(key)
+        if isinstance(value, str):
+            message[key] = _sanitize_text(
+                value, "reasoning content", reject=reject
+            )
+    tool_calls = message.get("tool_calls")
+    if isinstance(tool_calls, list):
+        for tool_call in tool_calls:
+            if not isinstance(tool_call, MutableMapping):
+                continue
+            function = tool_call.get("function")
+            if not isinstance(function, MutableMapping):
+                continue
+            # Some chat templates (e.g. Kimi) render the call's function name
+            # as well as its arguments, so both reach the tokenizer.
+            for field, label in (
+                ("name", "tool call name"),
+                ("arguments", "tool call arguments"),
+            ):
+                value = function.get(field)
+                if isinstance(value, str):
+                    function[field] = _sanitize_text(
+                        value, label, reject=reject
+                    )
+
+
+def _sanitize_stop(
+    stop: str | list[str] | None, *, reject: bool
+) -> str | list[str] | None:
+    """Sanitizes stop-sequence text, which the tokenizer also encodes.
+
+    Stop strings reach the tokenizer via ``_encode_stop_criteria``, so an
+    unpaired surrogate here must be handled at the boundary alongside the
+    prompt and message content.
+    """
+    if isinstance(stop, str):
+        return _sanitize_text(stop, "stop sequence", reject=reject)
+    if isinstance(stop, list):
+        return [
+            _sanitize_text(s, "stop sequence", reject=reject)
+            if isinstance(s, str)
+            else s
+            for s in stop
+        ]
+    return stop
+
+
+def _sanitize_json_in_place(
+    value: object, source: str, *, reject: bool
+) -> object:
+    """Recursively sanitizes every string leaf of a JSON-like value.
+
+    Used for a tool definition's ``parameters`` schema, whose nested
+    descriptions and enum values are rendered into some chat templates.
+    """
+    if isinstance(value, str):
+        return _sanitize_text(value, source, reject=reject)
+    if isinstance(value, MutableMapping):
+        for key, item in list(value.items()):
+            value[key] = _sanitize_json_in_place(item, source, reject=reject)
+    elif isinstance(value, list):
+        for i, item in enumerate(value):
+            value[i] = _sanitize_json_in_place(item, source, reject=reject)
+    return value
+
+
+def _sanitize_tool_in_place(
+    tool: MutableMapping[str, Any], *, reject: bool
+) -> None:
+    """Sanitizes a tool definition's rendered text (name, description, schema).
+
+    Tool definitions are passed to ``apply_chat_template`` and tokenized, so a
+    tokenizer that overrides the base encode path would otherwise still crash on
+    an unpaired surrogate in a tool name, description, or parameter schema.
+    """
+    function = tool.get("function")
+    if not isinstance(function, MutableMapping):
+        return
+    for key in ("name", "description"):
+        value = function.get(key)
+        if isinstance(value, str):
+            function[key] = _sanitize_text(
+                value, "tool definition", reject=reject
+            )
+    parameters = function.get("parameters")
+    if parameters is not None:
+        _sanitize_json_in_place(parameters, "tool definition", reject=reject)
+
+
 def _validate_tool_message_consistency(
     messages: Sequence[Mapping[str, Any]],
 ) -> None:
@@ -1265,6 +1410,22 @@ async def openai_parse_chat_completion_request(
     declare them via ``extra_chat_roles``).
     """
     _validate_tool_message_consistency(completion_request.messages)
+    for message in completion_request.messages:
+        # ``ChatCompletionMessageParam`` is a union of TypedDicts; at runtime
+        # each is a plain dict we mutate through a ``MutableMapping`` view.
+        _sanitize_message_in_place(
+            cast(MutableMapping[str, Any], message),
+            reject=settings.reject_invalid_utf8,
+        )
+    completion_request.stop = _sanitize_stop(
+        completion_request.stop, reject=settings.reject_invalid_utf8
+    )
+    for tool in completion_request.tools or []:
+        if isinstance(tool, MutableMapping):
+            _sanitize_tool_in_place(
+                cast(MutableMapping[str, Any], tool),
+                reject=settings.reject_invalid_utf8,
+            )
     if allowed_roles is not None:
         for m in completion_request.messages:
             role = m.get("role")
@@ -2678,7 +2839,18 @@ async def openai_create_completion(
         response_generator = OpenAICompletionResponseGenerator(
             pipeline, stream_options=completion_request.stream_options
         )
-        prompts = get_prompts_from_openai_request(completion_request.prompt)
+        reject_invalid_utf8 = request.app.state.settings.reject_invalid_utf8
+        prompts: list[str | Sequence[int]] = [
+            _sanitize_text(prompt, "prompt", reject=reject_invalid_utf8)
+            if isinstance(prompt, str)
+            else prompt
+            for prompt in get_prompts_from_openai_request(
+                completion_request.prompt
+            )
+        ]
+        completion_request.stop = _sanitize_stop(
+            completion_request.stop, reject=reject_invalid_utf8
+        )
         token_requests = []
         # Use request-level sampling params if provided, else server defaults.
         temp = (

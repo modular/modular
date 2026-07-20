@@ -174,6 +174,16 @@ class Settings(BaseSettings):
         default=512,
         alias="MAX_SERVE_GENERATED_MEDIA_STORAGE_MB",
     )
+    reject_invalid_utf8: bool = Field(
+        default=False,
+        description=(
+            "When True, reject a request whose text contains an unpaired UTF-16 "
+            "surrogate with HTTP 400 instead of normalizing it to U+FFFD. Such "
+            "text is valid JSON but not valid UTF-8 -- for example an emoji "
+            "whose surrogate pair was split by client-side truncation."
+        ),
+        alias="MAX_SERVE_REJECT_INVALID_UTF8",
+    )
 
     # Telemetry and logging configuration
     logs_console_level: str | None = Field(
@@ -391,6 +401,7 @@ class Settings(BaseSettings):
             f"    max_pending_requests   : "
             f"{self.max_pending_requests if self.max_pending_requests is not None else 'unbounded'}"
         )
+        logger.info(f"    reject_invalid_utf8    : {self.reject_invalid_utf8}")
         logger.info("")
 
         # File System Configuration
