@@ -57,7 +57,7 @@ def free(ptr: OptionalUnsafePointer[mut=True, NoneType, ...]):
         ptr: A pointer to the memory to free.
     """
     free(
-        UnsafePointer(to=ptr).bitcast[
+        Pointer(to=ptr).unsafe_bitcast[
             UnsafePointer[NoneType, UntrackedOrigin[mut=True]]
         ]()[]
     )

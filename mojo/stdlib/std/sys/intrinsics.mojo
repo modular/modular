@@ -140,9 +140,9 @@ def gather[
     """
 
     comptime if size == 1:
-        return UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
+        return Pointer[Scalar[dtype], MutUntrackedOrigin](
             unsafe_from_address=Int(base[0])
-        ).load[invariant=invariant]() if mask else SIMD[dtype, size](
+        ).unsafe_load[invariant=invariant]() if mask else SIMD[dtype, size](
             passthrough[0]
         )
 
@@ -150,9 +150,9 @@ def gather[
         var result = SIMD[dtype, size]()
 
         comptime for i in range(size):
-            result[i] = UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
+            result[i] = Pointer[Scalar[dtype], MutUntrackedOrigin](
                 unsafe_from_address=Int(base[i])
-            ).load[invariant=invariant]() if mask[i] else Scalar[dtype](
+            ).unsafe_load[invariant=invariant]() if mask[i] else Scalar[dtype](
                 passthrough[i]
             )
         return result
@@ -161,7 +161,7 @@ def gather[
         "llvm.masked.gather",
         SIMD[dtype, size]._mlir_type,
     ](
-        UnsafePointer(to=base).bitcast[
+        Pointer(to=base).unsafe_bitcast[
             __mlir_type[`!kgen.simd<`, size._mlir_value, `, address>`],
         ]()[],
         Int32(alignment),
@@ -242,14 +242,14 @@ def scatter[
 
     comptime if size == 1:
         if mask:
-            var ptr = UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
+            var ptr = Pointer[Scalar[dtype], MutUntrackedOrigin](
                 unsafe_from_address=Int(base[0])
             )
-            ptr.store(value[0])
+            ptr.unsafe_store(value[0])
         return
     llvm_intrinsic["llvm.masked.scatter", NoneType](
         value,
-        UnsafePointer(to=base).bitcast[
+        Pointer(to=base).unsafe_bitcast[
             __mlir_type[`!kgen.simd<`, size._mlir_value, `, address>`],
         ]()[],
         Int32(alignment),
