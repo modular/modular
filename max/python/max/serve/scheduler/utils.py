@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from max.driver import Buffer
@@ -48,27 +48,18 @@ def _to_human_readable_throughput(tps: float) -> str:
 
 
 def _dp_token_occupancy_pct(
-    batches: list[list[TextContext]],
+    per_rank_tokens: Sequence[int],
     num_replicas: int,
-    token_length: Callable[[TextContext], int],
 ) -> float | None:
     """Mean/max of per-rank token sums as a percentage.
 
     Ranks step together, so the heaviest rank sets the step cost; mean/max
     is the fraction of that synchronized capacity doing useful work (100 =
-    perfectly balanced; the floor is 100/DP-degree). Padding dummies are
-    excluded (measure the constructor's placement, not the padded shapes);
-    replicas missing from ``batches`` scheduled zero tokens. ``None`` when
-    every rank sums to zero.
+    perfectly balanced; the floor is 100/DP-degree). Replicas missing from
+    ``per_rank_tokens`` scheduled zero tokens. ``None`` when every rank sums
+    to zero.
     """
-    per_rank = [
-        sum(
-            token_length(ctx)
-            for ctx in replica_batch
-            if not ctx._is_padding_ctx
-        )
-        for replica_batch in batches
-    ]
+    per_rank = list(per_rank_tokens)
     per_rank.extend([0] * (num_replicas - len(per_rank)))
     max_rank_tokens = max(per_rank, default=0)
     if max_rank_tokens == 0:
@@ -141,6 +132,14 @@ class BatchMetrics:
     # fresh prefill batch).
     dp_context_token_occupancy_pct: float | None = None
 
+    # Raw numerator/denominator behind ``dp_active_token_occupancy_pct``:
+    # total active tokens across replicas, and the synchronized step capacity
+    # (DP-degree x the heaviest rank's active tokens). Emitted as counters so
+    # token-weighted occupancy = sum(tokens) / sum(capacity) over any window.
+    # Both 0 when data_parallel_degree == 1 or the batch is empty.
+    dp_active_tokens: int = 0
+    dp_step_capacity_tokens: int = 0
+
     # Per-request KV cache hit rates for requests admitted in this batch
     # (cached_prefix_length / prompt_length). Empty for non-CE batches and
     # for CE batches that admit no new requests (e.g. follow-up prefill
@@ -207,20 +206,28 @@ class BatchMetrics:
         num_replicas = sch_config.data_parallel_degree
 
         # Data-parallel balance, along two axes: active tokens (compute load
-        # this step) and context tokens (KV / attention load). See
-        # ``_dp_token_occupancy_pct`` for the mean/max convention.
+        # this step) and context tokens (KV / attention load), computed from
+        # the per-replica sums frozen at batch construction. See
+        # ``_dp_token_occupancy_pct`` for the mean/max convention. Alongside
+        # the per-batch percentage, accumulate the raw numerator/denominator
+        # (active tokens vs. synchronized step capacity) so a token-weighted
+        # occupancy can be computed over any window from counter deltas.
         dp_active_token_occupancy_pct: float | None = None
         dp_context_token_occupancy_pct: float | None = None
+        dp_active_tokens = 0
+        dp_step_capacity_tokens = 0
         if num_replicas > 1:
-            dp_active_token_occupancy_pct = _dp_token_occupancy_pct(
-                inputs.batches,
-                num_replicas,
-                lambda ctx: ctx.tokens.active_length,
-            )
+            per_rank_active = list(inputs.per_replica_input_tokens)
+            per_rank_active.extend([0] * (num_replicas - len(per_rank_active)))
+            max_rank_active = max(per_rank_active, default=0)
+            if max_rank_active > 0:
+                dp_active_tokens = sum(per_rank_active)
+                dp_step_capacity_tokens = num_replicas * max_rank_active
+                dp_active_token_occupancy_pct = (
+                    100.0 * dp_active_tokens / dp_step_capacity_tokens
+                )
             dp_context_token_occupancy_pct = _dp_token_occupancy_pct(
-                inputs.batches,
-                num_replicas,
-                lambda ctx: ctx.tokens.processed_length,
+                inputs.per_replica_context_tokens, num_replicas
             )
 
         if kv_cache is not None:
@@ -382,6 +389,8 @@ class BatchMetrics:
             batch_execution_time_is_previous=batch_execution_time_is_previous,
             dp_active_token_occupancy_pct=dp_active_token_occupancy_pct,
             dp_context_token_occupancy_pct=dp_context_token_occupancy_pct,
+            dp_active_tokens=dp_active_tokens,
+            dp_step_capacity_tokens=dp_step_capacity_tokens,
             per_request_hit_rates=per_request_hit_rates,
             num_new_admissions=len(per_request_hit_rates),
             vision_metrics=batch_vision_metrics,
@@ -655,6 +664,11 @@ class BatchMetrics:
         if self.dp_context_token_occupancy_pct is not None:
             METRICS.dp_context_token_occupancy(
                 self.dp_context_token_occupancy_pct, batch_type=bt
+            )
+        if self.dp_step_capacity_tokens > 0:
+            METRICS.dp_active_tokens(self.dp_active_tokens, batch_type=bt)
+            METRICS.dp_step_capacity_tokens(
+                self.dp_step_capacity_tokens, batch_type=bt
             )
 
         METRICS.cache_num_used_blocks(

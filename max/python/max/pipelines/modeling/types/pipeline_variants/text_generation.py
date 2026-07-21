@@ -570,6 +570,15 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     batch_type: BatchType = BatchType.TG
     """Type of batch."""
 
+    per_replica_input_tokens: list[int] = field(default_factory=list)
+    """Per-replica active-token sums, excluding DP padding dummies. Frozen at
+    construction: token windows mutate during scheduling, so later reads of
+    ``active_length`` no longer describe this batch."""
+
+    per_replica_context_tokens: list[int] = field(default_factory=list)
+    """Per-replica processed-token (context) sums, excluding DP padding
+    dummies. Frozen at construction like ``per_replica_input_tokens``."""
+
     def __post_init__(self) -> None:
         self.input_tokens = sum(
             ctx.tokens.active_length for ctx in self.flat_batch
@@ -577,6 +586,22 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         self.context_tokens = sum(
             ctx.tokens.processed_length for ctx in self.flat_batch
         )
+        self.per_replica_input_tokens = [
+            sum(
+                ctx.tokens.active_length
+                for ctx in batch
+                if not getattr(ctx, "_is_padding_ctx", False)
+            )
+            for batch in self.batches
+        ]
+        self.per_replica_context_tokens = [
+            sum(
+                ctx.tokens.processed_length
+                for ctx in batch
+                if not getattr(ctx, "_is_padding_ctx", False)
+            )
+            for batch in self.batches
+        ]
         self.batch_type = BatchType.TG
         for context in self.flat_batch:
             if context.tokens.generated_length == 0:
