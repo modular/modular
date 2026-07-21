@@ -400,9 +400,9 @@ public:
 
   /// Resolve the absolute path for a given module name within the provided
   /// directory. Returns nullopt if the module cannot be found.
-  std::optional<SharedState::ModuleSpec>
-  resolveModulePath(StringRef moduleName, llvm::SMLoc includeLoc,
-                    StringRef includeDir, bool ignorePrebuilt);
+  std::optional<SharedState::ModuleSpec> resolveModulePath(StringRef moduleName,
+                                                           StringRef includeDir,
+                                                           bool ignorePrebuilt);
 
   //===--------------------------------------------------------------------===//
   // Debug Info

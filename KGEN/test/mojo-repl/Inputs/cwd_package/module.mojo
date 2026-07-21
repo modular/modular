@@ -3,9 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This is a test package.
 
-This is a description.
-"""
 
-from .module import Test
+def package_function():
+    print("package_function was called")

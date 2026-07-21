@@ -9,7 +9,7 @@ lit_tests(
         "%repl": "$(rlocationpath //KGEN/tools/mojo) repl --source-quietly -S $(rlocationpath //KGEN/unittests:lit-lldb-init.in)",
         "%mojo-lldb": "$(rlocationpath //KGEN:mojo-lldb)",
     },
-    data = glob(["Inputs/*.mojo"]) + [
+    data = glob(["Inputs/**/*.mojo"]) + [
         "//KGEN:mojo-lldb",
         "//KGEN/unittests:lit-lldb-init.in",
     ],

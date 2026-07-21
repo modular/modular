@@ -1046,8 +1046,8 @@ SharedState::ModuleSpec::classify(const std::filesystem::path &path) {
 /// Resolve the absolute path for a given module name within the provided
 /// directory. Returns nullopt if the module cannot be found.
 std::optional<SharedState::ModuleSpec>
-SharedState::resolveModulePath(StringRef moduleName, llvm::SMLoc includeLoc,
-                               StringRef includeDir, bool ignorePrebuilt) {
+SharedState::resolveModulePath(StringRef moduleName, StringRef includeDir,
+                               bool ignorePrebuilt) {
   // Find a path in `includeDir` that is an importable mojo construct matching
   // `moduleName`
   std::error_code ec;
@@ -1089,8 +1089,7 @@ SharedState::resolveModulePath(StringRef moduleName, SMLoc includeLoc) {
       // package.
       return WalkResult::advance();
     }
-    if ((result = resolveModulePath(moduleName, includeLoc, dir,
-                                    disablePrebuiltPackages)))
+    if ((result = resolveModulePath(moduleName, dir, disablePrebuiltPackages)))
       return WalkResult::interrupt();
     return WalkResult::advance();
   });
@@ -1307,7 +1306,7 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
   if (parentState->decl != impl->topLevelDecl) {
     if (!parentState->sourcePath)
       return notFound("unable to locate module '" + name + "'");
-    modulePath = resolveModulePath(name, loc, *parentState->sourcePath,
+    modulePath = resolveModulePath(name, *parentState->sourcePath,
                                    disablePrebuiltPackages);
   } else {
     // Otherwise, go through the normal import path.
@@ -2375,15 +2374,60 @@ ArrayRef<std::string> SharedState::getIncludedFiles() const {
   return impl->includedFiles;
 }
 
+/// Return the directory to treat as the compilation's working directory for
+/// module lookup. This is the directory containing the given buffer's file,
+/// walked up past any enclosing packages, falling back to the process's
+/// working directory when the buffer identifier has no existing parent
+/// directory. Returns an empty path if no absolute directory could be
+/// derived.
+static std::filesystem::path
+deriveWorkingDirectory(const llvm::SourceMgr &sourceMgr,
+                       unsigned importBufferFileId) {
+  if (!importBufferFileId)
+    return {};
+
+  // The buffer identifier usually names a real file, but REPL and LSP
+  // docstring code-block wrapper buffers have synthetic names formed by
+  // suffixing the real path (e.g. "foo.mojo wrapper_at(42)"). The identifier
+  // itself need not exist - only its parent directory does, which for wrapper
+  // buffers is the real file's directory. Identifiers with no usable parent
+  // (relative compile inputs, "<stdin>", REPL cells) fall back to the
+  // process's working directory.
+  std::optional<std::filesystem::path> path;
+  if (auto *importBuffer = sourceMgr.getMemoryBuffer(importBufferFileId)) {
+    std::filesystem::path identifier(importBuffer->getBufferIdentifier().str());
+    if (identifier.has_parent_path() &&
+        llvm::sys::fs::exists(identifier.parent_path().string()))
+      path = std::move(identifier);
+  }
+
+  bool pathFromBuffer = path.has_value();
+
+  // An empty relative path absolutizes to the process's working directory.
+  SmallString<256> absolute(path.value_or("").string());
+  if (llvm::sys::fs::make_absolute(absolute))
+    return {};
+  path = absolute.str().str();
+
+  // The buffer's identifier names a file path - real, or a synthetic wrapper
+  // name in an existing directory - so step up to its containing directory.
+  // The process-CWD fallback is already the directory to search. Either way,
+  // work back up to the top-most non-package directory.
+  if (pathFromBuffer)
+    path = path->parent_path();
+  while (Filesystem::isMojoSourcePackagePath(*path))
+    path = path->parent_path();
+  return *path;
+}
+
 void SharedState::traverseImportDirectories(
     unsigned importBufferFileId,
     function_ref<WalkResult(StringRef)> callback) const {
   // Python has lots of magic rules surrounding how modules get resolved. For
-  // now, we just use the available include directories within the source
-  // manager and the working directory of where the module is included.
-  SourceMgr &sourceMgr = getSourceMgr();
-
-  // Check the auto import directory first.
+  // now, we search the auto-import directories, the working directory derived
+  // from the importing buffer, and the source manager's include directories,
+  // in that order.
+  // Check the auto import directories.
   for (auto &rawPath : impl->autoImportDirs) {
     if (callback(rawPath).wasInterrupted())
       return;
@@ -2407,17 +2451,10 @@ void SharedState::traverseImportDirectories(
   }
 
   // Check the working directory.
-  if (importBufferFileId) {
-    const auto *includeBuffer = sourceMgr.getMemoryBuffer(importBufferFileId);
-    std::filesystem::path includerPath(
-        includeBuffer->getBufferIdentifier().str());
-
-    // Use the top-most non-package directory.
-    do {
-      includerPath = includerPath.parent_path();
-    } while (Filesystem::isMojoSourcePackagePath(includerPath));
-
-    if (callback(includerPath.string()).wasInterrupted())
+  {
+    std::filesystem::path cwd =
+        deriveWorkingDirectory(getSourceMgr(), importBufferFileId);
+    if (!cwd.empty() && callback(cwd.string()).wasInterrupted())
       return;
   }
 
