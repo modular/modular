@@ -197,7 +197,7 @@ def test_named_temporary_file_deletion() raises:
     ) as my_tmp_file:
         file_path = my_tmp_file.name
         var file_parts = file_path.split(std.os.sep)
-        var file_name = file_parts[len(file_parts) - 1]
+        var file_name = String(file_parts[len(file_parts) - 1])
         assert_true(exists(file_path), "Failed to create file " + file_path)
         assert_true(file_name.startswith("my_prefix"))
         assert_true(file_name.endswith("my_suffix"))

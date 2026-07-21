@@ -1688,7 +1688,9 @@ struct String(
         return StringSlice(self).isspace()
 
     @always_inline
-    def split(self, sep: StringSlice) -> List[StringSlice[origin_of(self)]]:
+    def split(
+        self, sep: StringSlice
+    ) -> List[StringSlice[origin_of(self)._get_owned_interior["bytes"]]]:
         """Split the string by a separator.
 
         Args:
@@ -1710,12 +1712,12 @@ struct String(
         _ = StringSlice("123").split("") # ['', '1', '2', '3', '']
         ```
         """
-        return StringSlice(self).split(sep)
+        return self._interior_slice().split(sep)
 
     @always_inline
     def split(
         self, sep: StringSlice, maxsplit: Int
-    ) -> List[StringSlice[origin_of(self)]]:
+    ) -> List[StringSlice[origin_of(self)._get_owned_interior["bytes"]]]:
         """Split the string by a separator.
 
         Args:
@@ -1736,10 +1738,12 @@ struct String(
         _ = StringSlice("123").split("", maxsplit=1) # ['', '123']
         ```
         """
-        return StringSlice(self).split(sep, maxsplit=maxsplit)
+        return self._interior_slice().split(sep, maxsplit=maxsplit)
 
     @always_inline
-    def split(self, sep: NoneType = None) -> List[StringSlice[origin_of(self)]]:
+    def split(
+        self, sep: NoneType = None
+    ) -> List[StringSlice[origin_of(self)._get_owned_interior["bytes"]]]:
         """Split the string by every Whitespace separator.
 
         Args:
@@ -1763,12 +1767,12 @@ struct String(
         ).split()  # ["hello", "world"]
         ```
         """
-        return StringSlice(self).split(sep)
+        return self._interior_slice().split(sep)
 
     @always_inline
     def split(
         self, sep: NoneType = None, *, maxsplit: Int
-    ) -> List[StringSlice[origin_of(self)]]:
+    ) -> List[StringSlice[origin_of(self)._get_owned_interior["bytes"]]]:
         """Split the string by every Whitespace separator.
 
         Args:
@@ -1784,11 +1788,11 @@ struct String(
         _ = StringSlice("1     2  3").split(maxsplit=1) # ['1', '2  3']
         ```
         """
-        return StringSlice(self).split(sep, maxsplit=maxsplit)
+        return self._interior_slice().split(sep, maxsplit=maxsplit)
 
     def splitlines(
         self, keepends: Bool = False
-    ) -> List[StringSlice[origin_of(self)]]:
+    ) -> List[StringSlice[origin_of(self)._get_owned_interior["bytes"]]]:
         """Split the string at line boundaries. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
@@ -1800,7 +1804,7 @@ struct String(
         Returns:
             A List of Strings containing the input split by line boundaries.
         """
-        return StringSlice(self).splitlines(keepends)
+        return self._interior_slice().splitlines(keepends)
 
     def replace(self, old: StringSlice, new: StringSlice) -> String:
         """Return a copy of the string with all occurrences of substring `old`
