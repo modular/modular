@@ -36,11 +36,7 @@ from .dict import (
     " non-`ImplicitlyDeletable` element type"
 )
 struct Set[
-    # TODO(MOCO-4385): restore `T: KeyElement` once the closure `lit.fn`
-    # sugar-alias verifier mismatch is fixed. Spelling the bound inline avoids
-    # minting the `sugar_alias` wrapper that trips the verifier on the
-    # `deinit_with` `forward` closure. `KeyElement` is exactly this composition.
-    T: Movable & Hashable & Equatable,
+    T: KeyElement,
     H: Hasher = default_hasher,
 ](
     Boolable,
