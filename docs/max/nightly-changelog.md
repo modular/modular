@@ -702,6 +702,22 @@ This version is still a work in progress.
   architecture's pinned backend. The flag now defaults to unset, so any model
   without an explicit `--structured-output-backend` (and no architecture pin)
   correctly resolves to `xgrammar`.
+- Sparse-attention MLA models (DeepSeek V3.2, GLM 5.1/5.2) with an FP8 latent
+  KV cache now run prefill on the absorbed sparse MLA prefill kernel instead
+  of the dense unabsorbed fallback, matching the decode kernel's unit-scale
+  read of the scale-less FP8 latent cache. The dense fallback re-quantized the
+  up-projected Q/K/V to FP8, measurably costing accuracy (GLM 5.2 TP8 gsm8k
+  0.95 -> 1.0), and forfeited sparse attention's linear-cost prefill at long
+  context. The kernel also gained a cache-native blockwise scale path (int8
+  granularity-32), dormant until FP8 KV-cache scales land.
+- Fixed the SM100 sparse MLA prefill kernel gathering K/V latents from the
+  wrong layer's KV-cache region for every layer above the first
+  (`num_layers > 1`). The gather consumed raw encoded indices without folding
+  in the paged per-layer block stride, silently corrupting attention for
+  multi-layer sparse-attention models (DeepSeek V3.2 and GLM 5.1/5.2) served
+  with a bfloat16 latent cache. Also enabled the sparse prefill kernel for
+  GLM 5.2's tensor-parallel head shards (8/16/32 heads per device) over a
+  bfloat16 latent cache; FP8 latent caches keep the decode-kernel routing.
 - Fixed MiniMax-M3 tool-call grammar enforcement silently disabling itself
   when the model emits more than one tool-call section in a single response.
   Enforcement used to switch off once the first section closed, so a second

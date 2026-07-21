@@ -28,11 +28,9 @@ from layout import TileTensor
 from std.gpu.memory import AddressSpace
 from .mla_prefill_generic import mla_sm100_prefill_generic
 from .mla_prefill_blockscale import mla_sm100_prefill_blockscale
-from .mla_prefill_sparse import (
-    MLASparseConfig,
-    mla_prefill_sparse,
-    mla_prefill_sparse_fp8,
-)
+from .mla_prefill_sparse_utils import MLASparseConfig
+from .mla_prefill_sparse import mla_prefill_sparse
+from .mla_prefill_sparse_kv_fp8 import mla_prefill_sparse_fp8
 
 
 @always_inline
@@ -260,7 +258,15 @@ def mla_sm100_prefill_sparse[
     )
 
 
-@always_inline
+# SM100 host launch wrapper. Deliberately NOT `@always_inline`: this wrapper's
+# transitively-inlined FP8 host launch path (the INT64-packed gather4 K+V TMA
+# descriptor construction, `mla_prefill_sparse_fp8` below) is a large store
+# chain. If it inlines into the model's giant fused host `region_0`, LLVM's SLP
+# vectorizer goes quadratic (`BoUpSLP::calculateDependencies` O(n^2) alias
+# queries) and the GLM-5.2 FP8-cache model compile blows up (~66 min vs ~15 for
+# bf16-cache). `@no_inline` keeps the store chain in its own small function
+# where SLP is cheap. Host-side only — the device kernel body is unchanged.
+@no_inline
 def mla_sm100_prefill_sparse_fp8[
     output_type: DType,
     q_type: DType,
@@ -300,10 +306,16 @@ def mla_sm100_prefill_sparse_fp8[
         v_depth: Per-head V depth (512 for DSv3.2).
         indices_stride: Per-query indices buffer stride (= top-k count).
         scale_block_size: Quantization block size along the depth axis.
-            Must be ``>= qk_depth`` (tensorwise, one scale per KV token).
-            Sub-token blockwise quantization is not yet supported because K
-            and V have different depths (``qk_depth != v_depth``), requiring
-            separate K/V scale pointers that this API does not expose.
+            ``0`` selects no-scale mode: FP8 latents are read at unit scale
+            (no dequant, ``scales_ptr`` unused / may be null), mirroring the
+            sparse-decode read of today's scale-less MLA latent cache — the
+            current DSv3.2 production path. ``>= qk_depth`` selects tensorwise
+            scaling (one scale per KV token). A smaller positive value (e.g.
+            32) selects cache-native blockwise scaling: MLA stores one
+            ``ceildiv(qk_depth, scale_block_size)``-wide scale vector per token
+            over the full latent, K consumes all of it and V the first
+            ``ceildiv(v_depth, scale_block_size)`` blocks, so a single
+            ``scales_ptr`` (stride ``ceildiv(qk_depth, sbs)``) serves both.
 
     Args:
         output: Output tile tensor ``[total_q_tokens, num_q_heads, v_depth]``.
@@ -312,8 +324,9 @@ def mla_sm100_prefill_sparse_fp8[
         indices: Per-query gather4 indices (uint32).
         topk_lengths: Per-query effective top-k count.
         attn_sink_ptr: Optional attention sink (pass ``None`` to skip).
-        scales_ptr: FP8 dequantization scales, one Float32 per physical KV
-            row (shape: ``[total_phys_rows]``).
+        scales_ptr: FP8 dequantization scales in ``get_tma_row`` space, laid
+            out ``[total_phys_rows, ceildiv(qk_depth, scale_block_size)]``
+            (i.e. ``k.scales_raw_ptr()`` for the paged cache).
         scale: Softmax scale.
         ctx: GPU device context.
     """
