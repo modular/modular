@@ -701,6 +701,17 @@ This version is still a work in progress.
       is transparent. Generic code that stores a `Tuple[*Ts]` with an unbounded
       pack may need `& ImplicitlyDeletable` on the pack bound to keep dropping
       the tuple implicitly.
+  - `Set[ElementType, HasherType]`
+    - The element bound loosened from `KeyElement & ImplicitlyDeletable` to just
+      `KeyElement`, so a `Set` can now hold a non-`ImplicitlyDeletable` element
+      type.
+    - Like `Dict`, element-mutating operations (`add`, `remove`, `discard`,
+      `clear`) still require `ElementType` to be `ImplicitlyDeletable`, so such
+      a `Set` can currently be constructed and torn down with `deinit_with()`
+      but not populated. For deletable element types (the common case) this is
+      transparent.
+    - Consuming iteration (`for x in set^`) is likewise conditional, requiring
+      `ElementType` to be `ImplicitlyDeletable`.
 
 - Is is now possible to iterate over owned elements in
   `List`, `Dict`, `InlineArray`, `LinkedList`, and `Set`
