@@ -969,7 +969,7 @@ def test_mergewith_pointer():
     # FIXME: This really should work, we need to figure out how exclusivity
     # works here.
 
-    # expected-error @below {{argument of 'List[Pointer[Int, origin_of(a, b)]]' initializer call allows writing a memory location previously writable through another aliased argument}}
+    # expected-error @below {{aliasing values passed mutably to 'elements' argument and mutably to 'elements' argument in 'List[Pointer[Int, origin_of(a, b)]]' initializer call}}
     # expected-note @below {{'origin_of(a)' memory accessed through reference embedded in value of type 'Pointer[Int, origin_of(a, b)]'}}
     # expected-note @below {{'origin_of(b)' memory accessed through reference embedded in value of type 'Pointer[Int, origin_of(a, b)]'}}
     for elt in [Pointer(to=a), Pointer(to=b)]:
