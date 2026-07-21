@@ -173,20 +173,20 @@ struct OwnedPointer[T: AnyType](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
+    @__unsafe_nested_origins_read_only
     def __getitem__(
         ref[AddressSpace.GENERIC] self,
-    ) -> ref[self._inner, AddressSpace.GENERIC] Self.T:
+    ) -> ref[
+        origin_of(self)._get_owned_interior["value"], AddressSpace.GENERIC
+    ] Self.T:
         """Returns a reference to the pointers's underlying data with parametric mutability.
 
         Returns:
             A reference to the data underlying the `OwnedPointer`.
         """
-        # This should have a widening conversion here that allows
-        # the mutable ref that is always (potentially unsafely)
-        # returned from UnsafePointer to be guarded behind the
-        # aliasing guarantees of the origin system here.
-        # All of the magic happens above in the function signature
-        return self._inner.unsafe_ptr()[]
+        return self._inner.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
+            "value", origin_of(self)
+        ]()
 
     # ===-------------------------------------------------------------------===#
     # Methods
