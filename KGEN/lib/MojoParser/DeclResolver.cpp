@@ -930,7 +930,7 @@ LogicalResult DeclResolver::importDeclFromModule(
   // that module so they're available in the destination scope.
   // All extensions known to their parents as e.g. `extension:MyStruct` but
   // also as `extension:` so asking for `extension:` will get all extensions.
-  StringAttr extensionNameAttr = StringAttr::get(getContext(), "extension:");
+  StringAttr extensionNameAttr = shared.extensionsScopeMarker;
   auto requestedModuleExts =
       shared.lookupAndResolveDecl(extensionNameAttr, sourceNameLoc, module,
                                   /*searchParentScopes=*/false,
@@ -960,7 +960,8 @@ LogicalResult DeclResolver::importDeclFromModule(
           continue;
         auto targetStructName = extOp.getTargetStructName().value();
         StringAttr specificExtensionName = StringAttr::get(
-            getContext(), "extension:" + targetStructName.str());
+            getContext(), shared.extensionsScopeMarker.getValue().str() +
+                              targetStructName.str());
         if (failed(aliasImportDecls({extensionDecl}, specificExtensionName,
                                     extensionNameAttr, moduleName, destNameLoc,
                                     dest, true))) {
@@ -1033,7 +1034,7 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
   // importDeclFromModule does. This ensures that when doing wildcard imports,
   // extensions are available in the destination scope.
   // Extensions are registered under "extension:" so we can find all of them.
-  StringAttr extensionNameAttr = StringAttr::get(getContext(), "extension:");
+  StringAttr extensionNameAttr = shared.extensionsScopeMarker;
   auto moduleExtensions =
       shared.lookupAndResolveDecl(extensionNameAttr, loc, module,
                                   /*searchParentScopes=*/false,
@@ -1063,7 +1064,8 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
         if (!targetStructName)
           continue;
         StringAttr specificExtensionName = StringAttr::get(
-            getContext(), "extension:" + targetStructName.value().str());
+            getContext(), shared.extensionsScopeMarker.getValue().str() +
+                              targetStructName.value().str());
         if (failed(aliasImportDecls({extensionDecl}, specificExtensionName,
                                     extensionNameAttr, moduleName, loc, context,
                                     true))) {

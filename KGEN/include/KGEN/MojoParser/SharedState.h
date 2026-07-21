@@ -124,6 +124,13 @@ public:
 
   const mlir::StringAttr bufferNameIdentifier;
 
+  /// Interned "extension:" name. Every scope that contains any extension also
+  /// registers its extensions under this aggregate name (see the
+  /// ExtensionDeclOp handling in SharedState::addDeclsForOp and the
+  /// module-import paths in DeclResolver), so it serves as a cheap marker to
+  /// skip extension lookups entirely in scopes that have none.
+  const mlir::StringAttr extensionsScopeMarker;
+
   /// This is used to efficiently walk MLIR types to find embedded origins.
   CachedOriginFinder cachedOriginFinder;
 
