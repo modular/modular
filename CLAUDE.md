@@ -111,7 +111,8 @@ modular/
 
 1. **Language Separation**:
    - Low-level performance kernels in Mojo (`max/kernels/`)
-   - High-level orchestration in Python (`max/python/max/serve/`, `max/python/max/pipelines/`)
+   - High-level orchestration in Python (`max/python/max/serve/`,
+     `max/python/max/pipelines/`)
 
 2. **Hardware Abstraction**:
    - Platform-specific optimizations via dispatch tables
