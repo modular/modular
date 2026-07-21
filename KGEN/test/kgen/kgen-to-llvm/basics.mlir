@@ -186,6 +186,13 @@ kgen.func @pointer_constant() -> !kgen.pointer<*?> {
   kgen.return %null : !kgen.pointer<*?>
 }
 
+// CHECK-LABEL: @empty_struct_with_never
+kgen.func @empty_struct_with_never() throws -> !kgen.struct<(union<struct<()>, !kgen.never>, scalar<ui8>)> {
+  %struct = kgen.param.constant: struct<(union<struct<()>, !kgen.never>, scalar<ui8>)> = <{ {:struct<()> #interp.uninitmem}, 0 }>
+  // CHECK: llvm.return %{{.*}} : !llvm.struct<(struct<()>, i8)>
+  kgen.return %struct : !kgen.struct<(union<struct<()>, !kgen.never>, scalar<ui8>)>
+}
+
 }
 
 // -----

@@ -1091,7 +1091,8 @@ def KGEN_MLIRDeferredType : KGENType<"MLIRDeferred", "deferred_type",
 // NeverType
 //===----------------------------------------------------------------------===//
 
-def KGEN_NeverType : KGENType<"Never", "never"> {
+def KGEN_NeverType : KGENType<"Never", "never", [
+    DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
   let summary = "Represents a type that cannot be constructed";
   let description = [{
     A `!kgen.never` type represents a type that cannot be

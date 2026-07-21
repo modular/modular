@@ -2252,6 +2252,20 @@ MLIRDeferredType::getTypeAlign(TargetInfoAttr target) const {
 }
 
 //===----------------------------------------------------------------------===//
+// NeverType
+//===----------------------------------------------------------------------===//
+
+// NeverType is lowered to empty struct. In LLVM IR it's zero sized type
+std::optional<int64_t> NeverType::getTypeSize(TargetInfoAttr target) const {
+  return 0;
+}
+
+// NeverType is lowered to empty struct. In LLVM IR it has 1 byte alignment
+std::optional<int64_t> NeverType::getTypeAlign(TargetInfoAttr target) const {
+  return 1;
+}
+
+//===----------------------------------------------------------------------===//
 // SIMDType
 //===----------------------------------------------------------------------===//
 
