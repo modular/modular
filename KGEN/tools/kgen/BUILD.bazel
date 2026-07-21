@@ -5,6 +5,17 @@ package(default_visibility = ["//KGEN:consumers"])
 modular_cc_binary(
     name = "kgen",
     srcs = glob(["*.cpp"]),
+    internal_deps = select({
+        # Under --config=hal-device-context the compiler links neither the
+        # legacy nor the HAL DeviceContext runtime, only the legacy-DeviceContext-free
+        # CompilationDevice plus a plugin-direct arch query
+        # (Driver/CompilerDeviceArch).
+        "//:hal_device_context_enabled": [
+            "//MLRT:Driver/CompilationDeviceImpl",
+            "//MLRT:Driver/CompilerDeviceArch",
+        ],
+        "//conditions:default": [],
+    }),
     linkopts = select({
         "@platforms//os:linux": [
             "-Wl,--export-dynamic-symbol=__jit_debug_*",
