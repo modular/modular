@@ -439,7 +439,7 @@ def _partition[
         elif k < pivot:
             span = span.unsafe_subspan(offset=0, length=pivot)
         else:
-            span._data += pivot + 1
+            span._data = span._data.unsafe_offset(pivot + 1)
             span._len -= pivot + 1
             k -= pivot + 1
 

@@ -14,15 +14,15 @@
 # (without -D MOJO_STDLIB_SIMD_UNINIT_CHECK).
 # Loading the poison pattern should NOT crash when the check is disabled.
 
-from std.memory import UnsafePointer
+from std.memory import Pointer
 
 
 def test_poison_ignored_when_disabled():
     """With MOJO_STDLIB_SIMD_UNINIT_CHECK not set, loading the poison
     pattern should not abort."""
     var value = UInt32(0x7F7FFFFF)
-    var ptr = UnsafePointer(to=value).bitcast[Float32]()
-    _ = ptr.load()
+    var ptr = Pointer(to=value).unsafe_bitcast[Float32]()
+    _ = ptr.unsafe_load()
 
 
 def main():

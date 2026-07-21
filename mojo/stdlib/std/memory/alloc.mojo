@@ -480,7 +480,7 @@ struct ThinAllocation[T: AnyType](
         T: The type of the elements stored in the allocation.
     """
 
-    var _ptr: UnsafePointer[Self.T, MutUntrackedOrigin]
+    var _ptr: Pointer[Self.T, MutUntrackedOrigin]
     """The owning pointer to the allocated storage."""
 
     def __init__(
@@ -570,7 +570,7 @@ struct ThinAllocation[T: AnyType](
         return (
             self._ptr.unsafe_mut_cast[origin.mut]()
             .unsafe_origin_cast[origin]()
-            .address_space_cast[address_space]()
+            .unsafe_address_space_cast[address_space]()
         )
 
     def write_to(self, mut writer: Some[Writer]):
@@ -644,7 +644,7 @@ def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
 
     comptime if size_of_t == 0:
         return ThinAllocation(
-            unsafe_assume_ownership=UnsafePointer[
+            unsafe_assume_ownership=Pointer[
                 T, MutUntrackedOrigin
             ].unsafe_dangling()
         ).unsafe_with_layout(layout)
@@ -652,7 +652,7 @@ def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
         return ThinAllocation(
             unsafe_assume_ownership=_alloc_bytes(
                 layout.as_byte_layout()
-            ).bitcast[T]()
+            ).unsafe_bitcast[T]()
         ).unsafe_with_layout(layout)
 
 

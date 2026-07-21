@@ -126,12 +126,12 @@ struct _SpanIter[
 
             var curr = self.index
             self.index += 1
-            return self.src._data[curr]
+            return self.src._data[unsafe_offset=curr]
         else:
             if self.index <= 0:
                 raise StopIteration()
             self.index -= 1
-            return self.src._data[self.index]
+            return self.src._data[unsafe_offset=self.index]
 
     @always_inline
     def __len__(self) -> Int:
@@ -186,11 +186,11 @@ struct Span[
     # Aliases
     comptime Immutable = Span[Self.T, ImmOrigin(Self.origin)]
     """The immutable version of the `Span`."""
-    comptime _UnsafePointerType = UnsafePointer[
+    comptime _PointerType = Pointer[
         Self.T,
         Self.origin,
     ]
-    """The unsafe pointer type for this `Span`."""
+    """The (safe) pointer type for this `Span`."""
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _SpanIter[downcast[Self.T, Copyable], Self.origin]
@@ -206,7 +206,7 @@ struct Span[
     """The owned iterator type for this `Span`."""
 
     # Fields
-    var _data: Self._UnsafePointerType
+    var _data: Self._PointerType
     var _len: Int
 
     comptime device_type: AnyType = Self
@@ -241,7 +241,7 @@ struct Span[
     @stable(since="1.0")
     def __init__(out self):
         """Create an empty / zero-length span."""
-        self._data = Self._UnsafePointerType.unsafe_dangling()
+        self._data = Self._PointerType.unsafe_dangling()
         self._len = 0
 
     @doc_hidden
@@ -256,6 +256,8 @@ struct Span[
         """
         self = rebind[type_of(self)](other)
 
+    # TODO(MSTDL-2879): Rename `ptr` to `unsafe_ptr` to flag the raw-pointer
+    # memory-unsafety of this constructor.
     @always_inline("builtin")
     def __init__(
         out self, *, ptr: UnsafePointer[Self.T, Self.origin], length: Int
@@ -279,7 +281,7 @@ struct Span[
         Args:
             list: The list to which the span refers.
         """
-        self._data = rebind[Self._UnsafePointerType](list.unsafe_ptr())
+        self._data = rebind[Self._PointerType](list.unsafe_ptr())
         self._len = list._len
 
     @always_inline
@@ -322,7 +324,7 @@ struct Span[
             A reference to the element at the given index.
         """
         check_bounds(idx, len(self))
-        return self._data[idx]
+        return self._data[unsafe_offset=idx]
 
     @always_inline
     def __getitem__(self, idx: IntLiteral) -> ref[Self.origin] Self.T:
@@ -339,7 +341,7 @@ struct Span[
             " instead"
         )
         check_bounds(idx, len(self))
-        return self._data[idx]
+        return self._data[unsafe_offset=idx]
 
     @always_inline
     def __getitem__(self, slc: ContiguousSlice) -> Self:
@@ -357,7 +359,7 @@ struct Span[
         """
         var start, end = slc.indices(len(self))
 
-        return Self(ptr=(self._data + start), length=end - start)
+        return Self(ptr=self._data.unsafe_offset(start), length=end - start)
 
     @always_inline
     def __iter__(var self) -> Self.IteratorOwnedType:
@@ -442,12 +444,17 @@ struct Span[
 
             comptime if simd_width_of[dtype]() >= width:
                 for _ in range((length - processed) // width):
-                    if value in (ptr + processed).load[width=width]():
+                    if (
+                        value
+                        in ptr.unsafe_offset(processed).unsafe_load[
+                            width=width
+                        ]()
+                    ):
                         return True
                     processed += width
 
         for i in range(length - processed):
-            if ptr[processed + i] == value:
+            if ptr[unsafe_offset=processed + i] == value:
                 return True
         return False
 
@@ -557,7 +564,7 @@ struct Span[
             - This function does not support wraparound for negative indices.
         """
         check_bounds[cpu_default=False](idx, len(self))
-        return self._data[idx]
+        return self._data[unsafe_offset=idx]
 
     @always_inline("builtin")
     def unsafe_ptr(
@@ -583,7 +590,7 @@ struct Span[
             A `Pointer` pointing at the first element of this span.
         """
 
-        return Pointer[Self.T, Self.origin](to=self._data[0])
+        return Pointer[Self.T, Self.origin](to=self._data[unsafe_offset=0])
 
     @always_inline
     def copy_from(
@@ -612,7 +619,9 @@ struct Span[
         else:
             for i in range(len(self)):
                 # TODO(MOCO-4220) once fixed this is self[i] = other[i].copy()
-                self.unsafe_ptr().unsafe_mut_cast[True]()[i] = other[i].copy()
+                self.unsafe_ptr().unsafe_mut_cast[True]()[
+                    unsafe_offset=i
+                ] = other[i].copy()
 
     def __bool__(self) -> Bool:
         """Check if a span is non-empty.
@@ -677,7 +686,7 @@ struct Span[
         for ref element in self:
             # TODO(MOCO-4220) once fixed update body to:
             # element = value.copy()
-            var p = UnsafePointer(to=element).unsafe_mut_cast[True]()
+            var p = Pointer(to=element).unsafe_mut_cast[True]()
             p[] = value.copy()
 
     @always_inline
@@ -708,7 +717,9 @@ struct Span[
 
         # `a` and `b` may be equal, so we cannot use `swap` directly.  The
         # unsafe_origin_cast silence the (correct) exclusivity error.
-        (ptr + a).unsafe_origin_cast[MutAnyOrigin]().swap_pointees(ptr + b)
+        ptr.unsafe_offset(a).unsafe_origin_cast[MutAnyOrigin]().swap_pointees(
+            ptr.unsafe_offset(b)
+        )
 
     def swap_elements(
         self, a: Int, b: Int
@@ -781,21 +792,23 @@ struct Span[
 
             comptime if simd_width_of[dtype]() >= w:
                 for _ in range((middle - processed) // w):
-                    var lhs_ptr = ptr + processed
-                    var rhs_ptr = ptr + length - (processed + w)
-                    var lhs_v = lhs_ptr.load[width=w]().reversed()
-                    var rhs_v = rhs_ptr.load[width=w]().reversed()
-                    lhs_ptr.store(rhs_v)
-                    rhs_ptr.store(lhs_v)
+                    var lhs_ptr = ptr.unsafe_offset(processed)
+                    var rhs_ptr = ptr.unsafe_offset(length - (processed + w))
+                    var lhs_v = lhs_ptr.unsafe_load[width=w]().reversed()
+                    var rhs_v = rhs_ptr.unsafe_load[width=w]().reversed()
+                    lhs_ptr.unsafe_store(rhs_v)
+                    rhs_ptr.unsafe_store(lhs_v)
                     processed += w
 
         if is_odd:
-            var value = ptr[middle + 1]
+            var value = ptr[unsafe_offset=middle + 1]
             # Use an unsafe origin cast to silence the (correct) exclusivity error.
-            var middle_prev = (ptr + middle - 1).unsafe_origin_cast[
+            var middle_prev = ptr.unsafe_offset(middle - 1).unsafe_origin_cast[
                 MutAnyOrigin
             ]()
-            (ptr + middle + 1).init_pointee_move_from(middle_prev)
+            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
+            # method.
+            ptr.unsafe_offset(middle + 1).init_pointee_move_from(middle_prev)
             middle_prev.unsafe_write(value)
 
     def apply[
@@ -820,12 +833,14 @@ struct Span[
 
             comptime if simd_width_of[dtype]() >= w:
                 for _ in range((length - processed) // w):
-                    var p_curr = ptr + processed
-                    p_curr.store(func(p_curr.load[width=w]()))
+                    var p_curr = ptr.unsafe_offset(processed)
+                    p_curr.unsafe_store(func(p_curr.unsafe_load[width=w]()))
                     processed += w
 
         for i in range(length - processed):
-            (ptr + processed + i).unsafe_write(func(ptr[processed + i]))
+            ptr.unsafe_offset(processed + i).unsafe_write(
+                func(ptr[unsafe_offset=processed + i])
+            )
 
     def apply[
         dtype: DType,
@@ -853,15 +868,15 @@ struct Span[
 
             comptime if simd_width_of[dtype]() >= w:
                 for _ in range((length - processed) // w):
-                    var p_curr = ptr + processed
-                    var vec = p_curr.load[width=w]()
-                    p_curr.store(cond(vec).select(func(vec), vec))
+                    var p_curr = ptr.unsafe_offset(processed)
+                    var vec = p_curr.unsafe_load[width=w]()
+                    p_curr.unsafe_store(cond(vec).select(func(vec), vec))
                     processed += w
 
         for i in range(length - processed):
-            var vec = ptr[processed + i]
+            var vec = ptr[unsafe_offset=processed + i]
             if cond(vec):
-                (ptr + processed + i).unsafe_write(func(vec))
+                ptr.unsafe_offset(processed + i).unsafe_write(func(vec))
 
     def count[
         dtype: DType,
@@ -887,7 +902,7 @@ struct Span[
         var count = 0
 
         def do_count[width: Int](idx: Int) {mut count, imm ptr, imm func}:
-            var mask = func[width](ptr.load[width=width](idx))
+            var mask = func[width](ptr.unsafe_load[width=width](idx))
             count += mask.reduce_bit_count()
 
         vectorize[simdwidth](length, do_count)
@@ -914,7 +929,7 @@ struct Span[
             offset,
         )
         assert 0 <= offset + length <= len(self), "subspan out of bounds."
-        return Self(ptr=self._data + offset, length=length)
+        return Self(ptr=self._data.unsafe_offset(offset), length=length)
 
     def _binary_search_index[
         dtype: DType,

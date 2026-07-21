@@ -13,11 +13,11 @@
 # Tests that loading a BFloat16 with the debug allocator poison pattern
 # (largest finite value = 0x7F7F) triggers abort.
 
-from std.memory import UnsafePointer
+from std.memory import Pointer
 
 
 # CHECK: UNINIT_READ at {{.*}}: dtype={{.*}}: load matched debug allocator poison sentinel
 def main():
     var value = UInt16(0x7F7F)
-    var ptr = UnsafePointer(to=value).bitcast[BFloat16]()
-    _ = ptr.load()
+    var ptr = Pointer(to=value).unsafe_bitcast[BFloat16]()
+    _ = ptr.unsafe_load()

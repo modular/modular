@@ -33,7 +33,7 @@ def test_maybe_uninitialized() raises:
     # Every time an Int is destroyed, it's going to be recorded here.
     var destructor_recorder = List[Int]()
 
-    var ptr = UnsafePointer(to=destructor_recorder).as_immutable()
+    var ptr = Pointer(to=destructor_recorder).as_immutable()
     var a = UnsafeMaybeUninit[DelRecorder[ptr.origin]]()
     a.init_from(DelRecorder(42, ptr))
 
@@ -92,7 +92,9 @@ def test_zeroed() raises:
     var arr = InlineArray[Byte, size_of[String]()](fill=0)
     assert_equal(
         memcmp(
-            c.unsafe_ptr().bitcast[Byte](), arr.unsafe_ptr(), size_of[String]()
+            c.unsafe_ptr().unsafe_bitcast[Byte](),
+            arr.unsafe_ptr(),
+            size_of[String](),
         ),
         0,
     )

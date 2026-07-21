@@ -186,6 +186,7 @@ from std.memory import (
     ImmutOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
+    OptionalPointer,
     OptionalUnsafePointer,
     ImmPointer,
     MutPointer,
