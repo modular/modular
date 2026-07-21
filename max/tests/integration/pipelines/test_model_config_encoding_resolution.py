@@ -561,14 +561,17 @@ class TestDeterminism:
 class TestEdgeCases:
     """Tests for edge cases in resolve()."""
 
-    def test_empty_model_path_and_weight_path_raises(self) -> None:
-        """Empty model_path with no weight_path should raise ValueError."""
-        config = _make_config("", device_specs=[CPU_DEVICE_SPEC])
-        with (
-            _resolve_mocks(),
-            pytest.raises(ValueError, match="model must be provided"),
-        ):
-            config.resolve()
+    def test_empty_model_path_is_constructible(self) -> None:
+        """A model-less config constructs and passes repo-access validation.
+
+        ``validate_repo_access`` only checks a *specified* remote repo, so a
+        placeholder config (no model_path, no weight_path) is a no-op rather
+        than an error -- requiring a model to run is enforced later, during
+        architecture resolution.
+        """
+        with _resolve_mocks():
+            config = _make_config("", device_specs=[CPU_DEVICE_SPEC])
+        config.validate_repo_access()  # should not raise
 
     def test_corrupt_safetensors_suppresses_exception(self) -> None:
         """A corrupt safetensors header must not raise during resolution.

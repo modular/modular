@@ -15,8 +15,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import click
 import pytest
@@ -28,6 +30,14 @@ from max.driver import DeviceSpec
 from max.pipelines.lib import PipelineConfig
 from pydantic import Field
 from pytest import MonkeyPatch
+
+
+@pytest.fixture(autouse=True)
+def _skip_repo_access_check() -> Iterator[None]:
+    """These precedence tests use placeholder repos, so skip the HF
+    existence check that ``PipelineConfig`` construction now runs."""
+    with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):
+        yield
 
 
 class _TestConfig(ConfigFileModel):

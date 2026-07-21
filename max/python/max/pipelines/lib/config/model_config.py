@@ -84,29 +84,22 @@ _ALLOWED_CAST_ENCODINGS = {
 
 
 # ---------------------------------------------------------------------------
-# Pure resolution helpers used by MAXModelConfig.resolve().
-#
-# These read a MAXModelConfig without mutating it and return the values the
-# caller should assign. Keeping the inference logic here (rather than as
-# mutating methods) lets callers other than resolve() -- e.g. a future
-# per-component diffusion builder -- reuse it without relying on resolve()
-# having run first.
+# Pure resolution helpers used by MAXModelConfig.__init__: they read config
+# values without mutating and return the resolved values.
 # ---------------------------------------------------------------------------
 
 
-def _resolve_weight_path_identity(
+def _parse_weight_and_model_paths(
     *,
     model_path: str,
     weight_path: list[Path],
     subfolder: str | None,
     weights_repo_id: str | None,
-    huggingface_model_revision: str,
 ) -> tuple[list[Path], str, str | None]:
     """Parses ``weight_path``/``model_path`` and applies subfolder prefixing.
 
     Returns:
-        A ``(weight_path, model_path, weights_repo_id)`` tuple with the
-        parsed/adjusted values.
+        A ``(weight_path, model_path, weights_repo_id)`` tuple.
     """
     weight_path, parsed_repo_id = WeightPathParser.parse(
         model_path, weight_path
@@ -143,23 +136,9 @@ def _resolve_weight_path_identity(
                 adjusted.append(p)
         weight_path = adjusted
 
-    # If we cannot infer the weight path, we lean on the model_path
-    # to provide it.
-    if len(weight_path) == 0:
-        if model_path == "":
-            raise ValueError(
-                "model must be provided and must be a valid Hugging Face repository"
-            )
-        elif not os.path.exists(os.path.expanduser(model_path)):
-            # Check if the model_path is a valid HuggingFace repository
-            validate_hf_repo_access(
-                repo_id=model_path,
-                revision=huggingface_model_revision,
-            )
-    elif model_path == "" and weights_repo_id is not None:
-        # weight_path is used and we should derive the repo_id from it.
-        # At this point, we should have a resolved weight path - be it local or remote HF.
-        # weight_path should not be used directly anymore.
+    # With an explicit weight_path but no model_path, derive model_path from
+    # the parsed weights repo id.
+    if weight_path and model_path == "" and weights_repo_id is not None:
         model_path = weights_repo_id
 
     return weight_path, model_path, weights_repo_id
@@ -275,7 +254,7 @@ def _infer_weight_path(
     reading ``config.quantization_encoding``/``config._applied_dtype_cast_from``
     so this can be called on a config those fields were never written to
     (e.g. a diffusion component resolved on demand at consumption time,
-    without going through ``MAXModelConfig.resolve()``).
+    without going through architecture-level resolution).
 
     Prefers safetensors format as default.
 
@@ -331,15 +310,14 @@ def _resolve_component_encoding_and_weights(
     """Best-effort resolution of encoding and weight_path for one component.
 
     Read-only: does not mutate *config*. Intended for callers that consume
-    a ``MAXModelConfig`` directly without going through
-    ``MAXModelConfig.resolve()`` -- e.g. a diffusion per-component builder --
-    so they get the same best-effort inference diffuser sub-components
-    used to get from ``resolve()``, without depending on mutation having
-    happened first.
+    a ``MAXModelConfig`` directly without going through architecture-level
+    resolution -- e.g. a diffusion per-component builder -- so they get the
+    same best-effort inference diffuser sub-components rely on, without
+    depending on mutation having happened first.
 
     Safe to call even when *config* is already fully resolved (e.g. an LLM
-    component whose fields were set by ``resolve()``): both steps are
-    no-ops once ``quantization_encoding``/``weight_path`` are already set.
+    component whose ``quantization_encoding``/``weight_path`` were set during
+    architecture validation): both steps are no-ops once those are set.
 
     Returns:
         A ``(encoding, weight_path)`` tuple. Either may be left unresolved
@@ -660,18 +638,31 @@ class MAXModelConfig(MAXModelConfigBase):
     if not TYPE_CHECKING:
 
         def __init__(self, **data: Any) -> None:
-            """Initialize config, allowing tests/internal callers to seed private attributes.
+            """Initialize, seeding private attrs and resolving the weight path.
 
-            Pydantic private attributes (``PrivateAttr``) are not regular model fields,
-            so they are not accepted as constructor kwargs by default. Some tests (and debugging
-            utilities) intentionally seed ``_huggingface_config`` to avoid network
-            access and to validate config override plumbing. Hence, we need to
-            explicitly define this ``__init__`` method to seed the private attributes.
+            Private attributes (``PrivateAttr``) aren't accepted as constructor
+            kwargs by default, so we pop the seeded ones
+            (``_huggingface_config``, ``_weights_repo_id``) here, then resolve
+            the weight-path identity eagerly.
             """
             seeded_huggingface_config = data.pop("_huggingface_config", None)
+            seeded_weights_repo_id = data.pop("_weights_repo_id", None)
             super().__init__(**data)
             if seeded_huggingface_config is not None:
                 self._huggingface_config = seeded_huggingface_config
+            if seeded_weights_repo_id is not None:
+                self._weights_repo_id = seeded_weights_repo_id
+
+            # Resolve weight-path identity eagerly so the config is fully
+            # specified once constructed.
+            self.weight_path, self.model_path, self._weights_repo_id = (
+                _parse_weight_and_model_paths(
+                    model_path=self.model_path,
+                    weight_path=self.weight_path,
+                    subfolder=self.subfolder,
+                    weights_repo_id=self._weights_repo_id,
+                )
+            )
 
     # TODO(SERVSYS-1085): Figure out a better way to avoid having to roll our
     # own custom __getstate__/__setstate__ methods.
@@ -729,7 +720,10 @@ class MAXModelConfig(MAXModelConfigBase):
         a subsequent call with the same ``args``. Set the corresponding field
         on ``args`` itself instead.
         """
-        model = cls(
+        # Seed ``_weights_repo_id`` (a PrivateAttr) so __init__'s weight-path
+        # resolution sees it. Passed via a kwargs dict because the
+        # private-attr-seeding __init__ is hidden from type checkers.
+        init_kwargs: dict[str, Any] = dict(
             model_path=args.model_path,
             served_model_name=args.served_model_name,
             weight_path=list(args.weight_path),
@@ -750,39 +744,31 @@ class MAXModelConfig(MAXModelConfigBase):
             pool_embeddings=args.pool_embeddings,
             max_length=args.max_length,
             kv_cache=args.kv_cache.model_copy(deep=True),
+            _weights_repo_id=args._weights_repo_id,
         )
-        model._weights_repo_id = args._weights_repo_id
-        return model
+        return cls(**init_kwargs)
 
-    # TODO(zheng): This can't just be a __post_init__ method, because we need to
-    # it also sets and updates other fields which may not be determined /
-    # initialized in the default factory.
-    # Realistically, this shouldn't become a problem in the long term once we
-    # instantiate these MAXConfigs with probably DAG dependency flows in our
-    # larger config refactor.
-    def resolve(self) -> None:
-        """Validates and resolves the config.
+    def validate_repo_access(self) -> None:
+        """Validates that the model's Hugging Face repo is accessible.
 
-        Called after initialization to ensure all fields are in a valid state
-        and to set fields that can't be determined in the default factory.
+        Deferred out of ``__init__`` so a ``MAXModelConfig`` can be constructed
+        offline; invoked from ``PipelineConfig`` construction. A no-op when
+        weights are given explicitly (``weight_path``), when no model is
+        specified (a placeholder config), or when ``model_path`` is a local
+        path -- there is no remote repo to check in those cases. Requiring a
+        model to actually run is enforced later, during architecture
+        resolution.
 
-        Parses the weight path and initializes ``_weights_repo_id``.
-
-        Encoding and weight_path are resolved elsewhere: diffuser
-        sub-components resolve on demand at consumption time (see
-        ``resolve_component_encoding_and_weights()``), and LLM models
-        resolve during architecture-level validation in
-        ``_validate_model_config_against_arch()``.
+        Raises:
+            ValueError: If the specified Hugging Face repo is inaccessible.
         """
-        self.weight_path, self.model_path, self._weights_repo_id = (
-            _resolve_weight_path_identity(
-                model_path=self.model_path,
-                weight_path=self.weight_path,
-                subfolder=self.subfolder,
-                weights_repo_id=self._weights_repo_id,
-                huggingface_model_revision=self.huggingface_model_revision,
+        if self.weight_path or not self.model_path:
+            return
+        if not os.path.exists(os.path.expanduser(self.model_path)):
+            validate_hf_repo_access(
+                repo_id=self.model_path,
+                revision=self.huggingface_model_revision,
             )
-        )
 
     @property
     def model_name(self) -> str:
@@ -1277,8 +1263,8 @@ class MAXModelConfig(MAXModelConfigBase):
         # (_infer_quantization_encoding), which normally applies this cast
         # before architecture resolution ever runs. This is a backstop for
         # cases where quantization_encoding is still unresolved here --
-        # e.g. resolve() wasn't called first, or the best-effort pass
-        # silently failed -- so architecture validation alone is
+        # e.g. the earlier encoding-inference pass didn't run, or the
+        # best-effort pass silently failed -- so architecture validation is
         # self-sufficient rather than depending on the earlier pass.
         if (
             self.quantization_encoding == "float32"
@@ -1472,7 +1458,7 @@ class MAXModelConfig(MAXModelConfigBase):
             weight_path: Weight files to resolve, relative to the repo.
                 Defaults to ``self.weight_path``. Pass an explicit,
                 already-resolved list for a config whose ``weight_path``
-                was never populated via ``resolve()`` (e.g. a diffusion
+                was never populated during resolution (e.g. a diffusion
                 component resolved on demand at consumption time -- see
                 :func:`_resolve_component_encoding_and_weights`).
 
@@ -1512,7 +1498,7 @@ class MAXModelConfig(MAXModelConfigBase):
 
         Resolves ``quantization_encoding``/``weight_path`` on demand (see
         :func:`_resolve_component_encoding_and_weights`) rather than
-        assuming ``resolve()`` already populated them -- a no-op when
+        assuming resolution already populated them -- a no-op when
         they're already set.
 
         Returns an empty loader when there are no weight paths -- common

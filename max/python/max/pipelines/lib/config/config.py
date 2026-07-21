@@ -905,6 +905,15 @@ class PipelineConfig(ConfigFileModel):
             else:
                 setattr(self, config_name, config_class(**matched_kwargs))
 
+    def _validate_repo_access(self) -> None:
+        """Validates that every model's repo was provided and is accessible.
+
+        Called at the end of the construction factories so a bad repo fails
+        fast. See :meth:`MAXModelConfig.validate_repo_access`.
+        """
+        for model in self.models.values():
+            model.validate_repo_access()
+
     @classmethod
     def from_flat_kwargs(cls, **kwargs: Any) -> Self:
         """Construct a :class:`PipelineConfig` from a flat CLI kwargs namespace.
@@ -972,6 +981,7 @@ class PipelineConfig(ConfigFileModel):
         if unmatched_kwargs:
             raise ValueError(f"Unmatched kwargs: {unmatched_kwargs}")
 
+        instance._validate_repo_access()
         return instance
 
     def _validate_required_arguments_against_architecture(
@@ -1603,7 +1613,7 @@ class PipelineConfig(ConfigFileModel):
                 models_dict["draft"] = args.draft_model.model_copy(deep=True)
             manifest = ModelManifest(models_dict)
 
-        return cls(
+        config = cls(
             models=manifest,
             model_override=list(args.model_override),
             sampling=SamplingConfig(
@@ -1674,6 +1684,8 @@ class PipelineConfig(ConfigFileModel):
             task=args.task,
             debug_verify_replay=args.debug_verify_replay,
         )
+        config._validate_repo_access()
+        return config
 
 
 def _parse_flag_bool(value: str, flag_name: str) -> bool:

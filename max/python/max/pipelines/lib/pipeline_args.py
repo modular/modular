@@ -732,7 +732,7 @@ class PipelineArgs(ConfigFileModel):
         etc.) instead of duplicating it. It is not a general round-trip:
         ``pipeline_config`` is expected to be freshly constructed and not
         yet resolved. Resolution-derived state (e.g. an applied dtype cast
-        recorded by ``MAXModelConfig.resolve()``) is *not* preserved --
+        recorded during architecture-level resolution) is *not* preserved --
         :class:`PipelineArgs` is deliberately isolated from resolution
         mutations (see #90128), so passing an already-resolved
         ``pipeline_config`` here will silently drop that state.

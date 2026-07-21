@@ -2433,7 +2433,8 @@ def test_from_args__unset_backend_preserves_none_sentinel() -> None:
     args = PipelineArgs(model_path="test/model")
     assert args.structured_output_backend is None
 
-    config = PipelineConfig.from_args(args)
+    with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):
+        config = PipelineConfig.from_args(args)
 
     assert config.sampling.structured_output_backend is None
 
@@ -2444,7 +2445,8 @@ def test_from_args__unset_backend_resolves_to_xgrammar() -> None:
     ``llguidance``."""
     args = PipelineArgs(model_path="test/model")
 
-    config = PipelineConfig.from_args(args)
+    with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):
+        config = PipelineConfig.from_args(args)
     config._resolve_default_structured_output_backend(
         arch=_backend_arch(default=None)
     )
@@ -2459,7 +2461,8 @@ def test_from_args__explicit_backend_is_preserved() -> None:
         model_path="test/model", structured_output_backend="llguidance"
     )
 
-    config = PipelineConfig.from_args(args)
+    with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):
+        config = PipelineConfig.from_args(args)
     assert config.sampling.structured_output_backend == "llguidance"
 
     config._resolve_default_structured_output_backend(

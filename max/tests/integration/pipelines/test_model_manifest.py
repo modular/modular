@@ -465,16 +465,24 @@ WEIGHT_PARSE_TARGET = (
 class TestResolve:
     """Tests for ModelManifest.resolve()."""
 
-    def test_resolve_calls_each_config(self) -> None:
-        """resolve() delegates to MAXModelConfig.resolve() for every component."""
-        vae = _make_config("vae-model")
-        unet = _make_config("unet-model")
-        manifest = ModelManifest({"vae": vae, "unet": unet})
+    def test_resolve_does_not_validate_repo_access(self) -> None:
+        """resolve() freezes the manifest without validating repo access.
 
-        with patch.object(MAXModelConfig, "resolve") as mock_resolve:
+        Repo-access validation happens at ``PipelineConfig`` construction.
+        """
+        manifest = ModelManifest(
+            {
+                "vae": _make_config("vae-model"),
+                "unet": _make_config("unet-model"),
+            }
+        )
+
+        with patch.object(
+            MAXModelConfig, "validate_repo_access"
+        ) as mock_validate:
             manifest.resolve()
 
-        assert mock_resolve.call_count == 2
+        mock_validate.assert_not_called()
 
     def test_resolve_empty_manifest(self) -> None:
         """resolve() on an empty manifest is a no-op."""
@@ -482,14 +490,12 @@ class TestResolve:
         manifest.resolve()  # should not raise
 
     def test_resolve_single_main(self) -> None:
-        """resolve() works for a single-model manifest."""
-        cfg = _make_config("org/llm-model")
-        manifest = ModelManifest({"main": cfg})
+        """resolve() freezes a single-model manifest."""
+        manifest = ModelManifest({"main": _make_config("org/llm-model")})
+        manifest.resolve()
 
-        with patch.object(MAXModelConfig, "resolve") as mock_resolve:
-            manifest.resolve()
-
-        mock_resolve.assert_called_once()
+        with pytest.raises(TypeError, match="frozen after resolve"):
+            manifest["draft"] = _make_config("org/draft")
 
     @patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
     @patch("max.pipelines.lib.config.model_config.validate_hf_repo_access")
@@ -584,7 +590,7 @@ class TestFrozenAfterResolve:
     @staticmethod
     def _resolved_manifest() -> ModelManifest:
         manifest = ModelManifest({"main": _make_config("org/model")})
-        with patch.object(MAXModelConfig, "resolve"):
+        with patch.object(MAXModelConfig, "validate_repo_access"):
             manifest.resolve()
         return manifest
 
@@ -638,7 +644,7 @@ class TestTotalWeightsSize:
             }
         )
         with (
-            patch.object(MAXModelConfig, "resolve"),
+            patch.object(MAXModelConfig, "validate_repo_access"),
             patch.object(
                 MAXModelConfig,
                 "weights_size",
@@ -656,7 +662,7 @@ class TestTotalWeightsSize:
             {"scheduler": scheduler, "transformer": transformer}
         )
         with (
-            patch.object(MAXModelConfig, "resolve"),
+            patch.object(MAXModelConfig, "validate_repo_access"),
             patch.object(
                 MAXModelConfig,
                 "weights_size",
