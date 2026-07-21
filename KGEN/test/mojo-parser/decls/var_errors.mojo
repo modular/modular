@@ -61,7 +61,7 @@ def use_before_def():
 # Issue #18150: https://github.com/modularml/modular/issues/18150
 def self_reference():
     # expected-error @+1 {{cannot implicitly convert 'None' value to 'Int'}}
-    var num: Int = fudge_int(num)
+    var num: Int = fudge_int(1)
 
 # Doesn't reject empty identifier name
 # https://github.com/modular/mojo/issues/1232

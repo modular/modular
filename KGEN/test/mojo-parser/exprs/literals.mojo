@@ -267,10 +267,10 @@ def test_set_literal():
     # CHECK: lit.call {{.*}}@"param_infer_equal
     param_infer_equal(a, {})
 
-    # CHECK: %b = lit.var.decl
     # CHECK: lit.var.decl "__passed_varargs__"
     # CHECK-NEXT: {{%.*}} = pop.array.create
     # CHECK: [[NONE_MARKER:%.*]] = kgen.param.constant: !NoneType
+    # CHECK: %b = lit.var.decl
     # CHECK: lit.call {{.*}}@MySet::@"__init__{{.*}}({{.*}}, [[NONE_MARKER]], %b)
     var b: MySet[Int] = {1, 2}
 

@@ -74,7 +74,7 @@ LogicalResult ExprNode::emitDestructuringPValue(PValue value,
 }
 
 ExprNode::ELVIITResult LValueCapableExprNode::emitLValueIfImplicitlyTyped(
-    IREmitter &emitter, PatternDeclKind kind, bool /*allowUnbound*/) const {
+    IREmitter &emitter, PatternDeclKind kind, bool /*hasInferrableRHS*/) const {
   ExprDest dest(EC_Assignment);
   dest.setPatternDeclKind(kind);
   return emitLCVIR(dest, emitter, true);
@@ -3771,7 +3771,7 @@ AnyValue BinOpNode::emitAssign(ExprDest &dest, IREmitter &emitter) const {
 
   // Check out the LHS speculatively.
   ELVIITResult lhsResult = lhs->emitLValueIfImplicitlyTyped(
-      emitter, PatternDeclKind::kNone, /*allowUnbound=*/true);
+      emitter, PatternDeclKind::kNone, /*hasInferrableRHS=*/true);
   if (lhsResult.isFailure())
     return {};
 
@@ -3863,17 +3863,17 @@ AnyValue BinOpNode::emitInplace(ExprDest &dest, IREmitter &emitter) const {
 }
 
 ExprNode::ELVIITResult BinOpNode::emitLValueIfImplicitlyTyped(
-    IREmitter &emitter, PatternDeclKind patKind, bool allowUnbound) const {
+    IREmitter &emitter, PatternDeclKind patKind, bool hasInferrableRHS) const {
   if (kind != kTypePattern)
     return this;
 
   // Emit the RHS as a type expression.
-  ASTType type = emitter.emitExprType(rhs, allowUnbound);
+  ASTType type = emitter.emitExprType(rhs, hasInferrableRHS);
   if (!type)
     return {};
 
-  if (type.hasUnknownParameters())
-    return LValuePartiallyBoundType{type, lhs};
+  if (hasInferrableRHS)
+    return LValueContextualType{type, lhs};
 
   // Handle type patterns like "(xyz) : Type": "xyz" must be an lvalue that has
   // the specified type, so we can direct emit it now.
@@ -3895,7 +3895,7 @@ AnyValue BinOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
 
   if (kind == kTypePattern) { // "x: Type" not in an LValue position?
     auto result = emitLValueIfImplicitlyTyped(
-        emitter, dest.getPatternDeclKind(), /*allowUnbound=*/false);
+        emitter, dest.getPatternDeclKind(), /*hasInferrableRHS=*/false);
     if (result.isFailure())
       return {};
     assert(result.getIfValue() && "Failed to resolve value?");
@@ -4237,8 +4237,10 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ExprDest &dest,
   return emitter.emitResult(MRValue(value), this, dest);
 }
 
-ExprNode::ELVIITResult UnaryOpNode::emitLValueIfImplicitlyTyped(
-    IREmitter &emitter, PatternDeclKind parentKind, bool allowUnbound) const {
+ExprNode::ELVIITResult
+UnaryOpNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
+                                         PatternDeclKind parentKind,
+                                         bool hasInferrableRHS) const {
   // Most unary operators are never LValues, so don't speculatively resolve
   // them.
   if (kind != kVarPat && kind != kRefPat)
@@ -4258,7 +4260,7 @@ ExprNode::ELVIITResult UnaryOpNode::emitLValueIfImplicitlyTyped(
   auto patKind =
       kind == kVarPat ? PatternDeclKind::kVar : PatternDeclKind::kRef;
   auto result =
-      subExpr->emitLValueIfImplicitlyTyped(emitter, patKind, allowUnbound);
+      subExpr->emitLValueIfImplicitlyTyped(emitter, patKind, hasInferrableRHS);
   if (result.isFailure())
     return result;
 
@@ -5570,7 +5572,7 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     bool anyExprChanged = false;
     for (const ExprNode *expr : exprs) {
       auto result = expr->emitLValueIfImplicitlyTyped(
-          emitter, dest.getPatternDeclKind(), /*allowUnbound=*/false);
+          emitter, dest.getPatternDeclKind(), /*hasInferrableRHS=*/false);
       if (result.isFailure())
         return {};
       if (auto *newExpr = result.getIfExprNode()) {

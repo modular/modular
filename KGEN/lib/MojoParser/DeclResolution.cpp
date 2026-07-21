@@ -2429,7 +2429,12 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
       return failure();
 
     IREmitter emitter(sigDecl, EC_AliasValue);
-
+    if (type.hasUnknownParameters()) {
+      p.emitError(initExpr->getLoc(),
+                  "cannot construct a value with parametric type: ")
+          << type << initExpr->getRange();
+      return failure();
+    }
     // Emit the value and convert to the expected type if we know it.
     PValue rhsValue = emitter.emitExprPValue(initExpr, EC_AliasValue, type);
     if (!rhsValue)

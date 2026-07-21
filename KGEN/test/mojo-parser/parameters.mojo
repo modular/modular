@@ -896,8 +896,8 @@ def dont_interpret():
 def testParameterEvaluator():
   # CHECK-NEXT: lit.alias.decl *"x{{.*}}": scalar<index> = <sugar_member_alias(!lit.struct<#Abstraction <:!Int {:scalar<index> 1}>>, "val", 1)>
   comptime x = Abstraction[1].val
-  # CHECK-NEXT: %y = lit.var.decl "y"
   # CHECK-NEXT: %0 = lit.call {{.*}}@Abstraction::@"push{{.*}}"<:!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}>
+  # CHECK-NEXT: %y = lit.var.decl "y"
   # CHECK-NEXT: lit.ref.store %0, %y
   var y : Abstraction[3] = Abstraction[1].push[2]()
   # CHECK-NEXT: [[Y:%.*]] = lit.ref.load %y : {{.*}}Abstraction <:!Int {:scalar<index> 3}>>,

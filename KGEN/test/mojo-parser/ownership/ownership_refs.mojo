@@ -352,7 +352,6 @@ def variadic_inout_mems_iter(mut *mems: MemExample):
   # CHECK-NEXT: %__try_error__ = lit.var.decl
   # CHECK-NEXT: lit.try
 
-  # CHECK-NEXT: %x = lit.var.decl
   # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl {{.*}} : !lit.ref<!lit.ref<
   # CHECK: lit.call {{.*}}__next__{{.*}}(%iter, {{.*}}, %__call_result_tmp__)
 
@@ -363,6 +362,7 @@ def variadic_inout_mems_iter(mut *mems: MemExample):
   # CHECK-NEXT: lit.var.lifetime.end %__call_result_tmp__
 
   # Copy the result of __next__ into !lit.ref
+  # CHECK-NEXT: %x = lit.var.decl
   # CHECK-NEXT: [[ELTREFIMM:%.*]] = lit.ref.immut [[ELTREF]]
   # CHECK-NEXT: lifetime.start %x
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}copy"

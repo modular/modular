@@ -170,11 +170,10 @@ void ExprDest::dump() const { llvm::errs() << *this; }
   } else if (isa<LValueInitializerType>(representation)) {
     os << "LValueInitializerType: "
        << cast<LValueInitializerType>(representation).type;
-  } else if (isa<LValuePartiallyBoundType>(representation)) {
-    os << "LValuePartiallyBoundType: "
-       << cast<LValuePartiallyBoundType>(representation).type
-       << "\n ExprNode: ";
-    cast<LValuePartiallyBoundType>(representation).expr->print(os);
+  } else if (isa<LValueContextualType>(representation)) {
+    os << "LValueContextualType: "
+       << cast<LValueContextualType>(representation).type << "\n ExprNode: ";
+    cast<LValueContextualType>(representation).expr->print(os);
   } else {
     os << "UNKNOWN VALUE DEST!";
   }
@@ -211,8 +210,8 @@ ASTType ExprDest::getExpectedTypeIfSpecified() const {
     return type;
   if (isa<LValueInitializerType>(representation))
     return cast<LValueInitializerType>(representation).type;
-  if (isa<LValuePartiallyBoundType>(representation))
-    return cast<LValuePartiallyBoundType>(representation).type;
+  if (isa<LValueContextualType>(representation))
+    return cast<LValueContextualType>(representation).type;
   return cast<LValue>(representation).getRValueType();
 }
 
@@ -245,32 +244,6 @@ void ExprDest::resetForError(IREmitter &emitter) {
   representation = NullRepresentation();
 }
 
-/// Diagnose a mismatch between a partially-bound LValue destination and the
-/// concrete `existingValueType` produced by the RHS. Returns true (after
-/// emitting an error) when the concrete type cannot satisfy the partially-bound
-/// type; the caller should then clear the destination.
-static bool diagnosePartiallyBoundTypeMismatch(LValuePartiallyBoundType dest,
-                                               Type existingValueType,
-                                               IREmitter &emitter) {
-  if (dest.type.isEqualAllowingUnknownAttr(existingValueType, emitter.shared))
-    return false;
-
-  // TODO: we can infer the missing parameter by emitting a constructor call
-  // here to support:
-  // ```
-  // struct ParamType[T: AnyType]:
-  //   def __init__(out self: ParamType[Int], var x: Int):
-  //     pass
-  //
-  // def test_parametric_list_literal():
-  //   var v: ParamType = 1
-  // ```
-  emitter.emitError(dest.expr->getLoc(),
-                    "can not infer the missing parameters for ")
-      << dest.type;
-  return true;
-}
-
 /// Inspect the ExprDest to see if it implies a specific type for the value
 /// being computed, emitting ExprNode targets if present to get their implied
 /// type if present.  This returns null if there is no implied type.
@@ -301,23 +274,31 @@ ASTType ExprDest::resolveImpliedType(SMLoc loc, Type existingValueType,
     // If we have a contextual type available, pass that down to the emitter so
     // implicitly declared variables and discard patterns can know their type.
     if (!existingValueType) {
-      if (isa<LValuePartiallyBoundType>(representation))
-        return cast<LValuePartiallyBoundType>(representation).type;
-      return {};
-    }
-
-    // The concrete existing value type must match the partially bound type.
-    if (isa<LValuePartiallyBoundType>(representation) &&
-        diagnosePartiallyBoundTypeMismatch(
-            cast<LValuePartiallyBoundType>(representation), existingValueType,
-            emitter)) {
-      representation = NullRepresentation(); // Error already emitted!
+      if (isa<LValueContextualType>(representation))
+        return cast<LValueContextualType>(representation).type;
       return {};
     }
 
     if (ASTType nmTarget = ASTType(existingValueType)
                                .getNonmaterializableTarget(emitter.shared))
       existingValueType = nmTarget;
+
+    // The concrete existing value type must match the partially bound type.
+    if (isa<LValueContextualType>(representation)) {
+      auto ctxType = cast<LValueContextualType>(representation);
+
+      if (ctxType.type.hasUnknownParameters()) {
+        if (!ctxType.type.isEqualAllowingUnknownAttr(existingValueType,
+                                                     emitter.shared))
+          // The context type is partially bound, and the existing type does not
+          // simply match it. We need an extra implicit conversion.
+          return ctxType.type;
+      } else {
+        // If the context type is concrete, this must be the lvalue type we
+        // are going to be emitting.
+        existingValueType = ctxType.type;
+      }
+    }
 
     // Propagate var/ref context (if any) into the generated declarations.
     ExprDest dest(LValueInitializerType{existingValueType}, context);
@@ -376,20 +357,29 @@ MLValue ExprDest::getDefinedMLValueIfExists(ASTType resultType,
   // If we have an uncollapsed expression, emit it to learn more about it.
   if (const ExprNode *target = getLValueExprNode()) {
     // The concrete existing value type must match the partially bound type.
-    if (isa<LValuePartiallyBoundType>(representation) &&
-        diagnosePartiallyBoundTypeMismatch(
-            cast<LValuePartiallyBoundType>(representation), resultType,
-            emitter)) {
-      representation = NullRepresentation(); // Error already emitted!
-    } else {
-      ExprDest dest(LValueInitializerType{resultType}, getContext());
-      dest.patternDeclKind = patternDeclKind;
-      if (LValue lValue = emitter.emitExprLValue(target, dest)) {
-        representation = lValue;
+    if (isa<LValueContextualType>(representation)) {
+      auto cxtType = cast<LValueContextualType>(representation);
+      if (cxtType.type.hasUnknownParameters()) {
+        // can not directly use the dest as a lvalue, need a conversion.
+        if (!cxtType.type.isEqualAllowingUnknownAttr(resultType,
+                                                     emitter.shared))
+          return {};
+        // Else, partially bound contextual type, but the existing type is a
+        // simple match, just take the type.
       } else {
-        dest.resetForError(emitter);
-        representation = NullRepresentation(); // Error already emitted!
+        // Context contextual type, this must be the lvalue type we are going
+        // to be emitting.
+        resultType = cxtType.type;
       }
+    }
+
+    ExprDest dest(LValueInitializerType{resultType}, getContext());
+    dest.patternDeclKind = patternDeclKind;
+    if (LValue lValue = emitter.emitExprLValue(target, dest)) {
+      representation = lValue;
+    } else {
+      dest.resetForError(emitter);
+      representation = NullRepresentation(); // Error already emitted!
     }
   }
 
@@ -477,16 +467,16 @@ LValue ExprDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // If we have an expression node destination, then we need to bind this
   // value to a pattern (aka "target" in Python internals nomenclature).
   if (isa<const ExprNode *>(representation) ||
-      isa<LValuePartiallyBoundType>(representation)) {
+      isa<LValueContextualType>(representation)) {
     // resolveImpliedType will resolve ExprNode destinations into LValues.
     (void)resolveImpliedType(loc, resultType, emitter);
 
-    // If this is a "bind" operation (e.g. in a for stmt) then the callee will
-    // fill in the produced MLValue, but subsequent accesses will need to treat
-    // the value as bound (and therefore immutable).
     if (LValue lValue = dyn_cast<LValue>(representation)) {
       if (RLValue rlValue = lValue.getIfRLValue()) {
         VarDeclOp refOp = cast<VarDeclOp>(rlValue.getDefiningOp());
+        // If this is a "bind" operation (e.g. in a for stmt) then the callee
+        // will fill in the produced MLValue, but subsequent accesses will need
+        // to treat the value as bound (and therefore immutable).
         if (refOp.getKind() == VarDeclKind::Bind) {
           // Switch the vardecl so that uses of it are treated as MBValue
           // instead of MLValues.
@@ -495,7 +485,6 @@ LValue ExprDest::getLValueForResult(SMLoc loc, ASTType resultType,
 
           // Type refinement is applied in emitStoreToLValue after the store
           // completes, not here during type inference.
-
           representation = MLValue(refOp);
         }
       }

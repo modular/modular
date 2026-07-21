@@ -410,10 +410,11 @@ struct ParenNode final : public ExprNode {
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   LogicalResult emitDestructuringPValue(PValue value,
                                         IREmitter &emitter) const override;
-  ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
-                                           PatternDeclKind kind,
-                                           bool allowUnbound) const override {
-    return subExpr->emitLValueIfImplicitlyTyped(emitter, kind, allowUnbound);
+  ELVIITResult
+  emitLValueIfImplicitlyTyped(IREmitter &emitter, PatternDeclKind kind,
+                              bool hasInferrableRHS) const override {
+    return subExpr->emitLValueIfImplicitlyTyped(emitter, kind,
+                                                hasInferrableRHS);
   }
 
   void print(mlir::raw_indented_ostream &os) const override;
@@ -599,9 +600,9 @@ struct BinOpNode final : public ExprNode {
   SourceRange getRange() const override {
     return {lhs->getRangeStart(), rhs->getRangeEnd()};
   }
-  ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
-                                           PatternDeclKind kind,
-                                           bool allowUnbound) const override;
+  ELVIITResult
+  emitLValueIfImplicitlyTyped(IREmitter &emitter, PatternDeclKind kind,
+                              bool hasInferrableRHS) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 
@@ -628,9 +629,9 @@ struct UnaryOpNode final : public ExprNode {
                        : SourceRange(opLoc, subExpr->getRangeEnd());
   }
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
-  ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
-                                           PatternDeclKind kind,
-                                           bool allowUnbound) const override;
+  ELVIITResult
+  emitLValueIfImplicitlyTyped(IREmitter &emitter, PatternDeclKind kind,
+                              bool hasInferrableRHS) const override;
   void print(mlir::raw_indented_ostream &os) const override;
   AnyValue emitTransfer(AnyValue argValue, ExprDest &dest,
                         IREmitter &emitter) const;

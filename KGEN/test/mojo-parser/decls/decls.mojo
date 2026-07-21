@@ -1562,3 +1562,17 @@ struct BinStruct[x: Int, y: Int] where bin_pred(x, y):
     # CHECK-SAME: %__result__: !lit.ref<!lit.struct<#BinStruct
     def get_with_z[z: Int](self) -> BinStruct[Self.xx, z] where bin_pred(Self.x, z):
         return {}
+
+##===----------------------------------------------------------------------===##
+# Partially bound Contextual Types.
+##===----------------------------------------------------------------------===##
+
+struct PartiallyBoundParam[T: AnyType]:
+    @implicit
+    def __init__(out self: PartiallyBoundParam[Self.T],  x:Self.T):
+        pass
+
+
+def infer_partially_bound_var_type():
+    # CHECK: lit.var.decl "v" var : !lit.ref<!lit.struct<#PartiallyBoundParam <:!AnyType !Int>>, mut *"v`1">
+    var v: PartiallyBoundParam = 1
