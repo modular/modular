@@ -120,9 +120,12 @@ def bench_fused_qk_rms_norm_rope[
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     comptime paged_lut_layout = Layout.row_major[2]()
 
-    var row_offsets_d = ctx.enqueue_create_buffer[DType.uint32](
-        total_seq_len + 1
-    )
+    # row_offsets is a cumulative per-batch offset array (cu_seqlens-style):
+    # one entry per batch boundary, not per token -- must be sized
+    # batch_size + 1, not total_seq_len + 1 (which left the tail unfilled
+    # and fed garbage into get_batch_from_row_offsets' binary search for
+    # any seq_len > ~3).
+    var row_offsets_d = ctx.enqueue_create_buffer[DType.uint32](batch_size + 1)
     var cache_lengths_d = ctx.enqueue_create_buffer[DType.uint32](batch_size)
     # Separate input Q buffers so each benchmark reads the same original data.
     # bench_two_step wrote its RoPE output back into q_d, which would corrupt
@@ -154,7 +157,7 @@ def bench_fused_qk_rms_norm_rope[
     var freqs_d = ctx.enqueue_create_buffer[dtype](max_seq_len * rope_dim)
 
     var row_offsets_h = ctx.enqueue_create_host_buffer[DType.uint32](
-        total_seq_len + 1
+        batch_size + 1
     )
     var cache_lengths_h = ctx.enqueue_create_host_buffer[DType.uint32](
         batch_size
@@ -226,9 +229,7 @@ def bench_fused_qk_rms_norm_rope[
     var gamma_k_tile = TileTensor(gamma_k_d, row_major[head_dim]())
     comptime freqs_tile_layout = row_major[max_seq_len, rope_dim]()
     var freqs_tile = TileTensor(freqs_d, freqs_tile_layout)
-    var row_offsets_tile = TileTensor(
-        row_offsets_d, row_major(total_seq_len + 1)
-    )
+    var row_offsets_tile = TileTensor(row_offsets_d, row_major(batch_size + 1))
 
     var cache_lengths_tensor = LayoutTensor[
         mut=False, DType.uint32, cache_lengths_layout
