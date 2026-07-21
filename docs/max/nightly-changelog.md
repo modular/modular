@@ -696,6 +696,12 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed a graph-compilation failure on B200 (`constraint failed: split-K (M2)
+  supports only check_mask==False masks`) for models whose attention uses a
+  materialized attention mask, such as the padded text encoders in diffusion
+  pipelines (for example FLUX.2's Qwen3 text encoder). The SM100 FA4 dispatch
+  no longer instantiates its split-K kernels for such masks and routes them to
+  the single-partition path instead.
 - Fixed Nemotron-3-Nano (`NemotronHForCausalLM`) leaking chain-of-thought and
   a raw `</think>` delimiter into `message.content` (with the reasoning field
   left empty), and `tool_choice="required"` emitting zero tool calls. The

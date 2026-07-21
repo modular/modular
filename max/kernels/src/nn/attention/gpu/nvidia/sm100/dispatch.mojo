@@ -514,8 +514,15 @@ def mha_sm100_dispatch[
         # requires it). To widen occupancy coverage again, re-add entries
         # (e.g. 6, 8, 16) at the cost of compile time; the scan / combine
         # math is P-general for any even P in {2, 4, 6, 8, 10, 16}.
-        comptime SPLITK_CANDIDATES = [10, 4, 2]
         comptime fa4_config_1q = fa4_config_2q.with_num_q(1)
+        # Split-K kernels reject UNKNOWN_MASK masks at compile time
+        # (softmax_warp), so the candidate list stays empty for them.
+        comptime splitk_mask_ok = MaskType.nonfull_sets[
+            fa4_config_1q.PairBM_eff(), fa4_config_1q.BN
+        ]()[0] != TileMaskStatus.UNKNOWN_MASK
+        comptime SPLITK_CANDIDATES = (
+            [10, 4, 2] if splitk_mask_ok else List[Int]()
+        )
 
         # The GPC fragmentation model (`clusters_per_wave`) covers B200 (148 SMs)
         # and B300 (160 SMs); its LUT folds at comptime keyed on

@@ -460,6 +460,10 @@ _FILECHECK_TESTS = [
             # Dtype-parameterized 4-wave conv test (explicit per-dtype
             # targets are declared below).
             "test_amd_4wave_conv_dtypes.mojo",
+            # SM100 FA4 UNKNOWN_MASK split-K suppression guard: uses
+            # PagedKVCacheCollection (//max:kv_cache) and is B200-only;
+            # declared explicitly below.
+            "attention/test_mha_sm100_materialized_mask.mojo",
             # Apple-only decode-attention correctness gate (needs the
             # //max:kv_cache dep and an Apple-GPU-only constraint; declared
             # explicitly below).
@@ -474,6 +478,35 @@ _FILECHECK_TESTS = [
         ],
     )
 ]
+
+# SM100 FA4 UNKNOWN_MASK split-K suppression: without the fix, elaborating
+# flash_attention with MaterializedMask (UNKNOWN_MASK) causes a COMPILE FAILURE
+# because SPLITK_CANDIDATES was unconditional and split-K kernels hit the
+# fa4_softmax comptime assert ("split-K (M2) supports only check_mask==False
+# masks"). With the fix, SPLITK_CANDIDATES is empty for UNKNOWN_MASK masks and
+# the dispatch falls through to the plain 1Q single-partition path.
+# Motivating failure: FLUX.2's padded Qwen3 text encoder on B200. B200-only.
+mojo_test(
+    name = "attention/test_mha_sm100_materialized_mask.mojo.test",
+    size = "large",
+    srcs = ["attention/test_mha_sm100_materialized_mask.mojo"],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
 
 # SM100 FA4 WS BM=32 MULTI-TILE (Phase C2): forces WS via `-D FA4_FORCE_CONFIG=1`
 # so prompts with valid_length > 32 -- which the auto dispatch route does NOT yet
