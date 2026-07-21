@@ -33,6 +33,11 @@ from std.testing import TestSuite, assert_equal
 
 
 def add_one(
+    # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a safe
+    # `Pointer`.
+    # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer args
+    # to `UnsafePointer` (their `device_type`) and matches the declared param
+    # type exactly, so these stay `UnsafePointer` (safe `Pointer` won't match).
     inp: UnsafePointer[Float32, MutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
@@ -40,7 +45,7 @@ def add_one(
     var tid = global_idx.x
     if tid >= len:
         return
-    output[tid] = inp[tid] + 1.0
+    output[unsafe_offset=tid] = inp[unsafe_offset=tid] + 1.0
 
 
 def ensure_stream_count(ctx: DeviceContext, count: Int) raises:

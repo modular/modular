@@ -25,7 +25,6 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
 )
-from layout.tile_io import GenericToSharedTileCopier
 from layout.tile_layout import row_major
 from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute
@@ -117,8 +116,6 @@ def fp8_index_kernel[
     """
     # Convert TileTensor inputs to LayoutTensor for internal use,
     # which relies on LayoutTensor-specific APIs (tile, indexing).
-    # The DRAM->SMEM copy itself is now done natively on TileTensor via
-    # GenericToSharedTileCopier from layout.tile_io.
     var output = output_tt.to_layout_tensor()
     var q = q_tt.to_layout_tensor()
     var q_s = q_s_tt.to_layout_tensor()
@@ -229,20 +226,21 @@ def fp8_index_kernel[
     comptime for q_frag_idx in range(num_heads // thread_dim_y):
         q_s_reg_tile[0, q_frag_idx] = q_s_frag[0, q_frag_idx][0]
 
-    var q_smem_tt = TileTensor(
-        q_smem.unsafe_ptr(), row_major[num_heads, depth]()
-    ).vectorize[1, simd_width]()
-    var q_src_tt = TileTensor(q_ptr, row_major[num_heads, depth]()).vectorize[
-        1, simd_width
-    ]()
-    GenericToSharedTileCopier[thread_layout=row_major[16, 8]()]().copy(
-        q_smem_tt, q_src_tt
-    )
-
     comptime num_threads = thread_dim_x * thread_dim_y
     comptime assert (
         depth % simd_width == 0
     ), "depth must be a multiple of the SIMD width"
+
+    # Flat thread-strided copy of the contiguous [num_heads, depth] Q tile.
+    # A layout-distributed copy over the [16, 8] thread shape floor-divides
+    # the tile shape per axis and silently stages NOTHING whenever
+    # num_heads < 16 or depth // simd_width < 8 (e.g. depth == 64).
+    comptime q_vecs = num_heads * depth // simd_width
+    var q_smem_dst = q_smem.unsafe_ptr()
+    for v in range(Int(tid), q_vecs, num_threads):
+        q_smem_dst.store(
+            v * simd_width, q_ptr.load[width=simd_width](v * simd_width)
+        )
 
     for i in range(BM // BN):
         var current_key_offset = key_offset + i * BN
@@ -388,7 +386,7 @@ def fp8_index[
     )
     var ks_operand = RaggedMHAOperand(ks_buf, cro_buf)
 
-    comptime assert num_heads % 8 == 0, "num_heads must be a multiple of 8"
+    comptime assert num_heads % 4 == 0, "num_heads must be a multiple of 4"
 
     # RaggedMHAOperand.cache_length() returns full key length directly, so the
     # SM100 tensor-core scorer and the scalar fallback both run with
@@ -400,7 +398,12 @@ def fp8_index[
     # path is) or a multiple of BM_key; any other page_size falls back too.
     comptime if (
         _has_blackwell_tcgen05()
-        and num_heads == 64
+        and (
+            num_heads == 64
+            or num_heads == 32
+            or num_heads == 8
+            or num_heads == 4
+        )
         and depth == 128
         and (
             type_of(k_operand).page_size == 0
@@ -422,10 +425,17 @@ def fp8_index[
             ks_operand,
             valid_length,
             batch_size,
+            max_seq_len,
             max_num_keys,
+            False,
             ctx,
         )
     else:
+        comptime assert num_heads % 16 == 0, (
+            "the scalar fp8_index_kernel tiles heads by thread_dim_y == 8 and"
+            " is unvalidated below 16 heads; num_heads in {4, 8} requires the"
+            " SM100 tensor-core path"
+        )
         comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
         comptime BM = block_tile_shape[0]
         comptime BN = block_tile_shape[1]

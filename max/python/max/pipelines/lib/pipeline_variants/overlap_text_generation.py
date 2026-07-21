@@ -547,6 +547,32 @@ class _AsyncBatchOutput:
     spec_decode_metrics: _SpeculativeDecodingMetrics | None = None
 
 
+def _merge_generation_outputs(
+    older: TextGenerationOutput, newer: TextGenerationOutput
+) -> TextGenerationOutput:
+    """Merges two consecutive per-step outputs for the same request.
+
+    Used when draining two in-flight schedule-ahead batches in one call:
+    the older batch's realized token(s) precede the newer batch's, and the
+    newer output carries the authoritative final status.
+    """
+    log_probabilities = None
+    if (
+        older.log_probabilities is not None
+        or newer.log_probabilities is not None
+    ):
+        log_probabilities = (older.log_probabilities or []) + (
+            newer.log_probabilities or []
+        )
+    return TextGenerationOutput(
+        request_id=newer.request_id,
+        tokens=older.tokens + newer.tokens,
+        log_probabilities=log_probabilities,
+        final_status=newer.final_status,
+        num_cached_tokens=newer.num_cached_tokens,
+    )
+
+
 @dataclass
 class AsyncSpecDecodeBatch:
     """Extra outputs specific for speculative decoding async batch."""
@@ -1595,7 +1621,12 @@ class OverlapTextGenerationPipeline(
             raise ValueError(
                 "Enable Echo is not supported for speculative decoding. Please disable echo."
             )
-        elif is_spec_decode:
+        if is_spec_decode and pipeline_config.runtime.max_pending_futures > 1:
+            raise ValueError(
+                "max_pending_futures > 1 (schedule-ahead decoding) is not "
+                "supported with speculative decoding. Use the default of 1."
+            )
+        if is_spec_decode:
             return_logits = ReturnLogits.VARIABLE
         else:
             return_logits = ReturnLogits.LAST_TOKEN
@@ -1720,6 +1751,13 @@ class OverlapTextGenerationPipeline(
                 device=self._sampler_device,
             )
 
+        # Persistent pinned host buffer for the per-step generated-token D2H in
+        # `_sample_logits`. Allocated once and reused (sliced to the batch size)
+        # so the decode critical path does not pay a page-locking pinned-host
+        # allocation on every step. Lazily created on first use to match the
+        # sampler's token dtype; the host / virtual-device paths skip it.
+        self._pinned_generated_tokens_host: Buffer | None = None
+
         self._identity_logit_offsets = (
             FusedSamplingProcessor.allocate_identity_logit_offsets(
                 pipeline_config, self._sampler_device, max_batch_size
@@ -1763,6 +1801,48 @@ class OverlapTextGenerationPipeline(
         self._graph_capture_runner: ServeGraphCaptureRunner | None = None
         # set a default graph capture size, 128
         self._max_graph_capture_batch_size: int = _MAX_GRAPH_CAPTURE_BATCH_SIZE
+
+        # Fold greedy token selection (argmax) into the captured forward graph
+        # so all-greedy decode batches materialize the sampled token during the
+        # single replay instead of a separate blocking sampler submission.
+        # Gated on the architecture actually emitting the folded token output:
+        # for every other architecture the runtime flag (default on) is a
+        # no-op, and the capture path must not peel a trailing output that is
+        # really the logits buffer.
+        self._fold_sampler_into_graph: bool = (
+            pipeline_config.runtime.fold_sampler_into_graph
+            and self._pipeline_model.emits_folded_sampled_tokens
+        )
+
+        # Maximum unrealized future-token placeholders per request. A value of
+        # 2 enables schedule-ahead decoding: two forward passes stay in flight
+        # and each batch's outputs are consumed one step late, so the host
+        # never blocks on the just-enqueued forward. Deeper queues are not
+        # implemented. Prefill-only workers never decode ahead (they have no
+        # realize-future-token processor), so they are pinned to depth 1.
+        max_pending_futures = pipeline_config.runtime.max_pending_futures
+        if max_pending_futures < 1 or max_pending_futures > 2:
+            raise ValueError(
+                "max_pending_futures must be 1 (classic overlap) or 2 "
+                f"(schedule-ahead decoding), got {max_pending_futures}."
+            )
+        if self._realize_future_token_processor is None:
+            max_pending_futures = 1
+        self._max_pending_futures: int = max_pending_futures
+
+        # Older of the (at most two) in-flight batches under schedule-ahead
+        # decoding; always None at depth 1. Invariant: when set, `_prev_batch`
+        # is also set and holds the NEWER unsynced batch (the realize scatter
+        # always fills placeholders from the newest in-flight batch).
+        self._prev_prev_batch: AsyncBatch[TextGenerationContextType] | None = (
+            None
+        )
+        # Second pinned host slot + parity for the per-step generated-token
+        # D2H at depth 2 (see `_sample_logits`): with two batches in flight, a
+        # single reused buffer would be overwritten before the older batch's
+        # tokens are read.
+        self._pinned_generated_tokens_host_alt: Buffer | None = None
+        self._generated_tokens_host_parity: int = 0
 
         self._disable_overlap = disable_overlap
 
@@ -2104,6 +2184,7 @@ class OverlapTextGenerationPipeline(
             max_cache_length_upper_bound=self._effective_max_cache_length,
             max_batch_size=max_capture_batch_size,
             num_speculative_tokens=num_speculative_tokens,
+            fold_sampler_into_graph=self._fold_sampler_into_graph,
         )
         self._graph_capture_runner = graph_capture_runner
         self._max_graph_capture_batch_size = max_capture_batch_size
@@ -2542,6 +2623,159 @@ class OverlapTextGenerationPipeline(
 
         return sampling_processor, bitmask
 
+    def _can_use_folded_sampler(
+        self,
+        model_outputs: ModelOutputs,
+        sampling_processor: FusedSamplingProcessor,
+        flat_batch: list[TextGenerationContextType],
+    ) -> bool:
+        """Whether the folded in-graph argmax token can replace the sampler.
+
+        The folded output selects ``argmax`` over the LAST_TOKEN logits, which
+        is token-for-token identical to the greedy sampler only when every
+        request is pure greedy and no logits-modifying feature is engaged for
+        the batch. Any deviation falls back to the separate sampler, whose
+        (ignored) folded output costs nothing.
+        """
+        if not self._fold_sampler_into_graph:
+            return False
+        if model_outputs.sampled_tokens is None:
+            return False
+        # Folded argmax is over LAST_TOKEN [B, V] logits; the variable-logit
+        # (logit_offsets) path is out of scope for the greedy fold.
+        if model_outputs.logit_offsets is not None:
+            return False
+        # Structured output, penalties, and min-token masking all rewrite the
+        # logits before selection, so the folded argmax would diverge.
+        if sampling_processor.bitmask is not None:
+            return False
+        if sampling_processor.penalty_inputs is not None:
+            return False
+        if sampling_processor.min_tokens_masks:
+            return False
+        # Every request must be pure greedy (argmax-equivalent): temperature 0
+        # (SamplingParams then forces top_k=1) with no logits-rewriting
+        # feature (penalties, custom processors). top_p / min_p need no gate
+        # at temperature 0: both filters always retain the max-probability
+        # token, so they cannot change the argmax selection — and models
+        # commonly ship generation-config defaults like top_p=0.95 that
+        # would otherwise disable the fold for all greedy traffic.
+        for ctx in flat_batch:
+            params = ctx.sampling_params
+            if params.temperature != 0.0:
+                return False
+            if params.needs_penalties:
+                return False
+            if params.logits_processors is not None:
+                return False
+        return True
+
+    def _can_defer_sync(
+        self, inputs: TextGenerationInputs[TextGenerationContextType]
+    ) -> bool:
+        """Whether this step may run schedule-ahead (defer the newest sync).
+
+        Deferring keeps the newest in-flight batch unsynced so this step's
+        forward queues directly behind it on the device, and consumes the
+        OLDER in-flight batch's outputs instead. It is only correct for a
+        steady pure-greedy token-generation step:
+
+        * The batch must be TG: a CE / mixed batch admits requests whose
+          host token state the deferred batch has not realized yet, and the
+          structured-output cold-start paths assume the previous batch's FSM
+          state is final.
+        * Every request must be pure greedy with no logits-modifying feature
+          (penalties / min-tokens / custom processors / structured output).
+          Those features read host token state that would be one step staler
+          than the classic overlap depth, and structured output requires the
+          previous batch's FSM advance before this batch's bitmask fill.
+        * Every request with an unrealized placeholder must be present in the
+          newest in-flight batch: the on-device realize scatter fills
+          placeholders from that batch only. A request whose placeholder came
+          from an older batch needs a host realize (drain) first.
+
+        Callers must treat a ``False`` at depth 2 as a drain-to-depth-1
+        signal (see :meth:`_drain_pending_batches`).
+        """
+        if self._max_pending_futures < 2:
+            return False
+        if self._disable_overlap:
+            return False
+        if self._spec_decode_state is not None:
+            return False
+        if self._realize_future_token_processor is None:
+            return False
+        if self._sampler_device.is_host:
+            return False
+        if not inputs or inputs.batch_type != BatchType.TG:
+            return False
+
+        newest = self._prev_batch
+        newest_request_ids: set[RequestID] = (
+            {ctx.request_id for ctx in newest.inputs.flat_batch}
+            if newest is not None and not newest._is_processed
+            else set()
+        )
+        for ctx in inputs.flat_batch:
+            if ctx._is_padding_ctx:
+                # DP padding contexts are outside the schedule-ahead scope.
+                return False
+            params = ctx.sampling_params
+            # top_p / min_p need no gate at temperature 0: both filters
+            # always retain the max-probability token, so they cannot change
+            # the argmax selection (see _can_use_folded_sampler).
+            if params.temperature != 0.0:
+                return False
+            if params.needs_penalties:
+                return False
+            if params.logits_processors is not None:
+                return False
+            if params.min_new_tokens > 0:
+                return False
+            if (
+                ctx.json_schema is not None
+                or ctx.grammar is not None
+                or ctx.matcher is not None
+            ):
+                return False
+            if (
+                ctx.pending_future_count > 0
+                and ctx.request_id not in newest_request_ids
+            ):
+                return False
+        return True
+
+    def _drain_pending_batches(
+        self, inputs: TextGenerationInputs[TextGenerationContextType]
+    ) -> PipelineOutputsDict[TextGenerationOutput]:
+        """Syncs both in-flight batches (oldest first), merging outputs.
+
+        Called before building a step that cannot run schedule-ahead
+        (composition change, CE batch, or sampling features) while two
+        batches are still in flight. Draining first host-realizes every
+        outstanding placeholder, so the step's model inputs are built from
+        fully realized token buffers. A request present in both batches gets
+        both realized tokens merged into a single response.
+        """
+        merged: PipelineOutputsDict[TextGenerationOutput] = {}
+        curr_flat_batch = inputs.flat_batch if inputs else None
+        for batch in (self._prev_prev_batch, self._prev_batch):
+            if batch is None:
+                continue
+            wrapped = batch.sync_and_process_outputs(
+                curr_flat_batch=curr_flat_batch
+            )
+            for req_id, output in wrapped.output_dict.items():
+                older = merged.get(req_id)
+                merged[req_id] = (
+                    _merge_generation_outputs(older, output)
+                    if older is not None
+                    else output
+                )
+        self._prev_prev_batch = None
+        self._prev_batch = None
+        return merged
+
     def _sample_logits(
         self,
         inputs: TextGenerationInputs[TextGenerationContextType],
@@ -2561,33 +2795,45 @@ class OverlapTextGenerationPipeline(
         device0 = self._devices[0]
         flat_batch = inputs.flat_batch
 
-        if model_outputs.logit_offsets is None:
-            batch_size = len(flat_batch)
-            logits_batch = int(model_outputs.logits.shape[0])
-            if logits_batch != batch_size:
-                raise AssertionError(
-                    "Model returned LAST_TOKEN logits with a leading dimension "
-                    f"that does not match request batch size: logits.shape[0]={logits_batch}, "
-                    f"batch_size={batch_size}, input_tokens={sum(ctx.tokens.active_length for ctx in flat_batch)}, "
-                    f"active_lengths={[ctx.tokens.active_length for ctx in flat_batch]}, "
-                    f"generated_lengths={[ctx.tokens.generated_length for ctx in flat_batch]}."
-                )
+        # Fast path: the greedy token was already selected inside the captured
+        # forward graph (argmax folded in). Skip the separate sampler
+        # submission entirely and consume the folded output. Only taken when
+        # every request is pure-greedy; otherwise fall through to the sampler.
+        use_folded_sampler = self._can_use_folded_sampler(
+            model_outputs, sampling_processor, flat_batch
+        )
 
-        with Tracer("apply_logits_processors"):
-            sample_logits, sample_offsets = (
-                sampling_processor.logits_for_sampling(
-                    logits=model_outputs.logits,
-                    next_token_logits=model_outputs.next_token_logits,
-                    logit_offsets=model_outputs.logit_offsets,
+        if use_folded_sampler:
+            assert model_outputs.sampled_tokens is not None
+            generated_tokens = model_outputs.sampled_tokens
+        else:
+            if model_outputs.logit_offsets is None:
+                batch_size = len(flat_batch)
+                logits_batch = int(model_outputs.logits.shape[0])
+                if logits_batch != batch_size:
+                    raise AssertionError(
+                        "Model returned LAST_TOKEN logits with a leading dimension "
+                        f"that does not match request batch size: logits.shape[0]={logits_batch}, "
+                        f"batch_size={batch_size}, input_tokens={sum(ctx.tokens.active_length for ctx in flat_batch)}, "
+                        f"active_lengths={[ctx.tokens.active_length for ctx in flat_batch]}, "
+                        f"generated_lengths={[ctx.tokens.generated_length for ctx in flat_batch]}."
+                    )
+
+            with Tracer("apply_logits_processors"):
+                sample_logits, sample_offsets = (
+                    sampling_processor.logits_for_sampling(
+                        logits=model_outputs.logits,
+                        next_token_logits=model_outputs.next_token_logits,
+                        logit_offsets=model_outputs.logit_offsets,
+                    )
                 )
-            )
-            apply_logits_processors(
-                context_batch=flat_batch,
-                batch_logits=sample_logits,
-                batch_logit_offsets=sample_offsets,
-                batch_processors=[sampling_processor],
-            )
-        generated_tokens = sampling_processor.generated_tokens
+                apply_logits_processors(
+                    context_batch=flat_batch,
+                    batch_logits=sample_logits,
+                    batch_logit_offsets=sample_offsets,
+                    batch_processors=[sampling_processor],
+                )
+            generated_tokens = sampling_processor.generated_tokens
         # [B, 1] -> [B]
         generated_tokens = generated_tokens.view(
             dtype=generated_tokens.dtype,
@@ -2600,13 +2846,45 @@ class OverlapTextGenerationPipeline(
                 generated_tokens_device = generated_tokens.to(device0)
             else:
                 generated_tokens_device = generated_tokens
-                # Allocate a pinned tensor on the host for faster async d2h
-                # transfer speeds.
-                generated_tokens_host = DevicePinnedBuffer(
-                    shape=generated_tokens_device.shape,
-                    dtype=generated_tokens_device.dtype,
-                    device=device0,
+                # Reuse a persistent pinned host buffer for the async D2H instead
+                # of page-locking a fresh one every decode step (this allocation
+                # was exposed host time on the per-step critical path). The
+                # overlap scheduler reads the previous batch's copy in
+                # sync_and_process_outputs strictly before _sample_logits writes
+                # the next batch's copy, so a single reused buffer is race-free.
+                d2h_batch = int(generated_tokens_device.shape[0])
+                # Under schedule-ahead decoding (depth 2) two batches are in
+                # flight, so their host token copies must land in different
+                # pinned slots: a single reused buffer would be overwritten by
+                # this batch's D2H before the older, still-unsynced batch's
+                # tokens are read. Alternate between two persistent slots. At
+                # depth 1 the single buffer is used unchanged.
+                use_alt_slot = (
+                    self._max_pending_futures > 1
+                    and self._generated_tokens_host_parity == 1
                 )
+                pinned = (
+                    self._pinned_generated_tokens_host_alt
+                    if use_alt_slot
+                    else self._pinned_generated_tokens_host
+                )
+                if (
+                    pinned is None
+                    or int(pinned.shape[0]) < d2h_batch
+                    or pinned.dtype != generated_tokens_device.dtype
+                ):
+                    pinned = DevicePinnedBuffer(
+                        shape=(max(self._max_batch_size, d2h_batch),),
+                        dtype=generated_tokens_device.dtype,
+                        device=device0,
+                    )
+                    if use_alt_slot:
+                        self._pinned_generated_tokens_host_alt = pinned
+                    else:
+                        self._pinned_generated_tokens_host = pinned
+                if self._max_pending_futures > 1:
+                    self._generated_tokens_host_parity ^= 1
+                generated_tokens_host = pinned[:d2h_batch]
                 generated_tokens_host.inplace_copy_from(generated_tokens_device)
             # Record an event to track the completion of the copy. This ensures
             # the subsequent synchronize() call blocks until the copy is
@@ -3359,6 +3637,18 @@ class OverlapTextGenerationPipeline(
         if self._spec_decode_state is not None:
             self._spec_decode_state.batch_metrics = None
 
+        # Schedule-ahead (depth 2) decision for this step. When deferring, the
+        # newest in-flight batch stays unsynced (so this step's forward queues
+        # directly behind it on the device) and the OLDER in-flight batch is
+        # consumed instead. Any step that cannot defer drains both in-flight
+        # batches to depth 0 BEFORE building its model inputs, so every
+        # outstanding placeholder is realized on the host first.
+        defer_sync = False
+        if self._max_pending_futures > 1 and self._spec_decode_state is None:
+            defer_sync = self._can_defer_sync(inputs)
+            if not defer_sync and self._prev_prev_batch is not None:
+                outputs = self._drain_pending_batches(inputs)
+
         if inputs:
             # Spec-decode handles sampling internally.
             # Remove the condition below when SERVOPT-992 is resolved.
@@ -3390,10 +3680,23 @@ class OverlapTextGenerationPipeline(
             else:
                 # Run the entire forward pass and output processing if the
                 # batch has at least one request.
+                #
+                # Launch the forward pass FIRST, then build the sampling
+                # processor. ``_run_forward`` enqueues the decode kernels
+                # asynchronously and returns immediately, so constructing the
+                # sampling processor (host-side param gather + small H2D copies
+                # in ``SamplerInputs.create``) overlaps with the GPU forward
+                # instead of running as exposed host time before it. The two
+                # are independent: ``_run_forward`` neither reads the sampling
+                # processor / bitmask nor mutates any state
+                # ``_create_sampling_processor`` consumes (``sampling_params``
+                # and host token lengths are unchanged by the forward launch),
+                # and both still precede the previous-batch sync / FSM advance
+                # below, so ordering and results are identical.
+                model_outputs = self._run_forward(inputs)
                 sampling_processor, bitmask = self._create_sampling_processor(
                     inputs.flat_batch
                 )
-                model_outputs = self._run_forward(inputs)
 
         elif self.pipeline_config.runtime.execute_empty_batches:
             # If the batch is empty and execute_empty_batches is True, we will
@@ -3401,7 +3704,23 @@ class OverlapTextGenerationPipeline(
             # for EP + DP. We skip all output processing.
             self._run_forward(inputs)
 
-        if self._prev_batch is not None:
+        if self._prev_batch is not None and defer_sync:
+            # Schedule-ahead: leave the newest in-flight batch unsynced and
+            # consume the OLDER one, if any. Its GPU work finished at least a
+            # full step ago, so this sync does not block the host between the
+            # two forward enqueues. On the ramp-up step (only one batch in
+            # flight) nothing is synced and no outputs are returned yet.
+            if self._prev_prev_batch is not None:
+                wrapped_outputs = (
+                    self._prev_prev_batch.sync_and_process_outputs(
+                        curr_flat_batch=inputs.flat_batch if inputs else None,
+                        bitmask=bitmask,
+                        sampling_processor=sampling_processor,
+                    )
+                )
+                self._prev_prev_batch = None
+                outputs = wrapped_outputs.output_dict
+        elif self._prev_batch is not None:
             assert not self._disable_overlap, (
                 "Cannot have a previous batch when overlap is disabled"
             )
@@ -3445,7 +3764,7 @@ class OverlapTextGenerationPipeline(
 
         if curr_batch is not None:
             for context in inputs.flat_batch:
-                context.update_with_future_token()
+                context.update_with_future_token(self._max_pending_futures)
                 # TODO: these two fields should not both be named spec_decode_state...
                 if self._spec_decode_state is not None:
                     assert curr_batch.spec_decode is not None
@@ -3476,8 +3795,8 @@ class OverlapTextGenerationPipeline(
                         # to the GPU acceptance sampler.
                         context.spec_decoding_state.draft_tokens_to_verify = []
 
-        # Commit the new KV blocks into the prefix cache, ignoring the final
-        # placeholder future token.
+        # Commit the new KV blocks into the prefix cache, ignoring the trailing
+        # placeholder future tokens (one per pending forward).
         self._kv_manager.step(inputs.batches)
 
         if curr_batch is not None:
@@ -3498,6 +3817,11 @@ class OverlapTextGenerationPipeline(
                 # sync_and_process_outputs() after the FSM is advanced,
                 # so overlap scheduling still works correctly.
                 curr_batch.enqueue_monotonic = execute_start_monotonic
+                if defer_sync and self._prev_batch is not None:
+                    # Schedule-ahead: two batches are now in flight. The
+                    # current batch becomes the newest; the previous one is
+                    # consumed on a later step (FIFO).
+                    self._prev_prev_batch = self._prev_batch
                 self._prev_batch = curr_batch
 
         return outputs

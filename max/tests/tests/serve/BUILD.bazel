@@ -46,6 +46,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/pipelines/architectures/kimik2_5",
+        "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/lora",

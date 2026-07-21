@@ -195,6 +195,7 @@ def causal_conv1d_varlen_fwd(
     cache_indices: TensorValue,
     has_initial_state: TensorValue,
     activation: str = "silu",
+    channels_last: bool = False,
 ) -> TensorValue:
     """Slot-indexed varlen causal depthwise conv1d (prefill and decode).
 
@@ -204,7 +205,8 @@ def causal_conv1d_varlen_fwd(
     position 4 (after ``output, x, weight, bias``).
 
     Args:
-        x: ``[dim, total_seqlen]`` input (channels-first, model dtype).
+        x: ``[dim, total_seqlen]`` input (channels-first, model dtype), or
+            ``[total_seqlen, dim]`` when ``channels_last`` is true.
         weight: ``[dim, width]`` depthwise conv weights.
         bias: ``[dim]`` per-channel bias (empty to disable).
         conv_states: ``[max_slots, dim, width - 1]`` mutable conv-state pool.
@@ -212,15 +214,19 @@ def causal_conv1d_varlen_fwd(
         cache_indices: ``[batch]`` int32 slot indices into ``conv_states``.
         has_initial_state: ``[batch]`` bool, whether to use the stored state.
         activation: ``"silu"`` or ``"none"``.
+        channels_last: If true, ``x`` and the output are tokens-major
+            ``[total_seqlen, dim]``. The kernel indexes through runtime
+            strides, so this only relabels the axes — it avoids the
+            materialized transposes the ``[dim, total_seqlen]`` contract
+            forces on a tokens-major caller.
 
     Returns:
-        ``[dim, total_seqlen]`` conv output. ``conv_states`` is mutated in place.
+        Conv output with the same shape/layout as ``x``. ``conv_states`` is
+        mutated in place.
     """
     device = x.device
-    dim = x.shape[0]
-    total_seqlen = x.shape[1]
 
-    out_type = TensorType(x.dtype, [dim, total_seqlen], device)
+    out_type = TensorType(x.dtype, x.shape, device)
 
     # Operand order matches the builtin registration
     # ``CausalConv1DVarlenFwd.execute``: after the ``output`` operand,
@@ -239,7 +245,7 @@ def causal_conv1d_varlen_fwd(
             has_initial_state,
         ],
         [out_type],
-        parameters={"activation": activation},
+        parameters={"activation": activation, "channels_last": channels_last},
     )
     return cast(TensorValue, results[0])
 

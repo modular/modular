@@ -132,6 +132,28 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_all_pipelines",
+    size = "medium",
+    srcs = ["test_all_pipelines.py"],
+    # TODO(SERVSYS-1284): importing max.pipelines.lib alone blows the 300s
+    # budget on the shared BuildBuddy macOS workers (times out in pytest
+    # collection).
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        # all_pipelines brings every architecture (llama3 resolves SmolLM at
+        # runtime); pipelines provides the CommonTextGenPipeline class.
+        "//max/python/max/experimental/cascade/pipelines",
+        "//max/python/max/experimental/cascade/pipelines:all_pipelines",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
     name = "test_max_model_worker",
     size = "small",
     srcs = ["test_max_model_worker.py"],
@@ -160,14 +182,14 @@ modular_py_test(
         "no-sandbox",
         "requires-network",
     ],
-    # The llama3 architecture SmolLM resolves to (via string lookup in the
-    # registry) arrives transitively through the cascade pipelines target,
-    # which depends on every architecture for the dispatcher's runfiles.
     deps = [
         "//max/python/max/driver",
         "//max/python/max/experimental/cascade",
         "//max/python/max/experimental/cascade/core",
+        # all_pipelines brings every architecture (llama3 resolves SmolLM at
+        # runtime); pipelines provides the CommonTextGenPipeline class.
         "//max/python/max/experimental/cascade/pipelines",
+        "//max/python/max/experimental/cascade/pipelines:all_pipelines",
         "//max/python/max/experimental/cascade/workers",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",

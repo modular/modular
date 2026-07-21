@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""``InferenceSession.read`` loads exported ``.mef`` artifacts.
+"""``max.engine.read`` loads exported ``.mef`` artifacts.
 
 Round-trips ``CompiledModel.export_mef`` through ``read`` from both a path
 and a binary file-like object, without re-invoking the graph compiler.
@@ -23,6 +23,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from max import engine
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -57,24 +58,60 @@ def _check_model(session: InferenceSession, compiled) -> None:  # noqa: ANN001
 
 
 def test_read_from_path(session: InferenceSession, mef_path: Path) -> None:
-    _check_model(session, session.read(mef_path))
+    _check_model(session, engine.read(mef_path))
 
 
 def test_read_from_str_path(session: InferenceSession, mef_path: Path) -> None:
-    _check_model(session, session.read(str(mef_path)))
+    _check_model(session, engine.read(str(mef_path)))
 
 
 def test_read_from_file_like(session: InferenceSession, mef_path: Path) -> None:
     # The buffer is consumed before read() returns; the model must stay
     # executable with no backing file reachable by path.
-    _check_model(session, session.read(io.BytesIO(mef_path.read_bytes())))
+    _check_model(session, engine.read(io.BytesIO(mef_path.read_bytes())))
 
 
 def test_read_missing_path(session: InferenceSession, tmp_path: Path) -> None:
     with pytest.raises(RuntimeError):
-        session.read(tmp_path / "nonexistent.mef")
+        engine.read(tmp_path / "nonexistent.mef")
 
 
 def test_read_invalid_artifact(session: InferenceSession) -> None:
     with pytest.raises(Exception):
-        session.read(io.BytesIO(b"this is not a mef"))
+        engine.read(io.BytesIO(b"this is not a mef"))
+
+
+def test_free_read_needs_no_session(
+    session: InferenceSession, mef_path: Path
+) -> None:
+    _check_model(session, engine.read(mef_path))
+
+
+def test_free_read_from_bytes(
+    session: InferenceSession, mef_path: Path
+) -> None:
+    _check_model(session, engine.read(io.BytesIO(mef_path.read_bytes())))
+
+
+def test_free_read_survives_source_deletion(
+    session: InferenceSession, mef_path: Path, tmp_path: Path
+) -> None:
+    # The artifact is mmapped; unlinking the file must not invalidate it.
+    copy = tmp_path / "unlinked.mef"
+    copy.write_bytes(mef_path.read_bytes())
+    compiled = engine.read(copy)
+    copy.unlink()
+    _check_model(session, compiled)
+
+
+def test_free_read_repeat_init(
+    session: InferenceSession, mef_path: Path
+) -> None:
+    compiled = engine.read(mef_path)
+    _check_model(session, compiled)
+    _check_model(session, compiled)
+
+
+def test_free_read_invalid_artifact() -> None:
+    with pytest.raises(RuntimeError):
+        engine.read(io.BytesIO(b"this is not a mef"))

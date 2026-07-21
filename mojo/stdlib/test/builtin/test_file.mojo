@@ -294,6 +294,10 @@ def test_file_seek() raises:
         pos = f.seek(-16, std.os.SEEK_END)
         assert_equal(pos, 938)
 
+        var neg_offset = -16
+        pos = f.seek(neg_offset, std.os.SEEK_END)
+        assert_equal(pos, 938)
+
         _ = f.read(6)
 
         # Seek from current position, skip the space

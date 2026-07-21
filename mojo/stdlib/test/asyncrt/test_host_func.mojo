@@ -31,7 +31,7 @@ def test_enqueue_host_func() raises:
     var stream = ctx.stream()
 
     var counter = Atomic[DType.int32](0)
-    var counter_ptr = UnsafePointer(to=counter.value).bitcast[NoneType]()
+    var counter_ptr = Pointer(to=counter.value).unsafe_bitcast[NoneType]()
     var counter_opaque = rebind[OpaquePointer[MutAnyOrigin]](counter_ptr)
 
     comptime N = 4

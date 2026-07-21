@@ -50,6 +50,10 @@ from nn.normalization import (
 )
 from nn.softmax import logsoftmax, softmax
 from nn.topk import top_k, top_k_shape_impl
+from state_space.rms_norm_fused_residual import (
+    _rms_norm_fused_residual_cpu_entry,
+    rms_norm_fused_residual,
+)
 from extensibility import InputTensor, OutputTensor
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
@@ -1594,6 +1598,175 @@ def composite_rms_norm_fused_residual_add_shape[
     Returns:
         The output shape, which matches the `input` shape.
     """
+    return input.shape()
+
+
+@extensibility.register("mo.composite.rms_norm_residual_add")
+struct RMSNormResidualAdd:
+    """Fused single-norm residual-add + RMSNorm.
+
+    Computes ``intermediate = input + residual_input`` and
+    ``output = rms_norm(intermediate, gamma, epsilon, weight_offset)`` in a
+    single launch, returning both ``output`` and ``intermediate``. This is the
+    canonical transformer/mamba pre-norm boundary ``rms_norm(residual + out)``
+    where the pre-add value is carried forward as the next block's residual.
+    Reuses the ``state_space`` fused-residual kernel; numerically identical to
+    the unfused ``mo.add`` + ``mo.reduce.rms_norm`` pair.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        multiply_before_cast: Bool = True,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        residual_output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        residual_input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Float32,
+        weight_offset: Scalar[dtype=dtype],
+        ctx: DeviceContext,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        if input.shape() != residual_input.shape():
+            raise Error("Input and residual input buffers are not same shape")
+
+        comptime if is_gpu[target]():
+            # GPU path: the device kernel bakes the callbacks in as `capturing`
+            # comptime closures, so build them as comptime parameters. Reads go
+            # through `_lambda_load` so a fused producer op folds into the load.
+            @parameter
+            @always_inline
+            def input_fn[
+                width: Int, _rank: Int
+            ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+                return input._lambda_load[width=width, element_alignment=width](
+                    rebind[IndexList[input.rank]](coords)
+                )
+
+            @parameter
+            @always_inline
+            def residual_input_fn[
+                width: Int, _rank: Int
+            ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+                return residual_input._lambda_load[width=width](
+                    rebind[IndexList[input.rank]](coords)
+                )
+
+            @parameter
+            @always_inline
+            def output_fn[
+                width: SIMDSize, _rank: Int, alignment: Int
+            ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+                output._fused_store[width=width, element_alignment=alignment](
+                    rebind[IndexList[output.rank]](coords),
+                    rebind[SIMD[output.dtype, width]](val),
+                )
+
+            @parameter
+            @always_inline
+            def residual_output_fn[
+                width: SIMDSize, _rank: Int, alignment: Int
+            ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+                residual_output._fused_store[
+                    width=width, element_alignment=alignment
+                ](
+                    rebind[IndexList[residual_output.rank]](coords),
+                    rebind[SIMD[residual_output.dtype, width]](val),
+                )
+
+            rms_norm_fused_residual[
+                input_fn,
+                residual_input_fn,
+                output_fn,
+                residual_output_fn,
+                target=target,
+                multiply_before_cast=multiply_before_cast,
+            ](
+                input.shape(),
+                gamma.to_tile_tensor[DType.int64](),
+                epsilon,
+                weight_offset,
+                ctx,
+            )
+        else:
+            # CPU path: the migrated CPU kernel takes unified closures that
+            # capture the tensors directly, so it can run the callbacks end to
+            # end at runtime (see `RMSNormFusedResidual`). `_fused_load` works
+            # whether or not a producer fused in, unlike the GPU-only comptime
+            # `_lambda_load`.
+            @always_inline
+            def input_fn_cpu[
+                width: Int, _rank: Int
+            ](coords: IndexList[_rank]) {var input} -> SIMD[dtype, width]:
+                return input._fused_load[width=width](
+                    rebind[IndexList[input.rank]](coords)
+                )
+
+            @always_inline
+            def residual_input_fn_cpu[
+                width: Int, _rank: Int
+            ](coords: IndexList[_rank]) {var residual_input} -> SIMD[
+                dtype, width
+            ]:
+                return residual_input._fused_load[width=width](
+                    rebind[IndexList[residual_input.rank]](coords)
+                )
+
+            @always_inline
+            def output_fn_cpu[
+                width: SIMDSize, alignment: Int
+            ](coords: IndexList[rank], val: SIMD[dtype, width]) {
+                var output
+            } -> None:
+                output._fused_store[width=width, element_alignment=alignment](
+                    rebind[IndexList[output.rank]](coords),
+                    rebind[SIMD[output.dtype, width]](val),
+                )
+
+            @always_inline
+            def residual_output_fn_cpu[
+                width: SIMDSize, alignment: Int
+            ](coords: IndexList[rank], val: SIMD[dtype, width]) {
+                var residual_output
+            } -> None:
+                residual_output._fused_store[
+                    width=width, element_alignment=alignment
+                ](
+                    rebind[IndexList[residual_output.rank]](coords),
+                    rebind[SIMD[residual_output.dtype, width]](val),
+                )
+
+            _rms_norm_fused_residual_cpu_entry[
+                multiply_before_cast=multiply_before_cast
+            ](
+                input_fn_cpu,
+                residual_input_fn_cpu,
+                output_fn_cpu,
+                residual_output_fn_cpu,
+                input.shape(),
+                gamma.to_tile_tensor[DType.int64](),
+                epsilon,
+                weight_offset,
+            )
+
+
+@extensibility.register_shape_function("mo.composite.rms_norm_residual_add")
+def composite_rms_norm_residual_add_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    residual_input: InputTensor[dtype=dtype, rank=rank, ...],
+    gamma: InputTensor[dtype=dtype, rank=1, ...],
+    epsilon: Float32,
+    weight_offset: Scalar[dtype=dtype],
+) -> IndexList[rank]:
     return input.shape()
 
 

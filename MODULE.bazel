@@ -32,6 +32,7 @@ link_hack(
 )
 
 register_toolchains(
+    "//bazel/internal:mojo_toolchain",
     "@mojo_toolchains//...",
     "//bazel/internal/cc-toolchain:all",
     "//bazel/internal:mojo_copts_toolchain",

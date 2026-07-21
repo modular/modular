@@ -962,7 +962,7 @@ def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
     idx_head_dim: int,
     input_scale: TensorValue,
     weight_scale: TensorValue,
-) -> TensorValue:
+) -> tuple[TensorValue, TensorValue]:
     """Computes MiniMax-M3's fused QKV + index-QK projections in one MXFP8 GEMM.
 
     A 5-way fusion: ``input`` and ``wqkv`` carry ``float8_e4m3fn`` data with
@@ -970,16 +970,14 @@ def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
     the concatenation ``[Wq | Wk | Wv | Wiq | Wik]`` along the output dimension.
     The single matmul output columns route as:
 
-    - ``Q``       -> returned combined output, columns ``[0, q_dim)``.
+    - ``Q``       -> returned as the first output, shape ``[M, q_dim]``.
     - ``K`` / ``V`` -> scattered in place into the MAIN ``kv_collection``.
-    - ``IndexQ``  -> returned combined output, columns
-      ``[q_dim, q_dim + iq_dim)`` (packed right after ``Q``).
+    - ``IndexQ``  -> returned as the second output, shape ``[M, iq_dim]``.
     - ``IndexK``  -> scattered in place into the INDEX ``index_kv_collection``
       (MLA cache: single latent head, head 0, K only).
 
     The fusion is bit-exact to separate QKV and IndexQK matmuls because every
-    band boundary lands on a 128-element scale-block boundary for M3. The model
-    code splits the returned tensor into ``Q`` and ``IndexQ`` via ``ops.split``.
+    band boundary lands on a 128-element scale-block boundary for M3.
 
     Args:
         kv_params: KVCacheParams for the MAIN (K, V) cache (GQA/MHA, non-MLA).
@@ -1003,7 +1001,8 @@ def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
         weight_scale: E8M0 weight block scales in the rank-5 SF-atom layout.
 
     Returns:
-        Combined ``[M, q_dim + iq_dim]`` bf16 tensor (Q then IndexQ).
+        A tuple ``(q, index_q)`` of bf16 tensors: ``q`` is ``[M, q_dim]`` and
+        ``index_q`` is ``[M, iq_dim]``.
 
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
@@ -1062,6 +1061,131 @@ def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
         layer_idx,
     ]
 
+    # Two separate outputs: Q [M, q_dim] and IndexQ [M, iq_dim]. The kernel's
+    # store-redirect epilogue routes the Q band to the first output and the
+    # IndexQ band to the second, so the downstream reshapes stay contiguous
+    # views (no split/copy).
+    q_dim = n_heads * kv_params.head_dim
+
+    results = ops.inplace_custom(
+        op_name,
+        device=input.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=input.shape[:-1] + [q_dim],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=input.shape[:-1] + [iq_dim],
+                device=input.device,
+            ),
+        ],
+        parameters=parameters,
+    )
+    return (results[0].tensor, results[1].tensor)
+
+
+def _fused_qkv_index_ragged_matmul(
+    kv_params: KVCacheParams,
+    index_kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    wqkv: TensorValue,
+    kv_collection: PagedCacheValues,
+    index_kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    n_heads: int,
+    num_index_heads: int,
+    idx_head_dim: int,
+) -> TensorValue:
+    """Computes MiniMax-M3's fused QKV + index-QK projections in one BF16 GEMM.
+
+    Non-scaled BF16 analog of ``_fused_qkv_index_ragged_matmul_scaled_mxfp8``: a
+    5-way fusion over the concatenated weight ``[Wq | Wk | Wv | Wiq | Wik]``
+    (along the output dimension), with no block-scaling operands. ``input`` and
+    ``wqkv`` are uniform ``bfloat16`` (attention in M3 is not quantized). The
+    single matmul output columns route as:
+
+    - ``Q``       -> returned combined output, columns ``[0, q_dim)``.
+    - ``K`` / ``V`` -> scattered in place into the MAIN ``kv_collection``.
+    - ``IndexQ``  -> returned combined output, columns
+      ``[q_dim, q_dim + iq_dim)`` (packed right after ``Q``).
+    - ``IndexK``  -> scattered in place into the INDEX ``index_kv_collection``
+      (MLA cache: single latent head, head 0, K only).
+
+    The model code splits the returned tensor into ``Q`` and ``IndexQ`` via
+    ``ops.split``.
+
+    Args:
+        kv_params: KVCacheParams for the MAIN (K, V) cache (GQA/MHA, non-MLA).
+        index_kv_params: KVCacheParams for the INDEX (IndexK) cache; MLA with a
+            single latent head (``is_mla=True``, ``n_kv_heads=1`` for M3).
+        input: Activation tensor, ``bfloat16`` with shape
+            [M=total_seq_len, K=hidden_dim].
+        input_row_offsets: Ragged offsets ``[batch_size + 1]``, uint32.
+        wqkv: Concatenated weight ``[Wq | Wk | Wv | Wiq | Wik]``, ``bfloat16``,
+            shape [N_total, K=hidden_dim] where
+            ``N_total = q_dim + 2 * kv_dim + iq_dim + ik_dim``.
+        kv_collection: PagedCacheValues for the MAIN cache.
+        index_kv_collection: PagedCacheValues for the INDEX cache.
+        layer_idx: Layer index, uint32 on CPU.
+        n_heads: Number of (main) attention heads. ``q_dim = n_heads *
+            head_dim``.
+        num_index_heads: Number of index Q heads. ``iq_dim = num_index_heads *
+            idx_head_dim``.
+        idx_head_dim: Index head dimension; also the single-head IndexK width.
+
+    Returns:
+        Combined ``[M, q_dim + iq_dim]`` tensor (Q then IndexQ), dtype = input's.
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+    _check_same_dtype(input=input, wqkv=wqkv)
+
+    input_rank_expected = 2
+    _check_rank(input_rank_expected, input=input)
+
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
+
+    tensors_to_check = [wqkv, input_row_offsets]
+    if not all(t.device == input.device for t in tensors_to_check):
+        raise ValueError(
+            "expected all tensors to be on the same device as input"
+            f" ({input.device}), but got:\n  wqkv={wqkv.device}\n "
+            f" input_row_offsets={input_row_offsets.device}"
+        )
+
+    if layer_idx.device != DeviceRef.CPU():
+        raise ValueError(
+            "expected layer_idx to be on CPU device, but got"
+            f" {layer_idx.device}"
+        )
+
+    assert kv_params.page_size is not None
+    assert index_kv_params.page_size is not None
+    iq_dim = num_index_heads * idx_head_dim
+    parameters: dict[str, int | str | DType] = {
+        "kv_type": kv_params.dtype,
+        "index_kv_type": index_kv_params.dtype,
+        "IQ_DIM": iq_dim,
+    }
+
+    op_name = "mo.fused_qkv_index_matmul.ragged.paged"
+    values = [
+        input,
+        input_row_offsets,
+        wqkv,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        *index_kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+    ]
+
     # Combined output: Q (n_heads * head_dim) then IndexQ (iq_dim).
     output_dim = n_heads * kv_params.head_dim + iq_dim
 
@@ -1071,7 +1195,7 @@ def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
         values=values,
         out_types=[
             TensorType(
-                dtype=DType.bfloat16,
+                dtype=input.dtype,
                 shape=input.shape[:-1] + [output_dim],
                 device=input.device,
             )
@@ -4606,6 +4730,45 @@ def moe_router_group_limited(
     )
 
     return (results[0].tensor, results[1].tensor)
+
+
+def _router_gate_mixed_gemv(
+    hidden_states: TensorValue,
+    gate_weight: TensorValue,
+) -> TensorValue:
+    """Computes mixed-input MiniMax router logits."""
+    _check_rank(2, hidden_states=hidden_states, gate_weight=gate_weight)
+    _check_dtype(DType.bfloat16, hidden_states=hidden_states)
+    _check_dtype(DType.float32, gate_weight=gate_weight)
+    _check_same_device(hidden_states=hidden_states, gate_weight=gate_weight)
+
+    n_dim = gate_weight.shape[0]
+    k_dim = gate_weight.shape[1]
+    # N/K are inferred from the static gate-weight layout inside the op, so the
+    # shape must be known here (the op also asserts this at compile time).
+    if not isinstance(n_dim, StaticDim) or not isinstance(k_dim, StaticDim):
+        raise ValueError(
+            "_router_gate_mixed_gemv requires a static gate-weight shape, got"
+            f" {gate_weight.shape}"
+        )
+    if hidden_states.shape[1] != k_dim:
+        raise ValueError(
+            "hidden_states K must match gate_weight K, got"
+            f" {hidden_states.shape[1]} and {k_dim}"
+        )
+
+    return ops.custom(
+        "mo.router.gate.mixed.gemv",
+        device=hidden_states.device,
+        values=[hidden_states, gate_weight],
+        out_types=[
+            TensorType(
+                dtype=DType.float32,
+                shape=[hidden_states.shape[0], n_dim],
+                device=hidden_states.device,
+            )
+        ],
+    )[0].tensor
 
 
 def moe_eplb_remap(

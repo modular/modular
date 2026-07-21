@@ -343,6 +343,29 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "processed tokens (fresh prefill batches are skipped)."
         ),
     ),  # type: ignore
+    "maxserve.dp_active_tokens": _meter.create_counter(
+        "maxserve.dp_active_tokens",
+        unit="tokens",
+        description=(
+            "Cumulative active tokens scheduled across all DP replicas, "
+            "excluding padding dummies. Divided by "
+            "maxserve.dp_step_capacity_tokens over the same window, this "
+            "gives the token-weighted DP occupancy (each batch weighted by "
+            "its step cost rather than counted once). Recorded only when "
+            "data_parallel_degree > 1."
+        ),
+    ),  # type: ignore
+    "maxserve.dp_step_capacity_tokens": _meter.create_counter(
+        "maxserve.dp_step_capacity_tokens",
+        unit="tokens",
+        description=(
+            "Cumulative synchronized step capacity in tokens: for each "
+            "batch, DP-degree times the heaviest rank's active tokens "
+            "(ranks step together, so the heaviest rank sets the step "
+            "cost). Denominator for token-weighted DP occupancy. Recorded "
+            "only when data_parallel_degree > 1."
+        ),
+    ),  # type: ignore
     "maxserve.batch_terminated_reqs": _meter.create_histogram(
         "maxserve.batch_terminated_reqs",
         unit="reqs",
@@ -1042,6 +1065,24 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.dp_context_token_occupancy",
                 pct,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+        )
+
+    def dp_active_tokens(self, value: int, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dp_active_tokens",
+                value,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+        )
+
+    def dp_step_capacity_tokens(self, value: int, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dp_step_capacity_tokens",
+                value,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
         )

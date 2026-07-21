@@ -151,7 +151,7 @@ struct OwnedPointer[T: AnyType](
         After using this constructor, the `UnsafePointer` is assumed to be owned by this `OwnedPointer`.
         In particular, the destructor method will call `T.__del__` and `UnsafePointer.free`.
         """
-        var ptr = unsafe_from_opaque_pointer.bitcast[Self.T]()
+        var ptr = unsafe_from_opaque_pointer.unsafe_bitcast[Self.T]()
         self = Self(
             unsafe_from_raw_pointer=ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         )
@@ -225,7 +225,7 @@ struct OwnedPointer[T: AnyType](
         Returns:
             The data that is (was) backing the `OwnedPointer`.
         """
-        var r = self._inner.unsafe_ptr().take_pointee()
+        var r = self._inner.unsafe_ptr().unsafe_take_pointee()
         dealloc(self._inner^.unsafe_with_layout(Layout[_T].single()))
         return r^
 

@@ -88,6 +88,11 @@ struct NotZeroSized(
 
 def _vec_func_zero(
     zs: ZeroSized,
+    # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a safe
+    # `Pointer`.
+    # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer args
+    # to `UnsafePointer` (their `device_type`) and matches the declared param
+    # type exactly, so these stay `UnsafePointer` (safe `Pointer` won't match).
     in0: UnsafePointer[S, MutAnyOrigin],
     in1: UnsafePointer[S, MutAnyOrigin],
     output: UnsafePointer[S, MutAnyOrigin],
@@ -96,11 +101,18 @@ def _vec_func_zero(
     var tid = global_idx.x
     if tid >= len:
         return
-    output[tid] = in0[tid] + in1[tid] + zs.value()
+    output[unsafe_offset=tid] = (
+        in0[unsafe_offset=tid] + in1[unsafe_offset=tid] + zs.value()
+    )
 
 
 def _vec_func_not_zero(
     zs: NotZeroSized,
+    # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a safe
+    # `Pointer`.
+    # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer args
+    # to `UnsafePointer` (their `device_type`) and matches the declared param
+    # type exactly, so these stay `UnsafePointer` (safe `Pointer` won't match).
     in0: UnsafePointer[S, MutAnyOrigin],
     in1: UnsafePointer[S, MutAnyOrigin],
     output: UnsafePointer[S, MutAnyOrigin],
@@ -109,13 +121,20 @@ def _vec_func_not_zero(
     var tid = global_idx.x
     if tid >= len:
         return
-    output[tid] = in0[tid] + in1[tid] + zs.value()
+    output[unsafe_offset=tid] = (
+        in0[unsafe_offset=tid] + in1[unsafe_offset=tid] + zs.value()
+    )
 
 
 def _vec_func[
     zero_sized_t: MaybeZeroSized
 ](
     zs: zero_sized_t,
+    # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a safe
+    # `Pointer`.
+    # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer args
+    # to `UnsafePointer` (their `device_type`) and matches the declared param
+    # type exactly, so these stay `UnsafePointer` (safe `Pointer` won't match).
     in0: UnsafePointer[S, MutAnyOrigin],
     in1: UnsafePointer[S, MutAnyOrigin],
     output: UnsafePointer[S, MutAnyOrigin],
@@ -124,7 +143,9 @@ def _vec_func[
     var tid = global_idx.x
     if tid >= len:
         return
-    output[tid] = in0[tid] + in1[tid] + zs.value()
+    output[unsafe_offset=tid] = (
+        in0[unsafe_offset=tid] + in1[unsafe_offset=tid] + zs.value()
+    )
 
 
 def test_function_compilation() raises:

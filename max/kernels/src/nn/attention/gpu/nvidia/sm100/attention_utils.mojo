@@ -1029,18 +1029,23 @@ struct SM100TensorAccumulator[
     #
     # For k_major A the outer-K stride is BMN * swizzle_width; halving BMN
     # halves that stride so K offsets stay in the per-CTA buffer.
-    # For k_major B (transpose_b) the K stride doesn't depend on BMN,
-    # but using per-CTA BMN is harmless and keeps the rule uniform.
+    # For k_major B (transpose_b) the cross-swizzle-chunk K stride is
+    # BMN * swizzle_width too (tile_layout_k_major's (0, k) offset
+    # scales with BMN), so per-CTA BMN is REQUIRED in both quadrants:
+    # a full-MMA_N layout doubles every chunk-crossing K offset at
+    # cta_group=2, reading wrong SMEM (and past the tile) from the
+    # second 64-column chunk onward.
     #
-    # The TS quadrant historically builds b_layout with the full MMA_N
-    # (no cta_group division); preserved as-is.
+    # The mn-major TS quadrant (the P@V users) historically builds
+    # b_layout with the full MMA_N (no cta_group division); preserved
+    # as-is.
     comptime a_bmn: Int = align_up(Self.MMA_M // Self.cta_group, 8)
     comptime a_layout = tile_layout_k_major[
         Self.operand_t, Self.a_bmn, Self.padded_BK, Self.swizzle_a
     ]()
-    comptime b_bmn: Int = Self.MMA_N if Self.a_tmem else (
-        Self.MMA_N // Self.cta_group
-    )
+    comptime b_bmn: Int = Self.MMA_N if (
+        Self.a_tmem and not Self.transpose_b
+    ) else (Self.MMA_N // Self.cta_group)
     comptime b_layout = tile_layout_k_major[
         Self.operand_t,
         Self.b_bmn,

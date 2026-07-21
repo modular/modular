@@ -148,11 +148,11 @@ def test_nicheable() raises:
 
     var memory = UnsafeMaybeUninit[PointerType]()
 
-    PointerType.write_niche(UnsafePointer(to=memory))
-    assert_true(PointerType.isa_niche(UnsafePointer(to=memory)))
+    PointerType.write_niche(Pointer(to=memory))
+    assert_true(PointerType.isa_niche(Pointer(to=memory)))
 
     memory.init_from(Pointer(to=x))
-    assert_false(PointerType.isa_niche(UnsafePointer(to=memory)))
+    assert_false(PointerType.isa_niche(Pointer(to=memory)))
 
 
 # We don't actually need to run this,

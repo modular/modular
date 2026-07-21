@@ -182,7 +182,7 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
     """Convenience alias: `WeakPointer[T]` for this `ArcPointer[T]`."""
 
     comptime _inner_type = _ArcPointerInner[Self.T]
-    var _inner: UnsafePointer[Self._inner_type, MutUntrackedOrigin]
+    var _inner: Pointer[Self._inner_type, MutUntrackedOrigin]
 
     def __init__(out self, var value: Self.T):
         """Construct a new thread-safe, reference-counted smart pointer,
@@ -200,7 +200,7 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
     def __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: UnsafePointer[Self.T, MutUntrackedOrigin],
+        unsafe_from_raw_pointer: Pointer[Self.T, MutUntrackedOrigin],
     ):
         """Constructs an `ArcPointer` from a raw pointer.
 
@@ -224,12 +224,12 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
         var restored_arc = ArcPointer(unsafe_from_raw_pointer=raw_ptr)
         ```
         """
-        var pointer_to_payload = unsafe_from_raw_pointer.bitcast[Byte]()
+        var pointer_to_payload = unsafe_from_raw_pointer.unsafe_bitcast[Byte]()
         comptime payload_offset = reflect[Self._inner_type].field_offset[
             name="payload"
         ]()
-        var pointer_to_inner = pointer_to_payload - payload_offset
-        self._inner = pointer_to_inner.bitcast[Self._inner_type]()
+        var pointer_to_inner = pointer_to_payload.unsafe_offset(-payload_offset)
+        self._inner = pointer_to_inner.unsafe_bitcast[Self._inner_type]()
 
     def __init__(out self, *, copy: Self):
         """Copy an existing reference. Increment the refcount to the object.
@@ -245,7 +245,7 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
     def __init__(
         out self,
         *,
-        _inner: UnsafePointer[Self._inner_type, MutUntrackedOrigin],
+        _inner: Pointer[Self._inner_type, MutUntrackedOrigin],
     ):
         """Internal: construct from an already-incremented inner pointer.
 
@@ -312,7 +312,7 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
         """
         # TODO: consider removing this method.
         return (
-            UnsafePointer(to=self._inner[].payload_ref())
+            Pointer(to=self._inner[].payload_ref())
             .mut_cast[mut]()
             .unsafe_origin_cast[origin]()
         )
@@ -355,7 +355,7 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
         The returned pointer is not guaranteed to point to the beginning of the backing allocation,
         meaning calling `UnsafePointer.free` may result in undefined behavior.
         """
-        return UnsafePointer(to=self._inner[].payload_ref())
+        return Pointer(to=self._inner[].payload_ref())
 
     def __is__(self, rhs: Self) -> Bool:
         """Returns True if the two `ArcPointer` instances point at the same
@@ -456,7 +456,7 @@ struct WeakPointer[T: Movable & ImplicitlyDeletable](
 
     comptime _inner_type = _ArcPointerInner[Self.T]
     # FIXME MOCO-3525: use UnsafePointer[Self._inner_type, MutUntrackedOrigin]
-    comptime _inner_ptr_type = UnsafePointer[NoneType, MutUntrackedOrigin]
+    comptime _inner_ptr_type = Pointer[NoneType, MutUntrackedOrigin]
     var _inner: Optional[Self._inner_ptr_type]
 
     def __init__(
@@ -483,7 +483,7 @@ struct WeakPointer[T: Movable & ImplicitlyDeletable](
             A new `Weak` pointer sharing this allocation.
         """
         downgrade._inner[].add_weak()
-        self._inner = downgrade._inner.bitcast[NoneType]()
+        self._inner = downgrade._inner.unsafe_bitcast[NoneType]()
 
     @doc_hidden
     def __init__(
@@ -506,7 +506,9 @@ struct WeakPointer[T: Movable & ImplicitlyDeletable](
             copy: The existing `WeakPointer` to share an allocation with.
         """
         if copy._inner:
-            copy._inner.unsafe_value().bitcast[Self._inner_type]()[].add_weak()
+            copy._inner.unsafe_value().unsafe_bitcast[
+                Self._inner_type
+            ]()[].add_weak()
         self._inner = copy._inner
 
     @no_inline
@@ -515,12 +517,12 @@ struct WeakPointer[T: Movable & ImplicitlyDeletable](
         if (
             self._inner
             and self._inner.unsafe_value()
-            .bitcast[Self._inner_type]()[]
+            .unsafe_bitcast[Self._inner_type]()[]
             .drop_weak()
         ):
             dealloc(
                 ThinAllocation(
-                    unsafe_assume_ownership=self._inner.unsafe_value().bitcast[
+                    unsafe_assume_ownership=self._inner.unsafe_value().unsafe_bitcast[
                         Self._inner_type
                     ]()
                 ).unsafe_with_layout({count = 1})
@@ -536,12 +538,12 @@ struct WeakPointer[T: Movable & ImplicitlyDeletable](
         if (
             self._inner
             and self._inner.unsafe_value()
-            .bitcast[Self._inner_type]()[]
+            .unsafe_bitcast[Self._inner_type]()[]
             .try_add_strong()
         ):
             return {
                 ArcPointer[Self.T](
-                    _inner=self._inner.unsafe_value().bitcast[
+                    _inner=self._inner.unsafe_value().unsafe_bitcast[
                         Self._inner_type
                     ]()
                 )
@@ -557,7 +559,7 @@ struct WeakPointer[T: Movable & ImplicitlyDeletable](
         if self._inner:
             return (
                 self._inner.unsafe_value()
-                .bitcast[Self._inner_type]()[]
+                .unsafe_bitcast[Self._inner_type]()[]
                 .strong_count()
             )
         else:
@@ -575,12 +577,12 @@ struct WeakPointer[T: Movable & ImplicitlyDeletable](
         if self._inner:
             var w = (
                 self._inner.unsafe_value()
-                .bitcast[Self._inner_type]()[]
+                .unsafe_bitcast[Self._inner_type]()[]
                 .weak_count_with_implicit()
             )
             if (
                 self._inner.unsafe_value()
-                .bitcast[Self._inner_type]()[]
+                .unsafe_bitcast[Self._inner_type]()[]
                 .strong_count()
                 == 0
             ):

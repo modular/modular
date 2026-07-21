@@ -1617,18 +1617,25 @@ def build_block_scaled_configs[
 
     var set = Set[config_t]()
 
+    # Enumerate only MMA tiles the kernel accepts (its tile `constrained[]`):
+    # one unsupported tile in this comptime-instantiated set fails the whole
+    # compile; a shape with no matching config falls through to vendor.
+    def _kernel_supported(cfg: config_t) {} -> Bool:
+        var mma_m_ok = cfg.mma_shape[0] == (256 if cfg.cta_group == 2 else 128)
+        return mma_m_ok and cfg.mma_shape[1] in (64, 128, 192, 256)
+
     for m in range(8, 128, 8):  # [8, 128]
         config = choose_block_scaled_config[
             a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
         ](m, N, K)
-        if config not in set:
+        if _kernel_supported(config) and config not in set:
             set.add(config)
 
     for m in range(128, 8193, 64):  # [128, 8192]
         config = choose_block_scaled_config[
             a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
         ](m, N, K)
-        if config not in set:
+        if _kernel_supported(config) and config not in set:
             set.add(config)
 
     return set^

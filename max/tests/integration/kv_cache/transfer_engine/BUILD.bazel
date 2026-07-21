@@ -1,9 +1,15 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
 
+# The NIXL drag race (//utils/benchmarking/nixl) reuses the cross-node harness
+# here as its per-role engine, so extend the inherited default visibility to
+# that package. Set via a gazelle directive so gazelle keeps it stable.
+# gazelle:default_visibility //max/tests:__subpackages__,//:__pkg__,//oss/modular/max/tests:__subpackages__,//utils/benchmarking/nixl:__pkg__
+
 package(default_visibility = [
     "//:__pkg__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
+    "//utils/benchmarking/nixl:__pkg__",
 ])
 
 modular_py_binary(
@@ -69,8 +75,11 @@ modular_py_test(
     # The NIXL plugins reach the runfiles tree via the kv_cache dep's
     # :nixl_host_plugins data; the conftest resolves NIXL_PLUGIN_DIR through
     # max._core.
-    # TODO(GEX-3817): the standard b200 CI machines lack proper RDMA config
-    # for the UCX IB path. Mark manual until a suitable runner is available.
+    # TODO(GEX-3817): fails deterministically on the b200 remote-exec
+    # workers — measured notification latency is ~10.3s against the test's
+    # 8s bound (10/10 runs, 2026-07-17), pointing at a real progress-thread
+    # delivery delay rather than machine flake. Keep manual until the
+    # latency is root-caused.
     gpu_constraints = ["//:nvidia_gpu"],
     imports = ["."],
     tags = [
@@ -129,13 +138,10 @@ modular_py_test(
     # The NIXL plugins reach the runfiles tree via the kv_cache dep's
     # :nixl_host_plugins data; the conftest resolves NIXL_PLUGIN_DIR through
     # max._core.
-    # TODO(GEX-3817): b200 CI machines have IB misconfiguration causing UCX
-    # transfers to timeout. Mark manual until a suitable runner is available.
     gpu_constraints = ["//:nvidia_gpu"],
     imports = ["."],
     tags = [
         "gpu",
-        "manual",
     ],
     # UCX currently only supports linux machines
     target_compatible_with = [
@@ -174,13 +180,17 @@ modular_py_test(
     gpu_constraints = [
         "//:has_gpu",
         "//:has_multi_gpu",
-        "//:nvidia_gpu",
     ],
     imports = ["."],
     per_test_tags = {
         "test_send_recv_multi_process_gpu.py": ["manual"],  # FIXME: Times out intermittently (SERVOPT-1326)
     },
     tags = ["gpu"],
+    # NVIDIA or AMD, never Apple: Apple GPUs only exist on the macOS
+    # platform, and NIXL/UCX is Linux-only.
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines/kv_cache",

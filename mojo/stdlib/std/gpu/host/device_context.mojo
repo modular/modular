@@ -3063,10 +3063,9 @@ struct DeviceFunction[
     @parameter
     def _call_with_pack[
         *Ts: AnyType,
-        ContextT: _FunctionEnqueuer,
     ](
         imm self,
-        ctx: ContextT,
+        ctx: Some[_FunctionEnqueuer],
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -3298,10 +3297,9 @@ struct DeviceFunction[
     @parameter
     def _call_with_pack_checked[
         *Ts: DevicePassable,
-        ContextT: _FunctionEnqueuer,
     ](
         imm self,
-        ctx: ContextT,
+        ctx: Some[_FunctionEnqueuer],
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -3750,10 +3748,10 @@ struct DeviceExternalFunction:
     @always_inline
     @parameter
     def _call_with_pack[
-        *Ts: AnyType
+        *Ts: AnyType,
     ](
         imm self,
-        ctx: DeviceContext,
+        ctx: Some[_FunctionEnqueuer],
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -3769,7 +3767,7 @@ struct DeviceExternalFunction:
             Ts: Types of the arguments to pass to the device function.
 
         Args:
-            ctx: The device context to launch the function on.
+            ctx: The enqueuer to launch the function on.
             args: Arguments to pass to the device function.
             grid_dim: Grid dimensions for the kernel launch.
             block_dim: Block dimensions for the kernel launch.
@@ -3806,45 +3804,22 @@ struct DeviceExternalFunction:
             for i in range(len(constant_memory)):
                 self._copy_to_constant_memory(constant_memory[i])
 
-        # const char *AsyncRT_DeviceContext_enqueueFunctionDirect(const DeviceContext *ctx, const DeviceFunction *func,
-        #                                                         uint32_t gridX, uint32_t gridY, uint32_t gridZ,
-        #                                                         uint32_t blockX, uint32_t blockY, uint32_t blockZ,
-        #                                                         uint32_t sharedMemBytes, void *attrs, uint32_t num_attrs,
-        #                                                         void **args, uint32_t argCount, const size_t *argSizes)
+        # External functions carry no argument-size metadata, so no per-arg
+        # sizes are passed to the enqueuer (matching the previous direct call).
+        var no_arg_sizes = OptionalUnsafePointer[UInt64, MutAnyOrigin](None)
         _checked(
-            external_call[
-                "AsyncRT_DeviceContext_enqueueFunctionDirect",
-                _CString[],
-                _DeviceContextPtr[mut=True],
-                _DeviceFunctionPtr[mut=True],
-                c_uint,
-                c_uint,
-                c_uint,
-                c_uint,
-                c_uint,
-                c_uint,
-                c_uint,
-                UnsafePointer[LaunchAttribute, MutAnyOrigin],
-                c_uint,
-                UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
-                c_uint,
-                Optional[UnsafePointer[UInt64, MutAnyOrigin]],
-            ](
-                ctx._handle,
+            ctx.enqueue(
                 self._handle,
-                c_uint(grid_dim.x()),
-                c_uint(grid_dim.y()),
-                c_uint(grid_dim.z()),
-                c_uint(block_dim.x()),
-                c_uint(block_dim.y()),
-                c_uint(block_dim.z()),
-                c_uint(shared_mem_bytes.or_else(0)),
-                attributes.unsafe_ptr().as_unsafe_any_origin(),
-                c_uint(len(attributes)),
+                grid_dim,
+                block_dim,
+                shared_mem_bytes.or_else(0),
+                attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+                len(attributes),
                 dense_args_addrs.unsafe_ptr().as_unsafe_any_origin(),
-                c_uint(num_args),
-                None,
-            )
+                UInt32(num_args),
+                no_arg_sizes,
+            ),
+            location=location.or_else(call_location()),
         )
 
     @always_inline

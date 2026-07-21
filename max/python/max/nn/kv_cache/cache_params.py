@@ -510,9 +510,15 @@ class KVCacheParamInterface(Protocol):
         ...
 
     def get_symbolic_inputs(
-        self,
+        self, namespace: str = ""
     ) -> KVCacheInputsInterface[TensorType, BufferType]:
-        """Returns the symbolic inputs for the KV cache."""
+        """Returns the symbolic inputs for the KV cache.
+
+        Args:
+            namespace: Prefix that disambiguates this cache's page-pool
+                symbolic dim from sibling caches in a multi-group tree. Empty
+                for a single-group cache, leaving its names unchanged.
+        """
         ...
 
     def flattened_kv_inputs(self) -> list[TensorType | BufferType]:
@@ -923,12 +929,19 @@ class KVCacheParams(KVCacheParamInterface):
         return base_bytes
 
     def _get_symbolic_inputs_for_replica(
-        self, replica_idx: int, prefix: str
+        self, replica_idx: int, prefix: str, page_namespace: str = ""
     ) -> list[KVCacheInputsPerDevice[TensorType, BufferType]]:
         raise NotImplementedError
 
-    def get_symbolic_inputs(self) -> KVCacheInputs[TensorType, BufferType]:
+    def get_symbolic_inputs(
+        self, namespace: str = ""
+    ) -> KVCacheInputs[TensorType, BufferType]:
         """Computes the symbolic inputs for the KV cache.
+
+        Args:
+            namespace: Prefix disambiguating this cache's per-pool page-count
+                dim from sibling caches in a multi-group tree (empty for a
+                single-group cache).
 
         Returns:
             The symbolic inputs for the KV cache.
@@ -936,7 +949,9 @@ class KVCacheParams(KVCacheParamInterface):
         input_symbols: list[KVCacheInputsPerDevice[TensorType, BufferType]] = []
         for replica_idx in range(len(self.devices_per_replica)):
             prefix = f"replica_{replica_idx}_"
-            symbols = self._get_symbolic_inputs_for_replica(replica_idx, prefix)
+            symbols = self._get_symbolic_inputs_for_replica(
+                replica_idx, prefix, namespace
+            )
             input_symbols.extend(symbols)
         return KVCacheInputs(inputs=input_symbols)
 
@@ -1231,9 +1246,11 @@ class MHAKVCacheParams(KVCacheParams):
         return TensorType(DType.int64, shape=[4], device=DeviceRef.CPU())
 
     def _get_symbolic_inputs_for_replica(
-        self, replica_idx: int, prefix: str
+        self, replica_idx: int, prefix: str, page_namespace: str = ""
     ) -> list[KVCacheInputsPerDevice[TensorType, BufferType]]:
         devices = self.devices_per_replica[replica_idx]
+        # Sibling cache groups may size their page pools independently.
+        page_dim = page_namespace + "total_num_pages"
 
         def _blocks_per_layer(
             device: DeviceRef,
@@ -1246,7 +1263,7 @@ class MHAKVCacheParams(KVCacheParams):
             return [
                 BufferType(
                     self.dtype,
-                    shape=["total_num_pages", *self.shape_per_layer_block],
+                    shape=[page_dim, *self.shape_per_layer_block],
                     device=device,
                 )
                 for _ in range(self.num_layers)
@@ -1258,12 +1275,12 @@ class MHAKVCacheParams(KVCacheParams):
             if self.per_layer_buffers:
                 return BufferType(
                     self.dtype,
-                    shape=["total_num_pages", *self.shape_per_layer_block],
+                    shape=[page_dim, *self.shape_per_layer_block],
                     device=device,
                 )
             return BufferType(
                 self.dtype,
-                shape=["total_num_pages", *self.shape_per_block],
+                shape=[page_dim, *self.shape_per_block],
                 device=device,
             )
 
@@ -1292,7 +1309,7 @@ class MHAKVCacheParams(KVCacheParams):
                 ),
                 kv_scales=BufferType(
                     self.kv_cache_scale_dtype,
-                    shape=["total_num_pages", *self.shape_per_scale_block],
+                    shape=[page_dim, *self.shape_per_scale_block],
                     device=device,
                 )
                 if self.quantized_kv_cache
@@ -1431,15 +1448,17 @@ class MLAKVCacheParams(KVCacheParams):
         return _filter_tiny_cache_lengths(probe_lengths, self.num_draft_tokens)
 
     def _get_symbolic_inputs_for_replica(
-        self, replica_idx: int, prefix: str
+        self, replica_idx: int, prefix: str, page_namespace: str = ""
     ) -> list[KVCacheInputsPerDevice[TensorType, BufferType]]:
         devices = self.devices_per_replica[replica_idx]
+        # Sibling cache groups may size their page pools independently.
+        page_dim = page_namespace + "total_num_pages"
 
         return [
             KVCacheInputsPerDevice(
                 kv_blocks=BufferType(
                     self.dtype,
-                    shape=["total_num_pages", *self.shape_per_block],
+                    shape=[page_dim, *self.shape_per_block],
                     device=device,
                 ),
                 cache_lengths=TensorType(
@@ -1464,7 +1483,7 @@ class MLAKVCacheParams(KVCacheParams):
                 ),
                 kv_scales=BufferType(
                     self.kv_cache_scale_dtype,
-                    shape=["total_num_pages", *self.shape_per_scale_block],
+                    shape=[page_dim, *self.shape_per_scale_block],
                     device=device,
                 )
                 if self.quantized_kv_cache
@@ -1767,11 +1786,18 @@ class MultiKVCacheParams(KVCacheParamInterface):
         """
         return sum(p.bytes_per_block for p in self.children.values())
 
-    def get_symbolic_inputs(self) -> MultiKVCacheInputs[TensorType, BufferType]:
-        """Returns the symbolic inputs for the KV cache tree."""
+    def get_symbolic_inputs(
+        self, namespace: str = ""
+    ) -> MultiKVCacheInputs[TensorType, BufferType]:
+        """Returns the symbolic inputs for the KV cache tree.
+
+        Each child inherits a distinct namespace so sibling groups' page-pool
+        dims stay independent; nested subtrees compose the prefix.
+        """
         return MultiKVCacheInputs(
             children={
-                k: p.get_symbolic_inputs() for k, p in self.children.items()
+                k: p.get_symbolic_inputs(namespace=f"{namespace}{k}_")
+                for k, p in self.children.items()
             }
         )
 

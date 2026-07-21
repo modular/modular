@@ -21,7 +21,7 @@ Handlers are registered using the @register_op_handler decorator.
 """
 
 from collections.abc import Callable, Sequence
-from math import ceil, prod
+from math import prod
 from typing import Any, Protocol, cast
 
 import max._interpreter_ops as ops
@@ -29,9 +29,12 @@ import numpy as np
 from max import _core, graph
 from max._core.dialects import builtin, kgen, mo, mosh
 from max._interpreter_ops import (
+    conv_gc,
     elementwise_binary_gc,
     matmul_gc,
+    pooling_gc,
     reduce_axis_gc,
+    resize_gc,
     shape_rearrange_gc,
     unary_elementwise_gc,
 )
@@ -2399,320 +2402,97 @@ def _handle_scatter_mul(
     return _scatter_reduction_common(op, inputs, "ScatterMul")
 
 
-def _conv_out_dim(
-    in_dim: int, k: int, dilation: int, stride: int, pad_total: int
-) -> int:
-    """Compute conv output dimension (floor mode)."""
-    return 1 + (in_dim + pad_total - (1 + dilation * (k - 1))) // stride
-
-
 @register_op_handler(mo.ConvOp)
 def _handle_conv(
     op: mo.ConvOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.conv (2D forward convolution, NHWC + RSCF).
-
-    Operands: input, filter, strides, dilations, paddings, num_groups.
-    All shape params are host int64 tensors.
+    """Handle mo.conv (forward convolution, NHWC + RSCF).
 
     Args:
         op: The conv operation.
-        inputs: Input buffers.
+        inputs: Six buffers -- input, filter, strides, dilations, paddings,
+            num_groups. All already-realized host int64/scalar tensors,
+            forwarded straight to the GC model, which infers the output
+            shape internally via its registered shape function.
 
     Returns:
         List containing the convolution output buffer.
+
+    Raises:
+        NotImplementedError: If dilation != 1 -- the GC-compiled kernel
+            hard-errors at runtime with "Non-unit dilation is not
+            supported yet"; pre-checked here for a clear error instead.
+            TODO(KERN-3238): add kernel support.
+        NotImplementedError: If groups != 1 -- grouped conv needs a
+            pre-packed filter layout, and there's no Python-exposed op to
+            produce one (the packing kernel is only invoked by an internal
+            compiler mechanism). TODO(KERN-3239): expose a packing op.
     """
-    target_device = _get_target_device(op)
+    input_buffer, filter_buffer, strides, dilations, paddings, num_groups = (
+        inputs
+    )
+    assert isinstance(input_buffer, Buffer)  # input (NHWC)
+    assert isinstance(filter_buffer, Buffer)  # filter (RSCF)
+    assert isinstance(strides, Buffer)
+    assert isinstance(dilations, Buffer)
+    assert isinstance(paddings, Buffer)
+    assert isinstance(num_groups, Buffer)
 
-    assert isinstance(inputs[0], Buffer)  # input (NHWC)
-    assert isinstance(inputs[1], Buffer)  # filter (RSCF)
-    assert isinstance(inputs[2], Buffer)  # strides
-    assert isinstance(inputs[3], Buffer)  # dilations
-    assert isinstance(inputs[4], Buffer)  # paddings
-    assert isinstance(inputs[5], Buffer)  # num_groups
-
-    input_buffer = inputs[0]
-    filter_buffer = inputs[1]
-
-    strides = [int(s) for s in inputs[2].to_numpy().flatten()]
-    dilations = [int(d) for d in inputs[3].to_numpy().flatten()]
-    paddings = [int(p) for p in inputs[4].to_numpy().flatten()]
-    groups = int(inputs[5].to_numpy().item())
-
-    in_shape = list(input_buffer.shape)
-    filt_shape = list(filter_buffer.shape)
-
-    if len(in_shape) != 4:
-        raise ValueError(
-            f"conv2d expects rank-4 input, got rank {len(in_shape)}"
+    dilations_np = dilations.to_numpy().flatten()
+    if any(int(d) != 1 for d in dilations_np):
+        raise NotImplementedError(
+            f"conv: dilation != 1 is not supported (got {dilations_np.tolist()})"
+        )
+    groups = int(num_groups.to_numpy().item())
+    if groups != 1:
+        raise NotImplementedError(
+            f"conv: groups != 1 is not supported (got groups={groups})"
         )
 
-    batch, in_h, in_w, in_c = in_shape
-    kh, kw = filt_shape[0], filt_shape[1]
-    out_c = filt_shape[-1]
-
-    stride_h, stride_w = strides[0], strides[1]
-    dil_h, dil_w = dilations[0], dilations[1]
-    pad_h_before, pad_h_after = paddings[0], paddings[1]
-    pad_w_before, pad_w_after = paddings[2], paddings[3]
-
-    out_h = _conv_out_dim(in_h, kh, dil_h, stride_h, pad_h_before + pad_h_after)
-    out_w = _conv_out_dim(in_w, kw, dil_w, stride_w, pad_w_before + pad_w_after)
-
-    output = Buffer(
-        shape=[batch, out_h, out_w, out_c],
-        dtype=input_buffer.dtype,
-        device=target_device,
-    )
-    ctx_ptr = target_device._device_context_ptr()
-
-    ops.conv_ops.Conv2d(
-        output,
-        input_buffer,
-        filter_buffer,
-        (
-            batch,
-            in_h,
-            in_w,
-            in_c,
-            out_c,
-            kh,
-            kw,
-            stride_h,
-            stride_w,
-            dil_h,
-            dil_w,
-            pad_h_before,
-            pad_w_before,
-            groups,
-            out_h,
-            out_w,
-        ),
-        ctx_ptr,
+    model = conv_gc.conv_model(input_buffer.device, input_buffer.dtype)
+    return model(
+        input_buffer, filter_buffer, strides, dilations, paddings, num_groups
     )
 
-    return [output]
 
-
+# TODO(KERN-3233): add a conv_transpose GPU kernel (old Mojo binding's GPU
+# path crashed on Apple/failed on CUDA; deleted rather than kept as a
+# broken fallback).
 @register_op_handler(mo.ConvTransposeOp)
 def _handle_conv_transpose(
     op: mo.ConvTransposeOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.conv_transpose (2D transposed convolution, NHWC + RSCF).
-
-    Operands: input, filter, strides, dilations, paddings, output_paddings.
-    All shape params are host int64 tensors.
-
-    Args:
-        op: The conv transpose operation.
-        inputs: Input buffers.
-
-    Returns:
-        List containing the transposed convolution output buffer.
-    """
-    target_device = _get_target_device(op)
-
-    assert isinstance(inputs[0], Buffer)  # input (NHWC)
-    assert isinstance(inputs[1], Buffer)  # filter (RSCF)
-    assert isinstance(inputs[2], Buffer)  # strides
-    assert isinstance(inputs[3], Buffer)  # dilations
-    assert isinstance(inputs[4], Buffer)  # paddings
-    assert isinstance(inputs[5], Buffer)  # output_paddings
-
-    input_buffer = inputs[0]
-    filter_buffer = inputs[1]
-
-    strides = [int(s) for s in inputs[2].to_numpy().flatten()]
-    dilations = [int(d) for d in inputs[3].to_numpy().flatten()]
-    paddings = [int(p) for p in inputs[4].to_numpy().flatten()]
-    output_pads = [int(p) for p in inputs[5].to_numpy().flatten()]
-
-    in_shape = list(input_buffer.shape)
-    filt_shape = list(filter_buffer.shape)
-
-    if len(in_shape) != 4:
-        raise ValueError(
-            f"conv_transpose2d expects rank-4 input, got rank {len(in_shape)}"
-        )
-
-    batch, in_h, in_w, in_c = in_shape
-    kh, kw = filt_shape[0], filt_shape[1]
-    out_c = filt_shape[2]
-
-    stride_h, stride_w = strides[0], strides[1]
-    dil_h, dil_w = dilations[0], dilations[1]
-    pad_h_before, pad_h_after = paddings[0], paddings[1]
-    pad_w_before, pad_w_after = paddings[2], paddings[3]
-    opad_h = output_pads[0] if len(output_pads) > 0 else 0
-    opad_w = output_pads[1] if len(output_pads) > 1 else 0
-
-    out_h = (
-        (in_h - 1) * stride_h
-        - pad_h_before
-        - pad_h_after
-        + dil_h * (kh - 1)
-        + 1
-        + opad_h
-    )
-    out_w = (
-        (in_w - 1) * stride_w
-        - pad_w_before
-        - pad_w_after
-        + dil_w * (kw - 1)
-        + 1
-        + opad_w
-    )
-
-    output = Buffer(
-        shape=[batch, out_h, out_w, out_c],
-        dtype=input_buffer.dtype,
-        device=target_device,
-    )
-    ctx_ptr = target_device._device_context_ptr()
-
-    ops.conv_ops.ConvTranspose2d(
-        output,
-        input_buffer,
-        filter_buffer,
-        (
-            batch,
-            in_h,
-            in_w,
-            in_c,
-            out_c,
-            kh,
-            kw,
-            stride_h,
-            stride_w,
-            dil_h,
-            dil_w,
-            pad_h_before,
-            pad_w_before,
-            out_h,
-            out_w,
-        ),
-        ctx_ptr,
-    )
-
-    return [output]
+    raise NotImplementedError("conv_transpose is not yet supported")
 
 
 # Pooling operations
 
 
-def _compute_pool_out_dim(
-    in_dim: int,
-    filter_dim: int,
-    stride: int,
-    dilation: int,
-    pad: int,
-    ceil_mode: bool,
-) -> int:
-    """Compute output spatial dim for a sliding window operation."""
-    numerator = in_dim + pad - (dilation * (filter_dim - 1) + 1)
-    if ceil_mode:
-        return 1 + -(-numerator // stride)  # ceildiv
-    return 1 + numerator // stride
-
-
-def _handle_max_pool_impl(
+@register_op_handler(mo.MaxPoolOp)
+@register_op_handler(mo.MaxPoolCeilModeTrueOp)
+def _handle_max_pool(
     op: mo.MaxPoolOp | mo.MaxPoolCeilModeTrueOp,
     inputs: Sequence[Buffer | None],
-    ceil_mode: bool,
 ) -> Sequence[Buffer]:
-    """Shared implementation for MaxPoolOp and MaxPoolCeilModeTrueOp."""
-    target_device = _get_target_device(op)
+    """Handle mo.max_pool / mo.max_pool_ceil_mode_true.
 
-    assert isinstance(inputs[0], Buffer)  # input (NHWC)
-    assert isinstance(inputs[1], Buffer)  # filter_shape
-    assert isinstance(inputs[2], Buffer)  # strides
-    assert isinstance(inputs[3], Buffer)  # dilations
-    assert isinstance(inputs[4], Buffer)  # paddings
+    Args:
+        op: The max_pool operation.
+        inputs: Tuple of (input, filter_shape, strides, dilations, paddings)
+            -- already-realized host int64 tensors, forwarded straight to
+            the GC model, which infers the output shape internally.
+    """
+    input_buffer, filter_shape, strides, dilations, paddings = inputs
+    assert isinstance(input_buffer, Buffer)
+    assert isinstance(filter_shape, Buffer)
+    assert isinstance(strides, Buffer)
+    assert isinstance(dilations, Buffer)
+    assert isinstance(paddings, Buffer)
 
-    input_buffer = inputs[0]
-    filter_shape = [int(x) for x in inputs[1].to_numpy().flatten()]
-    strides = [int(x) for x in inputs[2].to_numpy().flatten()]
-    dilations = [int(x) for x in inputs[3].to_numpy().flatten()]
-    paddings = [int(x) for x in inputs[4].to_numpy().flatten()]
-
-    in_shape = list(input_buffer.shape)
-    batch = in_shape[0]
-    in_h = in_shape[1]
-    in_w = in_shape[2]
-    channels = in_shape[3]
-
-    filter_h, filter_w = filter_shape[0], filter_shape[1]
-    stride_h, stride_w = strides[0], strides[1]
-    dilation_h, dilation_w = dilations[0], dilations[1]
-    pad_h_before, pad_h_after = paddings[0], paddings[1]
-    pad_w_before, pad_w_after = paddings[2], paddings[3]
-
-    out_h = _compute_pool_out_dim(
-        in_h,
-        filter_h,
-        stride_h,
-        dilation_h,
-        pad_h_before + pad_h_after,
-        ceil_mode,
+    model = pooling_gc.pool_model(
+        type(op), input_buffer.device, input_buffer.dtype
     )
-    out_w = _compute_pool_out_dim(
-        in_w,
-        filter_w,
-        stride_w,
-        dilation_w,
-        pad_w_before + pad_w_after,
-        ceil_mode,
-    )
-
-    output = Buffer(
-        shape=[batch, out_h, out_w, channels],
-        dtype=input_buffer.dtype,
-        device=target_device,
-    )
-
-    ctx_ptr = target_device._device_context_ptr()
-    kernel_fn = (
-        ops.pooling_ops.MaxPoolCeil if ceil_mode else ops.pooling_ops.MaxPool
-    )
-    kernel_fn(
-        output,
-        input_buffer,
-        (
-            batch,
-            in_h,
-            in_w,
-            channels,
-            out_h,
-            out_w,
-            filter_h,
-            filter_w,
-            stride_h,
-            stride_w,
-            dilation_h,
-            dilation_w,
-            pad_h_before,
-            pad_w_before,
-        ),
-        ctx_ptr,
-    )
-
-    return [output]
-
-
-@register_op_handler(mo.MaxPoolOp)
-def _handle_max_pool(
-    op: mo.MaxPoolOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.max_pool via Mojo max pooling kernel (floor mode)."""
-    return _handle_max_pool_impl(op, inputs, ceil_mode=False)
-
-
-@register_op_handler(mo.MaxPoolCeilModeTrueOp)
-def _handle_max_pool_ceil(
-    op: mo.MaxPoolCeilModeTrueOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.max_pool_ceil_mode_true via Mojo max pooling kernel."""
-    return _handle_max_pool_impl(op, inputs, ceil_mode=True)
+    return model(input_buffer, filter_shape, strides, dilations, paddings)
 
 
 @register_op_handler(mo.TileOp)
@@ -2801,112 +2581,35 @@ def _handle_band_part(
 # Average pooling
 
 
-def _avg_pool_common(
+@register_op_handler(mo.AvgPoolOp)
+@register_op_handler(mo.AvgPoolCeilModeTrueOp)
+def _handle_avg_pool(
     op: mo.AvgPoolOp | mo.AvgPoolCeilModeTrueOp,
     inputs: Sequence[Buffer | None],
-    ceil_mode: bool,
 ) -> Sequence[Buffer]:
-    """Shared logic for avg_pool (floor) and avg_pool_ceil_mode_true.
+    """Handle mo.avg_pool / mo.avg_pool_ceil_mode_true.
 
     Args:
-        op: The avg_pool operation.
-        inputs: Input buffers [input, filter_shape, strides, dilations, paddings].
-        ceil_mode: Whether to use ceiling mode for output shape.
-
-    Returns:
-        List containing the pooled output buffer.
+        op: The avg_pool operation. ``count_boundary`` selects the
+            compiled variant.
+        inputs: Tuple of (input, filter_shape, strides, dilations, paddings)
+            -- already-realized host int64 tensors, forwarded straight to
+            the GC model.
     """
-    target_device = _get_target_device(op)
+    input_buffer, filter_shape, strides, dilations, paddings = inputs
+    assert isinstance(input_buffer, Buffer)
+    assert isinstance(filter_shape, Buffer)
+    assert isinstance(strides, Buffer)
+    assert isinstance(dilations, Buffer)
+    assert isinstance(paddings, Buffer)
 
-    assert isinstance(inputs[0], Buffer)  # input
-    assert isinstance(inputs[1], Buffer)  # filter_shape
-    assert isinstance(inputs[2], Buffer)  # strides
-    assert isinstance(inputs[3], Buffer)  # dilations
-    assert isinstance(inputs[4], Buffer)  # paddings
-
-    input_buffer = inputs[0]
-    filter_np = inputs[1].to_numpy().flatten()
-    strides_np = inputs[2].to_numpy().flatten()
-    dilations_np = inputs[3].to_numpy().flatten()
-    paddings_np = inputs[4].to_numpy().flatten()
-
-    in_shape = list(input_buffer.shape)
-    if len(in_shape) != 4:
-        raise ValueError(
-            f"avg_pool2d expects rank-4 NHWC input, got rank {len(in_shape)}"
-        )
-
-    batch, in_h, in_w, channels = in_shape
-    kH, kW = int(filter_np[0]), int(filter_np[1])
-    stride_h, stride_w = int(strides_np[0]), int(strides_np[1])
-    dil_h, dil_w = int(dilations_np[0]), int(dilations_np[1])
-    pad_h_before = int(paddings_np[0])
-    pad_h_after = int(paddings_np[1])
-    pad_w_before = int(paddings_np[2])
-    pad_w_after = int(paddings_np[3])
-
-    count_boundary = bool(op.count_boundary)
-
-    eff_kH = dil_h * (kH - 1) + 1
-    eff_kW = dil_w * (kW - 1) + 1
-    if ceil_mode:
-        out_h = ceil(
-            (in_h + pad_h_before + pad_h_after - eff_kH + 1) / stride_h
-        )
-        out_w = ceil(
-            (in_w + pad_w_before + pad_w_after - eff_kW + 1) / stride_w
-        )
-    else:
-        out_h = (in_h + pad_h_before + pad_h_after - eff_kH) // stride_h + 1
-        out_w = (in_w + pad_w_before + pad_w_after - eff_kW) // stride_w + 1
-
-    output = Buffer(
-        shape=[batch, out_h, out_w, channels],
-        dtype=input_buffer.dtype,
-        device=target_device,
+    model = pooling_gc.pool_model(
+        type(op),
+        input_buffer.device,
+        input_buffer.dtype,
+        bool(op.count_boundary),
     )
-    ctx_ptr = target_device._device_context_ptr()
-
-    ops.avg_pool_ops.AvgPool2d(
-        output,
-        input_buffer,
-        (
-            batch,
-            in_h,
-            in_w,
-            channels,
-            out_h,
-            out_w,
-            kH,
-            kW,
-            stride_h,
-            stride_w,
-            dil_h,
-            dil_w,
-            pad_h_before,
-            pad_w_before,
-            int(count_boundary),
-        ),
-        ctx_ptr,
-    )
-
-    return [output]
-
-
-@register_op_handler(mo.AvgPoolOp)
-def _handle_avg_pool(
-    op: mo.AvgPoolOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.avg_pool (floor-mode 2D average pooling)."""
-    return _avg_pool_common(op, inputs, ceil_mode=False)
-
-
-@register_op_handler(mo.AvgPoolCeilModeTrueOp)
-def _handle_avg_pool_ceil(
-    op: mo.AvgPoolCeilModeTrueOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.avg_pool_ceil_mode_true (ceil-mode 2D average pooling)."""
-    return _avg_pool_common(op, inputs, ceil_mode=True)
+    return model(input_buffer, filter_shape, strides, dilations, paddings)
 
 
 # ROI Align operation
@@ -3253,156 +2956,68 @@ def _handle_pad_repeat(
 def _handle_resize_linear(
     op: mo.ResizeLinearOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.resize.linear via Mojo separable linear-filter resize (CPU-only).
-
-    Operands (MO_HostOnly):
-      inputs[0]: input data tensor (host)
-      inputs[1]: size -- 1-D int64 tensor whose values give the full output
-                 shape (one value per input rank dimension).
-
-    Attributes on ``op``:
-      ``coordinate_transform_mode`` -- int 0-3 (half_pixel / align_corners /
-          asymmetric / half_pixel_1D).
-      ``antialias`` -- bool; widens the tent-filter kernel when downscaling.
+    """Handle mo.resize.linear (CPU-only).
 
     Args:
         op: The resize-linear operation.
-        inputs: Two buffers -- input data and size.
+        inputs: tuple of input data, output shape.
 
     Returns:
-        List containing a single output buffer with shape given by ``size``
-        and the same dtype as ``input``.
+        List containing a single output buffer with shape given by ``size``.
     """
-    target_device = _get_target_device(op)
+    input_buffer, size_buffer = inputs
+    assert isinstance(input_buffer, Buffer)
+    assert isinstance(size_buffer, Buffer)
 
-    assert isinstance(inputs[0], Buffer)  # input
-    assert isinstance(inputs[1], Buffer)  # size (int64 output-shape vector)
-
-    input_buffer = inputs[0]
-    size_buffer = inputs[1]
-
-    coord_mode = int(op.coordinate_transform_mode.value)
-    antialias = bool(op.antialias)
-
-    in_shape = list(input_buffer.shape)
-    rank = len(in_shape)
-    out_shape = size_buffer.to_numpy().astype(int).flatten().tolist()
-
-    assert len(out_shape) == rank, (
-        f"resize_linear: size rank {len(out_shape)} != input rank {rank}"
+    rank = len(input_buffer.shape)
+    variant = int(op.coordinate_transform_mode.value), int(op.antialias)
+    model = resize_gc.resize_model(
+        mo.ResizeLinearOp,
+        input_buffer.device,
+        input_buffer.dtype,
+        rank,
+        variant,
     )
-
-    output = Buffer(shape=out_shape, dtype=input_buffer.dtype, device=CPU())
-    ops.resize_ops.ResizeLinear(
-        output,
-        input_buffer,
-        (coord_mode, antialias, rank, in_shape, out_shape),
-        target_device._device_context_ptr(),
-    )
-    return [output]
+    return model(input_buffer, size_buffer)
 
 
 @register_op_handler(mo.ResizeNearestOp)
 def _handle_resize_nearest(
     op: mo.ResizeNearestOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.resize.nearest via Mojo nearest-neighbor resize (CPU-only).
-
-    Operands (MO_HostOnly):
-      inputs[0]: input data tensor (host)
-      inputs[1]: size -- 1-D int64 tensor whose values give the full output
-                 shape (one value per input rank dimension).
-
-    Attributes on ``op``:
-      ``coordinate_transform_mode`` -- int 0-3 (half_pixel / align_corners /
-          asymmetric / half_pixel_1D).
-      ``round_mode`` -- int 0-3 (HalfDown / HalfUp / Floor / Ceil).
+    """Handle mo.resize.nearest (CPU-only).
 
     Args:
         op: The resize-nearest operation.
-        inputs: Two buffers -- input data and size.
+        inputs: tuple of input data, output shape.
 
     Returns:
-        List containing a single output buffer with shape given by ``size``
-        and the same dtype as ``input``.
+        List containing a single output buffer with shape given by ``size``.
     """
-    target_device = _get_target_device(op)
+    input_buffer, size_buffer = inputs
+    assert isinstance(input_buffer, Buffer)
+    assert isinstance(size_buffer, Buffer)
 
-    assert isinstance(inputs[0], Buffer)  # input
-    assert isinstance(inputs[1], Buffer)  # size (int64 output-shape vector)
-
-    input_buffer = inputs[0]
-    size_buffer = inputs[1]
-
-    coord_mode = int(op.coordinate_transform_mode.value)
-    round_mode = int(op.round_mode)
-
-    in_shape = list(input_buffer.shape)
-    rank = len(in_shape)
-    out_shape = size_buffer.to_numpy().astype(int).flatten().tolist()
-
-    assert len(out_shape) == rank, (
-        f"resize_nearest: size rank {len(out_shape)} != input rank {rank}"
+    rank = len(input_buffer.shape)
+    variant = int(op.coordinate_transform_mode.value), int(op.round_mode)
+    model = resize_gc.resize_model(
+        mo.ResizeNearestOp,
+        input_buffer.device,
+        input_buffer.dtype,
+        rank,
+        variant,
     )
-
-    output = Buffer(shape=out_shape, dtype=input_buffer.dtype, device=CPU())
-    ops.resize_ops.ResizeNearest(
-        output,
-        input_buffer,
-        (coord_mode, round_mode, rank, in_shape, out_shape),
-        target_device._device_context_ptr(),
-    )
-    return [output]
+    return model(input_buffer, size_buffer)
 
 
+# TODO(GEX-3990): GraphCompiler has no shape-fallback registration for
+# MO::ResizeBicubicOp (unlike Linear/Nearest); resize_ops.mojo has been
+# deleted rather than kept as a fallback that can't be reached.
 @register_op_handler(mo.ResizeBicubicOp)
 def _handle_resize_bicubic(
     op: mo.ResizeBicubicOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.resize.bicubic via Mojo CPU bicubic kernel.
-
-    Operands:
-      inputs[0]: input data tensor (rank-4 NCHW).
-      inputs[1]: size -- 1-D int64 tensor whose values give the full output
-                 shape (4 values: N, C, H, W).
-
-    The kernel uses hardcoded half_pixel coordinate mapping and
-    a=-0.75 Catmull-Rom cubic filter.  No configurable attributes.
-
-    Args:
-        op: The resize-bicubic operation.
-        inputs: Two buffers -- input data and size.
-
-    Returns:
-        List containing a single output buffer with shape given by ``size``
-        and the same dtype as ``input``.
-    """
-    assert isinstance(inputs[0], Buffer)  # input
-    assert isinstance(inputs[1], Buffer)  # size (int64 output-shape vector)
-
-    input_buffer = inputs[0]
-    size_buffer = inputs[1]
-
-    in_shape = list(input_buffer.shape)
-    rank = len(in_shape)
-    out_shape = size_buffer.to_numpy().astype(int).flatten().tolist()
-
-    assert rank == 4, (
-        f"resize_bicubic: input must be rank 4 (NCHW), got rank {rank}"
-    )
-    assert len(out_shape) == 4, (
-        f"resize_bicubic: size must have 4 elements, got {len(out_shape)}"
-    )
-
-    target_device = _get_target_device(op)
-    output = Buffer(shape=out_shape, dtype=input_buffer.dtype, device=CPU())
-    ops.resize_ops.ResizeBicubic(
-        output,
-        input_buffer,
-        (in_shape, out_shape),
-        target_device._device_context_ptr(),
-    )
-    return [output]
+    raise NotImplementedError("resize_bicubic is not yet supported")
 
 
 # Distributed operations
