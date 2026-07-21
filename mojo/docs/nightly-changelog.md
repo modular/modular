@@ -1049,6 +1049,13 @@ This version is still a work in progress.
   NVIDIA has no approximate f64 sqrt, so the `Float32` fast path continues to
   use `sqrt.approx.ftz.f32`.
 
+- [#4473](https://github.com/modular/modular/issues/4473) - The `offset`
+  parameter of `FileHandle.seek()` (and `NamedTemporaryFile.seek()`) is now a
+  signed `Int` instead of `UInt64`, so negative offsets relative to
+  `os.SEEK_CUR` or `os.SEEK_END` work as the docstrings already showed.
+  Previously a negative offset only compiled as a literal (via unsigned
+  wrap-around) and could not be passed from a signed variable.
+
 - [#6755](https://github.com/modular/modular/issues/6755) - Volatile loads are
   no longer removed when their results are unused.
 
