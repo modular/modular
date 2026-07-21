@@ -476,6 +476,12 @@ LogicalResult StructEmitter::populateDefaultedTraitFunction(ASTDecl &fnDecl) {
           callParamBindings, &fnDecl.getShared().getEvaluationContext(),
           fn.getLoc());
 
+  // Bail if specialization failed (already diagnosed)
+  if (!specializedGenerator) {
+    fnDecl.setErroneous();
+    return failure();
+  }
+
   SymbolRefAttr calleeSym =
       LIT::getFullyResolvedSymbolRef(traitDefaultMethodOp);
   TypedAttr typedSymbol = KGEN::SymbolConstantAttr::get(
