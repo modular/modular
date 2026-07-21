@@ -333,22 +333,29 @@ def test_simd_repr_and_write_repr_to() raises:
         "SIMD[DType.int32, 4](-1, 2, -3, 4)",
     )
 
-    # Size boundary: scalar (size=1)
-    _test_repr(Int32(4), "SIMD[DType.int32, 1](4)")
-    _test_repr(Int32(0), "SIMD[DType.int32, 1](0)")
-    _test_repr(Int32(-42), "SIMD[DType.int32, 1](-42)")
+    # Size boundary: scalars (size=1) print using their type alias.
+    _test_repr(Int32(4), "Int32(4)")
+    _test_repr(Int32(0), "Int32(0)")
+    _test_repr(Int32(-42), "Int32(-42)")
+    _test_repr(Int(7), "Int(7)")
+    _test_repr(UInt(7), "UInt(7)")
 
     # Integer boundary values (min/max for different sizes)
-    _test_repr(Int8.MIN, "SIMD[DType.int8, 1](-128)")
-    _test_repr(Int8.MAX, "SIMD[DType.int8, 1](127)")
-    _test_repr(UInt8.MAX, "SIMD[DType.uint8, 1](255)")
-    _test_repr(
-        Int64.MIN,
-        "SIMD[DType.int64, 1](-9223372036854775808)",
-    )
+    _test_repr(Int8.MIN, "Int8(-128)")
+    _test_repr(Int8.MAX, "Int8(127)")
+    _test_repr(UInt8.MAX, "UInt8(255)")
+    _test_repr(Int64.MIN, "Int64(-9223372036854775808)")
+
+    # size > 1 keeps the verbose `SIMD[...]` form.
     _test_repr(
         SIMD[DType.uint32, 2](0, UInt32.MAX),
         "SIMD[DType.uint32, 2](0, 4294967295)",
+    )
+
+    # Boolean scalars have no scalar alias, so they keep the `SIMD[...]` form.
+    _test_repr(
+        SIMD[DType.bool, 1](True),
+        "SIMD[DType.bool, 1](True)",
     )
 
     # Boolean vectors - all patterns
@@ -366,12 +373,14 @@ def test_simd_repr_and_write_repr_to() raises:
     )
 
     # Float types - different precisions
-    _test_repr(Float16(324), "SIMD[DType.float16, 1](324.0)")
-    _test_repr(Float32(2897239), "SIMD[DType.float32, 1](2897239.0)")
-    _test_repr(
-        Float64(235234523.3452),
-        "SIMD[DType.float64, 1](235234523.3452)",
-    )
+    _test_repr(BFloat16(2.0), "BFloat16(2.0)")
+    _test_repr(Float16(324), "Float16(324.0)")
+    _test_repr(Float32(2897239), "Float32(2897239.0)")
+    _test_repr(Float64(235234523.3452), "Float64(235234523.3452)")
+
+    # Low-precision float scalars also use their type alias.
+    _test_repr(Float8_e4m3fn(2.0), "Float8_e4m3fn(2.0)")
+    _test_repr(Float8_e5m2(2.0), "Float8_e5m2(2.0)")
 
     # Float special values (inf, -inf, nan, -0.0)
     _test_repr(

@@ -473,6 +473,15 @@ This version is still a work in progress.
   (`range(Float64(4.5))` and `range(Float64(0.5), Float64(3.0))`) are compile
   errors instead of infinite loops; use the three-argument stepped form.
 
+- `repr()` of a scalar `SIMD` value (`size == 1`) now prints using its type
+  alias instead of the verbose `SIMD[DType.<dtype>, 1](...)` form when the
+  dtype has one. For example, `repr(UInt32(4))` is now `UInt32(4)` (previously
+  `SIMD[DType.uint32, 1](4)`), and `repr(List[UInt](1, 2))` is now
+  `List[SIMD[DType.uint, 1]]([UInt(1), UInt(2)])`. `size > 1` values, and
+  scalar dtypes without an alias (such as `DType.bool`), keep the
+  `SIMD[...]` form. This only affects `repr()`; `String(...)` / `print(...)`
+  output is unchanged.
+
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
   `destroy_func`, so it can clear a `Dict` whose key or value type is not
