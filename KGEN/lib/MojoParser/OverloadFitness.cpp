@@ -318,20 +318,9 @@ closureParamCapturesIfClosure(ASTDecl *funcIfDirect,
   //    enclosing function (the closure is called within that function's body);
   //  - closure-typed struct parameters/fields register on the struct (the
   //    closure is callable from any of the struct's methods).
-  // Only these two scopes are relevant, so consult exactly the nearest
-  // enclosing function and the nearest enclosing struct
   Value mlirValue = selfCValue.getMlirValue();
   if (!mlirValue)
     return {};
-  FnOp fnScope;
-  StructDeclOp structScope;
-  for (Operation *op = mlirValue.getParentBlock()->getParentOp();
-       op && !(fnScope && structScope); op = op->getParentOp()) {
-    if (auto fn = dyn_cast<FnOp>(op))
-      fnScope = fnScope ? fnScope : fn;
-    else if (auto structOp = dyn_cast<StructDeclOp>(op))
-      structScope = structScope ? structScope : structOp;
-  }
 
   SharedState &shared = funcIfDirect->getShared();
   auto lookup = [&](Operation *op) -> ArrayRef<ClosureParamCapture> {
@@ -343,10 +332,18 @@ closureParamCapturesIfClosure(ASTDecl *funcIfDirect,
     }
     return {};
   };
-  if (fnScope)
-    if (ArrayRef<ClosureParamCapture> captures = lookup(fnScope);
-        !captures.empty())
-      return captures;
+
+  StructDeclOp structScope;
+  for (Operation *op = mlirValue.getParentBlock()->getParentOp(); op;
+       op = op->getParentOp()) {
+    if (isa<FnOp>(op)) {
+      if (ArrayRef<ClosureParamCapture> captures = lookup(op);
+          !captures.empty())
+        return captures;
+    } else if (auto structOp = dyn_cast<StructDeclOp>(op)) {
+      structScope = structScope ? structScope : structOp;
+    }
+  }
   if (structScope)
     return lookup(structScope);
   return {};
