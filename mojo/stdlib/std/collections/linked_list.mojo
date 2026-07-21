@@ -838,8 +838,13 @@ struct LinkedList[ElementType: Movable](
             curr.value()[].value.__hash__(hasher)
             curr = curr.value()[].next()
 
+    @__unsafe_nested_origins_read_only
     @always_inline
-    def get_nth[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
+    def get_nth[
+        I: Indexer
+    ](ref self, idx: I) -> ref[
+        origin_of(self)._get_owned_interior["element"]
+    ] Self.ElementType:
         """Get the element at the specified index.
 
         Parameters:
@@ -849,12 +854,14 @@ struct LinkedList[ElementType: Movable](
             idx: The index of the element to get.
 
         Returns:
-            The element at the specified index.
+            A reference to the element at the specified index.
 
         Notes:
             Time Complexity: O(n/2) in len(self).
         """
-        return self._get_node_ptr(idx).value()[].value
+        return UnsafePointer(
+            to=self._get_node_ptr(idx).value()[].value
+        )._get_ref_with_unsafe_interior_origin["element", origin_of(self)]()
 
     @always_inline
     def _get_node_ptr[I: Indexer, //](ref self, idx: I) -> Self._NodePointer:

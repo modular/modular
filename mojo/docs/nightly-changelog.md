@@ -393,7 +393,8 @@ This version is still a work in progress.
 ## Library changes
 
 - Various datatypes have adopted interior origins for increased memory safety,
-  including `List`, `Deque`, `Variant`, `String` and `Dict`. Slicing a `List`
+  including `List`, `Deque`, `Variant`, `String`, `Dict`, and `LinkedList`.
+  Slicing a `List`
   (`list[start:end]`) now returns a `Span` that carries an interior origin, so a
   slice held across a list mutation is rejected by the lifetime checker instead
   of silently dangling after a reallocation:
