@@ -416,6 +416,21 @@ config_setting(
     flag_values = {"//:use_vllm": "true"},
 )
 
+# Routes the DeviceContext through the HAL implementation. Selects the HAL
+# overlay of the stdlib's `gpu/host/device_context.mojo` (see
+# mojo/stdlib/std/BUILD.bazel).
+bool_flag(
+    name = "hal_device_context",
+    build_setting_default = False,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "hal_device_context_enabled",
+    flag_values = {"//:hal_device_context": "true"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
 # When set, GPU tests disable MAX's device memory manager (caching allocator)
 # so each `enqueue_create_buffer` is a 1:1 device allocation and
 # compute-sanitizer memcheck/initcheck see true per-buffer bounds. Without this,

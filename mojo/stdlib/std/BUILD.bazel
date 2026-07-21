@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "mojo_library", "pkg_files")
+load("//bazel:api.bzl", "mojo_library", "mojo_overlay_srcs", "pkg_files")
 
 # gazelle:default_visibility //visibility:public
 
@@ -35,11 +35,51 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+# Under --config=hal-device-context, stage the HAL DeviceContext sources from
+# //max/driver/src onto `gpu/host/device_context.mojo`, so
+# `std.gpu.host.DeviceContext` (and every consumer of the `device_context`
+# module) resolves to the HAL implementation. The HAL sources keep their home
+# in //max/driver/src; this target stages build-time copies into the `std`
+# tree, respelling their top-level `_hal`/`machine` package imports for the
+# staged locations.
+mojo_overlay_srcs(
+    name = "std_srcs_hal",
+    # The Metal launch path (`_device_context_metal`) and the Metal
+    # native-handle accessors (`_metal`) are imported only by the default
+    # `device_context`, which the overlay replaces. They are orphaned under the
+    # HAL backend, so drop them from the staged tree rather than compile them.
+    base_exclude = [
+        "std/gpu/host/_device_context_metal.mojo",
+        "std/gpu/host/_metal.mojo",
+    ],
+    base_srcs = [":std_srcs"],
+    overlay_files = {
+        "//max/driver/src/_device_context_hal:__init__.mojo": "std/gpu/host/device_context.mojo",
+        "//max/driver/src/_hal:__init__.mojo": "std/gpu/host/_hal/__init__.mojo",
+        "//max/driver/src/_hal:buffer.mojo": "std/gpu/host/_hal/buffer.mojo",
+        "//max/driver/src/_hal:context.mojo": "std/gpu/host/_hal/context.mojo",
+        "//max/driver/src/_hal:memory.mojo": "std/gpu/host/_hal/memory.mojo",
+        "//max/driver/src/_hal:device.mojo": "std/gpu/host/_hal/device.mojo",
+        "//max/driver/src/_hal:driver.mojo": "std/gpu/host/_hal/driver.mojo",
+        "//max/driver/src/_hal:event.mojo": "std/gpu/host/_hal/event.mojo",
+        "//max/driver/src/_hal:execution_config/__init__.mojo": "std/gpu/host/_hal/execution_config/__init__.mojo",
+        "//max/driver/src/_hal:execution_config/gpu_execution_config.mojo": "std/gpu/host/_hal/execution_config/gpu_execution_config.mojo",
+        "//max/driver/src/_hal:plugin.mojo": "std/gpu/host/_hal/plugin.mojo",
+        "//max/driver/src/_hal:queue.mojo": "std/gpu/host/_hal/queue.mojo",
+        "//max/driver/src/_hal:status.mojo": "std/gpu/host/_hal/status.mojo",
+        "//max/driver/src/_hal:stream.mojo": "std/gpu/host/_hal/stream.mojo",
+        "//max/driver/src/machine:__init__.mojo": "std/gpu/host/_hal/machine/__init__.mojo",
+        "//max/driver/src/machine:device.mojo": "std/gpu/host/_hal/machine/device.mojo",
+        "//max/driver/src/machine:machine.mojo": "std/gpu/host/_hal/machine/machine.mojo",
+    },
+    # Selected into `std` when the switch-over change lands; unreferenced
+    # until then.
+    tags = ["maybe-unused"],
+)
+
 mojo_library(
     name = "std",
-    srcs = [
-        ":std_srcs",
-    ],
+    srcs = [":std_srcs"],
     docs_hosted_on_mojolang = True,
     docs_title = "Mojo standard library",
     use_production_compiler_for_asan = True,

@@ -2,6 +2,10 @@ load("//bazel:api.bzl", "mojo_library")
 
 package(default_visibility = ["//max:consumers"])
 
+# Staged over the stdlib's `gpu/host/device_context.mojo` under
+# --config=hal-device-context (see mojo/stdlib/std/BUILD.bazel).
+exports_files(glob(["*.mojo"]))
+
 mojo_library(
     name = "_device_context_hal",
     srcs = glob(["**/*.mojo"]),

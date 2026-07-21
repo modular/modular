@@ -29,7 +29,7 @@ from std.memory.arc_pointer import WeakPointer
 
 from std.gpu.host.compile import get_gpu_target
 from std.gpu.host.info import GPUInfo
-from machine import MachineDefinition, DeviceRef, DeviceSpec
+from ._machine import MachineDefinition, DeviceRef, DeviceSpec
 
 
 def get_machine_definition() -> MachineDefinition:

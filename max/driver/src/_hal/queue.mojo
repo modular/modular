@@ -31,7 +31,7 @@ from std.memory import (
     UnsafeMaybeUninit,
 )
 from std.memory.arc_pointer import WeakPointer
-from _hal.execution_config import (
+from .execution_config import (
     ExecutionConfig,
     BlockExecutionConfig,
     GridBlockExecutionConfig,

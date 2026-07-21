@@ -2,6 +2,13 @@ load("//bazel:api.bzl", "mojo_library")
 
 package(default_visibility = ["//max:consumers"])
 
+# Staged into the stdlib overlay under --config=hal-device-context (see
+# mojo/stdlib/std/BUILD.bazel).
+exports_files(glob([
+    "*.mojo",
+    "execution_config/*.mojo",
+]))
+
 mojo_library(
     name = "_hal",
     srcs = glob(["**/*.mojo"]),
