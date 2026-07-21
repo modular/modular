@@ -1147,20 +1147,20 @@ void SharedState::registerSourcePackageChildren(ASTDecl &packageDecl) {
   // a deterministic order across platforms.
   std::map<std::string, ModuleSpec> packageChildren;
   for (const auto &entry : std::filesystem::directory_iterator(directory, ec)) {
-    if (auto moduleSpec = ModuleSpec::classify(entry.path())) {
-      std::string name =
-          entry.path().filename().replace_extension().generic_string();
-      if (auto it = packageChildren.find(name);
-          it == packageChildren.end() ||
-          moduleSpec->takesImportPrecedence(it->second)) {
-        packageChildren[name] = *moduleSpec;
-      }
+    auto moduleSpec = ModuleSpec::classify(entry.path());
+    // Precompiled children aren't supported in source packages.
+    if (!moduleSpec || moduleSpec->isPrecompiled())
+      continue;
+    std::string name =
+        entry.path().filename().replace_extension().generic_string();
+    if (auto it = packageChildren.find(name);
+        it == packageChildren.end() ||
+        moduleSpec->takesImportPrecedence(it->second)) {
+      packageChildren[name] = *moduleSpec;
     }
   }
 
   for (const auto &[name, value] : packageChildren) {
-    if (value.isPrecompiled())
-      continue;
     // The package's own __init__ is resolved separately by resolveBody.
     if (name == "__init__")
       continue;
