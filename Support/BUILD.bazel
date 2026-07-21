@@ -602,6 +602,9 @@ modular_shared_library(
     }),
     deps = [
         ":Profiling",
+        # RangeBackend.h uses MODULAR_VISIBILITY_EXPORT to make the backend
+        # registry a process-global symbol (cross-DSO sharing rationale there).
+        ":SymbolExport",
         # libcuda_stub provides cuCtxGetCurrent (RangeKineto.cpp's
         # CUDA-context probe) via on-demand dlopen of libcuda.so.1, avoiding a
         # hard NEEDED entry on the real driver library.
