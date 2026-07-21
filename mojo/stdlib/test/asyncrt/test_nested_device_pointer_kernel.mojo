@@ -54,6 +54,8 @@ from std.testing import TestSuite, assert_equal
 struct DevicePtrAndSentinel[mut: Bool, //, origin: Origin[mut=mut]](
     DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable
 ):
+    # TODO(MSTDL-2875): Stays `UnsafePointer` — this device-side view mirrors a
+    # DeviceBuffer's `device_type`, which a safe `Pointer` won't match yet.
     var raw_ptr: UnsafePointer[Float32, Self.origin]
     var sentinel: Int32
 
@@ -114,7 +116,7 @@ def write_sentinel_via_direct_field(arg: DevicePtrAndSentinel[MutAnyOrigin]):
     """
     if global_idx.x != 0:
         return
-    arg.raw_ptr[0] = Float32(arg.sentinel)
+    arg.raw_ptr[unsafe_offset=0] = Float32(arg.sentinel)
 
 
 def write_sentinel_via_reinterpret(arg: DevicePtrAndSentinel[MutAnyOrigin]):
@@ -132,10 +134,10 @@ def write_sentinel_via_reinterpret(arg: DevicePtrAndSentinel[MutAnyOrigin]):
     """
     if global_idx.x != 0:
         return
-    var reinterpreted = UnsafePointer(to=arg).bitcast[
+    var reinterpreted = UnsafePointer(to=arg).unsafe_bitcast[
         UnsafePointer[Float32, MutAnyOrigin]
     ]()[]
-    reinterpreted[0] = Float32(arg.sentinel)
+    reinterpreted[unsafe_offset=0] = Float32(arg.sentinel)
 
 
 def test_kernel_receives_encoded_pointer_and_sibling() raises:
