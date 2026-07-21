@@ -175,11 +175,11 @@ _KERNEL_PACKAGES = [
 # independently belong in one of the two categories below once the crash
 # stopped masking them):
 #
-# 1. //Kernels/lib/... Bazel-visibility gap: these files import `matmul_rs`/
-#    `msa`, which are visibility-scoped to specific consumers and unavailable
-#    to this standalone test (see _KERNEL_MOJOPKGS's comment below).
-#    "unable to locate module" is the only error; no crash, no other
-#    diagnostic.
+# 1. //Kernels/lib/... OSS-layering gap: these files import `matmul_rs`/`msa`,
+#    packages that live in the closed-source `Kernels/` tree rather than the
+#    open-sourced max/kernels/src (see _KERNEL_MOJOPKGS's comment below).
+#    Known issue, not specific to this test. "unable to locate module" is
+#    the only error; no crash, no other diagnostic.
 # 2. layout/__init__.mojo crashes standalone-resolving `LayoutTensor`'s
 #    default parameter `element_layout: Layout = Layout(1, 1)`
 #    (layout_tensor.mojo:263) via `CallParamInf::inferForCall`
@@ -195,10 +195,11 @@ _KERNELS_NO_RUN_LIST = [
     "layout/__init__.mojo",
 ]
 
-# ALL_MOJOPKGS minus the internal //Kernels/lib/... packages (msa,
-# matmul_rs): visibility-scoped to specific consumers and unavailable here --
-# any file that imports them still shows "unable to locate module" (see
-# _KERNELS_NO_RUN_LIST's visibility-gap category: msa.mojo, distributed.mojo).
+# ALL_MOJOPKGS minus the internal //Kernels/... packages (msa, matmul_rs,
+# mega_ffn): these live in the closed-source `Kernels/` tree rather than the
+# open-sourced max/kernels/src, and are unreachable from here. Known
+# OSS-layering issue, not specific to this test (see _KERNELS_NO_RUN_LIST's
+# category 1 above: msa.mojo, distributed.mojo).
 #
 # The graph_compiler sub-package targets (extensibility, builtin_kernels,
 # builtin_primitives) were excluded here too until 2026-07-09, on the theory
