@@ -382,6 +382,9 @@ This version is still a work in progress.
   - `def __getitem__[origin: Origin, //](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin_of(self)._get_owned_interior["element"]]:`
   - `def __init__(out self, *, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable):`
   - `def __iadd__(mut self, var other: Self, /) where conforms_to(Self.T, Copyable):`
+  - `def extend(mut self, var other: Self):`
+  - `def __contains__[dtype: DType, //](self: Span[Scalar[dtype], _]. value: Scalar[dtype]) -> Bool`
+  - `def __contains__(self, value: Self.T) -> Bool where conforms_to(Self.T, Equatable)`
 
 - Bool
 - Span

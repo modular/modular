@@ -923,6 +923,7 @@ struct List[T: Movable, /](
             earlier_idx -= 1
             later_idx -= 1
 
+    @stable(since="1.0")
     def extend(mut self, var other: Self):
         """Extends this list by consuming the elements of `other`.
 

@@ -419,6 +419,7 @@ struct Span[
         """
         return self._len
 
+    @stable(since="1.0")
     def __contains__[
         dtype: DType, //
     ](self: Span[Scalar[dtype], _], value: Scalar[dtype]) -> Bool:
@@ -458,6 +459,7 @@ struct Span[
                 return True
         return False
 
+    @stable(since="1.0")
     def __contains__(
         self, value: Self.T
     ) -> Bool where conforms_to(Self.T, Equatable):
