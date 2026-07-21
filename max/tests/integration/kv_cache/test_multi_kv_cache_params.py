@@ -19,9 +19,10 @@ import math
 
 import pytest
 from max.dtype import DType
-from max.graph import DeviceRef
+from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import (
     KVCacheParams,
+    KVCacheQuantizationConfig,
     KVConnectorType,
     MHAKVCacheParams,
     MultiKVCacheParams,
@@ -740,3 +741,124 @@ class TestPerLayerBuffers:
         )
         with pytest.raises(NotImplementedError, match="data parallelism"):
             params.allocate_buffers(total_num_pages=4)
+
+
+def _page_dim(kv: KVCacheInputs[TensorType, BufferType]) -> str:
+    """First (page-pool) symbolic dim name of a leaf's kv_blocks buffer."""
+    return str(kv.inputs[0].kv_blocks.shape[0])
+
+
+def _lookup_dims(kv: KVCacheInputs[TensorType, BufferType]) -> tuple[str, str]:
+    """The (batch_size, max_num_pages) symbolic dim names of the lookup table."""
+    shape = kv.inputs[0].lookup_table.shape
+    return str(shape[0]), str(shape[1])
+
+
+class TestPagePoolSymbolicNamespace:
+    """A windowed model gives each KV group an independently sized page pool
+    (mach sizes a sliding group smaller than the global one), so their
+    ``total_num_pages`` symbolic dims must not collapse onto one shared name.
+    The shared block table (``batch_size``/``max_num_pages``) must stay shared.
+    """
+
+    def test_sibling_groups_get_distinct_page_dims(self) -> None:
+        a = create_leaf_params()
+        b = create_leaf_params()
+        root = MultiKVCacheParams.from_params({"global": a, "local": b})
+        symbolic = root.get_symbolic_inputs()
+        assert isinstance(symbolic, MultiKVCacheInputs)
+
+        g = symbolic.children["global"]
+        loc = symbolic.children["local"]
+        assert isinstance(g, KVCacheInputs) and isinstance(loc, KVCacheInputs)
+        assert _page_dim(g) == "global_total_num_pages"
+        assert _page_dim(loc) == "local_total_num_pages"
+        assert _page_dim(g) != _page_dim(loc)
+
+    def test_shared_block_table_dims_stay_shared(self) -> None:
+        a = create_leaf_params()
+        b = create_leaf_params()
+        root = MultiKVCacheParams.from_params({"global": a, "local": b})
+        symbolic = root.get_symbolic_inputs()
+        assert isinstance(symbolic, MultiKVCacheInputs)
+        g = symbolic.children["global"]
+        loc = symbolic.children["local"]
+        assert isinstance(g, KVCacheInputs) and isinstance(loc, KVCacheInputs)
+        assert _lookup_dims(g) == _lookup_dims(loc)
+        assert _lookup_dims(g) == (
+            "replica_0_batch_size",
+            "replica_0_max_num_pages",
+        )
+
+    def test_nested_namespace_composes(self) -> None:
+        root = _build_deep_tree()
+        symbolic = root.get_symbolic_inputs()
+        assert isinstance(symbolic, MultiKVCacheInputs)
+        draft = symbolic.children["draft"]
+        assert isinstance(draft, MultiKVCacheInputs)
+        c = draft.children["c"]
+        assert isinstance(c, MultiKVCacheInputs)
+        e = c.children["e"]
+        assert isinstance(e, MultiKVCacheInputs)
+        f = e.children["f"]
+        assert isinstance(f, KVCacheInputs)
+        assert _page_dim(f) == "draft_c_e_f_total_num_pages"
+
+    def test_single_group_names_unchanged(self) -> None:
+        """A plain leaf keeps byte-identical names (empty namespace)."""
+        leaf = create_leaf_params()
+        symbolic = leaf.get_symbolic_inputs()
+        assert isinstance(symbolic, KVCacheInputs)
+        assert _page_dim(symbolic) == "total_num_pages"
+        assert _lookup_dims(symbolic) == (
+            "replica_0_batch_size",
+            "replica_0_max_num_pages",
+        )
+
+    def test_single_group_quantized_scales_page_dim_unchanged(self) -> None:
+        """The kv_scales page dim tracks total_num_pages and stays bare."""
+        leaf = MHAKVCacheParams(
+            dtype=DType.float8_e4m3fn,
+            n_kv_heads=8,
+            head_dim=128,
+            num_layers=4,
+            devices=[DeviceRef.GPU()],
+            page_size=128,
+            kvcache_quant_config=KVCacheQuantizationConfig(
+                scale_dtype=DType.float32
+            ),
+        )
+        symbolic = leaf.get_symbolic_inputs()
+        assert isinstance(symbolic, KVCacheInputs)
+        scales = symbolic.inputs[0].kv_scales
+        assert scales is not None
+        assert str(scales.shape[0]) == "total_num_pages"
+
+    def test_quantized_sibling_scales_page_dim_namespaced(self) -> None:
+        def quant_leaf() -> KVCacheParams:
+            return MHAKVCacheParams(
+                dtype=DType.float8_e4m3fn,
+                n_kv_heads=8,
+                head_dim=128,
+                num_layers=4,
+                devices=[DeviceRef.GPU()],
+                page_size=128,
+                kvcache_quant_config=KVCacheQuantizationConfig(
+                    scale_dtype=DType.float32
+                ),
+            )
+
+        root = MultiKVCacheParams.from_params(
+            {"global": quant_leaf(), "local": quant_leaf()}
+        )
+        symbolic = root.get_symbolic_inputs()
+        assert isinstance(symbolic, MultiKVCacheInputs)
+        g = symbolic.children["global"]
+        loc = symbolic.children["local"]
+        assert isinstance(g, KVCacheInputs) and isinstance(loc, KVCacheInputs)
+        g_scales = g.inputs[0].kv_scales
+        loc_scales = loc.inputs[0].kv_scales
+        assert g_scales is not None and loc_scales is not None
+        assert str(g_scales.shape[0]) == "global_total_num_pages"
+        assert str(loc_scales.shape[0]) == "local_total_num_pages"
+        assert str(g_scales.shape[0]) == _page_dim(g)

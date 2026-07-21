@@ -69,7 +69,10 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_prefill_kv_cache_ragged,
 )
 from nn.attention.gpu.mla import _k_cache_to_buffer, mla_decode_max_seq_len
-from nn.attention.gpu.nvidia.sm100.mla_prefill import mla_sm100_prefill_sparse
+from nn.attention.gpu.nvidia.sm100.mla_prefill import (
+    mla_sm100_prefill_sparse,
+    mla_sm100_prefill_sparse_fp8,
+)
 from nn.normalization import _rms_norm_warp_tiling_subkernel
 
 
@@ -1496,21 +1499,52 @@ def mla_prefill_branch_sparse_fp8[
         )
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
-    mla_sm100_prefill_sparse[
-        num_q_heads=num_heads,
-        qk_depth=k_cache_dim,
-        v_depth=kv_latent_dim,
-        indices_stride=indices_stride,
-    ](
-        raw_output,
-        mla_decode_input,
-        k_cache,
-        indices_tt,
-        topk_lengths_tt,
-        attn_sink_opt,
-        scale,
-        ctx,
-    )
+    comptime if collection_t.CacheType.dtype.is_float8():
+        # FP8 latent cache: run the FP8 sparse-prefill kernel directly over the
+        # quantized cache (no BF16 staging). Today the cache carries no dequant
+        # scales (scale_dtype=int8 => quantization disabled), so read at unit
+        # scale (scale_block_size=0), mirroring the sparse-DECODE kernel's read.
+        # scales_ptr is unused at scale_block_size=0; pass a non-null dummy
+        # (SnapMLA/SERVOPT-1094 will supply real scales + a positive
+        # scale_block_size here once the cache carries them).
+        var dummy_scales = (
+            raw_output_buf.unsafe_ptr()
+            .bitcast[Float32]()
+            .as_unsafe_any_origin()
+        )
+        mla_sm100_prefill_sparse_fp8[
+            num_q_heads=num_heads,
+            qk_depth=k_cache_dim,
+            v_depth=kv_latent_dim,
+            indices_stride=indices_stride,
+            scale_block_size=0,
+        ](
+            raw_output,
+            mla_decode_input,
+            k_cache,
+            indices_tt,
+            topk_lengths_tt,
+            attn_sink_opt,
+            dummy_scales,
+            scale,
+            ctx,
+        )
+    else:
+        mla_sm100_prefill_sparse[
+            num_q_heads=num_heads,
+            qk_depth=k_cache_dim,
+            v_depth=kv_latent_dim,
+            indices_stride=indices_stride,
+        ](
+            raw_output,
+            mla_decode_input,
+            k_cache,
+            indices_tt,
+            topk_lengths_tt,
+            attn_sink_opt,
+            scale,
+            ctx,
+        )
 
     var output_t = TileTensor(
         output.ptr,
@@ -1735,9 +1769,13 @@ def mla_prefill_decode_graph_fp8[
         )
 
     else:
-        comptime if sparse_mla and collection_t.CacheType.dtype == (
-            DType.bfloat16
-        ):
+        comptime if sparse_mla:
+            # Sparse MLA prefill for BOTH bf16 and fp8 latent caches: the
+            # branch comptime-dispatches the attention kernel on the cache
+            # dtype (fp8 cache => mla_sm100_prefill_sparse_fp8 read at unit
+            # scale, mirroring sparse decode; bf16 cache =>
+            # mla_sm100_prefill_sparse). Replaces the dense FP8-cache fallback
+            # that previously ran here.
             mla_prefill_branch_sparse_fp8[
                 m_scale_granularity=m_scale_granularity,
                 n_scale_granularity=n_scale_granularity,
@@ -1765,9 +1803,8 @@ def mla_prefill_decode_graph_fp8[
                 attn_sink_ptr,
             )
         else:
-            # Dense prefill. FP8-cache sparse is deferred: the sparse kernel
-            # needs external fp32 per-token scales, but the paged FP8 MLA cache
-            # stores int8 granularity-32 scales (layout mismatch).
+            # Dense prefill for NON-sparse MLA only. Sparse MLA (both bf16 and
+            # fp8 caches) is handled by the sparse branch above.
             mla_prefill_branch_fp8[
                 m_scale_granularity=m_scale_granularity,
                 n_scale_granularity=n_scale_granularity,
@@ -2577,21 +2614,52 @@ def mla_prefill_branch_sparse_bf16[
         )
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
-    mla_sm100_prefill_sparse[
-        num_q_heads=num_heads,
-        qk_depth=k_cache_dim,
-        v_depth=kv_latent_dim,
-        indices_stride=indices_stride,
-    ](
-        raw_output,
-        mla_decode_input,
-        k_cache,
-        indices_tt,
-        topk_lengths_tt,
-        attn_sink_opt,
-        scale,
-        ctx,
-    )
+    comptime if collection_t.CacheType.dtype.is_float8():
+        # FP8 latent cache: run the FP8 sparse-prefill kernel directly over the
+        # quantized cache (no BF16 staging). Today the cache carries no dequant
+        # scales (scale_dtype=int8 => quantization disabled), so read at unit
+        # scale (scale_block_size=0), mirroring the sparse-DECODE kernel's read.
+        # scales_ptr is unused at scale_block_size=0; pass a non-null dummy
+        # (SnapMLA/SERVOPT-1094 will supply real scales + a positive
+        # scale_block_size here once the cache carries them).
+        var dummy_scales = (
+            raw_output_buf.unsafe_ptr()
+            .bitcast[Float32]()
+            .as_unsafe_any_origin()
+        )
+        mla_sm100_prefill_sparse_fp8[
+            num_q_heads=num_heads,
+            qk_depth=k_cache_dim,
+            v_depth=kv_latent_dim,
+            indices_stride=indices_stride,
+            scale_block_size=0,
+        ](
+            raw_output,
+            mla_decode_input,
+            k_cache,
+            indices_tt,
+            topk_lengths_tt,
+            attn_sink_opt,
+            dummy_scales,
+            scale,
+            ctx,
+        )
+    else:
+        mla_sm100_prefill_sparse[
+            num_q_heads=num_heads,
+            qk_depth=k_cache_dim,
+            v_depth=kv_latent_dim,
+            indices_stride=indices_stride,
+        ](
+            raw_output,
+            mla_decode_input,
+            k_cache,
+            indices_tt,
+            topk_lengths_tt,
+            attn_sink_opt,
+            scale,
+            ctx,
+        )
 
     var raw_output_t = TileTensor(
         raw_output_buf,
@@ -2765,9 +2833,13 @@ def mla_prefill_decode_graph_bf16[
             num_partitions_in,
         )
     else:
-        comptime if sparse_mla and collection_t.CacheType.dtype == (
-            DType.bfloat16
-        ):
+        comptime if sparse_mla:
+            # Sparse MLA prefill for BOTH bf16 and fp8 latent caches: the
+            # branch comptime-dispatches the attention kernel on the cache
+            # dtype (fp8 cache => mla_sm100_prefill_sparse_fp8 read at unit
+            # scale, mirroring sparse decode; bf16 cache =>
+            # mla_sm100_prefill_sparse). Replaces the dense FP8-cache fallback
+            # that previously ran here.
             mla_prefill_branch_sparse_bf16[
                 kv_input_fn=kv_input_fn,
                 indices_stride=sparse_indices_stride,
@@ -2790,6 +2862,8 @@ def mla_prefill_decode_graph_bf16[
                 attn_sink_ptr,
             )
         else:
+            # Dense prefill for NON-sparse MLA only. Sparse MLA (both bf16 and
+            # fp8 caches) is handled by the sparse branch above.
             mla_prefill_branch_bf16[
                 mask_str=mask_str,
                 kv_input_fn=kv_input_fn,

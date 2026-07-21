@@ -10,12 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""``copy`` — module-level synchronous copy between HAL buffers."""
+"""Module-level synchronous memory ops: ``copy``, ``set_memory``, ``fill``."""
 
 from __future__ import annotations
 
 from .buffer import Buffer
-from .mojo_module import copy as _mojo_copy  # type: ignore[import-not-found]
+from .mojo_module import (  # type: ignore[import-not-found]
+    copy as _mojo_copy,
+)
+from .mojo_module import (
+    fill as _mojo_fill,
+)
+from .mojo_module import (
+    set_memory as _mojo_set_memory,
+)
 
 
 def copy(*, dst: Buffer, src: Buffer) -> None:
@@ -28,3 +36,24 @@ def copy(*, dst: Buffer, src: Buffer) -> None:
     stream-less plugin copy ops all run on the Mojo side — no queue is created.
     """
     _mojo_copy(dst._inner, src._inner)
+
+
+def set_memory(*, dst: Buffer, value: int) -> None:
+    """Synchronously sets every byte of ``dst`` to ``value``.
+
+    Sets all of ``dst``'s bytes and blocks until the fill completes; no queue is
+    created. The blocking, stream-less plugin op runs on the Mojo side.
+    """
+    _mojo_set_memory(dst._inner, value)
+
+
+def fill(*, dst: Buffer, value: int, value_size: int) -> None:
+    """Synchronously fills ``dst`` with a repeated ``value_size``-byte value.
+
+    Fills all of ``dst``'s bytes and blocks until the fill completes; no queue
+    is created. ``dst``'s byte size must be a multiple of ``value_size``, which
+    must be one of 1, 2, 4, or 8; a ``value_size`` of 1 is equivalent to
+    :func:`set_memory`. The blocking, stream-less plugin op runs on the Mojo
+    side.
+    """
+    _mojo_fill(dst._inner, value, value_size)

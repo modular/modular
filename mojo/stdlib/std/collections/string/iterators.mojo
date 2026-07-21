@@ -243,7 +243,9 @@ struct CodepointSliceIter[
             # SAFETY: We just checked that `result` holds a value
             var slice_len = result.unsafe_value().byte_length()
             # Advance the pointer in _slice.
-            self._slice._slice._data += slice_len
+            self._slice._slice._data = self._slice._slice._data.unsafe_offset(
+                slice_len
+            )
             # Decrement the byte-length of _slice.
             self._slice._slice._len -= slice_len
 
@@ -410,7 +412,9 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
             # SAFETY: We just checked that `result` holds a value
             var char_len = result.unsafe_value().utf8_byte_length()
             # Advance the pointer in _slice.
-            self._slice._slice._data += char_len
+            self._slice._slice._data = self._slice._slice._data.unsafe_offset(
+                char_len
+            )
             # Decrement the byte-length of _slice.
             self._slice._slice._len -= char_len
 
@@ -671,7 +675,9 @@ struct GraphemeSliceIter[
         # Advance the slice past this grapheme cluster. This moves the data
         # pointer, so any previously-cached reverse safe-start (an offset
         # relative to the old data pointer) is now stale.
-        self._slice._slice._data += consumed
+        self._slice._slice._data = self._slice._slice._data.unsafe_offset(
+            consumed
+        )
         self._slice._slice._len -= consumed
         self._back_safe_known = False
 

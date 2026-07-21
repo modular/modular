@@ -600,7 +600,7 @@ def test_log1p_accuracy() raises:
 
     # Moderate values.
     comptime n = 1_000.0
-    for i in range(n):
+    for i in range(Float64(0.0), n, Float64(1.0)):
         var val = Float64(i) / (n / 10.5) - 0.5
         assert_almost_equal(
             log1p(val),

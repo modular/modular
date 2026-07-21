@@ -107,12 +107,12 @@ struct BlockingScopedLock[origin: MutOrigin, //]:
     comptime LockType = BlockingSpinLock
     """The type of the lock."""
 
-    var lock: UnsafePointer[Self.LockType, Self.origin]
+    var lock: Pointer[Self.LockType, Self.origin]
     """The underlying lock instance."""
 
     def __init__(
         out self,
-        lock: UnsafePointer[Self.LockType, Self.origin],
+        lock: Pointer[Self.LockType, Self.origin],
     ):
         """Primary constructor.
 
@@ -129,18 +129,18 @@ struct BlockingScopedLock[origin: MutOrigin, //]:
             lock: A mutable reference to the underlying lock.
         """
 
-        self.lock = UnsafePointer(to=lock)
+        self.lock = Pointer(to=lock)
 
     @no_inline
     def __enter__(mut self):
         """Acquire the lock on entry.
         This is done by setting the owner of the lock to own address."""
-        var address = UnsafePointer(to=self)
+        var address = Pointer(to=self)
         self.lock[].lock(Int(address))
 
     @no_inline
     def __exit__(mut self):
         """Release the lock on exit.
         Reset the address on the underlying lock."""
-        var address = UnsafePointer(to=self)
+        var address = Pointer(to=self)
         _ = self.lock[].unlock(Int(address))

@@ -332,6 +332,23 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+comptime OptionalPointer[
+    mut: Bool,
+    //,
+    T: AnyType,
+    origin: Origin[mut=mut],
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+] = Optional[Pointer[T, origin, address_space=address_space, _safe=True]]
+"""An optional (nullable) safe `Pointer`.
+
+Parameters:
+    mut: The mutability of the pointer.
+    T: The type of the pointee.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
+
 
 struct Pointer[
     mut: Bool,

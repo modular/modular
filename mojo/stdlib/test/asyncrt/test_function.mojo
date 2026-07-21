@@ -61,6 +61,11 @@ struct OneS(DevicePassable):
 
 
 def vec_func(
+    # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a safe
+    # `Pointer`.
+    # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer args
+    # to `UnsafePointer` (their `device_type`) and matches the declared param
+    # type exactly, so these stay `UnsafePointer` (safe `Pointer` won't match).
     in0: UnsafePointer[S, MutAnyOrigin],
     in1: UnsafePointer[S, MutAnyOrigin],
     output: UnsafePointer[S, MutAnyOrigin],
@@ -70,7 +75,9 @@ def vec_func(
     var tid = global_idx.x
     if tid >= len:
         return
-    output[tid] = in0[tid] + in1[tid] + s.s1 + s.s0
+    output[unsafe_offset=tid] = (
+        in0[unsafe_offset=tid] + in1[unsafe_offset=tid] + s.s1 + s.s0
+    )
 
 
 def test_function_checked() raises:

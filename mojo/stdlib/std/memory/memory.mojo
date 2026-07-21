@@ -46,13 +46,13 @@ from std.algorithm import vectorize
 def _memcmp_impl_unconstrained[
     dtype: DType, //
 ](
-    s1: UnsafePointer[mut=False, Scalar[dtype], ...],
-    s2: UnsafePointer[mut=False, Scalar[dtype], ...],
+    s1: Pointer[mut=False, Scalar[dtype], ...],
+    s2: Pointer[mut=False, Scalar[dtype], ...],
     count: Int,
 ) -> Int:
     for i in range(count):
-        var s1i = s1[i]
-        var s2i = s2[i]
+        var s1i = s1[unsafe_offset=i]
+        var s2i = s2[unsafe_offset=i]
         if s1i != s2i:
             return 1 if s1i > s2i else -1
     return 0
@@ -62,15 +62,15 @@ def _memcmp_impl_unconstrained[
 def _memcmp_opt_impl_unconstrained[
     dtype: DType, //
 ](
-    s1: UnsafePointer[mut=False, Scalar[dtype], ...],
-    s2: UnsafePointer[mut=False, Scalar[dtype], ...],
+    s1: Pointer[mut=False, Scalar[dtype], ...],
+    s2: Pointer[mut=False, Scalar[dtype], ...],
     count: Int,
 ) -> Int:
     comptime simd_width = simd_width_of[dtype]()
     if count < simd_width:
         for i in range(count):
-            var s1i = s1[i]
-            var s2i = s2[i]
+            var s1i = s1[unsafe_offset=i]
+            var s2i = s2[unsafe_offset=i]
             if s1i != s2i:
                 return 1 if s1i > s2i else -1
         return 0
@@ -78,8 +78,8 @@ def _memcmp_opt_impl_unconstrained[
     var last = count - simd_width
 
     for i in range(0, last, simd_width):
-        var s1i = s1.load[width=simd_width](i)
-        var s2i = s2.load[width=simd_width](i)
+        var s1i = s1.unsafe_load[width=simd_width](i)
+        var s2i = s2.unsafe_load[width=simd_width](i)
         var diff = s1i.ne(s2i)
         if any(diff):
             var index = Int(
@@ -90,8 +90,8 @@ def _memcmp_opt_impl_unconstrained[
             )
             return -1 if s1i[index] < s2i[index] else 1
 
-    var s1i = s1.load[width=simd_width](last)
-    var s2i = s2.load[width=simd_width](last)
+    var s1i = s1.unsafe_load[width=simd_width](last)
+    var s2i = s2.unsafe_load[width=simd_width](last)
     var diff = s1i.ne(s2i)
     if any(diff):
         var index = Int(
@@ -108,8 +108,8 @@ def _memcmp_opt_impl_unconstrained[
 def _memcmp_impl[
     dtype: DType
 ](
-    s1: UnsafePointer[mut=False, Scalar[dtype], ...],
-    s2: UnsafePointer[mut=False, Scalar[dtype], ...],
+    s1: Pointer[mut=False, Scalar[dtype], ...],
+    s2: Pointer[mut=False, Scalar[dtype], ...],
     count: Int,
 ) -> Int where dtype.is_integral():
     if __is_run_in_comptime_interpreter:
@@ -122,8 +122,8 @@ def _memcmp_impl[
 def memcmp[
     type: AnyType, address_space: AddressSpace
 ](
-    s1: UnsafePointer[mut=False, type, _, address_space=address_space],
-    s2: UnsafePointer[mut=False, type, _, address_space=address_space],
+    s1: Pointer[mut=False, type, _, address_space=address_space],
+    s2: Pointer[mut=False, type, _, address_space=address_space],
     count: Int,
 ) -> Int:
     """Compares two buffers. Both strings are assumed to be of the same length.
@@ -146,12 +146,14 @@ def memcmp[
 
     comptime if size_of[type]() % size_of[DType.int32]() == 0:
         return _memcmp_impl(
-            s1.bitcast[Int32](),
-            s2.bitcast[Int32](),
+            s1.unsafe_bitcast[Int32](),
+            s2.unsafe_bitcast[Int32](),
             byte_count // size_of[DType.int32](),
         )
 
-    return _memcmp_impl(s1.bitcast[Byte](), s2.bitcast[Byte](), byte_count)
+    return _memcmp_impl(
+        s1.unsafe_bitcast[Byte](), s2.unsafe_bitcast[Byte](), byte_count
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -161,8 +163,8 @@ def memcmp[
 
 @always_inline
 def _memcpy_impl(
-    dest_data: UnsafePointer[mut=True, Byte, ...],
-    src_data: UnsafePointer[mut=False, Byte, ...],
+    dest_data: Pointer[mut=True, Byte, ...],
+    src_data: Pointer[mut=False, Byte, ...],
     n: Int,
 ):
     """Copies a memory area.
@@ -174,7 +176,9 @@ def _memcpy_impl(
     """
 
     def copy[width: Int](offset: Int) {imm}:
-        dest_data.store(offset, src_data.load[width=width](offset))
+        dest_data.unsafe_store(
+            offset, src_data.unsafe_load[width=width](offset)
+        )
 
     comptime if is_gpu():
         vectorize[simd_bit_width()](n, copy)
@@ -184,35 +188,41 @@ def _memcpy_impl(
     if n < 5:
         if n == 0:
             return
-        dest_data[0] = src_data[0]
-        dest_data[n - 1] = src_data[n - 1]
+        dest_data[unsafe_offset=0] = src_data[unsafe_offset=0]
+        dest_data[unsafe_offset=n - 1] = src_data[unsafe_offset=n - 1]
         if n <= 2:
             return
-        dest_data[1] = src_data[1]
-        dest_data[n - 2] = src_data[n - 2]
+        dest_data[unsafe_offset=1] = src_data[unsafe_offset=1]
+        dest_data[unsafe_offset=n - 2] = src_data[unsafe_offset=n - 2]
         return
 
     if n <= 16:
         if n >= 8:
             var ui64_size = size_of[UInt64]()
-            dest_data.bitcast[UInt64]().store[alignment=1](
-                0, src_data.bitcast[UInt64]().load[alignment=1](0)
+            dest_data.unsafe_bitcast[UInt64]().unsafe_store[alignment=1](
+                0, src_data.unsafe_bitcast[UInt64]().unsafe_load[alignment=1](0)
             )
-            (dest_data + n - ui64_size).bitcast[UInt64]().store[alignment=1](
+            dest_data.unsafe_offset(n - ui64_size).unsafe_bitcast[
+                UInt64
+            ]().unsafe_store[alignment=1](
                 0,
-                (src_data + n - ui64_size)
-                .bitcast[UInt64]()
-                .load[alignment=1](0),
+                src_data.unsafe_offset(n - ui64_size)
+                .unsafe_bitcast[UInt64]()
+                .unsafe_load[alignment=1](0),
             )
             return
 
         var ui32_size = size_of[UInt32]()
-        dest_data.bitcast[UInt32]().store[alignment=1](
-            0, src_data.bitcast[UInt32]().load[alignment=1](0)
+        dest_data.unsafe_bitcast[UInt32]().unsafe_store[alignment=1](
+            0, src_data.unsafe_bitcast[UInt32]().unsafe_load[alignment=1](0)
         )
-        (dest_data + n - ui32_size).bitcast[UInt32]().store[alignment=1](
+        dest_data.unsafe_offset(n - ui32_size).unsafe_bitcast[
+            UInt32
+        ]().unsafe_store[alignment=1](
             0,
-            (src_data + n - ui32_size).bitcast[UInt32]().load[alignment=1](0),
+            src_data.unsafe_offset(n - ui32_size)
+            .unsafe_bitcast[UInt32]()
+            .unsafe_load[alignment=1](0),
         )
         return
 
@@ -235,12 +245,7 @@ def _memcpy_impl(
 @always_inline
 def unsafe_memcpy[
     T: AnyType
-](
-    *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[T, _],
-    count: Int,
-):
+](*, dest: Pointer[mut=True, T, _], src: Pointer[T, _], count: Int,):
     """Copy `count * size_of[T]()` bytes from src to dest.
 
     The dest and src memory must **not** overlap. For potentially
@@ -263,8 +268,8 @@ def unsafe_memcpy[
 
     var n = count * size_of[T]()
 
-    var dest_bytes = dest.bitcast[Byte]()
-    var src_bytes = src.bitcast[Byte]()
+    var dest_bytes = dest.unsafe_bitcast[Byte]()
+    var src_bytes = src.unsafe_bitcast[Byte]()
 
     if __is_run_in_comptime_interpreter:
         llvm_intrinsic["llvm.memcpy", NoneType](
@@ -315,12 +320,7 @@ def memcpy[
 @always_inline
 def memmove[
     T: AnyType
-](
-    *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[mut=False, T, _],
-    count: Int,
-):
+](*, dest: Pointer[mut=True, T, _], src: Pointer[mut=False, T, _], count: Int,):
     """Copy `count * size_of[T]()` bytes from src to dest.
 
     Unlike `memcpy`, the memory regions are allowed to overlap.
@@ -336,12 +336,14 @@ def memmove[
     var n = count * size_of[T]()
     if __is_run_in_comptime_interpreter:
         for i in range(n):
-            (dest.bitcast[Byte]() + i).store((src.bitcast[Byte]() + i).load())
+            dest.unsafe_bitcast[Byte]().unsafe_offset(i).unsafe_store(
+                src.unsafe_bitcast[Byte]().unsafe_offset(i).unsafe_load()
+            )
     else:
         llvm_intrinsic["llvm.memmove", NoneType](
             # <dest>, <src>, <len>, <isvolatile>
-            dest.bitcast[Byte](),
-            src.bitcast[Byte](),
+            dest.unsafe_bitcast[Byte](),
+            src.unsafe_bitcast[Byte](),
             n,
             False,
         )
@@ -353,26 +355,24 @@ def memmove[
 
 
 @always_inline("nodebug")
-def _memset_impl(
-    ptr: UnsafePointer[mut=True, Byte, ...], value: Byte, count: Int
-):
+def _memset_impl(ptr: Pointer[mut=True, Byte, ...], value: Byte, count: Int):
     def fill[width: Int](offset: Int) {imm}:
-        ptr.store(offset, SIMD[DType.uint8, width](value))
+        ptr.unsafe_store(offset, SIMD[DType.uint8, width](value))
 
     comptime simd_width = simd_width_of[Byte]()
     vectorize[simd_width](count, fill)
 
 
 @always_inline
-def memset(ptr: UnsafePointer[mut=True, ...], value: Byte, count: Int):
+def memset(ptr: Pointer[mut=True, ...], value: Byte, count: Int):
     """Fills memory with the given value.
 
     Args:
-        ptr: UnsafePointer to the beginning of the memory block to fill.
+        ptr: Pointer to the beginning of the memory block to fill.
         value: The value to fill with.
         count: Number of elements to fill (in elements, not bytes).
     """
-    _memset_impl(ptr.bitcast[Byte](), value, count * size_of[ptr.T]())
+    _memset_impl(ptr.unsafe_bitcast[Byte](), value, count * size_of[ptr.T]())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -381,11 +381,11 @@ def memset(ptr: UnsafePointer[mut=True, ...], value: Byte, count: Int):
 
 
 @always_inline
-def memset_zero(ptr: UnsafePointer[mut=True, ...], count: Int):
+def memset_zero(ptr: Pointer[mut=True, ...], count: Int):
     """Fills memory with zeros.
 
     Args:
-        ptr: UnsafePointer to the beginning of the memory block to fill.
+        ptr: Pointer to the beginning of the memory block to fill.
         count: Number of elements to fill (in elements, not bytes).
     """
     memset(ptr, 0, count)
@@ -394,7 +394,7 @@ def memset_zero(ptr: UnsafePointer[mut=True, ...], count: Int):
 @always_inline
 def memset_zero[
     dtype: DType, //, *, count: Int
-](ptr: UnsafePointer[mut=True, Scalar[dtype], ...]):
+](ptr: Pointer[mut=True, Scalar[dtype], ...]):
     """Fills memory with zeros.
 
     Parameters:
@@ -402,14 +402,14 @@ def memset_zero[
         count: Number of elements to fill (in elements, not bytes).
 
     Args:
-        ptr: UnsafePointer to the beginning of the memory block to fill.
+        ptr: Pointer to the beginning of the memory block to fill.
     """
 
     comptime if count > 128:
         return memset_zero(ptr, count)
 
     def fill[width: Int](offset: Int) {imm}:
-        ptr.store(offset, SIMD[dtype, width](0))
+        ptr.unsafe_store(offset, SIMD[dtype, width](0))
 
     vectorize[simd_width_of[dtype]()](count, fill)
 
@@ -428,12 +428,10 @@ def _malloc[
     /,
     *,
     alignment: Int = align_of[type](),
-    out result: Optional[
-        UnsafePointer[
-            type,
-            MutUntrackedOrigin,
-            address_space=AddressSpace.GENERIC,
-        ]
+    out result: OptionalPointer[
+        type,
+        MutUntrackedOrigin,
+        address_space=AddressSpace.GENERIC,
     ],
 ):
     comptime MlirPointerType = type_of(result).T._mlir_type
@@ -455,9 +453,9 @@ def _malloc[
             alignment.__mlir_index__(), size.__mlir_index__()
         )
 
-    # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
+    # SAFETY: Due to the niche optimization, `Optional[Pointer]` is
     # represented exactly as the `MlirPointerType` so we can do a bit-cast.
-    result = UnsafePointer(to=mlir_pointer).bitcast[type_of(result)]()[]
+    result = Pointer(to=mlir_pointer).unsafe_bitcast[type_of(result)]()[]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -466,22 +464,22 @@ def _malloc[
 
 
 @always_inline
-def _free(ptr: UnsafePointer[mut=True, ...]):
+def _free(ptr: Pointer[mut=True, ...]):
     comptime if is_gpu():
-        libc.free(ptr.bitcast[NoneType]())
+        libc.free(ptr.unsafe_bitcast[NoneType]())
     else:
         __mlir_op.`pop.aligned_free`(ptr._get_kgen_pointer())
 
 
 @always_inline
-def _free(ptr: OptionalUnsafePointer[mut=True, ...]):
+def _free(ptr: OptionalPointer[mut=True, ...]):
     comptime if is_gpu():
         libc.free(unsafe_cast[Type=NoneType, origin=MutUntrackedOrigin](ptr))
     else:
         comptime KgenPointerType = type_of(ptr).T._mlir_type
-        # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
+        # SAFETY: Due to the niche optimization, `Optional[Pointer]` is
         # represented exactly as the `KgenPointerType` so we can do a bit-cast.
-        var kgen_pointer = UnsafePointer(to=ptr).bitcast[KgenPointerType]()[]
+        var kgen_pointer = Pointer(to=ptr).unsafe_bitcast[KgenPointerType]()[]
         __mlir_op.`pop.aligned_free`(kgen_pointer)
 
 
@@ -557,12 +555,7 @@ def uninit_move_n[
     //,
     *,
     overlapping: Bool,
-](
-    *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[mut=True, T, _],
-    count: Int,
-):
+](*, dest: Pointer[mut=True, T, _], src: Pointer[mut=True, T, _], count: Int,):
     """Move `count` values from `src` into memory at `dest`.
 
     This function transfers ownership of `count` values from the source memory
@@ -612,7 +605,11 @@ def uninit_move_n[
             unsafe_memcpy(dest=dest, src=src, count=count)
     else:
         for i in range(count):
-            (dest + i).init_pointee_move_from(src + i)
+            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
+            # method.
+            MutUnsafePointer(dest.unsafe_offset(i)).init_pointee_move_from(
+                MutUnsafePointer(src.unsafe_offset(i))
+            )
 
 
 @always_inline
@@ -621,12 +618,7 @@ def uninit_copy_n[
     //,
     *,
     overlapping: Bool,
-](
-    *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[mut=False, T, _],
-    count: Int,
-):
+](*, dest: Pointer[mut=True, T, _], src: Pointer[mut=False, T, _], count: Int,):
     """Copy `count` values from `src` into memory at `dest`.
 
     This function creates copies of `count` values from the source memory in the
@@ -675,13 +667,13 @@ def uninit_copy_n[
             unsafe_memcpy(dest=dest, src=src, count=count)
     else:
         for i in range(count):
-            (dest + i).unsafe_write(copy=(src + i)[])
+            dest.unsafe_offset(i).unsafe_write(copy=src.unsafe_offset(i)[])
 
 
 @always_inline
 def destroy_n[
     T: ImplicitlyDeletable
-](pointer: UnsafePointer[mut=True, T, _], count: Int):
+](pointer: Pointer[mut=True, T, _], count: Int):
     """Destroy `count` initialized values at `pointer`.
 
     This function runs the destructor for each of the `count` values, leaving
@@ -710,7 +702,7 @@ def destroy_n[
         pass
     else:
         for i in range(count):
-            (pointer + i).unsafe_deinit_pointee()
+            pointer.unsafe_offset(i).unsafe_deinit_pointee()
 
 
 # ===-----------------------------------------------------------------------===#

@@ -288,7 +288,10 @@ class PrefillScheduler(Scheduler):
         self.dispatcher.send_reply_nowait(
             PrefillResponse(
                 id=req_id,
-                generated_token_id=int(context.tokens[-1]),
+                # The last buffer slot may be an unrealized future-token
+                # placeholder while overlap forwards are in flight; send the
+                # newest realized token.
+                generated_token_id=context.last_realized_token,
                 transfer_metadata=transfer_data,
                 draft_tokens=draft_tokens,
             ),

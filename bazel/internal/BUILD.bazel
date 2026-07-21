@@ -2,10 +2,12 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_mojo//mojo:toolchain.bzl", "mojo_copts_toolchain")
 load("@rules_mypy//mypy:mypy.bzl", "mypy_cli")
 load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 load("//max/python/max:all_deps.bzl", "ALL_MAX_PYTHON_DEPS")
 load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
+load(":mojo_toolchain.bzl", "mojo_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -176,6 +178,40 @@ mojo_copts_toolchain(
         "//conditions:default": [],
     }),
     tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
+)
+
+sh_binary(
+    name = "fake_mojo_binary",
+    srcs = ["fake_mojo_binary.sh"],
+)
+
+mojo_toolchain(
+    name = "mojo_toolchain_target",
+    implicit_deps = select({
+        "//conditions:default": [],
+        "//:use_prebuilt_mojo_toolchain_disabled": [
+            # Note: Device Context excluded here.
+            "//AsyncRT:RuntimeGlobals",
+            "//KGEN:CompilerRT",
+            "//Support:Globals",
+        ],
+    }),
+    lld = "@llvm-project//lld:lld",
+    mojo = select({
+        # nonsense just so it resolves. this should never actually run.
+        "//:use_prebuilt_mojo_toolchain_disabled": "//KGEN/tools/mojo:mojo-compiler-only",
+        "//conditions:default": ":fake_mojo_binary",
+    }),
+    tags = [TOP_LEVEL_TAG],  # Used in oss.MODULE.bazel
+)
+
+# Don't split toolchains on OS, we don't care about cross compilation here.
+toolchain(
+    name = "mojo_toolchain",
+    tags = [TOP_LEVEL_TAG],  # Used in oss.MODULE.bazel
+    target_settings = ["//:use_prebuilt_mojo_toolchain_disabled"],
+    toolchain = ":mojo_toolchain_target",
+    toolchain_type = "@rules_mojo//:toolchain_type",
 )
 
 toolchain(

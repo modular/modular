@@ -24,7 +24,7 @@ from std.ffi import external_call
 from std.memory import (
     unsafe_memcpy,
     memset,
-    UnsafePointer,
+    Pointer,
     MutUntrackedOrigin,
     stack_allocation,
 )
@@ -35,7 +35,7 @@ comptime _CHUNK_SIZE = 64
 
 
 @always_inline
-def _metal_os_log_chunk(data: UnsafePointer[UInt8, MutUntrackedOrigin]):
+def _metal_os_log_chunk(data: Pointer[UInt8, MutUntrackedOrigin]):
     """Emit a single 64-byte chunk via the os_log sentinel.
 
     The compiler's InstructionRewrite pass replaces this sentinel call

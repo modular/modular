@@ -19,7 +19,11 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderMetrics
-from max.pipelines.modeling.types import BatchType, CompletedBatchStats
+from max.pipelines.modeling.types import (
+    BatchType,
+    CompletedBatchStats,
+    TextGenerationInputs,
+)
 from max.serve.scheduler.utils import (
     BatchMetrics,
     SchedulerLogger,
@@ -952,21 +956,21 @@ def _mock_ctx(
 def _mock_dp_inputs(
     rank_batches: list[list[MagicMock]],
     batch_type: BatchType = BatchType.CE,
-) -> MagicMock:
-    inputs = MagicMock()
-    inputs.batches = rank_batches
-    inputs.flat_batch = [ctx for batch in rank_batches for ctx in batch]
-    inputs.input_tokens = sum(
-        ctx.tokens.active_length for ctx in inputs.flat_batch
+) -> TextGenerationInputs[Any]:
+    # Real inputs rather than a mock: the per-replica token sums the metrics
+    # read are frozen in __post_init__, so that production path must run.
+    inputs: TextGenerationInputs[Any] = TextGenerationInputs(
+        batches=rank_batches
     )
-    inputs.context_tokens = sum(
-        ctx.tokens.processed_length for ctx in inputs.flat_batch
-    )
+    # __post_init__ infers batch_type from the contexts' generated_length,
+    # which mock contexts don't model; override it like the DP padder does.
     inputs.batch_type = batch_type
     return inputs
 
 
-def _create_dp_metrics(inputs: MagicMock, dp: int) -> BatchMetrics:
+def _create_dp_metrics(
+    inputs: TextGenerationInputs[Any], dp: int
+) -> BatchMetrics:
     return BatchMetrics.create(
         sch_config=_mock_sch_config(dp=dp),
         inputs=inputs,
@@ -985,6 +989,8 @@ def test_dp_occupancy_imbalanced_ce() -> None:
     inputs = _mock_dp_inputs([[_mock_ctx(8000)], [_mock_ctx(8)]])
     metrics = _create_dp_metrics(inputs, dp=2)
     assert metrics.dp_active_token_occupancy_pct == 100.0 * 8008 / 16000
+    assert metrics.dp_active_tokens == 8008
+    assert metrics.dp_step_capacity_tokens == 16000
 
 
 def test_dp_occupancy_balanced() -> None:
@@ -999,12 +1005,16 @@ def test_dp_occupancy_skipped_at_dp1() -> None:
     inputs = _mock_dp_inputs([[_mock_ctx(8000)]])
     metrics = _create_dp_metrics(inputs, dp=1)
     assert metrics.dp_active_token_occupancy_pct is None
+    assert metrics.dp_active_tokens == 0
+    assert metrics.dp_step_capacity_tokens == 0
 
 
 def test_dp_occupancy_skipped_on_empty_batch() -> None:
     inputs = _mock_dp_inputs([[], []])
     metrics = _create_dp_metrics(inputs, dp=2)
     assert metrics.dp_active_token_occupancy_pct is None
+    assert metrics.dp_active_tokens == 0
+    assert metrics.dp_step_capacity_tokens == 0
 
 
 def test_dp_occupancy_excludes_padding_dummies() -> None:
@@ -1013,6 +1023,8 @@ def test_dp_occupancy_excludes_padding_dummies() -> None:
     inputs = _mock_dp_inputs([[_mock_ctx(8000)], [_mock_ctx(1, padding=True)]])
     metrics = _create_dp_metrics(inputs, dp=2)
     assert metrics.dp_active_token_occupancy_pct == 50.0
+    assert metrics.dp_active_tokens == 8000
+    assert metrics.dp_step_capacity_tokens == 16000
 
 
 def test_dp_occupancy_missing_replicas_count_as_zero() -> None:
@@ -1034,6 +1046,25 @@ def test_publish_metrics_dp_occupancy_skipped_when_unset() -> None:
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
         _make_metrics().publish_metrics()
     mock_metrics.dp_active_token_occupancy.assert_not_called()
+
+
+def test_publish_metrics_dp_token_counters() -> None:
+    metrics = _make_metrics(
+        dp_active_tokens=8008, dp_step_capacity_tokens=16000
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+    mock_metrics.dp_active_tokens.assert_called_once_with(8008, batch_type="CE")
+    mock_metrics.dp_step_capacity_tokens.assert_called_once_with(
+        16000, batch_type="CE"
+    )
+
+
+def test_publish_metrics_dp_token_counters_skipped_when_zero() -> None:
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        _make_metrics().publish_metrics()
+    mock_metrics.dp_active_tokens.assert_not_called()
+    mock_metrics.dp_step_capacity_tokens.assert_not_called()
 
 
 def test_dp_occupancy_in_log_line_and_extra() -> None:

@@ -1638,6 +1638,8 @@ class PipelineConfig(ConfigFileModel):
                 execute_empty_batches=args.execute_empty_batches,
                 max_batch_total_tokens=args.max_batch_total_tokens,
                 device_graph_capture=args.device_graph_capture,
+                fold_sampler_into_graph=args.fold_sampler_into_graph,
+                max_pending_futures=args.max_pending_futures,
                 force=args.force,
                 kvcache_ce_watermark=args.kvcache_ce_watermark,
                 decode_stall_timeout_s=args.decode_stall_timeout_s,

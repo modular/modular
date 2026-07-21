@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from max.experimental.cascade.pipelines.common_textgen import (
+    CommonTextGenPipeline,
+)
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
@@ -58,4 +61,5 @@ llama_arch = SupportedArchitecture(
     config=Llama3Config,
     batching=Llama3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
+    cascade_pipeline_factory=CommonTextGenPipeline,
 )

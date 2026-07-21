@@ -511,6 +511,8 @@ class NemotronHAttention(Module):
         dev = config.devices[0]
         self.kv_params: KVCacheParams = config.kv_params
         self.kv_layer_idx = kv_layer_idx
+        # Preserve the activation dtype at the FP8 attention output boundary.
+        self.dtype = config.dtype
         self.n_heads = config.num_attention_heads
         self.n_kv_heads = config.num_key_value_heads
         self.head_dim = config.attention_head_dim
@@ -563,6 +565,15 @@ class NemotronHAttention(Module):
         key = ops.reshape(k, [-1, self.n_kv_heads, self.head_dim])
         value = ops.reshape(v, [-1, self.n_kv_heads, self.head_dim])
 
+        # Paged stores require K/V to match the cache dtype, and FP8 flash
+        # attention requires the query to match it as well. Convert the
+        # attention output back to the activation dtype before ``o_proj``.
+        if self.kv_params.is_fp8_kv_dtype:
+            cache_dtype = self.kv_params.dtype
+            query = ops.cast(query, cache_dtype)
+            key = ops.cast(key, cache_dtype)
+            value = ops.cast(value, cache_dtype)
+
         # NoPE: write K/V to cache as-is (no rotary), then ragged flash attn.
         store_k_cache_ragged(kv_collection, key, input_row_offsets, layer_idx)
         store_v_cache_ragged(kv_collection, value, input_row_offsets, layer_idx)
@@ -575,6 +586,7 @@ class NemotronHAttention(Module):
             input_row_offsets=input_row_offsets,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
+            output_dtype=self.dtype,
         )
         attn_out = ops.reshape(attn_out, [total_seq_len, -1])
         return self.o_proj(attn_out)
@@ -758,7 +770,7 @@ class NemotronHMamba2Mixer(Module):
             proj, [self.intermediate, self.conv_dim, self.nheads], axis=1
         )
 
-        # Depthwise SiLU conv over hidden_BC. Op expects [dim, total_seqlen].
+        # Depthwise SiLU conv over hidden_BC.
         conv_w = ops.reshape(
             self.conv1d_weight.to(device), [self.conv_dim, self.conv_kernel]
         )
@@ -769,12 +781,16 @@ class NemotronHMamba2Mixer(Module):
                 [self.conv_dim]
             )
         )
-        hidden_BC_t = ops.transpose(hidden_BC, 0, 1)  # [conv_dim, N]
         # Slot-indexed in-place conv: the kernel reads+writes the conv pool at
         # slot ``cache_indices[b] = slot_idx[b]`` (Qwen3.5 GatedDeltaNet conv
         # pattern). No graph-side gather/scatter — the pool is mutated directly.
-        conv_out_t = causal_conv1d_varlen_fwd(
-            x=hidden_BC_t,
+        # ``channels_last=True``: the op consumes/produces the tokens-major
+        # [N, conv_dim] layout the surrounding graph already carries,
+        # eliminating the materialized [conv_dim, N] transposes on both sides
+        # of the conv (the dominant prefill glue-kernel cost, ~9.5 ms per
+        # 4k-token request on B200).
+        conv_out = causal_conv1d_varlen_fwd(
+            x=hidden_BC,
             weight=conv_w,
             bias=conv_bias,
             conv_states=conv_pool,
@@ -782,8 +798,8 @@ class NemotronHMamba2Mixer(Module):
             cache_indices=ops.cast(slot_idx, DType.int32),
             has_initial_state=has_initial_state,
             activation="silu",
-        )
-        conv_out = ops.transpose(conv_out_t, 0, 1)  # [N, conv_dim]
+            channels_last=True,
+        )  # [N, conv_dim]
 
         # Split conv output: [hidden(intermediate), B(ng*ds), C(ng*ds)].
         gtss = self.ngroups * self.dstate

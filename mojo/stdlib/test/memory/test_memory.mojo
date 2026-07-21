@@ -56,8 +56,8 @@ def test_memcpy() raises:
     var pair1 = Pair(1, 2)
     var pair2 = Pair(0, 0)
 
-    var src = UnsafePointer(to=pair1)
-    var dest = UnsafePointer(to=pair2)
+    var src = Pointer(to=pair1)
+    var dest = Pointer(to=pair2)
 
     # UnsafePointer test
     pair2.lo = 0
@@ -124,8 +124,8 @@ def test_memcmp() raises:
     var pair1 = Pair(1, 2)
     var pair2 = Pair(1, 2)
 
-    var ptr1 = UnsafePointer(to=pair1)
-    var ptr2 = UnsafePointer(to=pair2)
+    var ptr1 = Pointer(to=pair1)
+    var ptr2 = Pointer(to=pair2)
 
     var errors = memcmp(ptr1, ptr2, 1)
 
@@ -147,8 +147,8 @@ def test_memcmp_non_multiple_of_int32() raises:
 
     comptime assert size_of[SixByteStruct]() == 6
 
-    var ptr1 = UnsafePointer(to=triple1)
-    var ptr2 = UnsafePointer(to=triple2)
+    var ptr1 = Pointer(to=triple1)
+    var ptr2 = Pointer(to=triple2)
     var errors = memcmp(ptr1, ptr2, 1)
     assert_equal(errors, -1)
 
@@ -568,7 +568,7 @@ def test_memcmp_simd_zero_bytes() raises:
 def test_memset() raises:
     var pair = Pair(1, 2)
 
-    var ptr = UnsafePointer(to=pair)
+    var ptr = Pointer(to=pair)
     memset_zero(ptr, 1)
 
     assert_equal(pair.lo, 0)
@@ -934,7 +934,7 @@ def test_uninit_copy_n_nontrivial() raises:
 def test_destroy_n_trivial() raises:
     # Test with trivial destructor - should be no-op, not call __del__
     var del_count = 0
-    var counter_ptr = UnsafePointer(to=del_count)
+    var counter_ptr = Pointer(to=del_count)
     comptime Counter = DelCounter[origin_of(del_count), trivial_del=True]
 
     var ptr = alloc[Counter](3)
@@ -953,7 +953,7 @@ def test_destroy_n_trivial() raises:
 def test_destroy_n_nontrivial() raises:
     # Test with non-trivial type that tracks destructor calls
     var del_count = 0
-    var counter_ptr = UnsafePointer(to=del_count)
+    var counter_ptr = Pointer(to=del_count)
     comptime Counter = DelCounter[origin_of(del_count)]
 
     var ptr = alloc[Counter](3)
@@ -973,7 +973,7 @@ def test_uninit_move_n_zero_count() raises:
     var src = alloc[MoveCounter[String]](1)
     # Use unsafe_memcpy to initialize without calling move constructor
     var tmp = MoveCounter("test")
-    unsafe_memcpy(dest=src, src=UnsafePointer(to=tmp), count=1)
+    unsafe_memcpy(dest=src, src=Pointer(to=tmp), count=1)
 
     var dest = alloc[MoveCounter[String]](1)
 
@@ -1009,7 +1009,7 @@ def test_uninit_copy_n_zero_count() raises:
 def test_destroy_n_zero_count() raises:
     # Test with zero count - should be no-op
     var del_count = 0
-    var counter_ptr = UnsafePointer(to=del_count)
+    var counter_ptr = Pointer(to=del_count)
     comptime Counter = DelCounter[origin_of(del_count), trivial_del=True]
 
     var ptr = alloc[Counter](1)

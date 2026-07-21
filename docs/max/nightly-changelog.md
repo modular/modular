@@ -123,6 +123,34 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Fixed non-streaming chat completions leaking a literal structural tool-call
+  marker (for example `<tool_call>`) into `message.content` when a
+  `max_tokens` truncation landed mid tool-call block. The response now
+  surfaces only the content before the marker, with
+  `finish_reason == "length"`.
+- Added an experimental `--fold-sampler-into-graph` option (default off) that
+  folds greedy token selection (argmax) into the captured forward graph, so a
+  single device-graph replay materializes the sampled token instead of a
+  separate sampler submission with a blocking readback. Applies to all-greedy
+  decode batches on architectures that emit the folded token output (currently
+  Nemotron-H); non-greedy requests fall back to the separate sampler.
+- Added a `max-pending-futures` config (default 1, the classic
+  overlap-scheduler depth of one forward in flight per request). Request
+  bookkeeping now tracks unrealized future-token placeholders with a counted
+  model instead of a single-sentinel check, and setting the value to 2 enables
+  experimental schedule-ahead decoding: two forwards in flight per request,
+  with the next step's input token realized on-device from the folded sampler
+  output. Behavior at the default depth is unchanged.
+- Fixed the serve CLI dropping the `fold-sampler-into-graph`,
+  `max-pending-futures`, and greedy-sampling gate settings on their way to the
+  model worker, which silently disabled the folded greedy sampler. With the
+  flags threaded through, `--fold-sampler-into-graph` removes the per-token
+  blocking sampler submission and substantially improves decode latency on
+  architectures that support it.
+- Added `max.engine.read` for loading a compiled-model artifact (a `.mef`
+  file) without an `InferenceSession`. The resulting `CompiledModel` can
+  be initialized on any session via `InferenceSession.init`. It replaces
+  `InferenceSession.read`, which has been removed.
 - Image generation responses on the Open Responses endpoint now report
   `usage`: `output_tokens` and `total_tokens` carry the total pixel count of
   the generated images, counted from the actual output arrays, and
@@ -259,6 +287,14 @@ This version is still a work in progress.
   `reasoning_content` instead of `reasoning` (the two are never emitted
   together). This restores the `reasoning_content` field for clients that
   require it; it remains off by default, so responses emit `reasoning` only.
+- Requests whose text contains an unpaired UTF-16 surrogate (valid JSON but not
+  valid UTF-8, for example an emoji split by client-side truncation) are now
+  handled gracefully. By default the surrogate is normalized to the Unicode
+  replacement character (U+FFFD) and the request proceeds, instead of failing
+  with a 500 or a misleading "Invalid JSON." 400. A new opt-in
+  `MAX_SERVE_REJECT_INVALID_UTF8` server config instead rejects such requests
+  with an accurate 400 that names the offending position, identically across the
+  streaming and non-streaming chat paths and `/v1/completions`.
 - Improved time-to-first-token for multimodal requests by making the image and
   video preprocessor reject and decode media more efficiently. Oversized media
   is now rejected before its bytes are fully materialized: an `http(s)` download
@@ -505,6 +541,31 @@ This version is still a work in progress.
   widths, repeat counts, split/slice bounds) stay runtime operands, so one
   compiled graph per `(op, device, dtype[, rank])` serves every shape.
 
+- The eager interpreter's pooling ops (`max_pool`/`avg_pool`, floor and
+  ceil-mode variants) now run through pre-compiled graph-compiler models
+  instead of hand-written Mojo bindings. Window shape, strides, dilations,
+  and paddings are runtime operands, so one compiled graph per `(op, device,
+  dtype[, count_boundary])` serves every configuration. CPU float16 isn't
+  supported (a graph-compiler limitation); GPU float16 still works.
+
+- The eager interpreter's `conv2d` op now runs through a pre-compiled
+  graph-compiler model instead of a hand-written Mojo binding. Filter
+  shape, input shape, stride, dilation, and padding are runtime operands,
+  so one compiled graph per `(device, dtype)` serves every conv shape.
+  Dilation != 1 and grouped convolution now raise a clear error instead of
+  computing silently. `conv2d_transpose` is no longer supported: its old
+  Mojo binding depended on cuDNN, which crashed on Apple GPUs and failed on
+  CUDA, and has been removed rather than kept as a broken fallback.
+
+- The eager interpreter's `resize` ops (`resize_linear` and
+  `resize_nearest`) now run through pre-compiled graph-compiler models
+  instead of hand-written Mojo bindings, with output size as a runtime
+  operand, so one compiled graph per `(op, device, dtype, rank, variant)`
+  serves every output size. `resize_bicubic` is no longer supported: its
+  old Mojo binding has been removed rather than kept as a fallback, due to
+  a graph-compiler gap. CPU float16 isn't supported (a graph-compiler
+  limitation); GPU float16 still works.
+
 - Added a `max warm-interpreter-cache` command that batch-compiles the full
   eager interpreter model matrix into the on-disk cache for the current
   machine's devices and drops a stamp. A later lazy eager process on the same
@@ -632,6 +693,31 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed Nemotron-3-Nano (`NemotronHForCausalLM`) leaking chain-of-thought and
+  a raw `</think>` delimiter into `message.content` (with the reasoning field
+  left empty), and `tool_choice="required"` emitting zero tool calls. The
+  architecture now defaults both `--reasoning-parser` and `--tool-parser` to
+  `qwen3_5`, matching its Qwen-format chat template (implicit `<think>` open,
+  explicit `</think>` close, `<tool_call>`/`<function=…>` tool blocks). Pass
+  `--reasoning-parser=none` / `--tool-parser=none` to restore the old
+  behavior.
+- Fixed `ops.scatter_add` / `ops.scatter_mul` / `ops.scatter_max` /
+  `ops.scatter_min` silently returning wrong results when `indices` contains
+  duplicates and the update count is large. These ops run on CPU, and once
+  the update count exceeded roughly 32k elements the reduction was split
+  across worker threads with a plain read-modify-write, so concurrent
+  updates to the same output element raced and got dropped. The reduce path
+  now applies updates atomically; the plain overwrite `ops.scatter` is
+  unchanged (duplicates keep last-writer-wins semantics).
+- Fixed `ops.scatter_nd_add` / `ops.scatter_nd_mul` / `ops.scatter_nd_max` /
+  `ops.scatter_nd_min` silently returning wrong results when `indices`
+  contains duplicate index vectors. The reduction applied each update with a
+  plain read-modify-write, so concurrent threads targeting the same output
+  element raced and dropped updates — on GPU always, and on CPU once the
+  index count was large enough to split across worker threads. The reduce
+  path now applies updates atomically (a compare-exchange loop around the
+  reduction), so duplicate indices accumulate correctly on both devices, in
+  line with ONNX `ScatterND` reduction semantics.
 - Fixed the compiled-model cache (`.max_cache`) not invalidating when the
   Mojo kernel libraries change. The cache key previously content-hashed only
   the two built-in kernel packages, not the packages they import
@@ -648,6 +734,22 @@ This version is still a work in progress.
   architecture's pinned backend. The flag now defaults to unset, so any model
   without an explicit `--structured-output-backend` (and no architecture pin)
   correctly resolves to `xgrammar`.
+- Sparse-attention MLA models (DeepSeek V3.2, GLM 5.1/5.2) with an FP8 latent
+  KV cache now run prefill on the absorbed sparse MLA prefill kernel instead
+  of the dense unabsorbed fallback, matching the decode kernel's unit-scale
+  read of the scale-less FP8 latent cache. The dense fallback re-quantized the
+  up-projected Q/K/V to FP8, measurably costing accuracy (GLM 5.2 TP8 gsm8k
+  0.95 -> 1.0), and forfeited sparse attention's linear-cost prefill at long
+  context. The kernel also gained a cache-native blockwise scale path (int8
+  granularity-32), dormant until FP8 KV-cache scales land.
+- Fixed the SM100 sparse MLA prefill kernel gathering K/V latents from the
+  wrong layer's KV-cache region for every layer above the first
+  (`num_layers > 1`). The gather consumed raw encoded indices without folding
+  in the paged per-layer block stride, silently corrupting attention for
+  multi-layer sparse-attention models (DeepSeek V3.2 and GLM 5.1/5.2) served
+  with a bfloat16 latent cache. Also enabled the sparse prefill kernel for
+  GLM 5.2's tensor-parallel head shards (8/16/32 heads per device) over a
+  bfloat16 latent cache; FP8 latent caches keep the decode-kernel routing.
 - Fixed MiniMax-M3 tool-call grammar enforcement silently disabling itself
   when the model emits more than one tool-call section in a single response.
   Enforcement used to switch off once the first section closed, so a second

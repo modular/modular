@@ -379,7 +379,7 @@ This version is still a work in progress.
   - `def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):`
   - `def reserve(mut self, capacity: Int):`
   - `def resize(mut self, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):`
-  - `def __getitem__[origin: Origin, //](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:`
+  - `def __getitem__[origin: Origin, //](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin_of(self)._get_owned_interior["element"]]:`
   - `def __init__(out self, *, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable):`
   - `def __iadd__(mut self, var other: Self, /) where conforms_to(Self.T, Copyable):`
 
@@ -393,10 +393,35 @@ This version is still a work in progress.
 ## Library changes
 
 - Various datatypes have adopted interior origins for increased memory safety,
-  including `List`, `Deque`, `Variant` and `String`. `String`'s view-returning
-  accessors (`as_bytes()`, `s[byte=...]`, `s[codepoint=...]`, and similar) now
-  return `StringSlice`/`Span` views bound to an interior origin of the string,
-  so such a view is invalidated when the string is mutated:
+  including `List`, `Deque`, `Variant`, `String` and `Dict`. Slicing a `List`
+  (`list[start:end]`) now returns a `Span` that carries an interior origin, so a
+  slice held across a list mutation is rejected by the lifetime checker instead
+  of silently dangling after a reallocation:
+
+  ```mojo
+  var list = [1, 2, 3]
+  var s = list[:]
+  list.append(4)  # may reallocate, invalidating `s`
+  print(s[0])     # error: use of invalidated interior reference
+  ```
+
+  `Dict`'s reference-returning accessors (`d[key]`, `setdefault()`) now return a
+  reference bound to an interior origin of the dictionary, so such a reference
+  is invalidated by any mutating operation, including an insert via
+  `setdefault()`:
+
+  ```mojo
+  var d = Dict[String, Int]()
+  d["a"] = 1
+  ref value = d["a"]
+  _ = d.setdefault("b", 2)  # inserts (mutates), invalidating `value`
+  print(value)              # error: use of invalidated interior reference
+  ```
+
+  `String`'s view-returning accessors (`as_bytes()`, `s[byte=...]`,
+  `s[codepoint=...]`, and similar) now return `StringSlice`/`Span` views bound
+  to an interior origin of the string, so such a view is invalidated when the
+  string is mutated:
 
   ```mojo
   var s = String("hello world")
@@ -435,6 +460,27 @@ This version is still a work in progress.
   `Imm`-prefixed spelling used for the other immutable origins. The old name
   is still available as a deprecated alias and will be removed in a future
   release.
+
+- Floating-point `range()` iteration is now drift-free and reversible.
+  Element `i` is computed as `fma(i, step, start)`. Forward and reverse
+  iteration produce identical sequences across repeated calls
+  and across any IEEE-754 platform at the same floating-point width.
+  Previously a step that was not exactly representable, such as `0.1`, could
+  drift and yield an extra forward element that `reversed()` then dropped.
+
+- `range()` now rejects non-numeric element types (`Bool` and the narrow MX
+  float formats) at construction. The one- and two-argument float ranges
+  (`range(Float64(4.5))` and `range(Float64(0.5), Float64(3.0))`) are compile
+  errors instead of infinite loops; use the three-argument stepped form.
+
+- `repr()` of a scalar `SIMD` value (`size == 1`) now prints using its type
+  alias instead of the verbose `SIMD[DType.<dtype>, 1](...)` form when the
+  dtype has one. For example, `repr(UInt32(4))` is now `UInt32(4)` (previously
+  `SIMD[DType.uint32, 1](4)`), and `repr(List[UInt](1, 2))` is now
+  `List[SIMD[DType.uint, 1]]([UInt(1), UInt(2)])`. `size > 1` values, and
+  scalar dtypes without an alias (such as `DType.bool`), keep the
+  `SIMD[...]` form. This only affects `repr()`; `String(...)` / `print(...)`
+  output is unchanged.
 
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
@@ -664,6 +710,17 @@ This version is still a work in progress.
       is transparent. Generic code that stores a `Tuple[*Ts]` with an unbounded
       pack may need `& ImplicitlyDeletable` on the pack bound to keep dropping
       the tuple implicitly.
+  - `Set[ElementType, HasherType]`
+    - The element bound loosened from `KeyElement & ImplicitlyDeletable` to just
+      `KeyElement`, so a `Set` can now hold a non-`ImplicitlyDeletable` element
+      type.
+    - Like `Dict`, element-mutating operations (`add`, `remove`, `discard`,
+      `clear`) still require `ElementType` to be `ImplicitlyDeletable`, so such
+      a `Set` can currently be constructed and torn down with `deinit_with()`
+      but not populated. For deletable element types (the common case) this is
+      transparent.
+    - Consuming iteration (`for x in set^`) is likewise conditional, requiring
+      `ElementType` to be `ImplicitlyDeletable`.
 
 - Is is now possible to iterate over owned elements in
   `List`, `Dict`, `InlineArray`, `LinkedList`, and `Set`
@@ -880,6 +937,14 @@ This version is still a work in progress.
   GPU generations (M1-M5). It accepts `Float16`, `BFloat16`, and `Float32`
   inputs with a `Float32` accumulator.
 
+- `Atomic.compare_exchange()` now accepts a `weak` parameter, and requires
+  `weak=True` to compile on Apple GPU targets: AIR exposes no strong
+  compare-exchange primitive, so Metal only lowers the `weak` form. This is
+  safe for the common case of a CAS-retry loop, since a spurious failure just
+  costs one extra iteration. Previously any use of `compare_exchange()`,
+  including helpers built on it like atomic scatter-reduce, failed to
+  compile on Metal.
+
 - Apple M5 `simdgroup_matrix` MMA now accepts FP8 (`float8_e4m3fn`,
   `float8_e5m2`) inputs with an F32 accumulator, alongside the existing
   F16/BF16/F32 and 8-bit integer types.
@@ -928,6 +993,19 @@ This version is still a work in progress.
       )
   ```
 
+- `DeviceGraphBuilder.add_function` now covers every live
+  `DeviceContext.enqueue_function` form, so any kernel launchable on a device
+  context can also be recorded as a graph node:
+
+  - Added an overload accepting a `DeviceExternalFunction` loaded from
+    PTX/SASS via `DeviceContext.load_function()`.
+  - Added an overload taking a capturing kernel as a compile-time parameter
+    with runtime arguments, mirroring the capturing parameter-based
+    `DeviceContext.enqueue_function`.
+  - All `add_function` overloads now accept a `location` argument so wrappers
+    can attribute launch errors to their callers, and the closure overload now
+    accepts (and honors) a `func_attribute` argument.
+
 - `AddressSpace` is now target-extensible rather than a fixed, portable enum.
   The built-in GPU spaces (`GENERIC`, `GLOBAL`, `SHARED`, `CONSTANT`, `LOCAL`,
   `SHARED_CLUSTER`, `BUFFER_RESOURCE`) are unchanged, but accessing any other
@@ -970,6 +1048,13 @@ This version is still a work in progress.
   hardware sqrt (`sqrt.rn.f64`) instead of being rejected at compile time.
   NVIDIA has no approximate f64 sqrt, so the `Float32` fast path continues to
   use `sqrt.approx.ftz.f32`.
+
+- [#4473](https://github.com/modular/modular/issues/4473) - The `offset`
+  parameter of `FileHandle.seek()` (and `NamedTemporaryFile.seek()`) is now a
+  signed `Int` instead of `UInt64`, so negative offsets relative to
+  `os.SEEK_CUR` or `os.SEEK_END` work as the docstrings already showed.
+  Previously a negative offset only compiled as a literal (via unsigned
+  wrap-around) and could not be passed from a signed variable.
 
 - [#6755](https://github.com/modular/modular/issues/6755) - Volatile loads are
   no longer removed when their results are unused.

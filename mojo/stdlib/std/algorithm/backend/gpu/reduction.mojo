@@ -570,6 +570,11 @@ def twophase_reduce_kernel[
 ](
     shape: IndexList[rank],
     init: StaticTuple[Scalar[dtype], num_reductions],
+    # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a safe
+    # `Pointer`.
+    # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer args
+    # to `UnsafePointer` (their `device_type`) and matches the declared param
+    # type exactly, so these stay `UnsafePointer` (safe `Pointer` won't match).
     partials: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
     counters: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
     blocks_per_row: Int,
@@ -645,10 +650,10 @@ def twophase_reduce_kernel[
         if thread_idx.x == 0:
             var base = block_idx.x * num_reductions
             comptime for i in range(num_reductions):
-                partials[base + i] = partial[i]
+                partials[unsafe_offset=base + i] = partial[i]
 
             var finished = Atomic[DType.int32].fetch_add(
-                counters + row_idx, Int32(1)
+                counters.unsafe_offset(row_idx), Int32(1)
             )
             is_last_block = finished == Int32(blocks_per_row - 1)
 
@@ -668,7 +673,9 @@ def twophase_reduce_kernel[
                 comptime for i in range(num_reductions):
                     thread_accum[i] = reduce_fn[accum_type, 1, i](
                         thread_accum[i],
-                        partials[row_base + b * num_reductions + i],
+                        partials[
+                            unsafe_offset=row_base + b * num_reductions + i
+                        ],
                     )
 
             # Note this is currently no-op since we insist simd_width==1

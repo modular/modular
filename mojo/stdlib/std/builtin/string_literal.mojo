@@ -334,14 +334,14 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             The raw pointer to the data.
         """
-        var ptr = UnsafePointer[_, ImmStaticOrigin](
+        var ptr = Pointer[_, ImmStaticOrigin](
             _mlir_value=__mlir_op.`pop.string.address`(self.value)
         )
 
         # TODO(MSTDL-555):
         #   Remove bitcast after changing pop.string.address
         #   return type.
-        return ptr.bitcast[Byte]()
+        return ptr.unsafe_bitcast[Byte]()
 
     @always_inline
     def as_c_string_slice(
@@ -353,7 +353,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             The `CStringSlice` of the string.
         """
         # Safety: StringLiteral is guaranteed to be nul-terminated.
-        return CStringSlice(unsafe_from_ptr=self.unsafe_ptr().bitcast[c_char]())
+        return CStringSlice(
+            unsafe_from_ptr=self.unsafe_ptr().unsafe_bitcast[c_char]()
+        )
 
     @always_inline("nodebug")
     def as_string_slice(self) -> StaticString:

@@ -164,6 +164,7 @@ modular_py_test(
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:mocks",
         "//max/tests/integration/test_common:numerics",
+        requirement("av"),
         requirement("numpy"),
         requirement("transformers"),
     ],

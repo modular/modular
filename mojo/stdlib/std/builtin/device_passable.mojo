@@ -166,7 +166,7 @@ trait DeviceTypeEncoder:
             )
 
         comptime if conforms_to(ValueType, Copyable):
-            dst.bitcast[ValueType]().unsafe_write(copy=value)
+            dst.unsafe_bitcast[ValueType]().unsafe_write(copy=value)
         else:
             comptime assert False, String(
                 t"encode: ValueType '{reflect[ValueType].base_name()}' must"
@@ -200,7 +200,7 @@ trait DeviceTypeEncoder:
         comptime r = reflect[StructType]
         comptime if r.is_struct() and r.field_count() == 1:
             comptime FieldType = r.field_types()[0]
-            ref field = UnsafePointer(to=value).bitcast[FieldType]()[]
+            ref field = Pointer(to=value).unsafe_bitcast[FieldType]()[]
 
             comptime if conforms_to(FieldType, DevicePassable):
                 field._to_device_type(self, dst)
@@ -277,7 +277,11 @@ trait DeviceTypeEncoder:
             # Offset in the device data layout, not the host's.
             comptime offset = r.field_offset[index=i, target=Self.target()]()
             ref field = r.field_ref[i](value)
-            var sub = (dst.bitcast[UInt8]() + offset).bitcast[NoneType]()
+            var sub = (
+                dst.unsafe_bitcast[UInt8]()
+                .unsafe_offset(offset)
+                .unsafe_bitcast[NoneType]()
+            )
 
             comptime if conforms_to(FieldType, DevicePassable):
                 field._to_device_type(self, sub)
@@ -334,7 +338,11 @@ trait DeviceTypeEncoder:
         ]()
 
         comptime for i in range(size):
-            var sub = (dst.bitcast[UInt8]() + i * stride).bitcast[NoneType]()
+            var sub = (
+                dst.unsafe_bitcast[UInt8]()
+                .unsafe_offset(i * stride)
+                .unsafe_bitcast[NoneType]()
+            )
             ref elem = value._unsafe_ref(i)
 
             comptime if conforms_to(ElementType, DevicePassable):
@@ -388,7 +396,11 @@ trait DeviceTypeEncoder:
         ]()
 
         comptime for i in range(size):
-            var sub = (dst.bitcast[UInt8]() + i * stride).bitcast[NoneType]()
+            var sub = (
+                dst.unsafe_bitcast[UInt8]()
+                .unsafe_offset(i * stride)
+                .unsafe_bitcast[NoneType]()
+            )
             ref elem = value.unsafe_get(i)
 
             comptime if conforms_to(ElementType, DevicePassable):

@@ -48,11 +48,59 @@ from .indexer import Indexer
 logger = logging.getLogger("max.pipelines")
 
 
-# Head counts the sparse-prefill kernel supports (both bf16 and FP8 handle
-# {64, 128}).  Other counts (e.g. TP-sharded 128 // 8 = 16) fall back to
-# decode rather than tripping the kernel's comptime assert.
+# Head counts that route prefill through the combined prefill/decode op
+# unconditionally (landed behavior; the sparse-prefill kernel handles 128 or
+# any multiple of 8 in (0, 64]).  Other counts fall back to decode rather
+# than tripping the kernel's comptime assert.
 _SPARSE_PREFILL_SUPPORTED_HEADS_BF16 = (64, 128)
 _SPARSE_PREFILL_SUPPORTED_HEADS_FP8 = (64, 128)
+# GLM 5.2's TP-sharded counts (64 // {8, 4, 2}) route to the combined op over a
+# bfloat16 OR float8_e4m3fn latent cache.  The combined op's prefill arm now
+# takes the sparse-prefill kernel for both cache dtypes: mla_graph.mojo
+# dispatches an FP8 latent cache to mla_sm100_prefill_sparse_fp8 read at unit
+# scale (scale_block_size=0), mirroring the sparse-decode kernel's read of the
+# scale-less FP8 latent cache.  So the absorbed sparse path -- not the dense
+# unabsorbed FP8 prefill (whose extra Q/K/V requantization cost accuracy) --
+# runs for FP8-cache prefill at these head counts.
+_SPARSE_PREFILL_TP_SHARDED_HEADS = (8, 16, 32)
+
+
+# Master gate for the sparse-MLA *prefill* kernel. When False, prefill is
+# routed through the sparse *decode* kernel (the same fallback used for
+# unsupported head counts) instead of the sparse-prefill kernel, so the
+# combined-op wiring can merge while the prefill kernel is still being
+# optimized.
+_ENABLE_SPARSE_MLA_PREFILL_KERNEL = True
+
+# Dedup the one-time "prefill kernel gated off" notice (guard runs per layer).
+_WARNED_PREFILL_KERNEL_DISABLED: set[str] = set()
+
+
+def _warn_prefill_kernel_disabled() -> None:
+    """Log once (deduped across layers) that the prefill kernel is off."""
+    if "logged" in _WARNED_PREFILL_KERNEL_DISABLED:
+        return
+    _WARNED_PREFILL_KERNEL_DISABLED.add("logged")
+    logger.info(
+        "Sparse MLA prefill kernel disabled "
+        "(_ENABLE_SPARSE_MLA_PREFILL_KERNEL=False); routing prefill "
+        "through the sparse decode kernel."
+    )
+
+
+def _sparse_prefill_head_count_supported(
+    n_heads: int,
+    supported_heads: tuple[int, ...],
+    cache_dtype: DType,
+) -> bool:
+    """Whether prefill may route through the combined prefill/decode op."""
+    if n_heads in supported_heads:
+        return True
+    return n_heads in _SPARSE_PREFILL_TP_SHARDED_HEADS and cache_dtype in (
+        DType.bfloat16,
+        DType.float8_e4m3fn,
+    )
+
 
 # Head counts already warned about; the guard runs per layer, so dedup the log.
 _WARNED_FALLBACK_HEADS: set[int] = set()
@@ -190,7 +238,17 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         effective_graph_mode = self.graph_mode
         if (
             effective_graph_mode != "decode"
-            and self.n_heads not in _SPARSE_PREFILL_SUPPORTED_HEADS_FP8
+            and not _ENABLE_SPARSE_MLA_PREFILL_KERNEL
+        ):
+            _warn_prefill_kernel_disabled()
+            effective_graph_mode = "decode"
+        elif (
+            effective_graph_mode != "decode"
+            and not _sparse_prefill_head_count_supported(
+                self.n_heads,
+                _SPARSE_PREFILL_SUPPORTED_HEADS_FP8,
+                self.kv_params.dtype,
+            )
         ):
             if self.n_heads not in _WARNED_FALLBACK_HEADS:
                 _WARNED_FALLBACK_HEADS.add(self.n_heads)
@@ -833,7 +891,17 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
         effective_graph_mode = self.graph_mode
         if (
             effective_graph_mode != "decode"
-            and self.n_heads not in _SPARSE_PREFILL_SUPPORTED_HEADS_BF16
+            and not _ENABLE_SPARSE_MLA_PREFILL_KERNEL
+        ):
+            _warn_prefill_kernel_disabled()
+            effective_graph_mode = "decode"
+        elif (
+            effective_graph_mode != "decode"
+            and not _sparse_prefill_head_count_supported(
+                self.n_heads,
+                _SPARSE_PREFILL_SUPPORTED_HEADS_BF16,
+                self.kv_params.dtype,
+            )
         ):
             if self.n_heads not in _WARNED_FALLBACK_HEADS:
                 _WARNED_FALLBACK_HEADS.add(self.n_heads)
