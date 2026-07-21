@@ -36,6 +36,9 @@ struct FillStrategy(Equatable, ImplicitlyCopyable):
 
 
 def reduce_add(
+    # TODO(MSTDL-2875): Kernel entry params stay `UnsafePointer` — a
+    # DeviceBuffer's `device_type` is `UnsafePointer` and `enqueue_function`
+    # matches the declared param type exactly, so a safe `Pointer` won't match.
     res_add: UnsafePointer[Float32, MutAnyOrigin],
     vec: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
@@ -45,10 +48,13 @@ def reduce_add(
     if tid >= len:
         return
 
-    _ = Atomic.fetch_add(res_add, vec[tid])
+    _ = Atomic.fetch_add(res_add, vec[unsafe_offset=tid])
 
 
 def reduce_add_via_cas(
+    # TODO(MSTDL-2875): Kernel entry params stay `UnsafePointer` — a
+    # DeviceBuffer's `device_type` is `UnsafePointer` and `enqueue_function`
+    # matches the declared param type exactly, so a safe `Pointer` won't match.
     res_add: UnsafePointer[Float32, MutAnyOrigin],
     vec: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
@@ -68,6 +74,9 @@ def reduce_add_via_cas(
 
 
 def reduce_add_via_shared_cas(
+    # TODO(MSTDL-2875): Kernel entry params stay `UnsafePointer` — a
+    # DeviceBuffer's `device_type` is `UnsafePointer` and `enqueue_function`
+    # matches the declared param type exactly, so a safe `Pointer` won't match.
     res_add: UnsafePointer[Float32, MutAnyOrigin],
     vec: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
@@ -99,6 +108,9 @@ def reduce_add_via_shared_cas(
 
 
 def reduce_min_max(
+    # TODO(MSTDL-2875): Kernel entry params stay `UnsafePointer` — a
+    # DeviceBuffer's `device_type` is `UnsafePointer` and `enqueue_function`
+    # matches the declared param type exactly, so a safe `Pointer` won't match.
     res_min: UnsafePointer[Float32, MutAnyOrigin],
     res_max: UnsafePointer[Float32, MutAnyOrigin],
     vec: UnsafePointer[Float32, MutAnyOrigin],
@@ -109,8 +121,8 @@ def reduce_min_max(
     if tid >= len:
         return
 
-    Atomic.min(res_min, vec[tid])
-    Atomic.max(res_max, vec[tid])
+    Atomic.min(res_min, vec[unsafe_offset=tid])
+    Atomic.max(res_max, vec[unsafe_offset=tid])
 
 
 def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
@@ -152,7 +164,7 @@ def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     )
 
     var res = Float32(0)
-    res_add_device.enqueue_copy_to(UnsafePointer(to=res))
+    res_add_device.enqueue_copy_to(Pointer(to=res))
 
     var res_min = Float32(0)
     var res_max = Float32(0)
@@ -172,8 +184,8 @@ def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
             block_dim=BLOCK_SIZE,
         )
 
-        res_min_device.enqueue_copy_to(UnsafePointer(to=res_min))
-        res_max_device.enqueue_copy_to(UnsafePointer(to=res_max))
+        res_min_device.enqueue_copy_to(Pointer(to=res_min))
+        res_max_device.enqueue_copy_to(Pointer(to=res_max))
 
     ctx.synchronize()
 
@@ -241,9 +253,9 @@ def run_reduce_via_cas(ctx: DeviceContext) raises:
     )
 
     var res = Float32(0)
-    res_device.enqueue_copy_to(UnsafePointer(to=res))
+    res_device.enqueue_copy_to(Pointer(to=res))
     var res_shared = Float32(0)
-    res_shared_device.enqueue_copy_to(UnsafePointer(to=res_shared))
+    res_shared_device.enqueue_copy_to(Pointer(to=res_shared))
     ctx.synchronize()
 
     assert_equal(res, n * (n - 1) // 2)

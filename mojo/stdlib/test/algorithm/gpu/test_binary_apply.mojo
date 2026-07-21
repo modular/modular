@@ -19,6 +19,9 @@ from std.testing import assert_equal, TestSuite
 def vec_func[
     op: def(Float32, Float32) capturing[_] -> Float32
 ](
+    # TODO(MSTDL-2875): Kernel entry params stay `UnsafePointer` — a
+    # DeviceBuffer's `device_type` is `UnsafePointer` and `enqueue_function`
+    # matches the declared param type exactly, so a safe `Pointer` won't match.
     in0: UnsafePointer[Float32, MutAnyOrigin],
     in1: UnsafePointer[Float32, MutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
@@ -27,7 +30,9 @@ def vec_func[
     var tid = global_idx.x
     if tid >= len:
         return
-    output[tid] = op(in0[tid], in1[tid])
+    output[unsafe_offset=tid] = op(
+        in0[unsafe_offset=tid], in1[unsafe_offset=tid]
+    )
 
 
 # Force the capture to be captured instead of inlined away.

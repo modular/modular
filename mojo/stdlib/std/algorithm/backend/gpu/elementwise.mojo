@@ -63,7 +63,7 @@ comptime _PDL_LEVEL = PDLLevel.ON
 
 @always_inline("nodebug")
 def _mbarrier_wait_acquire_cta(
-    mbar: UnsafePointer[mut=True, Int64, _, address_space=AddressSpace.SHARED],
+    mbar: Pointer[mut=True, Int64, _, address_space=AddressSpace.SHARED],
     phase: UInt32,
 ):
     """Spin-waits on an mbarrier until the given phase completes, with acquire
