@@ -379,7 +379,7 @@ This version is still a work in progress.
   - `def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):`
   - `def reserve(mut self, capacity: Int):`
   - `def resize(mut self, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):`
-  - `def __getitem__[origin: Origin, //](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:`
+  - `def __getitem__[origin: Origin, //](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin_of(self)._get_owned_interior["element"]]:`
   - `def __init__(out self, *, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable):`
   - `def __iadd__(mut self, var other: Self, /) where conforms_to(Self.T, Copyable):`
 
@@ -393,8 +393,19 @@ This version is still a work in progress.
 ## Library changes
 
 - Various datatypes have adopted interior origins for increased memory safety,
-  including `List`, `Deque`, `Variant`, `String` and `Dict`. `Dict`'s
-  reference-returning accessors (`d[key]`, `setdefault()`) now return a
+  including `List`, `Deque`, `Variant`, `String` and `Dict`. Slicing a `List`
+  (`list[start:end]`) now returns a `Span` that carries an interior origin, so a
+  slice held across a list mutation is rejected by the lifetime checker instead
+  of silently dangling after a reallocation:
+
+  ```mojo
+  var list = [1, 2, 3]
+  var s = list[:]
+  list.append(4)  # may reallocate, invalidating `s`
+  print(s[0])     # error: use of invalidated interior reference
+  ```
+
+  `Dict`'s reference-returning accessors (`d[key]`, `setdefault()`) now return a
   reference bound to an interior origin of the dictionary, so such a reference
   is invalidated by any mutating operation, including an insert via
   `setdefault()`:

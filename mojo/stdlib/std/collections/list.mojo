@@ -1381,10 +1381,13 @@ struct List[T: Movable, /](
 
         return res^
 
+    @__unsafe_nested_origins_read_only
     @stable(since="1.0")
     def __getitem__[
         origin: Origin, //
-    ](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:
+    ](ref[origin] self, slice: ContiguousSlice) -> Span[
+        Self.T, origin_of(self)._get_owned_interior["element"]
+    ]:
         """Gets the sequence of elements at the specified positions.
 
         Parameters:
@@ -1394,11 +1397,20 @@ struct List[T: Movable, /](
             slice: A slice the specifies the positions of the new list.
 
         Returns:
-            A span over the specified slice.
+            A span over the specified slice. The span carries an interior origin
+            derived from `self`, so any subsequent mutation of the list
+            (`append`, `pop`, and similar) invalidates it at compile time.
         """
         var start, end = slice.indices(len(self))
-        return Span[Self.T, origin](
-            ptr=self.unsafe_ptr().unsafe_offset(start), length=end - start
+        return Span[Self.T, origin_of(self)._get_owned_interior["element"]](
+            ptr=UnsafePointer(
+                to=self.unsafe_ptr()
+                .unsafe_offset(start)
+                ._get_ref_with_unsafe_interior_origin[
+                    "element", origin_of(self)
+                ]()
+            ),
+            length=end - start,
         )
 
     @__unsafe_nested_origins_read_only
