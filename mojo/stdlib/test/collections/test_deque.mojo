@@ -1037,6 +1037,24 @@ def test_rotate() raises:
     assert_equal(q[3], 3)
 
 
+def test_rotate_empty_deque() raises:
+    q = Deque[Int]()
+    q.rotate(1)
+    assert_equal(len(q), 0)
+    q.rotate(-1)
+    assert_equal(len(q), 0)
+    q.rotate(0)
+    assert_equal(len(q), 0)
+
+    # n == 0 on a non-empty deque must also be a no-op.
+    q2 = Deque(1, 2, 3)
+    q2.rotate(0)
+    assert_equal(len(q2), 3)
+    assert_equal(q2[0], 1)
+    assert_equal(q2[1], 2)
+    assert_equal(q2[2], 3)
+
+
 def test_iter() raises:
     q = Deque(1, 2, 3)
 
