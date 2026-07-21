@@ -737,7 +737,18 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
   if (ASTType requiredType =
           dest.resolveImpliedType(expr->getLoc(), rvType, *this)) {
     if (!requiredType.isEqualCanon(rvType)) {
-      cValue = emitImplicitConversionToType({cValue, expr}, requiredType, dest);
+      if (requiredType.hasUnknownParameters()) {
+        dest.representation =
+            cast<LValueContextualType>(dest.representation).expr;
+        cValue = emitConstructorCall(
+            requiredType, CallOperands(CallSyntax::kImplicitConvert, expr,
+                                       std::move(dest), {{cValue, expr}}));
+        // The constructor call must have resolved the dest.
+        assert(!dest.isSpecified());
+      } else {
+        cValue =
+            emitImplicitConversionToType({cValue, expr}, requiredType, dest);
+      }
       // If this resolved the value dest, then we're done.   This handles the
       // null result case as well.
       if (!dest.isSpecified())

@@ -217,15 +217,15 @@ def takesSugarTuple[T: ImplicitlyCopyable](elements: Tuple[T, T]):
 # CHECK-LABEL: lit.fn @"index_homogenous_tuple
 def index_homogenous_tuple[idx: Int]():
     var tup = (1, 2, 3, 4)
-    # CHECK: %test1 = lit.var.decl "test1"
-    # CHECK-NEXT: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}:!Int {:scalar<index> 1}{{.*}}(%tup)
+    # CHECK: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}:!Int {:scalar<index> 1}{{.*}}(%tup)
+    # CHECK-NEXT: %test1 = lit.var.decl "test1"
     # CHECK-NEXT: [[ELTREB:%.*]] = kgen.rebind [[ELTPTR]]
     # CHECK-NEXT: [[INTVAL:%.*]] = lit.ref.load [[ELTREB]]
     # CHECK-NEXT: lit.ref.store [[INTVAL]], %test1
     var test1: Int = tup[1]
 
-    # CHECK: %test2 = lit.var.decl "test2"
-    # CHECK-NEXT: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}:!Int idx{{.*}}(%tup)
+    # CHECK: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}:!Int idx{{.*}}(%tup)
+    # CHECK-NEXT: %test2 = lit.var.decl "test2"
     # CHECK-NEXT: [[ELTREB:%.*]] = kgen.rebind [[ELTPTR]]
     # CHECK-NEXT: [[INTVAL:%.*]] = lit.ref.load [[ELTREB]]
     # CHECK-NEXT: lit.ref.store [[INTVAL]], %test2

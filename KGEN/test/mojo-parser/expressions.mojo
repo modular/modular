@@ -121,8 +121,8 @@ def memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   var v2xx = v2.x.x
 
   # Implicit conversion between memory-only types.
-  # CHECK-NEXT: %mpFloat = lit.var.decl
   # CHECK-NEXT: [[V2X:%.*]] = lit.ref.struct.ger %v2[x]
+  # CHECK-NEXT: %mpFloat = lit.var.decl
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[V2X]]
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[IMMREF]], %mpFloat)
   var mpFloat : MemoryOnlyFloat64 = v2.x
@@ -594,7 +594,6 @@ z
 
 # CHECK-LABEL: lit.fn @"test_if_cond
 def test_if_cond(var cond: Bool, memCond: MemBoolish):
-    # CHECK: %i = lit.var.decl "i"
     # CHECK: %[[COND:.*]] = lit.ref.load %cond
     # CHECK: %[[LIT_BOOLSB:.*]] = lit.call {{.*}}__mlir_bool__{{.*}}(%[[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLSB]]
@@ -604,6 +603,7 @@ def test_if_cond(var cond: Bool, memCond: MemBoolish):
     # CHECK-NEXT:   %[[INT_THREE:.*]] = kgen{{.*}}{:scalar<index> 3}
     # CHECK-NEXT:   hlcf.yield %[[INT_THREE]]
     # CHECK-NEXT: }
+    # CHECK-NEXT: %i = lit.var.decl "i"
     # CHECK-NEXT: lit.ref.store %[[IF_RES]], %i
     var i: Int = 2 if cond else 3
 

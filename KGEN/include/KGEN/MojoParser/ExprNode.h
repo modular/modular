@@ -214,7 +214,7 @@ public:
     // Error cases can often propagate in a null AnyValue.
     ELVIITResult(AnyValue value) : storage(value) {}
     ELVIITResult(CValue value) : ELVIITResult(AnyValue(value)) {}
-    ELVIITResult(LValuePartiallyBoundType value) : storage(value) {}
+    ELVIITResult(LValueContextualType value) : storage(value) {}
     ELVIITResult(const ExprNode *value) : storage(value) {
       assert(value && "Cannot init with null ExprNode*");
     }
@@ -235,15 +235,15 @@ public:
         return *ptr;
       return nullptr;
     }
-    LValuePartiallyBoundType getIfPartiallyBoundLV() const {
-      if (auto *ptr = std::get_if<LValuePartiallyBoundType>(&storage))
+    LValueContextualType getIfPartiallyBoundLV() const {
+      if (auto *ptr = std::get_if<LValueContextualType>(&storage))
         return *ptr;
-      return LValuePartiallyBoundType{ASTType(), nullptr};
+      return LValueContextualType{ASTType(), nullptr};
     }
 
   private:
     /// The failure case is encoded as a null AnyValue
-    std::variant<AnyValue, const ExprNode *, LValuePartiallyBoundType> storage;
+    std::variant<AnyValue, const ExprNode *, LValueContextualType> storage;
   };
 
   /// If this expression is an LValue with an inherent type, emit it and return
@@ -253,13 +253,13 @@ public:
   /// 'kind' indicates whether this pattern is implicitly scoped to the function
   /// or whether it is explicitly a 'var' or 'ref' pattern.
   ///
-  /// 'allowUnbound' indicates whether the type of the pattern is allowed to
+  /// 'hasInferrableRHS' indicates whether the type of the pattern is allowed to
   /// have unbound parameters (e.g. `x: ParametricList` without explicit
   /// parameters), which happens when the type can be inferred from an
   /// initializer.
-  virtual ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
-                                                   PatternDeclKind kind,
-                                                   bool allowUnbound) const {
+  virtual ELVIITResult
+  emitLValueIfImplicitlyTyped(IREmitter &emitter, PatternDeclKind kind,
+                              bool hasInferrableRHS) const {
     return ELVIITResult(this);
   }
 };
@@ -273,9 +273,9 @@ public:
   LValueCapableExprNode(Kind kind) : ExprNode(kind) {}
 
   // A default implementation is provided for these that forward to emitIR.
-  ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
-                                           PatternDeclKind kind,
-                                           bool allowUnbound) const override;
+  ELVIITResult
+  emitLValueIfImplicitlyTyped(IREmitter &emitter, PatternDeclKind kind,
+                              bool hasInferrableRHS) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
 
   virtual ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,

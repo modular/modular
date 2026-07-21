@@ -104,11 +104,18 @@ struct LValueInitializerType {
 /// write it back yet.
 struct LValueBufferTaken {};
 
-/// This struct is used to represent an LValue with a partially bound type,
-/// the expression can not be eagerly emitted since its type is not yet
-/// concrete. Though we can still use the partially bound type as an contextual
-/// type for inference.
-struct LValuePartiallyBoundType {
+/// This struct is used to represent an LValue with a contextual type,
+/// The contextual type could be only partially bound type, and a concrete type
+/// will be inferred from the RHS expression. This supports:
+///
+/// struct PartiallyBoundParam[T: AnyType]:
+///   @implicit
+///   def __init__(out self: PartiallyBoundParam[Self.T],  x:Self.T):
+///     pass
+
+/// def infer_partially_bound_var_type():
+///   var v: PartiallyBoundParam = 1
+struct LValueContextualType {
   ASTType type;
   ExprNode *expr;
 };
@@ -163,7 +170,7 @@ public:
   }
   ExprDest(LValueInitializerType type, ExprContext context)
       : representation(type), context(context) {}
-  ExprDest(LValuePartiallyBoundType dest, ExprContext context)
+  ExprDest(LValueContextualType dest, ExprContext context)
       : representation(dest), context(context) {
     assert(dest.expr && dest.type &&
            "Cannot init with null ExprNode* or ASTType");
@@ -223,8 +230,8 @@ public:
   const ExprNode *getLValueExprNode() const {
     if (isa<const ExprNode *>(representation))
       return cast<const ExprNode *>(representation);
-    if (isa<LValuePartiallyBoundType>(representation))
-      return cast<LValuePartiallyBoundType>(representation).expr;
+    if (isa<LValueContextualType>(representation))
+      return cast<LValueContextualType>(representation).expr;
     return nullptr;
   }
 
@@ -296,7 +303,7 @@ private:
   friend class IREmitter;
   SmartVariant<NullRepresentation, LValue, LValueBufferTaken, const ExprNode *,
                Operation *, ASTType, LValueInitializerType,
-               LValuePartiallyBoundType>
+               LValueContextualType>
       representation;
   ExprContext context;
 
