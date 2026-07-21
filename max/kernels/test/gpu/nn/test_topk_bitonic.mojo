@@ -31,6 +31,7 @@ from layout import TileTensor, row_major
 from nn.topk_bitonic import (
     PERSISTENT_TOPK_MAX_N,
     persistent_topk_block,
+    persistent_topk_block_split,
 )
 
 
@@ -491,6 +492,325 @@ def test_streaming_masked_and_ties(ctx: DeviceContext) raises:
 
 
 # ===----------------------------------------------------------------------=== #
+# Split path (`persistent_topk_block_split`) — the low-row / long-context
+# decode regime that fans the streaming fold across `rows * S` blocks.
+# ===----------------------------------------------------------------------=== #
+
+
+def _check_topk_row(
+    scores_row: List[Float32],
+    idxs: List[Int],
+    N: Int,
+    K: Int,
+    label: String,
+    row: Int,
+) raises:
+    """Tie-robust top-K validation of one row.
+
+    Verifies (1) indices in `[0, N)`, distinct, exactly `K`; (2) non-increasing
+    score order; (3) every *non-selected* score is `<= min(selected scores)` —
+    the exact top-K condition, which (unlike an exact index-set match) admits
+    any valid tie-break at the K-th boundary.
+    """
+    var seen = Set[Int]()
+    var min_sel = Float32.MAX
+    for k in range(K):
+        var idx = idxs[k]
+        assert_true(
+            idx >= 0 and idx < N,
+            String("[", label, "] row ", row, " idx[", k, "]=", idx, " OOB"),
+        )
+        assert_true(
+            not (idx in seen),
+            String("[", label, "] row ", row, " duplicate idx=", idx),
+        )
+        seen.add(idx)
+        if k > 0:
+            var prev = idxs[k - 1]
+            assert_true(
+                scores_row[idx] <= scores_row[prev],
+                String("[", label, "] row ", row, " order violation at k=", k),
+            )
+        min_sel = min(min_sel, scores_row[idx])
+
+    assert_true(
+        len(seen) == K,
+        String("[", label, "] row ", row, " selected ", len(seen), " != K"),
+    )
+    for i in range(N):
+        if not (i in seen):
+            assert_true(
+                scores_row[i] <= min_sel,
+                String(
+                    "[",
+                    label,
+                    "] row ",
+                    row,
+                    " non-selected idx ",
+                    i,
+                    " score ",
+                    scores_row[i],
+                    " exceeds selected min ",
+                    min_sel,
+                ),
+            )
+
+
+def _run_and_check_split(
+    ctx: DeviceContext,
+    scores_host: List[Float32],  # B * N flat, row-major
+    N: Int,
+    K: Int,
+    B: Int,
+    label: String,
+) raises:
+    """Run `persistent_topk_block_split` over `B` rows and validate each row."""
+    assert K <= PERSISTENT_TOPK_MAX_N, "K exceeds champion width"
+    assert len(scores_host) == B * N, "scores_host length mismatch"
+
+    var scores_dev = ctx.enqueue_create_buffer[DType.float32](B * N)
+    var idxs_dev = ctx.enqueue_create_buffer[DType.int32](B * K)
+    idxs_dev.enqueue_fill(Int32(-2))
+
+    with scores_dev.map_to_host() as buf:
+        for i in range(B * N):
+            buf[i] = Scalar[DType.float32](scores_host[i])
+
+    persistent_topk_block_split(
+        ctx,
+        rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
+            scores_dev.unsafe_ptr()
+        ),
+        rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
+            idxs_dev.unsafe_ptr()
+        ),
+        N,
+        K,
+        total_seq_len=B,
+    )
+    ctx.synchronize()
+
+    var idxs_host = ctx.enqueue_create_host_buffer[DType.int32](B * K)
+    ctx.enqueue_copy(dst_buf=idxs_host, src_buf=idxs_dev)
+    ctx.synchronize()
+
+    for b in range(B):
+        var row_scores = List[Float32](capacity=N)
+        for i in range(N):
+            row_scores.append(scores_host[b * N + i])
+        var row_idxs = List[Int](capacity=K)
+        for k in range(K):
+            row_idxs.append(Int(idxs_host[b * K + k]))
+        _check_topk_row(row_scores, row_idxs, N, K, label, b)
+
+    _ = scores_dev
+    _ = idxs_dev
+    _ = idxs_host
+
+
+def _lcg_scores(B: Int, N: Int, sd: UInt32, scale: Float32) -> List[Float32]:
+    var a: UInt32 = 1664525
+    var c: UInt32 = 1013904223
+    var state = sd
+    var scores = List[Float32](capacity=B * N)
+    for _ in range(B * N):
+        state = a * state + c
+        scores.append(Float32(Int32(state)) / Float32(2**31) * scale)
+    return scores^
+
+
+def test_split_decode_long(ctx: DeviceContext) raises:
+    """Rows=8, N=32769 (17 tiles, non-multiple), K=2048 — the decode-long shape.
+    """
+    comptime N = 32769
+    comptime K = 2048
+    comptime B = 8
+    var scores = _lcg_scores(B, N, 0x1234ABCD, 100.0)
+    _run_and_check_split(ctx, scores, N, K, B, "split_decode_long")
+    print("PASS test_split_decode_long")
+
+
+def test_split_decode_mtp(ctx: DeviceContext) raises:
+    """Rows=16, N=8193 (5 tiles), K=2048 — the MTP decode shape."""
+    comptime N = 8193
+    comptime K = 2048
+    comptime B = 16
+    var scores = _lcg_scores(B, N, 0xCAFED00D, 50.0)
+    _run_and_check_split(ctx, scores, N, K, B, "split_decode_mtp")
+    print("PASS test_split_decode_mtp")
+
+
+def test_split_max_context(ctx: DeviceContext) raises:
+    """Rows=2, N=163840 (80 tiles, GLM max context), K=2048."""
+    comptime N = 163840
+    comptime K = 2048
+    comptime B = 2
+    var scores = _lcg_scores(B, N, 0xBADF00D5, 100.0)
+    _run_and_check_split(ctx, scores, N, K, B, "split_max_context")
+    print("PASS test_split_max_context")
+
+
+def test_split_partial_k(ctx: DeviceContext) raises:
+    """Rows=4, N=8193, K=512 — split with K < champion width."""
+    comptime N = 8193
+    comptime K = 512
+    comptime B = 4
+    var scores = _lcg_scores(B, N, 0x0FF1CE55, 30.0)
+    _run_and_check_split(ctx, scores, N, K, B, "split_partial_k")
+    print("PASS test_split_partial_k")
+
+
+def test_split_masked_and_ties(ctx: DeviceContext) raises:
+    """Rows=4, N=8193 with a masked prefix + heavy ties — the causal regime.
+
+    The tie-robust check accepts any valid boundary tie-break, so the split's
+    per-slice tie order need not match a specific reference permutation.
+    """
+    comptime N = 8193
+    comptime K = 2048
+    comptime B = 4
+    var scores = List[Float32](capacity=B * N)
+    for _b in range(B):
+        for i in range(N):
+            if i < N // 2:
+                scores.append(Float32(-1.0e30))
+            else:
+                scores.append(Float32(1.0) if (i % 3 == 0) else Float32(2.0))
+    _run_and_check_split(ctx, scores, N, K, B, "split_masked_and_ties")
+    print("PASS test_split_masked_and_ties")
+
+
+# The tree phase-2 reduces S partials with fan-in 5; these rows=8 shapes pin S
+# (= min(num_tiles, ceildiv(2*sm_count, rows))) at values that exercise the
+# reduction at several fan-out patterns: 6 (fan-in+1 edge), 8 (power of two),
+# 13 (prime, uneven final group), 17 (non-power-of-two). N = num_tiles*2048 - 1
+# keeps the last tile partial too.
+
+
+def test_split_tree_s6(ctx: DeviceContext) raises:
+    """Rows=8, N=12287 (6 tiles) -> S=6, one reduce round (6 -> 2) + final."""
+    comptime N = 12287
+    comptime K = 2048
+    comptime B = 8
+    var scores = _lcg_scores(B, N, 0x00516006, 80.0)
+    _run_and_check_split(ctx, scores, N, K, B, "split_tree_s6")
+    print("PASS test_split_tree_s6")
+
+
+def test_split_tree_s8(ctx: DeviceContext) raises:
+    """Rows=8, N=16383 (8 tiles) -> S=8, one reduce round (8 -> 2) + final."""
+    comptime N = 16383
+    comptime K = 2048
+    comptime B = 8
+    var scores = _lcg_scores(B, N, 0x00518008, 90.0)
+    _run_and_check_split(ctx, scores, N, K, B, "split_tree_s8")
+    print("PASS test_split_tree_s8")
+
+
+def test_split_tree_s13(ctx: DeviceContext) raises:
+    """Rows=8, N=26623 (13 tiles) -> S=13, reduce (13 -> 3) + final of 3."""
+    comptime N = 26623
+    comptime K = 2048
+    comptime B = 8
+    var scores = _lcg_scores(B, N, 0x00513013, 120.0)
+    _run_and_check_split(ctx, scores, N, K, B, "split_tree_s13")
+    print("PASS test_split_tree_s13")
+
+
+# ===----------------------------------------------------------------------=== #
+# Odd-N / odd-alignment coverage for the non-split kernels.
+#
+# The vectorized score load emits a 128-bit load only when the row base is
+# 16B-aligned; odd `N` makes `token*N` non-aligned for most rows, so these
+# multi-row odd-N shapes exercise the scalar fallback (a misaligned 128-bit
+# load would fault). `test_split_decode_long` covers the same for the split
+# kernels; these cover `persistent_topk_block`'s 2048 and streaming kernels,
+# which every other test only drives at `total_seq_len=1` (row 0, always
+# aligned).
+# ===----------------------------------------------------------------------=== #
+
+
+def _run_and_check_block_multirow(
+    ctx: DeviceContext,
+    scores_host: List[Float32],  # B * N flat, row-major
+    N: Int,
+    K: Int,
+    B: Int,
+    label: String,
+) raises:
+    """Run `persistent_topk_block` over `B` rows and validate each row."""
+    assert K <= PERSISTENT_TOPK_MAX_N, "K exceeds champion width"
+    assert len(scores_host) == B * N, "scores_host length mismatch"
+
+    var scores_dev = ctx.enqueue_create_buffer[DType.float32](B * N)
+    var idxs_dev = ctx.enqueue_create_buffer[DType.int32](B * K)
+    idxs_dev.enqueue_fill(Int32(-2))
+    with scores_dev.map_to_host() as buf:
+        for i in range(B * N):
+            buf[i] = Scalar[DType.float32](scores_host[i])
+
+    persistent_topk_block(
+        ctx,
+        rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
+            scores_dev.unsafe_ptr()
+        ),
+        rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
+            idxs_dev.unsafe_ptr()
+        ),
+        N,
+        K,
+        total_seq_len=B,
+    )
+    ctx.synchronize()
+
+    var idxs_host = ctx.enqueue_create_host_buffer[DType.int32](B * K)
+    ctx.enqueue_copy(dst_buf=idxs_host, src_buf=idxs_dev)
+    ctx.synchronize()
+
+    for b in range(B):
+        var row_scores = List[Float32](capacity=N)
+        for i in range(N):
+            row_scores.append(scores_host[b * N + i])
+        var row_idxs = List[Int](capacity=K)
+        for k in range(K):
+            row_idxs.append(Int(idxs_host[b * K + k]))
+        _check_topk_row(row_scores, row_idxs, N, K, label, b)
+
+    _ = scores_dev
+    _ = idxs_dev
+    _ = idxs_host
+
+
+def test_block_odd_n_multirow(ctx: DeviceContext) raises:
+    """N=1025 (odd, <=2048), rows=8, K=512 — 2048 kernel, misaligned bases.
+
+    `token*1025` is non-16B-aligned for most rows, forcing the scalar-fallback
+    score load in `_persistent_topk_2048_kernel`.
+    """
+    comptime N = 1025
+    comptime K = 512
+    comptime B = 8
+    var scores = _lcg_scores(B, N, 0x0DD00001, 40.0)
+    _run_and_check_block_multirow(ctx, scores, N, K, B, "block_odd_n_multirow")
+    print("PASS test_block_odd_n_multirow")
+
+
+def test_block_streaming_odd_n_multirow(ctx: DeviceContext) raises:
+    """N=8193 (odd, >2048), rows=8, K=2048 — streaming kernel, misaligned bases.
+
+    Drives `persistent_topk_block` (not the split launcher), so the streaming
+    fold runs one block per row with odd `token*N` bases -> scalar-fallback
+    score load. Complements `test_split_decode_long` (split path's odd-N loads).
+    """
+    comptime N = 8193
+    comptime K = 2048
+    comptime B = 8
+    var scores = _lcg_scores(B, N, 0x0DD08193, 60.0)
+    _run_and_check_block_multirow(ctx, scores, N, K, B, "block_streaming_odd_n")
+    print("PASS test_block_streaming_odd_n_multirow")
+
+
+# ===----------------------------------------------------------------------=== #
 # Entry point
 # ===----------------------------------------------------------------------=== #
 
@@ -515,4 +835,14 @@ def main() raises:
         test_streaming_n16006_nonmultiple(ctx)
         test_streaming_n163840_ascending(ctx)
         test_streaming_masked_and_ties(ctx)
+        test_split_decode_long(ctx)
+        test_split_decode_mtp(ctx)
+        test_split_max_context(ctx)
+        test_split_partial_k(ctx)
+        test_split_masked_and_ties(ctx)
+        test_split_tree_s6(ctx)
+        test_split_tree_s8(ctx)
+        test_split_tree_s13(ctx)
+        test_block_odd_n_multirow(ctx)
+        test_block_streaming_odd_n_multirow(ctx)
     print("ALL TESTS PASSED")

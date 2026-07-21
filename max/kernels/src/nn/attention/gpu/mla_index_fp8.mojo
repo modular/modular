@@ -38,7 +38,7 @@ from nn.attention.mha_operand import KVCacheMHAOperand, KVCacheScalesMHAOperand
 from nn.attention.mha_utils import dispatch_mask
 from nn.topk_bitonic import (
     PERSISTENT_TOPK_MAX_N,
-    persistent_topk_block,
+    persistent_topk_block_split,
 )
 from nn.topk import topk_gpu
 
@@ -330,23 +330,16 @@ def mla_indexer_ragged_float8_paged[
     var k_operand = KVCacheMHAOperand(k_cache)
     var ks_operand = KVCacheScalesMHAOperand(k_cache)
 
-    # Both paths run with _is_cache_length_accurate=False: the KVCache
-    # cache_length excludes the new tokens.
-    # The scorer uses tcgen05/TMA (Blackwell-only), so gate on
-    # _has_blackwell_tcgen05(): H100/A100/other NVIDIA and AMD take the scalar
-    # fallback below. The SM100 scorer stages a BM_key-row K tile with one TMA
-    # copy, so a paged K cache must have page_size == 0 (contiguous) or a
-    # multiple of BM_key; any other page_size straddles a page boundary and
-    # falls back to the scalar kernel below.
-    comptime if (
+    comptime use_sm100_scorer = (
         _has_blackwell_tcgen05()
-        and num_heads == 64
+        and num_heads in (64, 32, 8, 4)
         and depth == 128
         and (
             type_of(k_operand).page_size == 0
             or type_of(k_operand).page_size % _BM_KEY == 0
         )
-    ):
+    )
+    comptime if use_sm100_scorer:
         fp8_index_score_sm100[
             dtype,
             type_of(k_operand),
@@ -362,10 +355,17 @@ def mla_indexer_ragged_float8_paged[
             ks_operand,
             input_row_offsets,
             batch_size,
+            max_new_tokens,
             max_num_keys,
+            mask_str == MaskName.CAUSAL.name,
             ctx,
         )
     else:
+        comptime assert num_heads % 16 == 0, (
+            "the scalar fp8_index_kernel tiles heads by thread_dim_y == 8 and"
+            " is unvalidated below 16 heads; num_heads in {4, 8} requires the"
+            " SM100 tensor-core path"
+        )
         comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
         comptime BM = block_tile_shape[0]
         comptime BN = block_tile_shape[1]
@@ -411,8 +411,10 @@ def mla_indexer_ragged_float8_paged[
     # fill_invalid_topk below.
     var cache_lengths = k_cache.cache_lengths_nd()
 
-    # Apply mask for prefill (seq_len > 1)
-    comptime if mask_str != MaskName.NULL.name:
+    # Apply mask for prefill (seq_len > 1). The SM100 scorer fuses the causal
+    # mask into its store guard (forbidden slots keep the -inf fill), so the
+    # separate full-buffer mask pass only runs for the scalar fallback.
+    comptime if mask_str != MaskName.NULL.name and not use_sm100_scorer:
         if max_new_tokens > 1:
 
             @always_inline
@@ -469,7 +471,7 @@ def mla_indexer_ragged_float8_paged[
     # The bitonic path can only select up to the champion width
     # (PERSISTENT_TOPK_MAX_N); topk_gpu handles the rare k above it.
     if effective_k <= PERSISTENT_TOPK_MAX_N:
-        persistent_topk_block(
+        persistent_topk_block_split(
             ctx,
             rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
                 scores_tile.ptr

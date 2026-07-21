@@ -52,6 +52,7 @@ def _score_paged_sm100[
     input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
     k_collection: KCollectionT,
     batch_size: Int,
+    max_seq_len: Int,
     max_num_keys: Int,
     ctx: DeviceContext,
 ) raises:
@@ -77,7 +78,9 @@ def _score_paged_sm100[
         ks_op,
         input_row_offsets,
         batch_size,
+        max_seq_len,
         max_num_keys,
+        False,
         ctx,
     )
 
@@ -449,6 +452,7 @@ def test_mla_index_fp8_paged_variable_lengths[
                 input_row_offsets_tile.as_immut(),
                 k_collection,
                 batch_size,
+                max_seq_len,
                 total_num_keys_max,
                 ctx,
             )
@@ -576,6 +580,25 @@ def main() raises:
             ctx=ctx,
         )
 
+        # strict_complete guard on the grid.z-split + causal path: max_seq_len=6
+        # keeps out of the prefill gate (ceildiv(6, 2) = 3 < 16) and base_ctas=16
+        # < sm_count forces num_slices=2 (split kernel), while top_k=256 covers
+        # every token's causal key set (max 204) so the full set must be
+        # selected. strict_complete on split otherwise only runs under NULL, and
+        # on causal only via the prefill kernel.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=64,
+            top_k=256,
+            mask_name=MaskName.CAUSAL.name,
+            strict_complete=True,
+        ](
+            seq_lens=[6, 1, 4, 1],
+            cache_lens=[128, 64, 200, 50],
+            ctx=ctx,
+        )
+
         # page_size=128 (multiple of BM_key=64, larger than one tile): must stay
         # on the SM100 tensor-core path.
         test_mla_index_fp8_paged_variable_lengths[
@@ -635,6 +658,162 @@ def main() raises:
             cache_lens=[64, 96, 32, 128],
             ctx=ctx,
         )
+
+        # ===== TP-head-sharded indexer geometry (num_heads=8, depth=128):
+        # SM100 scorer with N_TOKENS = 16 tokens per tile. Sharded head
+        # counts (< 16) exist only on the tensor-core path — the scalar
+        # fallback's [16, 8] copier thread layout silently stages nothing
+        # below 16 heads — so these are compile-gated to Blackwell. =====
+        comptime if _has_blackwell_tcgen05():
+            print("\n--- SM100 tensor-core scorer (num_heads=8, depth=128) ---")
+
+            # Dense NULL + strict_complete across the 16-token tile boundary
+            # (seq_len 17 -> two tiles with a 1-token partial; 16 -> one).
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=8,
+                depth=128,
+                page_size=64,
+                top_k=256,
+                mask_name=MaskName.NULL.name,
+                strict_complete=True,
+            ](
+                seq_lens=[17, 16, 6, 1],
+                cache_lens=[64, 128, 32, 96],
+                ctx=ctx,
+            )
+
+            # CAUSAL MTP decode at the sharded-head count.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=8,
+                depth=128,
+                page_size=64,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+            ](
+                seq_lens=[6, 1, 4, 1],
+                cache_lens=[128, 64, 200, 50],
+                ctx=ctx,
+            )
+
+            # Paged score check: logit-by-logit vs the host reference,
+            # exercising both Q buffers (seq_len 18 -> 2 tiles) at N_TOKENS=16.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=8,
+                depth=128,
+                page_size=64,
+                top_k=64,
+                mask_name=MaskName.NULL.name,
+                check_scores=True,
+            ](
+                seq_lens=[18, 2],
+                cache_lens=[100, 60],
+                ctx=ctx,
+            )
+
+        # ===== GLM 5.x replicated indexer geometry (num_heads=32,
+        # depth=128): SM100 scorer with N_TOKENS = 4 tokens per tile =====
+        print("\n--- SM100 tensor-core scorer (num_heads=32, depth=128) ---")
+
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=64,
+            top_k=256,
+            mask_name=MaskName.NULL.name,
+            strict_complete=True,
+        ](
+            seq_lens=[5, 4, 2, 1],
+            cache_lens=[64, 128, 32, 96],
+            ctx=ctx,
+        )
+
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=64,
+            top_k=64,
+            mask_name=MaskName.CAUSAL.name,
+        ](
+            seq_lens=[6, 1, 4, 1],
+            cache_lens=[128, 64, 200, 50],
+            ctx=ctx,
+        )
+
+        # Score check across the 4-token tile boundary (5 -> 2 tiles).
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=64,
+            top_k=64,
+            mask_name=MaskName.NULL.name,
+            check_scores=True,
+        ](
+            seq_lens=[5, 2],
+            cache_lens=[100, 60],
+            ctx=ctx,
+        )
+
+        # Long nh=32 pure-prefill routes to the K-streaming prefill kernel:
+        # seq=1792 (ceildiv(1792, 4) = 448 tiles >= _PREFILL_MIN_TOKEN_TILES_NH32)
+        # with causal + cache=0 clears the prefill gate. strict_complete asserts
+        # the prefill kernel selects every token's full causal key set.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=64,
+            top_k=2048,
+            mask_name=MaskName.CAUSAL.name,
+            strict_complete=True,
+        ](
+            seq_lens=[1792],
+            cache_lens=[0],
+            ctx=ctx,
+        )
+
+        # ===== GLM 32 heads sharded over 8 ranks (num_heads=4, depth=128):
+        # N_TOKENS = 32. The scalar fallback tiles heads by 8, so this count
+        # only compiles where the SM100 tensor-core path is taken. =====
+        comptime if _has_blackwell_tcgen05():
+            print("\n--- SM100 tensor-core scorer (num_heads=4, depth=128) ---")
+
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=4,
+                depth=128,
+                page_size=64,
+                top_k=256,
+                mask_name=MaskName.NULL.name,
+                strict_complete=True,
+            ](
+                seq_lens=[33, 32, 6, 1],
+                cache_lens=[64, 128, 32, 96],
+                ctx=ctx,
+            )
+
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=4,
+                depth=128,
+                page_size=64,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+            ](
+                seq_lens=[6, 1, 4, 1],
+                cache_lens=[128, 64, 200, 50],
+                ctx=ctx,
+            )
+
+            # Score check across the 32-token tile boundary (34 -> 2 tiles).
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=4,
+                depth=128,
+                page_size=64,
+                top_k=64,
+                mask_name=MaskName.NULL.name,
+                check_scores=True,
+            ](
+                seq_lens=[34, 2],
+                cache_lens=[100, 60],
+                ctx=ctx,
+            )
 
         # ===== Tests with CAUSAL mask =====
         print("\n--- CAUSAL mask tests ---")

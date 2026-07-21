@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
+from std.sys.info import _has_blackwell_tcgen05
 from nn.index_fp8 import fp8_index, fp8_index_naive
 from std.random import rand
 from layout import Idx, TileTensor, row_major
@@ -201,3 +202,40 @@ def main() raises:
         test_index_fp8[num_heads=64, depth=128](4, 722, 722, ctx)
         test_index_fp8[num_heads=64, depth=128](5, 32, 64, ctx)
         test_index_fp8[num_heads=64, depth=128](2, 128, 256, ctx)
+
+        # depth=64 stays on the scalar kernel on every target (the SM100 gate
+        # requires depth == 128): regression coverage for the Q staging, whose
+        # old layout-distributed copy silently staged nothing at this depth.
+        test_index_fp8[num_heads=64, depth=64](2, 32, 64, ctx)
+        test_index_fp8[num_heads=64, depth=64](3, 5, 33, ctx)
+        test_index_fp8[num_heads=128, depth=64](2, 16, 32, ctx)
+
+        # num_heads=32 (GLM 5.x replicated indexer): N_TOKENS=4 boundary. The
+        # scalar fallback also supports 32, so these run on every target.
+        test_index_fp8[num_heads=32, depth=128](2, 128, 128, ctx)
+        test_index_fp8[num_heads=32, depth=128](2, 3, 64, ctx)
+        test_index_fp8[num_heads=32, depth=128](1, 4, 64, ctx)
+        test_index_fp8[num_heads=32, depth=128](4, 5, 200, ctx)
+        test_index_fp8[num_heads=32, depth=128](3, 200, 200, ctx)
+
+        # TP-head-sharded indexer counts exist only on the SM100 tensor-core
+        # path (the scalar fallback's [16, 8] thread layout copies nothing
+        # below 16 heads), so they are compile-gated to Blackwell.
+        comptime if _has_blackwell_tcgen05():
+            # num_heads=8 (GLM 32 heads over 4 ranks; DSv3.2 64 over 8):
+            # N_TOKENS=16, cover partial tiles around the 16-token boundary.
+            test_index_fp8[num_heads=8, depth=128](2, 128, 128, ctx)
+            test_index_fp8[num_heads=8, depth=128](2, 17, 32, ctx)
+            test_index_fp8[num_heads=8, depth=128](4, 200, 200, ctx)
+            test_index_fp8[num_heads=8, depth=128](1, 501, 501, ctx)
+            test_index_fp8[num_heads=8, depth=128](3, 15, 64, ctx)
+            test_index_fp8[num_heads=8, depth=128](5, 16, 64, ctx)
+            test_index_fp8[num_heads=8, depth=128](2, 1, 256, ctx)
+
+            # num_heads=4 (GLM 32 heads over 8 ranks): N_TOKENS=32 boundary.
+            test_index_fp8[num_heads=4, depth=128](2, 128, 128, ctx)
+            test_index_fp8[num_heads=4, depth=128](2, 33, 64, ctx)
+            test_index_fp8[num_heads=4, depth=128](1, 32, 64, ctx)
+            test_index_fp8[num_heads=4, depth=128](2, 31, 256, ctx)
+            test_index_fp8[num_heads=4, depth=128](4, 200, 200, ctx)
+            test_index_fp8[num_heads=4, depth=128](1, 1, 64, ctx)
