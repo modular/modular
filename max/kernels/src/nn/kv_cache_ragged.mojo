@@ -22,6 +22,7 @@ from std.algorithm.functional import elementwise, unswitch
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
+from std.gpu.primitives.grid_controls import PDLLevel
 from std.collections import Optional, OptionalReg
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -1442,7 +1443,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
 # MiniMax-M3's five projections (Q, K, V, IndexQ, IndexK) into ONE matmul over
 # the concatenated weight W = [Wq | Wk | Wv | Wiq | Wik] (concat along N), then
 # routes the matmul output columns in a single elementwise epilogue to:
-#   - the combined output buffer [M, q_dim + iq_dim]  (Q then IndexQ), and
+#   - two separate output buffers: `q_output` [M, q_dim] (Q) and `iq_output`
+#     [M, iq_dim] (IndexQ), and
 #   - TWO paged KV cache collections: the MAIN cache (K + V) and the INDEX
 #     cache (IndexK only, single shared KV head).
 #
@@ -1458,10 +1460,10 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
 #
 # Column routing over col in [0, N_total) with
 #   N_total = q_dim + 2*kv_dim + iq_dim + ik_dim:
-#   [0, q_dim)                       -> Q       : output[:, col]
+#   [0, q_dim)                       -> Q       : q_output[:, col]
 #   [q_dim, q_dim+kv_dim)            -> K       : main k_cache (head/dim from col)
 #   [q_dim+kv_dim, q_dim+2*kv_dim)   -> V       : main v_cache
-#   [q_dim+2*kv_dim, +iq_dim)        -> IndexQ  : output[:, q_dim + (col-base)]
+#   [q_dim+2*kv_dim, +iq_dim)        -> IndexQ  : iq_output[:, col-base]
 #   [+iq_dim, +ik_dim)               -> IndexK  : index k_cache (head=0, dim)
 #
 # The MAIN cache is GQA/MHA (non-MLA). The INDEX cache is MLA (single latent
@@ -1498,14 +1500,17 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
     index_kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     iq_dim: Int,
-    output: LayoutTensor[
+    q_output: LayoutTensor[
+        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    iq_output: LayoutTensor[
         mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
-    """Performs a fused QKV + index-QK matmul. Q and IndexQ are written to the
-    combined `output` buffer; K/V are scattered into the MAIN `kv_collection`
-    and IndexK into the INDEX `index_kv_collection`.
+    """Performs a fused QKV + index-QK matmul. Q is written to `q_output` and
+    IndexQ to `iq_output`; K/V are scattered into the MAIN `kv_collection` and
+    IndexK into the INDEX `index_kv_collection`.
 
     Parameters:
         dtype: Element type of the `hidden_state` input tensor.
@@ -1541,8 +1546,10 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
         iq_dim: Width of the IndexQ output band (num_index_heads *
             idx_head_dim). Passed explicitly because for an MLA index cache it
             is not recoverable from the index cache's `num_heads`.
-        output: The pre-allocated combined output buffer for Q and IndexQ
-            projections. Shape: (sum(seq_lens), q_dim + iq_dim).
+        q_output: The pre-allocated output buffer for the Q projection.
+            Shape: (sum(seq_lens), q_dim).
+        iq_output: The pre-allocated output buffer for the IndexQ projection.
+            Shape: (sum(seq_lens), iq_dim).
         ctx: The call context pointer, passed by the graph compiler.
     """
 
@@ -1552,7 +1559,10 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
         return String(";").join(
             Span(
                 [
-                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg("q_output", q_output.runtime_layout.shape.value),
+                    trace_arg(
+                        "iq_output", iq_output.runtime_layout.shape.value
+                    ),
                     trace_arg(
                         "hidden_state", hidden_state.runtime_layout.shape.value
                     ),
@@ -1593,7 +1603,8 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
             index_kv_collection,
             layer_idx,
             iq_dim,
-            output,
+            q_output,
+            iq_output,
             ctx,
         )
 
@@ -1629,7 +1640,10 @@ def _fused_qkv_index_matmul_kv_cache_ragged_scale_float4[
     index_kv_collection: index_collection_t,
     layer_idx: UInt32,
     iq_dim: Int,
-    output: LayoutTensor[
+    q_output: LayoutTensor[
+        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    iq_output: LayoutTensor[
         mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContext,
@@ -1666,7 +1680,8 @@ def _fused_qkv_index_matmul_kv_cache_ragged_scale_float4[
         v_cache,
         index_k_cache,
         iq_dim,
-        output,
+        q_output,
+        iq_output,
         context,
     )
 
@@ -1700,16 +1715,18 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
     v_cache: cache_t,
     index_k_cache: index_cache_t,
     iq_dim: Int,
-    output: LayoutTensor[
+    q_output: LayoutTensor[
+        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    iq_output: LayoutTensor[
         mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: Optional[DeviceContext],
 ) raises:
     """Dual-cache fused QKV + index matmul on ragged tensors.
 
-    Q and IndexQ are written to the combined `output` buffer (Q in
-    `[0, q_dim)`, IndexQ in `[q_dim, q_dim + iq_dim)`); K/V are scattered into
-    the main `k_cache`/`v_cache`; IndexK is scattered into the MLA
+    Q is written to `q_output` and IndexQ to `iq_output`; K/V are scattered
+    into the main `k_cache`/`v_cache`; IndexK is scattered into the MLA
     `index_k_cache` (single latent head, head 0).
     """
     comptime kv_type = cache_t.dtype
@@ -1719,20 +1736,19 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
 
     comptime assert (
         kv_type == index_kv_type == output_dtype
-    ), "Main/index KV cache dtype must match the combined output dtype."
+    ), "Main/index KV cache dtype must match the output dtype."
 
-    # Boundaries over the concatenated N dimension. `output` is the combined
-    # [M, q_dim + iq_dim] buffer (Q then IndexQ):
+    # Boundaries over the concatenated N dimension. Q lands in `q_output`
+    # ([M, q_dim]) and IndexQ in `iq_output` ([M, iq_dim]):
     #   kv_dim = main num_heads * head_size   (K band == V band width)
     #   iq_dim = num_index_heads * idx_head_dim  (IndexQ band; PASSED IN, since
     #            for an MLA index cache index_kv_params.num_heads == 1 != it)
     #   ik_dim = index head_size              (IndexK band == single MLA latent
     #            head width; derivable from the index cache params)
-    #   q_dim  = output_width - iq_dim        (Q band)
+    #   q_dim  = q_output width               (Q band)
     var kv_dim = kv_params.head_size * kv_params.num_heads
     var ik_dim = index_kv_params.head_size
-    var output_width = output.dim[1]()
-    var q_dim = output_width - iq_dim
+    var q_dim = q_output.dim[1]()
 
     # Column band boundaries (exclusive upper bounds).
     var q_end = q_dim  # Q       : [0, q_end)
@@ -1769,7 +1785,6 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
         k_end,
         v_end,
         iq_end,
-        q_dim,
     )
     @always_inline
     def write_to_caches[
@@ -1783,17 +1798,17 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
 
         var col = idx[1]
 
-        # Q band -> output[:, col].
+        # Q band -> q_output[:, col].
         if col < q_end:
-            output.store[width=width](idx, output_val_out)
+            q_output.store[width=width](idx, output_val_out)
             return
 
-        # IndexQ band -> output[:, q_dim + (col - v_end)]. Packed right after Q
-        # in the combined output. Checked before the cache scatters so the
-        # branch order matches the column layout (Q | K | V | IndexQ | IndexK).
+        # IndexQ band -> iq_output[:, col - v_end]. Checked before the cache
+        # scatters so the branch order matches the column layout
+        # (Q | K | V | IndexQ | IndexK).
         if col >= v_end and col < iq_end:
-            output.store[width=width](
-                IndexList[2](idx[0], q_dim + (col - v_end)),
+            iq_output.store[width=width](
+                IndexList[2](idx[0], col - v_end),
                 output_val_out,
             )
             return
@@ -2462,11 +2477,27 @@ def _matmul_blockwise_scaled_fp4_common[
 
     # Try MAX's own SM100 Mojo block-scaled kernel first; vendor cuBLASLt only
     # on DISPATCH_MISS. The K/V-scatter epilogue rides `elementwise_lambda_fn`.
+    #
+    # This path runs a single K partition: a B200 microbench of the served
+    # decode shapes (M<=16, N in {2304,2560}, K=6144) showed split-K within
+    # noise of the single-launch kernel (the GEMM is latency-bound, not
+    # occupancy-bound), so split-K carries no benefit here; the `k_group_size=4`
+    # dispatch tuning carries the real win.
+    #
+    # PDL (programmatic dependent launch) overlaps this GEMM's prologue with the
+    # tail of the upstream grid (RMSNorm+MXFP8-quantize) and releases the
+    # downstream grid (attention) only after the fused scatter epilogue
+    # completes -- the small-BN/main kernels fire `launch_dependent_grids()`
+    # after `tmem_dealloc_mbar.wait()`, so the KV/index stores are visible
+    # before any dependent grid runs. The upstream RMSNorm-block-scaled and
+    # downstream attention kernels already default `PDLLevel.ON`; keeping this
+    # GEMM OFF forced a full serialization bubble on both sides.
     block_scaled_matmul[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
         target=target,
+        pdl_level=PDLLevel.ON,
     ](
         c_tt,
         lt_to_tt(hidden_state),

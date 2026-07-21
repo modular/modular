@@ -122,7 +122,6 @@ def execute_dual_cache_fused[
     comptime qkv_n = q_dim + 2 * kv_dim  # main matmul N
     comptime idx_n = iq_dim + ik_dim  # index matmul N
     comptime n_total = qkv_n + idx_n  # concatenated N
-    comptime combined_out = q_dim + iq_dim  # dual-cache output width
 
     # Every band boundary must land on an SF-atom row group for bit-exactness.
     comptime assert q_dim % SF_MN_GROUP_SIZE == 0
@@ -265,11 +264,18 @@ def execute_dual_cache_fused[
         UInt32(max_ctx),
     )
 
-    # ---- combined output buffers ----
-    comptime out_layout = Layout.row_major(UNKNOWN_VALUE, combined_out)
-    var fused_out = ManagedLayoutTensor[OUT_DTYPE, out_layout](
-        RuntimeLayout[out_layout].row_major(
-            IndexList[2](total_length, combined_out)
+    # ---- dual-cache fused output buffers (Q and IndexQ, separate) ----
+    comptime fused_q_layout = Layout.row_major(UNKNOWN_VALUE, q_dim)
+    var fused_q_out = ManagedLayoutTensor[OUT_DTYPE, fused_q_layout](
+        RuntimeLayout[fused_q_layout].row_major(
+            IndexList[2](total_length, q_dim)
+        ),
+        ctx,
+    )
+    comptime fused_iq_layout = Layout.row_major(UNKNOWN_VALUE, iq_dim)
+    var fused_iq_out = ManagedLayoutTensor[OUT_DTYPE, fused_iq_layout](
+        RuntimeLayout[fused_iq_layout].row_major(
+            IndexList[2](total_length, iq_dim)
         ),
         ctx,
     )
@@ -305,7 +311,8 @@ def execute_dual_cache_fused[
         index_collection,
         UInt32(layer_idx),
         iq_dim,
-        fused_out.device_tensor(),
+        fused_q_out.device_tensor(),
+        fused_iq_out.device_tensor(),
         ctx,
     )
 
@@ -393,7 +400,8 @@ def execute_dual_cache_fused[
     ctx.synchronize()
 
     # ============ VERIFY ============
-    var fused_host = fused_out.tensor[update=True]()
+    var fused_q_host = fused_q_out.tensor[update=True]()
+    var fused_iq_host = fused_iq_out.tensor[update=True]()
     var q_host = q_out.tensor[update=True]()
     var iq_host = iq_out.tensor[update=True]()
     var main_host = main_blocks.tensor[update=True]()
@@ -422,15 +430,13 @@ def execute_dual_cache_fused[
     var iq_maxdiff = Float32(0.0)
     for m in range(total_length):
         for c in range(q_dim):
-            var a = fused_host.ptr[m * combined_out + c].cast[DType.float32]()
+            var a = fused_q_host.ptr[m * q_dim + c].cast[DType.float32]()
             var b = q_host.ptr[m * q_dim + c].cast[DType.float32]()
             if abs(a - b) > atol_f + rtol_f * max(abs(a), abs(b)):
                 q_mm += 1
             q_maxdiff = max(q_maxdiff, abs(a - b))
         for c in range(iq_dim):
-            var a = fused_host.ptr[m * combined_out + q_dim + c].cast[
-                DType.float32
-            ]()
+            var a = fused_iq_host.ptr[m * iq_dim + c].cast[DType.float32]()
             var b = iq_host.ptr[m * iq_dim + c].cast[DType.float32]()
             if abs(a - b) > atol_f + rtol_f * max(abs(a), abs(b)):
                 iq_mm += 1

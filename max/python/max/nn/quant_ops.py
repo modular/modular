@@ -670,15 +670,15 @@ def quantized_fused_qkv_index_matmul(
     idx_head_dim: int,
     quant_config: QuantConfig,
     weight_scale: TensorValue,
-) -> TensorValue:
+) -> tuple[TensorValue, TensorValue]:
     """Fuses MiniMax-M3's QKV and index-QK projections into one MXFP8 matmul.
 
     All five projections (``Q``, ``K``, ``V``, ``IndexQ``, ``IndexK``) read the
     same hidden state ``x``. This quantizes ``x`` once and runs a single
     block-scaled GEMM over the concatenated weights ``[Wq | Wk | Wv | Wiq |
     Wik]``, scattering ``K`` / ``V`` into ``kv_collection`` and ``IndexK`` into
-    ``index_kv_collection`` while returning the combined ``Q`` / ``IndexQ``
-    output for the caller to split.
+    ``index_kv_collection`` while returning ``Q`` and ``IndexQ`` as two separate
+    output tensors.
 
     Only the MXFP8 dynamic-activation-quant format is supported; callers must
     gate on it (other formats keep the separate QKV + IndexQK matmuls).
@@ -699,8 +699,9 @@ def quantized_fused_qkv_index_matmul(
         weight_scale: The concatenated E8M0 weight scale tensor (pre-interleave).
 
     Returns:
-        The combined ``[total_seq_len, q_dim + iq_dim]`` bf16 tensor
-        (``Q`` followed by ``IndexQ``).
+        A tuple ``(q, index_q)`` of bf16 tensors: ``q`` is
+        ``[total_seq_len, q_dim]`` and ``index_q`` is
+        ``[total_seq_len, iq_dim]``.
     """
     if quant_config.format != QuantFormat.MXFP8:
         raise ValueError(

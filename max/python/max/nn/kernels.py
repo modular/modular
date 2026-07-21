@@ -962,7 +962,7 @@ def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
     idx_head_dim: int,
     input_scale: TensorValue,
     weight_scale: TensorValue,
-) -> TensorValue:
+) -> tuple[TensorValue, TensorValue]:
     """Computes MiniMax-M3's fused QKV + index-QK projections in one MXFP8 GEMM.
 
     A 5-way fusion: ``input`` and ``wqkv`` carry ``float8_e4m3fn`` data with
@@ -970,16 +970,14 @@ def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
     the concatenation ``[Wq | Wk | Wv | Wiq | Wik]`` along the output dimension.
     The single matmul output columns route as:
 
-    - ``Q``       -> returned combined output, columns ``[0, q_dim)``.
+    - ``Q``       -> returned as the first output, shape ``[M, q_dim]``.
     - ``K`` / ``V`` -> scattered in place into the MAIN ``kv_collection``.
-    - ``IndexQ``  -> returned combined output, columns
-      ``[q_dim, q_dim + iq_dim)`` (packed right after ``Q``).
+    - ``IndexQ``  -> returned as the second output, shape ``[M, iq_dim]``.
     - ``IndexK``  -> scattered in place into the INDEX ``index_kv_collection``
       (MLA cache: single latent head, head 0, K only).
 
     The fusion is bit-exact to separate QKV and IndexQK matmuls because every
-    band boundary lands on a 128-element scale-block boundary for M3. The model
-    code splits the returned tensor into ``Q`` and ``IndexQ`` via ``ops.split``.
+    band boundary lands on a 128-element scale-block boundary for M3.
 
     Args:
         kv_params: KVCacheParams for the MAIN (K, V) cache (GQA/MHA, non-MLA).
@@ -1003,7 +1001,8 @@ def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
         weight_scale: E8M0 weight block scales in the rank-5 SF-atom layout.
 
     Returns:
-        Combined ``[M, q_dim + iq_dim]`` bf16 tensor (Q then IndexQ).
+        A tuple ``(q, index_q)`` of bf16 tensors: ``q`` is ``[M, q_dim]`` and
+        ``index_q`` is ``[M, iq_dim]``.
 
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
@@ -1062,22 +1061,31 @@ def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
         layer_idx,
     ]
 
-    # Combined output: Q (n_heads * head_dim) then IndexQ (iq_dim).
-    output_dim = n_heads * kv_params.head_dim + iq_dim
+    # Two separate outputs: Q [M, q_dim] and IndexQ [M, iq_dim]. The kernel's
+    # store-redirect epilogue routes the Q band to the first output and the
+    # IndexQ band to the second, so the downstream reshapes stay contiguous
+    # views (no split/copy).
+    q_dim = n_heads * kv_params.head_dim
 
-    return ops.inplace_custom(
+    results = ops.inplace_custom(
         op_name,
         device=input.device,
         values=values,
         out_types=[
             TensorType(
                 dtype=DType.bfloat16,
-                shape=input.shape[:-1] + [output_dim],
+                shape=input.shape[:-1] + [q_dim],
                 device=input.device,
-            )
+            ),
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=input.shape[:-1] + [iq_dim],
+                device=input.device,
+            ),
         ],
         parameters=parameters,
-    )[0].tensor
+    )
+    return (results[0].tensor, results[1].tensor)
 
 
 def _fused_qkv_index_ragged_matmul(

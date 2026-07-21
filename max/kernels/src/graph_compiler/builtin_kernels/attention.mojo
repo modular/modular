@@ -1183,8 +1183,8 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
     #
     # The MAIN cache operands (kv_blocks .. max_cache_length) drive the K/V
     # scatter; the INDEX cache operands (index_kv_blocks .. index_max_cache_length)
-    # drive the IndexK scatter. Q and IndexQ are returned in the combined
-    # `output` tensor [M, q_dim + iq_dim].
+    # drive the IndexK scatter. Q is returned in `q_output` [M, q_dim] and IndexQ
+    # in `iq_output` [M, iq_dim].
     #
     # `IQ_DIM` is the IndexQ output-band width (num_index_heads * idx_head_dim).
     # It is a parameter because, for the MLA index cache, it cannot be recovered
@@ -1202,7 +1202,8 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
         IQ_DIM: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=output_type, rank=2, ...],
+        q_output: OutputTensor[dtype=output_type, rank=2, ...],
+        iq_output: OutputTensor[dtype=output_type, rank=2, ...],
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
@@ -1251,7 +1252,8 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
                 index_kv_collection,
                 layer_idx,
                 IQ_DIM,
-                output.to_layout_tensor(),
+                q_output.to_layout_tensor(),
+                iq_output.to_layout_tensor(),
                 ctx,
             )
         )
