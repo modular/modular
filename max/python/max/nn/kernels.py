@@ -5038,6 +5038,7 @@ def grouped_dynamic_scaled_mxfp4_matmul(
     preshuffled_b: bool = False,
     a_scales_preshuffled: bool = False,
     a_scales_max_padded_m: int = 0,
+    decode_grid_m_cap: int = 0,
 ) -> TensorValue:
     """Performs grouped NVFP4 matmul for MoE layers.
 
@@ -5066,6 +5067,9 @@ def grouped_dynamic_scaled_mxfp4_matmul(
             num_active_experts].
         out_type: Output dtype. Defaults to bfloat16.
         estimated_total_m: The estimated total number of tokens.
+        decode_grid_m_cap: Per-expert decode cap sizing the direct grid.y on
+            the AMD preb decode bands. 0 disables (full-stride fallback).
+            Ignored unless ``preshuffled_b``.
 
     Returns:
         The matmul result with shape ``[total_tokens, N]`` and dtype ``out_type``.
@@ -5200,6 +5204,10 @@ def grouped_dynamic_scaled_mxfp4_matmul(
     else:
         max_num_tokens_arg = expert_usage_stats_host[0]
 
+    decode_grid_m_cap_arg = ops.constant(
+        decode_grid_m_cap, dtype=DType.uint32, device=DeviceRef.CPU()
+    )
+
     output = ops.custom(
         "mo.grouped.matmul.block.scaled.mxfp4",
         device=hidden_states.device,
@@ -5213,6 +5221,7 @@ def grouped_dynamic_scaled_mxfp4_matmul(
             max_num_tokens_arg,
             expert_usage_stats_host[1],
             estimated_total_m_arg,
+            decode_grid_m_cap_arg,
         ],
         out_types=[
             TensorType(

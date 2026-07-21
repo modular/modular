@@ -454,6 +454,7 @@ struct PreShuffledBGroupedGEMM[
         mfma_cluster: Int = 4,
         deep_prime: Bool = False,
         waves_per_eu: Int = 0,
+        static_grid_z: Bool = False,
     ](
         c: TileTensor[mut=True, ...],
         a: TileTensor[DType.uint8, ...],
@@ -469,6 +470,7 @@ struct PreShuffledBGroupedGEMM[
         max_num_tokens_per_expert: Int,
         num_active_experts: Int,
         ctx: DeviceContext,
+        grid_m_cap: Int = -1,
     ) raises:
         comptime MatmulDeviceFunctionType = _MXFP4MatmulAMD_PreB[
             BM=BM,
@@ -581,6 +583,16 @@ struct PreShuffledBGroupedGEMM[
                 deep_prime,
                 waves_per_eu,
             ]
+            # grid.y cap: decode cap when supplied, else full A-scale stride.
+            var m_cap = (
+                grid_m_cap if grid_m_cap > 0 else max_num_tokens_per_expert
+            )
+            # grid.z: comptime local-expert count (capture-time constant) when
+            # static_grid_z, else runtime num_active_experts.
+            comptime n_local_experts = b_pre.static_shape[0]
+            var grid_z = (
+                n_local_experts if static_grid_z else num_active_experts
+            )
             ctx.enqueue_function[kernel](
                 c,
                 a_i,
@@ -593,8 +605,8 @@ struct PreShuffledBGroupedGEMM[
                 max_padded_M,
                 grid_dim=(
                     ceildiv(N, BN),
-                    ceildiv(max_num_tokens_per_expert, BM),
-                    num_active_experts,
+                    ceildiv(m_cap, BM),
+                    grid_z,
                 ),
                 block_dim=MatmulDeviceFunctionType.num_threads,
             )
@@ -911,6 +923,7 @@ def mxfp4_grouped_matmul_amd_preb(
     num_active_experts: Int,
     ctx: DeviceContext,
     estimated_total_m: Int = 0,
+    decode_grid_m_cap: Int = -1,
 ) raises:
     """Launches grouped MXFP4 matmul on AMD CDNA4 with pre-shuffled weights.
 
@@ -934,6 +947,10 @@ def mxfp4_grouped_matmul_amd_preb(
         ctx: Device context.
         estimated_total_m: Estimated total tokens across all experts, used
             to select the tuned kernel band (default 0).
+        decode_grid_m_cap: Decode-band grid cap (the production max batch
+            size); when positive and estimated_total_m is within it, launches
+            the direct capped decode grid instead of the persistent fallback
+            (default -1, disabled).
     """
 
     comptime assert (
@@ -980,7 +997,10 @@ def mxfp4_grouped_matmul_amd_preb(
         b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
         deep_prime: Bool = False,
         wg_per_cu: Int = 2,
+        use_decode_cap: Bool = False,
     ]() raises:
+        # Decode bands (use_decode_cap) pass the decode cap; others pass -1.
+        var grid_m_cap = decode_grid_m_cap if use_decode_cap else -1
         PreShuffledBGroupedGEMM[
             cu_count=ctx.default_device_info.sm_count, wg_per_cu=wg_per_cu
         ].launch[
@@ -991,6 +1011,7 @@ def mxfp4_grouped_matmul_amd_preb(
             persistent=persistent,
             b_cache_policy=b_cache_policy,
             deep_prime=deep_prime,
+            static_grid_z=use_decode_cap,
         ](
             c,
             a,
@@ -1002,6 +1023,7 @@ def mxfp4_grouped_matmul_amd_preb(
             max_num_tokens_per_expert,
             num_active_experts,
             ctx,
+            grid_m_cap,
         )
 
     # Per-(shape, M-band) tuned picks: persistent decode -> direct prefill at
@@ -1042,11 +1064,13 @@ def mxfp4_grouped_matmul_amd_preb(
             return run_kernel[64, 128, 512, 64, False, deep_prime=True]()
 
     comptime if N == 6144 and packed_K == (6144 // 2):  # MiniMax-M3 gate+up
-        if etm <= 2:
-            return run_kernel[16, 64, 512, 16, True, STREAM, wg_per_cu=1]()
-        elif etm <= 4:
-            return run_kernel[16, 64, 512, 16, True, STREAM]()
-        elif etm <= 256:
+        if etm <= 256:
+            # Decode: direct capped grid beats persistent; needs a valid cap,
+            # else route to persistent.
+            if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
+                return run_kernel[
+                    16, 64, 512, 16, False, STREAM, use_decode_cap=True
+                ]()
             return run_kernel[16, 128, 512, 32, True, STREAM]()
         elif etm <= 512:
             return run_kernel[32, 128, 512, 32, True, STREAM]()
@@ -1060,11 +1084,13 @@ def mxfp4_grouped_matmul_amd_preb(
             return run_kernel[64, 128, 512, 64, False]()
 
     comptime if N == 6144 and packed_K == (3072 // 2):  # MiniMax-M3 down
-        if etm <= 2:
-            return run_kernel[16, 64, 512, 16, True, STREAM, wg_per_cu=1]()
-        elif etm <= 4:
-            return run_kernel[16, 64, 512, 16, True, STREAM]()
-        elif etm <= 256:
+        if etm <= 256:
+            # Decode: direct capped grid beats persistent; needs a valid cap,
+            # else route to persistent.
+            if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
+                return run_kernel[
+                    16, 64, 512, 16, False, STREAM, use_decode_cap=True
+                ]()
             return run_kernel[16, 128, 512, 32, True, STREAM]()
         elif etm <= 512:
             return run_kernel[32, 128, 512, 32, True, STREAM]()

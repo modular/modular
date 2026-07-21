@@ -307,6 +307,13 @@ class MoEQuantized(MoE):
             if mxfp4_ep_scale_fusion
             else 0
         )
+        # Decode cap = global decode batch; sizes the preb direct grid.y. 0
+        # disables (full-stride fallback).
+        mxfp4_decode_grid_m_cap = (
+            self.ep_batch_manager.config.max_batch_size
+            if self._ep_batch_manager
+            else 0
+        )
         # The up-proj reads its A-scale from the dispatched tokens, which
         # `ep_wait` wrote in slot layout when the fusion is on.
         up_a_scales_preshuffled = (
@@ -356,6 +363,7 @@ class MoEQuantized(MoE):
                     # KS224: ep_wait wrote the up-proj A-scale in slot layout.
                     a_scales_preshuffled=up_a_scales_preshuffled,
                     a_scales_max_padded_m=mxfp4_ep_max_padded_m,
+                    decode_grid_m_cap=mxfp4_decode_grid_m_cap,
                 )
                 down_in, silu_scales = strategy.fused_silu_quantize(
                     gate_up,
@@ -414,6 +422,7 @@ class MoEQuantized(MoE):
                 estimated_total_m=estimated_total_m,
                 a_scales_preshuffled=down_slot_stride > 0,
                 a_scales_max_padded_m=down_slot_stride,
+                decode_grid_m_cap=mxfp4_decode_grid_m_cap,
             )
         return strategy.grouped_matmul(
             self.down_proj,
