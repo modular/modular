@@ -2388,6 +2388,11 @@ def add_ftz_rm(
 
 
 @always_inline
+def fma_ftz(a: Float32, b: Float32, c: Float32) -> Float32:
+    return intrin["fma.rn.ftz"](a, b, c)
+
+
+@always_inline
 def fma_ftz(
     a: SIMD[DType.float32, 2],
     b: SIMD[DType.float32, 2],

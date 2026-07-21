@@ -1734,7 +1734,15 @@ def fa4_splitk_combine_write[
         )
         pmax[p + 1] = ms[0]
         psum[p + 1] = ms[1]
-        gmax = max(gmax, pmax[p + 1])
+    # Cluster-global max via 3-arg `max_ftz` (one FMNMX3 per two partitions)
+    # rather than a 2-arg chain. `gmax` seeds at pmax[0] (own_max); fold the
+    # remaining P-1 slots two at a time. P is even (split-K whitelist), so the
+    # final odd slot folds alone. Order-independent: max is exact/associative.
+    comptime for p in range(1, P, 2):
+        comptime if p + 1 < P:
+            gmax = max_ftz(gmax, pmax[p], pmax[p + 1])
+        else:
+            gmax = max_ftz(gmax, pmax[p])
 
     var w = InlineArray[Float32, P](uninitialized=True)
     var gsum: Float32 = 0
@@ -2487,7 +2495,7 @@ def fa4_softmax[
 
     @parameter
     @always_inline
-    def store_exp(row_max: Float32) -> f32x2:
+    def store_exp(max_term: Float32) -> f32x2:
         comptime exp_simd = 2
         comptime vs_len = score_cols // exp_simd  # score_cols // 2
         comptime assert (vs_len % config.num_pv_stages) == 0
@@ -2522,19 +2530,20 @@ def fa4_softmax[
 
         comptime if use_fma:
             vscale = f32x2(scale_log2e)
-            # expression byte-identical (no `+ 0.0` instruction emitted).
-            comptime if p_fp8_bias != 0:
-                vneg_max_scaled = fma_ftz(
-                    f32x2(-row_max), f32x2(scale_log2e), f32x2(p_fp8_bias)
-                )
-            else:
-                vneg_max_scaled = f32x2(-row_max * scale_log2e)
+            # `max_term` arrives fully formed as the negated log2-domain max
+            # `-row_max*scale_log2e` (+ `p_fp8_bias` already folded in for fp8,
+            # via a single fused fma at max-definition time — see
+            # `neg_scaled_max`). Computed once by the caller and carried across
+            # the K-loop, so store_exp neither recomputes `-row_max*scale` (one
+            # fewer scalar FMUL per K-iter) nor re-adds the bias here.
+            vneg_max_scaled = f32x2(max_term)
             vrow_max = f32x2(0)  # unused
         else:
+            # non-fma: `max_term` is the raw running max.
             comptime if p_fp8_bias != 0:
-                vrow_max = f32x2(row_max - p_fp8_bias)
+                vrow_max = f32x2(max_term - p_fp8_bias)
             else:
-                vrow_max = f32x2(row_max)
+                vrow_max = f32x2(max_term)
             vscale = f32x2(0)  # unused
             vneg_max_scaled = f32x2(0)  # unused
 
@@ -3051,7 +3060,41 @@ def fa4_softmax[
     else:
         sink_weight = 0.0
 
-    var row_sum: f32x2 = store_exp(row_max)
+    # use_fma carries the running max in the negated log2-domain
+    # (`neg_max_scaled = -row_max*scale_log2e`, with `p_fp8_bias` folded in for
+    # fp8). Computing it once and carrying it lets the K-loop share this
+    # `*scale_log2e` between the online-softmax correction diff and store_exp's
+    # bias term, dropping one scalar FMUL per iter. `neg_scale_log2e` hoists the
+    # sign flip out of the loop. use_fma implies null sink/qscale, so
+    # `row_max`/`scale_log2e` are final here.
+    # Function-scoped so the carry survives across K-loop iterations (a var
+    # first-assigned inside a `comptime if` would be block-scoped). Dead `0.0`
+    # init covers the non-fma path (unused there, DCE'd), as with `wr` above.
+    var neg_scale_log2e: Float32 = 0.0
+    var neg_max_scaled: Float32 = 0.0
+    comptime if use_fma:
+        neg_scale_log2e = -scale_log2e
+
+    @parameter
+    @always_inline
+    def neg_scaled_max(m: Float32) -> Float32:
+        # `-m*scale_log2e`, with the fp8 `p_fp8_bias` folded in via one fused
+        # fma -- so store_exp needs no separate bias add and, since the bias is
+        # common to every max, it cancels in the correction diff
+        # `nms_new - nms_old`. bf16 (bias == 0) uses a plain ftz mul (no fma) to
+        # avoid a spurious `+ 0.0`; the fp8 form is bit-identical to the old
+        # `fma(-row_max, scale_log2e, p_fp8_bias)` store_exp bias.
+        comptime if p_fp8_bias != 0:
+            return fma_ftz(m, neg_scale_log2e, p_fp8_bias)
+        else:
+            return mul_ftz(m, neg_scale_log2e)
+
+    var row_sum: f32x2
+    comptime if use_fma:
+        neg_max_scaled = neg_scaled_max(row_max)
+        row_sum = store_exp(neg_max_scaled)
+    else:
+        row_sum = store_exp(row_max)
 
     var o_phase: UInt32 = 0  # initial wait is phase 0
 
@@ -3136,10 +3179,16 @@ def fa4_softmax[
                     kv_row, old_max
                 )
 
-                diff = sub_ftz(old_max, new_row_max)
-
+                # Loop-body scoped so `nms_new` reaches the gate's adoption
+                # below (dead `0.0` for non-fma; DCE'd).
+                var nms_new: Float32 = 0.0
                 comptime if use_fma:
-                    diff = mul_ftz(diff, scale_log2e)
+                    # scaled-domain carry: one FMUL (nms_new) feeds both the
+                    # correction diff and store_exp's bias (see pre-loop note).
+                    nms_new = neg_scaled_max(new_row_max)
+                    diff = sub_ftz(nms_new, neg_max_scaled)
+                else:
+                    diff = sub_ftz(old_max, new_row_max)
                 var correction: Float32
 
                 comptime if rescale_threshold < 0:
@@ -3147,16 +3196,23 @@ def fa4_softmax[
                     # 8 < new_row_max - old_max
                     if _vote_nvidia_helper(diff < rescale_threshold) != 0:
                         row_max = new_row_max
+                        comptime if use_fma:
+                            neg_max_scaled = nms_new
                         correction = exp2(diff)
                     else:
                         correction = 1
                 else:
                     row_max = new_row_max
+                    comptime if use_fma:
+                        neg_max_scaled = nms_new
                     correction = exp2(diff)
                 correction_smem[] = correction
                 pipeline_c.commit()
                 # update s->p
-                local_rowsum = store_exp(row_max)
+                comptime if use_fma:
+                    local_rowsum = store_exp(neg_max_scaled)
+                else:
+                    local_rowsum = store_exp(row_max)
                 row_sum = fma_ftz(row_sum, f32x2(correction), local_rowsum)
                 o_phase ^= 1
     else:
@@ -3183,10 +3239,14 @@ def fa4_softmax[
                     kv_row, old_max
                 )
 
-            diff = sub_ftz(old_max, new_row_max)
-
+            var nms_new: Float32 = 0.0
             comptime if use_fma:
-                diff = mul_ftz(diff, scale_log2e)
+                # scaled-domain carry: one FMUL (nms_new) feeds both the
+                # correction diff and store_exp's bias (see pre-loop note).
+                nms_new = neg_scaled_max(new_row_max)
+                diff = sub_ftz(nms_new, neg_max_scaled)
+            else:
+                diff = sub_ftz(old_max, new_row_max)
             var correction: Float32
 
             comptime if rescale_threshold < 0:
@@ -3194,16 +3254,23 @@ def fa4_softmax[
                 # 8 < new_row_max - old_max
                 if _vote_nvidia_helper(diff < rescale_threshold) != 0:
                     row_max = new_row_max
+                    comptime if use_fma:
+                        neg_max_scaled = nms_new
                     correction = exp2(diff)
                 else:
                     correction = 1
             else:
                 row_max = new_row_max
+                comptime if use_fma:
+                    neg_max_scaled = nms_new
                 correction = exp2(diff)
             correction_smem[] = correction
             pipeline_c.commit()
             # update s->p
-            local_rowsum = store_exp(row_max)
+            comptime if use_fma:
+                local_rowsum = store_exp(neg_max_scaled)
+            else:
+                local_rowsum = store_exp(row_max)
             row_sum = fma_ftz(row_sum, f32x2(correction), local_rowsum)
             o_phase ^= 1
     # Do the final correction and write.
@@ -3736,20 +3803,20 @@ def fa4_softmax[
         global_max = max(row_max, peer_max)
         # Match the per-WG online softmax convention: when `use_fma`,
         # `row_max` is tracked in raw (unscaled) score units and the
-        # inner-loop diff is multiplied by `scale_log2e` before `exp2`
-        # (see `diff = mul_ftz(diff, scale_log2e)` above). The LSE
-        # combine must apply the same conversion, otherwise the
-        # cross-WG weights are `exp2(raw_diff)` instead of
-        # `exp2(raw_diff * scale_log2e)` and the 1Q output drifts ~1
-        # ULP whenever the two WGs' raw maxes differ. Without this
-        # scaling the bug is masked when K is constant (raw maxes
+        # inner-loop correction diff is formed in the `scale_log2e` (log2)
+        # domain before `exp2` (the running max is carried scaled as
+        # `neg_max_scaled = -row_max * scale_log2e`). The LSE combine must
+        # apply the same conversion, otherwise the cross-WG weights are
+        # `exp2(raw_diff)` instead of `exp2(raw_diff * scale_log2e)` and the
+        # 1Q output drifts ~1 ULP whenever the two WGs' raw maxes differ.
+        # Without this scaling the bug is masked when K is constant (raw maxes
         # equal across WGs) or V is constant (per-WG O ∝ row_sum so
         # the wrong weights cancel through global_sum normalization).
         # Vectorize the (local, peer) pair: one f32x2 sub / mul / exp2 in
         # place of two scalars each (matching `store_exp`'s f32x2 `exp2`),
-        # and fuse the denominator's two products into a single FMA. Note the
-        # `*= scale_log2e` here is now `mul_ftz` (ftz), matching the inner
-        # loop's `diff = mul_ftz(diff, scale_log2e)`.
+        # and fuse the denominator's two products into a single FMA. The
+        # `*= scale_log2e` here is `mul_ftz` (ftz), matching the inner loop's
+        # log2-domain correction diff.
         var diffs: f32x2 = f32x2(row_max, peer_max) - f32x2(global_max)
         comptime if use_fma:
             diffs = mul_ftz(diffs, f32x2(scale_log2e))
