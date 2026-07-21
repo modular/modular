@@ -20,6 +20,7 @@
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Compiler/Threading.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Target/TargetLowering.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
@@ -1056,18 +1057,43 @@ struct ConvertKGENRebind : public ConvertPOPToLLVMPattern<RebindOp> {
 struct ConvertKGENSourceLoc : ConvertPOPToLLVMPattern<SourceLocOp> {
   using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
+  // An op reaching here was not inlined enough to reach its requested caller
+  // frame (`SourceLocOp::fold` resolves the rest). Inlining is done, so degrade
+  // to the outermost caller in its call-site location rather than failing.
   LogicalResult
   matchAndRewrite(SourceLocOp op, SourceLocOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    auto inlineCountIntAttr = dyn_cast<IntegerAttr>(op.getInlineCount());
-    if (!inlineCountIntAttr)
+    if (!isa<IntegerAttr>(op.getInlineCount()))
       return op.emitError(
           "failed to materialize inline count value for call location");
 
-    return op.emitError("call location was not inlined the specified number of "
-                        "times: requires " +
-                        Twine(inlineCountIntAttr.getInt() + 1) +
-                        " more time(s)");
+    LocationAttr bestFrame;
+    DebugInfo::walkLocation(op.getLoc(),
+                            DebugInfo::LocWalkPolicy::CallerPriority,
+                            [&](Location loc) -> WalkResult {
+                              if (isa<mlir::CallSiteLoc>(loc))
+                                return WalkResult::advance();
+                              bestFrame = loc;
+                              return WalkResult::interrupt();
+                            });
+
+    Location loc = op.getLoc();
+    FileLineColLoc frame =
+        bestFrame ? DebugInfo::extractSourceLoc(bestFrame) : FileLineColLoc();
+
+    Value line = ParamConstantOp::create(
+        rewriter, loc, op.getLine().getType(),
+        rewriter.getIndexAttr(frame ? frame.getLine() : 0));
+    Value col = ParamConstantOp::create(
+        rewriter, loc, op.getCol().getType(),
+        rewriter.getIndexAttr(frame ? frame.getColumn() : 0));
+    Value file = ParamConstantOp::create(
+        rewriter, loc, op.getFileName().getType(),
+        StringAttr::get(frame ? frame.getFilename().getValue()
+                              : StringRef("<unknown location>"),
+                        rewriter.getType<StringType>()));
+    rewriter.replaceOp(op, {line, col, file});
+    return success();
   }
 };
 
