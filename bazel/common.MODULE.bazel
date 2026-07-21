@@ -48,10 +48,10 @@ archive_override(
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-PvMqbvlCakQ3JczLgemNYHlPzV0ZdIW3WXBNQAQ50Mg=",
-    strip_prefix = "rules_mojo-9a6a240114bd8ce0e0d3fea0dbef1d70744f7c6f",
+    integrity = "sha256-9nI/7x9s8iudXH0aOJxSbZxdy+WG2Gg9jOMQp2zO+qs=",
+    strip_prefix = "rules_mojo-09b87fd24f27c7dafc2ad13edc6767f784bd3ea6",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/9a6a240114bd8ce0e0d3fea0dbef1d70744f7c6f.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/09b87fd24f27c7dafc2ad13edc6767f784bd3ea6.tar.gz",
     ],
 )
 

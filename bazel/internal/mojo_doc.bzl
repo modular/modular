@@ -1,7 +1,7 @@
 """Generate documentation for Mojo source files."""
 
 load("@rules_mojo//mojo:providers.bzl", "MojoInfo")
-load("@rules_mojo//mojo/private:utils.bzl", "MOJO_EXTENSIONS", "collect_mojoinfo")  # buildifier: disable=bzl-visibility
+load("@rules_mojo//mojo/private:utils.bzl", "MOJO_EXTENSIONS", "collect_mojoinfo", "format_import")  # buildifier: disable=bzl-visibility
 
 def _mojo_doc_implementation(ctx):
     mojo_toolchain = ctx.toolchains["@rules_mojo//:toolchain_type"].mojo_toolchain_info
@@ -14,7 +14,7 @@ def _mojo_doc_implementation(ctx):
         if not file.dirname.startswith(root_directory):
             file_args.add("-I", file.dirname)
 
-    file_args.add_all(import_paths, before_each = "-I")
+    file_args.add_all(import_paths, map_each = format_import)
     file_args.add(root_directory)
 
     mojodoc_output = ctx.actions.declare_file(ctx.label.name + ".mojodoc.json")
