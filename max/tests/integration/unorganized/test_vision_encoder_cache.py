@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
@@ -24,6 +24,7 @@ from max.driver import Buffer
 from max.pipelines.context import (
     GenerationStatus,
     GrammarEnforcementSnapshot,
+    GrammarMatcher,
     ImageMetadata,
     LogProbabilities,
     SamplingParams,
@@ -33,7 +34,13 @@ from max.pipelines.context import (
 )
 from max.pipelines.context.context import TokenBuffer
 from max.pipelines.context.eos_tracking import EOSTracker
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
+from max.pipelines.lib.vision_encoder_cache import (
+    SupportsVisionEncoding,
+    VisionEncoderCache,
+    VisionEncodeResult,
+    derive_counts_from_spans,
+    validate_vision_encode_counts,
+)
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.pipelines.request import RequestID
 
@@ -81,10 +88,12 @@ class FakeContext:
         image_token_indices: npt.NDArray[np.int32] | None = None,
         processed_length: int = 0,
         active_length: int = 0,
+        next_images: list[ImageMetadata] | None = None,
     ) -> None:
         self._eos_tracker = EOSTracker()
         self._request_id = request_id
         self.images: list[ImageMetadata] = images or []
+        self._next_images_override = next_images
         self._needs_vision = needs_vision
         self.status = GenerationStatus.ACTIVE
         self.image_token_indices: npt.NDArray[np.int32] = (
@@ -116,7 +125,11 @@ class FakeContext:
 
     @property
     def next_images(self) -> list[ImageMetadata]:
-        return self.images if self._needs_vision else []
+        if not self._needs_vision:
+            return []
+        if self._next_images_override is not None:
+            return self._next_images_override
+        return self.images
 
     def compute_image_aligned_idx(self, idx: int) -> int:
         return idx
@@ -178,7 +191,7 @@ class FakeContext:
         pass
 
     @property
-    def matcher(self) -> Any | None:
+    def matcher(self) -> GrammarMatcher | None:
         return None
 
     @property
@@ -189,7 +202,7 @@ class FakeContext:
     def grammar(self) -> str | None:
         return None
 
-    def set_matcher(self, matcher: Any) -> None:
+    def set_matcher(self, matcher: GrammarMatcher) -> None:
         pass
 
     def set_tool_region(
@@ -249,6 +262,15 @@ def _as_vlm_batch(
     return cast(list[TextAndVisionContext], contexts)
 
 
+def _as_selection(
+    selection: list[tuple[FakeContext, list[ImageMetadata]]],
+) -> list[tuple[TextAndVisionContext, list[ImageMetadata]]]:
+    """Cast (FakeContext, miss-images) pairs for VLM cache APIs."""
+    return cast(
+        list[tuple[TextAndVisionContext, list[ImageMetadata]]], selection
+    )
+
+
 def _compute_merge_indices(
     contexts: list[FakeContext],
 ) -> npt.NDArray[np.int32]:
@@ -268,6 +290,21 @@ def _ref_count(
 def _make_cache() -> VisionEncoderCache[TextAndVisionContext]:
     """Create a cache for testing."""
     return VisionEncoderCache()
+
+
+def _miss_images(
+    cache: VisionEncoderCache[TextAndVisionContext],
+    uncached_contexts: list[TextAndVisionContext],
+) -> list[list[ImageMetadata]]:
+    """Cache-miss images per context — the selection prepare_vision_outputs needs."""
+    return [
+        [
+            img
+            for img in ctx.images
+            if img.image_hash is None or cache.lookup(img.image_hash) is None
+        ]
+        for ctx in uncached_contexts
+    ]
 
 
 def _make_cache_sized(
@@ -471,6 +508,7 @@ def test_prepare_partial_hit_only_encodes_uncached() -> None:
     result, _indices = cache.prepare_vision_outputs(
         context_batch=_as_vlm_batch([ctx]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=vision_embeds,
         per_image_token_counts=[3],
         n_devices=1,
@@ -527,6 +565,7 @@ def test_prepare_partial_hit_multi_context() -> None:
     result, _indices = cache.prepare_vision_outputs(
         context_batch=_as_vlm_batch([ctx1, ctx2]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=vision_embeds,
         per_image_token_counts=[3, 4],
         n_devices=1,
@@ -810,6 +849,7 @@ def test_prepare_all_uncached_fast_path() -> None:
     result, indices = cache.prepare_vision_outputs(
         context_batch=_as_vlm_batch([ctx]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=vision_embeds,
         per_image_token_counts=[3],
         n_devices=1,
@@ -853,6 +893,7 @@ def test_prepare_mixed_hits() -> None:
     result, _indices = cache.prepare_vision_outputs(
         context_batch=_as_vlm_batch([ctx1, ctx2]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=vision_embeds,
         per_image_token_counts=[3],
         n_devices=1,
@@ -886,6 +927,7 @@ def test_prepare_all_cached() -> None:
     result, _indices = cache.prepare_vision_outputs(
         context_batch=_as_vlm_batch([ctx]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=empty,
         per_image_token_counts=[],
         n_devices=1,
@@ -919,6 +961,7 @@ def test_disabled_cache_never_hits() -> None:
     cache.prepare_vision_outputs(
         context_batch=_as_vlm_batch([ctx]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=vision_embeds,
         per_image_token_counts=[3],
         n_devices=1,
@@ -1082,6 +1125,7 @@ def test_prepare_vision_outputs_returns_embeddings_and_indices() -> None:
     embeddings, indices = cache.prepare_vision_outputs(
         context_batch=_as_vlm_batch([ctx]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=vision_embeds,
         per_image_token_counts=[3],
         n_devices=1,
@@ -1111,6 +1155,7 @@ def test_prepare_vision_outputs_chunked_prefill() -> None:
     _embeddings, indices = cache.prepare_vision_outputs(
         context_batch=_as_vlm_batch([ctx]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=vision_embeds,
         per_image_token_counts=[6],
         n_devices=1,
@@ -1170,3 +1215,326 @@ def test_pop_metrics_disabled_cache_counts_all_as_encoded() -> None:
     assert m.num_images_cached == 0
     assert m.num_patches_encoded == 1
     assert m.num_tokens_encoded == 5
+
+
+def test_derive_counts_from_spans_single_context() -> None:
+    """Per-image count is the placeholder span of the selected images."""
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 3, image_hash=0xA),
+            _make_image_meta(3, 8, image_hash=0xB),
+        ],
+    )
+    counts = derive_counts_from_spans(
+        _as_selection([(ctx, list(ctx.images))])  # both selected to encode
+    )
+    assert counts == [3, 5]
+
+
+def test_derive_counts_from_spans_context_major_image_minor() -> None:
+    """Counts follow context-major, image-minor order (the embeddings order)."""
+    ctx1 = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 2, image_hash=0xA)],
+    )
+    ctx2 = FakeContext(
+        request_id=RequestID("r2"),
+        images=[
+            _make_image_meta(0, 4, image_hash=0xB),
+            _make_image_meta(4, 7, image_hash=0xC),
+        ],
+    )
+    counts = derive_counts_from_spans(
+        _as_selection([(ctx1, list(ctx1.images)), (ctx2, list(ctx2.images))])
+    )
+    assert counts == [2, 4, 3]
+
+
+def test_derive_counts_from_spans_uses_selection_not_all_images() -> None:
+    """Counts follow the manager's selection, not every image in the context."""
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 2, image_hash=0xA),  # not selected
+            _make_image_meta(2, 7, image_hash=0xB),  # selected -> counted
+        ],
+    )
+    counts = derive_counts_from_spans(
+        _as_selection([(ctx, [ctx.images[1]])])  # only B selected to encode
+    )
+    assert counts == [5]
+
+
+def test_derive_counts_from_spans_empty_batch() -> None:
+    assert derive_counts_from_spans([]) == []
+
+
+def test_validate_counts_matches_rows() -> None:
+    """No raise when the summed counts equal the encoder row count."""
+    embeds = [_make_buffer(8, 4)]  # 8 rows
+    validate_vision_encode_counts([3, 5], embeds)
+
+
+def test_validate_counts_mismatch_raises() -> None:
+    """A row/count mismatch is a hard error, not a silent reshape."""
+    embeds = [_make_buffer(8, 4)]  # 8 rows
+    with pytest.raises(ValueError):
+        validate_vision_encode_counts([3, 4], embeds)  # sums to 7 != 8
+
+
+def test_validate_counts_empty_embeddings_is_noop() -> None:
+    """An empty (no-encode) batch validates trivially."""
+    validate_vision_encode_counts([], [])
+
+
+def test_derive_then_validate_roundtrip() -> None:
+    """Counts derived from the selection validate against the encoder output."""
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 3, image_hash=0xA),
+            _make_image_meta(3, 8, image_hash=0xB),
+        ],
+    )
+    counts = derive_counts_from_spans(_as_selection([(ctx, list(ctx.images))]))
+    embeds = [_make_buffer(sum(counts), 4)]  # 8 rows
+    validate_vision_encode_counts(counts, embeds)
+
+
+def test_supports_vision_encoding_runtime_checkable() -> None:
+    """``SupportsVisionEncoding`` matches the two-step pack/execute contract."""
+
+    class _Encoder:
+        def pack_vision_inputs(
+            self, uncached: object, devices: object
+        ) -> object:
+            return None
+
+        def vision_execute(
+            self, uncached: object, devices: object, packed: object
+        ) -> VisionEncodeResult:
+            return VisionEncodeResult(embeddings=[])
+
+        def empty_vision_embeddings(self, devices: object) -> list[Buffer]:
+            return []
+
+    class _OnlyPacks:
+        def pack_vision_inputs(
+            self, uncached: object, devices: object
+        ) -> object:
+            return None
+
+    class _NotAnEncoder:
+        pass
+
+    assert isinstance(_Encoder(), SupportsVisionEncoding)
+    assert not isinstance(_OnlyPacks(), SupportsVisionEncoding)
+    assert not isinstance(_NotAnEncoder(), SupportsVisionEncoding)
+
+
+def test_vision_encode_result_defaults() -> None:
+    """``per_image_token_counts`` defaults to ``None`` (driver derives)."""
+    result = VisionEncodeResult(embeddings=[_make_buffer(3, 4)])
+    assert result.per_image_token_counts is None
+    assert len(result.embeddings) == 1
+
+
+def _make_layer_buffer(rows: int, cols: int, base: int) -> Buffer:
+    """A [rows, cols] host Buffer whose values start at *base* (distinct layers)."""
+    arr = (base + np.arange(rows * cols, dtype=np.float32)).reshape(rows, cols)
+    return Buffer.from_numpy(arr)
+
+
+def _make_manager(
+    max_entries: int = 256, n_devices: int = 1
+) -> VisionEncoderCache[TextAndVisionContext]:
+    """Create a manager for GPU-free testing (host buffers, one device)."""
+    return VisionEncoderCache(max_entries=max_entries, n_devices=n_devices)
+
+
+def test_manager_select_returns_miss_images_and_acquires_hits() -> None:
+    """``select`` returns (miss context, miss images) pairs and acquires hits."""
+    manager = _make_manager()
+    manager.insert(0xA, [_make_buffer(2)], num_tokens=2)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 2, image_hash=0xA),  # hit
+            _make_image_meta(2, 5, image_hash=0xB),  # miss
+        ],
+    )
+    selection = manager.select(_as_vlm_batch([ctx]))
+    assert [c for c, _ in selection] == [ctx]  # has a miss -> selected
+    assert [img.image_hash for _, miss in selection for img in miss] == [0xB]
+    assert _ref_count(manager, 0xA) == 1
+
+
+def test_manager_select_skips_fully_cached_context() -> None:
+    """A context whose every image is cached is not returned, but refs held."""
+    manager = _make_manager()
+    manager.insert(0xA, [_make_buffer(2)], num_tokens=2)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 2, image_hash=0xA)],
+    )
+    selection = manager.select(_as_vlm_batch([ctx]))
+    assert selection == []
+    assert _ref_count(manager, 0xA) == 1
+
+
+def test_manager_cache_vision_embeddings_stores_and_assembles() -> None:
+    """``cache_vision_embeddings`` derives counts, stores, and assembles."""
+    manager = _make_manager()
+    hidden = 4
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 3, image_hash=0xA)],
+        image_token_indices=np.array([0, 1, 2], dtype=np.int32),
+        processed_length=0,
+        active_length=5,
+    )
+    selection = manager.select(_as_vlm_batch([ctx]))
+    result = VisionEncodeResult(embeddings=[_make_buffer(3, hidden)])
+    _embeddings, indices = manager.cache_vision_embeddings(
+        context_batch=_as_vlm_batch([ctx]),
+        selection=selection,
+        encode_result=result,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    np.testing.assert_array_equal(indices, [0, 1, 2])
+    entry = manager.lookup(0xA)
+    assert entry is not None and entry.num_tokens == 3
+
+
+def test_manager_cache_vision_embeddings_validates_before_caching() -> None:
+    """A row/count mismatch raises before the cache is written."""
+    manager = _make_manager()
+    hidden = 4
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 3, image_hash=0xA)],
+        image_token_indices=np.array([0, 1, 2], dtype=np.int32),
+        processed_length=0,
+        active_length=5,
+    )
+    selection = manager.select(_as_vlm_batch([ctx]))
+    result = VisionEncodeResult(
+        embeddings=[_make_buffer(5, hidden)], per_image_token_counts=[3]
+    )
+    with pytest.raises(ValueError):
+        manager.cache_vision_embeddings(
+            context_batch=_as_vlm_batch([ctx]),
+            selection=selection,
+            encode_result=result,
+            empty_embeddings=[_make_buffer(0, hidden)],
+        )
+    assert manager.lookup(0xA) is None
+
+
+def test_manager_release_drops_refs() -> None:
+    """``release`` mirrors the KV release path: drops this request's refs."""
+    manager = _make_manager()
+    manager.insert(0xA, [_make_buffer(2)], num_tokens=2)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 2, image_hash=0xA)],
+    )
+    manager.select(_as_vlm_batch([ctx]))
+    assert _ref_count(manager, 0xA) == 1
+    manager.release_request(RequestID("r1"))
+    assert _ref_count(manager, 0xA) == 0
+
+
+def test_manager_disabled_when_zero_entries() -> None:
+    """``max_entries=0`` disables the cache (manager reflects it)."""
+    manager = _make_manager(max_entries=0)
+    assert not manager.enabled
+
+
+def test_derive_disabled_cache_chunked_prefill_no_false_raise() -> None:
+    """Disabled cache + chunked prefill: counts follow the selection, not all images.
+
+    Regression: deriving over ``ctx.images`` filtered by cache lookups would,
+    with the cache disabled, count already-processed images the encoder emitted
+    no rows for and falsely raise in validation.
+    """
+    manager = _make_manager(max_entries=0)  # disabled
+    assert not manager.enabled
+    img_a = _make_image_meta(0, 2, image_hash=0xA)
+    img_b = _make_image_meta(2, 7, image_hash=0xB)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[img_a, img_b],  # A already processed in a prior chunk
+        next_images=[img_b],  # only B is in this chunk
+        image_token_indices=np.array([2, 3, 4, 5, 6], dtype=np.int32),
+        processed_length=2,
+        active_length=5,
+    )
+    selection = manager.select(_as_vlm_batch([ctx]))
+    assert [c for c, _ in selection] == [ctx]
+    assert [img.image_hash for _, miss in selection for img in miss] == [0xB]
+    result = VisionEncodeResult(embeddings=[_make_buffer(5, 4)])
+    embeds, _indices = manager.cache_vision_embeddings(
+        context_batch=_as_vlm_batch([ctx]),
+        selection=selection,
+        encode_result=result,
+        empty_embeddings=[_make_buffer(0, 4)],
+    )
+    assert int(embeds[0].shape[0]) == 5
+
+
+def test_derive_enabled_partial_hit_counts_match_selection() -> None:
+    """Enabled cache, partial hit: counts cover only the freshly-encoded image."""
+    manager = _make_manager()
+    manager.insert(0xA, [_make_buffer(2, 4)], num_tokens=2)  # A resident
+    img_a = _make_image_meta(0, 2, image_hash=0xA)
+    img_b = _make_image_meta(2, 7, image_hash=0xB)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[img_a, img_b],
+        next_images=[img_a, img_b],  # both in-chunk, but A is a cache hit
+        image_token_indices=np.array([0, 1, 2, 3, 4, 5, 6], dtype=np.int32),
+        processed_length=0,
+        active_length=7,
+    )
+    selection = manager.select(_as_vlm_batch([ctx]))
+    assert [img.image_hash for _, miss in selection for img in miss] == [0xB]
+    result = VisionEncodeResult(embeddings=[_make_buffer(5, 4)])  # B only
+    embeds, _indices = manager.cache_vision_embeddings(
+        context_batch=_as_vlm_batch([ctx]),
+        selection=selection,
+        encode_result=result,
+        empty_embeddings=[_make_buffer(0, 4)],
+    )
+    assert int(embeds[0].shape[0]) == 7  # A (2, from cache) + B (5)
+
+
+def test_prepare_vision_outputs_splits_by_passed_selection() -> None:
+    """The store follows the caller's ``uncached_images``, not a re-derivation
+    over ``ctx.images`` — so hashes stay aligned with the encoder rows and the
+    strict-zip split can't diverge."""
+    cache = _make_cache()
+    hidden = 4
+    img_a = _make_image_meta(0, 2, image_hash=0xA)
+    img_b = _make_image_meta(2, 5, image_hash=0xB)
+    cache.insert(0xA, [_make_buffer(2, hidden)], num_tokens=2)  # A resident
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[img_a, img_b],
+        image_token_indices=np.array([0, 1, 2, 3, 4], dtype=np.int32),
+        processed_length=0,
+        active_length=5,
+    )
+    embeddings, _ = cache.prepare_vision_outputs(
+        context_batch=_as_vlm_batch([ctx]),
+        uncached_contexts=_as_vlm_batch([ctx]),
+        uncached_images=[[img_b]],
+        vision_embeds=[_make_buffer(3, hidden)],
+        per_image_token_counts=[3],
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    entry_b = cache.lookup(0xB)
+    assert entry_b is not None and entry_b.num_tokens == 3  # B stored
+    assert int(embeddings[0].shape[0]) == 5  # A(2, cached) + B(3) assembled

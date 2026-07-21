@@ -452,11 +452,13 @@ class Gemma3_MultiModalModel(
 
             assert img.cache_context_batch is not None
             assert img.cache_uncached_contexts is not None
+            assert img.cache_uncached_images is not None
             assert img.cache_per_image_token_counts is not None
             image_embeddings, scatter_np = (
                 self._ve_cache.prepare_vision_outputs(
                     context_batch=img.cache_context_batch,
                     uncached_contexts=img.cache_uncached_contexts,
+                    uncached_images=img.cache_uncached_images,
                     vision_embeds=raw_embeds,
                     per_image_token_counts=img.cache_per_image_token_counts,
                     n_devices=len(self.devices),

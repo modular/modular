@@ -128,6 +128,15 @@ class KimiK2_5BatchProcessor(DeepseekV3BatchProcessor):
             self._ve_cache.prepare_vision_outputs(
                 context_batch,
                 uncached_contexts,
+                [
+                    [
+                        img
+                        for img in ctx.images
+                        if img.image_hash is not None
+                        and self._ve_cache.lookup(img.image_hash) is None
+                    ]
+                    for ctx in uncached_contexts
+                ],
                 vision_embeds,
                 token_counts,
                 n_devices=len(devices),
