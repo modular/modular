@@ -123,6 +123,30 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Fixed non-streaming chat completions leaking a literal structural tool-call
+  marker (for example `<tool_call>`) into `message.content` when a
+  `max_tokens` truncation landed mid tool-call block. The response now
+  surfaces only the content before the marker, with
+  `finish_reason == "length"`.
+- Added an experimental `--fold-sampler-into-graph` option (default off) that
+  folds greedy token selection (argmax) into the captured forward graph, so a
+  single device-graph replay materializes the sampled token instead of a
+  separate sampler submission with a blocking readback. Applies to all-greedy
+  decode batches on architectures that emit the folded token output (currently
+  Nemotron-H); non-greedy requests fall back to the separate sampler.
+- Added a `max-pending-futures` config (default 1, the classic
+  overlap-scheduler depth of one forward in flight per request). Request
+  bookkeeping now tracks unrealized future-token placeholders with a counted
+  model instead of a single-sentinel check, and setting the value to 2 enables
+  experimental schedule-ahead decoding: two forwards in flight per request,
+  with the next step's input token realized on-device from the folded sampler
+  output. Behavior at the default depth is unchanged.
+- Fixed the serve CLI dropping the `fold-sampler-into-graph`,
+  `max-pending-futures`, and greedy-sampling gate settings on their way to the
+  model worker, which silently disabled the folded greedy sampler. With the
+  flags threaded through, `--fold-sampler-into-graph` removes the per-token
+  blocking sampler submission and substantially improves decode latency on
+  architectures that support it.
 - Added `max.engine.read` for loading a compiled-model artifact (a `.mef`
   file) without an `InferenceSession`. The resulting `CompiledModel` can
   be initialized on any session via `InferenceSession.init`. It replaces
@@ -669,6 +693,14 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed Nemotron-3-Nano (`NemotronHForCausalLM`) leaking chain-of-thought and
+  a raw `</think>` delimiter into `message.content` (with the reasoning field
+  left empty), and `tool_choice="required"` emitting zero tool calls. The
+  architecture now defaults both `--reasoning-parser` and `--tool-parser` to
+  `qwen3_5`, matching its Qwen-format chat template (implicit `<think>` open,
+  explicit `</think>` close, `<tool_call>`/`<function=…>` tool blocks). Pass
+  `--reasoning-parser=none` / `--tool-parser=none` to restore the old
+  behavior.
 - Fixed `ops.scatter_add` / `ops.scatter_mul` / `ops.scatter_max` /
   `ops.scatter_min` silently returning wrong results when `indices` contains
   duplicates and the update count is large. These ops run on CPU, and once

@@ -311,7 +311,16 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
         The forward pass maps each attention layer to a sequential KV cache
         index (0, 1, 2, ...), independent of the absolute layer index.
+
+        The reference configuration uses an FP8 KV cache for this checkpoint.
+        Select the same default while preserving explicit cache-format
+        overrides and non-FP8 model behavior.
         """
+        if (
+            pipeline_config.model.quantization_encoding == "float8_e4m3fn"
+            and kv_cache_config.kv_cache_format is None
+        ):
+            cache_dtype = DType.float8_e4m3fn
         kinds = parse_hybrid_pattern(huggingface_config.hybrid_override_pattern)
         num_attention_layers = sum(1 for k in kinds if k == "attention")
         return kv_cache_config.to_params(

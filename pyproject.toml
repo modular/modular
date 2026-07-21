@@ -34,6 +34,9 @@ line-length = 80  # Must match above
 force-exclude = true
 src = ["something-that-doesnt-exist"] # Stop ruff from assuming any root directory is a python module
 extend-exclude = [
+  # Machine-authored agent state (skills, agent scripts). Already excluded from
+  # rumdl and typos; these helper scripts are not shipped product code.
+  ".claude",
   "**/lit.cfg.py", # Globals that aren't imported
   "*.ipynb",
   "*_pb2.py", # Generated protobuf stubs

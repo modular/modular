@@ -48,11 +48,17 @@ def _make_ctx(
     tokens: np.ndarray,
     request_id: RequestID = RequestID("req-1"),
 ) -> TextContext:
-    """Build a minimal TextContext-like stub (see test_block_manager_sha256)."""
+    """Build a minimal TextContext-like stub (see test_block_manager_sha256).
+
+    ``compute_block_hashes`` reads ``ctx.pending_future_count`` (trailing
+    future-token placeholders are excluded from hashing); the real
+    ``TextContext`` always defines it (defaults to 0), so the stub must too.
+    """
     ctx = SimpleNamespace(
         request_id=request_id,
         tokens=tokens,
         cache_salt=None,
+        pending_future_count=0,
     )
     return cast(TextContext, ctx)
 

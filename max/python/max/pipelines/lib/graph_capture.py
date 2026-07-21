@@ -77,6 +77,7 @@ def _release_graph_capture_outputs_to_borrowed(
         "next_token_logits",
         "logit_offsets",
         "hidden_states",
+        "sampled_tokens",
         "num_accepted_draft_tokens",
         "next_tokens",
         "next_draft_tokens",
@@ -113,10 +114,16 @@ class ServeGraphCaptureRunner:
         max_cache_length_upper_bound: int,
         max_batch_size: int,
         num_speculative_tokens: int = 0,
+        fold_sampler_into_graph: bool = False,
     ) -> None:
         self._model = model
         self._warmup_model_inputs = warmup_model_inputs
         self._num_speculative_tokens = num_speculative_tokens
+        # When set, the architecture appends a folded greedy-token (argmax)
+        # buffer as the last forward-graph output; the capture path peels it
+        # off into ``ModelOutputs.sampled_tokens`` instead of mapping it
+        # positionally onto a logits field.
+        self._fold_sampler_into_graph = fold_sampler_into_graph
         if max_cache_length_upper_bound < 1:
             raise ValueError(
                 "Decode graph capture requires a positive decode "
@@ -240,7 +247,24 @@ class ServeGraphCaptureRunner:
                             _pack_model_graph_key(graph_key), *input_buffers
                         )
                     if not self._is_spec_decode:
-                        outputs: ModelOutputs = ModelOutputs(*output_buffers)
+                        model_output_buffers = list(output_buffers)
+                        sampled_tokens: Buffer | None = None
+                        if (
+                            self._fold_sampler_into_graph
+                            and len(model_output_buffers) > 1
+                        ):
+                            # The folded argmax token is the last graph output;
+                            # peel it off so the remaining buffers map onto the
+                            # logits fields positionally as usual. A
+                            # single-output capture means the architecture
+                            # emits no folded token (only the logits), so
+                            # there is nothing to peel even when the fold flag
+                            # is set.
+                            sampled_tokens = model_output_buffers.pop()
+                        outputs: ModelOutputs = ModelOutputs(
+                            *model_output_buffers
+                        )
+                        outputs.sampled_tokens = sampled_tokens
                     else:
                         assert len(output_buffers) == 3, "Expected 3 outputs"
                         outputs = UnifiedEagleOutputs(

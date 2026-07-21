@@ -385,6 +385,23 @@ class PipelineArgs(ConfigFileModel):
         ),
     )
 
+    fold_sampler_into_graph: bool = Field(
+        default=True,
+        description=(
+            "Fold greedy token selection (argmax) into the captured forward "
+            "graph so a single device-graph replay materializes the sampled "
+            "token."
+        ),
+    )
+
+    max_pending_futures: int = Field(
+        default=1,
+        description=(
+            "Maximum number of unrealized future-token placeholders a "
+            "request may hold at once; 2 enables schedule-ahead decoding."
+        ),
+    )
+
     force: bool = Field(
         default=False,
         description=(
@@ -790,6 +807,8 @@ class PipelineArgs(ConfigFileModel):
             execute_empty_batches=runtime.execute_empty_batches,
             max_batch_total_tokens=runtime.max_batch_total_tokens,
             device_graph_capture=runtime.device_graph_capture,
+            fold_sampler_into_graph=runtime.fold_sampler_into_graph,
+            max_pending_futures=runtime.max_pending_futures,
             force=runtime.force,
             kvcache_ce_watermark=runtime.kvcache_ce_watermark,
             decode_stall_timeout_s=runtime.decode_stall_timeout_s,

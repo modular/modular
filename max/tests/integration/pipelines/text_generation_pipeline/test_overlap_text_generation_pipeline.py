@@ -20,6 +20,8 @@ import numpy as np
 import pytest
 from llguidance import LLMatcher
 from max.pipelines.context import (
+    EOSTracker,
+    GenerationStatus,
     StructuredOutputRegionDelimiters,
     TextContext,
     TokenBuffer,
@@ -42,6 +44,7 @@ from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
 from max.pipelines.lib.pipeline_variants.utils import (
     StructuredOutputHelper,
     _count_token_subsequence,
+    update_context_and_prepare_responses,
 )
 from max.pipelines.lib.registry import get_pipeline_for_task
 from max.pipelines.modeling.types import (
@@ -146,6 +149,76 @@ def test_throws_if_enable_log_probs() -> None:
         pipeline.execute(inputs)
 
 
+def test_forward_launched_before_sampling_processor_build() -> None:
+    """The non-spec decode path launches the forward before building the sampler.
+
+    ``_run_forward`` enqueues the decode kernels asynchronously, so building the
+    sampling processor afterwards overlaps its host-side work (SamplerInputs
+    gather + small H2D copies) with the GPU forward instead of being exposed
+    host time ahead of the launch. This pins that ordering (a regression guard
+    for the async-overlap optimization) and verifies the two calls remain
+    independent: each runs exactly once and receives the expected argument.
+    """
+    pipeline = OverlapTextGenerationPipeline.__new__(
+        OverlapTextGenerationPipeline
+    )
+    pipeline._spec_decode_state = None
+    pipeline._prev_batch = None
+    pipeline._disable_overlap = False
+    pipeline._max_pending_futures = 1
+    pipeline._kv_manager = MagicMock()
+
+    call_order: list[str] = []
+
+    mock_model_outputs = MagicMock(name="model_outputs")
+    mock_sampling_processor = MagicMock(name="sampling_processor")
+    mock_curr_batch = MagicMock(name="curr_batch")
+
+    def _run_forward(inputs: object) -> object:
+        call_order.append("run_forward")
+        return mock_model_outputs
+
+    def _create_sampling_processor(
+        flat_batch: object,
+    ) -> tuple[object, object]:
+        call_order.append("create_sampling_processor")
+        return mock_sampling_processor, None
+
+    def _sample_logits(
+        inputs: object, model_outputs: object, sampling_processor: object
+    ) -> object:
+        call_order.append("sample_logits")
+        return mock_curr_batch
+
+    pipeline._run_forward = MagicMock(side_effect=_run_forward)  # type: ignore[method-assign]
+    pipeline._create_sampling_processor = MagicMock(  # type: ignore[method-assign]
+        side_effect=_create_sampling_processor
+    )
+    pipeline._sample_logits = MagicMock(side_effect=_sample_logits)  # type: ignore[method-assign]
+
+    mock_ctx = MagicMock(name="ctx")
+    inputs = MagicMock(name="inputs")
+    inputs.enable_log_probs = False
+    inputs.flat_batch = [mock_ctx]
+    inputs.batches = [[mock_ctx]]
+
+    pipeline.execute(cast(TextGenerationInputs[TextContext], inputs))
+
+    # Forward must be enqueued before the sampling processor is built so that
+    # the sampler's host-side construction overlaps the GPU forward.
+    assert call_order == [
+        "run_forward",
+        "create_sampling_processor",
+        "sample_logits",
+    ]
+    pipeline._run_forward.assert_called_once_with(inputs)
+    pipeline._create_sampling_processor.assert_called_once_with(
+        inputs.flat_batch
+    )
+    # Reorder must not clear the deferred (overlapped) current batch.
+    assert pipeline._prev_batch is mock_curr_batch
+
+
 @pytest.mark.parametrize(
     ("config_max_batch_size", "expected_capture_batch_size"),
     [
@@ -177,6 +250,7 @@ def test_warmup_graph_capture_batch_size(
     pipeline._kv_manager._total_num_pages = 100
     pipeline._spec_decode_state = None
     pipeline._kv_manager.num_caches = 1
+    pipeline._fold_sampler_into_graph = False
 
     with patch(
         "max.pipelines.lib.pipeline_variants.overlap_text_generation"
@@ -285,6 +359,7 @@ def test_effective_max_cache_length_covers_compute_seq_len(
     # drafts all counted as accepted.
     boundary_ctx = SimpleNamespace(
         tokens=[0] * (max_seq_len + 1),
+        pending_future_count=1,
         spec_decoding_state=SimpleNamespace(
             maybe_accepted_draft_tokens=[0] * num_draft_tokens
         ),
@@ -407,6 +482,112 @@ def test_async_batch_sync_with_single_step_tokens() -> None:
 
         # Check keyword args (overlap path always uses single-step [batch, 1] tokens)
         assert call_args[1]["overwrite_future"] is True
+
+
+def test_update_context_depth2_fifo_realize_and_eos_lag() -> None:
+    """Depth-2 sync path: FIFO realize with a live second placeholder.
+
+    Simulates schedule-ahead with two forwards in flight: both placeholders
+    are appended before the first sync. Each
+    ``update_context_and_prepare_responses`` call (the overlap sync path)
+    realizes only the OLDEST placeholder; the response it builds must exclude
+    the still-unrealized newer one. When the older step realizes EOS, the
+    context must be done at exactly that token even though the speculative
+    step ran past it; the extra token surfaces one sync later and is dropped
+    at the scheduler layer (released-request filtering), matching the depth-1
+    extra-token-after-EOS reconciliation.
+    """
+    ctx = TextContext(
+        request_id=RequestID("req-depth2"),
+        max_length=1000,
+        tokens=TokenBuffer(np.array([1, 2, 3], dtype=np.int64)),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
+    )
+
+    # Two forwards enqueued back-to-back before any sync.
+    ctx.update_with_future_token(max_pending_futures=2)
+    ctx.update_with_future_token(max_pending_futures=2)
+    assert ctx.pending_future_count == 2
+
+    # Sync 1: step n's token realizes; step n+1's placeholder stays pending
+    # and must not leak into the response.
+    outputs = update_context_and_prepare_responses(
+        np.array([[10]], dtype=np.int32), [ctx], overwrite_future=True
+    )
+    assert outputs[ctx.request_id].tokens == [10]
+    assert ctx.pending_future_count == 1
+    assert ctx.tokens.all.tolist() == [1, 2, 3, 10, FUTURE_TOKEN]
+
+    # The scheduler enqueues forward n+2 before sync 2 (steady state depth 2).
+    ctx.update_with_future_token(max_pending_futures=2)
+    assert ctx.pending_future_count == 2
+
+    # Sync 2 realizes EOS on the older step: the context is done at that
+    # token, evaluated on the realized prefix only.
+    outputs = update_context_and_prepare_responses(
+        np.array([[42]], dtype=np.int32), [ctx], overwrite_future=True
+    )
+    assert outputs[ctx.request_id].tokens == [42]
+    assert outputs[ctx.request_id].final_status == (
+        GenerationStatus.END_OF_SEQUENCE
+    )
+    assert outputs[ctx.request_id].is_done
+    assert ctx.pending_future_count == 1
+
+    # Sync 3: the speculative step's token still realizes (its forward ran).
+    # The pipeline surfaces it, and the serving scheduler drops it because
+    # the request was released on sync 2 (text_generation_scheduler filters
+    # responses for requests no longer in the batch constructor).
+    outputs = update_context_and_prepare_responses(
+        np.array([[7]], dtype=np.int32), [ctx], overwrite_future=True
+    )
+    assert ctx.pending_future_count == 0
+    assert ctx.status == GenerationStatus.END_OF_SEQUENCE
+
+
+def test_depth2_max_length_status_lags_until_final_realize() -> None:
+    """MAXIMUM_LENGTH must not be reported while wanted tokens are in flight.
+
+    At depth 2, appending the placeholder for the FINAL in-bounds position
+    sets ``ctx.status = MAXIMUM_LENGTH`` while the previous position's token
+    is still unrealized. If a response reported that status immediately, the
+    serving scheduler would release the request and the final in-flight
+    token would be dropped (token loss at the max-length boundary). The
+    reported status must stay ACTIVE until the realized prefix actually
+    reaches ``max_length``.
+    """
+    # Prompt of 4, max_length 6 -> exactly 2 generated tokens are wanted.
+    ctx = TextContext(
+        request_id=RequestID("req-depth2-maxlen"),
+        max_length=6,
+        tokens=TokenBuffer(np.array([1, 2, 3, 4], dtype=np.int64)),
+    )
+
+    # Two forwards enqueued back-to-back (schedule-ahead): the second
+    # placeholder append reaches max_length and sets the sticky status.
+    ctx.update_with_future_token(max_pending_futures=2)
+    ctx.update_with_future_token(max_pending_futures=2)
+    assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
+
+    # Sync 1 realizes the FIRST wanted token. The realized prefix (5) is
+    # still below max_length (6), so the response must NOT be done — the
+    # final token is still in flight.
+    outputs = update_context_and_prepare_responses(
+        np.array([[10]], dtype=np.int32), [ctx], overwrite_future=True
+    )
+    assert outputs[ctx.request_id].tokens == [10]
+    assert outputs[ctx.request_id].final_status == GenerationStatus.ACTIVE
+    assert not outputs[ctx.request_id].is_done
+
+    # Sync 2 realizes the final wanted token: now the response is done.
+    outputs = update_context_and_prepare_responses(
+        np.array([[11]], dtype=np.int32), [ctx], overwrite_future=True
+    )
+    assert outputs[ctx.request_id].tokens == [11]
+    assert outputs[ctx.request_id].final_status == (
+        GenerationStatus.MAXIMUM_LENGTH
+    )
+    assert outputs[ctx.request_id].is_done
 
 
 class TestUpdateWithFutureTokenStructuredOutput:

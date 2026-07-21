@@ -156,11 +156,25 @@ struct VarlenConvIO[
 
     Holds the `(dim, seqlen)` input `x`, `(dim, width)` `weight`, `(dim,)`
     `bias`, and `(dim, seqlen)` `output` TileTensor views and exposes one
-    method per access verb, so the forward path indexes with logical
-    coordinates (`t.load(Coord(...))`, `t.store[width=1](Coord(...), v)`)
-    instead of hand-rolled `raw_load`/`raw_store` offset arithmetic. Each
-    view's own `RuntimeLayout` computes the identical offset the explicit
-    `d*stride + s*stride` form did, so this is behavior-preserving.
+    method per access verb.
+
+    `weight`/`bias` (never axis-permuted) still index through
+    `t.load(Coord(...))` -- the view's own `RuntimeLayout` matches the
+    `(d, w)` / `(d,)` logical order exactly. `load_x`/`store_out` instead take
+    the caller's runtime `dim`/`seqlen` strides and compute the offset
+    explicitly (`d*dim_stride + s*seqlen_stride`), matching the conv-state
+    ring-buffer's `raw_load`/`raw_store` pattern below. This is required, not
+    just symmetric style: `x`/`output`'s *physical* axis order flips under the
+    `channels_last` builtin parameter (`kernels.mojo`'s `CausalConv1DVarlenFwd`)
+    while the `(d, s)` *logical* argument order here does not, so a
+    `Coord(d, s)` load through the view's native layout would silently swap
+    axes and read/write the wrong element whenever the caller is
+    channels-last. Passing the (already axis-corrected) strides down and
+    addressing raw offsets sidesteps the mismatch. See
+    `Kernels/claude_kb/entries/patterns/mojo-layout-is-cute-layout-algebra.md`
+    ("shape and stride are orthogonal") -- `d`/`s` are the algorithm's shape
+    plane; the stride plane is what may vary, so loads/stores must go through
+    strides, not through a Coord tied to the view's declared axis order.
 
     Every view parameter (dtype, layout, origin, storage, address space, index
     type) is inferred from the constructor arguments, so the owner adapts to
@@ -233,6 +247,15 @@ struct VarlenConvIO[
         address_space=Self.out_addr,
         linear_idx_type=Self.out_idx,
     ]
+    # Runtime dim/seqlen strides for `x`/`output`, already axis-corrected by
+    # the caller for `channels_last` (see class docstring). `load_x`/
+    # `store_out` address through these instead of `Coord(d, s)` because the
+    # view's own physical axis order flips under `channels_last` while these
+    # arguments' logical (d, s) order does not.
+    var x_dim_stride: UInt32
+    var x_seqlen_stride: UInt32
+    var out_dim_stride: UInt32
+    var out_seqlen_stride: UInt32
 
     @always_inline
     def load_x(self, d: Int, s: Int) -> Scalar[Self.x_dtype]:
@@ -242,7 +265,10 @@ struct VarlenConvIO[
             d: The channel index into the `(dim, seqlen)` input view.
             s: The sequence position index into the `(dim, seqlen)` input view.
         """
-        return self.x.load(Coord(d, s))[0]
+        var offset = (
+            UInt32(d) * self.x_dim_stride + UInt32(s) * self.x_seqlen_stride
+        )
+        return self.x.raw_load(offset)
 
     @always_inline
     def load_weight(self, d: Int, w: Int) -> Scalar[Self.weight_dtype]:
@@ -275,7 +301,10 @@ struct VarlenConvIO[
                 view.
             val: The convolution result to store at `output[d, s]`.
         """
-        self.output.store(Coord(d, s), val)
+        var offset = (
+            UInt32(d) * self.out_dim_stride + UInt32(s) * self.out_seqlen_stride
+        )
+        self.output.raw_store(offset, val)
 
 
 # ============================================================================
@@ -477,11 +506,20 @@ def causal_conv1d_varlen_fwd_cpu[
     """
     var width_minus_1 = width - 1
 
-    # Forward-path DRAM I/O owner. The conv-state ring-buffer reads/writes below
-    # deliberately keep raw_load/raw_store with the caller's runtime conv-state
-    # strides (like the states-extraction kernels): the write index is a
-    # data-dependent circular position, off the layout-`Coord` owner path.
-    var io = VarlenConvIO(x, weight, bias, output)
+    # Forward-path DRAM I/O owner. `load_x`/`store_out` address through the
+    # caller's runtime dim/seqlen strides (channels_last-corrected by the
+    # caller) rather than `Coord(d, s)`, matching the conv-state ring-buffer's
+    # raw_load/raw_store pattern below -- see `VarlenConvIO`'s docstring.
+    var io = VarlenConvIO(
+        x,
+        weight,
+        bias,
+        output,
+        x_dim_stride,
+        x_seqlen_stride,
+        out_dim_stride,
+        out_seqlen_stride,
+    )
 
     # Process each sequence in the batch
     for b in range(batch):
@@ -976,11 +1014,20 @@ def causal_conv1d_varlen_fwd_gpu[
     if has_cache_indices != 0:
         cache_idx = Int(cache_indices.raw_load(batch_idx))
 
-    # Forward-path DRAM I/O owner. The conv-state ring-buffer reads/writes below
-    # deliberately keep raw_load/raw_store with the caller's runtime conv-state
-    # strides (like the states-extraction kernels): the write index is a
-    # data-dependent circular position, off the layout-`Coord` owner path.
-    var io = VarlenConvIO(x, weight, bias, output)
+    # Forward-path DRAM I/O owner. `load_x`/`store_out` address through the
+    # caller's runtime dim/seqlen strides (channels_last-corrected by the
+    # caller) rather than `Coord(d, s)`, matching the conv-state ring-buffer's
+    # raw_load/raw_store pattern below -- see `VarlenConvIO`'s docstring.
+    var io = VarlenConvIO(
+        x,
+        weight,
+        bias,
+        output,
+        x_dim_stride,
+        x_seqlen_stride,
+        out_dim_stride,
+        out_seqlen_stride,
+    )
 
     # Load bias
     var bias_val: Scalar[output_dtype] = 0
@@ -1027,6 +1074,215 @@ def causal_conv1d_varlen_fwd_gpu[
 
     # Update conv_states
     if has_conv_states != 0:
+        comptime for s in range(WIDTH_MINUS_1):
+            var src_l = seqlen - WIDTH_MINUS_1 + s
+            var val: Scalar[conv_states_dtype] = 0
+
+            if src_l >= 0:
+                var x_offset = (
+                    UInt32(d) * x_dim_stride
+                    + UInt32((seq_start + src_l)) * x_seqlen_stride
+                )
+                val = Scalar[conv_states_dtype](x.raw_load(x_offset))
+
+            var state_offset = (
+                UInt32(cache_idx) * conv_states_batch_stride
+                + UInt32(d) * conv_states_dim_stride
+                + UInt32(s) * conv_states_width_stride
+            )
+            conv_states.raw_store(state_offset, val)
+
+
+def causal_conv1d_varlen_fwd_seqparallel_gpu[
+    x_dtype: DType,
+    weight_dtype: DType,
+    bias_dtype: DType,
+    output_dtype: DType,
+    cu_seqlens_dtype: DType,
+    cache_indices_dtype: DType,
+    has_initial_state_dtype: DType,
+    conv_states_dtype: DType,
+    WIDTH: Int,
+    BLOCK_DIM: Int,
+    TILE_SEQ: Int,
+    x_LT: TensorLayout,
+    weight_LT: TensorLayout,
+    bias_LT: TensorLayout,
+    query_start_loc_LT: TensorLayout,
+    cache_indices_LT: TensorLayout,
+    has_initial_state_LT: TensorLayout,
+    conv_states_LT: TensorLayout,
+    output_LT: TensorLayout,
+](
+    dim: Int,
+    total_seqlen: Int,
+    batch: Int,
+    x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],
+    weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
+    bias: TileTensor[bias_dtype, bias_LT, MutUntrackedOrigin],
+    query_start_loc: TileTensor[
+        cu_seqlens_dtype, query_start_loc_LT, MutUntrackedOrigin
+    ],
+    cache_indices: TileTensor[
+        cache_indices_dtype, cache_indices_LT, MutUntrackedOrigin
+    ],
+    has_initial_state: TileTensor[
+        has_initial_state_dtype, has_initial_state_LT, MutUntrackedOrigin
+    ],
+    conv_states: TileTensor[
+        conv_states_dtype, conv_states_LT, MutUntrackedOrigin
+    ],
+    output: TileTensor[output_dtype, output_LT, MutUntrackedOrigin],
+    x_dim_stride: UInt32,
+    x_seqlen_stride: UInt32,
+    weight_dim_stride: UInt32,
+    weight_width_stride: UInt32,
+    out_dim_stride: UInt32,
+    out_seqlen_stride: UInt32,
+    conv_states_batch_stride: UInt32,
+    conv_states_dim_stride: UInt32,
+    conv_states_width_stride: UInt32,
+    silu_activation: Int8,
+    pad_slot_id: Int32,
+    has_cache_indices: Int8,
+    has_initial_state_flag: Int8,
+    has_conv_states: Int8,
+    has_bias: Int8,
+):
+    """GPU kernel for causal conv1d forward with variable length sequences,
+    sequence-parallel prefill variant (NVIDIA B200/sm_100, generic elsewhere).
+
+    Grid: (batch, ceildiv(dim, BLOCK_DIM), num_tiles_ub)
+    Block: (BLOCK_DIM, 1)
+
+    Each grid-(x,y,z) block handles one (sequence, channel-tile, seq-tile).
+    The z-dimension tiles the sequence into TILE_SEQ-sized chunks so a long
+    prefill sequence is spread across many blocks instead of walking the
+    whole sequence serially in one thread (see `causal_conv1d_varlen_fwd_gpu`,
+    which stays byte-identical and is reused verbatim for decode). Depthwise
+    conv (WIDTH<=4) has no cross-position recurrence: the causal gather reads
+    GLOBAL read-only `x` across tile boundaries, so tiles need no shared
+    memory or cross-block synchronization. `conv_states` is written exactly
+    once, by the tail tile of each sequence (`tile_end == seqlen`).
+
+    Dispatched from `CausalConv1DVarlenFwd.launch_gpu` only when
+    `total_seqlen > batch` (i.e. at least one multi-token prefill segment is
+    present); pure decode (`total_seqlen == batch`) keeps using the serial
+    kernel above unmodified. Per
+    `Kernels/claude_kb` patterns/kv-buffer-pipeline-style host-vs-device
+    tiling notes: `num_tiles_ub` is a safe host-side upper bound
+    (`ceildiv(total_seqlen, TILE_SEQ) + batch`) that avoids a host-side
+    max-reduction over ragged per-sequence lengths; blocks whose z-index
+    exceeds a given sequence's actual tile count early-return.
+
+    Note: silu_activation and flag parameters are Int8 (0 or 1) instead of Bool
+    for DevicePassable compatibility on GPU.
+    """
+    var batch_idx = block_idx.x
+    var dim_block_idx = block_idx.y
+    var tid = thread_idx.x
+
+    var d = dim_block_idx * BLOCK_DIM + tid
+
+    # Check for padding
+    if has_cache_indices != 0:
+        var cache_idx_val = Int32(cache_indices.raw_load(batch_idx))
+        if cache_idx_val == pad_slot_id:
+            return
+
+    # Get sequence bounds
+    var seq_start = Int(query_start_loc.raw_load(batch_idx))
+    var seq_end = Int(query_start_loc.raw_load(batch_idx + 1))
+    var seqlen = seq_end - seq_start
+
+    # Grid-z tiling: each z-slice covers TILE_SEQ consecutive positions of
+    # this sequence. Tile 0 is kept alive even for an empty sequence so it
+    # can still reach the epilogue below and zero conv_states.
+    var local_tile = Int(block_idx.z)
+    var num_tiles_this_seq = ceildiv(seqlen, TILE_SEQ)
+    if local_tile >= max(num_tiles_this_seq, 1):
+        return
+    var tile_start = local_tile * TILE_SEQ
+    var tile_end = min(tile_start + TILE_SEQ, seqlen)
+
+    if d >= dim:
+        return
+
+    # Check for initial state
+    var use_initial_state = False
+    if has_initial_state_flag != 0:
+        use_initial_state = Bool(has_initial_state.raw_load(batch_idx))
+
+    # Get cache index
+    var cache_idx: Int = batch_idx
+    if has_cache_indices != 0:
+        cache_idx = Int(cache_indices.raw_load(batch_idx))
+
+    # Load bias
+    var bias_val: Scalar[output_dtype] = 0
+    if has_bias != 0:
+        bias_val = Scalar[output_dtype](bias.raw_load(d))
+
+    # Load weights into registers
+    var weights = SIMD[weight_dtype, 8](0)  # Initialize with zeros
+    for w_idx in range(WIDTH):
+        var weight_offset = (
+            UInt32(d) * weight_dim_stride + UInt32(w_idx) * weight_width_stride
+        )
+        weights[w_idx] = weight.raw_load(weight_offset)
+
+    comptime WIDTH_MINUS_1 = WIDTH - 1
+
+    # Process this tile's slice of the sequence
+    for l in range(tile_start, tile_end):
+        var conv_sum = bias_val
+
+        # Gather inputs and compute convolution
+        comptime for w_idx in range(WIDTH):
+            var input_l = l - (WIDTH_MINUS_1 - w_idx)
+            var input_val: Scalar[x_dtype] = 0
+
+            if input_l >= 0:
+                var x_offset = (
+                    UInt32(d) * x_dim_stride
+                    + UInt32((seq_start + input_l)) * x_seqlen_stride
+                )
+                input_val = x.raw_load(x_offset)
+            elif use_initial_state and has_conv_states != 0:
+                var state_idx = WIDTH_MINUS_1 + input_l
+                if state_idx >= 0:
+                    var state_offset = (
+                        UInt32(cache_idx) * conv_states_batch_stride
+                        + UInt32(d) * conv_states_dim_stride
+                        + UInt32(state_idx) * conv_states_width_stride
+                    )
+                    input_val = Scalar[x_dtype](
+                        conv_states.raw_load(state_offset)
+                    )
+
+            conv_sum += Scalar[output_dtype](
+                input_val * Scalar[x_dtype](weights[w_idx])
+            )
+
+        # Apply activation
+        var out_val = conv_sum
+        if silu_activation != 0:
+            comptime if output_dtype.is_floating_point():
+                out_val = silu(out_val)
+            else:
+                out_val = silu(out_val.cast[DType.float32]()).cast[
+                    output_dtype
+                ]()
+
+        # Store output
+        var out_offset = (
+            UInt32(d) * out_dim_stride
+            + UInt32((seq_start + l)) * out_seqlen_stride
+        )
+        output.raw_store(out_offset, out_val)
+
+    # Update conv_states exactly once, from the tail tile of this sequence.
+    if has_conv_states != 0 and tile_end == seqlen:
         comptime for s in range(WIDTH_MINUS_1):
             var src_l = seqlen - WIDTH_MINUS_1 + s
             var val: Scalar[conv_states_dtype] = 0

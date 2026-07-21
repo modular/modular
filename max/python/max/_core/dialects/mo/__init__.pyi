@@ -979,6 +979,67 @@ class CompositeRmsNormFusedQuantizeDynamicScaledFp8Op(max._core.Operation):
     @property
     def scale_ub(self) -> max._core.Value[TensorType]: ...
 
+class CompositeRmsNormResidualAddOp(max._core.Operation):
+    """
+    Fused operation computing:
+      intermediate = input + residual_input
+      output = rms_norm(intermediate, gamma, epsilon, weight_offset)
+
+    Returns both the final normalized output and the post-add intermediate
+    tensor. This is the canonical transformer/mamba pre-norm boundary
+    `rms_norm(residual + out)`, where the pre-add value is carried forward as
+    the next block's residual. Unlike `rms_norm_fused_residual_add`, there is a
+    single RMS norm (no inner norm on `input`).
+
+    Example:
+
+    ```mlir
+      %output, %intermediate = mo.composite.rms_norm_residual_add(
+          %input, %residual, %gamma, %eps, %offset) {
+          multiply_before_cast = false} :
+        (...) -> (!mo.tensor<[3, 2], f32>, !mo.tensor<[3, 2], f32>)
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: TensorType,
+        intermediate: TensorType,
+        input: max._core.Value[TensorType],
+        residual_input: max._core.Value[TensorType],
+        gamma: max._core.Value[TensorType],
+        epsilon: max._core.Value[TensorType],
+        weight_offset: max._core.Value[TensorType],
+        multiply_before_cast: max._core.dialects.builtin.BoolAttr,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def residual_input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gamma(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset(self) -> max._core.Value[TensorType]: ...
+    @property
+    def multiply_before_cast(self) -> bool: ...
+    @multiply_before_cast.setter
+    def multiply_before_cast(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
 class CompositeRmsNormFusedResidualAddOp(max._core.Operation):
     """
     Fused operation computing:

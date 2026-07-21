@@ -34,7 +34,12 @@ from max.pipelines.modeling.types import RequestID
 def _make_ctx(tokens: np.ndarray, request_id: RequestID) -> TextContext:
     return cast(
         TextContext,
-        SimpleNamespace(request_id=request_id, tokens=tokens, cache_salt=None),
+        SimpleNamespace(
+            request_id=request_id,
+            tokens=tokens,
+            cache_salt=None,
+            pending_future_count=0,
+        ),
     )
 
 

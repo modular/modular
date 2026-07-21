@@ -32,6 +32,7 @@ from fastapi import FastAPI
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient as SyncTestClient
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
+from max.pipelines.architectures.qwen3_5.tool_parser import Qwen3_5ToolParser
 from max.pipelines.context import (
     BaseContext,
     GenerationStatus,
@@ -1533,6 +1534,47 @@ async def test_stop_sequence_not_found_leaves_message_intact(
     message = response.choices[0].message
     assert message.content == "hello world"
     assert response.choices[0].finish_reason == "stop"
+
+
+@pytest.mark.asyncio
+async def test_tool_parse_failure_does_not_leak_structural_marker(
+    patch_openai_metrics: None,
+) -> None:
+    """Regression (fuzz-found): a ``max_tokens`` truncation landing mid
+    ``<tool_call>`` block makes the qwen3_5 parser's ``parse_complete``
+    raise (intentional — no complete block to parse). The non-streaming
+    raw-text fallback must then surface only the content *before* the
+    structural marker, never the raw response with the literal
+    ``<tool_call>`` marker in ``message.content``."""
+    truncated = (
+        "I'll get the weather for Paris first.\n"
+        "<tool_call>\n<function=get_weather>\n<parameter=city>\nLondon"
+    )
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(
+        return_value=[
+            TokenGeneratorOutput(
+                status=GenerationStatus.MAXIMUM_LENGTH,
+                decoded_tokens=truncated,
+                token_count=24,
+                prompt_token_count=5,
+            )
+        ]
+    )
+
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline,
+        parser=Qwen3_5ToolParser(),
+        parse_tool_calls=True,
+    )
+    response = await generator.complete([_make_mock_request()])
+
+    choice = response.choices[0]
+    assert choice.finish_reason == "length"
+    assert not choice.message.tool_calls
+    assert "<tool_call>" not in (choice.message.content or "")
+    assert choice.message.content == "I'll get the weather for Paris first."
 
 
 async def _run_stream(

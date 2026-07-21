@@ -36,7 +36,13 @@ from max.graph import (
 )
 from max.nn import kernels
 from max.nn.kv_cache import KVCacheInputsInterface, KVCacheParams
-from max.pipelines.context import TextContext, TokenBuffer
+from max.pipelines.context import (
+    EOSTracker,
+    GenerationStatus,
+    SamplingParams,
+    TextContext,
+    TokenBuffer,
+)
 from max.pipelines.context.context import FUTURE_TOKEN
 from max.pipelines.lib import (
     ModelInputs,
@@ -141,6 +147,8 @@ class FakeSamplingConfig(ConfigFileModel):
     in_dtype: DType = DType.float32
     out_dtype: DType = DType.float32
     enable_structured_output: bool = False
+    structured_output_backend: str | None = None
+    sample_on_host: bool = False
     enable_min_tokens: bool = False
 
 
@@ -161,7 +169,9 @@ class FakeRuntimeConfig(ConfigFileModel):
     execute_empty_batches: bool = False
     enable_overlap_scheduler: bool = False
     device_graph_capture: bool = False
+    fold_sampler_into_graph: bool = False
     max_batch_size: int = 999
+    max_pending_futures: int = 1
     pipeline_role: str = "prefill_and_decode"
     reasoning_parser: str | None = None
     tool_parser: str | None = None
@@ -362,12 +372,21 @@ FakePipelineModel.__abstractmethods__ = frozenset()
 
 
 def create_context(
-    isl: int = 64, osl: int = 64, offset: int = 0
+    isl: int = 64,
+    osl: int = 64,
+    offset: int = 0,
+    temperature: float = 1.0,
+    eos_token_ids: set[int] | None = None,
 ) -> TextContext:
+    kwargs: dict[str, Any] = {}
+    if eos_token_ids is not None:
+        kwargs["eos_tracker"] = EOSTracker(eos_token_ids=eos_token_ids)
     return TextContext(
         request_id=RequestID(),
         max_length=isl + osl,
         tokens=TokenBuffer(np.arange(isl) + offset),
+        sampling_params=SamplingParams(temperature=temperature),
+        **kwargs,
     )
 
 
@@ -385,6 +404,9 @@ def monkeypatch_weight_and_kvcache_loading(
 def create_overlap_pipeline(
     enable_overlap_scheduler: bool,
     disable_overlap: bool = False,
+    max_pending_futures: int = 1,
+    pipeline_role: str = "prefill_and_decode",
+    speculative: FakeSpeculativeConfig | None = None,
 ) -> OverlapTextGenerationPipeline[Any]:
     sampling_config = FakeSamplingConfig(enable_penalties=False)
     model_config = FakeModelConfig(
@@ -395,11 +417,14 @@ def create_overlap_pipeline(
     )
     runtime = FakeRuntimeConfig(
         enable_overlap_scheduler=enable_overlap_scheduler,
+        max_pending_futures=max_pending_futures,
+        pipeline_role=pipeline_role,
     )
     pipeline_config = FakePipelineConfig(
         model=model_config,
         sampling=sampling_config,
         runtime=runtime,
+        speculative=speculative,
     )
     pipeline = OverlapTextGenerationPipeline(
         pipeline_config=cast(PipelineConfig, pipeline_config),
@@ -639,3 +664,268 @@ def test_disable_overlap_returns_outputs_immediately(
     out = pipeline.execute(create_inputs([]))
     assert not pipeline.has_pending_outputs()
     assert len(out) == 0
+
+
+def test_overlap_reuses_generated_tokens_pinned_buffer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The per-step generated-token D2H pinned buffer is allocated once and
+    reused across overlap decode steps (no page-locking allocation per step),
+    while producing the same tokens as the deterministic fake model.
+
+    Guards the ``_sample_logits`` optimization: a single persistent buffer is
+    safe only because the previous batch's copy is read (in
+    ``sync_and_process_outputs``) strictly before the next batch's copy is
+    written. If that ordering broke, the token sequences below would corrupt.
+    """
+    monkeypatch_weight_and_kvcache_loading(monkeypatch)
+    prime_host_buffer_cache()
+
+    pipeline = create_overlap_pipeline(enable_overlap_scheduler=True)
+
+    # Two requests of different output lengths so the decode batch shrinks
+    # (2 -> 1) mid-run, exercising the ``[:batch_size]`` slice of the reused
+    # buffer without reallocation.
+    req_a = create_context(isl=17, osl=1, offset=100)
+    req_b = create_context(isl=42, osl=3, offset=200)
+    active = {req_a.request_id: req_a, req_b.request_id: req_b}
+    generated: dict[RequestID, list[int]] = {
+        req_a.request_id: [],
+        req_b.request_id: [],
+    }
+
+    seen_buffer_ids: set[int] = set()
+    while active:
+        inputs = TextGenerationInputs(batches=[list(active.values())])
+        outputs = pipeline.execute(inputs)
+
+        # After a decode step samples, the persistent buffer must exist and be
+        # sized for the max batch size, not the current (possibly smaller) one.
+        buf = pipeline._pinned_generated_tokens_host
+        assert buf is not None
+        assert int(buf.shape[0]) == pipeline.max_batch_size
+        seen_buffer_ids.add(id(buf))
+
+        for req_id, output in outputs.items():
+            if req_id in active:
+                generated[req_id].extend(output.tokens)
+                if output.is_done:
+                    del active[req_id]
+
+    # Deterministic fake model emits last_token + 1 each step.
+    assert generated[req_a.request_id] == [117]
+    assert generated[req_b.request_id] == [242, 243, 244]
+
+    # The buffer object was reused across every decode step (allocated once).
+    assert len(seen_buffer_ids) == 1
+
+
+def _run_to_completion(
+    pipeline: OverlapTextGenerationPipeline[Any],
+    contexts: list[TextContext],
+) -> tuple[dict[RequestID, list[int]], dict[RequestID, GenerationStatus], int]:
+    """Drives the pipeline like the serving scheduler until all requests done.
+
+    Mimics ``TokenGenerationScheduler._schedule``: responses for requests no
+    longer active (released) are dropped, and a request is released on its
+    first ``is_done`` response. Returns the per-request token streams, final
+    statuses, and the high-water mark of concurrently in-flight batches.
+    """
+    active = {ctx.request_id: ctx for ctx in contexts}
+    generated: dict[RequestID, list[int]] = {
+        ctx.request_id: [] for ctx in contexts
+    }
+    statuses: dict[RequestID, GenerationStatus] = {}
+    max_in_flight = 0
+    for _ in range(200):
+        if not active and not pipeline.has_pending_outputs():
+            break
+        inputs = TextGenerationInputs(batches=[list(active.values())])
+        outputs = pipeline.execute(inputs)
+        max_in_flight = max(
+            max_in_flight,
+            (pipeline._prev_batch is not None)
+            + (pipeline._prev_prev_batch is not None),
+        )
+        # The serving scheduler filters responses for released requests
+        # (the overlap pipeline may produce extra tokens after EOS /
+        # max-length; see text_generation_scheduler._schedule).
+        outputs = {
+            req_id: out for req_id, out in outputs.items() if req_id in active
+        }
+        for req_id, out in outputs.items():
+            generated[req_id].extend(out.tokens)
+            if out.is_done:
+                statuses[req_id] = out.final_status
+                del active[req_id]
+    else:
+        raise AssertionError("pipeline did not drain within iteration bound")
+    return generated, statuses, max_in_flight
+
+
+def test_depth2_schedule_ahead_two_in_flight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Depth-2 schedule-ahead through the real pipeline step loop.
+
+    With ``max_pending_futures=2`` and an all-greedy TG workload, the pipeline
+    must keep TWO batches in flight (the newest stays unsynced while the next
+    forward is enqueued) and still produce token streams identical to the
+    depth-1 expectations of ``test_overlap_execution``, including exact
+    termination at the max-length boundary (no token lost to the lagged
+    MAXIMUM_LENGTH status, no extra token leaked).
+    """
+    monkeypatch_weight_and_kvcache_loading(monkeypatch)
+    prime_host_buffer_cache()
+
+    pipeline = create_overlap_pipeline(
+        enable_overlap_scheduler=True, max_pending_futures=2
+    )
+
+    req_a = create_context(isl=17, osl=1, offset=100, temperature=0.0)
+    req_b = create_context(isl=42, osl=4, offset=200, temperature=0.0)
+    req_c = create_context(isl=77, osl=2, offset=300, temperature=0.0)
+
+    generated, statuses, max_in_flight = _run_to_completion(
+        pipeline, [req_a, req_b, req_c]
+    )
+
+    # Token-identical to the depth-1 expectations (same fake model).
+    assert generated[req_a.request_id] == [117]
+    assert generated[req_b.request_id] == [242, 243, 244, 245]
+    assert generated[req_c.request_id] == [377, 378]
+    assert all(
+        status == GenerationStatus.MAXIMUM_LENGTH
+        for status in statuses.values()
+    )
+
+    # Two batches were genuinely in flight at once (schedule-ahead engaged).
+    assert max_in_flight == 2
+
+    # The generated-token D2H used two distinct pinned slots (ping-pong):
+    # a single slot would let this batch's D2H overwrite the still-unsynced
+    # previous batch's host tokens.
+    assert pipeline._pinned_generated_tokens_host is not None
+    assert pipeline._pinned_generated_tokens_host_alt is not None
+    assert id(pipeline._pinned_generated_tokens_host) != id(
+        pipeline._pinned_generated_tokens_host_alt
+    )
+
+    # Fully drained at the end.
+    assert pipeline._prev_batch is None
+    assert pipeline._prev_prev_batch is None
+
+
+def test_depth2_eos_lag_no_extra_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """EOS at depth 2 through the full pipeline path.
+
+    When EOS realizes on the older in-flight step, a second speculative
+    forward has already run. The request must finish at exactly the EOS
+    token; the speculative extra token surfaces one sync later and is
+    dropped by the scheduler-level released-request filter (mimicked by
+    the driver loop).
+    """
+    monkeypatch_weight_and_kvcache_loading(monkeypatch)
+    prime_host_buffer_cache()
+
+    pipeline = create_overlap_pipeline(
+        enable_overlap_scheduler=True, max_pending_futures=2
+    )
+
+    # Fake model generates 117, 118, 119, 120, ... — treat 120 as EOS.
+    ctx = create_context(
+        isl=17, osl=64, offset=100, temperature=0.0, eos_token_ids={120}
+    )
+
+    generated, statuses, max_in_flight = _run_to_completion(pipeline, [ctx])
+
+    assert generated[ctx.request_id] == [117, 118, 119, 120]
+    assert statuses[ctx.request_id] == GenerationStatus.END_OF_SEQUENCE
+    assert ctx.status == GenerationStatus.END_OF_SEQUENCE
+    assert max_in_flight == 2
+    assert pipeline._prev_batch is None
+    assert pipeline._prev_prev_batch is None
+
+
+def test_depth2_composition_change_drains(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A batch-composition change at depth 2 drains to depth 1.
+
+    A new request joining mid-decode makes the batch CE, which cannot run
+    schedule-ahead. The pipeline must sync BOTH in-flight batches before
+    building that step's inputs (host-realizing every placeholder), merging
+    the two realized tokens per request into a single response, and then
+    ramp depth 2 back up. Token streams must stay exact throughout.
+    """
+    monkeypatch_weight_and_kvcache_loading(monkeypatch)
+    prime_host_buffer_cache()
+
+    pipeline = create_overlap_pipeline(
+        enable_overlap_scheduler=True, max_pending_futures=2
+    )
+
+    req_a = create_context(isl=10, osl=6, offset=100, temperature=0.0)
+    req_b = create_context(isl=20, osl=7, offset=200, temperature=0.0)
+
+    def make_inputs(
+        contexts: list[TextContext],
+    ) -> TextGenerationInputs[TextContext]:
+        return TextGenerationInputs(batches=[contexts])
+
+    # Iteration 1: CE batch (fresh prompts) — classic depth-1 step.
+    out = pipeline.execute(make_inputs([req_a, req_b]))
+    assert not out
+    # Iteration 2: TG batch — defer engages; ramp-up step returns nothing.
+    out = pipeline.execute(make_inputs([req_a, req_b]))
+    assert not out
+    assert pipeline._prev_prev_batch is not None
+    assert pipeline._prev_batch is not None
+
+    # Iteration 3: a fresh request joins -> CE batch -> drain-to-depth-1.
+    # Both in-flight batches sync before the forward; each continuing
+    # request's two realized tokens arrive merged in one response.
+    req_c = create_context(isl=5, osl=2, offset=300, temperature=0.0)
+    out = pipeline.execute(make_inputs([req_a, req_b, req_c]))
+    assert pipeline._prev_prev_batch is None
+    assert out[req_a.request_id].tokens == [110, 111]
+    assert out[req_b.request_id].tokens == [220, 221]
+    assert req_c.request_id not in out
+
+    # Drive everything to completion; streams must be exact.
+    generated, statuses, _ = _run_to_completion(pipeline, [req_a, req_b, req_c])
+    assert generated[req_a.request_id] == [112, 113, 114, 115]
+    assert generated[req_b.request_id] == [222, 223, 224, 225, 226]
+    assert generated[req_c.request_id] == [305, 306]
+    assert all(
+        status == GenerationStatus.MAXIMUM_LENGTH
+        for status in statuses.values()
+    )
+
+
+def test_depth2_rejected_with_spec_decode() -> None:
+    """Schedule-ahead depth and speculative decoding are mutually exclusive."""
+    with pytest.raises(
+        ValueError, match=r"max_pending_futures > 1 .* speculative"
+    ):
+        create_overlap_pipeline(
+            enable_overlap_scheduler=True,
+            max_pending_futures=2,
+            speculative=FakeSpeculativeConfig(num_speculative_tokens=3),
+        )
+
+
+def test_depth2_pinned_to_depth1_on_prefill_only_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prefill-only DI workers never decode ahead: depth pins to 1."""
+    monkeypatch_weight_and_kvcache_loading(monkeypatch)
+    pipeline = create_overlap_pipeline(
+        enable_overlap_scheduler=True,
+        max_pending_futures=2,
+        pipeline_role="prefill_only",
+    )
+    assert pipeline._realize_future_token_processor is None
+    assert pipeline._max_pending_futures == 1

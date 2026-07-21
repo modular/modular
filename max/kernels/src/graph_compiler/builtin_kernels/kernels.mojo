@@ -120,6 +120,7 @@ from state_space.mamba2_ssd_scan import (
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
     causal_conv1d_varlen_fwd_gpu,
+    causal_conv1d_varlen_fwd_seqparallel_gpu,
 )
 from std.runtime.tracing import trace_arg
 from extensibility import (
@@ -4238,7 +4239,9 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape[
 
 
 @extensibility.register("causal_conv1d_varlen_fwd")
-struct CausalConv1DVarlenFwd[activation: StaticString]:
+struct CausalConv1DVarlenFwd[
+    activation: StaticString, channels_last: Bool = False
+]:
     """Varlen causal 1D convolution forward pass.
 
     Performs causal 1D convolution on variable-length sequences that are
@@ -4250,12 +4253,24 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
     resolve the op with no out-of-tree `custom_extensions`. The kernel math
     lives in `state_space.varlen_causal_conv1d`.
 
+    The underlying kernels index `x`/`output` purely through runtime
+    dim/seqlen strides, so the token-axis memory layout is a free parameter.
+    With `channels_last=True` the op consumes and produces tokens-major
+    `(total_seqlen, dim)` tensors — the layout the surrounding graph
+    naturally carries — eliminating the materialized `(dim, total_seqlen)`
+    transposes on both sides of the op. Only the stride/extent bookkeeping
+    below changes; the per-element compute is identical in both layouts.
+
     Parameters:
         activation: Activation function - "none" or "silu".
+        channels_last: If True, `x` and `output` are tokens-major
+            (total_seqlen, dim) instead of (dim, total_seqlen).
 
     Tensor Shapes:
         - output: (dim, total_seqlen) - Output tensor
+          ((total_seqlen, dim) when `channels_last`)
         - x: (dim, total_seqlen) - Input tensor (concatenated sequences)
+          ((total_seqlen, dim) when `channels_last`)
         - weight: (dim, width) - Convolution weights per channel
         - bias: (dim,) - Per-channel bias
         - query_start_loc: (batch + 1,) - Cumulative sequence lengths
@@ -4285,8 +4300,13 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
         has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        var dim = x.dim_size(0)
-        var total_seqlen = x.dim_size(1)
+        # Axis of `x`/`output` holding channels vs. tokens (see
+        # `channels_last`). The GPU/CPU kernels take dim/seqlen strides as
+        # runtime arguments, so both layouts run the same code.
+        comptime dim_axis = 1 if Self.channels_last else 0
+        comptime seq_axis = 0 if Self.channels_last else 1
+        var dim = x.dim_size(dim_axis)
+        var total_seqlen = x.dim_size(seq_axis)
         var width = weight.dim_size(1)
         var batch = query_start_loc.dim_size(0) - 1
 
@@ -4307,12 +4327,12 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
         var output_strides = output.strides()
         var conv_states_strides = conv_states.strides()
 
-        var x_dim_stride = UInt32(x_strides[0])
-        var x_seqlen_stride = UInt32(x_strides[1])
+        var x_dim_stride = UInt32(x_strides[dim_axis])
+        var x_seqlen_stride = UInt32(x_strides[seq_axis])
         var weight_dim_stride = UInt32(weight_strides[0])
         var weight_width_stride = UInt32(weight_strides[1])
-        var out_dim_stride = UInt32(output_strides[0])
-        var out_seqlen_stride = UInt32(output_strides[1])
+        var out_dim_stride = UInt32(output_strides[dim_axis])
+        var out_seqlen_stride = UInt32(output_strides[seq_axis])
 
         var has_conv_states = conv_states.dim_size(0) > 0
         var conv_states_batch_stride = UInt32(
@@ -4375,11 +4395,91 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
             var gpu_ctx = ctx
             comptime BLOCK_DIM = 128
             comptime BLOCK_SEQ = 1
+            # Sequence-tile size for the seq-parallel prefill kernel (slice 1
+            # of run7/designs/state-space-prefill-conv-seqparallel.md). Only
+            # used on the `total_seqlen > batch` (prefill/mixed) branch below;
+            # pure decode (`total_seqlen == batch`) keeps the untouched serial
+            # kernel + BLOCK_SEQ path so decode stays byte-identical.
+            comptime TILE_SEQ = 128
             var silu_activation_int8 = Int8(silu_activation)
 
             @parameter
             @always_inline
             def launch_gpu[kWidth: Int]() raises:
+                # Prefill/mixed segments (at least one sequence has >1
+                # token) route to the grid-z sequence-tiled kernel; pure
+                # decode (every sequence has exactly 1 token, so
+                # total_seqlen == batch) keeps the serial per-thread kernel
+                # unchanged below. This mirrors the shape-only heuristic
+                # already used for the Mamba-2 SSD chunked-prefill gate.
+                if total_seqlen > batch:
+                    var compiled_func = gpu_ctx.compile_function[
+                        causal_conv1d_varlen_fwd_seqparallel_gpu[
+                            x_tt.dtype,
+                            weight_tt.dtype,
+                            bias_tt.dtype,
+                            output_tt.dtype,
+                            query_start_loc_tt.dtype,
+                            cache_indices_tt.dtype,
+                            has_initial_state_tt.dtype,
+                            conv_states_tt.dtype,
+                            kWidth,
+                            BLOCK_DIM,
+                            TILE_SEQ,
+                            x_tt.LayoutType,
+                            weight_tt.LayoutType,
+                            bias_tt.LayoutType,
+                            query_start_loc_tt.LayoutType,
+                            cache_indices_tt.LayoutType,
+                            has_initial_state_tt.LayoutType,
+                            conv_states_tt.LayoutType,
+                            output_tt.LayoutType,
+                        ]
+                    ]()
+                    # Host-side safe upper bound on the per-sequence tile
+                    # count, avoiding a host max-reduction over ragged
+                    # seqlens: `ceildiv(total_seqlen, TILE_SEQ)` covers the
+                    # tile count if all tokens were in one sequence, plus one
+                    # extra tile per sequence (`batch`) covers the remainder
+                    # from splitting total_seqlen across `batch` sequences.
+                    # Blocks whose z-index exceeds a given sequence's actual
+                    # tile count early-return inside the kernel.
+                    gpu_ctx.enqueue_function(
+                        compiled_func,
+                        dim,
+                        total_seqlen,
+                        batch,
+                        x_tt,
+                        weight_tt,
+                        bias_tt,
+                        query_start_loc_tt,
+                        cache_indices_tt,
+                        has_initial_state_tt,
+                        conv_states_tt,
+                        output_tt,
+                        x_dim_stride,
+                        x_seqlen_stride,
+                        weight_dim_stride,
+                        weight_width_stride,
+                        out_dim_stride,
+                        out_seqlen_stride,
+                        conv_states_batch_stride,
+                        conv_states_dim_stride,
+                        conv_states_width_stride,
+                        silu_activation_int8,
+                        PAD_SLOT_ID,
+                        Int8(has_cache_indices),
+                        Int8(has_initial_state_flag),
+                        Int8(has_conv_states),
+                        Int8(has_bias),
+                        grid_dim=(
+                            batch,
+                            ceildiv(dim, BLOCK_DIM),
+                            ceildiv(total_seqlen, TILE_SEQ) + batch,
+                        ),
+                        block_dim=(BLOCK_DIM, 1),
+                    )
+                    return
                 var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_varlen_fwd_gpu[
                         x_tt.dtype,

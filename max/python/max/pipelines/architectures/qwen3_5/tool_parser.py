@@ -42,7 +42,7 @@ import json
 import re
 import uuid
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, ClassVar
 
 from max.pipelines.lib.tool_parsing import register
 from max.pipelines.modeling.types import (
@@ -134,6 +134,11 @@ def _max_holdback(buffer: str, sentinel: str) -> int:
 @register("qwen3_5")
 class Qwen3_5ToolParser:
     """Parser for Qwen 3.5 / 3.6 tool calls."""
+
+    # Structural start marker, exposed under the same name as
+    # ``StructuralTagToolParser.CALL_BEGIN`` so the serving layer's
+    # marker-leak guard covers this parser too.
+    CALL_BEGIN: ClassVar[str] = TOOL_CALL_OPEN
 
     def __init__(self) -> None:
         self._buffer: str = ""
