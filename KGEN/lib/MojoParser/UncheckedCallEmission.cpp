@@ -1270,9 +1270,7 @@ struct ExclusivityChecker : public SharedStateUser {
         builder(emitter.builder), declScope(emitter.declScope) {
 
     // Handle __unsafe_nested_origins_read_only.
-    originsAccessesAreReadOnly =
-        sugarCast<FnTypeGeneratorType>(callee.getRValueType())
-            .getIsNestedOriginsReadOnly();
+    originsAccessesAreReadOnly = getCalleeType().getIsNestedOriginsReadOnly();
 
     // Check capture origins first so we know if argument values may overlap.
     checkCaptureOrigins();
@@ -1286,6 +1284,11 @@ struct ExclusivityChecker : public SharedStateUser {
   /// them might be to the current caller's stack frame, it returns true. This
   /// allows us to set the LLVM tailcall marker.
   bool mayAccessCallerStack() const;
+
+  /// Return the type of the callee.
+  FnTypeGeneratorType getCalleeType() const {
+    return sugarCast<FnTypeGeneratorType>(callee.getRValueType());
+  }
 
 private:
   RValue callee;
@@ -1321,11 +1324,11 @@ private:
   /// accesses.
   void checkCaptureOrigins();
 
-  void checkOriginAccess(Value val, std::optional<ArgConvention> convention,
-                         std::optional<unsigned> argIdx, TypedAttr origin);
+  void checkOriginAccess(Value val, std::optional<unsigned> argIdx,
+                         TypedAttr origin);
 
-  void diagViolation(Value val, ArgConvention convention, unsigned argIdx,
-                     TypedAttr origin, const OriginInfo &previousAccess);
+  void diagViolation(Value val, unsigned argIdx, TypedAttr origin,
+                     const OriginInfo &previousAccess);
 };
 } // end anonymous namespace
 
@@ -1374,15 +1377,15 @@ bool ExclusivityChecker::mayAccessCallerStack() const {
   };
 
   // At this point all the origins have been collected, just see if any are
-  // local references.
+  // local references. When an access to "x.y" happens we'll see both "x" and
+  // "x.y" here.
   for (const auto &[origin, info] : originAccesses) {
     // Static origins and subfields are ignorable.  Fields will have their bases
     // included.
     if (isa<StaticOriginAttr, OriginFieldAttr, ComptimeOriginAttr,
-            // TODO: Figure out InteriorOriginAttr semantics for this.
-            InteriorOriginAttr,
-            // FIXME: Why is this coming through here??
-            UnboundAttr>(origin))
+            InteriorOriginAttr>(origin) ||
+        // FIXME: Why is this happening?
+        isa<UnboundAttr>(origin))
       continue;
 
     // Scan up our decl hierarchy to see if this parameter is defined on a
@@ -1400,15 +1403,13 @@ bool ExclusivityChecker::mayAccessCallerStack() const {
 }
 
 void ExclusivityChecker::checkCaptureOrigins() {
-  TypedAttr captureOrigins =
-      sugarCast<FnTypeGeneratorType>(callee.getRValueType())
-          .getCaptureOrigins();
+  TypedAttr captureOrigins = getCalleeType().getCaptureOrigins();
   for (TypedAttr origin : shared.cachedOriginFinder.findOriginsIn(
            /*types=*/{}, captureOrigins)) {
     // If we are to treat all these as read-only, then strip the mutability.
     if (originsAccessesAreReadOnly)
       origin = OriginMutCastAttr::get(origin, false);
-    checkOriginAccess(Value(), /*convention=*/{}, /*argIdx=*/{}, origin);
+    checkOriginAccess(Value(), /*argIdx=*/{}, origin);
   }
 }
 
@@ -1416,14 +1417,14 @@ void ExclusivityChecker::checkCaptureOrigins() {
 /// see if the following origin (which may be part of the argument convention,
 /// or buried in the type) is a legal access given the other things we've
 /// already seen.
-void ExclusivityChecker::checkOriginAccess(
-    Value val, std::optional<ArgConvention> convention,
-    std::optional<unsigned> argIdx, TypedAttr rawOrigin) {
+void ExclusivityChecker::checkOriginAccess(Value val,
+                                           std::optional<unsigned> argIdx,
+                                           TypedAttr rawOrigin) {
 
   // Accesses to an origin union is an access to each of the members.
   if (auto unionAttr = sugarDynCast<OriginUnionAttr>(rawOrigin)) {
     for (auto elt : unionAttr.getOperands())
-      checkOriginAccess(val, convention, argIdx, elt);
+      checkOriginAccess(val, argIdx, elt);
     return;
   }
 
@@ -1469,7 +1470,7 @@ void ExclusivityChecker::checkOriginAccess(
           // "a.y" independently.
           (isLeaf || it->second.isLeaf)) {
         // If not, we have a problem!
-        diagViolation(val, *convention, *argIdx, rawOrigin, it->second);
+        diagViolation(val, *argIdx, rawOrigin, it->second);
         return;
       }
 
@@ -1515,24 +1516,27 @@ void ExclusivityChecker::checkOriginAccess(
 /// each independently.
 void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
                                        FnTypeGeneratorType signature) {
+  ArgConvention convention = signature.getArgConvention(argIdx);
+
+  // If this is a result argument, then we only look at the origin of the
+  // destination that we're storing into, not any nested references that may
+  // be in the result. This returned value is derived from the other arguments
+  // passed to the function, it doesn't conflict with them.
+  if (convention == ArgConvention::ByRefResult ||
+      convention == ArgConvention::ByRefError) {
+    argVal = RebindOp::strip(argVal);
+    checkOriginAccess(argVal, argIdx,
+                      sugarCast<RefType>(argVal.getType()).getOrigin());
+    return;
+  }
+
   // We get passed the MLIR representation for the dynamic argument, which
   // includes variadic and pack constructions.  Make sure to handle each
   // variadic argument separately.
-  auto checkArg = [&](Value argVal, ArgConvention convention) {
+  auto checkArg = [&](Value argVal) {
     // We sometimes get rebinds for downcasts of origins or for sugar alignment.
     // Ignore those so we can see the actual incoming value's origin.
     argVal = RebindOp::strip(argVal);
-
-    // If this is a result argument, then we only look at the origin of the
-    // destination that we're storing into, not any nested references that may
-    // be in the result. This returned value is derived from the other arguments
-    // passed to the function, it doesn't conflict with them.
-    if (convention == ArgConvention::ByRefResult ||
-        convention == ArgConvention::ByRefError) {
-      checkOriginAccess(argVal, convention, argIdx,
-                        sugarCast<RefType>(argVal.getType()).getOrigin());
-      return;
-    }
 
     // When @__unsafe_nested_origins_read_only is used, we strip
     // mutability of nested origins and 'ref' arguments, but do not strip from
@@ -1553,34 +1557,50 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
       // not to mutate origins.
       if (originsAccessesAreReadOnly && shouldStripMutability(origin))
         origin = OriginMutCastAttr::get(origin, false);
-      checkOriginAccess(argVal, convention, argIdx, origin);
+      checkOriginAccess(argVal, argIdx, origin);
     }
   };
 
   // Normal arguments.
   if (!signature.isPack(argIdx) && !signature.isPosVarArg(argIdx)) {
-    checkArg(argVal, signature.getArgConvention(argIdx));
+    checkArg(argVal);
     return;
   }
 
   // Handle VariadicList and VariadicPack.  They are constructed objects dumped
   // into a VarDecl because they need to be passed to the callee with ownership.
-  auto conv = signature.getVariadicConvention(argIdx);
+  convention = signature.getVariadicConvention(argIdx);
   TypedAttr extraOrigin; // Unused here.
   for (auto elt :
        OriginTrackable::decodeIndividualVariadicArguments(argVal, extraOrigin))
-    checkArg(elt, conv);
+    checkArg(elt);
 }
 
 /// Emit an error about an access to a conflicting origin after a previous
 /// access was seen.
-void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
-                                       unsigned argIdx, TypedAttr origin,
+void ExclusivityChecker::diagViolation(Value val, unsigned argIdx,
+                                       TypedAttr origin,
                                        const OriginInfo &previousAccess) {
   bool isImmut = OriginType::isMutableKnown(origin, false);
+  origin = OriginMutCastAttr::strip(origin);
+
+  FnTypeGeneratorType calleeType = getCalleeType();
   MojoInflightDiag diag = emitError(callExpr->getLoc());
 
-  diag << "argument of ";
+  diag << "aliasing values passed ";
+  diag << (isImmut ? "immutably" : "mutably") << " to "
+       << calleeType.getArgName(argIdx) << " argument and ";
+  diag << argumentValues[argIdx].expr->getRange();
+
+  diag << (previousAccess.isImmut ? "immutably" : "mutably");
+  if (std::optional<unsigned> prevIdx = previousAccess.argIdx) {
+    diag << " to " << calleeType.getArgName(*prevIdx) << " argument";
+    diag << argumentValues[*prevIdx].expr->getRange();
+  } else {
+    // TODO: Dig into the closure to get better error messages.
+    diag << " as an implicit closure capture";
+  }
+  diag << " in ";
   switch (syntax) {
   default:
     // If the callee is a direct call, dig out the source name.
@@ -1595,57 +1615,46 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
           if (calleeFunc.getSpecialFunctionInfo().isInitializer()) {
             // Use the bound result type, which is the result of the init,
             // not the generic unbound one from the containing decl.
-            auto resultType =
-                cast<FnTypeGeneratorType>(pv.getType()).getUserResultType();
-            diag << ASTType(resultType) << " initializer ";
+            diag << ASTType(calleeType.getUserResultType()) << " initializer ";
           } else if (auto sourceName = calleeFunc.getSourceNameAttr()) {
             diag << sourceName << ' ';
           }
         }
       }
     }
-    diag << "call ";
+    diag << "call";
     break;
   case CallSyntax::kImplicitConvert:
-    diag << "implicit conversion ";
+    diag << "implicit conversion to "
+         << ASTType(calleeType.getUserResultType());
     break;
   case CallSyntax::kImplicitCopyCtor:
-    diag << "implicit copy constructor ";
+    diag << "implicit copy constructor of "
+         << ASTType(calleeType.getUserResultType());
     break;
   case CallSyntax::kImplicitMoveCtor:
-    diag << "implicit move constructor ";
+    diag << "implicit move constructor of "
+         << ASTType(calleeType.getUserResultType());
     break;
-  }
-
-  diag << "allows ";
-  diag << (isImmut ? "reading" : "writing");
-  diag << " a memory location previously ";
-  diag << (previousAccess.isImmut ? "readable" : "writable");
-  diag << " through ";
-
-  // Add ranges for the two arguments.
-  diag << argumentValues[argIdx].expr->getRange();
-  if (std::optional<unsigned> prevIdx = previousAccess.argIdx) {
-    diag << "another aliased argument";
-    diag << argumentValues[*prevIdx].expr->getRange();
-  } else {
-    // TODO: Dig into the closure to get better error messages.
-    diag << "implicit closure captures";
   }
 
   // Attach a note to explain what is going on in more detail.
   diag.attachNote(callExpr->getLoc());
-  origin = OriginMutCastAttr::strip(origin);
 
   // If the origin in question is because of the top-level ref binding, then
   // we have a common problem where something is passed both mutable and
   // borrowed.
+  ArgConvention convention = calleeType.getArgConvention(argIdx);
+  if (calleeType.isAnyVarArg(argIdx))
+    convention = calleeType.getVariadicConvention(argIdx);
+
   if (hasAddress(convention) &&
       OriginMutCastAttr::strip(sugarCast<RefType>(val.getType()).getOrigin()) ==
           origin) {
     diag << "'" << ASTType::getOriginAsString(origin, &shared)
          << "' value is passed through aliasing '" << getUserSyntax(convention)
-         << "' argument" << argumentValues[argIdx].expr->getRange();
+         << "' argument " << calleeType.getArgName(argIdx)
+         << argumentValues[argIdx].expr->getRange();
     return;
   }
 
