@@ -979,6 +979,16 @@ static TraitType getDeclProvidedTrait(ASTDecl *decl) {
   return providedCanonTrait;
 }
 
+/// Uncached implementation of ASTDecl::doesNominalTypeConformTo. Only called by
+/// that wrapper. If `sawErroneousExtension` is non-null, it is set to true when
+/// a conformance-contributing extension of `self` is erroneous, signaling the
+/// caller that the result is unstable and must not be cached.
+static TriState
+doesNominalTypeConformToUncached(ASTDecl *self, TraitType trait,
+                                 ASTType concreteType,
+                                 ArrayRef<ConstraintAttr> callerAssumptions,
+                                 bool *sawErroneousExtension = nullptr);
+
 /// Given a decl for a struct or trait type, check if this type conforms to the
 /// specified trait type. If concreteType is provided, it is used to extract
 /// parameter bindings for evaluating conditional trait conformances.
@@ -991,13 +1001,64 @@ static TraitType getDeclProvidedTrait(ASTDecl *decl) {
 TriState
 ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
                                   ArrayRef<ConstraintAttr> callerAssumptions) {
+  // Only the assumption-free queries are context-independent enough to memoize;
+  // where-clause assumptions make the result caller-dependent, so those bypass
+  // the cache entirely.
+  if (!callerAssumptions.empty())
+    return doesNominalTypeConformToUncached(this, trait, concreteType,
+                                            callerAssumptions);
+
+  // Never consult or populate the cache for an erroneous decl: its conformance
+  // answer is unstable -- an optimistic declared `yes` (e.g. a struct that
+  // declares RegisterPassable but has a non-conforming member) becomes `no`
+  // once the invalidating error is diagnosed -- and it is irrelevant since
+  // compilation is already failing. Also skip not-yet-signature-resolved decls:
+  // resolvedness only moves forward and stores only happen at >= signature, so
+  // they can have no entry yet and the lookup would always miss.
+  const bool mayBeCached =
+      resolvedness >= DeclResolvedness::signature && !isErroneous();
+  if (mayBeCached)
+    if (std::optional<bool> conforms =
+            shared.getCachedNominalConformance(this, trait, concreteType))
+      return TriState::fromBool(*conforms);
+
+  // Caching a definitive answer for this (decl, trait, concreteType) assumes
+  // the answer is stable once the decl is signature-resolved and non-erroneous.
+  // That relies on the conformance-contributing decls being stable too:
+  // extension conformances are currently unconditional (never retracted after
+  // signature resolution), and `sawErroneousExtension` catches the one
+  // exception -- an erroneous contributing extension whose contribution may
+  // still change.
+  bool sawErroneousExtension = false;
+  TriState result = doesNominalTypeConformToUncached(
+      this, trait, concreteType, callerAssumptions, &sawErroneousExtension);
+
+  // Cache only stable, definitive answers: skip `unknown` (phase-dependent, may
+  // become yes/no as more of the program is type checked), erroneous decls (see
+  // above), results that depend on an erroneous extension, and results produced
+  // before the signature resolved (the error path returns `no` and must re-run
+  // so its diagnostics re-emit on each query).
+  // NB: re-read resolvedness/isErroneous here rather than reuse `mayBeCached`
+  // -- the uncached call above resolves the signature, so a first query can
+  // still populate the cache even though `mayBeCached` was false.
+  if (result.isDefinite() && resolvedness >= DeclResolvedness::signature &&
+      !isErroneous() && !sawErroneousExtension)
+    shared.cacheNominalConformance(this, trait, concreteType, result.isTrue());
+  return result;
+}
+
+static TriState doesNominalTypeConformToUncached(
+    ASTDecl *self, TraitType trait, ASTType concreteType,
+    ArrayRef<ConstraintAttr> callerAssumptions, bool *sawErroneousExtension) {
+  SharedState &shared = self->getShared();
+
   // We only need trait symbol to verify trait conformance, not the resolved
   // witness table.
-  if (failed(shared.declResolver->resolveSignature(*this, getLoc())))
+  if (failed(shared.declResolver->resolveSignature(*self, self->getLoc())))
     return TriState::no(); // Error emitted.
 
   // Collect all the symbols that the type explicitly provides.
-  TraitType providedCanonTrait = getDeclProvidedTrait(this);
+  TraitType providedCanonTrait = getDeclProvidedTrait(self);
   if (providedCanonTrait == trait)
     return TriState::yes();
 
@@ -1008,7 +1069,7 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
   ArrayRef<TypedAttr> paramBindings =
       concreteType ? concreteType.getParamBindings() : ArrayRef<TypedAttr>{};
   if (!paramBindings.empty()) {
-    if (auto structOp = dyn_cast_or_null<StructDeclOp>(this->getIfOperation()))
+    if (auto structOp = dyn_cast_or_null<StructDeclOp>(self->getIfOperation()))
       evaluator = shared.getParameterEvaluator(structOp.getInputParams(),
                                                paramBindings);
   }
@@ -1046,12 +1107,12 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
     }
   }
 
-  if (auto structOp = dyn_cast_or_null<StructDeclOp>(this->getIfOperation())) {
+  if (auto structOp = dyn_cast_or_null<StructDeclOp>(self->getIfOperation())) {
     llvm::SmallPtrSet<ASTDecl *, 4> uniqueExtensions;
     // Search for extensions in the struct's parent scope.
     // TODO(MOCO-522): Arcana docs on our orphan rule.
-    if (ASTDecl *structParent = this->getParentDecl()) {
-      structParent->findExtensionsInScopeForStruct(this->getSymbolRef(),
+    if (ASTDecl *structParent = self->getParentDecl()) {
+      structParent->findExtensionsInScopeForStruct(self->getSymbolRef(),
                                                    uniqueExtensions);
     }
     // Search for extensions in the trait's parent scope(s).
@@ -1061,7 +1122,7 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
           shared.declResolver->getTraitDecl(TraitType::get(traitSymbol));
       assert(traitDecl && "couldn't find trait decl for trait symbol");
       if (ASTDecl *traitParent = traitDecl->getParentDecl()) {
-        traitParent->findExtensionsInScopeForStruct(this->getSymbolRef(),
+        traitParent->findExtensionsInScopeForStruct(self->getSymbolRef(),
                                                     uniqueExtensions);
       }
     }
@@ -1071,9 +1132,20 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
       if (auto extOp =
               dyn_cast_or_null<ExtensionDeclOp>(extDecl->getIfOperation())) {
         // Signature resolve the extension so we can access its canonicalTrait.
+        // A failed resolution marks the extension erroneous, and its
+        // (non-)contribution may change once the error is diagnosed, so tell
+        // the caller not to cache this result.
         if (failed(shared.declResolver->resolveSignature(*extDecl,
-                                                         extDecl->getLoc())))
+                                                         extDecl->getLoc()))) {
+          if (sawErroneousExtension)
+            *sawErroneousExtension = true;
           continue;
+        }
+        // An erroneous contributing extension makes the result unstable (an
+        // optimistic `yes` can be demoted once the error surfaces), so signal
+        // the caller to skip caching.
+        if (extDecl->isErroneous() && sawErroneousExtension)
+          *sawErroneousExtension = true;
         // Extensions sometimes don't have canonical traits (like in isolated
         // tests).
         if (!extOp.getCanonicalTrait().has_value())

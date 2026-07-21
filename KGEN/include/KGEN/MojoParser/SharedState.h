@@ -620,6 +620,17 @@ public:
   void cacheImplicitConvertibility(ASTType from, ASTType to,
                                    bool isConvertible);
 
+  /// These two methods memoize ASTDecl::doesNominalTypeConformTo for the
+  /// common, assumption-free case, keyed by (type decl, required trait,
+  /// concrete type). Only definitive (yes/no) results are cached; `unknown` is
+  /// phase-dependent and never stored. `conforms` is the `yes`/`no` result as a
+  /// bool.
+  std::optional<bool> getCachedNominalConformance(const ASTDecl *decl,
+                                                  TraitType trait,
+                                                  ASTType concreteType);
+  void cacheNominalConformance(const ASTDecl *decl, TraitType trait,
+                               ASTType concreteType, bool conforms);
+
   /// Get the attribute evaluation context.
   ParserEvaluationContext &getEvaluationContext();
 

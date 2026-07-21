@@ -387,6 +387,17 @@ struct SharedState::Impl {
   /// another.
   DenseMap<std::pair<Type, Type>, bool> cachedImplicitConvertibility;
 
+  /// This memoizes assumption-free nominal trait-conformance checks
+  /// (ASTDecl::doesNominalTypeConformTo), keyed by (type decl, required trait,
+  /// concrete type). Only definitive yes/no results are stored. The type decl
+  /// is part of the key (not just the concrete type) because the result also
+  /// depends on the struct's extensions, which are found via that decl. The raw
+  /// `const ASTDecl *` is a stable identity key: ASTDecls are bump-allocated in
+  /// `persistentAllocator` and never freed or address-recycled within a
+  /// SharedState, so an entry can never be misattributed to a different decl.
+  DenseMap<std::tuple<const ASTDecl *, Type, Type>, bool>
+      nominalConformanceCache;
+
   /// An attribute walker used to resolve bytecode references.
   BytecodeResolutionReferenceWalker bytecodeRefResolutionWalker;
 
@@ -2891,6 +2902,40 @@ void SharedState::cacheImplicitConvertibility(ASTType from, ASTType to,
     assert(it->second == isConvertible &&
            "convertibility cache disagrees from actual computation! Must need "
            "to include more information in the hash key");
+}
+
+/// These two methods memoize assumption-free nominal trait-conformance results.
+std::optional<bool>
+SharedState::getCachedNominalConformance(const ASTDecl *decl, TraitType trait,
+                                         ASTType concreteType) {
+  DenseMap<std::tuple<const ASTDecl *, Type, Type>, bool> &cache =
+      getImpl().nominalConformanceCache;
+  auto it = cache.find({decl, Type(trait), Type(concreteType)});
+  if (it == cache.end())
+    return {};
+
+#ifndef NDEBUG
+  // Paranoia (mirrors the convertibility cache above): whenever the cache size
+  // is a multiple of 64, force a miss so the caller recomputes and the
+  // store-side assert can catch the cache drifting from ground truth if the
+  // result ever starts depending on state not in the key.
+  if ((cache.size() & 63) == 0)
+    return {};
+#endif
+  return it->second;
+}
+void SharedState::cacheNominalConformance(const ASTDecl *decl, TraitType trait,
+                                          ASTType concreteType, bool conforms) {
+  DenseMap<std::tuple<const ASTDecl *, Type, Type>, bool> &cache =
+      getImpl().nominalConformanceCache;
+  auto [it, newlyInserted] =
+      cache.insert({{decl, Type(trait), Type(concreteType)}, conforms});
+
+  // If the entry is already present, make sure the answers agree.
+  if (!newlyInserted)
+    assert(it->second == conforms &&
+           "nominal conformance cache disagrees from actual computation! Must "
+           "need to include more information in the hash key");
 }
 
 ParserEvaluationContext &SharedState::getEvaluationContext() {
