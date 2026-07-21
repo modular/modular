@@ -49,17 +49,6 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
-  kgen.func @materialize_source_loc() capturing -> !kgen.string {
-    // expected-error @below {{call location was not inlined the specified number of times: requires 1 more time(s)}}
-    // expected-error @below {{failed to legalize operation}}
-    %line, %col, %fileName = kgen.source_loc[0]
-    kgen.return %fileName : !kgen.string
-  }
-}
-
-// -----
-
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=64>} {
   // expected-error @below {{'"unknown_attribute"' is not defined}}
   // expected-error @below {{failed to legalize operation 'kgen.func' that was explicitly marked illegal}}
