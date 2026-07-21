@@ -14,7 +14,6 @@ _EXTRA_ALIASES = {
 _MAX_PACKAGES = {
     "machine": "driver/src/machine",
     "_hal": "driver/src/_hal",
-    "_device_context_hal": "driver/src/_device_context_hal",
     "kv_cache": "kernels/src/kv_cache",
     "layout": "kernels/src/layout",
     "linalg": "kernels/src/linalg",

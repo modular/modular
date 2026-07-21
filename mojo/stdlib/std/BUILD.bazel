@@ -55,6 +55,12 @@ mojo_overlay_srcs(
     base_srcs = [":std_srcs"],
     overlay_files = {
         "//max/driver/src/_device_context_hal:__init__.mojo": "std/gpu/host/device_context.mojo",
+        # The HAL DeviceContext has no device-graph support; replace the module
+        # with name-only stand-ins so `std.gpu.host`'s re-exports resolve.
+        "//max/driver/src/_device_context_hal:_device_graph.mojo": "std/gpu/host/device_graph.mojo",
+        # `_hal/_machine.mojo` is shadowed by the staged-tree variant (the
+        # `machine` package is nested inside `_hal` here, not a sibling).
+        "//max/driver/src/_device_context_hal:_machine.mojo": "std/gpu/host/_hal/_machine.mojo",
         "//max/driver/src/_hal:__init__.mojo": "std/gpu/host/_hal/__init__.mojo",
         "//max/driver/src/_hal:buffer.mojo": "std/gpu/host/_hal/buffer.mojo",
         "//max/driver/src/_hal:context.mojo": "std/gpu/host/_hal/context.mojo",
