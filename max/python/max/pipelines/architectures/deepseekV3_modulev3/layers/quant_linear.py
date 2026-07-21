@@ -17,13 +17,16 @@ from __future__ import annotations
 
 from typing import Literal
 
+from max.driver import Device
 from max.experimental.nn import Module
 from max.experimental.nn.common_layers.activation import (
     activation_function_from_name,
 )
 from max.experimental.nn.common_layers.linear import col_parallel, row_parallel
+from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.tensor import Tensor
 from max.nn.quant_config import QuantConfig
+from typing_extensions import Self
 
 from . import quant_ops
 from .quant_ops import QuantAwareTensor
@@ -49,6 +52,12 @@ class QuantizedLinear(Module[[Tensor], Tensor]):
         self.out_dim = out_dim
         self.weight = quant_ops.quantized_weight(out_dim, in_dim, quant_config)
         self.bias = Tensor.zeros((out_dim,)) if bias else 0
+
+    def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
+        self.weight = self.weight.to(target)
+        if isinstance(self.bias, QuantAwareTensor):
+            self.bias = self.bias.to(target)
+        return self
 
     def forward(self, x: Tensor) -> Tensor:
         return quant_ops.matmul(x, self.weight) + self.bias

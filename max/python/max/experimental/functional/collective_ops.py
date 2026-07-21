@@ -392,15 +392,6 @@ def _scatter(t: Tensor, target: DeviceMapping) -> Tensor:
     with ensure_context():
         tv = t.__tensorvalue__()
 
-        if mesh.num_devices > 1 and all(
-            isinstance(p, Replicated) for p in placements
-        ):
-            shard_tvs = _broadcast_replicated(tv, mesh)
-            return Tensor.from_shard_values(
-                shard_tvs,
-                PlacementMapping(mesh, placements),
-            )
-
         global_shape = t.shape
         shard_tvs = [tv]
         for mesh_axis in range(mesh.ndim):
@@ -447,19 +438,29 @@ def _scatter(t: Tensor, target: DeviceMapping) -> Tensor:
         )
 
 
-def _broadcast_replicated(
-    tv: TensorValue, mesh: DeviceMesh
-) -> list[TensorValue]:
-    """Broadcasts values to every device using one collective op."""
-    signal_bufs = _signal_buffers(mesh)
-    if signal_bufs is None:
-        return [
-            ops.transfer_to(tv, DeviceRef.from_device(d)) for d in mesh.devices
-        ]
-    mesh_device_refs = [DeviceRef.from_device(d) for d in mesh.devices]
-    if tv.device not in mesh_device_refs:
-        tv = ops.transfer_to(tv, mesh_device_refs[0])
-    return ops.distributed_broadcast(tv, signal_bufs)
+def distributed_broadcast(t: Tensor, mesh: DeviceMesh) -> Tensor:
+    """Replicates a non-distributed tensor onto every device with one collective.
+
+    Args:
+        t: A non-distributed source tensor.
+        mesh: The device mesh to replicate onto.
+
+    Returns:
+        A distributed tensor with :class:`Replicated` placement on every axis.
+    """
+    with ensure_context():
+        signal_buffers = _signal_buffers(mesh)
+        if signal_buffers is None:
+            raise RuntimeError("No signal buffers available for broadcast.")
+        if t.mesh.num_devices > 1:
+            raise RuntimeError(
+                "`F.distributed_broadcast` requires the source tensor to be non-distributed."
+            )
+        shards = ops.distributed_broadcast(TensorValue(t), signal_buffers)
+        return Tensor.from_shard_values(
+            shards,
+            PlacementMapping(mesh, (Replicated(),) * mesh.ndim),
+        )
 
 
 def transfer_to(

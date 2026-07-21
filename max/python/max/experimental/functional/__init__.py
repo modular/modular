@@ -51,6 +51,7 @@ from max.graph import DeviceRef, Graph, TensorType, Type, ops
 from .collective_ops import (
     allgather,
     allreduce_sum,
+    distributed_broadcast,
     reduce_scatter,
     transfer_to,
 )
@@ -235,6 +236,7 @@ __all__ = [
     "cumsum",
     "custom",
     "dequantize",
+    "distributed_broadcast",
     "div",
     "elementwise_max",
     "elementwise_min",

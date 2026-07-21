@@ -52,23 +52,30 @@ logger = logging.getLogger("max.pipelines")
 
 @dataclass
 class DeepseekV3Inputs(DeepseekV2Inputs):
-    batch_context_length: Buffer = field(kw_only=True)
-    """Host (CPU) total page-aligned KV context length for the MLA prefill plan.
+    batch_context_lengths: list[Buffer] = field(kw_only=True)
+    """Host (CPU) page-aligned KV context length, one per DP replica.
 
     Substituted for the planner's device-resident ``buffer_lengths`` so the
     per-layer ``.to(CPU())`` stays host-to-host and the graph is capturable.
     """
 
+    data_parallel_splits: Buffer | None = field(default=None, kw_only=True)
+    input_row_offsets_i64: Buffer | None = field(default=None, kw_only=True)
     ep_inputs: tuple[Buffer, ...] = field(default=(), kw_only=True)
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         """Flat graph inputs in compile ABI order."""
+        dp_inputs: tuple[Buffer, ...] = ()
+        if self.data_parallel_splits is not None:
+            assert self.input_row_offsets_i64 is not None
+            dp_inputs = (self.data_parallel_splits, self.input_row_offsets_i64)
         return (
             self.tokens,
             self.return_n_logits,
             self.input_row_offsets,
-            self.batch_context_length,
+            *self.batch_context_lengths,
+            *dp_inputs,
             *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
             *self.ep_inputs,
         )
@@ -123,20 +130,23 @@ class DeepseekV3Model(DeepseekV2Model):
             data_parallel_degree=self.pipeline_config.model.data_parallel_degree,
             use_allreduce=self.pipeline_config.runtime.ep_use_allreduce,
         )
-        fused_shared_expert = False
-        if model_config.n_shared_experts == 1:
-            # Only enable shared expert fusion if the shared expert is of
-            # the same shape as routed experts.
-            fused_shared_expert = True
-
-        fp8_dispatch = self.dtype == DType.float8_e4m3fn
+        # Only enable shared expert fusion if the shared expert is of
+        # the same shape as routed experts.
+        fused_shared_expert = model_config.n_shared_experts == 1
+        # For a block-FP8 checkpoint, dispatch tokens FP8-on-the-wire: the
+        # dispatch kernel quantizes the activations once (halving all-to-all
+        # bytes) and the local grouped matmuls consume them without
+        # re-quantizing. ``dispatch_quant_config`` must be set whenever the
+        # dispatch dtype is not bf16 (validated by ``EPConfig``). Non-FP8
+        # weights keep the bf16 dispatch (quant_config ``None``).
+        dispatch_dtype = DType.bfloat16
+        dispatch_quant_config = None
+        if model_config.quant_config is not None and self.dtype.is_float8():
+            dispatch_dtype = self.dtype
+            dispatch_quant_config = model_config.quant_config
         return EPConfig(
-            dispatch_dtype=(
-                DType.float8_e4m3fn if fp8_dispatch else DType.bfloat16
-            ),
-            dispatch_quant_config=(
-                model_config.quant_config if fp8_dispatch else None
-            ),
+            dispatch_dtype=dispatch_dtype,
+            dispatch_quant_config=dispatch_quant_config,
             combine_dtype=DType.bfloat16,
             hidden_size=model_config.hidden_size,
             top_k=model_config.num_experts_per_tok,
@@ -203,12 +213,20 @@ class DeepseekV3Model(DeepseekV2Model):
                 correction_bias_key
             ].dtype
 
+        # 1-D pure-TP or pure-DP mesh; the sharding solver derives every
+        # activation collective (single-device mesh for single-GPU runs).
         n_devices = len(self.devices)
-        # Tensor-parallel device mesh across all devices (single-device mesh
-        # for single-GPU runs). Drives weight placement and the collectives
-        # inserted by the sharding propagation.
+        dp_degree = self.pipeline_config.model.data_parallel_degree
+        if dp_degree > 1 and dp_degree != n_devices:
+            # A dp x tp (2-D) mesh is untested; refuse rather than run
+            # unvalidated code.
+            raise NotImplementedError(
+                f"data_parallel_degree={dp_degree} must equal the device "
+                f"count ({n_devices}); dp x tp meshes are not supported yet."
+            )
+        axis_name = "dp" if dp_degree > 1 else "tp"
         model_config.mesh = DeviceMesh(
-            tuple(self.devices), (n_devices,), ("tp",)
+            tuple(self.devices), (n_devices,), (axis_name,)
         )
         return model_config
 
