@@ -291,6 +291,8 @@ modular_py_test(
     ],
 )
 
+# Disabled due to nondeterminism. Tracking: QUA-786
+# Re-enable tracking: https://linear.app/modularml/issue/GEX-3995
 modular_py_test(
     name = "test_buffer_create_init_gpu",
     size = "small",
@@ -300,6 +302,7 @@ modular_py_test(
     },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
+    target_compatible_with = ["@platforms//:incompatible"],
     deps = [
         ":buffer_create_init_shared",
         "//max/python/max/engine",
