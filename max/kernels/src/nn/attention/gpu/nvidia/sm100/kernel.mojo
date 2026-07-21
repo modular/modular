@@ -219,7 +219,10 @@ struct SM100MHA2Q[
         Self.KVLUTType.dtype,
         Self.config.swizzle_mode,
         BN=kv_sub_tile_rows(Self.config.BN, Self.page_size),
-        BK=Self.config.v_cols_per_cta(),
+        # WS shared sub-tile ring: V TMA box is one 256x64 depth-tile
+        # (`v_box_cols()`); folds to full-depth for non-WS. Must match the
+        # dispatch `create_tma_tile` box + the `fa4_load` signature.
+        BK=Self.config.v_box_cols(),
     ]
     comptime OTMAStoreType = RaggedTMA3DTile[
         Self.output_type,
@@ -238,8 +241,11 @@ struct SM100MHA2Q[
         # PER-BLOCK (rank-3) store because each partition TMA-stores only its own
         # depth band via `async_copy_from_col` at a non-{0,half} offset (see the
         # matching conditional + rationale in dispatch.mojo).
-        tma_blocks_per_op=0 if Self.config.splitk_partitions
-        > 1 else o_store_tma_blocks_per_op[
+        # WS (MMA_M=32) also uses the per-block WG0 egress (fa4_tma_store_o_smem),
+        # so it takes the rank-3 store like the 1Q split-K path.
+        tma_blocks_per_op=0 if (
+            Self.config.splitk_partitions > 1 or Self.config.use_ws
+        ) else o_store_tma_blocks_per_op[
             Self.output_type,
             TensorMapSwizzle.SWIZZLE_NONE,
             Self.config.ov_depth,
@@ -400,7 +406,10 @@ struct SM100MHA2Q[
         seq_info: SeqInfo,
     ):
         comptime assert (
-            Self.MMA_M == 64 or Self.MMA_M == 128 or Self.MMA_M == 256
+            Self.MMA_M == 32
+            or Self.MMA_M == 64
+            or Self.MMA_M == 128
+            or Self.MMA_M == 256
         )
         comptime assert _is_decoding[Self.MaxSeqLenType]() == False
         comptime assert Self.config.supported(), (

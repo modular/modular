@@ -80,6 +80,32 @@ def fa4_mma[
     comptime num_pv_stages = config.num_pv_stages
     comptime cta_group: Int = config.cta_group()
 
+    # Mb: WS packed P@V depth-tiling (comptime-dead until Md elaborates a BM=32
+    # config). For the `.ws` packed datapath (MMA_M=32, m_pack=4) the P@V op packs
+    # `m_pack` key-quarters x `depth_tile` output cols into one MMA_N=256 tile
+    # (F16 caps N at 256), so the full `padded_ov_depth` is covered by
+    # `num_d_tiles` depth-tiled MMAs at C stride `depth_tile`. Every value folds to
+    # today's literal for non-WS (m_pack==1) -> the non-WS issue stream is
+    # byte-identical. Mirrors the consumer's derivation (softmax_warp.mojo:507-508).
+    comptime depth_tile = (
+        256 // config.m_pack
+    ) if config.use_ws else config.padded_ov_depth
+    comptime num_d_tiles = (
+        config.padded_ov_depth // depth_tile
+    ) if config.use_ws else 1
+    comptime pv_mma_n = (
+        config.m_pack * depth_tile
+    ) if config.use_ws else config.padded_ov_depth
+    comptime pv_bk = (BN // config.m_pack) if config.use_ws else BN
+    # Byte stride between adjacent V depth-tile regions in SMEM (one packed
+    # `[pv_mma_n, pv_bk]` mn-major region). Only referenced in the `v_stage > 0`
+    # branch, so it is dead for non-WS (num_d_tiles == 1). = 32768 @depth128.
+    comptime v_region_bytes = pv_mma_n * pv_bk * size_of[config.qkv_dtype]()
+    comptime if config.use_ws:
+        comptime assert (
+            config.padded_ov_depth % depth_tile == 0
+        ), "Mb: padded_ov_depth must be a multiple of depth_tile"
+
     var mbars = smem.misc_mbars()
     comptime mma_kind = (
         UMMAKind.KIND_F8F6F4 if config.qkv_dtype.is_float8() else UMMAKind.KIND_F16
@@ -105,8 +131,8 @@ def fa4_mma[
         config.qkv_dtype,
         accum_type,
         MMA_M=config.MMA_M,
-        MMA_N=config.padded_ov_depth,
-        BK=BN,
+        MMA_N=pv_mma_n,
+        BK=pv_bk,
         a_tmem=True,
         swizzle_b=config.swizzle_mode,
         transpose_b=False,
@@ -160,6 +186,14 @@ def fa4_mma[
 
     comptime q_sub_bytes = HalfBM * config.BK0 * size_of[config.qkv_dtype]()
 
+    # WS Q depth-chunk stride: the full Q tile (q0_bytes) split into
+    # `num_qk_stages` equal depth chunks. In the shared sub-tile ring the two
+    # K depth-halves live in separate ring slots, so Q@K' is two
+    # `mma[stage_idx=0]` and the second reads Q at `q0 + q_chunk_bytes`. Folds
+    # to `q0_bytes` for num_qk_stages==1 (unused there). NOT `q_sub_bytes`
+    # (=HalfBM*BK0*size, the 2Q row-half stride on the wrong axis).
+    comptime q_chunk_bytes = q0_bytes // config.num_qk_stages
+
     e = elect()
 
     @parameter
@@ -193,11 +227,26 @@ def fa4_mma[
         wait_phase: UInt32,
         c_scale: UInt32,
     ):
-        comptime for pv_stage in range(num_pv_stages):
-            _ = consumer_s[pv_stage].wait(wait_phase)
-            UMMA1Type.mma[stage_idx=pv_stage](
-                s_tmem, v, o_tmem, elect=e, c_scale=c_scale
-            )
+        # V-smem tile outer; P-tmem stage inner. V-smem is the binding
+        # constraint, so each V region is fully contracted before the next.
+        comptime for v_stage in range(num_d_tiles):
+            comptime for p_stage in range(num_pv_stages):
+                comptime if v_stage == 0:
+                    # First V pass: wait each P sub-stage exactly once (P stays
+                    # live in TMEM across all V regions; preserves the 3/4+1/4
+                    # P-stage overlap). Non-WS folds to today's stream.
+                    _ = consumer_s[p_stage].wait(wait_phase)
+                    UMMA1Type.mma[stage_idx=p_stage](
+                        s_tmem, v, o_tmem, elect=e, c_scale=c_scale
+                    )
+                else:
+                    UMMA1Type.mma[stage_idx=p_stage](
+                        s_tmem,
+                        v + UInt32(v_stage * v_region_bytes),
+                        o_tmem + UInt32(v_stage * depth_tile),
+                        elect=e,
+                        c_scale=c_scale,
+                    )
 
     @parameter
     @always_inline
@@ -210,16 +259,30 @@ def fa4_mma[
         c_scale: UInt32,
         valid_k_mmas: UInt32,
     ):
-        comptime for pv_stage in range(num_pv_stages):
-            _ = consumer_s[pv_stage].wait(wait_phase)
-            UMMA1Type.mma_maybe_partial_k[stage_idx=pv_stage](
-                s_tmem,
-                v,
-                o_tmem,
-                c_scale=c_scale,
-                elect=e,
-                valid_k_mmas=valid_k_mmas,
-            )
+        # V-smem tile outer; P-tmem stage inner (see `_pv_full`). `valid_k_mmas`
+        # is the KEY count, identical across V regions, so it passes through
+        # unchanged for every v_stage.
+        comptime for v_stage in range(num_d_tiles):
+            comptime for p_stage in range(num_pv_stages):
+                comptime if v_stage == 0:
+                    _ = consumer_s[p_stage].wait(wait_phase)
+                    UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
+                        s_tmem,
+                        v,
+                        o_tmem,
+                        c_scale=c_scale,
+                        elect=e,
+                        valid_k_mmas=valid_k_mmas,
+                    )
+                else:
+                    UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
+                        s_tmem,
+                        v + UInt32(v_stage * v_region_bytes),
+                        o_tmem + UInt32(v_stage * depth_tile),
+                        c_scale=c_scale,
+                        elect=e,
+                        valid_k_mmas=valid_k_mmas,
+                    )
 
     # Sliding-window / any non-zero `start_column` mask: the load and
     # softmax warps work the contraction in the `[start_column, num_keys)`
@@ -238,17 +301,33 @@ def fa4_mma[
     )
     var v_eff_keys: UInt32 = num_keys - v_start_col
 
-    comptime if config.use_fused_kv:
-        # ---- Fused KV mode ----
-        # In fused mode, K_nope and V alternate in a single StagedPipeline.
+    comptime if config.use_shared_kv:
+        # ---- Shared KV mode ----
+        # In shared mode, K_nope and V alternate in a single StagedPipeline.
         # Stages: K0, V0, K1, V1, ...
 
-        var kv_smem = smem.k_smem_base()  # same as v_smem_base in fused mode
-        comptime kv_stage_bytes = config.v_cols_per_cta() * BN * size_of[
-            config.qkv_dtype
-        ]()
+        var kv_smem = smem.k_smem_base()  # same as v_smem_base in shared mode
+        # Per-slot byte stride = ONE ring slot. Derived from the SMEM struct so
+        # it can NEVER drift from the reservation/producer. WS: 32768 (one
+        # 256x64 sub-tile); non-WS shared: 65536 (one full-depth tile). The old
+        # `v_cols_per_cta()*BN*size` literal equalled the non-WS value but strode
+        # 2x the WS reservation -> latent overrun; this reconciles it.
+        comptime kv_stage_bytes = SM100AttentionSMem[config].k_stage_bytes
+        comptime if config.use_ws:
+            comptime assert (
+                kv_stage_bytes
+                == config.BN
+                * (config.shared_kv_cols() // config.num_qk_stages)
+                * size_of[config.qkv_dtype]()
+            ), "WS kv_stage_bytes must equal one 256x64 sub-tile"
+            comptime assert (
+                num_d_tiles == config.num_qk_stages
+            ), "WS uniform sub-tile: num_d_tiles == num_qk_stages"
+            comptime assert (
+                256 // config.m_pack
+            ) == config.BK0, "WS uniform sub-tile: depth_tile == BK0"
 
-        # K descriptor: k_major for Q@K'
+        # K descriptor: k_major for Q@K' (BK0=64 -> one depth-half sub-tile).
         kv_desc_k = smem_descriptor[
             BMN=config.k_rows_per_cta(),
             BK=config.BK0,
@@ -256,10 +335,16 @@ def fa4_mma[
             is_k_major=True,
             page_dense=config.k_row_major(),
         ](kv_smem)
-        # V descriptor: mn_major for P@V
+        # V descriptor: mn_major for P@V. WS uses the proven packed
+        # [pv_mma_n=256, pv_bk=64] one-depth-tile box; non-WS keeps the full
+        # [v_cols_per_cta, BN] tile (byte-identical).
+        comptime v_desc_bmn = (
+            pv_mma_n if config.use_ws else config.v_cols_per_cta()
+        )
+        comptime v_desc_bk = pv_bk if config.use_ws else config.BN
         kv_desc_v = smem_descriptor[
-            BMN=config.v_cols_per_cta(),
-            BK=config.BN,
+            BMN=v_desc_bmn,
+            BK=v_desc_bk,
             swizzle_mode=config.swizzle_mode,
             is_k_major=False,
             page_dense=config.v_row_major(),
@@ -321,51 +406,172 @@ def fa4_mma[
             kv_pipeline.consumer_wait()
             return kv_pipeline.state.index()
 
+        # ---- WS sub-tile ring helpers (all fold to no-ops for non-WS) ----
+        # `_qk_extra`: after the d=0 Q@K' mma at the first K sub-slot, do the
+        # remaining num_qk_stages-1 depth-half sub-slots. Each is its OWN ring
+        # slot (NOT contiguous), so we use two `mma[stage_idx=0]` with manual
+        # K/Q bases and c_scale 0->1 -- NOT `mma[stage_idx=1]`, which adds an
+        # internal +BK0 offset assuming one contiguous tile (would read OOB).
+        # Empty (no-op) when num_qk_stages==1.
+        @parameter
+        @always_inline
+        def _qk_extra(q_base: MMASmemDescriptorPair, s_tmem: UInt32):
+            comptime for d in range(1, config.num_qk_stages):
+                var kd_idx = _advance_kv(kv_pipeline.state.index())
+                UMMA0Type.mma[stage_idx=0](
+                    q_base + UInt32(d * q_chunk_bytes),
+                    kv_desc_k + UInt32(kv_stage_bytes) * kd_idx,
+                    s_tmem,
+                    elect=e,
+                    c_scale=1,
+                )
+
+        # `_v_wait_rest`: wait the remaining num_d_tiles-1 V depth-tile sub-slots
+        # (produced consecutively right after the first). Leaves the ring state
+        # at the last of them. Empty when num_d_tiles==1.
+        @parameter
+        @always_inline
+        def _v_wait_rest():
+            comptime for d in range(1, num_d_tiles):
+                kv_pipeline.state.step()
+                kv_pipeline.consumer_wait()
+
+        # `_v_release_rest`: release the num_d_tiles-1 V sub-slots after v_idx0
+        # (ring-adjacent). Empty when num_d_tiles==1.
+        @parameter
+        @always_inline
+        def _v_release_rest(v_idx0: UInt32):
+            comptime for d in range(1, num_d_tiles):
+                _commit(
+                    kv_pipeline.consumer_mbar(
+                        (v_idx0 + UInt32(d)) % UInt32(config.num_kv_stages)
+                    )
+                )
+
+        # `_pv_ws`: P@V across num_d_tiles depth-tile ring slots (WS only).
+        # `v_idx0` is the first slot's ring index; the rest are ring-adjacent.
+        # V-slot outer, P-stage inner (mirrors `_pv_full`); wait each P sub-stage
+        # once on the first depth-tile only (P stays live in TMEM across tiles).
+        # Each depth-tile MMAs into `o_tmem + d*depth_tile` from its own slot
+        # base (NOT the `+d*v_region_bytes` intra-slot offset the non-WS path
+        # uses for its contiguous V buffer).
+        @parameter
+        @always_inline
+        def _pv_ws[
+            partial: Bool
+        ](
+            s_tmem: UInt32,
+            v_idx0: UInt32,
+            o_tmem: UInt32,
+            consumer_s: MBarType,
+            wait_phase: UInt32,
+            c_scale: UInt32,
+            valid_k_mmas: UInt32,
+        ):
+            comptime for v_stage in range(num_d_tiles):
+                var v_idx_d: UInt32
+                comptime if v_stage == 0:
+                    v_idx_d = v_idx0
+                else:
+                    v_idx_d = (v_idx0 + UInt32(v_stage)) % UInt32(
+                        config.num_kv_stages
+                    )
+                var v_slot = kv_desc_v + UInt32(kv_stage_bytes) * v_idx_d
+                comptime for p_stage in range(num_pv_stages):
+                    comptime if v_stage == 0:
+                        _ = consumer_s[p_stage].wait(wait_phase)
+                    comptime if partial:
+                        UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
+                            s_tmem,
+                            v_slot,
+                            o_tmem + UInt32(v_stage * depth_tile),
+                            c_scale=c_scale,
+                            elect=e,
+                            valid_k_mmas=valid_k_mmas,
+                        )
+                    else:
+                        UMMA1Type.mma[stage_idx=p_stage](
+                            s_tmem,
+                            v_slot,
+                            o_tmem + UInt32(v_stage * depth_tile),
+                            elect=e,
+                            c_scale=c_scale,
+                        )
+
         # ---- Peeled iteration ----
-        # Stage 0 = K0
+        # Stage 0 = K0 (K_e[0]_d0)
         kv_pipeline.consumer_wait()
         k0 = kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
         UMMA0Type.mma[stage_idx=0](q0, k0, s0_tmem, elect=e, c_scale=0)
+        _qk_extra(q0, s0_tmem)  # WS: K_e[0]_d1..; non-WS: no-op
         _commit(pipeline_s0.producer_mbar())
 
-        # 1Q: release K_e[0]; step to slot 1; wait. Slot 1 holds
-        # K_o[0] for T >= 2 and V_e[0] for T == 1 -- diverge on
-        # descriptor base only.
+        # 1Q: release K_e[0] (last sub-slot); step to the next tile's first
+        # sub-slot; wait. It holds K_o[0]_d0 for T >= 2 and V_e[0]_d0 for
+        # T == 1 -- diverge on descriptor base only.
         comptime if num_q == 1:
             var slot1_offset = UInt32(kv_stage_bytes) * _advance_kv(
                 kv_pipeline.state.index()
             )
 
             # T == 1 fast path: slot 1 holds V_e[0] (load_warp produced
-            # K_e[0] + V_e[0] only). Do P_e @ V_e[0] -> o0 and return.
-            # Don't touch s1 / o1 -- softmax WG1 takes its matching
-            # no-op path at softmax_warp.mojo:1254-1257 (gated on
-            # total_iters_combined == 1 && warp_group_idx == 1).
+            # K_e[0] + V_e[0] only, = 2*num_qk_stages sub-slots). Do
+            # P_e @ V_e[0] -> o0 and return. Don't touch s1 / o1 -- softmax
+            # WG1 takes its matching no-op path (softmax_warp.mojo:1254-1257).
             if total_iters_runtime == UInt32(1):
-                v0 = kv_desc_v + slot1_offset
+                var ve_idx0 = kv_pipeline.state.index()  # V_e[0]_d0
+                _v_wait_rest()  # WS: wait V_e[0]_d1..
                 comptime if PARTIAL_K:
                     var vkm = ceildiv(
                         min(v_eff_keys, UInt32(BN)), UInt32(UMMA1Type.MMA_K)
                     )
-                    _pv_partial(s0_tmem, v0, o0_tmem, consumer_s0, 0, 0, vkm)
+                    comptime if config.use_ws:
+                        _pv_ws[partial=True](
+                            s0_tmem, ve_idx0, o0_tmem, consumer_s0, 0, 0, vkm
+                        )
+                    else:
+                        _pv_partial(
+                            s0_tmem,
+                            kv_desc_v + UInt32(kv_stage_bytes) * ve_idx0,
+                            o0_tmem,
+                            consumer_s0,
+                            0,
+                            0,
+                            vkm,
+                        )
                 else:
-                    _pv_full(s0_tmem, v0, o0_tmem, consumer_s0, 0, 0)
+                    comptime if config.use_ws:
+                        _pv_ws[partial=False](
+                            s0_tmem, ve_idx0, o0_tmem, consumer_s0, 0, 0, 0
+                        )
+                    else:
+                        _pv_full(
+                            s0_tmem,
+                            kv_desc_v + UInt32(kv_stage_bytes) * ve_idx0,
+                            o0_tmem,
+                            consumer_s0,
+                            0,
+                            0,
+                        )
                 _commit(pipeline_o0.producer_mbar())
-                _commit(kv_pipeline.consumer_mbar())  # release V_e[0]
+                _commit(kv_pipeline.consumer_mbar(ve_idx0))  # V_e[0]_d0
+                _v_release_rest(ve_idx0)  # WS: release V_e[0]_d1..
                 return
 
-            k0 = kv_desc_k + slot1_offset
+            k0 = kv_desc_k + slot1_offset  # K_o[0]_d0
 
         # Q_1 @ K_0 (2Q, q1 half, same K) / Q @ K_o[0] (1Q,
-        # q0 + redefined k0)
+        # q0 + redefined k0), depth-split across sub-slots for WS.
         comptime if num_q == 2:
             var q1_mbar = mbars.q1_wait_mbar()
             q1_mbar[0].wait()
             UMMA0Type.mma[stage_idx=0](q1, k0, s1_tmem, elect=e, c_scale=0)
+            _qk_extra(q1, s1_tmem)  # no-op (2Q shared -> num_qk_stages==1)
         else:
             UMMA0Type.mma[stage_idx=0](q0, k0, s1_tmem, elect=e, c_scale=0)
+            _qk_extra(q0, s1_tmem)  # WS: K_o[0]_d1..
 
-        # Release K (K_0 in 2Q / K_o[0] in 1Q) and advance.
+        # Release K (K_0 in 2Q / K_o[0] last sub-slot in 1Q) and advance.
         _commit(kv_pipeline.consumer_mbar())
         kv_pipeline.state.step()
         _commit(pipeline_s1.producer_mbar())
@@ -373,28 +579,50 @@ def fa4_mma[
         # Stage 1 = V_0 (2Q) / V_e[0] (1Q, single use; we will then
         # load V_o[0] and hold it for the first main-loop iter).
         kv_pipeline.consumer_wait()
-        var v_prev_idx: UInt32 = kv_pipeline.state.index()
-        v0 = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+        var v_prev_idx: UInt32 = kv_pipeline.state.index()  # V_e[0]_d0
+        _v_wait_rest()  # WS: wait V_e[0]_d1..
         comptime if PARTIAL_K and num_q == 2:
             # 2Q peeled o0 contracts tile 0, which is the last (and only)
             # tile only when total_iters == 1; vkm self-clamps to full
-            # (v_eff_keys >= BN) otherwise.
+            # (v_eff_keys >= BN) otherwise. 2Q shared is non-WS.
             var vkm = ceildiv(
                 min(v_eff_keys, UInt32(BN)), UInt32(UMMA1Type.MMA_K)
             )
-            _pv_partial(s0_tmem, v0, o0_tmem, consumer_s0, 0, 0, vkm)
+            _pv_partial(
+                s0_tmem,
+                kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx,
+                o0_tmem,
+                consumer_s0,
+                0,
+                0,
+                vkm,
+            )
         else:
-            _pv_full(s0_tmem, v0, o0_tmem, consumer_s0, 0, 0)
+            comptime if config.use_ws:
+                _pv_ws[partial=False](
+                    s0_tmem, v_prev_idx, o0_tmem, consumer_s0, 0, 0, 0
+                )
+            else:
+                _pv_full(
+                    s0_tmem,
+                    kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx,
+                    o0_tmem,
+                    consumer_s0,
+                    0,
+                    0,
+                )
         _commit(pipeline_o0.producer_mbar())
         var phase: UInt32 = 0
 
         var c_scale: UInt32 = 0
 
-        # 1Q: release V_e[0] (single use); load V_o[0] and hold its
-        # slot index in v_prev_idx for the first main-loop iter's
+        # 1Q: release V_e[0] (all sub-slots); load V_o[0] and hold its
+        # first slot index in v_prev_idx for the first main-loop iter's
         # P_o @ V_o[0] MMA.
         comptime if num_q == 1:
-            v_prev_idx = _advance_kv(v_prev_idx)
+            _v_release_rest(v_prev_idx)  # WS: release V_e[0]_d1..
+            v_prev_idx = _advance_kv(v_prev_idx)  # -> V_o[0]_d0
+            _v_wait_rest()  # WS: wait V_o[0]_d1..
 
         # ---- Main loop ----
         while iter_count != 0:
@@ -403,22 +631,31 @@ def fa4_mma[
             # Advance past held V to get to next K
             kv_pipeline.state.step()
 
-            # Kn
+            # Kn (K_e[n]_d0, depth-split across sub-slots for WS)
             kv_pipeline.consumer_wait()
             kn = kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
             UMMA0Type.mma[stage_idx=0](q0, kn, s0_tmem, elect=e, c_scale=0)
+            _qk_extra(q0, s0_tmem)  # WS: K_e[n]_d1..
             _commit(pipeline_s0.producer_mbar())
 
-            # P1 @ V_{n-1}
-            v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
-            comptime for pv_stage in range(num_pv_stages):
-                _ = consumer_s1[pv_stage].wait(phase)
-                UMMA1Type.mma[stage_idx=pv_stage](
-                    s1_tmem, v_prev, o1_tmem, elect=e, c_scale=c_scale
+            # P1 @ V_{n-1} (held V_o[n-1]). Per-depth-tile ring slots for WS.
+            comptime if config.use_ws:
+                _pv_ws[partial=False](
+                    s1_tmem, v_prev_idx, o1_tmem, consumer_s1, phase, c_scale, 0
+                )
+            else:
+                _pv_full(
+                    s1_tmem,
+                    kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx,
+                    o1_tmem,
+                    consumer_s1,
+                    phase,
+                    c_scale,
                 )
             _commit(pipeline_o1.producer_mbar())
             c_scale = 1
-            _commit(kv_pipeline.consumer_mbar(v_prev_idx))  # release V_{n-1}
+            _commit(kv_pipeline.consumer_mbar(v_prev_idx))  # V_{n-1}_d0
+            _v_release_rest(v_prev_idx)  # WS: release V_{n-1}_d1..
 
             # 1Q: between K_e[n] and K_o[n] -- break-check for tail
             # iter when total K-tiles is odd, else consume K_o[n] by
@@ -430,8 +667,9 @@ def fa4_mma[
                     # shape as the epilogue's P_1 @ V_last -> o1_tmem.
                     # Rebind o1-side aliases to o0-side resources and
                     # fall through; epilogue does the work unchanged.
-                    # release K_e[k], wait V_e[k]
+                    # release K_e[k] (last sub-slot), wait V_e[k]_d0
                     v_prev_idx = _advance_kv(kv_pipeline.state.index())
+                    _v_wait_rest()  # WS: wait V_e[k]_d1..
                     s1_tmem = s0_tmem
                     o1_tmem = o0_tmem
                     consumer_s1 = consumer_s0
@@ -440,18 +678,20 @@ def fa4_mma[
                     # to the V@o0 phase the s0 wait needs.
                     break
                 iter_count -= 1
-                # release K_e[n], wait K_o[n]
+                # release K_e[n] (last sub-slot), wait K_o[n]_d0
                 kn = kv_desc_k + UInt32(kv_stage_bytes) * _advance_kv(
                     kv_pipeline.state.index()
                 )
 
             # Q_1 @ K_n (2Q, q1 + same kn) / Q @ K_o[n] (1Q,
-            # q0 + redefined kn)
+            # q0 + redefined kn), depth-split across sub-slots for WS.
             comptime if num_q == 2:
                 UMMA0Type.mma[stage_idx=0](q1, kn, s1_tmem, elect=e, c_scale=0)
+                _qk_extra(q1, s1_tmem)  # no-op (2Q -> num_qk_stages==1)
             else:
                 UMMA0Type.mma[stage_idx=0](q0, kn, s1_tmem, elect=e, c_scale=0)
-            _commit(kv_pipeline.consumer_mbar())  # release K_n / K_o[n]
+                _qk_extra(q0, s1_tmem)  # WS: K_o[n]_d1..
+            _commit(kv_pipeline.consumer_mbar())  # release K_n / K_o[n] last
             kv_pipeline.state.step()
             _commit(pipeline_s1.producer_mbar())
             phase ^= 1
@@ -459,8 +699,8 @@ def fa4_mma[
             # Vn (2Q held for next iter) / V_e[n] (1Q single use,
             # then V_o[n] loaded and held).
             kv_pipeline.consumer_wait()
-            v_prev_idx = kv_pipeline.state.index()
-            vn = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+            v_prev_idx = kv_pipeline.state.index()  # V_e[n]_d0
+            _v_wait_rest()  # WS: wait V_e[n]_d1..
             comptime if PARTIAL_K and num_q == 2:
                 # 2Q: Vn is the last tile exactly when iter_count == 0
                 # (the final main-loop iteration); otherwise full.
@@ -472,18 +712,39 @@ def fa4_mma[
                     ),
                     UInt32(UMMA1Type.MMA_K),
                 ) if iter_count == 0 else UInt32(UMMA1Type.num_k_mmas)
-                _pv_partial(s0_tmem, vn, o0_tmem, consumer_s0, phase, 1, vkm)
+                _pv_partial(
+                    s0_tmem,
+                    kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx,
+                    o0_tmem,
+                    consumer_s0,
+                    phase,
+                    1,
+                    vkm,
+                )
             else:
-                _pv_full(s0_tmem, vn, o0_tmem, consumer_s0, phase, 1)
+                comptime if config.use_ws:
+                    _pv_ws[partial=False](
+                        s0_tmem, v_prev_idx, o0_tmem, consumer_s0, phase, 1, 0
+                    )
+                else:
+                    _pv_full(
+                        s0_tmem,
+                        kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx,
+                        o0_tmem,
+                        consumer_s0,
+                        phase,
+                        1,
+                    )
             _commit(pipeline_o0.producer_mbar())
 
-            # 1Q: release V_e[n] (single use); load V_o[n] and hold
-            # its slot in v_prev_idx for the next iter / epilogue.
+            # 1Q: release V_e[n] (all sub-slots); load V_o[n] and hold
+            # its first slot in v_prev_idx for the next iter / epilogue.
             comptime if num_q == 1:
-                v_prev_idx = _advance_kv(v_prev_idx)
+                _v_release_rest(v_prev_idx)  # WS: release V_e[n]_d1..
+                v_prev_idx = _advance_kv(v_prev_idx)  # -> V_o[n]_d0
+                _v_wait_rest()  # WS: wait V_o[n]_d1..
 
         # ---- Epilogue ----
-        v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
         comptime if PARTIAL_K:
             var vkm = ceildiv(
                 min(
@@ -492,16 +753,46 @@ def fa4_mma[
                 ),
                 UInt32(UMMA1Type.MMA_K),
             )
-            _pv_partial(
-                s1_tmem, v_prev, o1_tmem, consumer_s1, phase, c_scale, vkm
-            )
+            comptime if config.use_ws:
+                _pv_ws[partial=True](
+                    s1_tmem,
+                    v_prev_idx,
+                    o1_tmem,
+                    consumer_s1,
+                    phase,
+                    c_scale,
+                    vkm,
+                )
+            else:
+                _pv_partial(
+                    s1_tmem,
+                    kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx,
+                    o1_tmem,
+                    consumer_s1,
+                    phase,
+                    c_scale,
+                    vkm,
+                )
         else:
-            _pv_full(s1_tmem, v_prev, o1_tmem, consumer_s1, phase, c_scale)
+            comptime if config.use_ws:
+                _pv_ws[partial=False](
+                    s1_tmem, v_prev_idx, o1_tmem, consumer_s1, phase, c_scale, 0
+                )
+            else:
+                _pv_full(
+                    s1_tmem,
+                    kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx,
+                    o1_tmem,
+                    consumer_s1,
+                    phase,
+                    c_scale,
+                )
         _commit(pipeline_o1.producer_mbar())
-        _commit(kv_pipeline.consumer_mbar(v_prev_idx))  # release V_last
+        _commit(kv_pipeline.consumer_mbar(v_prev_idx))  # V_last_d0
+        _v_release_rest(v_prev_idx)  # WS: release V_last_d1..
 
     else:
-        # ---- Split KV mode (original) ----
+        # ---- Non-shared mode (original) ----
 
         var k_smem = rebind[SharedMemPointer[Scalar[config.qkv_dtype]]](
             smem.k_smem_base()
@@ -688,12 +979,23 @@ def fa4_mma[
                         pipeline_k.pipeline.state.step()
             _commit(pipeline_s0.producer_mbar())
 
-            # O_1 + P_1 @ V_{n-1} (2Q) / O_o + P_o @ V_o[n-1] (1Q)
-            comptime for pv_stage in range(num_pv_stages):
-                _ = consumer_s1[pv_stage].wait(phase)
-                UMMA1Type.mma[stage_idx=pv_stage](
-                    s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
-                )
+            # O_1 + P_1 @ V_{n-1} (2Q) / O_o + P_o @ V_o[n-1] (1Q).
+            # V-smem tile outer; P-tmem stage inner.
+            comptime for v_stage in range(num_d_tiles):
+                comptime for p_stage in range(num_pv_stages):
+                    comptime if v_stage == 0:
+                        _ = consumer_s1[p_stage].wait(phase)
+                        UMMA1Type.mma[stage_idx=p_stage](
+                            s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
+                        )
+                    else:
+                        UMMA1Type.mma[stage_idx=p_stage](
+                            s1_tmem,
+                            vlatest + UInt32(v_stage * v_region_bytes),
+                            o1_tmem + UInt32(v_stage * depth_tile),
+                            elect=e,
+                            c_scale=c_scale,
+                        )
             _commit(pipeline_o1.producer_mbar())
             c_scale = 1
             # Release V_{n-1} (2Q at current state) / V_o[n-1] (1Q at
@@ -711,7 +1013,7 @@ def fa4_mma[
             comptime if num_q == 1:
                 if iter_count == 0:
                     # Tail iter (T odd). Same alias-swap pattern as
-                    # fused-KV. K_e[k] was already released per
+                    # shared-KV. K_e[k] was already released per
                     # qk_stage inside the Q@K_e[k] staged loop above,
                     # so no K release is needed here.
                     vlatest = pipeline_v.get_v()  # V_e[k]

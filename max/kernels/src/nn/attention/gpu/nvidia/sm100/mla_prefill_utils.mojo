@@ -182,7 +182,9 @@ struct MLAConfig[
             swizzle_mode = self.qkv_swizzle_mode,
             page_size = page_size,
             is_mla = True,
-            num_q = num_q,
+            # FA4Config's primary knob is now BM; MLA is single-CTA so
+            # num_q=2 -> BM=256, num_q=1 -> BM=128.
+            BM = 256 if num_q == 2 else 128,
             nope_depth = nope_depth,
             single_o = single_o,
             bn_cap = bn_cap,
@@ -813,11 +815,11 @@ struct SM100MLA[
     comptime rope_mma_kind = (
         UMMAKind.KIND_F16 if Self.rope_mma_dtype.is_half_float() else UMMAKind.KIND_F8F6F4
     )
-    # use_fused_kv means we use a fused kv pipeline in shared memory
+    # use_shared_kv means we use a shared kv pipeline in shared memory
     # that forces us to put the k nope and rope in separate regions of smem
     # preventing us from fusing the nope and rope parts of UMMA0
     comptime fused_umma0 = (Self.qkv_dtype == Self.rope_mma_dtype) and (
-        not Self.config.fa4_config.use_fused_kv
+        not Self.config.fa4_config.use_shared_kv
     )
     comptime BK0 = Self.qk_depth if Self.fused_umma0 else Self.nope_depth
 
@@ -894,11 +896,17 @@ struct SM100MLA[
         num_pv_stages=Self.config.fa4_config.num_pv_stages,
         num_kv_stages=Self.config.fa4_config.num_kv_stages,
         use_order_barriers=EnableForcedOrdering,
-        use_fused_kv=Self.config.fa4_config.use_fused_kv,
+        use_shared_kv=Self.config.fa4_config.use_shared_kv,
         pair_cta=Self.config.fa4_config.pair_cta,
         num_q=Self.config.fa4_config.num_q,
         splitk_partitions=Self.config.fa4_config.splitk_partitions,
         BM=Self.config.fa4_config.BM,
+        # MLA is never warp-specialized (use_ws is always False here), but the
+        # param must be threaded so this MiscMBarsType matches the one built by
+        # `SM100AttentionSMem.MiscMBarsType` (same `...use_ws` expression) — an
+        # omitted param defaults to literal `False`, a DIFFERENT type from the
+        # `config.fa4_config.use_ws` expression, and the two would not convert.
+        use_ws=Self.config.fa4_config.use_ws,
     ]
 
     @staticmethod

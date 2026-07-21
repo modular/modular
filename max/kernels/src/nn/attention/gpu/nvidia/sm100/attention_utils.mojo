@@ -503,15 +503,16 @@ def st_shared_v4_b32[
     conflict, 4x wavefronts). The `v4.b32` operand mandates a contiguous
     register quad, so this stays one bank-conflict-free 16 B transaction.
 
-    `dtype` is the shared buffer's element type -- any 1-byte (fp8) or 2-byte
-    (bf16/f16) output; `elem_off` is in `dtype` elements. `packed` is a fixed
-    16 B (four u32) for every `dtype`: `pack_row` folds the per-u32 element count
-    (2 for bf16, 4 for fp8) into that width, so one call stores one SWIZZLE_NONE
-    block.
+    `dtype` is the shared buffer's element type -- any 1-byte (fp8), 2-byte
+    (bf16/f16), or 4-byte (f32) output; `elem_off` is in `dtype` elements.
+    `packed` is a fixed 16 B (four u32) for every `dtype`: `pack_row` folds the
+    per-u32 element count (2 for bf16, 4 for fp8, 1 for f32) into that width, so
+    one call stores one SWIZZLE_NONE block (`fa4_ws_intracta_combine` stores its
+    f32 output this way).
 
     Parameters:
-        dtype: Element dtype of the shared buffer; any 1-byte (`fp8`) or
-            2-byte (`bf16`/`f16`) output dtype (inferred).
+        dtype: Element dtype of the shared buffer; any 1-byte (`fp8`),
+            2-byte (`bf16`/`f16`), or 4-byte (`f32`) output dtype (inferred).
 
     Args:
         dst: Shared-memory pointer to the store target.
@@ -2866,7 +2867,7 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
     def consumer_release_at(self, idx: UInt32, e: Int32):
         """Release a specific stage without stepping the pipeline state.
 
-        Used for deferred V release in fused KV mode: V_{n-1} must be
+        Used for deferred V release in shared KV mode: V_{n-1} must be
         released while holding K_n, which is at a different pipeline index.
 
         Args:
@@ -4074,11 +4075,12 @@ struct FA4MiscMBars[
     num_pv_stages: Int = 1,
     num_kv_stages: Int = 2,
     use_order_barriers: Bool = True,
-    use_fused_kv: Bool = False,
+    use_shared_kv: Bool = False,
     pair_cta: Bool = False,
     num_q: Int = 2,
     splitk_partitions: Int = 1,
     BM: Int = 128,
+    use_ws: Bool = False,
 ](TrivialRegisterPassable):
     """Manages all mbarrier resources for FA4.
 
@@ -4096,7 +4098,7 @@ struct FA4MiscMBars[
         num_kv_stages: Number of KV buffer stages for double/triple buffering.
         use_order_barriers: When True, allocate order barriers to prevent softmax
             warp group overlap. When False, order barriers are omitted.
-        use_fused_kv: Whether the K and V share the same pipeline, or separate.
+        use_shared_kv: Whether the K and V share the same pipeline, or separate.
         pair_cta: Whether to use 1-cta or 2-cta implementation.
         num_q: Number of Q tiles per CTA. When 1, the `Q1Sync` slot is
             collapsed and `K_offset` shifts down by `num_qk_stages`. Must
@@ -4111,6 +4113,12 @@ struct FA4MiscMBars[
             `BM * P` (every row of every partition). Only used to size the
             publish barrier; defaults to 128 (== `WARPGROUP_SIZE` on the 1Q
             path) for non-split-K callers.
+        use_ws: Warp-specialized packed-TMEM (MMA_M=32) datapath. When True,
+            `num_kv_stages` counts depth-split 256x64 sub-tile ring slots
+            ("Convention B"), so `K_barriers = 2 * num_kv_stages` (the
+            `num_qk_stages` depth factor is already folded into the slot count).
+            When False (default), the non-WS full-depth-tile count applies and
+            the layout is byte-identical.
 
     Memory layout (count=128 first, then count=1):
         [S0_cons] [S1_cons] [C0] [C1] [Order*] | [S0_prod] [S1_prod] [Q1Sync**] [K] [V] [O_prod]
@@ -4141,10 +4149,21 @@ struct FA4MiscMBars[
     comptime Q1Sync_count: Int = Self.num_qk_stages if Self.num_q == 2 else 0
     # K pipeline barriers
     comptime K_offset = Self.Q1SyncIdx + Self.Q1Sync_count
-    comptime K_barriers: Int = 2 * Self.num_qk_stages * Self.num_kv_stages
-    # V pipeline barriers (separate from K, only in split mode)
+    # Non-WS: each of the `num_kv_stages` full-depth K tiles is depth-chunked into
+    # `num_qk_stages` Q@K' sub-loads, each needing a producer+consumer barrier.
+    # WS ("Convention B"): `num_kv_stages` already counts depth-split 256x64
+    # sub-tile ring slots (the depth split is folded into the slot count), so a
+    # slot is one ring entry with just 2 barriers — the `num_qk_stages` factor
+    # must NOT be applied again. `use_ws == False` folds to the non-WS count.
+    comptime K_barriers: Int = (
+        2
+        * Self.num_kv_stages if Self.use_ws else 2
+        * Self.num_qk_stages
+        * Self.num_kv_stages
+    )
+    # V pipeline barriers (separate from K, only in non-shared mode)
     comptime V_offset: Int = Self.K_offset + Self.K_barriers
-    comptime V_barriers: Int = 0 if Self.use_fused_kv else 2 * Self.num_kv_stages
+    comptime V_barriers: Int = 0 if Self.use_shared_kv else 2 * Self.num_kv_stages
     # O producer barriers (count=1)
     comptime O_producer_offset = Self.V_offset + Self.V_barriers
     # Split-K publish barrier (count=1 section, but count=P): one slot used by
@@ -4304,9 +4323,9 @@ struct FA4MiscMBars[
     @always_inline("nodebug")
     def get_v_mbars(self) -> MBarType:
         """Returns base pointer for V pipeline barriers.
-        In fused mode, returns the same as get_k_mbars (shared pipeline).
+        In shared mode, returns the same as get_k_mbars (shared pipeline).
         """
-        comptime if Self.use_fused_kv:
+        comptime if Self.use_shared_kv:
             return self.mbar_base + Self.K_offset
         else:
             return self.mbar_base + Self.V_offset

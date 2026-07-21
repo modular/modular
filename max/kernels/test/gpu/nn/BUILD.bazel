@@ -17,6 +17,27 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_mma_ws_ts_pv_m32.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_ws_intracta_combine.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # Host config-arithmetic probe for the BM-driven FA4Config API (pure
+    # comptime; no kernel launch). Pinned to B200 with its sibling WS tests.
+    "test_fa4_config_ws_bm32_probe.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # Host layout probe: proves the natural mn_major[128,256] V tile is byte-
+    # identical to the banded [256,64] WS P@V operand (pure layout algebra; no
+    # kernel launch, no GPU needed — but pinned to B200 with its sibling WS tests).
+    "test_ws_v_layout_probe.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # No SM100/B200-specific code; runs on any GPU. Apple is excluded because
     # `_block_reduce_topk` uses MAX_BLOCK_SIZE == WARP_SIZE there, which the
     # 128-thread block in the test would exceed.
@@ -211,6 +232,13 @@ _EXTRA_CONSTRAINTS = {
     # SM100 FA4 1Q attention-sink double-count regression. SM100-only
     # (exercises the FA4 `fa4_softmax` 1Q warp-specialized path).
     "attention/test_mha_sm100_1q_sink.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # SM100 FA4 warp-specialized BM=32 (MMA_M=32) end-to-end: first live
+    # elaboration of the packed-TMEM KV-ring + two-level combine datapath, driven
+    # by the short-prompt (max_prompt_len<=32) WS dispatch route. B200-only.
+    "attention/test_mha_sm100_ws_bm32.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -446,6 +474,165 @@ _FILECHECK_TESTS = [
         ],
     )
 ]
+
+# SM100 FA4 WS BM=32 MULTI-TILE (Phase C2): forces WS via `-D FA4_FORCE_CONFIG=1`
+# so prompts with valid_length > 32 -- which the auto dispatch route does NOT yet
+# send to WS -- exercise the multi-tile query path (many BM=32 tiles selected via
+# each CTA's prompt_offset) plus the shared-ring main loop, compared vs
+# mha_gpu_naive at the bf16 floor. Reuses the ws_bm32 source; its multi-tile cells
+# are guarded `FA4_FORCE_CONFIG == 1` so this target runs them (the default
+# `attention/test_mha_sm100_ws_bm32.mojo.test` glob target stays byte-identical).
+# B200-only.
+mojo_test(
+    name = "attention/test_mha_sm100_ws_bm32_multitile.mojo.test",
+    size = "large",
+    srcs = ["attention/test_mha_sm100_ws_bm32.mojo"],
+    copts = [
+        "-D",
+        "FA4_FORCE_CONFIG=1",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+# SM100 FA4 WS BM=32 CROSS-CTA SPLIT-K (Phase D): pins the WS split-K cluster to
+# P=2 via `-D FA4_WS_SPLITK_FORCE=2` so a long-cache / tiny-prompt shape routes
+# the WS BM=32 config through a 2-CTA cluster (each CTA owns half the KV and
+# DSMEM-combines its own depth band -- the THIRD split-K level, on top of the
+# 8-way intra-CTA split). Reuses the ws_bm32 source; its split-K cells are guarded
+# `FA4_WS_SPLITK_FORCE >= 2` and exit early, so the default
+# `attention/test_mha_sm100_ws_bm32.mojo.test` glob target stays single-CTA WS and
+# byte-identical. B200-only.
+mojo_test(
+    name = "attention/test_mha_sm100_ws_bm32_splitk.mojo.test",
+    size = "large",
+    srcs = ["attention/test_mha_sm100_ws_bm32.mojo"],
+    copts = [
+        "-D",
+        "FA4_WS_SPLITK_FORCE=2",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+# SM100 FA4 WS BM=32 CROSS-CTA SPLIT-K P=4 (Phase D): same source pinned to a P=4
+# cluster via `-D FA4_WS_SPLITK_FORCE=4` (the kernel is compiled once at P_MAX=4;
+# only the launch cluster size differs from the P=2 target). Runs the P=4 cells --
+# re-banding 1:1 (one warp-band per partition) with all partitions non-empty
+# (T=5), plus the EMPTY-trailing-partition case (T=3 < P, so partition 3 gets 0
+# tiles and exercises the L3 neutral element + empty-partition publish). B200-only.
+mojo_test(
+    name = "attention/test_mha_sm100_ws_bm32_splitk_p4.mojo.test",
+    size = "large",
+    srcs = ["attention/test_mha_sm100_ws_bm32.mojo"],
+    copts = [
+        "-D",
+        "FA4_WS_SPLITK_FORCE=4",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+# SM100 FA4 WS BM=32 CROSS-CTA SPLIT-K P=8 and P=16 (#92167 candidate widening):
+# the WS route now reuses the shared `SPLITK_CANDIDATES` (16,10,8,6,4,2) instead of
+# a WS-only {4,2}. For P > m_pack (== 4) only the first `m_pack` partitions own a
+# depth band, but all P partition the KV and are reduced into the owning bands.
+# P=8 (first pow2 past the old cap) and P=16 (ceiling; T=3/T=5 leave 13/11 empty
+# trailing partitions -- max empty-neutral-element + re-banding stress). Same
+# source, cells guarded `FA4_WS_SPLITK_FORCE >= 4`. B200-only.
+mojo_test(
+    name = "attention/test_mha_sm100_ws_bm32_splitk_p8.mojo.test",
+    size = "large",
+    srcs = ["attention/test_mha_sm100_ws_bm32.mojo"],
+    copts = [
+        "-D",
+        "FA4_WS_SPLITK_FORCE=8",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "attention/test_mha_sm100_ws_bm32_splitk_p16.mojo.test",
+    size = "large",
+    srcs = ["attention/test_mha_sm100_ws_bm32.mojo"],
+    copts = [
+        "-D",
+        "FA4_WS_SPLITK_FORCE=16",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
 
 # SM100 FA4 num_q==1 split-K (M4.3 + M4.4): writer-combines-all cross-CTA O
 # combine, swept over (mask, depth, P). The in-cluster DSMEM combine is

@@ -118,9 +118,9 @@ struct MLASmemStorage[
     comptime num_kv_stages = Self.config.num_kv_stages * Self.config.num_qk_stages
 
     # Per-stage K_nope/V data width: the buffer fits the wider of K_nope/V
-    # (fused_kv_cols, padded). Equal for DeepSeek (nope == v).
+    # (shared_kv_cols, padded). Equal for DeepSeek (nope == v).
     comptime kv_nope_bytes = (
-        Self.config.fa4_config.fused_kv_cols()
+        Self.config.fa4_config.shared_kv_cols()
         * Self.config.BN
         * size_of[Self.qkv_dtype]()
         * Self.num_kv_stages
@@ -942,7 +942,7 @@ __extension SM100MLA:
 
         # ---- Mode-shared sub-tile constants ----
         # The K_rope sub-tile shape (`rope_depth * rope_sub_BN`) is
-        # identical in fused-KV and split-KV mode; only the smem
+        # identical in shared-KV and non-shared-KV mode; only the smem
         # destination differs. Hoist so the unified `_produce_k_rope`
         # closure works for both modes.
         comptime k_rope_sub_elems = Self.rope_depth * rope_sub_BN
@@ -1057,8 +1057,8 @@ __extension SM100MLA:
                 )
 
         # V shared closure. V is on its own barrier in both modes
-        # (kv_pipeline.producer_mbar() in fused-KV,
-        # pipeline_v.get_tile().mbar in split-KV), so this closure
+        # (kv_pipeline.producer_mbar() in shared-KV,
+        # pipeline_v.get_tile().mbar in non-shared-KV), so this closure
         # emits its own partial-aware `expect_bytes_pred` directly.
         @parameter
         @always_inline
@@ -1093,11 +1093,11 @@ __extension SM100MLA:
             0
         ] == TileMaskStatus.UNKNOWN_MASK
 
-        comptime if Self.config.fa4_config.use_fused_kv:
-            # ---- Fused KV mode with per-token scale ----
-            # K_nope/V share one buffer; a stage fits the wider (fused_kv_cols).
+        comptime if Self.config.fa4_config.use_shared_kv:
+            # ---- Shared KV mode with per-token scale ----
+            # K_nope/V share one buffer; a stage fits the wider (shared_kv_cols).
             comptime kv_stage_elems = (
-                Self.config.fa4_config.fused_kv_cols() * Self.config.BN
+                Self.config.fa4_config.shared_kv_cols() * Self.config.BN
             )
             comptime rope_stage_elems = (
                 Self.config.rope_depth * Self.config.BN
@@ -1241,10 +1241,10 @@ __extension SM100MLA:
                 )
 
             comptime if num_q == 1:
-                # ---- 1Q fused-KV producer ----
+                # ---- 1Q shared-KV producer ----
                 # MMA consumes K_e, K_o, V_e, V_o per logical iter;
                 # produce in matching slot order (mirrors the generic
-                # MLA / load_warp.mojo 1Q fused producers). No FULL_MASK
+                # MLA / load_warp.mojo 1Q shared producers). No FULL_MASK
                 # skipping here (see the `check_mask` assert at the top
                 # of `load_per_token_scale`). Q + q_scale ride the
                 # peeled K_e[0] barrier (with_q=True); there is no Q1.
@@ -1448,7 +1448,7 @@ __extension SM100MLA:
                         _emit_v_1q[partial=True](paged_rows, k_nvp_pe)
                         _emit_v_1q[partial=True](paged_rows_o, k_nvp_po)
             else:
-                # ---- 2Q fused-KV producer (original) ----
+                # ---- 2Q shared-KV producer (original) ----
 
                 # ---- Peeled: K0 + Q0 + q_scale + k_scale[0] ----
                 var k0_mbar = kv_pipeline.producer_mbar()
@@ -1623,7 +1623,7 @@ __extension SM100MLA:
                             kv_pipeline.state.step()
 
         else:
-            # ---- Split KV mode with per-token scale ----
+            # ---- Non-shared mode with per-token scale ----
             comptime VPipeType = VProducerPipeline[
                 Self.KVLUTType.dtype, Self.config.fa4_config
             ]
@@ -1635,7 +1635,7 @@ __extension SM100MLA:
 
             # K stage may contain mixed dtypes (e.g. FP8 nope + BF16 rope).
             # Compute byte size then convert to qkv_dtype element count. The
-            # K_nope part is `padded_nope_depth` wide (split-KV: V has its own
+            # K_nope part is `padded_nope_depth` wide (non-shared-KV: V has its own
             # `pipeline_v`), so this is K-only.
             comptime k_stage_bytes = (
                 Self.config.fa4_config.padded_nope_depth
@@ -1664,7 +1664,7 @@ __extension SM100MLA:
             def _split_v_smem_ptr(
                 pair: type_of(pipeline_v.get_tile[qk_stage=0]()),
             ) -> SharedMemPointer[Scalar[Self.KVLUTType.dtype]]:
-                """V destination smem ptr for split-KV V pipeline pair.
+                """V destination smem ptr for non-shared-KV V pipeline pair.
 
                 Note we switched from `pipeline_v.get_v(e)` (which auto-
                 emits a fixed-size `expect_bytes`) to
@@ -1692,7 +1692,7 @@ __extension SM100MLA:
                 """Q + q_scale (if `with_q`) + K_nope + K_rope + k_scale
                 onto `mbar`.
 
-                Per-token-scale split-KV bundles K_rope onto the SAME K
+                Per-token-scale non-shared-KV bundles K_rope onto the SAME K
                 barrier (no separate CVT mbar like blockscale). Includes
                 the `split_smem` decomposition into K_nope and K_rope
                 smem regions.

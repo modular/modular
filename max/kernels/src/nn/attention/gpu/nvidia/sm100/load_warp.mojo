@@ -87,7 +87,11 @@ def fa4_load[
         KVLUTType.dtype,
         config.swizzle_mode,
         BN=kv_sub_tile_rows(config.BN, KVLUTType.page_size),
-        BK=config.v_cols_per_cta(),
+        # WS shared sub-tile ring: V is depth-split into num_qk_stages 256x64
+        # sub-tiles (mirrors K's BK0), loaded as one TMA per depth-tile. Non-WS
+        # keeps the full-depth V box. `v_box_cols()` is used identically at every
+        # V TMA type-param site so the expressions fold consistently.
+        BK=config.v_box_cols(),
     ],
     kv_lut: KVLUTType,
 ):
@@ -158,7 +162,7 @@ def fa4_load[
     comptime pair_cta: Bool = config.pair_cta
     comptime assert pair_cta or is_leader
 
-    # Unified paged-rows type shared by fused-KV and split-KV: populate
+    # Unified paged-rows type shared by shared-KV and non-shared-KV: populate
     # covers V's full tile so V can consume K's pre-populated indices
     # with no lazy LUT lookup. In non-pair-CTA mode `num_pages` is
     # simply `BN / eff_page`. In pair-CTA mode the struct's
@@ -284,10 +288,14 @@ def fa4_load[
     # `tma_copy_{k,v}[needs_partial=True]` with a runtime-bounded page
     # count to avoid OOB page lookups.
     comptime needs_partial = page_size > 0 and page_size < BN
+    # WS shared sub-tile ring: V depth-tile width (256x64 sub-tile). Folds to the
+    # full V width for non-WS (which loads V whole). All V byte/box constants
+    # below route through this so the WS path emits one TMA per V depth-tile.
+    comptime v_sub_cols = config.v_box_cols()
     comptime k_bytes_pp = config.BK0 * KVPagedRows.eff_page * size_of[
         qkv_type
     ]()
-    comptime v_bytes_pp = config.v_cols_per_cta() * KVPagedRows.eff_page * size_of[
+    comptime v_bytes_pp = v_sub_cols * KVPagedRows.eff_page * size_of[
         qkv_type
     ]()
 
@@ -314,7 +322,7 @@ def fa4_load[
     comptime v_fold_chunks = kv_tma_fold_chunks[
         qkv_type,
         config.swizzle_mode,
-        BK=config.v_cols_per_cta(),
+        BK=v_sub_cols,
         head_size=config.ov_depth,
         box_rows=kv_sub_tile_rows(BN, page_size),
         smem_BN=BN,
@@ -388,8 +396,8 @@ def fa4_load[
         # identity. The kernel terminal `cluster_sync()` still runs.
         if part_local_iters == 0:
             return
-        # Window the split-KV producer's loop count too. The fused-KV 1Q path
-        # below uses `T = part_local_iters` directly, but the split-KV path
+        # Window the non-shared-KV producer's loop count too. The shared-KV 1Q path
+        # below uses `T = part_local_iters` directly, but the non-shared-KV path
         # (num_qk_stages > 1, i.e. depth >= 128) drives its peel + main loop
         # off `iter_count` (set above to the FULL last_masked_set_end - 1).
         # Without windowing it, that producer emits the whole [0, T) range while
@@ -401,8 +409,8 @@ def fa4_load[
         # [+ last-peel(1) when needs_partial] == part_local_iters either way.
         iter_count = part_local_iters - UInt32(1)
 
-    # Valid page counts for the first tile (shared between fused-KV and
-    # split-KV). When `needs_partial`, these reflect how many sub-tile
+    # Valid page counts for the first tile (shared between shared-KV and
+    # non-shared-KV). When `needs_partial`, these reflect how many sub-tile
     # pages are actually in-bounds for the sequence; otherwise every
     # sub-tile is assumed fully populated.
     #
@@ -423,22 +431,20 @@ def fa4_load[
         v_nvp = _v_num_valid_pages(kv_row)
 
     # Full-tile expect_bytes (accounts for both CTAs in pair mode).
-    # Shared between fused-KV and split-KV: `KPipeType.bytes` and
+    # Shared between shared-KV and non-shared-KV: `KPipeType.bytes` and
     # `VPipeType.bytes` resolve to the same per-CTA values, so we
     # define them once here.
     comptime k_per_cta_bytes = (
         config.BK0 * config.k_rows_per_cta() * size_of[qkv_type]()
     )
-    comptime v_per_cta_bytes = (
-        config.v_cols_per_cta() * BN * size_of[qkv_type]()
-    )
+    comptime v_per_cta_bytes = (v_sub_cols * BN * size_of[qkv_type]())
     comptime k_expect_bytes = cta_group * k_per_cta_bytes
     comptime v_expect_bytes = cta_group * v_per_cta_bytes
     comptime qk_expect_bytes = cta_group * (q_bytes + k_per_cta_bytes)
 
-    # Mode-shared K/V producer closures. These cover both fused-KV and
-    # split-KV call sites (and the inlined main-loop / peeled-last V in
-    # split mode). Captures: `is_leader`, `e`, `cta_group`, `q_bytes`,
+    # Mode-shared K/V producer closures. These cover both shared-KV and
+    # non-shared-KV call sites (and the inlined main-loop / peeled-last V in
+    # non-shared mode). Captures: `is_leader`, `e`, `cta_group`, `q_bytes`,
     # `q_smem`, `q_elements`, `tt_row_major`, `QType`, `q_async_copy`,
     # `k_bytes_pp`, `v_bytes_pp`, `k_per_cta_bytes`, `v_expect_bytes`,
     # `k_nvp_peer`, `kv_head_idx`, `v_col_offset`, `k_tma_op`,
@@ -495,22 +501,46 @@ def fa4_load[
     @parameter
     @always_inline
     def _produce_v[
-        partial: Bool
+        partial: Bool,
+        d_tile: Int = 0,
     ](
         kv_paged_rows: KVPagedRows,
         smem_ptr: SharedMemPointer[Scalar[qkv_type]],
         mbar: SharedMemPointer[SharedMemBarrier],
         v_num_valid_pages: UInt32,
     ):
+        # WS: one TMA per V depth-tile; `d_tile` selects the 256x64 sub-tile at
+        # gmem depth `d_tile * v_sub_cols` (mirrors K's `qk_stage * BK0`).
+        # Non-WS keeps d_tile==0 -> depth_offset == v_col_offset (unchanged).
+        comptime v_depth_stage_offset = d_tile * v_sub_cols
+        # WS short-KV correctness: OOB-zero-fill the beyond-num_keys page slots
+        # of a partial V sub-tile so the FULL 256x64 sub-tile holds finite data
+        # before the packed .ws P@V reads it. The .ws P@V contracts the whole
+        # sub-tile: a fully-masked quarter's per-quarter row_max == MASK_VALUE
+        # gives P==1 (empty quarter), and masked keys in a live quarter give
+        # P==0; either way the two-level combine multiplies by scale==0, so
+        # stale/uninitialized SMEM propagates `0/1 * non-finite = NaN` (only on
+        # the first write to the slot, typically seq_len <= BN). Mirrors the
+        # depth-512 FA4 fix (mha_depth512/load_warp.mojo) + types.mojo
+        # `tma_copy_v` `oob_fill_pages`. WS-gated -> non-WS is byte-identical.
+        comptime v_oob_fill = partial and config.use_ws
         comptime if is_leader:
             var v_bytes: Int32
             comptime if partial:
-                v_bytes = Int32(cta_group * v_bytes_pp * Int(v_num_valid_pages))
+                comptime if config.use_ws:
+                    # OOB-fill issues all v_pages_per_sub_tile TMAs (valid +
+                    # OOB), each arriving at the mbar, so expect the FULL bytes.
+                    v_bytes = Int32(v_expect_bytes)
+                else:
+                    v_bytes = Int32(
+                        cta_group * v_bytes_pp * Int(v_num_valid_pages)
+                    )
             else:
                 v_bytes = Int32(v_expect_bytes)
             expect_bytes_pred(mbar, v_bytes, e)
         kv_paged_rows.tma_copy_v[
             needs_partial=partial,
+            oob_fill_pages=v_oob_fill,
             fold_chunks=v_fold_chunks,
             row_major=v_row_major,
         ](
@@ -520,24 +550,42 @@ def fa4_load[
             kv_head_idx=kv_head_idx,
             elect=e,
             num_valid_pages=v_num_valid_pages,
-            depth_offset=UInt32(v_col_offset),
+            depth_offset=UInt32(v_depth_stage_offset + v_col_offset),
         )
 
-    comptime if config.use_fused_kv:
-        # ---- Fused KV mode ----
+    comptime if config.use_shared_kv:
+        # ---- Shared KV mode ----
         # Single StagedPipeline alternating K and V stages.
         # 2Q (num_q=2): K0, V0, K1, V1, ... (one K/V per logical iter).
         # 1Q (num_q=1): K_e[0], K_o[0], V_e[0], V_o[0], K_e[1], K_o[1], ...
         # (two K + two V per logical iter, matching mma_warp's
         # Q@K_e->s0 / Q@K_o->s1 / P_e@V_e->o0 / P_o@V_o->o1 pattern).
         # For MHA: padded_qk_depth == padded_ov_depth, rope_depth == 0.
-        # num_qk_stages=1 in fused mode.
+        # non-WS shared: num_qk_stages==1, one full-depth tile per slot.
+        # WS shared sub-tile ring: each K/V slot is ONE 256x64 sub-tile, so
+        # `_emit_k`/`_emit_v` each emit num_qk_stages sub-tiles -> the 1Q iter
+        # becomes K_e_d0,K_e_d1,K_o_d0,K_o_d1,V_e_d0,V_e_d1,V_o_d0,V_o_d1 (8 slots).
 
         var kv_smem = rebind[SharedMemPointer[Scalar[KVLUTType.dtype]]](
             smem.k_smem_base()
         )
-        # Per-CTA SMEM: halved for pair-CTA.
-        comptime kv_stage_elems = (config.padded_ov_depth * BN // cta_group)
+        # Per-CTA SMEM per ring slot. WS: one 256x64 sub-tile (matches
+        # smem.ws_subtile_bytes); non-WS shared: one full-depth K/V tile.
+        comptime kv_stage_elems = (
+            (config.shared_kv_cols() // config.num_qk_stages) * BN // cta_group
+        ) if config.use_ws else (config.padded_ov_depth * BN // cta_group)
+        # Anti-drift: the producer per-slot stride MUST equal the struct sub-tile
+        # size the reservation + consumer (mma_warp) use. A mismatch is exactly
+        # the class of latent 2x-overrun this migration fixed. (cta_group==1 for
+        # WS, so per-CTA == full.) A non-WS-shared analog would need the per-CTA
+        # form `kv_stage_elems * size == k_stage_bytes` (no *cta_group) to stay
+        # pair-CTA-correct; left as a follow-up since nope==ov holds on the
+        # reachable fa4 path today.
+        comptime if config.use_ws:
+            comptime assert (
+                kv_stage_elems * cta_group * size_of[qkv_type]()
+                == SM100AttentionSMem[config].k_stage_bytes
+            ), "WS producer kv_stage_elems must match the struct sub-tile size"
 
         comptime KVPipeType = StagedPipeline[config.num_kv_stages, 1]
         var kv_pipeline: KVPipeType = {mbars.get_k_mbars()}
@@ -559,33 +607,46 @@ def fa4_load[
             with_q: Bool = False,
             acquire: Bool = True,
         ](rows: KVPagedRows, k_num_valid_pages: UInt32):
-            comptime if acquire:
-                kv_pipeline.producer_acquire()
-            var mbar = kv_pipeline.producer_mbar()
-            var smem_ptr = kv_smem + kv_pipeline.state.index() * UInt32(
-                kv_stage_elems
-            )
-            _produce_k[partial=partial, qk_stage=0, with_q=with_q](
-                rows, smem_ptr, mbar, k_num_valid_pages
-            )
-            kv_pipeline.state.step()
+            # WS shared sub-tile ring: emit num_qk_stages K depth-half sub-tiles
+            # (each a 32768-B ring slot with its own barrier); Q (when with_q)
+            # rides every K sub-tile (q_elements is per-sub-tile). Folds to one
+            # slot for non-WS shared (num_qk_stages==1). The acquire=False peel
+            # applies ONLY to the very first sub-tile (initial phase=1); later
+            # sub-tiles acquire like any subsequent ring slot.
+            comptime for qk_stage in range(config.num_qk_stages):
+                comptime if acquire or qk_stage != 0:
+                    kv_pipeline.producer_acquire()
+                var mbar = kv_pipeline.producer_mbar()
+                var smem_ptr = kv_smem + kv_pipeline.state.index() * UInt32(
+                    kv_stage_elems
+                )
+                _produce_k[partial=partial, qk_stage=qk_stage, with_q=with_q](
+                    rows, smem_ptr, mbar, k_num_valid_pages
+                )
+                kv_pipeline.state.step()
 
         @parameter
         @always_inline
         def _emit_v[
             partial: Bool, acquire: Bool = True
         ](rows: KVPagedRows, v_num_valid_pages: UInt32):
-            comptime if acquire:
-                kv_pipeline.producer_acquire()
-            var mbar = kv_pipeline.producer_mbar()
-            var smem_ptr = kv_smem + kv_pipeline.state.index() * UInt32(
-                kv_stage_elems
-            )
-            _produce_v[partial=partial](rows, smem_ptr, mbar, v_num_valid_pages)
-            kv_pipeline.state.step()
+            # WS shared sub-tile ring: emit num_qk_stages V depth-tile sub-tiles
+            # (each a 32768-B ring slot with its own barrier). Folds to one slot
+            # for non-WS shared (num_qk_stages==1).
+            comptime for d_tile in range(config.num_qk_stages):
+                comptime if acquire or d_tile != 0:
+                    kv_pipeline.producer_acquire()
+                var mbar = kv_pipeline.producer_mbar()
+                var smem_ptr = kv_smem + kv_pipeline.state.index() * UInt32(
+                    kv_stage_elems
+                )
+                _produce_v[partial=partial, d_tile=d_tile](
+                    rows, smem_ptr, mbar, v_num_valid_pages
+                )
+                kv_pipeline.state.step()
 
         comptime if num_q == 1:
-            # ---- 1Q fused-KV producer ----
+            # ---- 1Q shared-KV producer ----
             # MMA consumes K_e, K_o, V_e, V_o per logical iter. Produce
             # in matching slot order. No FULL_MASK skip in this path
             # (deferred; standard masks in 1Q-eligible regimes have no
@@ -733,7 +794,7 @@ def fa4_load[
                     # V_o (partial, reuses rows_po)
                     _emit_v[partial=True](rows_po, v_nvp_po)
         else:
-            # ---- 2Q fused-KV producer (existing path, unchanged) ----
+            # ---- 2Q shared-KV producer (existing path, unchanged) ----
 
             # ---- Peeled: K0 + Q0 on same barrier ----
             var kv_paged_rows = kv_lut.populate[
@@ -834,7 +895,7 @@ def fa4_load[
                         _emit_v[partial=True](kv_paged_rows, v_nvp)
 
     else:
-        # ---- Split KV mode ----
+        # ---- Non-shared mode ----
         # One `populate` per outer iteration yields a shared
         # `kv_paged_rows` whose row-indices feed both the K and V TMA
         # copies (`tma_copy_k` / `tma_copy_v`). K's per-CTA half and

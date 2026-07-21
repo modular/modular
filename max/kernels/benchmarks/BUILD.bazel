@@ -337,6 +337,126 @@ mojo_test(
     ],
 )
 
+# --- SM100 FA4 warp-specialized (WS) vs baseline A/B benches ---
+# Execute on a remote B200 via `bazel test --config=remote-b200[-benchmark] ...`
+# (mojo_test so the run is a remote *test action*; `bazel run` would execute locally).
+# Comptime cells (each a separate compiled target): FA4_FORCE_CONFIG (0=auto, 1=WS,
+# 2=baseline) x FA4_WS_SPLITK_FORCE (P) x depth. Baseline (run_base, FORCE=2) comptime-kills
+# the WS block (dispatch.mojo:558-559) -> byte-identical to main's selected non-WS path.
+# Runtime shape (seq_len/num_keys/cache_len/batch_size) is forwarded per invocation via
+# `--test_arg=--name=value` (arg_parse matches "--<name>=", internal_utils/_utils.mojo:205);
+# always add `--nocache_test_results` for a benchmark. See plan crystalline-leaping-sunrise.md.
+_FA4_WS_CELLS = {
+    "run_auto": [
+        "-D",
+        "FA4_FORCE_CONFIG=0",
+    ],
+    "run_ws": [
+        "-D",
+        "FA4_FORCE_CONFIG=1",
+    ],
+    "run_ws_p2": [
+        "-D",
+        "FA4_FORCE_CONFIG=1",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=2",
+    ],
+    "run_ws_p4": [
+        "-D",
+        "FA4_FORCE_CONFIG=1",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=4",
+    ],
+    "run_base": [
+        "-D",
+        "FA4_FORCE_CONFIG=2",
+    ],
+}
+
+# Deps/data/env mirror the generic gpu/** glob (above) that already compiles these srcs.
+_FA4_WS_DEPS = [
+    "//max:comm",
+    "//max:internal_utils",
+    "//max:layout",
+    "//max:nn",
+    "//max:shmem",
+    "//max:structured_kernels",
+    "@mojo//:std",
+]
+
+# bench_mha (contiguous): depth is comptime via `-D depth=<d>`.
+[
+    mojo_test(
+        name = "gpu/nn/bench_mha.mojo.%s_d%d" % (suffix, depth),
+        size = "enormous",
+        srcs = ["gpu/nn/bench_mha.mojo"],
+        copts = copts + [
+            "-D",
+            "depth=%d" % depth,
+        ],
+        data = select({
+            "//:nvidia_gpu": ["@nvshmem_prebuilt//:host"],
+            "//conditions:default": [],
+        }),
+        enable_assertions = False,
+        env = select({
+            "//:nvidia_gpu": {"MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt"},
+            "//conditions:default": {},
+        }),
+        exec_properties = {
+            "test.resources:gpu-memory": "64",
+        },
+        tags = [
+            "gpu",
+            "manual",
+        ],
+        target_compatible_with = ["//:b200_gpu"],
+        deps = _FA4_WS_DEPS,
+    )
+    for suffix, copts in _FA4_WS_CELLS.items()
+    for depth in [
+        64,
+        128,
+    ]
+]
+
+# bench_kv_cache_ragged_flash_attention (ragged, long-cache/small-grid vehicle):
+# depth is comptime via `-D head_dim=<d>`.
+[
+    mojo_test(
+        name = "gpu/nn/bench_kv_cache_ragged_flash_attention.mojo.%s_d%d" % (suffix, depth),
+        size = "enormous",
+        srcs = ["gpu/nn/bench_kv_cache_ragged_flash_attention.mojo"],
+        copts = copts + [
+            "-D",
+            "head_dim=%d" % depth,
+        ],
+        data = select({
+            "//:nvidia_gpu": ["@nvshmem_prebuilt//:host"],
+            "//conditions:default": [],
+        }),
+        enable_assertions = False,
+        env = select({
+            "//:nvidia_gpu": {"MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt"},
+            "//conditions:default": {},
+        }),
+        exec_properties = {
+            "test.resources:gpu-memory": "40",
+        },
+        tags = [
+            "gpu",
+            "manual",
+        ],
+        target_compatible_with = ["//:b200_gpu"],
+        deps = _FA4_WS_DEPS,
+    )
+    for suffix, copts in _FA4_WS_CELLS.items()
+    for depth in [
+        64,
+        128,
+    ]
+]
+
 pkg_files(
     name = "kernel_benchmark_input_files",
     srcs = glob(
