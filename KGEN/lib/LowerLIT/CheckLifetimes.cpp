@@ -558,27 +558,69 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type,
     }
   }
 
-  auto getDestructor = [&](StructInfo info) -> SpecialMemberInfo {
-    // The type has to conform to implicitly destructible to have a
-    // destructor. If it is missing, then the struct body isn't resolved. This
-    // happens in LSP and lazy parsing situations.  We treat this as trivial
-    // in this case.
-    auto conformance = info.implicitlyDestructible;
-    // A conformance like `ImplicitlyDeletable where False` is like no
-    // conformance at all, and does not build witnesses, so we must bail out
-    // here before the witness checks below incorrectly treat the missing
-    // witness as a trivial destructor.
-    if (!conformance) {
-      // May also just be unconditionally linear.
-      if (info.decl.getLinearTypeErrorMsg().value_or("") != "")
-        return SpecialMemberInfo::unavailable(
-            info.decl.getLinearTypeErrorMsgAttr());
+  // Check if this specific instantiation of the struct type is
+  // ImplicitlyDeletable by substituting the parameters into the where clause
+  // constraint of ImplicitlyDeletable (if any).
+  //
+  // Returns nullopt if the trait isn't in the composition at all.
+  auto isTypeImplicitlyDeletable = [&](StructInfo info,
+                                       Type structType) -> ConstraintRelation {
+    TraitType canonTrait = info.decl.getCanonicalTrait();
+    ArrayRef<SymbolRefAttr> symbols = canonTrait.getSymbols();
+    ArrayRef<ConstraintAttr> constraints = canonTrait.getConstraints();
+    for (auto [i, symbol] : llvm::enumerate(symbols)) {
+      if (symbol.getLeafReference() != "ImplicitlyDeletable")
+        continue;
+      if (i >= constraints.size())
+        return ConstraintRelation::Implies; // Unconditional conformance.
 
-      return SpecialMemberInfo::available({});
+      auto actualStructType = sugarCast<LIT::StructType>(structType);
+      ParameterEvaluator evaluator(info.decl.getParams(),
+                                   actualStructType.getParamValues());
+      evaluator.setEvaluationContext(getEvaluationContext());
+      TypedAttr conformanceCondition =
+          evaluator.getReboundAttribute(constraints[i].getProposition());
+      conformanceCondition = getCanonicalAttr(conformanceCondition);
+
+      SmallVector<ConstraintAttr> assumptions =
+          getConstraintsFromContext(fnContext);
+      TypedAttr overallAssumption =
+          SIMDAttr::getScalarBool(structType.getContext(), true);
+      for (auto assumption : assumptions)
+        overallAssumption = ParamOperatorAttr::get(
+            POC::And, {overallAssumption, assumption.getProposition()});
+
+      return inferConstraintRelation(overallAssumption, conformanceCondition);
+    }
+    return ConstraintRelation::Contradicts;
+  };
+
+  auto getDestructor = [&](StructInfo info) -> SpecialMemberInfo {
+    auto conformance = info.implicitlyDestructible;
+    // Determine conformance to ImplicitlyDeletable via the declared trait bound
+    // of the struct type. This info is always available (in both LSP & normal
+    // compile).
+    ConstraintRelation isImplicitlyDeletableOpt =
+        isTypeImplicitlyDeletable(info, type);
+
+    // - If the conformance condition is provably False, the type is NOT
+    // ImplicitlyDeletable.
+    // - If the conformance condition is unprovable, conservatively treat it as
+    // NOT ImplicitlyDeletable. We can improve this error message in the future.
+    if (isImplicitlyDeletableOpt != ConstraintRelation::Implies) {
+      StringAttr message = info.decl.getLinearTypeErrorMsgAttr();
+      assert(message && "should have a message");
+      return SpecialMemberInfo::unavailable(message);
     }
 
-    // Ok, the type has a destructor.  Check to see if there is any
-    // conditional conformance involved.
+    // After this point, we're confident the type is ImplicitlyDeletable.
+
+    // If we didn't find a conformance op, we must be in LSP mode. Treat the
+    // type as trivial since the exact dtor isn't important.
+    if (!conformance)
+      return SpecialMemberInfo::available({});
+
+    // Fetch the destructor and trivial witness entries from the conformance op.
     TypedAttr dtorAttr;
     TypedAttr isTrivialAttr;
     for (WitnessOp witness : conformance.getOps<WitnessOp>()) {
@@ -609,36 +651,6 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type,
                                  actualStructType.getParamValues());
     evaluator.setEvaluationContext(getEvaluationContext());
     isTrivialAttr = evaluator.getReboundAttribute(isTrivialAttr);
-
-    // Substitute parameters into the 'where' clause on the conformance, and
-    // check to see if it is valid. If not, this is a (potentially
-    // conditionally) linear type.
-    auto whereClause = conformance.getConstraint().getProposition();
-    whereClause = evaluator.getReboundAttribute(whereClause);
-    SmallVector<ConstraintAttr> assumptions =
-        getConstraintsFromContext(fnContext);
-    TypedAttr overallAssumption =
-        SIMDAttr::getScalarBool(whereClause.getContext(), true);
-    for (auto assumption : assumptions)
-      overallAssumption = ParamOperatorAttr::get(
-          POC::And, {overallAssumption, assumption.getProposition()});
-
-    bool isDisabled = inferConstraintRelation(overallAssumption, whereClause) !=
-                      ConstraintRelation::Implies;
-    if (isDisabled) {
-      // If the type is linear, then ignore an explicitly declared
-      // destructor for the purposes of destructor insertion.
-      // FIXME: This is wrong, we should check the 'where' clause on the
-      // conformance.
-      // Any struct that conditionally conforms to ImplicitlyDeletable always
-      // has a linear-type error message: DeclResolution synthesizes a default
-      // one when @explicit_destroy is not used.
-      assert(info.decl.getLinearTypeErrorMsg().value_or("") != "" &&
-             "Shouldn't conditionally conform to ImplicitlyDeletable without a "
-             "linear type error message");
-      return SpecialMemberInfo::unavailable(
-          info.decl.getLinearTypeErrorMsgAttr());
-    }
 
     // The type of the trivial witness is Bool which wraps an i1.  If we can
     // prove that it is 1, then we can ignore this destructor.
