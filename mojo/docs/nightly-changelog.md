@@ -394,41 +394,16 @@ This version is still a work in progress.
 
 - Various datatypes have adopted interior origins for increased memory safety,
   including `List`, `Deque`, `Variant`, `String`, `Dict`, `LinkedList`, and
-  `OwnedPointer`. Slicing a `List`
-  (`list[start:end]`) now returns a `Span` that carries an interior origin, so a
-  slice held across a list mutation is rejected by the lifetime checker instead
-  of silently dangling after a reallocation:
+  `OwnedPointer`. A reference or view into one of these containers now carries
+  an interior origin, so one held across a mutation is rejected by the lifetime
+  checker instead of silently dangling after a reallocation. For example,
+  indexing a `List` (`list[i]`) returns a reference bound to the list:
 
   ```mojo
   var list = [1, 2, 3]
-  var s = list[:]
-  list.append(4)  # may reallocate, invalidating `s`
-  print(s[0])     # error: use of invalidated interior reference
-  ```
-
-  `Dict`'s reference-returning accessors (`d[key]`, `setdefault()`) now return a
-  reference bound to an interior origin of the dictionary, so such a reference
-  is invalidated by any mutating operation, including an insert via
-  `setdefault()`:
-
-  ```mojo
-  var d = Dict[String, Int]()
-  d["a"] = 1
-  ref value = d["a"]
-  _ = d.setdefault("b", 2)  # inserts (mutates), invalidating `value`
-  print(value)              # error: use of invalidated interior reference
-  ```
-
-  `String`'s view-returning accessors (`as_bytes()`, `s[byte=...]`,
-  `s[codepoint=...]`, and similar) now return `StringSlice`/`Span` views bound
-  to an interior origin of the string, so such a view is invalidated when the
-  string is mutated:
-
-  ```mojo
-  var s = String("hello world")
-  var view = s[byte=0:5]
-  s += "!"      # may reallocate, invalidating `view`
-  print(view)   # error: use of invalidated interior reference
+  ref elem = list[0]
+  list.append(4)  # may reallocate, invalidating `elem`
+  print(elem)     # error: use of invalidated interior reference
   ```
 
 - Added `Tuple.consume_elements`, which moves each element out of a tuple into a
