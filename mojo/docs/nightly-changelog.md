@@ -1154,3 +1154,9 @@ This version is still a work in progress.
   struct Two(Movable where False):
       var y: One
   ```
+
+- A failed import no longer poisons its name for the rest of the compilation.
+  Previously, after something like `import pkg.util` failed to resolve, a
+  later `import util` would silently bind the cached failure even when a real
+  `util.mojo` exists on the search path, making the module unimportable with
+  no diagnostic.
