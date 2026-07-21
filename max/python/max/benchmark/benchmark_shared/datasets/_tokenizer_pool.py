@@ -142,24 +142,26 @@ class TokenizerPool:
         self,
         tokenizer: PreTrainedTokenizerBase,
         *,
-        workers: int | None = None,
         loader: _LoaderFn | None = None,
     ) -> None:
         self.tokenizer = tokenizer
-        # Cap the default worker count at 16, leaving a core free for the
-        # main process. If the core count is unavailable, fall back to a
-        # single process.
-        default_nproc = min(16, max(1, (os.cpu_count() or 1) - 1))
-        nproc = workers if workers is not None else default_nproc
-        # Tests (and other constrained environments) can cap worker count
-        # via env var without threading `workers=` through every call site.
-        env_cap = os.environ.get("MAX_BENCHMARK_MAX_TOKENIZER_THREADS")
-        if env_cap:
-            try:
-                nproc = min(nproc, max(1, int(env_cap)))
-            except ValueError:
-                pass
-        self._workers = nproc
+        # Make sure to always leave at least one core free for the main thread.
+        # If the core count is unknown, limit to 1 core only.
+        cpu_count = os.cpu_count()
+        if cpu_count and cpu_count > 1:
+            cpu_limit = cpu_count - 1
+        else:
+            cpu_limit = 1
+
+        # Tests (and other constrained environments) can set the
+        # default worker count via env var.
+        env_count = os.environ.get("MAX_BENCHMARK_MAX_TOKENIZER_THREADS")
+        if env_count and env_count.isdigit():
+            workers = int(env_count)
+        else:
+            # Default to 16 cores if no value requested.
+            workers = 16
+        self._workers = min(workers, cpu_limit)
         self._loader = loader if loader is not None else _default_loader
         self._pool: mp.pool.Pool | None = None
         self._log_listener: logging.handlers.QueueListener | None = None
