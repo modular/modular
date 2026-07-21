@@ -202,6 +202,31 @@ def testChainedAliasClosureField():
     print(h.call()[0])
 
 
+# COM: A closure-typed parameter invoked from within a nested closure.
+def nestedClosureParamCapture[
+    dtype: DType,
+    F: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[w: Int]() -> SIMD[dtype, w]),
+](f: F) -> Scalar[dtype]:
+    @always_inline
+    def body() {var f} -> Scalar[dtype]:
+        @always_inline
+        def inner[w: Int]() {var f} -> SIMD[dtype, w]:
+            return f[w]()
+
+        return inner[4]()[0]
+
+    return body()
+
+
+def testNestedClosureParamCapture():
+    def impl[w: Int]() -> SIMD[DType.int32, w]:
+        return SIMD[DType.int32, w](12)
+
+    print(nestedClosureParamCapture[DType.int32, type_of(impl)](impl))
+
+
 def main() raises:
     var y: Int = atol(argv()[1])
     var one = atol(argv()[2])
@@ -240,3 +265,8 @@ def main() raises:
     # COM: Infer-only parameter bound through a chain of parametric-alias traits.
     # CHECK: 11
     testChainedAliasClosureField()
+
+    # COM: Closure-typed function parameter invoked from within a nested closure,
+    # COM: seeding a captured parameter from an ancestor function scope.
+    # CHECK: 12
+    testNestedClosureParamCapture()
