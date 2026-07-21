@@ -892,9 +892,12 @@ modular_cc_library(
     name = "ToolCommon.headers",
     hdrs = glob(["include/KGEN/ToolCommon/*.h"]),
     defines = ["MLRT_ACCELERATOR_SUPPORT=1"],
-    internal_deps = [
-        "//MLRT:Driver/DeviceContext",
-    ],
+    internal_deps = select({
+        # Under --config=hal-device-context we don't link the full DeviceContext,
+        # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
+        "//:hal_device_context_enabled": ["//MLRT:Driver/DeviceContextAPI"],
+        "//conditions:default": ["//MLRT:Driver/DeviceContext"],
+    }),
     tags = ["no-clang-tidy-headers"],
     visibility = ["//visibility:private"],
     deps = [
@@ -949,8 +952,12 @@ modular_shared_library(
     ]),
     internal_deps = [
         "//MLRT:Core",
-        "//MLRT:Driver/DeviceContext",
     ] + select({
+        # Under --config=hal-device-context we don't link the full DeviceContext,
+        # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
+        "//:hal_device_context_enabled": [],
+        "//conditions:default": ["//MLRT:Driver/DeviceContext"],
+    }) + select({
         "//:tracy_enabled": ["@tracy//:Tracy"],
         "//conditions:default": [],
     }),
@@ -1436,6 +1443,15 @@ modular_shared_library(
     ),
     hdrs = glob(["lib/MojoLLDB/**/*.h"]),
     includes = [],
+    internal_deps = select({
+        # Under --config=hal-device-context we don't link the full DeviceContext,
+        # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
+        "//:hal_device_context_enabled": [
+            "//MLRT:Driver/CompilationDeviceImpl",
+            "//MLRT:Driver/CompilerDeviceArch",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         ":ExecutionEngine",
         ":KGENDialect",

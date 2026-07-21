@@ -11,6 +11,15 @@ modular_cc_binary(
         "-O0",
         "-g0",
     ],
+    internal_deps = select({
+        # Under --config=hal-device-context we don't link the full DeviceContext,
+        # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
+        "//:hal_device_context_enabled": [
+            "//MLRT:Driver/CompilationDeviceImpl",
+            "//MLRT:Driver/CompilerDeviceArch",
+        ],
+        "//conditions:default": [],
+    }),
     linkopts = select({
         "@platforms//os:linux": [
             # Make sure this never gets stripped because it is used as a lldb breakpoint
