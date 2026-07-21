@@ -173,7 +173,6 @@ def test_supported_architecture__eq__method() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
-        rope_type="normal",
         weight_adapters={
             WeightsFormat.safetensors: simple_adapter,
             WeightsFormat.gguf: simple_adapter,
@@ -196,7 +195,6 @@ def test_supported_architecture__eq__method() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
-        rope_type="normal",
         weight_adapters={
             WeightsFormat.safetensors: simple_adapter,
             WeightsFormat.gguf: simple_adapter,
@@ -368,7 +366,6 @@ def test_supported_architecture__eq__method() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
-        rope_type="none",  # Different rope type
     )
     assert arch1 != arch11
 

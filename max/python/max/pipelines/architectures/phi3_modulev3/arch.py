@@ -38,7 +38,6 @@ phi3_modulev3_arch = SupportedArchitecture(
     pipeline_model=Phi3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type="longrope",
     multi_gpu_supported=False,
     weight_adapters={
         WeightsFormat.safetensors: convert_safetensor_state_dict,

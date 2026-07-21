@@ -34,7 +34,6 @@ unified_dflash_llama3_arch = SupportedArchitecture(
     pipeline_model=UnifiedDflashLlama3Model,
     context_type=TextContext,
     tokenizer=TextTokenizer,
-    rope_type="normal",
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     weight_adapters={

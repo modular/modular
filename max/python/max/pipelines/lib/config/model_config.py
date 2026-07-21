@@ -1054,11 +1054,6 @@ class MAXModelConfig(MAXModelConfigBase):
                 default_encoding=default_encoding,
             )
 
-    def validate_and_resolve_rope_type(self, arch_rope_type: RopeType) -> None:
-        """Resolves rope_type from architecture default if not set."""
-        if self.rope_type is None:
-            self.rope_type = arch_rope_type
-
     def validate_lora_compatibility(self) -> None:
         """Validates that LoRA configuration is compatible with model settings.
 

@@ -49,7 +49,6 @@ llama4_arch = SupportedArchitecture(
     # ``--no-device-graph-capture`` until the kernel gains stream-capture
     # support.
     supports_device_graph_capture=False,
-    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
@@ -73,7 +72,6 @@ llama4_conditional_arch = SupportedArchitecture(
     # ``--no-device-graph-capture`` until the kernel gains stream-capture
     # support.
     supports_device_graph_capture=False,
-    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },

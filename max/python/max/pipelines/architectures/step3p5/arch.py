@@ -35,7 +35,6 @@ step3p5_arch = SupportedArchitecture(
     pipeline_model=Step3p5Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: convert_step3p5_state_dict,
     },

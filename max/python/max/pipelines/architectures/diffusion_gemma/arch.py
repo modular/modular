@@ -53,7 +53,6 @@ diffusion_gemma_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     input_modalities={InputModality.TEXT},
-    rope_type="normal",
     context_type=Gemma4Context,
     config=DiffusionGemmaForBlockDiffusionConfig,
     tool_parser="gemma4",

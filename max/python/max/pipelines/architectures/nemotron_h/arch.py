@@ -49,7 +49,6 @@ nemotron_h_arch = SupportedArchitecture(
     tokenizer=NemotronHTokenizer,
     context_type=TextContext,
     # NoPE: attention adds no rotary embedding (position flows through the SSM).
-    rope_type="none",
     weight_adapters={
         WeightsFormat.safetensors: convert_nemotron_h_state_dict,
     },

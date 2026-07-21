@@ -148,7 +148,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         _weights_format = weights_format(model_config.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and model_config.rope_type == "normal"
+            and (model_config.rope_type or "normal") == "normal"
         )
 
         device_refs = [

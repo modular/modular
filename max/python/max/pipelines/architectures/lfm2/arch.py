@@ -31,7 +31,6 @@ lfm2_arch = SupportedArchitecture(
     pipeline_model=LFM2Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type="neox",
     default_weights_format=WeightsFormat.safetensors,
     required_arguments={
         "allow_safetensors_weights_fp32_bf16_bidirectional_cast": True,

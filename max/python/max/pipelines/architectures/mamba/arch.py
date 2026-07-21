@@ -39,7 +39,6 @@ mamba_arch = SupportedArchitecture(
     batching=MambaBatchProcessor,
     tokenizer=MambaTokenizer,
     context_type=TextContext,
-    rope_type="normal",
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     weight_adapters={

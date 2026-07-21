@@ -41,7 +41,6 @@ minimax_m2_arch = SupportedArchitecture(
     pipeline_model=MiniMaxM2Model,
     tokenizer=MiniMaxM2Tokenizer,
     context_type=TextContext,
-    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },

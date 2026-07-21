@@ -41,7 +41,6 @@ laguna_arch = SupportedArchitecture(
     pipeline_model=LagunaModel,
     tokenizer=LagunaTokenizer,
     context_type=TextContext,
-    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },

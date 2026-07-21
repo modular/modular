@@ -1510,10 +1510,6 @@ class PipelineConfig(ConfigFileModel):
         # This means that a KV cache dtype can be determined, assuming an override wasn't provided.
         model_config.set_cache_dtype_given_quantization_encoding()
 
-        model_config.validate_and_resolve_rope_type(
-            arch_rope_type=arch.rope_type
-        )
-
         # by this point, the quantization_encoding must be provided. verify it is supported.
         if model_config.quantization_encoding not in arch.supported_encodings:
             raise ValueError(

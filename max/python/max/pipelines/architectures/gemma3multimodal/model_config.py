@@ -230,7 +230,7 @@ class Gemma3ForConditionalGenerationConfig(
         _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == "normal"
+            and (pipeline_config.model.rope_type or "normal") == "normal"
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)

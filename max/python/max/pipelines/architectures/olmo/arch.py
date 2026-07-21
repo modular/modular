@@ -35,7 +35,6 @@ olmo_arch = SupportedArchitecture(
     pipeline_model=OlmoModel,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type="normal",
     multi_gpu_supported=False,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
