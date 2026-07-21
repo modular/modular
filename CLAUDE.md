@@ -100,9 +100,9 @@ modular/
 │   │   ├── pipelines/       # Model architectures (Python)
 │   │   ├── nn/              # Neural network operators (Python)
 │   │   └── ...              # graph, driver, engine, kv_cache, etc.
-│   ├── driver/               # Device/runtime driver (C++/Mojo)
-│   ├── examples/             # MAX usage examples
-│   └── tests/                # MAX tests
+│   ├── driver/              # Device/runtime driver (C++/Mojo)
+│   ├── examples/            # MAX usage examples
+│   └── tests/               # MAX tests
 ├── docs/                    # Docs site sources (docs.modular.com)
 └── bazel/                   # Build system configuration
 ```
