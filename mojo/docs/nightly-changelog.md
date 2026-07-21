@@ -430,6 +430,9 @@ This version is still a work in progress.
   update any explicit `InlineArray[T, size=N]` to `InlineArray[T, length=N]`,
   and `.size` reads to `.length`.
 
+- `InlineArray`'s first parameter is renamed from `ElementType` to `T`.
+  Any explicit usages must be updated.
+
 - `List.capacity` is now a `capacity()` method instead of a public field. This
   keeps the allocated capacity out of the stable public field surface, since it
   should only change indirectly through operations like `append()`. Replace

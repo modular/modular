@@ -882,7 +882,7 @@ struct List[T: Movable, /](
         self._len += 1
 
     @always_inline
-    def insert(mut self, i: Int, var value: Self.T):
+    def insert(mut self, i: Int, var value: Self.T, /):
         """Inserts a value to the list at the given index.
         `a.insert(len(a), value)` is equivalent to `a.append(value)`.
 
@@ -1439,6 +1439,10 @@ struct List[T: Movable, /](
         ref self, idx: Some[Indexer]
     ) -> ref[self.unsafe_get(index(idx))] Self.T:
         """Gets the list element at the given index.
+
+        Unlike when subscripting using slices negative indices are
+        considered out of bounds. They will be checked in the same situations
+        as "off the end" indexing.
 
         Args:
             idx: The index of the element.
