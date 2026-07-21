@@ -120,7 +120,8 @@ ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
   // with "extension:" (e.g., "extension:Spaceship") so that we can do this
   // lookup here.
   StringRef typeName = astDecl->getUserNameIfOperation().value();
-  std::string extensionName = "extension:" + typeName.str();
+  std::string extensionName =
+      shared.extensionsScopeMarker.getValue().str() + typeName.str();
   LookupAllResult lookupResult =
       shared.lookupAllDeclsWithName(extensionName, callLoc, *this, true);
 
@@ -362,15 +363,23 @@ Type ASTDecl::computeSelfTypeForTrait(TraitDeclOp traitOp) {
 void ASTDecl::findExtensionsInScopeForStruct(
     SymbolRefAttr targetStruct, llvm::SmallPtrSetImpl<ASTDecl *> &results,
     std::optional<SymbolRefAttr> filterTrait) {
-  // Extensions are registered in this scope under the name "extension:<leaf>"
-  // (see the ExtensionDeclOp case in SharedState::addDeclsForOp).
-  // The bucket is keyed by the target's leaf name only, so distinct structs
-  // that share a leaf name land together and the exact-symbol check below still
-  // filters them.
   if (!declsInScope)
     return;
 
-  SmallString<64> extensionName("extension:");
+  // Fast path: any scope that has extensions also registers them under the
+  // aggregate name "extension:" (see the ExtensionDeclOp case in
+  // SharedState::addDeclsForOp and the module-import paths in DeclResolver).
+  // This is a hot conformance-check query and the vast majority of scopes have
+  // no extensions at all, so bail out with a single pointer-keyed lookup on the
+  // pre-interned marker before building any per-struct name.
+  if (declsInScope->find(shared.extensionsScopeMarker) == declsInScope->end())
+    return;
+
+  // Extensions targeting this struct are registered under "extension:<leaf>".
+  // The bucket is keyed by the target's leaf name only, so distinct structs
+  // that share a leaf name land together and the exact-symbol check below still
+  // filters them.
+  SmallString<64> extensionName(shared.extensionsScopeMarker.getValue());
   extensionName += targetStruct.getLeafReference().getValue();
   auto it = declsInScope->find(StringAttr::get(getContext(), extensionName));
   if (it == declsInScope->end())

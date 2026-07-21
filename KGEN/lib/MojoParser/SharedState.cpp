@@ -423,6 +423,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
       options(config.options),
       declResolver(std::make_unique<DeclResolver>(*this)),
       parserListener(config.parserListener),
+      extensionsScopeMarker(StringAttr::get(config.context, "extension:")),
       disablePrebuiltPackages(config.disablePrebuiltPackages),
       useBuiltinModule(config.useBuiltinModule),
       impl(std::make_unique<Impl>(*this)) {
@@ -1973,7 +1974,8 @@ SharedState::lookupAndResolveMangledDecl(StringAttr leafRef, SMLoc loc,
   StringAttr name;
   if (auto *extOp = dyn_cast_or_null<ExtensionDeclOp>(&declOp)) {
     StringAttr baseName = extOp->getTargetStruct().value().getLeafReference();
-    std::string extensionName = "extension:" + baseName.getValue().str();
+    std::string extensionName =
+        extensionsScopeMarker.getValue().str() + baseName.getValue().str();
     name = StringAttr::get(extOp->getContext(), extensionName);
   } else {
     name = declOp.getDeclName();
@@ -2260,16 +2262,16 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             //   given MyStruct
             // - "extension:", for looking for all extensions for any struct
             //   in a given scope (useful for importing).
-            // Register this extension under both names now.
+            // Register this extension under both names now. The "extension:"
+            // prefix and marker are single-sourced from extensionsScopeMarker.
             // TODO(MOCO-522): Arcana docs on this!
-            std::string extensionName =
-                "extension:" + baseName.getValue().str();
+            std::string extensionName = extensionsScopeMarker.getValue().str() +
+                                        baseName.getValue().str();
             StringAttr extensionNameAttr =
                 StringAttr::get(op.getContext(), extensionName);
             ASTDecl &extensionDecl = addDeclForOp(op, extensionNameAttr);
-            StringAttr extensionsNameAttr =
-                StringAttr::get(op.getContext(), "extension:");
-            declResolver->aliasDeclInParent(&extensionDecl, extensionsNameAttr);
+            declResolver->aliasDeclInParent(&extensionDecl,
+                                            extensionsScopeMarker);
           })
           .Case([&](AliasDeclOp op) {
             addDeclForOp(op, StringAttr::get(op.getContext(),
