@@ -802,6 +802,15 @@ This version is still a work in progress.
   `<|tool_call_begin|>`). The walk now runs on a deep copy of the matcher,
   leaving the real matcher untouched.
 
+- Fixed speculative decoding (Eagle) requests that reached the per-request
+  `max_tokens` cap stopping up to `num_speculative_tokens` tokens short of it,
+  returning `finish_reason="length"` with fewer completion tokens than
+  requested. The response builder reserved a full worst-case speculative
+  chunk of slack against the per-request cap instead of only against the
+  hard model/KV limit, ending the request before its final (and possibly
+  partial) chunk could run. That chunk now runs, and the per-token accept
+  loop truncates it to land exactly on the cap.
+
 - Fixed slicing and `view()` on a `max.driver.DevicePinnedBuffer` silently
   returning a plain `Buffer`. The decayed type lost the pinned buffer's
   no-synchronization behavior, so a later `to_numpy()` on the slice triggered

@@ -35,6 +35,7 @@ from max.pipelines.lib.pipeline_variants.structured_output_backend import (
 from max.pipelines.lib.pipeline_variants.utils import (
     StructuredOutputHelper,
     build_response,
+    update_spec_decode_context_and_prepare_responses,
 )
 from max.pipelines.lib.tool_parsing import StructuralTagToolParser, register
 from max.pipelines.modeling.types import ParsedToolCall, RequestID
@@ -238,6 +239,78 @@ class TestBuildResponse:
         # With max_growth_per_step=1: 50 + 1 = 51 > 50 → MAXIMUM_LENGTH
         build_response(
             [ctx], max_seq_len=global_max_seq_len, max_growth_per_step=1
+        )
+        assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
+
+
+class TestSpecDecodeStopsExactlyAtPerRequestCap:
+    """Regression for CENG-827.
+
+    With Eagle spec decoding on, ``build_response`` reserved a full
+    ``num_speculative_tokens + 1`` worst-case chunk of slack against the
+    *per-request* cap (``context.max_length``), so a request was marked
+    ``MAXIMUM_LENGTH`` up to ``num_speculative_tokens`` tokens before it
+    actually reached its cap -- the final (possibly partial) accept chunk
+    that would have landed exactly on the cap never got a chance to run.
+    That slack must only be reserved against the hard model/KV limit
+    (``max_seq_len``), never against the per-request cap.
+    """
+
+    def test_stops_exactly_at_cap_on_non_chunk_aligned_boundary(self) -> None:
+        prompt_len = 10
+        num_speculative_tokens = 3
+        max_gen_tokens = 20
+        # Hard model/KV limit is far above the per-request cap, so only the
+        # per-request cap should ever gate termination in this test.
+        max_seq_len = 10_000
+
+        ctx = create_text_context(
+            prompt_len=prompt_len, max_length=prompt_len + max_gen_tokens
+        )
+
+        # Phase 1: overlap scheduler always appends a placeholder future
+        # token before a request's first spec-decode verify step.
+        ctx.update_with_future_token()
+
+        # Per-step accepted-draft counts (out of 3 drafts). Each full cycle
+        # (a placeholder future token followed by its verify step) commits
+        # num_accept + 1 tokens (accepted drafts + bonus token) -- these sum
+        # to exactly max_gen_tokens (20). The step sizes -- 4, 4, 4, 4, 2, 2
+        # -- don't line up on a fixed 4-token (num_speculative_tokens + 1)
+        # chunk grid, so the cap is reached by a partial (2-token) chunk,
+        # not a full one: exactly the case the per-token accept loop in
+        # ``update_spec_decode_context_and_prepare_responses`` truncates to
+        # land precisely on the cap -- if ``build_response`` lets that final
+        # step run at all.
+        accept_counts = [3, 3, 3, 3, 1, 1]
+        assert all(c <= num_speculative_tokens for c in accept_counts)
+        assert sum(c + 1 for c in accept_counts) == max_gen_tokens
+
+        for num_accept in accept_counts:
+            if ctx.is_done:
+                # The cap was already reached (e.g. by a placeholder future
+                # token landing exactly on it); the scheduler would not have
+                # driven a further step for this request.
+                break
+            update_spec_decode_context_and_prepare_responses(
+                draft_tokens=np.array([[101, 102, 103]], dtype=np.int32),
+                next_draft_tokens=np.array([[201, 202, 203]], dtype=np.int32),
+                num_accepted_draft_tokens=np.array(
+                    [num_accept], dtype=np.int32
+                ),
+                next_tokens=np.array([999], dtype=np.int32),
+                context_batch=[ctx],
+                max_seq_len=max_seq_len,
+            )
+            if ctx.is_done:
+                break
+            # Mirrors the overlap scheduler: only a still-active request gets
+            # a placeholder future token for its next verify step.
+            ctx.update_with_future_token()
+
+        assert ctx.tokens.generated_length == max_gen_tokens, (
+            f"expected exactly {max_gen_tokens} generated tokens, got "
+            f"{ctx.tokens.generated_length}"
         )
         assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
 

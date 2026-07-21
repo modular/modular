@@ -135,9 +135,21 @@ def build_response(
             upper_bound=max_seq_len, default=context.max_length
         )
 
-        # Mark as done if the next step would exceed the max length.
+        # Mark as done once the per-request cap is actually reached. Unlike
+        # the hard model/KV limit below, no growth slack is reserved here:
+        # the per-token accept loop above already truncates the final
+        # accepted chunk to land exactly on this cap, so reserving a full
+        # worst-case spec chunk of slack against it would stop the request
+        # up to `max_growth_per_step` tokens early (CENG-827).
         current_length = context.tokens.processed_length + 1
-        if current_length + max_growth_per_step > context_max_length:
+        if current_length >= context_max_length:
+            context.status = GenerationStatus.MAXIMUM_LENGTH
+        # Mark as done if the next step's worst-case growth (all drafts
+        # accepted + bonus token) would exceed the hard model/KV capacity.
+        # The KV pool reserves `max_seq_len + spec_slack` up front (see
+        # overlap_text_generation.py), so running one more speculative step
+        # here can never overflow it.
+        elif current_length + max_growth_per_step > max_seq_len:
             context.status = GenerationStatus.MAXIMUM_LENGTH
 
         output = context.to_generation_output()
