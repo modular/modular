@@ -8,6 +8,7 @@
 # and does not include any useful testing by itself.
 
 
+# expected-note @+1 {{function declared here}}
 def imported_fn():
     return
 

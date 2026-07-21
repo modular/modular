@@ -1942,17 +1942,25 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
 
 SharedState::ModuleState &SharedState::createErrorModuleState(
     SMLoc loc, StringAttr name, ASTDecl &errorContext, const Twine &errorMsg) {
-  // Check if we already have an error decl with this name.
-  if (auto *it = impl->topLevelModuleState->nestedModules.lookup(name))
+  // Register the error state in the scope whose lookup failed.
+  ModuleState *contextState = impl->moduleStates.lookup(&errorContext);
+  if (!contextState)
+    contextState = impl->topLevelModuleState.get();
+
+  // Reuse a previously-created error state for this name so the message is
+  // emitted once per scope.
+  if (auto *it = contextState->nestedModules.lookup(name)) {
+    assert(it->decl && it->decl->isErroneous() &&
+           "error state requested for a name bound to a real module");
     return *it;
+  }
 
   // Emit the error message the first time this error module state is created.
   emitError(loc, errorMsg);
 
   // Otherwise, create one.
-  ASTDecl *decl =
-      &declResolver->addErroneousDecl(name, loc, impl->topLevelDecl);
-  ModuleState &state = impl->topLevelModuleState->insertNestedModule(
+  ASTDecl *decl = &declResolver->addErroneousDecl(name, loc, &errorContext);
+  ModuleState &state = contextState->insertNestedModule(
       name, std::make_unique<ModuleState>(decl));
   impl->moduleStates[state.decl] = &state;
   return state;
