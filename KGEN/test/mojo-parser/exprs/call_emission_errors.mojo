@@ -257,7 +257,7 @@ def exclusivity[
     # Compiler injects a temporary to make this ok.
     x = x^
 
-    # expected-error @below {{aliasing values passed mutably to 'b' argument and mutably to 'a' argument in 'take_two_spans' call}}
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed mutably to 'b' argument in 'take_two_spans' call}}
     # expected-note @below {{'origin_of(spanlife)' memory accessed through reference embedded in value of type 'MyMutSpan[spanlife]'}}
     take_two_spans(span, span)
 
@@ -323,34 +323,34 @@ def inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     mutate_two(a, b)
 
     # This is not.
-    # expected-error @below {{aliasing values passed mutably to 'b' argument and mutably to 'a' argument in 'mutate_two' call}}
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed mutably to 'b' argument in 'mutate_two' call}}
     # expected-note @below {{'origin_of(a)' value is passed through aliasing 'mut' argument}}
     mutate_two(a, a)
 
     # This is ok: field sensitivity.
     mutate_two(s.a, s.b)
 
-    # expected-error @below {{aliasing values passed mutably to 'b' argument and mutably to 'a' argument in 'mutate_two' call}}
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed mutably to 'b' argument in 'mutate_two' call}}
     # expected-note @below {{'origin_of(s.a)' value is passed through aliasing 'mut' argument}}
     mutate_two(s.a, s.a)
 
-    # expected-error @below {{aliasing values passed mutably to 'b' argument and mutably to 'a' argument in 'mutate_two' call}}
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed mutably to 'b' argument in 'mutate_two' call}}
     # expected-note @below {{'origin_of(s)' value is passed through aliasing 'mut' argument}}
     mutate_two(s.a, s)
 
-    # expected-error @below {{aliasing values passed mutably to 'b' argument and mutably to 'a' argument in 'mutate_two' call}}
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed mutably to 'b' argument in 'mutate_two' call}}
     # expected-note @below {{'origin_of(s.a)' value is passed through aliasing 'mut' argument}}
     mutate_two(s, s.a)
 
-    # expected-error @below {{aliasing values passed mutably to 'b' argument and mutably to 'a' argument in 'take_two_owned' call}}
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed mutably to 'b' argument in 'take_two_owned' call}}
     # expected-note @below {{'origin_of(s)' value is passed through aliasing 'var' argument}}
     take_two_owned(s^, s^)
 
-    # expected-error @below {{aliasing values passed immutably to 'b' argument and mutably to 'a' argument in 'mutate_one_read_one' call}}
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed immutably to 'b' argument in 'mutate_one_read_one' call}}
     # expected-note @below {{'origin_of(s.a)' value is passed through aliasing 'imm' argument}}
     mutate_one_read_one(s, s.a)
 
-    # expected-error @below {{aliasing values passed mutably to 'b' argument and mutably to 'a' argument in 'mutate_two_AnyLifetime' call}}
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed mutably to 'b' argument in 'mutate_two_AnyLifetime' call}}
     # expected-note @below {{'origin_of(a)' value is passed through aliasing 'ref' argument}}
     mutate_two_AnyLifetime(a, a)
 
@@ -359,15 +359,15 @@ def inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     mutate_variadic_any(s)
     mutate_variadic_any(a, b)
 
-    # expected-error @below {{aliasing values passed mutably to 'values' argument and mutably to 'values' argument in 'mutate_variadic_any' call}}
+    # expected-error @below {{aliasing values passed mutably to 'values' argument and passed mutably to 'values' argument in 'mutate_variadic_any' call}}
     # expected-note @below {{'origin_of(a)' value is passed through aliasing 'mut' argument}}
     mutate_variadic_any(a, a)
 
-    # expected-error @below {{aliasing values passed mutably to 'values' argument and mutably to 'values' argument in 'mutate_variadic_any' call}}
+    # expected-error @below {{aliasing values passed mutably to 'values' argument and passed mutably to 'values' argument in 'mutate_variadic_any' call}}
     # expected-note @below {{'origin_of(a)' value is passed through aliasing 'mut' argument}}
     mutate_variadic_any(a, b, a)
 
-    # expected-error @below {{aliasing values passed mutably to 'values' argument and mutably to 'values' argument in 'mutate_variadic_any' call}}
+    # expected-error @below {{aliasing values passed mutably to 'values' argument and passed mutably to 'values' argument in 'mutate_variadic_any' call}}
     # expected-note @below {{'origin_of(s)' value is passed through aliasing 'mut' argument}}
     mutate_variadic_any(s, s)
 
@@ -375,15 +375,15 @@ def inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     mutate_pack(a)
     mutate_pack(a, s)
 
-    # expected-error @below {{aliasing values passed mutably to 'strs' argument and mutably to 'strs' argument in 'mutate_pack' call}}
+    # expected-error @below {{aliasing values passed mutably to 'strs' argument and passed mutably to 'strs' argument in 'mutate_pack' call}}
     # expected-note @below {{'origin_of(a)' value is passed through aliasing 'mut' argument}}
     mutate_pack(a, a)
 
-    # expected-error @below {{aliasing values passed mutably to 'strs' argument and mutably to 'strs' argument in 'mutate_pack' call}}
+    # expected-error @below {{aliasing values passed mutably to 'strs' argument and passed mutably to 'strs' argument in 'mutate_pack' call}}
     # expected-note @below {{'origin_of(a)' value is passed through aliasing 'mut' argument}}
     mutate_pack(a, b, a)
 
-    # expected-error @below {{aliasing values passed mutably to 'strs' argument and mutably to 'strs' argument in 'mutate_pack' call}}
+    # expected-error @below {{aliasing values passed mutably to 'strs' argument and passed mutably to 'strs' argument in 'mutate_pack' call}}
     # expected-note @below {{'origin_of(s)' value is passed through aliasing 'mut' argument}}
     mutate_pack(s, s)
 
@@ -432,7 +432,7 @@ def take_owned_and_mutate_rp(var a: MyRPStruct2, mut b: MyRPStruct2):
 
 
 def rp_exclusivity(mut x: MyRPStruct2):
-    # expected-error @below {{aliasing values passed mutably to 'b' argument and mutably to 'a' argument in 'take_owned_and_mutate_rp' call}}
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed mutably to 'b' argument in 'take_owned_and_mutate_rp' call}}
     # expected-note @below {{'origin_of(x)' value is passed through aliasing 'mut' argument}}
     take_owned_and_mutate_rp(x^, x)
 
@@ -442,14 +442,14 @@ def take_and_mutate_rp(a: MyRPStruct, mut b: MyRPStruct2):
 
 
 def rp_exclusivity2(mut x: MyRPStruct2):
-    # expected-error @below {{aliasing values passed mutably to 'b' argument and immutably to 'a' argument in 'take_and_mutate_rp' call}}
+    # expected-error @below {{aliasing values passed immutably to 'a' argument and passed mutably to 'b' argument in 'take_and_mutate_rp' call}}
     # expected-note @below {{'origin_of(x)' value is passed through aliasing 'mut' argument}}
     take_and_mutate_rp(x.b, x)
 
 def bad_interior_origin_example_exclusivity():
     var b : Buf
-    # expected-error @below {{aliasing values passed mutably to 'self' argument and immutably to 'size' argument in 'Buf' initializer call}}
-    # expected-note @below {{'origin_of(b)' value is passed through aliasing 'out' argument}}
+    # expected-error @below {{aliasing values passed immutably to 'size' argument and constructed as a result in 'Buf' initializer call}}
+    # expected-note @below {{introduce a temporary to avoid mutating the call result while accessing it through an argument}}
     b = Buf(b.view())   # copy from own interior view, then reassign
 
 struct Buf:
@@ -595,6 +595,6 @@ def nested_mutability_disabled2(mut a: String, b: String): pass
 def test_nested_mutability_disabled():
     var s : String
     nested_mutability_disabled1(s, s) # This is ok, 'ref' is treated readonly
-    # expected-error @below {{aliasing values passed immutably to 'b' argument and mutably to 'a' argument in 'nested_mutability_disabled2' call}}
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed immutably to 'b' argument in 'nested_mutability_disabled2' call}}
     # expected-note @below {{'origin_of(s)' value is passed through aliasing 'imm' argument}}
     nested_mutability_disabled2(s, s)

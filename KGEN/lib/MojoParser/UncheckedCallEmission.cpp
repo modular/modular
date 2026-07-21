@@ -1586,12 +1586,9 @@ void ExclusivityChecker::diagViolation(Value val, unsigned argIdx,
 
   FnTypeGeneratorType calleeType = getCalleeType();
   MojoInflightDiag diag = emitError(callExpr->getLoc());
+  ArgConvention convention = calleeType.getArgConvention(argIdx);
 
   diag << "aliasing values passed ";
-  diag << (isImmut ? "immutably" : "mutably") << " to "
-       << calleeType.getArgName(argIdx) << " argument and ";
-  diag << argumentValues[argIdx].expr->getRange();
-
   diag << (previousAccess.isImmut ? "immutably" : "mutably");
   if (std::optional<unsigned> prevIdx = previousAccess.argIdx) {
     diag << " to " << calleeType.getArgName(*prevIdx) << " argument";
@@ -1600,6 +1597,16 @@ void ExclusivityChecker::diagViolation(Value val, unsigned argIdx,
     // TODO: Dig into the closure to get better error messages.
     diag << " as an implicit closure capture";
   }
+
+  diag << " and ";
+  if (convention != ArgConvention::ByRefResult) {
+    diag << "passed " << (isImmut ? "immutably" : "mutably") << " to "
+         << calleeType.getArgName(argIdx) << " argument";
+    diag << argumentValues[argIdx].expr->getRange();
+  } else {
+    diag << "constructed as a result";
+  }
+
   diag << " in ";
   switch (syntax) {
   default:
@@ -1644,9 +1651,15 @@ void ExclusivityChecker::diagViolation(Value val, unsigned argIdx,
   // If the origin in question is because of the top-level ref binding, then
   // we have a common problem where something is passed both mutable and
   // borrowed.
-  ArgConvention convention = calleeType.getArgConvention(argIdx);
   if (calleeType.isAnyVarArg(argIdx))
     convention = calleeType.getVariadicConvention(argIdx);
+
+  // Special case the result slot.
+  if (convention == ArgConvention::ByRefResult) {
+    diag << "introduce a temporary to avoid mutating the call result while "
+            "accessing it through an argument";
+    return;
+  }
 
   if (hasAddress(convention) &&
       OriginMutCastAttr::strip(sugarCast<RefType>(val.getType()).getOrigin()) ==
