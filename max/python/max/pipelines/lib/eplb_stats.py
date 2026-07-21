@@ -49,8 +49,14 @@ __all__ = [
 class EplbStatsMetadata:
     """Static metadata describing the shape and semantics of a snapshot."""
 
+    num_layers: int
+    """Total transformer layers profiled. Equals the histogram row count."""
+
     num_moe_layers: int
-    """Number of MoE layers being profiled."""
+    """Count of true MoE (routing) layers. Dense layers are all-zero rows."""
+
+    moe_layer_indices: tuple[int, ...]
+    """Histogram row indices that correspond to MoE layers (row i == layer i)."""
 
     num_logical_experts: int
     """Number of logical experts per layer."""
@@ -59,8 +65,20 @@ class EplbStatsMetadata:
     """Top-k experts selected per token."""
 
     def __post_init__(self) -> None:
-        assert self.num_moe_layers > 0, (
-            f"num_moe_layers must be > 0, got {self.num_moe_layers!r}"
+        assert self.num_layers > 0, (
+            f"num_layers must be > 0, got {self.num_layers!r}"
+        )
+        assert 0 < self.num_moe_layers <= self.num_layers, (
+            f"num_moe_layers must be in (0, {self.num_layers}], got "
+            f"{self.num_moe_layers!r}"
+        )
+        assert len(self.moe_layer_indices) == self.num_moe_layers, (
+            f"moe_layer_indices length {len(self.moe_layer_indices)} != "
+            f"num_moe_layers {self.num_moe_layers}"
+        )
+        assert all(0 <= i < self.num_layers for i in self.moe_layer_indices), (
+            f"moe_layer_indices out of range [0, {self.num_layers}): "
+            f"{self.moe_layer_indices!r}"
         )
         assert self.num_logical_experts > 0, (
             f"num_logical_experts must be > 0, got {self.num_logical_experts!r}"
@@ -71,49 +89,50 @@ class EplbStatsMetadata:
         )
         assert self.num_experts_per_token <= self.num_logical_experts, (
             "num_experts_per_token must be <= num_logical_experts, got "
-            f"{self.num_experts_per_token!r} and "
-            f"{self.num_logical_experts!r}"
+            f"{self.num_experts_per_token!r} and {self.num_logical_experts!r}"
         )
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a JSON-safe dict representation."""
         return {
+            "num_layers": self.num_layers,
             "num_moe_layers": self.num_moe_layers,
+            "moe_layer_indices": list(self.moe_layer_indices),
             "num_logical_experts": self.num_logical_experts,
             "num_experts_per_token": self.num_experts_per_token,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EplbStatsMetadata:
-        """Constructs an instance from a dict produced by method to_dict.
+        """Constructs an instance from a dict produced by ``to_dict``.
 
-        Args:
-            data: A dict produced by method to_dict.
-
-        Returns:
-            An `EplbStatsMetadata` class instance.
-
-        Raises:
-            ValueError: If a required field is missing or has the wrong
-                type.
+        Tolerates legacy snapshots that only had ``num_moe_layers`` (which then
+        meant the row count): those map to ``num_layers`` with every row treated
+        as MoE.
         """
-        required = (
-            "num_moe_layers",
-            "num_logical_experts",
-            "num_experts_per_token",
-        )
-        for key in required:
+        for key in ("num_logical_experts", "num_experts_per_token"):
             if key not in data:
                 raise ValueError(f"Missing required field: {key}")
             if not isinstance(data[key], int) or isinstance(data[key], bool):
                 raise ValueError(
                     f"Field {key} must be an int, got {data[key]!r}"
                 )
-
+        if "num_layers" in data:
+            num_layers = int(data["num_layers"])
+            num_moe_layers = int(data.get("num_moe_layers", num_layers))
+        else:
+            # Legacy: num_moe_layers was the row count.
+            num_layers = int(data["num_moe_layers"])
+            num_moe_layers = num_layers
+        moe_layer_indices = tuple(
+            int(i) for i in data.get("moe_layer_indices", range(num_layers))
+        )
         return cls(
-            num_moe_layers=data["num_moe_layers"],
-            num_logical_experts=data["num_logical_experts"],
-            num_experts_per_token=data["num_experts_per_token"],
+            num_layers=num_layers,
+            num_moe_layers=num_moe_layers,
+            moe_layer_indices=moe_layer_indices,
+            num_logical_experts=int(data["num_logical_experts"]),
+            num_experts_per_token=int(data["num_experts_per_token"]),
         )
 
 
@@ -137,14 +156,18 @@ class EplbStatsSnapshot:
     """Static shape/semantics descriptor."""
 
     histogram: NDArray[np.int64]
-    """Int64 array of shape ``(num_moe_layers, num_logical_experts)``. Read-only."""
+    """Int64 array of shape ``(num_layers, num_logical_experts)``. Read-only."""
 
     total_tokens: int = 0
-    """Total number of tokens that contributed to the histogram.
+    """Non-draft (confirmed)  tokens fed to the target. In spec decode this
+    EXCLUDES draft candidates, so it is < total_routed_tokens."""
 
-    ``sum(histogram) == total_tokens * num_experts_per_token`` when
-    accumulation is well-formed.
-    """
+    total_routed_tokens: int = 0
+    """Tokens actually routed through the target's experts (confirmed +
+    verified drafts). Any MoE row sums to
+    ``total_routed_tokens * num_experts_per_token``; equivalently
+    ``total_routed_tokens == total_tokens + draft_candidate_tokens``."""
+
     hostname: str | None = None
 
     def __post_init__(self) -> None:
@@ -153,7 +176,7 @@ class EplbStatsSnapshot:
             f"{type(self.histogram).__name__}"
         )
         expected_shape = (
-            self.metadata.num_moe_layers,
+            self.metadata.num_layers,
             self.metadata.num_logical_experts,
         )
         assert self.histogram.shape == expected_shape, (
@@ -170,6 +193,14 @@ class EplbStatsSnapshot:
         # Freeze the array so a consumer cannot mutate the snapshot.
         self.histogram.setflags(write=False)
 
+    @property
+    def draft_candidate_tokens(self) -> int:
+        """Extra tokens routed by verified speculative draft candidates.
+
+        0 on non-spec paths.
+        """
+        return max(0, self.total_routed_tokens - self.total_tokens)
+
     @classmethod
     def from_array(
         cls,
@@ -177,6 +208,7 @@ class EplbStatsSnapshot:
         histogram: NDArray[np.int64],
         *,
         total_tokens: int = 0,
+        total_routed_tokens: int = 0,
         hostname: str | None = None,
     ) -> EplbStatsSnapshot:
         """Builds a snapshot, defensively copying the histogram.
@@ -190,6 +222,8 @@ class EplbStatsSnapshot:
                 be copied.
             total_tokens: Total number of tokens contributing to the
                 histogram so far.
+            total_routed_tokens: Total number of tokens routed to experts,
+                including speculative draft candidates.
             hostname: Optional worker hostname to tag the snapshot with.
 
         Returns:
@@ -202,6 +236,7 @@ class EplbStatsSnapshot:
             metadata=metadata,
             histogram=np.array(histogram, dtype=np.int64, copy=True),
             total_tokens=int(total_tokens),
+            total_routed_tokens=int(total_routed_tokens),
             hostname=hostname,
         )
 
@@ -214,12 +249,16 @@ class EplbStatsSnapshot:
         Returns:
             A dict that is safe to pass directly to json.dumps.
         """
-        return {
+        d = {
             "metadata": self.metadata.to_dict(),
             "histogram": self.histogram.tolist(),
-            "total_tokens": self.total_tokens,
+            "non_draft_tokens": self.total_tokens,
+            "total_routed_tokens": self.total_routed_tokens,
             "hostname": self.hostname,
         }
+        if self.draft_candidate_tokens > 0:
+            d["draft_candidate_tokens"] = self.draft_candidate_tokens
+        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EplbStatsSnapshot:
@@ -240,7 +279,7 @@ class EplbStatsSnapshot:
         for key in (
             "metadata",
             "histogram",
-            "total_tokens",
+            "non_draft_tokens",
             "hostname",
         ):
             if key not in data:
@@ -263,16 +302,20 @@ class EplbStatsSnapshot:
             raise ValueError(
                 f"histogram could not be parsed as int64 array: {e}"
             ) from e
-        total_tokens = data["total_tokens"]
-        if not isinstance(total_tokens, int) or isinstance(total_tokens, bool):
+        non_draft_tokens = data["non_draft_tokens"]
+        if not isinstance(non_draft_tokens, int) or isinstance(
+            non_draft_tokens, bool
+        ):
             raise ValueError(
-                f"total_tokens must be an int, got {total_tokens!r}"
+                f"non_draft_tokens must be an int, got {non_draft_tokens!r}"
             )
+        total_routed_tokens = data.get("total_routed_tokens", non_draft_tokens)
 
         return cls.from_array(
             metadata=metadata,
             histogram=histogram,
-            total_tokens=total_tokens,
+            total_tokens=non_draft_tokens,
+            total_routed_tokens=total_routed_tokens,
         )
 
 
@@ -307,7 +350,7 @@ class EplbStatsAccumulator:
                 ).to(d)
                 for d in devices
             ]
-            for _ in range(metadata.num_moe_layers)
+            for _ in range(metadata.num_layers)
         ]
 
     @property
@@ -342,33 +385,51 @@ class EplbStatsAccumulator:
         Returns:
             An immutable `EplbStatsSnapshot`.
         """
-        num_layers = self._metadata.num_moe_layers
+        num_layers = self._metadata.num_layers
         num_experts = self._metadata.num_logical_experts
         histogram = np.zeros((num_layers, num_experts), dtype=np.int64)
         for layer_idx, layer_bufs in enumerate(self._layer_device_buffers):
             histogram[layer_idx] = sum(b.to_numpy() for b in layer_bufs)
         with self._lock:
             total = self._total_tokens
+        # Tokens routed through the experts, derived from the histogram: each
+        # routed token increments exactly ``top_k`` bins, so ``row_sum / top_k``
+        # is the exact per-layer routed-token count. It is uniform across MoE
+        # layers for target-only profiling; take the max non-zero row. This
+        # already includes any speculative draft candidates the target verified
+        # (wherever the harness injects them), so no separate host counter is
+        # needed. Falls back to ``total`` when nothing has routed yet.
+        row_sums = histogram.sum(axis=1)
+        nonzero = row_sums[row_sums > 0]
+        top_k = self._metadata.num_experts_per_token
+        routed = int(nonzero.max() // top_k) if nonzero.size else total
         return EplbStatsSnapshot.from_array(
             metadata=self._metadata,
             histogram=histogram,
             total_tokens=total,
+            total_routed_tokens=routed,
             hostname=hostname,
         )
 
     def reset(self) -> None:
-        """Zeros every per-(layer, device) counter buffer and the token count."""
+        """Zeros every per-(layer, device) counter buffer and the token count.
+
+        Zeros in place instead of reallocating: device-graph capture pins the
+        pre-captured decode graph to the exact Buffer objects this accumulator
+        owned at warmup. Reallocating orphans those buffers, so decode-step
+        accumulations (which run via captured-graph replay) land in the orphaned
+        buffers while snapshot() reads the new ones. Preserving buffer identity
+        keeps the captured decode graph writing the live buffers. Runs on the
+        model-worker thread between forward steps, so the zero cannot race a
+        forward pass.
+        """
         with self._lock:
-            self._layer_device_buffers = [
-                [
-                    Buffer.zeros(
-                        shape=(self.metadata.num_logical_experts,),
-                        dtype=DType.int64,
-                    ).to(d)
-                    for d in self._devices
-                ]
-                for _ in range(self._metadata.num_moe_layers)
-            ]
+            zero_host = Buffer.from_numpy(
+                np.zeros((self._metadata.num_logical_experts,), dtype=np.int64)
+            )
+            for layer_bufs in self._layer_device_buffers:
+                for buf in layer_bufs:
+                    buf.inplace_copy_from(zero_host)
             self._total_tokens = 0
 
 

@@ -402,6 +402,10 @@ class ModelWorker:
                 pipeline, settings.eplb_profile
             )
 
+            if eplb_stats_accumulator is not None:
+                # Zero warmup/graph-capture skew so the first snapshot is clean.
+                eplb_stats_accumulator.reset()
+
             eplb_stats_backend = (
                 EplbStatsBackend(
                     zmq_endpoint_base,

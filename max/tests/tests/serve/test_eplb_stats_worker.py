@@ -28,7 +28,11 @@ from max.serve.pipelines.model_worker import _get_eplb_stats_accumulator
 
 def _md() -> EplbStatsMetadata:
     return EplbStatsMetadata(
-        num_moe_layers=2, num_logical_experts=4, num_experts_per_token=2
+        num_layers=2,
+        num_moe_layers=2,
+        moe_layer_indices=(0, 1),
+        num_logical_experts=4,
+        num_experts_per_token=2,
     )
 
 

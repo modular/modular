@@ -857,10 +857,20 @@ class KimiK2_5Model(
         raise RuntimeError("No batch processor configured for KimiK2_5Model")
 
     def _eplb_stats_metadata(self) -> EplbStatsMetadata:
-        """Returns shape descriptor for the language MoE layers."""
+        """Returns shape descriptor for the language layers (row i == layer i)."""
         text = self.huggingface_config.text_config
+        num_layers = text.num_hidden_layers
+        first_k_dense = int(getattr(text, "first_k_dense_replace", 0) or 0)
+        moe_freq = int(getattr(text, "moe_layer_freq", 1) or 1)
+        moe_idx = tuple(
+            i
+            for i in range(num_layers)
+            if i >= first_k_dense and i % moe_freq == 0
+        )
         return EplbStatsMetadata(
-            num_moe_layers=text.num_hidden_layers,
+            num_layers=num_layers,
+            num_moe_layers=len(moe_idx),
+            moe_layer_indices=moe_idx,
             num_logical_experts=text.n_routed_experts,
             num_experts_per_token=text.num_experts_per_tok,
         )
@@ -879,7 +889,7 @@ class KimiK2_5Model(
             snap = EplbStatsSnapshot.from_dict(json.load(f))
         md = self._eplb_stats_metadata()
         if (
-            snap.metadata.num_moe_layers != md.num_moe_layers
+            snap.metadata.num_layers != md.num_layers
             or snap.metadata.num_logical_experts != md.num_logical_experts
         ):
             raise ValueError(
