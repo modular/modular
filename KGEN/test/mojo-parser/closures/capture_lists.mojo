@@ -237,3 +237,35 @@ def toyImm(A: String, B: String):
         use(A, B)
         return A
     takeIt(immAll)
+
+# // -----
+
+# Make sure sugar is preserved correctly for argument type.
+
+comptime MyKey = Movable
+
+struct Inner[T: MyKey]:
+    var _x: Int
+
+    def __init__(out self):
+        self._x = 0
+
+    def deinit_with(
+        deinit self, deinit_func: Some[def(var Self.T, var NoneType)], /
+    ):
+        pass
+
+
+struct Outer[T: MyKey]:
+    var _inner: Inner[Self.T]
+
+    def __init__(out self):
+        self._inner = Inner[Self.T]()
+
+    def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
+        # CHECK: lit.fn @"forward
+        # CHECK-SAME: %key: !lit.ref<:!alias_MyKey
+        def forward(var key: Self.T, var value: NoneType) {imm deinit_func}:
+            deinit_func(key^)
+
+        self._inner^.deinit_with(forward)

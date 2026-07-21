@@ -153,8 +153,13 @@ public:
   Attribute tryReplace(Attribute attr, size_t depth) {
     if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr)) {
       if (indexRef.getDepth() == depth &&
-          indexRef.getIndex() < explicitParamDecls.size())
-        return ParamDeclRefAttr::get(explicitParamDecls[indexRef.getIndex()]);
+          indexRef.getIndex() < explicitParamDecls.size()) {
+        // Replace with the name decl, but reuse the type on the index ref to
+        // preserve sugar.
+        return ParamDeclRefAttr::get(
+            explicitParamDecls[indexRef.getIndex()].getName(),
+            replace(indexRef.getType()));
+      }
       return {};
     }
     if (auto originRef = dyn_cast<ImplicitOriginRefAttr>(attr)) {
