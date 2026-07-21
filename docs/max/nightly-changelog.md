@@ -267,6 +267,9 @@ This version is still a work in progress.
   rather than a default.
 - Added a `max-benchmark` conda package for parity with the `max[benchmark]`
   wheel extra.
+- Added a `max-serve` conda package for parity with the `max[serve]` wheel
+  extra.
+- Added a `max[all]` extra to the wheel, and `max-all` package for Conda.
 
 ### Inference server
 
