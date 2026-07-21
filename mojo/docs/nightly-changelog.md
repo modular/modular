@@ -758,6 +758,10 @@ This version is still a work in progress.
   Mojo `Error` into a Python exception via `PyErr_SetString` and returns a null
   `PyObjectPtr`.
 
+- `PythonObject(value: Bool)` and `PythonObject(value: Scalar[DType.bool])` now
+  read the cached `Py_True` / `Py_False` singletons directly instead of going
+  through `PyBool_FromLong`, skipping one C-call dispatch per Mojo `Bool`
+  returned to Python.
 - Iterating over a `String`, `StringSlice`, or `StringLiteral` now yields
   grapheme clusters by default. Their `__iter__()` and `__reversed__()` methods
   return a `GraphemeSliceIter`, so `for c in my_string:` produces what a user
