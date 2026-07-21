@@ -301,6 +301,8 @@ ParamListSizeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 TypedAttr ParamListSizeAttr::get(TypedAttr variadic) {
+  // Canonicalize upcast on param_list.
+  variadic = UpcastAttr::strip(variadic);
   auto vaAttr = sugarDynCast<ParamListAttr>(variadic);
   if (vaAttr)
     return IntegerAttr::get(IndexType::get(variadic.getContext()),
