@@ -14,6 +14,11 @@ context. This page covers resources available on docs.modular.com:
 - **Documentation files** (`llms.txt`): Raw text files that AI tools use for
 website navigation hints and direct access to up-to-date API documentation.
 
+- **Docs MCP server**: A hosted [Model Context
+  Protocol](https://modelcontextprotocol.io) server that gives your assistant
+  live, queryable access to the docs: search, API symbol lookup, code
+  examples, and import validation.
+
 - **Project context files** (`CLAUDE.md` and `AGENTS.md`): Markdown files in
   your
 project that provide AI assistants with build commands, coding conventions,
@@ -77,6 +82,74 @@ Read https://docs.modular.com/llms-python.txt for MAX Python API documentation
 
 For more details, see the section below about [our `llms.txt`
 files](#modular-llmstxt-files).
+
+## Connect to the docs MCP server
+
+Connect the docs MCP server to give your AI assistant live access to MAX's
+documentation. Your assistant can search all of MAX's tutorials, API
+references, and code examples while it plans, writes, and debugs your code, so
+its answers stay grounded in the current documentation instead of its
+training data.
+
+Your assistant can usually set up the MCP server itself with a prompt like
+this:
+
+```text
+Add the MAX docs MCP server at https://mcp.modular.com/mcp/ and verify it
+by searching the docs.
+```
+
+Or configure it manually in your tool's settings.
+
+With Claude Code, add the server from the command line:
+
+```sh
+claude mcp add --transport http max-docs https://mcp.modular.com/mcp/
+```
+
+With Cursor, add the server to `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "max-docs": {
+      "url": "https://mcp.modular.com/mcp/"
+    }
+  }
+}
+```
+
+Any other client that supports MCP's streamable HTTP transport connects with
+the same URL. The server indexes both the nightly and stable documentation.
+
+### Use the docs MCP server
+
+Once connected, ask your assistant a MAX question and it searches the docs
+before answering, so the response reflects the current documentation. For
+example, if you ask how to port a model, it grounds its answer in the model
+bring-up workflow instead of guessing from its training data.
+
+For example, you might ask:
+
+```text
+How can I port an existing model to MAX?
+```
+
+The assistant searches the docs and responds with grounded guidance:
+
+```text
+To port an existing model to MAX, you implement its architecture with MAX's
+`nn` modules and map the pretrained weights into that graph. Most models reuse
+an existing reference architecture in one of three ways:
+
+1. Remap: point a new architecture at an existing reference model (such as
+   Llama3) when the architectures match.
+2. Subclass: extend a reference model class to override specific layers.
+3. New graph: build the full model from max.nn primitives when it has no
+   close match.
+
+# ... (truncated for brevity)
+```
 
 ## Working in the Modular repository
 
