@@ -227,7 +227,7 @@ def main():
     needs_rp(rp_wrapped)
 
 
-# CHECK: comptime member 'Value' type 'AnyStruct[Variant[T]]' does not conform to trait's required type 'Copyable'
+# CHECK: comptime member 'Value' type 'AnyStruct[Variant[*T.values]]' does not conform to trait's required type 'Copyable'
 
 
 # ===========================================================================
