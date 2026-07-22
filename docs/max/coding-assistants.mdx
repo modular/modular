@@ -122,35 +122,6 @@ With Cursor, add the server to `~/.cursor/mcp.json`:
 Any other client that supports MCP's streamable HTTP transport connects with
 the same URL. The server indexes both the nightly and stable documentation.
 
-### Use the docs MCP server
-
-Once connected, ask your assistant a MAX question and it searches the docs
-before answering, so the response reflects the current documentation. For
-example, if you ask how to port a model, it grounds its answer in the model
-bring-up workflow instead of guessing from its training data.
-
-For example, you might ask:
-
-```text
-How can I port an existing model to MAX?
-```
-
-The assistant searches the docs and responds with grounded guidance:
-
-```text
-To port an existing model to MAX, you implement its architecture with MAX's
-`nn` modules and map the pretrained weights into that graph. Most models reuse
-an existing reference architecture in one of three ways:
-
-1. Remap: point a new architecture at an existing reference model (such as
-   Llama3) when the architectures match.
-2. Subclass: extend a reference model class to override specific layers.
-3. New graph: build the full model from max.nn primitives when it has no
-   close match.
-
-# ... (truncated for brevity)
-```
-
 ## Working in the Modular repository
 
 When you clone the [Modular repo](https://github.com/modular/modular),
