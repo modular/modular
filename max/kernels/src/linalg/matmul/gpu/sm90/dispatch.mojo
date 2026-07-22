@@ -34,7 +34,11 @@ from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ....utils_gpu import MatmulConfig, _vendor_blas_fallback_disabled
 from ..tile_scheduler import MatmulSchedule, RasterOrder
 from .matmul import warp_specialize_gemm_with_multicasting
-from .tuning_configs import _get_tuning_list_bf16, TuningConfigSM90
+from .tuning_configs import (
+    _get_tuning_list_bf16,
+    TuningConfigSM90,
+    TuningGroup,
+)
 from .config import (
     build_configs,
     build_configs_generic,
@@ -792,51 +796,6 @@ def matmul_dispatch_sm90_fp8[
 # BF16 and FP32 Dispatch
 
 # ===----------------------------------------------------------------------=== #
-
-
-def _get_miscellaneous_list[
-    size_factor: Int, mma_k: Int, BK: Int
-]() -> List[TuningConfigSM90]:
-    return [
-        TuningConfigSM90(
-            M=128,
-            N=1536,
-            K=4096,
-            mma_shape=IndexList[3](64, 32, mma_k),
-            block_tile_shape=Index(64, 32, BK),
-            cluster_shape=Index(1, 1, 1),
-            num_pipeline_stages=8,
-            num_consumer=1,
-            partitioned_multicast=False,
-            grid_shape=Index(H100.sm_count, 1),
-            schedule=MatmulSchedule.DS_SCHEDULER,
-        ),
-        TuningConfigSM90(
-            M=128,
-            N=4096,
-            K=1536,
-            mma_shape=IndexList[3](64, 32, mma_k),
-            block_tile_shape=Index(128, 32, BK),
-            cluster_shape=Index(1, 1, 1),
-            num_pipeline_stages=8,
-            num_consumer=2,
-            partitioned_multicast=False,
-            grid_shape=Index(H100.sm_count, 1),
-            schedule=MatmulSchedule.DS_SCHEDULER,
-        ),
-        TuningConfigSM90(
-            M=128,
-            N=1536,
-            K=4608,
-            mma_shape=IndexList[3](64, 32, mma_k),
-            block_tile_shape=Index(64, 32, BK),
-            cluster_shape=Index(1, 1, 1),
-            num_pipeline_stages=8,
-            num_consumer=1,
-            partitioned_multicast=False,
-            schedule=MatmulSchedule.NONE,
-        ),
-    ]
 
 
 def _get_internvl_list[
@@ -2402,11 +2361,6 @@ def matmul_dispatch_sm90_bf16_fp32[
     comptime gemma_3_27b_list = _get_gemma_3_27b_list[size_factor, mma_k, BK]()
     comptime gemma_3_27b_table = Table(gemma_3_27b_list, "gemma_3_27b")
 
-    comptime miscellaneous_list = _get_miscellaneous_list[
-        size_factor, mma_k, BK
-    ]()
-    comptime miscellaneous_table = Table(miscellaneous_list, "miscellaneous")
-
     @parameter
     @always_inline("nodebug")
     def _dispatch[entry: TuningConfigSM90]() raises:
@@ -2476,8 +2430,16 @@ def matmul_dispatch_sm90_bf16_fp32[
     def rule_eq_nk(x: TuningConfigSM90) {} -> Bool:
         return x.K == static_K and x.N == static_N
 
+    @always_inline
+    def rule_eq_nk_group[
+        group: TuningGroup
+    ](x: TuningConfigSM90,) {} -> Bool:
+        return rule_eq_nk(x) and x.dispatch_group == group
+
     # First check the new tuning table before falling back on any old results
-    comptime tuning_nk_idx_list = tuning_table.query_index(rule=rule_eq_nk)
+    comptime tuning_nk_idx_list = tuning_table.query_index(
+        rule=rule_eq_nk_group[TuningGroup.CORE]
+    )
 
     # make sure the domain (nk_idx_list) is not empty!
     comptime if tuning_nk_idx_list:
@@ -2498,13 +2460,10 @@ def matmul_dispatch_sm90_bf16_fp32[
         static_N == 4096 and static_K == 1536
     ):
         if m > 256:
-            comptime nk_idx_list = miscellaneous_table.query_index(
-                rule=rule_eq_nk
+            comptime nk_idx_list = tuning_table.query_index(
+                rule=rule_eq_nk_group[TuningGroup.MISCELLANEOUS]
             )
-            if (
-                _search[miscellaneous_table, domain=nk_idx_list]()
-                == DISPATCH_HIT
-            ):
+            if _search[tuning_table, domain=nk_idx_list]() == DISPATCH_HIT:
                 return DISPATCH_HIT
 
     comptime if a_is_bfloat16_or_float32 and (
@@ -2848,8 +2807,10 @@ def matmul_dispatch_sm90_bf16_fp32[
                 ](c, a, b, ctx)
                 return DISPATCH_HIT
 
-        comptime nk_idx_list = miscellaneous_table.query_index(rule=rule_eq_nk)
-        if _search[miscellaneous_table, domain=nk_idx_list]() == DISPATCH_HIT:
+        comptime nk_idx_list = tuning_table.query_index(
+            rule=rule_eq_nk_group[TuningGroup.MISCELLANEOUS]
+        )
+        if _search[tuning_table, domain=nk_idx_list]() == DISPATCH_HIT:
             return DISPATCH_HIT
 
     # Internvl 2xH100 shapes

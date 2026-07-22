@@ -24,6 +24,14 @@ from std.collections import OptionalReg
 from std.gpu.host.info import H100
 
 
+@fieldwise_init
+struct TuningGroup(Equatable, TrivialRegisterPassable, Writable):
+    var _value: Int32
+
+    comptime CORE = Self(0)
+    comptime MISCELLANEOUS = Self(1)
+
+
 struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
     """Tuning record for a single (M, N, K) SM90 matmul configuration.
 
@@ -47,6 +55,7 @@ struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
     var schedule: MatmulSchedule  # =  MatmulSchedule.NONE
     var splits: OptionalReg[Int]
     var raster_order: OptionalReg[RasterOrder]
+    var dispatch_group: TuningGroup
 
     def __init__(
         out self,
@@ -63,6 +72,7 @@ struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
         schedule: MatmulSchedule = MatmulSchedule.NONE,
         splits: OptionalReg[Int] = None,
         raster_order: OptionalReg[RasterOrder] = None,
+        dispatch_group: TuningGroup = TuningGroup.CORE,
     ):
         self.M = M
         self.N = N
@@ -77,6 +87,7 @@ struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
         self.schedule = schedule
         self.splits = splits
         self.raster_order = raster_order
+        self.dispatch_group = dispatch_group
 
     def write_to(self, mut writer: Some[Writer]):
         """Writes the tuning config as a string.
@@ -84,7 +95,17 @@ struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
         Args:
             writer: The writer to write to.
         """
-        writer.write("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
+        writer.write(
+            "config: ",
+            "m:",
+            self.M,
+            "/n:",
+            self.N,
+            "/k:",
+            self.K,
+            "/group:",
+            self.dispatch_group,
+        )
 
 
 def _get_tuning_list_bf16[mma_k: Int, BK: Int]() -> List[TuningConfigSM90]:
@@ -1154,6 +1175,66 @@ def _get_tuning_list_bf16[mma_k: Int, BK: Int]() -> List[TuningConfigSM90]:
             raster_order=OptionalReg[RasterOrder](
                 RasterOrder.AlongM
             ) if False else None,
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [56]
+        TuningConfigSM90(
+            M=128,
+            N=1536,
+            K=4096,
+            mma_shape=IndexList[3](64, 32, mma_k),
+            block_tile_shape=Index(64 * 1, 32, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=8,
+            num_consumer=1,
+            partitioned_multicast=False,
+            grid_shape=Index(132, H100.sm_count // 132),
+            schedule=MatmulSchedule(3),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(1),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [57]
+        TuningConfigSM90(
+            M=128,
+            N=4096,
+            K=1536,
+            mma_shape=IndexList[3](64, 32, mma_k),
+            block_tile_shape=Index(64 * 2, 32, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=8,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(132, H100.sm_count // 132),
+            schedule=MatmulSchedule(3),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(1),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [58]
+        TuningConfigSM90(
+            M=128,
+            N=1536,
+            K=4608,
+            mma_shape=IndexList[3](64, 32, mma_k),
+            block_tile_shape=Index(64 * 1, 32, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=8,
+            num_consumer=1,
+            partitioned_multicast=False,
+            grid_shape=None,
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(1),
         ),
         # ----------------END-TUNING-LIST-BF16-SMALL----------------
     ]
