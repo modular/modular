@@ -159,7 +159,7 @@ lit.fn @incorrect_param_variadicness<a: dtype stuff>() {
 // -----
 
 kgen.generator @not_lit_func() {
-  // expected-error @below {{'lit.return' op expected to be nested inside a `lit.fn` or `lit.closure.init` operation}}
+  // expected-error @below {{'lit.return' op expected to be nested inside a `lit.fn` operation}}
   lit.return
   kgen.return
 }

@@ -126,11 +126,11 @@ public:
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
                  std::optional<bool> capturingOverride = std::nullopt);
 
-  Value emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
-                      ArrayRef<Capture> captures, TraitDeclOp trait,
-                      Location location, bool isCopyable,
-                      FnTypeGeneratorType closureSig,
-                      ArrayRef<ParamDeclRefAttr> paramCaptures);
+  Value emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
+                    ArrayRef<Capture> captures, TraitDeclOp trait,
+                    Location location, bool isCopyable,
+                    FnTypeGeneratorType closureSig,
+                    ArrayRef<ParamDeclRefAttr> paramCaptures);
   static ASTDecl *addCaptureValue(SharedState &shared, ASTDecl &closure,
                                   StringRef name, SMLoc location);
 
@@ -156,9 +156,8 @@ public:
   ///    def doSomething(self, x:Int):
   ///       self.field.doSomething(x)
   /// This is useful in the context of emitting closures because in the case of
-  /// closures "T" is an abstract type (ClosureType). Wrapping the closure
-  /// instance in a struct renders it eligible to be handled properly by our
-  /// check-lifetimes pass.
+  /// closures "T" is an storage type. TODO: remove wrapper. It was only needed
+  /// for historical purposes
   ASTDecl *createStructWrapper(ASTDecl &moduleDecl, StringRef name,
                                ASTDecl &traitDecl, SMLoc location,
                                TypeConvention typeConvention, bool isCopyable,
@@ -300,28 +299,6 @@ private:
                                       StructFieldOp devicePassedField,
                                       ParamDeclAttr impl,
                                       ParamDeclAttr originSet);
-  /// Validate copy/move/del symbols and build a MemSymbolTripleAttr.
-  /// Emits errors if required symbols are missing for the given convention.
-  MemSymbolTripleAttr
-  validateAndBuildTriple(TypedAttr copy, TypedAttr move, TypedAttr del,
-                         CaptureConvention convention, const Capture &capture,
-                         UnitAttr &isMove, ASTDecl &nestedFnDecl);
-
-  /// Build a MemSymbolTripleAttr for capturing a concrete StructType value.
-  /// Returns {triple, highestConvention}. Returns {nullptr, Unspecified} on
-  /// error.
-  std::pair<MemSymbolTripleAttr, TypeConvention>
-  buildStructCaptureInfo(StructType structType, const Capture &capture,
-                         CaptureConvention convention, UnitAttr &isMove,
-                         ASTDecl &nestedFnDecl);
-
-  /// Build a MemSymbolTripleAttr for capturing a generic ParamType value.
-  /// Uses GetWitnessAttr to reference copy/move/del from the trait constraint.
-  /// Returns {nullptr, Unspecified} on error.
-  std::pair<MemSymbolTripleAttr, TypeConvention>
-  buildParamCaptureInfo(ParamType paramType, const Capture &capture,
-                        CaptureConvention convention, UnitAttr &isMove,
-                        ASTDecl &nestedFnDecl, ASTDecl &moduleDecl);
 
   /// AnyType is the base metatype for all types.
   ClosureParent anyParent;

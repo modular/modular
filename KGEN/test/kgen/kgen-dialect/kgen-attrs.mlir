@@ -159,15 +159,6 @@ kgen.generator @canonicalize_get_witness_upcast<T: !DerivedTrait>() {
 // CHECK: kgen.param.assert <rebind(:i53 42)>, "rebind must fold"
 kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
 
-// COM: Closure Attribute
-
-// CHECK-LABEL: kgen.generator export @bindIt() {
-kgen.generator export @bindIt(){
-  // CHECK-NEXT: kgen.param.declare a: !kgen.param_closure<@foo "fn"> = <#kgen.closure<@foo "fn">>
-  kgen.param.declare a : !kgen.param_closure<@foo "fn"> = <#kgen.closure<@foo "fn">>
-  kgen.return
-}
-
 "some.op"() {
   meta = #kgen.type<!kgen.type> : !kgen.type,
   // COM: non-trivial downcast is folded in evaluation context, not by AttrBuilder
@@ -177,66 +168,6 @@ kgen.generator export @bindIt(){
   identityDowncast = #kgen.downcast<#kgen.type<array<1, i1>> : !kgen.type> : !kgen.type,
   // CHECK-SAME: identityUpcast = #kgen.type<array<1, i1>> : !kgen.type
   identityUpcast = #kgen.upcast<#kgen.type<array<1, i1>> : !kgen.type> : !kgen.type
-} : () -> ()
-
-// CHECK-LABEL: kgen.generator @closureSymbol()
-kgen.generator @closureSymbol(){
-  // CHECK: kgen.param.declare symbol: <!kgen.param_closure<@foo "fn">>
-  // CHECK-SAME: (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> index =
-  // CHECK-SAME: <#kgen.closure.symbol<@foo, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "fn"> ?>>>
-  kgen.param.declare symbol : <!kgen.param_closure<@foo "fn">>(!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> index =
-    <#kgen.closure.symbol<@foo, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "fn"> ?> >>
-  kgen.return
-}
-
-"some.op"() {
-  // CHECK: a = #kgen.mem_symbol_triple<@bar_move<:type index, :type index>,
-  // CHECK-SAME: @bar_del<:type index, :type index> : !kgen.pointer<struct<(index, index)>>>
-  a = #kgen.mem_symbol_triple<@bar_move<:type index, :type index>,
-                              @bar_del<:type index, :type index> : !kgen.pointer<struct<(index, index)>>>,
-  // CHECK: b = #kgen.mem_symbol_triple<@bar_copy<:type index, :type index>,
-  // CHECK-SAME: @bar_move<:type index, :type index>, @bar_del<:type index, :type index> move : !kgen.pointer<struct<(index, index)>>>
-  b = #kgen.mem_symbol_triple<@bar_copy<:type index, :type index>,
-                              @bar_move<:type index, :type index>,
-                              @bar_del<:type index, :type index> move : !kgen.pointer<struct<(index, index)>>>
-} : () -> ()
-
-kgen.struct.generator @WitnessedMemStruct = struct_inst<"WitnessedMemStruct"(data: index)> {
-  kgen.conformance @MemOps {
-    kgen.witness "copy" : (!kgen.pointer<struct<(index)>> read_mem,
-                           !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none = @witnessed_mem_copy
-    kgen.witness "move" : (!kgen.pointer<struct<(index)>> owned_in_mem,
-                           !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none = @witnessed_mem_move
-    kgen.witness "del" : (!kgen.pointer<struct<(index)>> owned_in_mem) -> !kgen.none = @witnessed_mem_del
-  }
-}
-
-kgen.generator @witnessed_mem_copy(%arg0: !kgen.pointer<struct<(index)>> read_mem,
-                                   %arg1: !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none {
-  %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
-}
-
-kgen.generator @witnessed_mem_move(%arg0: !kgen.pointer<struct<(index)>> owned_in_mem,
-                                   %arg1: !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none {
-  %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
-}
-
-kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in_mem) -> !kgen.none {
-  %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
-}
-
-// COM: GetWitness-backed mem_symbol_triple should round-trip too.
-"witness.mem.symbol.triple"() {
-  // CHECK: c = #kgen.mem_symbol_triple<#kgen.get_witness<#kgen.genref<@WitnessedMemStruct>, "MemOps", "copy"> : !kgen.generator<(!kgen.pointer<struct<(index)>> read_mem, !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none>,
-  // CHECK-SAME: #kgen.get_witness<#kgen.genref<@WitnessedMemStruct>, "MemOps", "move"> : !kgen.generator<(!kgen.pointer<struct<(index)>> owned_in_mem, !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none>,
-  // CHECK-SAME: #kgen.get_witness<#kgen.genref<@WitnessedMemStruct>, "MemOps", "del"> : !kgen.generator<(!kgen.pointer<struct<(index)>> owned_in_mem) -> !kgen.none> move>
-  c = #kgen.mem_symbol_triple<
-        #kgen.get_witness<#kgen.genref<@WitnessedMemStruct>, "MemOps", "copy"> : !kgen.generator<(!kgen.pointer<struct<(index)>> read_mem, !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none>,
-        #kgen.get_witness<#kgen.genref<@WitnessedMemStruct>, "MemOps", "move"> : !kgen.generator<(!kgen.pointer<struct<(index)>> owned_in_mem, !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none>,
-        #kgen.get_witness<#kgen.genref<@WitnessedMemStruct>, "MemOps", "del"> : !kgen.generator<(!kgen.pointer<struct<(index)>> owned_in_mem) -> !kgen.none> move>
 } : () -> ()
 
 "some.op"() {

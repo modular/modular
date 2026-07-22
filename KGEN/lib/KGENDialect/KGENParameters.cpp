@@ -105,12 +105,10 @@ Attribute IndexDepthAdjuster::tryReplace(Attribute attr, size_t depth) {
 
 void ParameterCollector::collectUsesFromAttr(
     Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
-    size_t &requiredSignatureDepth,
-    SmallVectorImpl<ClosureAttr> *unresolvedCaptures) {
+    size_t &requiredSignatureDepth) {
   if (auto sig = dyn_cast<ParameterScopeAttrInterface>(attr)) {
     signatures.push_back(sig.getInputParamTypes());
-    collectUsesFromAttrImpl(attr, uses, hasConstExpr, requiredSignatureDepth,
-                            unresolvedCaptures);
+    collectUsesFromAttrImpl(attr, uses, hasConstExpr, requiredSignatureDepth);
     signatures.pop_back();
     // The result is intrinsic to `attr` itself; stepping out one signature
     // scope reduces the required surrounding depth by one.
@@ -118,16 +116,14 @@ void ParameterCollector::collectUsesFromAttr(
       --requiredSignatureDepth;
     return;
   }
-  collectUsesFromAttrImpl(attr, uses, hasConstExpr, requiredSignatureDepth,
-                          unresolvedCaptures);
+  collectUsesFromAttrImpl(attr, uses, hasConstExpr, requiredSignatureDepth);
 }
 
 /// Scan the specified attribute and its recursive uses, diagnosing incorrect
 /// parameter declarations and collecting parameter uses.
 void ParameterCollector::collectUsesFromAttrImpl(
     Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
-    size_t &requiredSignatureDepth,
-    SmallVectorImpl<ClosureAttr> *unresolvedCaptures) {
+    size_t &requiredSignatureDepth) {
   // If we have already scanned it and know that it has no parameters in it,
   // return early.
   if (auto it = cache.parameterLess.find(attr.getAsOpaquePointer());
@@ -141,23 +137,15 @@ void ParameterCollector::collectUsesFromAttrImpl(
   // Look through any SugarAttr's we encounter.
   if (auto sugar = dyn_cast<SugarAttr>(attr)) {
     collectUsesFromAttr(sugar.getCanonical(), uses, hasConstExpr,
-                        requiredSignatureDepth, unresolvedCaptures);
+                        requiredSignatureDepth);
     return;
   }
 
   // Collect parameter references.
   if (auto paramRef = dyn_cast<ParamDeclRefAttr>(attr)) {
     collectUsesFromType(paramRef.getType(), uses, hasConstExpr,
-                        requiredSignatureDepth, unresolvedCaptures);
+                        requiredSignatureDepth);
     uses.push_back(paramRef);
-    return;
-  }
-
-  // ClosureAttr represents a deferred reference to another closure's parameter
-  // captures.
-  if (auto closureAttr = dyn_cast<ClosureAttr>(attr)) {
-    if (unresolvedCaptures)
-      unresolvedCaptures->push_back(closureAttr);
     return;
   }
 
@@ -165,7 +153,7 @@ void ParameterCollector::collectUsesFromAttrImpl(
   // TODO(MOCO-2080): Should this be dyn_cast<IndexRefAttrInterface>?
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr)) {
     collectUsesFromType(indexRef.getType(), uses, hasConstExpr,
-                        requiredSignatureDepth, unresolvedCaptures);
+                        requiredSignatureDepth);
     // Intrinsic requirement for this sub-expression: a ref with depth D needs
     // at least D+1 enclosing signature scopes around itself to be valid.
     size_t localRequiredDepth = indexRef.getDepth() + 1;
@@ -234,8 +222,6 @@ void ParameterCollector::collectUsesFromAttrImpl(
   // Save the number of nested parameters before recursing and check whether the
   // attribute has a nested constant expression.
   size_t oldSize = uses.size();
-  size_t oldClosureCaptureSize =
-      unresolvedCaptures ? unresolvedCaptures->size() : 0;
   // Parameterized type constants are by definition unresolved expressions.
   bool hasNestedConstExpr = false;
   size_t nestedRequiredDepth = 0;
@@ -244,19 +230,17 @@ void ParameterCollector::collectUsesFromAttrImpl(
   // array attribute.
   attr.walkImmediateSubElements(
       [&](Attribute attr) {
-        collectUsesFromAttr(attr, uses, hasNestedConstExpr, nestedRequiredDepth,
-                            unresolvedCaptures);
+        collectUsesFromAttr(attr, uses, hasNestedConstExpr,
+                            nestedRequiredDepth);
       },
       [&](Type type) {
-        collectUsesFromType(type, uses, hasNestedConstExpr, nestedRequiredDepth,
-                            unresolvedCaptures);
+        collectUsesFromType(type, uses, hasNestedConstExpr,
+                            nestedRequiredDepth);
       });
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
   // in the future.
-  if (oldSize == uses.size() && !nestedRequiredDepth &&
-      (!unresolvedCaptures ||
-       oldClosureCaptureSize == unresolvedCaptures->size())) {
+  if (oldSize == uses.size() && !nestedRequiredDepth) {
     // Check whether this is a parameterless expression.
     hasNestedConstExpr |= isa<ContextuallyEvaluatedAttrInterface>(attr);
     cache.parameterLess.try_emplace(
@@ -270,12 +254,10 @@ void ParameterCollector::collectUsesFromAttrImpl(
 
 void ParameterCollector::collectUsesFromType(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
-    size_t &requiredSignatureDepth,
-    SmallVectorImpl<ClosureAttr> *unresolvedCaptures) {
+    size_t &requiredSignatureDepth) {
   if (auto sig = dyn_cast<ParameterScopeTypeInterface>(type)) {
     signatures.push_back(sig.getInputParamTypes());
-    collectUsesFromTypesImpl(type, uses, hasConstExpr, requiredSignatureDepth,
-                             unresolvedCaptures);
+    collectUsesFromTypesImpl(type, uses, hasConstExpr, requiredSignatureDepth);
     signatures.pop_back();
     // The result is intrinsic to `type` itself; stepping out one signature
     // scope reduces the required surrounding depth by one.
@@ -284,13 +266,12 @@ void ParameterCollector::collectUsesFromType(
     return;
   }
   return collectUsesFromTypesImpl(type, uses, hasConstExpr,
-                                  requiredSignatureDepth, unresolvedCaptures);
+                                  requiredSignatureDepth);
 }
 
 void ParameterCollector::collectUsesFromTypesImpl(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
-    size_t &requiredSignatureDepth,
-    SmallVectorImpl<ClosureAttr> *unresolvedCaptures) {
+    size_t &requiredSignatureDepth) {
   // Ignore types we have already scanned.
   if (auto it = cache.parameterLess.find(type.getAsOpaquePointer());
       it != cache.parameterLess.end()) {
@@ -307,8 +288,6 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // Save the number of nested parameters before recursing and check whether the
   // attribute has a nested constant expression.
   size_t oldSize = uses.size();
-  size_t oldClosureCaptureSize =
-      unresolvedCaptures ? unresolvedCaptures->size() : 0;
   // Types that reference external symbols must be treated as implicitly
   // parametric because the external type definition could contain parametric
   // types. We don't want to assume that the type is concrete.
@@ -319,20 +298,18 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // function type, types like !kgen.scalar<ty> etc.
   type.walkImmediateSubElements(
       [&](Attribute attr) {
-        collectUsesFromAttr(attr, uses, hasNestedConstExpr, nestedRequiredDepth,
-                            unresolvedCaptures);
+        collectUsesFromAttr(attr, uses, hasNestedConstExpr,
+                            nestedRequiredDepth);
       },
       [&](Type type) {
-        collectUsesFromType(type, uses, hasNestedConstExpr, nestedRequiredDepth,
-                            unresolvedCaptures);
+        collectUsesFromType(type, uses, hasNestedConstExpr,
+                            nestedRequiredDepth);
       });
 
   // If the type had parameter uses or constant expressions, don't consider it
   // "parameterless".  We want other operations using the same type to record
   // the uses as well.
-  if (oldSize == uses.size() && !nestedRequiredDepth &&
-      (!unresolvedCaptures ||
-       oldClosureCaptureSize == unresolvedCaptures->size())) {
+  if (oldSize == uses.size() && !nestedRequiredDepth) {
     cache.parameterLess.try_emplace(
         type.getAsOpaquePointer(),
         Analysis::ParameterlessInfo{hasNestedConstExpr, nestedRequiredDepth});
@@ -621,15 +598,12 @@ static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
   // Ignored. Free index refs are verified and errors in the collector.
   size_t requiredSignatureDepth = 0;
   SmallVector<ParamDeclRefAttr> uses;
-  SmallVector<ClosureAttr> unresolvedCaptures;
 
   auto scanAttr = [&](Attribute attr) {
-    c.collectUsesFromAttr(attr, uses, hasConstExpr, requiredSignatureDepth,
-                          &unresolvedCaptures);
+    c.collectUsesFromAttr(attr, uses, hasConstExpr, requiredSignatureDepth);
   };
   auto scanType = [&](Type type) {
-    c.collectUsesFromType(type, uses, hasConstExpr, requiredSignatureDepth,
-                          &unresolvedCaptures);
+    c.collectUsesFromType(type, uses, hasConstExpr, requiredSignatureDepth);
   };
 
   auto itf = dyn_cast<ParamOpInterface>(op);
@@ -666,9 +640,6 @@ static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
     // declare parameters.
     g.paramOps.push_back(op);
   }
-
-  for (ClosureAttr capture : unresolvedCaptures)
-    g.closureCaptures.insert(capture);
 }
 
 static LogicalResult recordDecl(ParameterUseDefGraph &g, ParamDeclAttr decl,
@@ -950,8 +921,6 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
       if (it == decls.end() || !scope->isAncestor(it->second.scope))
         usesFromAbove.insert(use);
     }
-    for (ClosureAttr use : nested.closureCaptures)
-      closureCaptures.insert(use);
 
     nestedScopes.try_emplace(nestedScope, std::move(nested));
   }
@@ -1032,7 +1001,6 @@ ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) const {
   // These are trivial to copy over.
   out.params = params;
   out.usesFromAbove = usesFromAbove;
-  out.closureCaptures = closureCaptures;
 
   // Copy over the op uses.
   for (auto [op, useVector] : opUses)
@@ -1079,11 +1047,6 @@ void ParameterUseDefGraph::dump() const {
       llvm::interleaveComma(opAndUses.second, os,
                             [&](const auto &use) { os << use.getName(); });
     });
-    os << "\n";
-
-    os << "ClosureCaptures: ";
-    llvm::interleaveComma(cur->closureCaptures, os,
-                          [&](ClosureAttr attr) { os << attr; });
     os << "\n";
 
     for (Region *nested : cur->nestedDecls)

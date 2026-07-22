@@ -14,13 +14,13 @@
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S6 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S7 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S8 < %t.mlir
-# COM: a
-# S0: lit.closure.init[{{.*}}](%{{.*}}[ref: mut *"a
-# COM: b
-# S0-SAME: %{{.*}}[ref: muttoimm *"b
-# COM: c
-# S0-SAME: %{{.*}}[{{.*}} move])
-# COM: d is omitted because it uses default convention.
+# COM: Captures are threaded through the closure storage struct's initializer:
+# COM: a by mutable reference, b by mut-to-immutable reference, and c by move
+# COM: (owned_in_mem). d is omitted because it uses the default convention.
+# S0: lit.call {{.*}}::@"captures_with_default_convention()::my_fn::__storage"::@"__init__
+# S0-SAME: "a": !lit.ref<!String, mut *"a
+# S0-SAME: "b": !lit.ref<!String, muttoimm *"b
+# S0-SAME: "c": !lit.ref<!String, mut {{.*}}> owned_in_mem
 
 def captures_with_default_convention():
     var a, b, c, d = ("a", "b", "c", "d")

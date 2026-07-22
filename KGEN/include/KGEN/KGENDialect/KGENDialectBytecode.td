@@ -88,17 +88,6 @@ def WrappedVariantType : DialectType<(type
   TypedAttr:$variadic
 )>;
 
-def ClosureType : DialectType<(type
-  ConcreteAttribute<"SymbolRefAttr">:$parentSymbol,
-  StringAttr:$name,
-  EnumAttr<"ClosureMemoryKind">:$closureMemoryKind
-)>;
-
-def ParamClosureType : DialectType<(type
-  ConcreteAttribute<"SymbolRefAttr">:$parentSymbol,
-  StringAttr:$name
-)>;
-
 def DeferredType : DialectType<(type)>;
 
 def MLIRDeferredType : DialectType<(type
@@ -133,8 +122,6 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     StructType,
     StructInstanceType,
     WrappedVariantType,
-    ClosureType,
-    ParamClosureType,
     DeferredType,
     MLIRDeferredType,
     NeverType,
@@ -416,17 +403,6 @@ def ClosureSymbolAttr : DialectAttribute<(attr
   ConcreteType<"GeneratorType">:$type
 )>;
 
-def ClosureAttr : DialectAttribute<(attr
-  ConcreteType<"ParamClosureType">:$type
-)>;
-
-def MemSymbolTripleAttr : DialectAttribute<(attr
-  OptionalAttribute<"TypedAttr">:$copy,
-  OptionalAttribute<"TypedAttr">:$move,
-  OptionalAttribute<"TypedAttr">:$del,
-  ConcreteOptionalAttribute<"UnitAttr">:$isMove
-)>;
-
 def LinkageNameAttr : DialectAttribute<(attr
   TypedAttr:$name,
   ConcreteAttribute<"BoolAttr">:$mangle
@@ -618,9 +594,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     LLVMBitcodeLibArrayAttr,
     SugarAttr,
     ClosureSymbolAttr,
-    ClosureAttr,
     ClosureMethodAttr,
-    MemSymbolTripleAttr,
     LinkageNameAttr,
     TypeConformsToTraitAttr,
     DowncastAttr,

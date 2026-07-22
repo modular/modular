@@ -1450,9 +1450,9 @@ emitClosureInstance(ArrayRef<Capture> captures, ASTDecl &nestedFnDecl,
     }
   }
   Value wrapperInstance =
-      emitter.emitClosureOp(*moduleDecl, nestedFnDecl, captures,
-                            cast<TraitDeclOp>(closureTrait->getIfOperation()),
-                            mlirLoc, isCopyable, closureSig, capturedRefs);
+      emitter.emitClosure(*moduleDecl, nestedFnDecl, captures,
+                          cast<TraitDeclOp>(closureTrait->getIfOperation()),
+                          mlirLoc, isCopyable, closureSig, capturedRefs);
   if (!wrapperInstance)
     return {};
   return MLValue(wrapperInstance);

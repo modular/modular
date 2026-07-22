@@ -88,16 +88,6 @@ OriginTrackable::OriginTrackable(Value v) {
     return;
   }
 
-  if (auto closure = v.getDefiningOp<LIT::ClosureInitOp>()) {
-    name = StringAttr::get(v.getContext(), "(closure)");
-    // register passable closures still have pointer semantics until after
-    // elaboration.
-    isIndirect = true;
-    startsUninit = true;
-    endInitState = EndsUninit;
-    return;
-  }
-
   /// Owned results of function calls are tracked as being initialized when
   /// defined but needing to be destroyed by the end of function.
   if (OpResult res = dyn_cast<OpResult>(v)) {
@@ -149,9 +139,6 @@ OriginTrackable::OriginTrackable(Value v) {
   if (auto func = dyn_cast<FnOp>(bbArg.getOwner()->getParentOp())) {
     signature = func.getFuncTypeGenerator();
     isInit = func.getSpecialFunctionInfo().isInitializer();
-  } else if (auto closure = dyn_cast<LIT::ClosureInitOp>(
-                 bbArg.getOwner()->getParentOp())) {
-    signature = closure.getFuncTypeGenerator();
   }
   if (!signature)
     return;
@@ -534,40 +521,6 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
     analyzeCallOp(op);
     return {};
   }
-  // A closure init is analogous to a call to a constructor of a struct.
-  // Use the origin set to determine the operand effect of the captures.
-  if (auto closureOp = dyn_cast<LIT::ClosureInitOp>(op)) {
-    for (auto [capture, captureAttribute] : llvm::zip(
-             closureOp->getOperands(), closureOp.getCaptureConventions())) {
-      // If capture by copy, treat this as a call to the copy method of the
-      // captured type, which is by borrow. If capture by move, treat this as a
-      // call to the move method of the captured type, which consumes the
-      // operand.
-      if (auto triple = dyn_cast<KGEN::MemSymbolTripleAttr>(captureAttribute)) {
-        operands.push_back({capture, triple.getIsMove()
-                                         ? OperandEffect::memConsume
-                                         : OperandEffect::memLoad});
-        continue;
-      }
-      if (isa<UnitAttr>(captureAttribute))
-        continue;
-      // If capture by reference, the operand effect is either memMut or
-      // memLoad.
-      if (auto typedAttr = dyn_cast<TypedAttr>(captureAttribute)) {
-        OriginType origin = sugarCast<OriginType>(typedAttr.getType());
-        operands.push_back({capture, origin.isMutable()
-                                         ? OperandEffect::memMut
-                                         : OperandEffect::memLoad});
-        continue;
-      }
-
-      // Otherwise, this is a value capture and there is no consumption.
-      operands.push_back({capture, OperandEffect::regUse});
-    }
-    results.push_back(ResultEffect::memDefineInitToUninit);
-    return {};
-  }
-
   // A return consumes all the live-out values from the function.
   if (isa<KGEN::ReturnOp, LIT::ErrorReturnOp, KGEN::UnreachableOp,
           HLCF::YieldOp>(op)) {

@@ -684,57 +684,6 @@ lit.fn @call_using_empty_struct<es: !lit.struct<@EmptyStruct>, alwaysFn: !lit.ge
 // -----
 
 //===----------------------------------------------------------------------===//
-// Closures.
-//===----------------------------------------------------------------------===//
-
-!Closure = !lit.trait<@Closure>
-!String = !lit.struct<@String>
-!Impl = !kgen.closure<@make_closure, "foo" nonescaping>
-
-#Impl1 = #kgen.type<!Impl> : !Closure
-
-lit.trait.decl @Closure<?, SELF: !Closure> {
-  lit.fn @"__call__"[imm O](%self: !lit.ref<:!Closure SELF, imm O> read_mem, %y: index) -> index {
-    kgen.unreachable
-  }
-}
-
-// CHECK-label: kgen.generator @make_closure
-lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<!String, imm Y> owned_in_mem, %x:index, %z: !lit.ref<!String, imm Z> owned_in_mem) -> !kgen.none {
-  // CHECK:     kgen.closure.init(%arg0, %arg1, %arg2[@"String::__copyinit__", @"String::__moveinit__", @"String::__del__"])(index) -> index : (!kgen.pointer<struct<() memoryOnly>>, index, !kgen.pointer<struct<() memoryOnly>>), !kgen.pointer<!kgen.closure<@make_closure, "foo" nonescaping>>
-  %impl = lit.closure.init[#Impl1](%y[ref: imm Y], %x, %z[@String::@__copyinit__ !lit.generator<[2]("existing": !lit.ref<!String, imm *[0,1]> read_mem, "self": !lit.ref<!String, mut *[0,0]> byref_result) -> !kgen.none>,
-                                                  @String::@__moveinit__ !lit.generator<[2]("existing": !lit.ref<!String, imm *[0,1]> read_mem, "self": !lit.ref<!String, mut *[0,0]> byref_result) -> !kgen.none>,
-                                                  @String::@__del__ !lit.generator<[1]("self": !lit.ref<!String, mut *[0,0]> owned_in_mem) -> !kgen.none>])(%y2: index) -> index : (!lit.ref<!String, imm Y>, index, !lit.ref<!String, imm Z>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
-  %2 = lit.call @direct[mut C]<:!Closure #Impl1>(%impl, %x) : !lit.generator<[1]("c":!lit.ref<:!Closure #Impl1, mut *[0,0]> read_mem, "x": index) -> !kgen.none>
-
-   %none = kgen.param.constant: none = <#kgen.none>
-   kgen.return %none : !kgen.none
-}
-
-lit.fn @direct<CT: !Closure>[mut Origin0](%c: !lit.ref<:!Closure CT, mut Origin0> read_mem, %x: index) -> !kgen.none {
-   %0 = lit.call [!lit.generator<[1]("self": !lit.ref<:!Closure CT, imm *[0,0]> read_mem, "y": index) -> index>:
-        #kgen.get_witness<:!Closure CT, "Closure", "__call__">][mut Origin0](%c, %x)
-   lit.end_fn
-}
-
-lit.struct.decl @String {
-    lit.fn @__copyinit__[mut E1, imm E2](%existing: !lit.ref<!String, imm E2> read_mem, %self: !lit.ref<!String, mut E1> byref_result) -> !kgen.none {
-      %none = kgen.param.constant: none = <#kgen.none>
-      kgen.return %none : !kgen.none
-    }
-    lit.fn @__moveinit__[mut E1, imm E2](%existing: !lit.ref<!String, imm E2> read_mem, %self: !lit.ref<!String, mut E1> byref_result) -> !kgen.none {
-      %none = kgen.param.constant: none = <#kgen.none>
-      kgen.return %none : !kgen.none
-    }
-    lit.fn @__del__[mut E](%self: !lit.ref<!String, mut E> owned_in_mem) -> !kgen.none {
-      %none = kgen.param.constant: none = <#kgen.none>
-      kgen.return %none : !kgen.none
-    }
-}
-
-// -----
-
-//===----------------------------------------------------------------------===//
 // Struct alignment lowering
 //===----------------------------------------------------------------------===//
 
@@ -826,18 +775,3 @@ lit.struct.decl @TestStruct2 {
 }
 
 // TODO(MOCO-522): Add tests for aliases in extensions into LowerLIT
-
-// -----
-
-// COM: Origins are pruned correctly from lit closure init ops.
-!Walks = !lit.trait<@Walks>
-#type_value = #kgen.type<array<1, i1>> : !kgen.type
-lit.trait.decl @Walks<?, SELF: !Walks>(!Walks) {}
-
-// CHECK-LABEL: kgen.generator @aThing
-lit.fn @aThing() -> !kgen.none {
-  // CHECK: kgen.closure.init()<T: type>(!kgen.pointer<*(0,0)> read_mem) -> !kgen.none
-  %0 = lit.closure.init[#type_value]()<T: !Walks>[imm O1](%arg0[a]: !lit.ref<:!Walks T, imm O1> read_mem) -> !kgen.none : (), !lit.ref<!kgen.closure<@aThing, "aClosure" nonescaping>, mut *"aClosure`1">
-  %none_1 = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none_1 : !kgen.none
-}

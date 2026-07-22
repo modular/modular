@@ -18,11 +18,14 @@ def use(a:String, d:MoveMe):
 
 # CHECK:  lit.fn @"moveMeUser
 def moveMeUser(byCopy:String, prefix:String, var byMove: MoveMe):
+    # COM: `var byCopy` copies the String into a temporary via the copy ctor.
     # CHECK: [[V0:%.*]] = lit.var.decl "anonymous*"
     # CHECK-NEXT: lit.call {{.*}}::@String::@"__init__{{.*}}(%byCopy, [[V0]]){{.*}}(*, "copy":
-    # CHECK: [[V1:%.*]] = lit.var.decl "anonymous*"
-    # CHECK-NEXT: lit.call {{.*}}::@MoveMe::@"__init__{{.*}}(%byMove, [[V1]]){{.*}}(*, "move":
-    # CHECK: [[V0]][@{{.*}}::@String::@"__init__(copy:::String)
+    # COM: The closure storage initializer receives byCopy by copy (read) and
+    # COM: byMove by move (owned_in_mem).
+    # CHECK: lit.call {{.*}}myclosure::__storage"::@"__init__
+    # CHECK-SAME: %byMove,
+    # CHECK-SAME: "byMove": !lit.ref<!MoveMe, {{[^>]*}}> owned_in_mem
     def myclosure(prefix: String) {var byCopy, var byMove^} -> String:
         use(byCopy, byMove)
         return prefix
@@ -35,7 +38,10 @@ def moveMeUser(byCopy:String, prefix:String, var byMove: MoveMe):
 
 # CHECK:  lit.fn @"make_closure
 def make_closure(x: Int):
-    # CHECK: [[V0:%.*]] = lit.closure.init[{{.*}}](%x)
+    # COM: `var x` on a trivial Int becomes a trivial copy threaded through the
+    # COM: closure storage initializer.
+    # CHECK: lit.call {{.*}}my_closure::__storage"::@"__init__
+    # CHECK-SAME: "x": !lit.ref<!Int, {{[^>]*}}> read_mem
     def my_closure(y: Int) {var x} -> Int:
         return x + y
 
@@ -47,10 +53,12 @@ def use(y:String):
     pass
 
 def make_closure(x: Int, str:String):
-    # CHECK: [[COPY:%.*]] = lit.var.decl "anonymous*"
-    # CHECK: lit.closure.init[{{.*}}](%x, [[COPY]]
-    # CHECK: [[COPY_OF_COPY:%.*]] = lit.var.decl "anonymous*"
-    # CHECK: lit.closure.init[{{.*}}]({{.*}}, [[COPY_OF_COPY]]
+    # COM: The outer closure copies its captures into its storage struct.
+    # CHECK: lit.var.decl "anonymous*"
+    # CHECK: lit.call {{.*}}my_closure::__storage"::@"__init__
+    # COM: The nested closure copies the outer copies again into its storage.
+    # CHECK: lit.var.decl "anonymous*"
+    # CHECK: lit.call {{.*}}my_nested_closure::__storage"::@"__init__
     def my_closure(y: Int) {var x, var str} -> Int:
         def my_nested_closure(z: Int) {var x, var str} -> Int:
             use(str)
@@ -73,7 +81,8 @@ def takesMut(mut str: String):
 
 # CHECK: lit.fn @"no_castsImmut({{.*}})"[imm *"byRef`"
 def no_castsImmut(byRef:String):
-    # CHECK-NEXT: %byRef[ref: imm *"byRef`"]
+    # COM: A read capture of an immutable ref needs no mutability cast.
+    # CHECK: "byRef": !lit.ref<!String, imm *"byRef`"> ref
     def myclosure() {read byRef}:
         takesImmut(byRef)
 
@@ -81,7 +90,8 @@ def no_castsImmut(byRef:String):
 
 # CHECK: lit.fn @"no_castsMut({{.*}})"[mut *"byRefMut`"
 def no_castsMut(mut byRefMut: String):
-    # CHECK-NEXT: %byRefMut[ref: mut *"byRefMut`"
+    # COM: A mut capture of a mutable ref needs no mutability cast.
+    # CHECK: "byRefMut": !lit.ref<!String, mut *"byRefMut`"> ref
     def myclosure() {mut byRefMut}:
         takesImmut(byRefMut)
 
@@ -89,8 +99,10 @@ def no_castsMut(mut byRefMut: String):
 
 # CHECK: lit.fn @"casts({{.*}})"[mut *"byRefMut`"
 def casts(mut byRefMut: String):
+    # COM: A read capture of a mutable ref inserts a mut-to-immutable cast.
     # CHECK: [[V0:%.*]] = lit.ref.immut %byRefMut : <!String, mut *"byRefMut`">
-    # CHECK: lit.closure.init[{{.*}}]([[V0]]
+    # CHECK: lit.call {{.*}}myclosure::__storage"::@"__init__
+    # CHECK-SAME: "byRefMut": !lit.ref<!String, muttoimm *"byRefMut`"> ref
     def myclosure() {read byRefMut}:
         takesImmut(byRefMut)
 
@@ -108,9 +120,10 @@ def use(ref a: String, ref b: String, ref c: String):
 # CHECK-LABEL: lit.fn @"captureAllByRef
 def captureAllByRef(A: String, mut B: String, ref C: String):
     # CHECK-NOT: lit.ref.immut
-    # CHECK: lit.closure.init{{.*}}%A[ref: imm
-    # CHECK-SAME: %B[ref: mut
-    # CHECK-SAME: %C[ref: mut=
+    # CHECK: lit.call {{.*}}refAll::__storage"::@"__init__
+    # CHECK-SAME: "A": !lit.ref<!String, imm *"A`"> ref
+    # CHECK-SAME: "B": !lit.ref<!String, mut *"B`1"> ref
+    # CHECK-SAME: "C": !lit.ref<!String, mut=*"C_is_mut`2", *"C_is_origin`3"> ref
     def refAll() {ref}:
         use(A, B, C)
         pass
@@ -130,24 +143,29 @@ def use(a: String, d: String):
 
 # CHECK-LABEL:  lit.fn @"toy
 def toy(A: String, B: String, mut C: String, mut D: String):
-    # CHECK: (%A[ref: imm *"A`"], %B[ref: imm *"B`1"])
+    # COM: `read` capture-all threads A and B into storage by immutable ref.
+    # CHECK: lit.call {{.*}}readAll::__storage"::@"__init__
+    # CHECK-SAME: "A": !lit.ref<!String, imm *"A`"> ref
+    # CHECK-SAME: "B": !lit.ref<!String, imm *"B`1"> ref
     def readAll() {read} -> String:
         use(A, B)
         return A
     takeIt(readAll)
 
+    # COM: `var` capture-all copies each value before storing it.
     # CHECK: @String::@"__init__{{.*}}"{{.*}}*, "copy"
     # CHECK: @String::@"__init__{{.*}}"{{.*}}*, "copy"
-    # CHECK: lit.closure.init
+    # CHECK: lit.call {{.*}}copyAll::__storage"::@"__init__
     def copyAll() {var} -> String:
         use(A, B)
         return C
 
     takeIt(copyAll)
 
-    # CHECK: @String::@"__init__{{.*}}"{{.*}}*, "move"
-    # CHECK: @String::@"__init__{{.*}}"{{.*}}*, "move"
-    # CHECK: lit.closure.init
+    # COM: `var^` capture-all moves each value into storage (owned_in_mem).
+    # CHECK: lit.call {{.*}}moveAll::__storage"::@"__init__
+    # CHECK-SAME: "C": !lit.ref<!String, {{[^>]*}}> owned_in_mem
+    # CHECK-SAME: "D": !lit.ref<!String, {{[^>]*}}> owned_in_mem
     def moveAll() {var^} -> String:
         use(C, D)
         return D
@@ -191,7 +209,12 @@ def longCaptureLists(
     mut something4: String,
     mut something5: String,
 ) raises:
-    # CHECK: lit.closure.init
+    # COM: The mixed capture list threads each value through the storage
+    # COM: initializer with its own convention.
+    # CHECK: lit.call {{.*}}closure::__storage"::@"__init__
+    # CHECK-SAME: "something": !lit.ref<!String, {{[^>]*}}> read_mem
+    # CHECK-SAME: "something2": !lit.ref<!String, mut {{[^>]*}}> ref
+    # CHECK-SAME: "something3": !lit.ref<!String, muttoimm {{[^>]*}}> ref
     def closure() raises {
         var something,
         mut something2,
@@ -216,7 +239,8 @@ def takesImmut(str: String):
 
 # CHECK: lit.fn @"no_castsImm({{.*}})"[imm *"byRef`"
 def no_castsImm(byRef:String):
-    # CHECK-NEXT: %byRef[ref: imm *"byRef`"]
+    # COM: `imm byRef` captures by immutable ref with no mutability cast.
+    # CHECK: "byRef": !lit.ref<!String, imm *"byRef`"> ref
     def myclosure() {imm byRef}:
         takesImmut(byRef)
 
@@ -232,7 +256,10 @@ def takeIt[T: def () -> String, //](state: T):
 
 # CHECK-LABEL:  lit.fn @"toyImm
 def toyImm(A: String, B: String):
-    # CHECK: (%A[ref: imm *"A`"], %B[ref: imm *"B`1"])
+    # COM: `imm` capture-all threads A and B into storage by immutable ref.
+    # CHECK: lit.call {{.*}}immAll::__storage"::@"__init__
+    # CHECK-SAME: "A": !lit.ref<!String, imm *"A`"> ref
+    # CHECK-SAME: "B": !lit.ref<!String, imm *"B`1"> ref
     def immAll() {imm} -> String:
         use(A, B)
         return A

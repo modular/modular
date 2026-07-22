@@ -2170,58 +2170,6 @@ ErrorOr<TypedAttr> VariantType::readFrom(int64_t addr,
 }
 
 //===----------------------------------------------------------------------===//
-// ClosureType
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseClosureTypes(AsmParser &p, TypedAttr &closureAttr,
-                                     ClosureMemoryKind &closureMemoryKind) {
-  MLIRContext *ctx = p.getContext();
-  SymbolRefAttr symbol;
-  StringAttr name;
-  if (p.parseAttribute(symbol) || p.parseComma() || p.parseAttribute(name))
-    return failure();
-
-  closureAttr = ClosureAttr::get(ctx, ParamClosureType::get(ctx, symbol, name));
-
-  if (succeeded(p.parseOptionalKeyword("escaping")))
-    closureMemoryKind = ClosureMemoryKind::ESCAPING;
-  else if (succeeded(p.parseOptionalKeyword("nonescaping")))
-    closureMemoryKind = ClosureMemoryKind::NONESCAPING;
-  else if (succeeded(p.parseOptionalKeyword("trivial")))
-    closureMemoryKind = ClosureMemoryKind::TRIVIAL;
-  else if (succeeded(p.parseOptionalKeyword("register_passable")))
-    closureMemoryKind = ClosureMemoryKind::REGISTER_PASSABLE;
-  else
-    return p.emitError(p.getCurrentLocation(),
-                       "expected escaping, nonescaping, or trivial");
-  return success();
-}
-
-static void printClosureTypes(AsmPrinter &p, TypedAttr closureAttr,
-                              ClosureMemoryKind closureMemoryKind) {
-  ParamClosureType closureType = cast<ClosureAttr>(closureAttr).getType();
-  SymbolRefAttr symbol = closureType.getParentSymbol();
-  StringAttr name = closureType.getName();
-  p << symbol;
-  p << ", ";
-  p << name;
-  switch (closureMemoryKind) {
-  case ClosureMemoryKind::ESCAPING:
-    p << " escaping";
-    break;
-  case ClosureMemoryKind::NONESCAPING:
-    p << " nonescaping";
-    break;
-  case ClosureMemoryKind::REGISTER_PASSABLE:
-    p << " register_passable";
-    break;
-  case ClosureMemoryKind::TRIVIAL:
-    p << " trivial";
-    break;
-  }
-}
-
-//===----------------------------------------------------------------------===//
 // DeferredType
 //===----------------------------------------------------------------------===//
 
@@ -2505,25 +2453,4 @@ void KGENDialect::printType(Type type, DialectAsmPrinter &p) const {
     return;
   }
   (void)generatedTypePrinter(type, p);
-}
-
-ClosureType ClosureType::get(MLIRContext *context, SymbolRefAttr parentSymbol,
-                             StringAttr name,
-                             ClosureMemoryKind closureMemoryKind) {
-  return get(context,
-             ClosureAttr::get(
-                 context, ParamClosureType::get(context, parentSymbol, name)),
-             closureMemoryKind);
-}
-
-ParamClosureType ClosureType::getParamClosureType() const {
-  return cast<ParamClosureType>(getClosureAttr().getType());
-}
-
-SymbolRefAttr ClosureType::getParentSymbol() const {
-  return getParamClosureType().getParentSymbol();
-}
-
-StringAttr ClosureType::getName() const {
-  return getParamClosureType().getName();
 }

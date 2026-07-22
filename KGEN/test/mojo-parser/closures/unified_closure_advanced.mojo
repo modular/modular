@@ -181,7 +181,8 @@ def s5_demo[
 # COM: MOCO-4128
 # S6-LABEL: lit.fn @"apply_closure
 # COM: Make sure the field type is paramtric over `T`, not a plain `AnyType`.
-# S6-DAG: [[S6_CLOSURE:%[0-9a-zA-Z_]+]] = lit.closure.init{{.*}}struct<(:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable T)>
+# S6: lit.call {{.*}}::f::__storage"::@"__init__
+# S6-SAME: "x": !lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable T,
 
 
 

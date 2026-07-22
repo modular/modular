@@ -67,9 +67,8 @@ struct RaiseSetEntry {
 
 namespace {
 /// FunctionLikeOp abstracts a function. It defines the interface necessary for
-/// an op to undergo a checklifetimes pass. It is either a ClosureInitOp or FnOp
+/// an op to undergo a checklifetimes pass.
 struct FunctionLikeOp {
-  FunctionLikeOp(LIT::ClosureInitOp closure) : op(closure) {}
   FunctionLikeOp(FnOp fn) : op(fn) {}
   unsigned getNumArguments() const;
   Location getLoc() const { return op->getLoc(); }
@@ -5357,16 +5356,12 @@ Region &FunctionLikeOp::getBodyRegion() const { return op->getRegion(0); }
 FnTypeGeneratorType FunctionLikeOp::getFuncTypeGenerator() const {
   if (auto fn = dyn_cast<FnOp>(op))
     return fn.getFuncTypeGenerator();
-  if (auto closure = dyn_cast<LIT::ClosureInitOp>(op))
-    return closure.getFuncTypeGenerator();
   return {};
 }
 
 ArrayRef<ParamDeclAttr> FunctionLikeOp::getInputParams() const {
   if (auto fn = dyn_cast<FnOp>(op))
     return fn.getInputParams();
-  if (auto closure = dyn_cast<LIT::ClosureInitOp>(op))
-    return closure.getInputParams();
   return {};
 }
 
