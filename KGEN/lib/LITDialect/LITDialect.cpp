@@ -90,6 +90,7 @@ using WrappedOriginSetAttr = WrappedAttrType<OriginSetAttr>;
 using WrappedOriginSetUnionAttr = WrappedAttrType<OriginSetUnionAttr>;
 using WrappedOriginFieldAttr = WrappedAttrType<OriginFieldAttr>;
 using WrappedInteriorOriginAttr = WrappedAttrType<InteriorOriginAttr>;
+using WrappedOriginSubtreeAttr = WrappedAttrType<OriginSubtreeAttr>;
 
 //===----------------------------------------------------------------------===//
 // Utilities

@@ -221,6 +221,11 @@ def WrappedInteriorOriginAttr : DialectAttribute<(attr
   ConcreteType<"OriginType">:$type
 )>;
 
+def WrappedOriginSubtreeAttr : DialectAttribute<(attr
+  TypedAttr:$origin,
+  ConcreteType<"OriginType">:$type
+)>;
+
 def ImplicitOriginRefAttr : DialectAttribute<(attr
   VarInt:$depth,
   VarInt:$index,
@@ -304,6 +309,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     ComptimeOriginAttr,
     StaticOriginAttr,
     WrappedInteriorOriginAttr,
+    WrappedOriginSubtreeAttr,
     ImplicitConversionKindAttr,
   ];
 }

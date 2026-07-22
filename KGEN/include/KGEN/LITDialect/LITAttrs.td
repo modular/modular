@@ -691,6 +691,41 @@ def ImplicitOriginRefAttr
 }
 
 //===----------------------------------------------------------------------===//
+// OriginSubtreeAttr
+//===----------------------------------------------------------------------===//
+
+def OriginSubtreeAttr : LITTypedAttr<"OriginSubtree", "origin.subtree", [
+          DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>
+  ]> {
+  let summary = "A view over an origin and all origins derived from it";
+  let description = [{
+    This attribute represents the entire subtree rooted at the given origin.
+    A reference whose origin is `#lit.origin.subtree<x>` may refer to storage
+    governed by `x` itself or by any origin formed by applying field or interior
+    origin projections beneath `x`.
+  }];
+
+  let parameters = (ins "TypedAttr":$origin,
+                        AttributeSelfTypeParameter<"", "OriginType">:$type);
+
+  let assemblyFormat = "`<` $origin `>`";
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$origin), "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$origin, "OriginType":$type), [{
+      return get(origin);
+    }], "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{
+    /// A specific builder used to build the attribute from a bytecode context,
+    /// providing a slightly different context from the normal builder.
+    static OriginSubtreeAttr getFromBytecode(TypedAttr origin, OriginType type);
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // OriginSetAttr
 //===----------------------------------------------------------------------===//
 
