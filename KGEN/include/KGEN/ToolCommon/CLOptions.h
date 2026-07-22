@@ -230,7 +230,6 @@ public:
   DEFINE_CL_OPTION_GETTER(uint64_t, parametricInlineEstimatedLoopTripCount);
   DEFINE_CL_OPTION_GETTER(size_t, stackReusePromoteToGlobalThreshold);
   DEFINE_CL_OPTION_GETTER(size_t, kgenVerifierMaxErrors);
-  DEFINE_CL_OPTION_GETTER(std::string, objectCompilerUseCustomAIR);
 
 private:
   struct PassOptions {
@@ -263,12 +262,6 @@ private:
                                   "Specify maximum number of errors "
                                   "KGENVerifier pass can emit at once.",
                                   10)
-    DEFINE_CL_OPTION(
-        std::string, objectCompilerUseCustomAIR,
-        "kgen-object-compiler-use-custom-air",
-        "Specify custom AIR file to compile a program. The custom AIR file "
-        "is not removed after compilation. WARNING: to run the program AIR "
-        "file must contain all kernels used by it.")
   };
 
   static llvm::ManagedStatic<PassOptions> passOptions;
