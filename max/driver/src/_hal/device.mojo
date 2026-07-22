@@ -21,6 +21,9 @@ from .plugin import (
 )
 from .status import STATUS_SUCCESS, STATUS_INVALID_ARG, HALError
 
+from std.collections import InlineArray
+from std.ffi import c_char
+
 from std.memory import (
     ArcPointer,
     UnsafeMaybeUninit,
@@ -30,6 +33,10 @@ from std.memory.arc_pointer import WeakPointer
 from std.gpu.host.compile import get_gpu_target
 from std.gpu.host.info import GPUInfo
 from ._machine import MachineDefinition, DeviceRef, DeviceSpec
+
+# Buffer size for string-valued device properties; must match
+# M_DRIVER_DEVICE_PROPERTY_NAME_MAX_LEN in SDK/include/HAL/M_driver_device.h.
+comptime _DEVICE_NAME_MAX_LEN = 256
 
 
 def get_machine_definition() -> MachineDefinition:
@@ -145,3 +152,24 @@ struct Device[spec: DeviceSpec](ImplicitlyDeletable, Movable):
         return self._raw[].get_device_property[
             "dlpack_device", M_driver_dlpack_device
         ](self._handle)
+
+    def get_name(self) raises HALError -> String:
+        """Queries the device's human-readable name."""
+        var buf = InlineArray[Int8, _DEVICE_NAME_MAX_LEN](fill=0)
+        self._raw[].get_device_property_string["name"](
+            self._handle, buf.unsafe_ptr()
+        )
+        return String(unsafe_from_utf8_ptr=buf.unsafe_ptr().bitcast[c_char]())
+
+    def get_arch(self) raises HALError -> String:
+        """Queries the device's compile-target architecture name.
+
+        For AMD GPUs this is the `gfx*` name (e.g. `gfx942`); vendors whose arch
+        is derived host-side (e.g. CUDA `sm_<cc>`) need not implement this
+        plugin property.
+        """
+        var buf = InlineArray[Int8, _DEVICE_NAME_MAX_LEN](fill=0)
+        self._raw[].get_device_property_string["arch"](
+            self._handle, buf.unsafe_ptr()
+        )
+        return String(unsafe_from_utf8_ptr=buf.unsafe_ptr().bitcast[c_char]())
