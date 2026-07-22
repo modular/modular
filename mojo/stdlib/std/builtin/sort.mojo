@@ -38,7 +38,7 @@ def _insertion_sort[
     cmp_fn: def(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin]):
     """Sort the array[start:end] slice"""
-    var array = span.unsafe_ptr().as_unsafe_any_origin()
+    var array = span.as_ref().as_unsafe_any_origin()
     var size = len(span)
 
     for i in range(1, size):
@@ -49,8 +49,6 @@ def _insertion_sort[
         # find the position. Throughout, we assume array[start:i] has already
         # been sorted.
         while j > 0 and cmp_fn(value, array[unsafe_offset=j - 1]):
-            # TODO(MSTDL-2902): Migrate off `Span.unsafe_ptr()` to a safe
-            # `Pointer`.
             array.unsafe_offset(j).unsafe_write_move_from(
                 array.unsafe_offset(j - 1)
             )
@@ -295,9 +293,9 @@ def _merge[
     """
     var span1_size = len(span1)
     var span2_size = len(span2)
-    var span1_ptr = span1.unsafe_ptr()
-    var span2_ptr = span2.unsafe_ptr()
-    var res_ptr = result.unsafe_ptr()
+    var span1_ptr = span1.as_ref()
+    var span2_ptr = span2.as_ref()
+    var res_ptr = result.as_ref()
 
     assert span1_size + span2_size <= len(
         result
@@ -305,7 +303,6 @@ def _merge[
     var i = 0
     var j = 0
     var k = 0
-    # TODO(MSTDL-2902): Migrate off `Span.unsafe_ptr()` to a safe `Pointer`.
     while i < span1_size:
         if j == span2_size:
             while i < span1_size:
