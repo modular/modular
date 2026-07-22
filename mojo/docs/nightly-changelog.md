@@ -1092,6 +1092,12 @@ This version is still a work in progress.
 
 ## Fixed
 
+- Fixed `print()` and `debug_assert()` emitting garbled output on AMD GPUs when
+  a printed string's byte length was an exact multiple of 8. The AMDGPU
+  `hostcall` printf interface reads each string up to its nul terminator, and
+  the terminator was being dropped in that case, so the host read past the
+  payload.
+
 - `base64.b16decode` now raises on invalid input instead of silently producing
   corrupt output.
 

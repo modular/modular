@@ -272,7 +272,16 @@ def _printf[
         comptime args_len = types.size
 
         var message = printf_begin()
-        message = printf_append_string_n(message, fmt.as_bytes(), args_len == 0)
+        # `get_static_string` guarantees a trailing nul in static memory (just
+        # past the returned range); include it so the AMD fprintf service sees a
+        # terminated format string even when `len(fmt)` is a multiple of 8.
+        # `as_bytes()` alone drops the nul, corrupting output (MSTDL-1597).
+        var fmt_str = get_static_string[fmt]()
+        message = printf_append_string_n(
+            message,
+            Span(ptr=fmt_str.unsafe_ptr(), length=fmt_str.byte_length() + 1),
+            args_len == 0,
+        )
         comptime k_args_per_group = 7
 
         comptime for group in range(0, args_len, k_args_per_group):
