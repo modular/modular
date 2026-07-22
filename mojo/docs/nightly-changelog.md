@@ -1123,6 +1123,13 @@ This version is still a work in progress.
 
 ## Fixed
 
+- Code folding in VSCode now works for Mojo files. `mojo-lsp-server` no longer
+  advertises folding-range support, which only produced docstring ranges and
+  caused VSCode to disable its built-in indentation-based folding — leaving
+  functions, structs, and blocks unfoldable. Editors now fall back to
+  indentation-based folding until the server returns structural folding
+  ranges.
+
 - Fixed `print()` and `debug_assert()` emitting garbled output on AMD GPUs when
   a printed string's byte length was an exact multiple of 8. The AMDGPU
   `hostcall` printf interface reads each string up to its nul terminator, and
