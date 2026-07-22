@@ -47,9 +47,7 @@ struct Node[
         ElementType: The type of element stored in the node.
     """
 
-    comptime _OpaquePointer = Optional[
-        UnsafePointer[NoneType, MutUntrackedOrigin]
-    ]
+    comptime _OpaquePointer = Optional[Pointer[NoneType, MutUntrackedOrigin]]
 
     var value: Self.ElementType
     """The value stored in this node."""
@@ -61,17 +59,17 @@ struct Node[
     @doc_hidden
     def prev(
         ref self,
-    ) -> ref[self._prev] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
-        return UnsafePointer(to=self._prev).bitcast[
-            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
+    ) -> ref[self._prev] Optional[Pointer[Self, MutUntrackedOrigin]]:
+        return Pointer(to=self._prev).unsafe_bitcast[
+            Optional[Pointer[Self, MutUntrackedOrigin]]
         ]()[]
 
     @doc_hidden
     def next(
         ref self,
-    ) -> ref[self._next] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
-        return UnsafePointer(to=self._next).bitcast[
-            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
+    ) -> ref[self._next] Optional[Pointer[Self, MutUntrackedOrigin]]:
+        return Pointer(to=self._next).unsafe_bitcast[
+            Optional[Pointer[Self, MutUntrackedOrigin]]
         ]()[]
 
     def __init__(
@@ -126,8 +124,8 @@ def _make_node[
 ](
     out node: Node[T],
     var value: T,
-    prev: Optional[UnsafePointer[Node[T], MutUntrackedOrigin]],
-    next: Optional[UnsafePointer[Node[T], MutUntrackedOrigin]],
+    prev: Optional[Pointer[Node[T], MutUntrackedOrigin]],
+    next: Optional[Pointer[Node[T], MutUntrackedOrigin]],
 ):
     """Initialize a new Node with the given value and optional prev/next
     pointers.
@@ -139,8 +137,8 @@ def _make_node[
     """
     node = Node(
         value^,
-        UnsafePointer(to=prev).bitcast[Node[T]._OpaquePointer]()[],
-        UnsafePointer(to=next).bitcast[Node[T]._OpaquePointer]()[],
+        Pointer(to=prev).unsafe_bitcast[Node[T]._OpaquePointer]()[],
+        Pointer(to=next).unsafe_bitcast[Node[T]._OpaquePointer]()[],
     )
 
 
@@ -153,9 +151,7 @@ struct _LinkedListIter[
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     var src: Pointer[LinkedList[Self.ElementType], Self.origin]
-    var curr: Optional[
-        UnsafePointer[Node[Self.ElementType], MutUntrackedOrigin]
-    ]
+    var curr: Optional[Pointer[Node[Self.ElementType], MutUntrackedOrigin]]
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -220,7 +216,7 @@ struct _LinkedListIterOwned[T: Movable & ImplicitlyDeletable](
         # Pop from front: take the head node, relink, and return the value.
         # (Mirrors LinkedList.pop() but operates on the head instead of tail.)
         var nn = self._list._head.value()
-        var node = nn.take_pointee()
+        var node = nn.unsafe_take_pointee()
         self._list._head = node.next()
         self._list._size -= 1
         if self._list._size == 0:
@@ -271,7 +267,7 @@ struct LinkedList[ElementType: Movable](
     """
 
     comptime _NodePointer = Optional[
-        UnsafePointer[Node[Self.ElementType], MutUntrackedOrigin]
+        Pointer[Node[Self.ElementType], MutUntrackedOrigin]
     ]
 
     comptime IteratorType[
@@ -370,7 +366,7 @@ struct LinkedList[ElementType: Movable](
         while curr:
             var nn = curr.value()
             var next = nn[].next()
-            destroy_func(nn.take_pointee()._into_value())
+            destroy_func(nn.unsafe_take_pointee()._into_value())
             dealloc(
                 ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
                     {count = 1}
@@ -413,8 +409,10 @@ struct LinkedList[ElementType: Movable](
         Notes:
             Time Complexity: O(1).
         """
-        var addr = alloc(Layout[Node[Self.ElementType]].single()).unsafe_leak()
-        var value_ptr = UnsafePointer(to=addr[].value)
+        var addr: Pointer[Node[Self.ElementType], MutUntrackedOrigin] = alloc(
+            Layout[Node[Self.ElementType]].single()
+        ).unsafe_leak()
+        var value_ptr = Pointer(to=addr[].value)
         value_ptr.unsafe_write(value^)
         addr[].prev() = self._tail
         addr[].next() = Self._NodePointer()
@@ -435,7 +433,9 @@ struct LinkedList[ElementType: Movable](
             Time Complexity: O(1).
         """
         var node = _make_node[Self.ElementType](value^, None, self._head)
-        var addr = alloc(Layout[Node[Self.ElementType]].single()).unsafe_leak()
+        var addr: Pointer[Node[Self.ElementType], MutUntrackedOrigin] = alloc(
+            Layout[Node[Self.ElementType]].single()
+        ).unsafe_leak()
         addr.unsafe_write(node^)
         if self:
             self._head.value()[].prev() = addr
@@ -478,7 +478,7 @@ struct LinkedList[ElementType: Movable](
             raise "Pop on empty list."
 
         var nn = self._tail.value()
-        var node = nn.take_pointee()
+        var node = nn.unsafe_take_pointee()
         self._tail = node.prev()
         self._size -= 1
         if self._size == 0:
@@ -519,7 +519,7 @@ struct LinkedList[ElementType: Movable](
 
         if current:
             var nn = current.value()
-            var node = nn.take_pointee()
+            var node = nn.unsafe_take_pointee()
             if node.prev():
                 node.prev().value()[].next() = node.next()
             else:
@@ -551,7 +551,7 @@ struct LinkedList[ElementType: Movable](
         if not self._tail:
             return Optional[Self.ElementType]()
         var nn = self._tail.value()
-        var node = nn.take_pointee()
+        var node = nn.unsafe_take_pointee()
         self._tail = node.prev()
         self._size -= 1
         if self._size == 0:
@@ -590,7 +590,7 @@ struct LinkedList[ElementType: Movable](
             return Optional[Self.ElementType]()
         else:
             var nn = current.value()
-            var node = nn.take_pointee()
+            var node = nn.unsafe_take_pointee()
             if node.prev():
                 node.prev().value()[].next() = node.next()
             else:
@@ -655,9 +655,9 @@ struct LinkedList[ElementType: Movable](
         check_bounds(i, len(self) + 1)
 
         if i == 0:
-            var node = alloc(
-                Layout[Node[Self.ElementType]].single()
-            ).unsafe_leak()
+            var node: Pointer[
+                Node[Self.ElementType], MutUntrackedOrigin
+            ] = alloc(Layout[Node[Self.ElementType]].single()).unsafe_leak()
             node.unsafe_write(
                 _make_node[Self.ElementType](
                     elem^, Self._NodePointer(), Self._NodePointer()
@@ -682,8 +682,10 @@ struct LinkedList[ElementType: Movable](
         var current = self._get_node_ptr(i)
         var curr_nn = current.value()
         var next = curr_nn[].next()
-        var node = alloc(Layout[Node[Self.ElementType]].single()).unsafe_leak()
-        var data = UnsafePointer(to=node[].value)
+        var node: Pointer[Node[Self.ElementType], MutUntrackedOrigin] = alloc(
+            Layout[Node[Self.ElementType]].single()
+        ).unsafe_leak()
+        var data = Pointer(to=node[].value)
         data.unsafe_write(elem^)
         node[].next() = next
         node[].prev() = current
@@ -859,7 +861,7 @@ struct LinkedList[ElementType: Movable](
         Notes:
             Time Complexity: O(n/2) in len(self).
         """
-        return UnsafePointer(
+        return Pointer(
             to=self._get_node_ptr(idx).value()[].value
         )._get_ref_with_unsafe_interior_origin["element", origin_of(self)]()
 
