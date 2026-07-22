@@ -18,7 +18,7 @@ import logging
 from dataclasses import dataclass, field, fields
 from typing import Any, ClassVar, cast
 
-from max.driver import Buffer, Device, DLPackArray
+from max.driver import Buffer, Device, DLPackArray, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, ops
@@ -174,7 +174,10 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         model_config: DeepseekV3NextNConfig,
     ) -> None:
         self.ep_comm_initializer = None
-        if model_config.ep_config is None:
+        # Skip EP initialization in virtual device mode (compilation-only)
+        # since NVSHMEM functions cannot be linked without real GPU devices.
+        # We still keep ep_config to generate the correct graph structure.
+        if model_config.ep_config is None or is_virtual_device_mode():
             return
         if self._shared_ep_comm_initializer is not None:
             # Reuse target model's EP buffers (NVSHMEM symmetric memory).
