@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_test")
 
-package(default_visibility = ["//visibility:private"])
+package(default_visibility = ["//max:consumers"])
 
 _LIT_TESTS = [
     "test_sin_cos_f64.mojo",

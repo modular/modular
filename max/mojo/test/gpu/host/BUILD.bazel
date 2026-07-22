@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "mojo_test")
 
-package(default_visibility = ["//visibility:private"])
+package(default_visibility = ["//max:consumers"])
 
 # Metal-only: `MetalDeviceTypeEncoder._buffers` is Metal-specific state, so this
 # test is compatible only with the Apple GPU toolchain.

@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "mojo_test")
 
-package(default_visibility = ["//visibility:private"])
+package(default_visibility = ["//max:consumers"])
 
 # FIXME: MOCO-3587 — Metal compiler crash on test_reduce
 _APPLE_GPU_INCOMPATIBLE_TESTS = [
