@@ -27,8 +27,8 @@ def test_basic_lock() raises:
     comptime maxI = 100
     comptime maxJ = 100
 
-    async def inc() {mut}:
-        with BlockingScopedLock(lock):
+    async def inc(mut blockingLock: BlockingSpinLock) {mut}:
+        with BlockingScopedLock(blockingLock):
             rawCounter += 1
             _ = counter.fetch_add(1)
 
@@ -44,7 +44,7 @@ def test_basic_lock() raises:
         var tg = TaskGroup()
         for _ in range(0, maxI):
             for _ in range(0, maxJ):
-                tg.create_task(inc())
+                tg.create_task(inc(lock))
         tg.wait[origin_of(lock)._mlir_origin]()
 
     _ = time_function(test_atomic)
