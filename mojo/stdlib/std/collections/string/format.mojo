@@ -138,9 +138,7 @@ def _comptime_list_to_span[
         var array = InlineArray[T, len(list)](uninitialized=True)
 
         comptime for i in range(len(list)):
-            UnsafePointer(to=array[i]).unsafe_write(
-                materialize[list[i].copy()]()
-            )
+            Pointer(to=array[i]).unsafe_write(materialize[list[i].copy()]())
         return array^
 
     comptime array = list_to_array[list]()

@@ -492,7 +492,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     @always_inline
     def unsafe_write_utf8[
         optimize_ascii: Bool = True, branchless: Bool = False
-    ](self, ptr: UnsafePointer[mut=True, Byte, ...]) -> Int:
+    ](self, ptr: Pointer[mut=True, Byte, ...]) -> Int:
         """Shift unicode to utf8 representation.
 
         Parameters:
@@ -541,47 +541,59 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
             comptime cont_marker = 0b1000_0000  # marker for continuation bytes
 
             if is_ascii:
-                ptr[0] = Byte(c)
+                ptr[unsafe_offset=0] = Byte(c)
             elif num_bytes == 2:
-                ptr[0] = Byte(
+                ptr[unsafe_offset=0] = Byte(
                     (c >> 6) | 0b1100_0000
                 )  # marker for 2 byte sequence
-                ptr[1] = Byte((c & cont_mask) | cont_marker)
+                ptr[unsafe_offset=1] = Byte((c & cont_mask) | cont_marker)
             elif num_bytes == 3:
-                ptr[0] = Byte(
+                ptr[unsafe_offset=0] = Byte(
                     (c >> 12) | 0b1110_0000
                 )  # marker for 3 byte sequence
-                ptr[1] = Byte(((c >> 6) & cont_mask) | cont_marker)
-                ptr[2] = Byte((c & cont_mask) | cont_marker)
+                ptr[unsafe_offset=1] = Byte(
+                    ((c >> 6) & cont_mask) | cont_marker
+                )
+                ptr[unsafe_offset=2] = Byte((c & cont_mask) | cont_marker)
             else:
-                ptr[0] = Byte(
+                ptr[unsafe_offset=0] = Byte(
                     (c >> 18) | 0b1111_0000
                 )  # marker for 4 byte sequence
-                ptr[1] = Byte(((c >> 12) & cont_mask) | cont_marker)
-                ptr[2] = Byte(((c >> 6) & cont_mask) | cont_marker)
-                ptr[3] = Byte((c & cont_mask) | cont_marker)
+                ptr[unsafe_offset=1] = Byte(
+                    ((c >> 12) & cont_mask) | cont_marker
+                )
+                ptr[unsafe_offset=2] = Byte(
+                    ((c >> 6) & cont_mask) | cont_marker
+                )
+                ptr[unsafe_offset=3] = Byte((c & cont_mask) | cont_marker)
         else:
             comptime if optimize_ascii:
                 if likely(num_bytes == 1):
-                    ptr[0] = UInt8(c)
+                    ptr[unsafe_offset=0] = UInt8(c)
                     return 1
                 var shift = 6 * (num_bytes - 1)
                 var mask = UInt8(0xFF) >> UInt8(num_bytes + 1)
                 var num_bytes_marker = UInt8(0xFF) << UInt8(8 - num_bytes)
-                ptr[0] = (UInt8(c >> shift) & mask) | num_bytes_marker
+                ptr[unsafe_offset=0] = (
+                    UInt8(c >> shift) & mask
+                ) | num_bytes_marker
                 for i in range(1, num_bytes):
                     shift -= 6
-                    ptr[i] = Byte(((c >> shift) & 0b0011_1111) | 0b1000_0000)
+                    ptr[unsafe_offset=i] = Byte(
+                        ((c >> shift) & 0b0011_1111) | 0b1000_0000
+                    )
             else:
                 var shift = 6 * (num_bytes - 1)
                 var mask = UInt8(0xFF) >> UInt8(num_bytes + Int(num_bytes > 1))
                 var num_bytes_marker = UInt8(0xFF) << UInt8(8 - num_bytes)
-                ptr[0] = (UInt8(c >> shift) & mask) | (
+                ptr[unsafe_offset=0] = (UInt8(c >> shift) & mask) | (
                     num_bytes_marker & UInt8(splat(num_bytes != 1))
                 )
                 for i in range(1, num_bytes):
                     shift -= 6
-                    ptr[i] = Byte(((c >> shift) & 0b0011_1111) | 0b1000_0000)
+                    ptr[unsafe_offset=i] = Byte(
+                        ((c >> shift) & 0b0011_1111) | 0b1000_0000
+                    )
 
         return num_bytes
 

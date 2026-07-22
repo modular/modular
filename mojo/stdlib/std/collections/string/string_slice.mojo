@@ -194,7 +194,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         )
         var ptr = UnsafePointer[mut=False, _, ImmStaticOrigin](
             _mlir_value=__mlir_op.`pop.string.address`(_kgen)
-        ).bitcast[Byte]()
+        ).unsafe_bitcast[Byte]()
         self._slice = {ptr = ptr, length = length}
 
     @always_inline
@@ -380,7 +380,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         comptime if Self.origin.mut:
             # FIXME(MOCO-3906): Needs `unsafe_mut_cast()` because type refinement
             #   based on the `if origin.mut` knowledge is not supported.
-            ref value_mut = UnsafePointer(to=value).unsafe_mut_cast[True]()[]
+            ref value_mut = Pointer(to=value).unsafe_mut_cast[True]()[]
 
             # Note: unsafe_as_bytes_mut() reallocates the `String` data if it
             #   was originally constructed from a read-only static string.
@@ -2676,9 +2676,7 @@ def _to_string_list[
 
 
 @always_inline
-def _unsafe_strlen(
-    ptr: UnsafePointer[mut=False, Byte, _], max: Int = Int.MAX
-) -> Int:
+def _unsafe_strlen(ptr: Pointer[mut=False, Byte, _], max: Int = Int.MAX) -> Int:
     """Get the length of a null-terminated string from a pointer.
 
     Args:
@@ -2692,7 +2690,7 @@ def _unsafe_strlen(
         The length does NOT include the null terminator.
     """
     var offset = 0
-    while offset < max and ptr[offset]:
+    while offset < max and ptr[unsafe_offset=offset]:
         offset += 1
     return offset
 
@@ -2700,18 +2698,18 @@ def _unsafe_strlen(
 @always_inline
 def _memchr[
     dtype: DType, //
-](source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]) -> Optional[
-    UnsafePointer[Scalar[dtype], source.origin]
-]:
+](
+    source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]
+) -> OptionalPointer[Scalar[dtype], source.origin]:
     if (
         __is_run_in_comptime_interpreter
         or len(source) < simd_width_of[Scalar[dtype]]()
     ):
-        var ptr = source.unsafe_ptr()
+        var ptr: Pointer[Scalar[dtype], source.origin] = source.unsafe_ptr()
 
         for i in range(len(source)):
-            if ptr[i] == char:
-                return ptr + i
+            if ptr[unsafe_offset=i] == char:
+                return ptr.unsafe_offset(i)
         return {}
     else:
         return _memchr_impl(source, char)
@@ -2723,22 +2721,26 @@ def _memchr_impl[
 ](
     source: Span[mut=False, Scalar[dtype], ...],
     char: Scalar[dtype],
-) -> Optional[UnsafePointer[Scalar[dtype], source.origin]]:
-    var haystack = source.unsafe_ptr()
+) -> OptionalPointer[Scalar[dtype], source.origin]:
+    var haystack: Pointer[Scalar[dtype], source.origin] = source.unsafe_ptr()
     var length = len(source)
     comptime bool_mask_width = simd_width_of[DType.bool]()
     var first_needle = SIMD[dtype, bool_mask_width](char)
     var vectorized_end = align_down(length, bool_mask_width)
 
     for i in range(0, vectorized_end, bool_mask_width):
-        var bool_mask = haystack.load[width=bool_mask_width](i).eq(first_needle)
+        var bool_mask = haystack.unsafe_load[width=bool_mask_width](i).eq(
+            first_needle
+        )
         var mask = pack_bits(bool_mask)
         if mask:
-            return haystack + Int(type_of(mask)(i) + count_trailing_zeros(mask))
+            return haystack.unsafe_offset(
+                Int(type_of(mask)(i) + count_trailing_zeros(mask))
+            )
 
     for i in range(vectorized_end, length):
-        if haystack[i] == char:
-            return haystack + i
+        if haystack[unsafe_offset=i] == char:
+            return haystack.unsafe_offset(i)
 
     return {}
 
@@ -2753,22 +2755,29 @@ def _memmem[
         Scalar[dtype],
         ...,
     ],
-) -> Optional[UnsafePointer[Scalar[dtype], haystack_span.origin]]:
+) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
     if (
         __is_run_in_comptime_interpreter
         or len(haystack_span) < simd_width_of[Scalar[dtype]]()
     ):
-        var haystack = haystack_span.unsafe_ptr()
+        var haystack: Pointer[
+            Scalar[dtype], haystack_span.origin
+        ] = haystack_span.unsafe_ptr()
         var haystack_len = len(haystack_span)
         var needle = needle_span.unsafe_ptr()
         var needle_len = len(needle_span)
 
         for i in range(haystack_len - needle_len + 1):
-            if haystack[i] != needle[0]:
+            if haystack[unsafe_offset=i] != needle[0]:
                 continue
 
-            if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
-                return haystack + i
+            if (
+                memcmp(
+                    haystack.unsafe_offset(i + 1), needle + 1, needle_len - 1
+                )
+                == 0
+            ):
+                return haystack.unsafe_offset(i)
 
         return {}
     else:
@@ -2785,8 +2794,10 @@ def _memmem_impl[
         Scalar[dtype],
         ...,
     ],
-) -> Optional[UnsafePointer[Scalar[dtype], haystack_span.origin]]:
-    var haystack = haystack_span.unsafe_ptr()
+) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
+    var haystack: Pointer[
+        Scalar[dtype], haystack_span.origin
+    ] = haystack_span.unsafe_ptr()
     var haystack_len = len(haystack_span)
     var needle = needle_span.unsafe_ptr()
     var needle_len = len(needle_span)
@@ -2805,8 +2816,8 @@ def _memmem_impl[
     var last_needle = SIMD[dtype, bool_mask_width](needle[needle_len - 1])
 
     for i in range(0, vectorized_end, bool_mask_width):
-        var first_block = haystack.load[width=bool_mask_width](i)
-        var last_block = haystack.load[width=bool_mask_width](
+        var first_block = haystack.unsafe_load[width=bool_mask_width](i)
+        var last_block = haystack.unsafe_load[width=bool_mask_width](
             i + needle_len - 1
         )
 
@@ -2817,16 +2828,26 @@ def _memmem_impl[
 
         while mask:
             var offset = i + Int(count_trailing_zeros(mask))
-            if memcmp(haystack + offset + 1, needle + 1, needle_len - 1) == 0:
-                return haystack + offset
+            if (
+                memcmp(
+                    haystack.unsafe_offset(offset + 1),
+                    needle + 1,
+                    needle_len - 1,
+                )
+                == 0
+            ):
+                return haystack.unsafe_offset(offset)
             mask = mask & (mask - 1)
 
     for i in range(vectorized_end, haystack_len - needle_len + 1):
-        if haystack[i] != needle[0]:
+        if haystack[unsafe_offset=i] != needle[0]:
             continue
 
-        if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
-            return haystack + i
+        if (
+            memcmp(haystack.unsafe_offset(i + 1), needle + 1, needle_len - 1)
+            == 0
+        ):
+            return haystack.unsafe_offset(i)
     return {}
 
 
@@ -2836,12 +2857,11 @@ def _memrchr[
 ](
     source: Span[mut=False, Scalar[dtype], _],
     char: Scalar[dtype],
-) -> Optional[
-    UnsafePointer[Scalar[dtype], source.origin]
-]:
+) -> OptionalPointer[Scalar[dtype], source.origin]:
+    var base: Pointer[Scalar[dtype], source.origin] = source.unsafe_ptr()
     for i in reversed(range(len(source))):
         if source.unsafe_get(i) == char:
-            return source.unsafe_ptr() + i
+            return base.unsafe_offset(i)
     return {}
 
 
@@ -2851,9 +2871,10 @@ def _memrmem[
 ](
     haystack: Span[mut=False, Scalar[dtype], _],
     needle: Span[mut=False, Scalar[dtype], _],
-) -> Optional[UnsafePointer[Scalar[dtype], haystack.origin]]:
+) -> OptionalPointer[Scalar[dtype], haystack.origin]:
+    var hp: Pointer[Scalar[dtype], haystack.origin] = haystack.unsafe_ptr()
     if not needle:
-        return haystack.unsafe_ptr()
+        return hp
     if len(needle) > len(haystack):
         return {}
     if len(needle) == 1:
@@ -2863,13 +2884,13 @@ def _memrmem[
             continue
         if (
             memcmp(
-                haystack.unsafe_ptr() + i + 1,
+                hp.unsafe_offset(i + 1),
                 needle.unsafe_ptr() + 1,
                 len(needle) - 1,
             )
             == 0
         ):
-            return haystack.unsafe_ptr() + i
+            return hp.unsafe_offset(i)
     return {}
 
 

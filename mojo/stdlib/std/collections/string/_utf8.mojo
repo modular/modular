@@ -324,7 +324,7 @@ def _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> type_of(b):
 def _is_newline_char_utf8[
     include_r_n: Bool = False
 ](
-    p: UnsafePointer[mut=False, Byte, ...],
+    p: Pointer[mut=False, Byte, ...],
     eol_start: Int,
     b0: Byte,
     char_len: Int,
@@ -352,7 +352,7 @@ def _is_newline_char_utf8[
     elif char_len == 4:
         return False
 
-    var b1 = p[eol_start + 1]
+    var b1 = p[unsafe_offset=eol_start + 1]
     if char_len == 2:
         var is_next_line = b0 == 0xC2 and b1 == 0x85  # unicode next line \x85
 
@@ -362,7 +362,7 @@ def _is_newline_char_utf8[
             return is_next_line
     else:  # unicode line sep or paragraph sep: \u2028 , \u2029
         assert char_len == 3, "invalid UTF-8 byte length"
-        var b2 = p[eol_start + 2]
+        var b2 = p[unsafe_offset=eol_start + 2]
         return b0 == 0xE2 and b1 == 0x80 and (b2 == 0xA8 or b2 == 0xA9)
 
 
