@@ -217,6 +217,12 @@ def test_access_or_raise_custom_error_convert_to_error() raises:
     var x = access_or_raise_custom_error(l)
     _ = x
 
+# MOCO-4374
+def test_problem_4374():
+    var lst = MyList[Int]()
+    p = Pointer(to=lst[])
+    _ = p[]
+
 # ===----------------------------------------------------------------------=== #
 # Closures
 # ===----------------------------------------------------------------------=== #
