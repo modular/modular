@@ -605,11 +605,7 @@ def uninit_move_n[
             unsafe_memcpy(dest=dest, src=src, count=count)
     else:
         for i in range(count):
-            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
-            # method.
-            MutUnsafePointer(dest.unsafe_offset(i)).init_pointee_move_from(
-                MutUnsafePointer(src.unsafe_offset(i))
-            )
+            dest.unsafe_offset(i).unsafe_write_move_from(src.unsafe_offset(i))
 
 
 @always_inline

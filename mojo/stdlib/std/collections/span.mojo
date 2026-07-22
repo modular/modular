@@ -808,9 +808,7 @@ struct Span[
             var middle_prev = ptr.unsafe_offset(middle - 1).unsafe_origin_cast[
                 MutAnyOrigin
             ]()
-            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
-            # method.
-            ptr.unsafe_offset(middle + 1).init_pointee_move_from(middle_prev)
+            ptr.unsafe_offset(middle + 1).unsafe_write_move_from(middle_prev)
             middle_prev.unsafe_write(value)
 
     def apply[

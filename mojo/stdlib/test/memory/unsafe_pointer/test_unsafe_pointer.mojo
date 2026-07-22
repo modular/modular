@@ -133,7 +133,7 @@ def test_unsafepointer_move_pointee_move_count() raises:
     assert_equal(1, ptr[].move_count)
 
     var ptr_2 = alloc[MoveCounter[Int]](1)
-    ptr_2.init_pointee_move_from(ptr)
+    ptr_2.unsafe_write_move_from(ptr)
 
     assert_equal(2, ptr_2[].move_count)
 

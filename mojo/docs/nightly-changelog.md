@@ -862,6 +862,20 @@ This version is still a work in progress.
   names going forward. Each method's docstring documents the exact `Safety:`
   requirements the caller must uphold.
 
+- `UnsafePointer.init_pointee_move_from()` is now deprecated in favor of the new
+  `unsafe_write_move_from()` method, which moves the value out of a source
+  pointer into the uninitialized memory `self` points to (leaving the source
+  uninitialized):
+
+  ```mojo
+  dst.unsafe_write_move_from(src)
+  ```
+
+  Like `unsafe_write()` and `unsafe_take_pointee()`, this method works on any
+  `Pointer` — the old `init_pointee_move_from()` was gated behind an unsafe
+  pointer type, so callers no longer need to wrap safe pointers in
+  `MutUnsafePointer` to move a value between them.
+
 - `OwnedDLHandle.get_function` now returns a callable that keeps the owning
   handle alive while it runs, fixing a crash where the library could be
   `dlclose`d between symbol lookup and the call. Its parameter is now the

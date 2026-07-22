@@ -240,14 +240,14 @@ def _flatten[
     """
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(result))
 
-    UnsafePointer(to=result[0]).init_pointee_move_from(
+    UnsafePointer(to=result[0]).unsafe_write_move_from(
         rebind[UnsafePointer[type_of(result[0]), origin_of(arg)]](
             UnsafePointer(to=arg[0])
         )
     )
 
     comptime for j in range(type_of(arg[1]).__len__()):
-        UnsafePointer(to=result[j + 1]).init_pointee_move_from(
+        UnsafePointer(to=result[j + 1]).unsafe_write_move_from(
             rebind[UnsafePointer[type_of(result[j + 1]), origin_of(arg)]](
                 UnsafePointer(to=arg[1][j])
             )

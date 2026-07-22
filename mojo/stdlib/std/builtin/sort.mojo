@@ -49,9 +49,9 @@ def _insertion_sort[
         # find the position. Throughout, we assume array[start:i] has already
         # been sorted.
         while j > 0 and cmp_fn(value, array[unsafe_offset=j - 1]):
-            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
-            # method.
-            array.unsafe_offset(j).init_pointee_move_from(
+            # TODO(MSTDL-2902): Migrate off `Span.unsafe_ptr()` to a safe
+            # `Pointer`.
+            array.unsafe_offset(j).unsafe_write_move_from(
                 array.unsafe_offset(j - 1)
             )
             j -= 1
@@ -305,30 +305,30 @@ def _merge[
     var i = 0
     var j = 0
     var k = 0
-    # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_ method.
+    # TODO(MSTDL-2902): Migrate off `Span.unsafe_ptr()` to a safe `Pointer`.
     while i < span1_size:
         if j == span2_size:
             while i < span1_size:
-                res_ptr.unsafe_offset(k).init_pointee_move_from(
+                res_ptr.unsafe_offset(k).unsafe_write_move_from(
                     span1_ptr.unsafe_offset(i)
                 )
                 k += 1
                 i += 1
             return
         if cmp_fn(span2.unsafe_get(j), span1.unsafe_get(i)):
-            res_ptr.unsafe_offset(k).init_pointee_move_from(
+            res_ptr.unsafe_offset(k).unsafe_write_move_from(
                 span2_ptr.unsafe_offset(j)
             )
             j += 1
         else:
-            res_ptr.unsafe_offset(k).init_pointee_move_from(
+            res_ptr.unsafe_offset(k).unsafe_write_move_from(
                 span1_ptr.unsafe_offset(i)
             )
             i += 1
         k += 1
 
     while j < span2_size:
-        res_ptr.unsafe_offset(k).init_pointee_move_from(
+        res_ptr.unsafe_offset(k).unsafe_write_move_from(
             span2_ptr.unsafe_offset(j)
         )
         k += 1
@@ -364,12 +364,8 @@ def _stable_sort_impl[
             )
             _merge[cmp_fn](span1, span2, temp_buff)
             for i in range(merge_size + len(span2)):
-                # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
-                # method.
-                MutUnsafePointer(
-                    Pointer(to=span.unsafe_get(j + i))
-                ).init_pointee_move_from(
-                    MutUnsafePointer(Pointer(to=temp_buff.unsafe_get(i)))
+                Pointer(to=span.unsafe_get(j + i)).unsafe_write_move_from(
+                    Pointer(to=temp_buff.unsafe_get(i))
                 )
             j += 2 * merge_size
         merge_size *= 2

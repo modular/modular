@@ -293,10 +293,8 @@ struct _DefaultVariantStorage[*Ts: AnyType](
             comptime assert conforms_to(T, Movable)
 
             if self.get_discriminant() == UInt8(i):
-                # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
-                # method
-                MutUnsafePointer(self.unsafe_ptr[T]()).init_pointee_move_from(
-                    MutUnsafePointer(move.unsafe_ptr[T]())
+                self.unsafe_ptr[T]().unsafe_write_move_from(
+                    move.unsafe_ptr[T]()
                 )
                 return
 

@@ -235,12 +235,12 @@ non-null, and the memory location contains a valid, initialized value of the
 pointee's type; otherwise the function results in undefined behavior.
 
 Calling
-[`init_pointee_move_from(self, src)`](/docs/std/memory/unsafe_pointer/UnsafePointer/#init_pointee_move_from)
+[`unsafe_write_move_from(self, src)`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_write_move_from)
 moves the value pointed to by `src` into the memory location pointed to by
 `self`. After this operation, ownership of that value transfers from `src` to
 `self` and the memory at `src` is uninitialized: do not read from it, and do not
 invoke destructors on it. To make the memory valid again, initialize it with a
-new value using one of the `init_pointee_*()` operations.
+new value using one of the `unsafe_write*()` operations.
 
 :::note
 Mojo assumes the destination memory is uninitialized.

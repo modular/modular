@@ -404,7 +404,7 @@ struct InlineArray[T: AnyType, length: Int](
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         for i in range(Self.length):
-            (self.unsafe_ptr() + i).init_pointee_move_from(
+            (self.unsafe_ptr() + i).unsafe_write_move_from(
                 unsafe_assume_initialized[i].unsafe_ptr()
             )
 
@@ -503,10 +503,10 @@ struct InlineArray[T: AnyType, length: Int](
             # TODO(MOCO-4058): The `where conforms_to(Self.T, Movable)` clause
             # narrows the `elems` pack element to `T(Movable)`, but
             # `self.unsafe_ptr()` keeps the struct's `T` bound, so the two views
-            # don't unify at `init_pointee_move_from`. Reconcile the source
+            # don't unify at `unsafe_write_move_from`. Reconcile the source
             # pointer's element view; drop the bitcast once the compiler
             # propagates `where`-clause evidence to the field type.
-            ptr.init_pointee_move_from(
+            ptr.unsafe_write_move_from(
                 UnsafePointer(to=elems[i]).bitcast[Self.T]()
             )
             ptr += 1
@@ -561,7 +561,7 @@ struct InlineArray[T: AnyType, length: Int](
             self = Self(uninitialized=True)
             for idx in range(Self.length):
                 var other_ptr = move.unsafe_ptr() + idx
-                (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
+                (self.unsafe_ptr() + idx).unsafe_write_move_from(other_ptr)
 
     def __del__(
         deinit self,

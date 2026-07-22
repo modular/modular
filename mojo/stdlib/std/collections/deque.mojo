@@ -714,7 +714,7 @@ struct Deque[ElementType: Movable](
         # move remaining elements from `values`
         src = values_data + n_pop_values
         for i in range(n_move_values):
-            (self._data + self._tail).init_pointee_move_from(src + i)
+            (self._data + self._tail).unsafe_write_move_from(src + i)
             self._tail = self._physical_index(self._tail + 1)
 
         # free the list backing buffer
@@ -759,7 +759,7 @@ struct Deque[ElementType: Movable](
         src = values_data + n_pop_values
         for i in range(n_move_values):
             self._head = self._physical_index(self._head - 1)
-            (self._data + self._head).init_pointee_move_from(src + i)
+            (self._data + self._head).unsafe_write_move_from(src + i)
 
         dealloc(
             ThinAllocation(
@@ -834,13 +834,13 @@ struct Deque[ElementType: Movable](
             for i in range(idx):
                 src = self._physical_index(self._head + i)
                 dst = self._physical_index(src - 1)
-                (self._data + dst).init_pointee_move_from(self._data + src)
+                (self._data + dst).unsafe_write_move_from(self._data + src)
             self._head = self._physical_index(self._head - 1)
         else:
             for i in range(deque_len - idx):
                 dst = self._physical_index(self._tail - i)
                 src = self._physical_index(dst - 1)
-                (self._data + dst).init_pointee_move_from(self._data + src)
+                (self._data + dst).unsafe_write_move_from(self._data + src)
             self._tail = self._physical_index(self._tail + 1)
 
         offset = self._physical_index(self._head + idx)
@@ -872,7 +872,7 @@ struct Deque[ElementType: Movable](
                     for i in reversed(range(idx)):
                         src = self._physical_index(self._head + i)
                         dst = self._physical_index(src + 1)
-                        (self._data + dst).init_pointee_move_from(
+                        (self._data + dst).unsafe_write_move_from(
                             self._data + src
                         )
                     self._head = self._physical_index(self._head + 1)
@@ -880,7 +880,7 @@ struct Deque[ElementType: Movable](
                     for i in range(idx + 1, deque_len):
                         src = self._physical_index(self._head + i)
                         dst = self._physical_index(src - 1)
-                        (self._data + dst).init_pointee_move_from(
+                        (self._data + dst).unsafe_write_move_from(
                             self._data + src
                         )
                     self._tail = self._physical_index(self._tail - 1)
@@ -983,7 +983,7 @@ struct Deque[ElementType: Movable](
             src = self._physical_index(self._head + i)
             dst = self._physical_index(last - i)
             tmp = (self._data + dst).take_pointee()
-            (self._data + dst).init_pointee_move_from(self._data + src)
+            (self._data + dst).unsafe_write_move_from(self._data + src)
             (self._data + src).unsafe_write(tmp^)
 
     def rotate(mut self, n: Int = 1):
@@ -998,7 +998,7 @@ struct Deque[ElementType: Movable](
         """
         if n < 0:
             for _ in range(-n):
-                (self._data + self._tail).init_pointee_move_from(
+                (self._data + self._tail).unsafe_write_move_from(
                     self._data + self._head
                 )
                 self._tail = self._physical_index(self._tail + 1)
@@ -1007,7 +1007,7 @@ struct Deque[ElementType: Movable](
             for _ in range(n):
                 self._tail = self._physical_index(self._tail - 1)
                 self._head = self._physical_index(self._head - 1)
-                (self._data + self._head).init_pointee_move_from(
+                (self._data + self._head).unsafe_write_move_from(
                     self._data + self._tail
                 )
 
@@ -1081,7 +1081,7 @@ struct Deque[ElementType: Movable](
 
         for i in range(n_retain):
             offset = self._physical_index(self._head + i)
-            (new_data + i).init_pointee_move_from(self._data + offset)
+            (new_data + i).unsafe_write_move_from(self._data + offset)
 
         if self._capacity > 0:
             dealloc(
@@ -1120,12 +1120,12 @@ struct Deque[ElementType: Movable](
         src = self._data + self._head
         dsc = new_data
         for i in range(head_len):
-            (dsc + i).init_pointee_move_from(src + i)
+            (dsc + i).unsafe_write_move_from(src + i)
 
         src = self._data
         dsc = new_data + head_len
         for i in range(tail_len):
-            (dsc + i).init_pointee_move_from(src + i)
+            (dsc + i).unsafe_write_move_from(src + i)
 
         self._head = 0
         self._tail = deque_len

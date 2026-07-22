@@ -914,10 +914,7 @@ struct List[T: Movable, /](
             var later_ptr = self._data.unsafe_offset(later_idx)
 
             var tmp = earlier_ptr.unsafe_take_pointee()
-            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_ method
-            MutUnsafePointer(earlier_ptr).init_pointee_move_from(
-                MutUnsafePointer(later_ptr)
-            )
+            earlier_ptr.unsafe_write_move_from(later_ptr)
             later_ptr.unsafe_write(tmp^)
 
             earlier_idx -= 1
@@ -1254,10 +1251,7 @@ struct List[T: Movable, /](
             var later_ptr = self._data.unsafe_offset(later_idx)
 
             var tmp = earlier_ptr.unsafe_take_pointee()
-            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_ method
-            MutUnsafePointer(earlier_ptr).init_pointee_move_from(
-                MutUnsafePointer(later_ptr)
-            )
+            earlier_ptr.unsafe_write_move_from(later_ptr)
             later_ptr.unsafe_write(tmp^)
 
             earlier_idx += 1
