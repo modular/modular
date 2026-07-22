@@ -287,6 +287,8 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
 
     SmallVector<Type> llvmTypes;
     int64_t offset = 0;
+    int64_t llvmMaxFieldAlign = 1;
+    int64_t kgenMaxFieldAlign = 1;
     Type i8Type = IntegerType::get(&getContext(), 8);
 
     for (auto [logicalIdx, kgenType] : llvm::enumerate(*elementTypes)) {
@@ -307,6 +309,8 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
       // alignment, since LLVM doesn't know about KGEN's @align decorators
       // or alignment inheritance from fields.
       int64_t llvmNaturalAlign = getTypeABIAlign(llvmType);
+      llvmMaxFieldAlign = std::max(llvmMaxFieldAlign, llvmNaturalAlign);
+      kgenMaxFieldAlign = std::max(kgenMaxFieldAlign, *kgenAlign);
 
       // Compute where LLVM would naturally place this field and where KGEN
       // requires it.
@@ -332,6 +336,17 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
 
       // Advance offset using KGEN alloc size.
       offset = kgenOffset + *kgenAllocSize;
+    }
+
+    // Ensure the struct size as designed by KGEN is identical to how LLVM sees
+    // it. This is necessary when the struct contains fields that don't carry
+    // their own alignment in the type information (e.g. unions lowered into
+    // byte arrays).
+    if (kgenMaxFieldAlign > llvmMaxFieldAlign) {
+      int64_t paddedSize = llvm::alignTo(offset, kgenMaxFieldAlign);
+      if (paddedSize > offset)
+        llvmTypes.push_back(
+            LLVM::LLVMArrayType::get(i8Type, paddedSize - offset));
     }
 
     return LLVM::LLVMStructType::getLiteral(&getContext(), llvmTypes);
@@ -361,56 +376,25 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     return Builder(&getContext()).getI8Type();
   });
 
-  // Convert union types to an array with enough space to contain the largest
-  // union element type.
+  // Convert union types to a plain byte array big enough for the largest
+  // member. An all-empty union is lowered to an empty struct.
   addConversion([this](POP::UnionType unionType) -> std::optional<Type> {
     // Unresolved (parameterized) unions must be specialized before lowering.
     // They are resolved during monomorphization in the KGEN elaboration pass.
     assert(unionType.isResolved() &&
            "cannot lower unresolved union type to LLVM");
-    // TODO: The generated assembly is sensitive to the content type of the
-    // union type. This needs to be optimized. For now, use an array of
-    // word-size integers.
     int64_t maxSize = 0;
-    std::pair<int64_t, Type> maxAlignAndType(1, nullptr);
     for (Type unionType : unionType.getTypes()) {
       Type type = convertType(unionType);
       if (!type)
         return {};
       maxSize = std::max(maxSize, getTypeAllocSize(type));
-
-      // Record the max aligned member field. Skip members whose converted type
-      // is null (e.g. empty structs): getTypeABIAlignAndType returns
-      // {1, nullptr} for an empty LLVM struct, and allowing that to win via
-      // '>=' would overwrite a valid type entry with a null, causing a null
-      // dereference in getTypeSizeInBits when the null type is later used as
-      // the first field of the lowered union struct.
-      auto curAlignAndMember = getTypeABIAlignAndType(type);
-      if (curAlignAndMember.second &&
-          curAlignAndMember.first >= maxAlignAndType.first)
-        maxAlignAndType = curAlignAndMember;
     }
     if (maxSize == 0)
       return LLVM::LLVMStructType::getLiteral(&getContext(), {});
 
-    // Lower union to {max_align_t, [(max_size - sizeof(max_align_t)) x i8]}.
-    // `max_align_t` ensure whole structure alignment, the tailing array ensures
-    // that we allocate enough memory to hold the maximum variant of the union.
-    Type maxAlignTp = maxAlignAndType.second;
-    SmallVector<Type, 2> structElemTp;
-    structElemTp.push_back(maxAlignTp);
-
-    int64_t remLen = maxSize - getTypeStoreSize(maxAlignTp);
-    if (remLen != 0) {
-      structElemTp.push_back(
-          LLVM::LLVMArrayType::get(IntegerType::get(&getContext(), 8), remLen));
-    }
-
-    auto ret = LLVM::LLVMStructType::getLiteral(&getContext(), structElemTp);
-    assert(maxSize == getTypeAllocSize(ret) &&
-           "expect lowered UnionType to have the same size as the biggest "
-           "union variant.");
-    return ret;
+    return LLVM::LLVMArrayType::get(IntegerType::get(&getContext(), 8),
+                                    maxSize);
   });
 
   // Coroutine handles are always lowered to opaque pointers.
@@ -540,79 +524,25 @@ void VariantHelper::walkAndCreateVariant(
   }
 }
 
-Value VariantHelper::materializeLLVMUnion(
-    mlir::LLVM::LLVMStructType unionStructTp, Value value) {
-  if (unionStructTp.getBody().empty())
-    return LLVM::UndefOp::create(b, unionStructTp);
-
+Value VariantHelper::materializeLLVMUnion(mlir::LLVM::LLVMArrayType unionArrTp,
+                                          Value value) {
+  // The union is a plain byte array, so every storage slot here is a full byte,
+  // and packing is simple: fill the bytes in order.
+  unsigned numBytes = unionArrTp.getNumElements();
   SmallVector<Value> storageValues;
-  auto maxAlignTp = unionStructTp.getBody().front();
-
-  // Normalize the max_align_t to an (potentially array of) integers.
-  if (auto t = dyn_cast<VectorType>(maxAlignTp)) {
-    // Flatten the vector.
-    for (int i = 0, e = t.getNumElements(); i < e; ++i) {
-      storageValues.push_back(LLVM::ConstantOp::create(
-          b, b.getIntegerType(dl.getTypeSizeInBits(t.getElementType())), 0));
-    }
-  } else if (maxAlignTp.isIntOrFloat() ||
-             isa<LLVM::LLVMPointerType>(maxAlignTp)) {
-    storageValues.push_back(LLVM::ConstantOp::create(
-        b, b.getIntegerType(dl.getTypeSizeInBits(maxAlignTp)), 0));
-  } else {
-    llvm_unreachable(
-        "The first type in lowered union type must be non-aggregated.");
-  }
-
-  LLVM::LLVMArrayType tailingMem = nullptr;
-  if (unionStructTp.getBody().size() == 2) {
-    tailingMem = cast<LLVM::LLVMArrayType>(unionStructTp.getBody().back());
-    for (unsigned i = 0, e = tailingMem.getNumElements(); i < e; ++i)
-      storageValues.push_back(
-          LLVM::ConstantOp::create(b, tailingMem.getElementType(), 0));
-  }
+  storageValues.reserve(numBytes);
+  Type i8Ty = b.getIntegerType(8);
+  for (unsigned i = 0; i != numBytes; ++i)
+    storageValues.push_back(LLVM::ConstantOp::create(b, i8Ty, 0));
 
   MutableArrayRef<Value>::iterator valueIt = storageValues.begin();
   unsigned storageOffset = 0;
   unsigned offset = 0;
   walkAndCreateVariant(valueIt, storageOffset, offset, value);
 
-  ArrayRef<Value> toPack = storageValues;
-  Value content = LLVM::UndefOp::create(b, unionStructTp);
-
-  Value maxAlignV;
-  if (auto vecTp = dyn_cast<VectorType>(maxAlignTp)) {
-    // Aggregate the vector.
-    maxAlignV = LLVM::UndefOp::create(b, vecTp);
-    for (int i = 0, e = vecTp.getNumElements(); i < e; ++i) {
-      auto element = toPack.front();
-      maxAlignV = LLVM::InsertElementOp::create(
-          b, maxAlignV,
-          LLVM::BitcastOp::create(b, vecTp.getElementType(), element),
-          LLVM::ConstantOp::create(b, b.getI32Type(), i));
-
-      toPack = toPack.drop_front();
-    }
-  } else if (isa<LLVM::LLVMPointerType>(maxAlignTp)) {
-    maxAlignV = LLVM::IntToPtrOp::create(b, maxAlignTp, toPack.front());
-    toPack = toPack.drop_front();
-  } else if (maxAlignTp.isIntOrFloat()) {
-    maxAlignV = LLVM::BitcastOp::create(b, maxAlignTp, toPack.front());
-    toPack = toPack.drop_front();
-  } else {
-    llvm_unreachable(
-        "The first type in lowered union type must be non-aggregated.");
-  }
-  content = LLVM::InsertValueOp::create(b, content, maxAlignV,
-                                        static_cast<int64_t>(0));
-
-  if (tailingMem) {
-    Value arrayV = LLVM::UndefOp::create(b, tailingMem);
-    for (auto [idx, value] : llvm::enumerate(toPack))
-      arrayV = LLVM::InsertValueOp::create(b, arrayV, value, idx);
-    content = LLVM::InsertValueOp::create(b, content, arrayV, 1);
-  }
-
+  Value content = LLVM::UndefOp::create(b, unionArrTp);
+  for (auto [idx, byteVal] : llvm::enumerate(storageValues))
+    content = LLVM::InsertValueOp::create(b, content, byteVal, idx);
   return content;
 }
 
@@ -1216,10 +1146,15 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
       return loweredValue;
     auto value = loweredValue.get();
 
-    auto contentType =
-        cast_or_null<LLVM::LLVMStructType>(tc.convertType(unionAttr.getType()));
-    if (!contentType)
+    Type unionType = tc.convertType(unionAttr.getType());
+    if (!unionType)
       return Error("cannot lower union constant with unknown type");
+
+    // An all-empty union (every member zero-sized) lowers to an empty struct.
+    if (auto emptyStruct = dyn_cast<LLVM::LLVMStructType>(unionType))
+      return LLVM::UndefOp::create(b, emptyStruct);
+
+    auto contentType = cast<LLVM::LLVMArrayType>(unionType);
     VariantHelper helper(b, b.getLoc(), tc);
     return helper.materializeLLVMUnion(contentType, value);
   }
