@@ -221,7 +221,7 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
       if (!isa_and_nonnull<FnOp>(previous->getIfOperation())) {
         auto diag = emitError(decl->getLoc(), "invalid redefinition of ")
                     << name;
-        diag.attachNote(previous->getLoc())
+        diag.attachNote(*previous)
             << "cannot overload with this non-function definition";
         decl->setErroneous();
         previous->setErroneous();
@@ -260,7 +260,7 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
         auto diag = emitError(decl->getLoc(), "cannot define ")
                     << (addingStruct ? "a struct" : "an extension")
                     << " here with name " << name;
-        diag.attachNote(previous->getLoc())
+        diag.attachNote(*previous)
             << "conflicts with this previous declaration";
         decl->setErroneous();
         previous->setErroneous();
@@ -275,7 +275,7 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
         auto diag =
             emitError(decl->getLoc(), "cannot define a struct here with name ")
             << name;
-        diag.attachNote(previous->getLoc())
+        diag.attachNote(*previous)
             << "conflicts with this previous declaration";
         decl->setErroneous();
         previous->setErroneous();
@@ -285,7 +285,7 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
       if (addingStruct && previousIsStruct) {
         auto diag = emitError(decl->getLoc(), "invalid redefinition of ")
                     << name;
-        diag.attachNote(previous->getLoc())
+        diag.attachNote(*previous)
             << "conflicts with this previous struct declaration";
         decl->setErroneous();
         previous->setErroneous();
@@ -327,7 +327,7 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
     // This is a genuine redefinition error
     ASTDecl *existing = entries.back();
     auto diag = emitError(decl->getLoc(), "invalid redefinition of ") << name;
-    diag.attachNote(existing->getLoc()) << "previous definition here";
+    diag.attachNote(*existing) << "previous definition here";
 
     // Mark the existing decl and this one as erroneous so uses of either
     // don't create confusing errors.
@@ -508,8 +508,8 @@ LogicalResult DeclResolver::checkImportNamingConflict(
 
   if (emitDiagnostics) {
     auto diag = emitError(aliasLoc, "import of ") << name << " is ambiguous";
-    diag.attachNote(conflictA->getLoc()) << name << " declared here";
-    diag.attachNote(conflictB->getLoc()) << name << " also declared here";
+    diag.attachNote(*conflictA) << name << " declared here";
+    diag.attachNote(*conflictB) << name << " also declared here";
   }
   return failure();
 }
@@ -681,7 +681,7 @@ LogicalResult DeclResolver::aliasDeclsImpl(
   // relax this in the future when we know what the right policy should be.
   if (emitDiagnostics) {
     auto diag = emitError(aliasLoc, "invalid redefinition of ") << name;
-    diag.attachNote(existing->getLoc()) << "previous definition here";
+    diag.attachNote(*existing) << "previous definition here";
 
     for (ASTDecl *previous : it->second)
       previous->setErroneous();
@@ -1519,7 +1519,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // resolved.
     for (ASTDecl *prev : llvm::reverse(declsCurrentlyProcessing.stack)) {
       // Bottom out when we find the declaration in question.
-      diag.attachNote(prev->getLoc()) << "by declaration";
+      diag.attachNote(*prev) << "by declaration";
       addDeclName(prev);
 
       diag.attachNote(declsCurrentlyProcessing.map[prev])
