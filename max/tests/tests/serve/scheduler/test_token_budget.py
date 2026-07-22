@@ -87,6 +87,67 @@ def test_token_budget__active_token_budget_without_chunking() -> None:
     assert active_token_budget.remaining < 0
 
 
+def test_token_budget__min_chunk_floor_moves_cut_to_protect_remainder() -> None:
+    # A boundary cut at 100 tokens would leave an 8-token remainder; with a
+    # 32-token floor the cut moves earlier so the remainder stays legal.
+    budget = ActiveTokenBudget(
+        capacity=100,
+        allow_chunking=True,
+        applicable_types=[RequestType.CE],
+        min_chunk_tokens=32,
+    )
+    context = TextContext(
+        tokens=TokenBuffer(np.ones(108, dtype=np.int64)), max_length=200
+    )
+    status = budget.status_after_context(context, request_type=RequestType.CE)
+    assert status == BudgetStatus.BUDGET_REACHED
+    assert context.tokens.active_length == 108 - 32
+
+
+def test_token_budget__min_chunk_floor_refuses_degenerate_splits() -> None:
+    budget = ActiveTokenBudget(
+        capacity=40,
+        allow_chunking=True,
+        applicable_types=[RequestType.CE],
+        min_chunk_tokens=32,
+    )
+
+    # Cutting 50 tokens at the 40-token boundary leaves a 10-token remainder;
+    # moving the cut to protect it (50 - 32 = 18) would make the chunk itself
+    # sub-floor. No legal cut point exists, so the split is refused and the
+    # context is left untouched for a later, roomier step.
+    context = TextContext(
+        tokens=TokenBuffer(np.ones(50, dtype=np.int64)), max_length=200
+    )
+    status = budget.status_after_context(context, request_type=RequestType.CE)
+    assert status == BudgetStatus.BUDGET_EXHAUSTED
+    assert context.tokens.active_length == 50
+
+    # 80 tokens splits legally at the boundary: both pieces are 40 >= 32.
+    context = TextContext(
+        tokens=TokenBuffer(np.ones(80, dtype=np.int64)), max_length=200
+    )
+    status = budget.status_after_context(context, request_type=RequestType.CE)
+    assert status == BudgetStatus.BUDGET_REACHED
+    assert context.tokens.active_length == 40
+
+
+def test_token_budget__min_chunk_floor_disabled_cuts_at_boundary() -> None:
+    # Default floor of 0 preserves the existing behavior: cuts land exactly
+    # on the budget boundary even when that leaves a tiny remainder.
+    budget = ActiveTokenBudget(
+        capacity=100,
+        allow_chunking=True,
+        applicable_types=[RequestType.CE],
+    )
+    context = TextContext(
+        tokens=TokenBuffer(np.ones(108, dtype=np.int64)), max_length=200
+    )
+    status = budget.status_after_context(context, request_type=RequestType.CE)
+    assert status == BudgetStatus.BUDGET_REACHED
+    assert context.tokens.active_length == 100
+
+
 def test_token_budget__total_context_budget_with_cost_alignment_alignment() -> (
     None
 ):

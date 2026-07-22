@@ -469,6 +469,7 @@ class TextBatchConstructor:
                 capacity=self.scheduler_config.target_tokens_per_batch_ce,
                 allow_chunking=self.scheduler_config.enable_chunked_prefill,
                 applicable_types=RequestType.all(),
+                min_chunk_tokens=self.scheduler_config.chunked_prefill_min_chunk_size,
             )
         ]
 

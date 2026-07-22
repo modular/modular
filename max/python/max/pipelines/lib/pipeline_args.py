@@ -309,6 +309,15 @@ class PipelineArgs(ConfigFileModel):
         ),
     )
 
+    chunked_prefill_min_chunk_size: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Floor, in tokens, on any chunk created by chunked prefill "
+            "(neither a chunk nor its remainder may be smaller). 0 disables."
+        ),
+    )
+
     enable_in_flight_batching: bool = Field(
         default=False,
         description=(
@@ -796,6 +805,7 @@ class PipelineArgs(ConfigFileModel):
             ce_delay_ms=runtime.ce_delay_ms,
             enable_prioritize_first_decode=runtime.enable_prioritize_first_decode,
             enable_chunked_prefill=runtime.enable_chunked_prefill,
+            chunked_prefill_min_chunk_size=runtime.chunked_prefill_min_chunk_size,
             enable_in_flight_batching=runtime.enable_in_flight_batching,
             eplb_replicas_per_gpu=runtime.eplb_replicas_per_gpu,
             max_num_steps=runtime.max_num_steps,

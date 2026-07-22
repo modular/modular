@@ -123,6 +123,16 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added `--chunked-prefill-min-chunk-size` (config key
+  `runtime.chunked_prefill_min_chunk_size`, default 0 = off) to set a floor,
+  in tokens, on any chunk created by chunked prefill. When splitting a
+  request against the CE token budget, the cut is moved earlier so that
+  neither the chunk nor its remainder is smaller than the floor; if no legal
+  cut point exists within the remaining budget, the request is left unsplit
+  for a later step. This avoids degenerate slivers (for example an 8-token
+  tail chunk after an 8192-token budget cut) that pay a full step's overhead
+  and re-read the request's entire context in attention for almost no
+  progress.
 - Fixed non-streaming chat completions leaking a literal structural tool-call
   marker (for example `<tool_call>`) into `message.content` when a
   `max_tokens` truncation landed mid tool-call block. The response now

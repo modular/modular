@@ -1633,6 +1633,7 @@ class PipelineConfig(ConfigFileModel):
                 ce_delay_ms=args.ce_delay_ms,
                 enable_prioritize_first_decode=args.enable_prioritize_first_decode,
                 enable_chunked_prefill=args.enable_chunked_prefill,
+                chunked_prefill_min_chunk_size=args.chunked_prefill_min_chunk_size,
                 enable_in_flight_batching=args.enable_in_flight_batching,
                 eplb_replicas_per_gpu=args.eplb_replicas_per_gpu,
                 max_num_steps=args.max_num_steps,

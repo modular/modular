@@ -72,6 +72,7 @@ class TokenBudget(ABC):
         capacity: int,
         allow_chunking: bool,
         applicable_types: list[RequestType],
+        min_chunk_tokens: int = 0,
     ) -> None:
         """Initialize a generic token budget.
 
@@ -84,12 +85,18 @@ class TokenBudget(ABC):
             applicable_types: Request types that this budget applies to. If the
                 active or incoming request type is not in this list, the budget
                 is effectively a no-op for that context.
+            min_chunk_tokens: When > 0, a split never creates a piece
+                (chunk or remainder) smaller than this: the cut moves
+                earlier to protect the remainder, and contexts with no
+                legal cut point are refused. 0 disables the floor.
         """
         self.capacity = capacity
         """Maximum number of tokens allowed for this budget."""
         self.allow_chunking = allow_chunking
         """Whether this budget may shrink the context via ``context.chunk`` in order to fit within the remaining capacity."""
         self.applicable_types = applicable_types
+        self.min_chunk_tokens = min_chunk_tokens
+        """Floor on the size of any split piece (0 = no floor)."""
 
         self.used = 0
         """Number of tokens currently consumed from this budget."""
@@ -298,9 +305,18 @@ class ActiveTokenBudget(TokenBudget):
         if not self.allow_chunking:
             return BudgetStatus.BUDGET_REACHED
 
-        # Try to shrink the active window so that it fits.
+        # Try to shrink the active window so that it fits. The min-chunk
+        # floor moves the cut earlier to protect the remainder, or refuses
+        # the split when no legal cut point exists.
+        chunk_size = tokens_remaining
+        if self.min_chunk_tokens > 0:
+            active_length = context.tokens.active_length
+            if active_length - chunk_size < self.min_chunk_tokens:
+                chunk_size = active_length - self.min_chunk_tokens
+            if chunk_size < self.min_chunk_tokens:
+                return BudgetStatus.BUDGET_EXHAUSTED
         try:
-            context.tokens.chunk(tokens_remaining)
+            context.tokens.chunk(chunk_size)
             return BudgetStatus.BUDGET_REACHED
         except ValueError:
             return BudgetStatus.BUDGET_EXHAUSTED
