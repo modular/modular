@@ -31,6 +31,7 @@
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/MDialect/MAttrs.h"
 #include "Support/Process.h"
+#include "Target/TargetTraits.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/Parser/Parser.h"
@@ -40,7 +41,6 @@
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include "llvm/TargetParser/ARMTargetParser.h"
 
 using namespace M;
 using namespace KGEN;
@@ -143,15 +143,12 @@ void CLOptions::addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr) {
 
 void CLOptions::setDefaultCPU() {
   llvm::Triple triple(targetTriple);
-  if (triple.getArch() == llvm::Triple::hexagon)
-    targetCpu = "hexagonv68";
-  else if (triple.isARM())
-    targetCpu = llvm::ARM::getDefaultCPU(triple.getArchName());
-  else {
-    // If the user provided the target triple without specifying a CPU,
-    // default to `generic`.
-    targetCpu = "generic";
-  }
+  // A registered target supplies its own default CPU (e.g. the host target's
+  // ARM baseline, or a plugin target); otherwise default to `generic`.
+  const TargetTraits *traits = TargetTraitsRegistry::get().lookup(triple);
+  llvm::StringRef targetDefault =
+      traits ? traits->defaultCPU(triple) : llvm::StringRef();
+  targetCpu = targetDefault.empty() ? "generic" : targetDefault.str();
 }
 
 /// Emit the IR for `theModule` to a file.

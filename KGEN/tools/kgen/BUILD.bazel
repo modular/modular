@@ -37,6 +37,7 @@ modular_cc_binary(
         "//KGEN:Pipeline",
         "//KGEN:Support",
         "//KGEN:SupportForceLinkMLIRC",
+        "//KGEN:TargetTraits",
         "//KGEN:ToolCommon",
         "//Support:Base",
         "//Support:Compiler",
