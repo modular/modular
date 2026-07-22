@@ -3016,6 +3016,27 @@ struct EPCombineKernel[
 
     @staticmethod
     @always_inline
+    def _recv_offset_in_bounds(src_idx: Int32, src_topk_idx: Int32) -> Bool:
+        """Whether a src_info row is a valid receive-buffer write offset.
+
+        `src_idx`/`src_topk_idx` come straight from `src_info`, which
+        `dispatch_wait` only writes for rows whose message header matched the
+        local expert. A stale or garbled row keeps out-of-range values; using
+        them as a `recv_buf_layout` offset is a wild P2P write that stomped
+        model weights in SERVOPT-1458. Validate against the receive-buffer
+        shape `(max_tokens_per_rank, top_k, msg_bytes)` first.
+        """
+        var si = Int(src_idx)
+        var sti = Int(src_topk_idx)
+        return (
+            si >= 0
+            and si < Self.max_tokens_per_rank
+            and sti >= 0
+            and sti < Self.top_k
+        )
+
+    @staticmethod
+    @always_inline
     def recv_count_layout(coord: Coord) -> Scalar[DType.int32]:
         comptime if Self.skip_a2a:
             var _coord = Coord((coord[0], Idx[0]))
@@ -3159,6 +3180,9 @@ struct EPCombineKernel[
                     var src_idx = src_token_info[0]
                     var src_topk_idx = src_token_info[1]
 
+                    if not Self._recv_offset_in_bounds(src_idx, src_topk_idx):
+                        continue
+
                     var dst_recv_buf_ptr = recv_buf_ptrs[
                         dst_p2p_rank
                     ] + Self.recv_buf_layout((src_idx, src_topk_idx, Idx[0]))
@@ -3228,26 +3252,31 @@ struct EPCombineKernel[
                                 var src_idx = src_token_info[0]
                                 var src_topk_idx = src_token_info[1]
 
-                                var curr_send_buf_ptr = (
-                                    send_buf_p
-                                    + Self.send_buf_layout((token_idx, Idx[0]))
-                                )
-                                var dst_recv_buf_ptr = recv_buf_ptrs[
-                                    my_p2p_rank
-                                ] + Self.recv_buf_layout(
-                                    (
-                                        Int(src_idx),
-                                        Int(src_topk_idx),
-                                        Idx[0],
+                                if Self._recv_offset_in_bounds(
+                                    src_idx, src_topk_idx
+                                ):
+                                    var curr_send_buf_ptr = (
+                                        send_buf_p
+                                        + Self.send_buf_layout(
+                                            (token_idx, Idx[0])
+                                        )
                                     )
-                                )
+                                    var dst_recv_buf_ptr = recv_buf_ptrs[
+                                        my_p2p_rank
+                                    ] + Self.recv_buf_layout(
+                                        (
+                                            Int(src_idx),
+                                            Int(src_topk_idx),
+                                            Idx[0],
+                                        )
+                                    )
 
-                                shmem_put_nbi[kind=SHMEMScope.default](
-                                    dst_recv_buf_ptr,
-                                    curr_send_buf_ptr,
-                                    c_size_t(Self.msg_bytes),
-                                    Int32(target_rank),
-                                )
+                                    shmem_put_nbi[kind=SHMEMScope.default](
+                                        dst_recv_buf_ptr,
+                                        curr_send_buf_ptr,
+                                        c_size_t(Self.msg_bytes),
+                                        Int32(target_rank),
+                                    )
 
             barrier()
 
