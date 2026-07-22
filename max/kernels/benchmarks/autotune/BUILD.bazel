@@ -2,6 +2,34 @@ load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_t
 
 package(default_visibility = ["//max:consumers"])
 
+modular_py_library(
+    name = "tuning_codegen_lib",
+    srcs = ["tuning_codegen.py"],
+    imports = ["."],
+    deps = [
+        requirement("pyyaml"),
+    ],
+)
+
+modular_py_binary(
+    name = "tuning_codegen",
+    srcs = ["tuning_codegen_main.py"],
+    imports = ["."],
+    main = "tuning_codegen_main.py",
+    deps = [
+        ":tuning_codegen_lib",
+    ],
+)
+
+modular_py_test(
+    name = "tuning_codegen_tests",
+    size = "small",
+    srcs = ["tests/test_tuning_codegen.py"],
+    deps = [
+        ":tuning_codegen_lib",
+    ],
+)
+
 # Python-only library form of kbench so out-of-tree consumers can build
 # their own modular_py_binary that pairs the same kbench harness with a
 # different `mojo_deps` set — most notably, a stdlib overlay other than
@@ -188,7 +216,10 @@ modular_py_test(
     name = "autotune_tests",
     # test_kbench compiles multiple Mojo binaries which can be slow on CI.
     size = "large",
-    srcs = glob(["tests/*.py"]),
+    srcs = glob(
+        ["tests/*.py"],
+        exclude = ["tests/test_tuning_codegen.py"],
+    ),
     data = glob(["tests/*.csv"]) + [
         "sample.mojo",
         "sample.py",
