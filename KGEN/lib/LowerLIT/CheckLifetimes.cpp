@@ -413,11 +413,10 @@ static void
 appendNamedBodyConstraints(ArrayRef<ParamDeclAttr> params,
                            ArrayRef<ConstraintAttr> bodyConstraints,
                            SmallVectorImpl<ConstraintAttr> &assumptions) {
-  ParameterEvaluator evaluator;
-  for (ParamDeclAttr param : params)
-    evaluator.appendIndexBinding(ParamDeclRefAttr::get(param));
+  ParamRefRemapper evaluator(params);
+
   for (ConstraintAttr constraint : bodyConstraints) {
-    Attribute namedProposition = evaluator.getReboundAttribute(constraint);
+    Attribute namedProposition = evaluator.replace(constraint);
     assert(namedProposition && "invalid constraint");
     assumptions.push_back(cast<ConstraintAttr>(namedProposition));
   }
