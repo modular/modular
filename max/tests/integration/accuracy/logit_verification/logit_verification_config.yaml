@@ -642,20 +642,6 @@ logit_verification_pipelines:
     cos_dist_threshold: 5.0e-02
     kl_div_threshold: 6.8e-01
 
-  LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct-float32:
-    pre_submit_agents: []
-    pipeline: "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct"
-    compatible_with: [cpu, gpu]
-    encoding: float32
-    tags: []
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_exaone_3_5_2_4b_instruct_float32_golden/1/ae16f10ebd7514f5d60f25755babbcff9636a4fa1c68d1470f614474fa907427/torch_exaone_3_5_2_4b_instruct_float32_golden.tar.gz"
-      json_file: "exaone_3_5_2_4b_instruct_float32_torch_goldens.json"
-    # TODO: Accuracy is much better on AMD.
-    # so we might have an nvidia kernel bug here
-    cos_dist_threshold: 2.5e-2
-    kl_div_threshold: 1.3e-2
-
   microsoft/Phi-3.5-mini-instruct-bfloat16:
     pre_submit_agents: []
     pipeline: "microsoft/Phi-3.5-mini-instruct"

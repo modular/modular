@@ -41,9 +41,8 @@ from test_common.load_model_helpers import (
         (Phi3Model, "microsoft/phi-4"),
         (OlmoModel, "allenai/OLMo-1B-hf"),
         (Llama3Model, "ibm-granite/granite-3.1-8b-instruct"),
-        (Llama3Model, "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"),
     ],
-    ids=["llama3", "phi3", "olmo", "granite", "exaone"],
+    ids=["llama3", "phi3", "olmo", "granite"],
 )
 def test_load_model(model_cls: type, repo_id: str) -> None:
     hf_config = make_small_llama_config()

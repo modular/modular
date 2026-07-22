@@ -288,10 +288,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
         rms_norm_eps = None
         if norm_method == "rms_norm":
-            if huggingface_config.model_type == "exaone":
-                rms_norm_eps = huggingface_config.layer_norm_epsilon
-            else:
-                rms_norm_eps = huggingface_config.rms_norm_eps
+            rms_norm_eps = huggingface_config.rms_norm_eps
 
         self.norm_method = norm_method
         self.rms_norm_eps = rms_norm_eps
