@@ -413,7 +413,7 @@ struct Variant[*Ts: AnyType](
     Equatable where Ts.all_conforms_to[Equatable](),
     Hashable where Ts.all_conforms_to[Hashable](),
     ImplicitlyCopyable where Ts.all_conforms_to[ImplicitlyCopyable](),
-    ImplicitlyDeletable,
+    ImplicitlyDeletable where Ts.all_conforms_to[ImplicitlyDeletable](),
     Movable where Ts.all_conforms_to[Movable](),
     RegisterPassable where Ts.all_conforms_to[RegisterPassable](),
     Writable where Ts.all_conforms_to[Writable](),
@@ -609,15 +609,14 @@ struct Variant[*Ts: AnyType](
             self._storage.unsafe_ptr[T]()._mlir_value
         ) = call()
 
-    def __del__(deinit self):
+    def __del__(
+        deinit self,
+    ) where Self.Ts.all_conforms_to[ImplicitlyDeletable]():
         """Destroy the variant, running the destructor of the currently held value.
 
         Constraints:
             All types in `Ts` must conform to `ImplicitlyDeletable`.
         """
-        comptime assert Self.Ts.all_conforms_to[
-            ImplicitlyDeletable
-        ](), "Cannot call __del__ on Variant with explicitly destroyed types"
         self._storage^.__del__()
 
     # ===-------------------------------------------------------------------===#
@@ -857,7 +856,11 @@ struct Variant[*Ts: AnyType](
         self = Self(value^)
         return x^
 
-    def set[T: Movable](mut self, var value: T):
+    def set[
+        T: Movable
+    ](mut self, var value: T) where Self.Ts.all_conforms_to[
+        ImplicitlyDeletable
+    ]():
         """Set the variant value.
 
         This will call the destructor on the old value, and update the variant's

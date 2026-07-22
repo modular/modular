@@ -87,7 +87,7 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
     Iterable where conforms_to(IteratorTypeA, Copyable),
     IterableOwned,
     Iterator,
-):
+) where conforms_to(IteratorTypeA.Element, ImplicitlyDeletable):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
     ]
@@ -182,6 +182,9 @@ def product[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
     IterableTypeB.IteratorType[origin_of(iterable_b)],
 ] where conforms_to(
+    IterableTypeA.IteratorType[origin_of(iterable_a)].Element,
+    ImplicitlyDeletable,
+) and conforms_to(
     IterableTypeB.IteratorType[origin_of(iterable_b)], Copyable & Iterator
 ):
     """Returns an iterator that yields tuples of the elements of the outer
@@ -273,6 +276,10 @@ struct _Product3[
     Iterable where conforms_to(IteratorTypeA, Copyable),
     IterableOwned,
     Iterator,
+) where conforms_to(
+    IteratorTypeA.Element, ImplicitlyDeletable
+) and conforms_to(
+    IteratorTypeB.Element, ImplicitlyDeletable
 ):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
@@ -330,10 +337,21 @@ def product[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
     IterableTypeB.IteratorType[origin_of(iterable_b)],
     IterableTypeC.IteratorType[origin_of(iterable_c)],
-] where conforms_to(
-    IterableTypeB.IteratorType[origin_of(iterable_b)], Copyable & Iterator
-) and conforms_to(
-    IterableTypeC.IteratorType[origin_of(iterable_c)], Copyable & Iterator
+] where (
+    conforms_to(
+        IterableTypeB.IteratorType[origin_of(iterable_b)], Copyable & Iterator
+    )
+    and conforms_to(
+        IterableTypeC.IteratorType[origin_of(iterable_c)], Copyable & Iterator
+    )
+    and conforms_to(
+        IterableTypeA.IteratorType[origin_of(iterable_a)].Element,
+        ImplicitlyDeletable,
+    )
+    and conforms_to(
+        IterableTypeB.IteratorType[origin_of(iterable_b)].Element,
+        ImplicitlyDeletable,
+    )
 ):
     """Returns an iterator that yields tuples of the elements of the outer
     product of three iterables.
@@ -387,6 +405,10 @@ struct _Product4[
     Iterable where conforms_to(IteratorTypeA, Copyable),
     IterableOwned,
     Iterator,
+) where (
+    conforms_to(IteratorTypeA.Element, ImplicitlyDeletable)
+    and conforms_to(IteratorTypeB.Element, ImplicitlyDeletable)
+    and conforms_to(IteratorTypeC.Element, ImplicitlyDeletable)
 ):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
@@ -461,6 +483,18 @@ def product[
     and conforms_to(
         IterableTypeD.IteratorType[origin_of(iterable_d)], Copyable & Iterator
     )
+    and conforms_to(
+        IterableTypeA.IteratorType[origin_of(iterable_a)].Element,
+        ImplicitlyDeletable,
+    )
+    and conforms_to(
+        IterableTypeB.IteratorType[origin_of(iterable_b)].Element,
+        ImplicitlyDeletable,
+    )
+    and conforms_to(
+        IterableTypeC.IteratorType[origin_of(iterable_c)].Element,
+        ImplicitlyDeletable,
+    )
 ):
     """Returns an iterator that yields tuples of the elements of the outer
     product of four iterables.
@@ -509,7 +543,11 @@ def product(
 ) -> _Product2[
     type_of(iterable_a).IteratorOwnedType,
     type_of(iterable_b).IteratorOwnedType,
-] where conforms_to(type_of(iterable_b).IteratorOwnedType, Copyable & Iterator):
+] where conforms_to(
+    type_of(iterable_b).IteratorOwnedType, Copyable & Iterator
+) and conforms_to(
+    type_of(iterable_a).IteratorOwnedType.Element, ImplicitlyDeletable
+):
     """Returns an iterator that yields tuples of the elements of the outer
     product of the iterables, consuming both iterables.
 
@@ -536,10 +574,17 @@ def product(
     type_of(iterable_a).IteratorOwnedType,
     type_of(iterable_b).IteratorOwnedType,
     type_of(iterable_c).IteratorOwnedType,
-] where conforms_to(
-    type_of(iterable_b).IteratorOwnedType, Copyable & Iterator
-) and conforms_to(
-    type_of(iterable_c).IteratorOwnedType, Copyable & Iterator
+] where (
+    conforms_to(type_of(iterable_b).IteratorOwnedType, Copyable & Iterator)
+    and conforms_to(type_of(iterable_c).IteratorOwnedType, Copyable & Iterator)
+    and conforms_to(
+        type_of(iterable_a).IteratorOwnedType.Element,
+        ImplicitlyDeletable,
+    )
+    and conforms_to(
+        type_of(iterable_b).IteratorOwnedType.Element,
+        ImplicitlyDeletable,
+    )
 ):
     """Returns an iterator that yields tuples of the elements of the outer
     product of three iterables, consuming all three iterables.
@@ -575,6 +620,18 @@ def product(
     conforms_to(type_of(iterable_b).IteratorOwnedType, Copyable & Iterator)
     and conforms_to(type_of(iterable_c).IteratorOwnedType, Copyable & Iterator)
     and conforms_to(type_of(iterable_d).IteratorOwnedType, Copyable & Iterator)
+    and conforms_to(
+        type_of(iterable_a).IteratorOwnedType.Element,
+        ImplicitlyDeletable,
+    )
+    and conforms_to(
+        type_of(iterable_b).IteratorOwnedType.Element,
+        ImplicitlyDeletable,
+    )
+    and conforms_to(
+        type_of(iterable_c).IteratorOwnedType.Element,
+        ImplicitlyDeletable,
+    )
 ):
     """Returns an iterator that yields tuples of the elements of the outer
     product of four iterables, consuming all four iterables.

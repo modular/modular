@@ -101,9 +101,10 @@ struct Optional[T: Movable](
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
     IterableOwned,
-    Iterator,
+    Iterator where conforms_to(T, ImplicitlyDeletable),
     Movable,
     RegisterPassable where conforms_to(T, RegisterPassable),
     Writable where conforms_to(T, Writable),
@@ -753,6 +754,28 @@ struct Optional[T: Movable](
             # trivially destructible, so `_NoneType.__del__` is a no-op.
             self._value^.deinit_with[_NoneType](_NoneType.__del__)
 
+    def deinit_assert_empty(deinit self):
+        """Destroys an empty `Optional`, asserting that it holds no value.
+
+        Use this on an `Optional[T]` whose element type is not
+        `ImplicitlyDeletable` when the value is known to be empty. Unlike
+        `deinit_with`, it takes no deinitializer function (there is no live
+        value to destroy). In safe-assert builds it aborts if the `Optional`
+        is non-empty.
+
+        Examples:
+
+        ```mojo
+        var opt: Optional[ExplicitDeinit] = None
+        opt^.deinit_assert_empty()
+        ```
+        """
+        debug_assert[assert_mode="safe"](
+            not self,
+            "`deinit_assert_empty()` called on a non-empty `Optional`",
+        )
+        self._value^.deinit_with[_NoneType](_NoneType.__del__)
+
     def or_else(
         deinit self, var default: Self.T
     ) -> Self.T where conforms_to(Self.T, Movable & ImplicitlyDeletable):
@@ -831,7 +854,9 @@ struct Optional[T: Movable](
         To: Movable,
         //,
         Mapper: def(var Self.T) -> To,
-    ](deinit self, mapper: Mapper) -> Optional[To]:
+    ](deinit self, mapper: Mapper) -> Optional[To] where conforms_to(
+        Self.T, ImplicitlyDeletable
+    ):
         """Applies a function to the contained value (if any), returning an
         `Optional` containing the result.
 
@@ -868,8 +893,10 @@ struct Optional[T: Movable](
         print(length.or_else(-1))  # Output: -1
         ```
         """
+        # comptime assert conforms_to(Self.T, ImplicitlyDeletable)
+        # comptime assert conforms_to(Self._type, ImplicitlyDeletable)
         if self:
-            return {mapper(self.unsafe_take())}
+            return {mapper(self._value^.unsafe_take[Self.T]())}
         else:
             return None
 
@@ -877,7 +904,9 @@ struct Optional[T: Movable](
         To: Movable,
         //,
         Mapper: def(var Self.T) -> Optional[To],
-    ](deinit self, mapper: Mapper) -> Optional[To]:
+    ](deinit self, mapper: Mapper) -> Optional[To] where conforms_to(
+        Self.T, ImplicitlyDeletable
+    ):
         """Calls `mapper` on the contained value (if any), returning the result.
 
         Unlike `map()`, the mapper function itself returns an `Optional`. This

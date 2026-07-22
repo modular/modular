@@ -16,7 +16,9 @@ comptime Element = String  # Adapt for your type
 comptime ListNode = Node[Element]  # Constructing a LinkedList
 
 
-struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
+struct Node[ElementType: ImplicitlyCopyable & Writable & ImplicitlyDeletable](
+    Movable
+):
     comptime NodePointer = UnsafePointer[Self, MutUntrackedOrigin]
 
     var value: Optional[Self.ElementType]  # The `Node`'s value

@@ -617,6 +617,9 @@ struct ProduceContext[
     ]:
         """Wait for consumer and return reference to stage."""
         self.pipeline[].wait_consumer()
+        # `_stage` is empty here; destroy it before repopulating, since an
+        # `Optional` of a non-implicitly-deletable stage can't drop implicitly.
+        self._stage^.deinit_assert_empty()
         self._stage = ProducerStage(
             self.pipeline, self.pipeline[].producer_stage()
         )
@@ -627,6 +630,10 @@ struct ProduceContext[
         """Release the stage (advances producer)."""
         self._stage.take().release()
         # take() already sets _stage to None
+
+    @always_inline
+    def __del__(deinit self):
+        self._stage^.deinit_assert_empty()
 
 
 @explicit_destroy("Must call release() or release_without_signal()")
@@ -762,6 +769,9 @@ struct ConsumeContext[
         """Wait for producer and return reference to stage."""
         self.pipeline[].wait_producer()
         var stage_idx = self.pipeline[].consumer_stage()
+        # `_stage` is empty here; destroy it before repopulating, since an
+        # `Optional` of a non-implicitly-deletable stage can't drop implicitly.
+        self._stage^.deinit_assert_empty()
         self._stage = ConsumerStage(self.pipeline, stage_idx)
         return self._stage.value()
 
@@ -770,6 +780,10 @@ struct ConsumeContext[
         """Release the stage (signals consumption + advances)."""
         self._stage.take().release()
         # take() already sets _stage to None
+
+    @always_inline
+    def __del__(deinit self):
+        self._stage^.deinit_assert_empty()
 
 
 struct ExplicitConsumeContext[
@@ -827,6 +841,9 @@ struct ExplicitConsumeContext[
         """
         self.pipeline[].wait_producer()
         var stage_idx = self.pipeline[].consumer_stage()
+        # `_stage` is empty here; destroy it before repopulating, since an
+        # `Optional` of a non-implicitly-deletable stage can't drop implicitly.
+        self._stage^.deinit_assert_empty()
         self._stage = ConsumerStage(self.pipeline, stage_idx)
         return self._stage.value()
 
@@ -836,3 +853,7 @@ struct ExplicitConsumeContext[
         # Caller is responsible for signaling via stage.arrive() or stage.mbar()
         self._stage.take().release_without_signal()
         # take() already sets _stage to None
+
+    @always_inline
+    def __del__(deinit self):
+        self._stage^.deinit_assert_empty()

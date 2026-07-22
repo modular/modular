@@ -42,7 +42,9 @@ This sample gives you a node type with a value slot and a single link
 to the next node:
 
 ```mojo
-struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
+struct Node[ElementType: ImplicitlyCopyable & Writable & ImplicitlyDeletable](
+    Movable
+):
     comptime NodePointer = UnsafePointer[Self, MutUntrackedOrigin]
 
 

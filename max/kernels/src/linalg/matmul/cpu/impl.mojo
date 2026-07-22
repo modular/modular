@@ -546,8 +546,13 @@ def _matmul_cpu_impl[
         comptime alignment = align_of[SIMD[c.dtype, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
+
         var a_packed_alloc: Optional[Allocation[Scalar[a.dtype]]] = None
         comptime if use_i8mm:
+            # Retire the empty `None` before reassigning: `Optional[Allocation]`
+            # is not implicitly deletable, so overwriting it cannot drop the old
+            # value implicitly.
+            a_packed_alloc^.deinit_with(dealloc[Scalar[a.dtype]])
             a_packed_alloc = alloc(
                 AllocLayout[Scalar[a.dtype]](count=mh * kh, alignment=alignment)
             )
@@ -641,13 +646,7 @@ def _matmul_cpu_impl[
         # to be synchronous in order to keep that state alive
         sync_parallelize[task_func](num_tasks, ctx)
 
-        # NOTE: passing `dealloc[Scalar[a.dtype]]` directly crashes the
-        # compiler (simplifyBindParams, KGENAttrs.cpp) when the dtype is
-        # parametric; wrap it in a local function as a workaround.
-        def _dealloc_packed(var packed: Allocation[Scalar[a.dtype]]):
-            dealloc(packed^)
-
-        a_packed_alloc^.deinit_with(_dealloc_packed)
+        a_packed_alloc^.deinit_with(dealloc[Scalar[a.dtype]])
 
 
 @always_inline

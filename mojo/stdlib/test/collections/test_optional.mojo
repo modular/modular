@@ -453,14 +453,21 @@ def test_and_then_with_none() raises:
 
 
 def test_optional_linear_type_deinit_with() raises:
-    # `Optional` holding a linear value is retired via `deinit_with`.
+    # `Optional` holding a linear value is destroyed via `deinit_with`.
     var v1 = Optional(ExplicitDelOnly(5))
     v1^.deinit_with(ExplicitDelOnly.destroy)
 
-    # `Optional[T]` holding `None` is retired without invoking
+    # `Optional[T]` holding `None` is destroyed without invoking
     # `deinit_func`.
     var v2 = Optional[ExplicitDelOnly](None)
     v2^.deinit_with(ExplicitDelOnly.destroy)
+
+
+def test_optional_linear_type_deinit_assert_empty() raises:
+    # An empty `Optional` holding a linear type is destroyed without a
+    # caller-provided deinitializer via `deinit_assert_empty`.
+    var v = Optional[ExplicitDelOnly](None)
+    v^.deinit_assert_empty()
 
 
 def test_optional_deinit_with_runs_exactly_once() raises:

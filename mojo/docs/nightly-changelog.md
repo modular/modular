@@ -766,6 +766,10 @@ This version is still a work in progress.
   uses `Movable` element types is unaffected, since a `Movable` element still
   yields a movable array.
 
+- `Optional` gained `deinit_assert_empty()`, which destroys an empty linear
+  `Optional` without a caller-provided deinitializer, aborting in safe-assert
+  builds if it is non-empty.
+
 - Is is now possible to iterate over owned elements in
   `List`, `Dict`, `InlineArray`, `LinkedList`, and `Set`
   when the element type is not `Copyable`:
