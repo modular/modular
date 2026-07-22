@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "mojo_library", "mojo_shared_library")
+load("//bazel:api.bzl", "modular_py_library", "mojo_library", "mojo_shared_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -10,6 +10,7 @@ mojo_library(
         "//max:consumers",
     ],
     deps = [
+        "//max:_hal",
         "@mojo//:std",
     ],
 )
@@ -20,6 +21,7 @@ mojo_shared_library(
     shared_lib_name = "mojo_module.so",
     deps = [
         ":_mojo_module",
+        "//max:_hal",
         "@mojo//:std",
     ],
 )
@@ -28,6 +30,7 @@ modular_py_library(
     name = "_hal",
     srcs = [
         "__init__.py",
+        "array.py",
         "buffer.py",
         "bundle.py",
         "context.py",
@@ -35,6 +38,7 @@ modular_py_library(
         "driver.py",
         "event.py",
         "function.py",
+        "memory.py",
         "queue.py",
         "stream.py",
     ],
@@ -46,6 +50,9 @@ modular_py_library(
         "//max:consumers",
     ],
     deps = [
+        "//max/python/max:_core",
+        "//max/python/max/dtype",
         "@mojo//:python",
+        requirement("numpy"),
     ],
 )

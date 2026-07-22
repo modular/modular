@@ -14,9 +14,9 @@
 
 A custom kernel's entry-point signature uses these:
 
-- `ManagedTensorSlice` — view of a tensor argument.
-- `IOSpec` (and `IO`) — input/output/mutability annotations.
-- `StaticTensorSpec` — runtime + compile-time tensor
+- `ManagedTensorSlice`: view of a tensor argument.
+- `IOSpec` (and `IO`): input/output/mutability annotations.
+- `StaticTensorSpec`: runtime + compile-time tensor
   metadata.
 - Fusion traits (`InputFusion`, `OutputFusion`, ...) and their `_NoFusion*`
   sentinels.
@@ -36,7 +36,7 @@ from std.memory import AddressSpace
 from std.runtime.tracing import trace_arg
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, is_gpu
-from std.sys.intrinsics import _type_is_eq, strided_load, strided_store
+from std.sys.intrinsics import strided_load, strided_store
 from std.utils import IndexList, StaticTuple, product
 from std.utils._serialize import _serialize
 
@@ -67,6 +67,13 @@ from .decorators import register_internal
 
 
 struct IO(TrivialRegisterPassable):
+    """Tags the direction and fusion kind of a tensor argument to a DPS kernel.
+
+    An `IO` value distinguishes plain inputs, outputs, mutable inputs, and the
+    fused variants (input, output, and compute-output) that the graph compiler
+    wires into a custom kernel's fusion lambdas.
+    """
+
     var value: SIMDSize
 
     # TODO: either rename or get rid of this
@@ -115,29 +122,32 @@ struct IOSpec[mut: Bool, input: IO](TrivialRegisterPassable):
     is an output, input, or mutable input.
 
     ```mojo
-    Input == IOSpec[False, IO.Input]()
-    Output == IOSpec[True, IO.Output]()
-    MutableInput == IOSpec[True, IO.Input]()
-    FusedInput == IOSpec[False, IO.FusedInput]()
-    FusedOutput == IOSpec[True, IO.FusedOutput]()
+    IOSpec.Input == IOSpec[False, IO.Input]()
+    IOSpec.Output == IOSpec[True, IO.Output]()
+    IOSpec.MutableInput == IOSpec[True, IO.Input]()
+    IOSpec.FusedInput == IOSpec[False, IO.FusedInput]()
+    IOSpec.FusedOutput == IOSpec[True, IO.FusedOutput]()
     ```
+
+    These value aliases live as static members of `IOSpec` (rather than as
+    module-level aliases) so that the bare names `Input`/`Output`/`MutableInput`
+    are free for the tensor-argument traits in `tensor_arg_traits.mojo`.
     """
 
-    ...
+    comptime Unknown = IOSpec[True, IO.Unknown]()
 
+    comptime Input = IOSpec[False, IO.Input]()
+    comptime Output = IOSpec[True, IO.Output]()
+    comptime MutableInput = IOSpec[True, IO.Input]()
 
-comptime IOUnknown = IOSpec[True, IO.Unknown]()
+    comptime FusedInput = IOSpec[False, IO.FusedInput]()
+    comptime FusedOutput = IOSpec[True, IO.FusedOutput]()
 
-comptime Input = IOSpec[False, IO.Input]()
-comptime Output = IOSpec[True, IO.Output]()
-comptime MutableInput = IOSpec[True, IO.Input]()
+    comptime _FusedComputeOutput = IOSpec[True, IO._FusedComputeOutput]()
 
-comptime FusedInput = IOSpec[False, IO.FusedInput]()
-comptime FusedOutput = IOSpec[True, IO.FusedOutput]()
-
-comptime _FusedComputeOutput = IOSpec[True, IO._FusedComputeOutput]()
-
-comptime _FusedComputeOutputTile = IOSpec[True, IO._FusedComputeOutputTile]()
+    comptime _FusedComputeOutputTile = IOSpec[
+        True, IO._FusedComputeOutputTile
+    ]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -395,6 +405,28 @@ struct _NoComputeFusionTile(ComputeOutputFusionTile):
         ), "compute() not implemented for this ComputeOutputFusionTile"
 
 
+trait ElementwiseFusionTile(TrivialRegisterPassable):
+    """The `TileTensor` variant of `ElementwiseFusion`: a tile-based pure
+    elementwise fusion struct emitted by the graph compiler.
+
+    `compute` fills the driver-provided `dst` tile (which carries the tile
+    layout) and returns it.
+    """
+
+    def compute[
+        dtype: DType,
+        rank: Int,
+        LayoutType: TensorLayout,
+        Copier: TileCopier,
+    ](
+        self,
+        tile_coords: IndexList[rank],
+        copier: Copier,
+        dst: TileTensor[dtype, LayoutType, MutAnyOrigin],
+    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin]:
+        ...
+
+
 # Compile time Tensor information
 struct StaticTensorSpec[
     dtype: DType,
@@ -405,6 +437,14 @@ struct StaticTensorSpec[
     ComputeFusion: ComputeOutputFusion = _NoComputeFusion,
     ComputeFusionTile: ComputeOutputFusionTile = _NoComputeFusionTile,
 ](ImplicitlyCopyable):
+    """Carries the compile-time and runtime metadata describing a tensor argument.
+
+    The compile-time parameters encode the element `dtype`, tensor `rank`,
+    static layout, and optional fusion traits. The runtime fields store the
+    alignment and address space of the backing memory. Custom kernels receive
+    `ManagedTensorSlice` instances parameterized by a `StaticTensorSpec`.
+    """
+
     # IntTuple aliases for static shape/strides.
     comptime shape_tuple = coord_to_int_tuple[
         *Self.static_layout._shape_types
@@ -422,14 +462,12 @@ struct StaticTensorSpec[
         address_space: AddressSpace,
     ):
         comptime assert Self.rank == Self.static_layout.rank, "rank mismatch"
-        comptime _has_in = not _type_is_eq[Self.InFusion, _NoFusionIn]()
-        comptime _has_out = not _type_is_eq[Self.OutFusion, _NoFusionOut]()
-        comptime _has_compute = not _type_is_eq[
-            Self.ComputeFusion, _NoComputeFusion
-        ]()
-        comptime _has_compute_tile = not _type_is_eq[
-            Self.ComputeFusionTile, _NoComputeFusionTile
-        ]()
+        comptime _has_in = Self.InFusion != _NoFusionIn
+        comptime _has_out = Self.OutFusion != _NoFusionOut
+        comptime _has_compute = Self.ComputeFusion != _NoComputeFusion
+        comptime _has_compute_tile = (
+            Self.ComputeFusionTile != _NoComputeFusionTile
+        )
         comptime assert (
             Int(_has_in)
             + Int(_has_out)
@@ -446,14 +484,12 @@ struct StaticTensorSpec[
         """
         Returns a StaticTensorSpec from a StaticTensorSpecInternal.
         """
-        comptime _has_in = not _type_is_eq[Self.InFusion, _NoFusionIn]()
-        comptime _has_out = not _type_is_eq[Self.OutFusion, _NoFusionOut]()
-        comptime _has_compute = not _type_is_eq[
-            Self.ComputeFusion, _NoComputeFusion
-        ]()
-        comptime _has_compute_tile = not _type_is_eq[
-            Self.ComputeFusionTile, _NoComputeFusionTile
-        ]()
+        comptime _has_in = Self.InFusion != _NoFusionIn
+        comptime _has_out = Self.OutFusion != _NoFusionOut
+        comptime _has_compute = Self.ComputeFusion != _NoComputeFusion
+        comptime _has_compute_tile = (
+            Self.ComputeFusionTile != _NoComputeFusionTile
+        )
         comptime assert (
             Int(_has_in)
             + Int(_has_out)
@@ -685,6 +721,12 @@ struct StaticTensorSpec[
 
 @fieldwise_init
 struct StaticTensorSpecInternal[dtype: DType, rank: Int](ImplicitlyCopyable):
+    """Stores the runtime-only portion of a `StaticTensorSpec`.
+
+    Holds the alignment and address space fields, providing a device-passable
+    view that drops the compile-time layout and fusion type parameters.
+    """
+
     var alignment: Int
     var address_space: AddressSpace
 
@@ -963,23 +1005,27 @@ def simd_load_from_managed_tensor_slice[
 # ManagedTensorSlice class
 # ===----------------------------------------------------------------------=== #
 
-comptime OutputTensor = ManagedTensorSlice[io_spec=Output, ...]
-comptime InputTensor = ManagedTensorSlice[io_spec=Input, ...]
+comptime OutputTensor = ManagedTensorSlice[io_spec=IOSpec.Output, ...]
+comptime InputTensor = ManagedTensorSlice[io_spec=IOSpec.Input, ...]
 
-comptime _MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput, ...]
-comptime _FusedOutputTensor = ManagedTensorSlice[io_spec=FusedOutput, ...]
-comptime _FusedInputTensor = ManagedTensorSlice[io_spec=FusedInput, ...]
+comptime _MutableInputTensor = ManagedTensorSlice[
+    io_spec=IOSpec.MutableInput, ...
+]
+comptime _FusedOutputTensor = ManagedTensorSlice[
+    io_spec=IOSpec.FusedOutput, ...
+]
+comptime _FusedInputTensor = ManagedTensorSlice[io_spec=IOSpec.FusedInput, ...]
 
 comptime _FusedComputeOutputTensor = ManagedTensorSlice[
-    io_spec=_FusedComputeOutput, ...
+    io_spec=IOSpec._FusedComputeOutput, ...
 ]
 
 comptime _FusedComputeOutputTileTensor = ManagedTensorSlice[
-    io_spec=_FusedComputeOutputTile, ...
+    io_spec=IOSpec._FusedComputeOutputTile, ...
 ]
 
 comptime DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
-    io_spec=IOUnknown,
+    io_spec=IOSpec.Unknown,
     static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
 ]
 
@@ -1082,15 +1128,11 @@ struct ManagedTensorSlice[
     # populates OutFusion instead of ComputeFusion.
     comptime _is_unfused: Bool = not Self.input.is_fused()
     comptime _has_input_fusion: Bool = (Self.input == IO.FusedInput)
-    comptime _has_output_store_fusion: Bool = not _type_is_eq[
-        Self.OutFusion, _NoFusionOut
-    ]()
-    comptime _has_compute_fusion: Bool = not _type_is_eq[
-        Self.ComputeFusion, _NoComputeFusion
-    ]()
-    comptime _has_compute_fusion_tile: Bool = not _type_is_eq[
-        Self.ComputeFusionTile, _NoComputeFusionTile
-    ]()
+    comptime _has_output_store_fusion: Bool = Self.OutFusion != _NoFusionOut
+    comptime _has_compute_fusion: Bool = Self.ComputeFusion != _NoComputeFusion
+    comptime _has_compute_fusion_tile: Bool = (
+        Self.ComputeFusionTile != _NoComputeFusionTile
+    )
 
     comptime RuntimeLayout = TileLayout[
         shape_types=Self.static_spec.static_layout._shape_types,
@@ -1110,7 +1152,7 @@ struct ManagedTensorSlice[
         """Return a sentinel InFusion value, or an uninitialized placeholder
         when the type parameter is a real fusion struct (never reached at
         runtime, but must compile for all instantiations)."""
-        comptime if _type_is_eq[Self.InFusion, _NoFusionIn]():
+        comptime if Self.InFusion == _NoFusionIn:
             return rebind[Self.InFusion](_NoFusionIn())
         else:
             var f: Self.InFusion
@@ -1124,7 +1166,7 @@ struct ManagedTensorSlice[
     def _sentinel_out_fusion() -> Self.OutFusion:
         """Return a sentinel OutFusion value, or an uninitialized placeholder
         when the type parameter is a real fusion struct."""
-        comptime if _type_is_eq[Self.OutFusion, _NoFusionOut]():
+        comptime if Self.OutFusion == _NoFusionOut:
             return rebind[Self.OutFusion](_NoFusionOut())
         else:
             var f: Self.OutFusion
@@ -1138,7 +1180,7 @@ struct ManagedTensorSlice[
     def _sentinel_compute_fusion() -> Self.ComputeFusion:
         """Return a sentinel ComputeFusion value, or an uninitialized
         placeholder when the type parameter is a real fusion struct."""
-        comptime if _type_is_eq[Self.ComputeFusion, _NoComputeFusion]():
+        comptime if Self.ComputeFusion == _NoComputeFusion:
             return rebind[Self.ComputeFusion](_NoComputeFusion())
         else:
             var f: Self.ComputeFusion
@@ -1152,7 +1194,7 @@ struct ManagedTensorSlice[
     def _sentinel_compute_fusion_tile() -> Self.ComputeFusionTile:
         """Return a sentinel ComputeFusionTile value, or an uninitialized
         placeholder when the type parameter is a real fusion struct."""
-        comptime if _type_is_eq[Self.ComputeFusionTile, _NoComputeFusionTile]():
+        comptime if Self.ComputeFusionTile == _NoComputeFusionTile:
             return rebind[Self.ComputeFusionTile](_NoComputeFusionTile())
         else:
             var f: Self.ComputeFusionTile
@@ -1893,7 +1935,7 @@ struct ManagedTensorSlice[
         out result: ManagedTensorSlice[
             dtype=Self.dtype,
             rank=Self.rank,
-            io_spec=FusedInput,
+            io_spec=IOSpec.FusedInput,
             static_spec=Self.static_spec.with_input_fusion[F](),
         ],
     ):
@@ -1927,7 +1969,7 @@ struct ManagedTensorSlice[
         out result: ManagedTensorSlice[
             dtype=Self.dtype,
             rank=Self.rank,
-            io_spec=FusedOutput,
+            io_spec=IOSpec.FusedOutput,
             static_spec=Self.static_spec.with_output_fusion[F](),
         ],
     ):
@@ -1958,7 +2000,7 @@ struct ManagedTensorSlice[
         out result: ManagedTensorSlice[
             dtype=Self.dtype,
             rank=Self.rank,
-            io_spec=_FusedComputeOutput,
+            io_spec=IOSpec._FusedComputeOutput,
             static_spec=Self.static_spec.with_output_fusion[F](),
         ],
     ):
@@ -1989,7 +2031,7 @@ struct ManagedTensorSlice[
         out result: ManagedTensorSlice[
             dtype=Self.dtype,
             rank=Self.rank,
-            io_spec=_FusedComputeOutput,
+            io_spec=IOSpec._FusedComputeOutput,
             static_spec=Self.static_spec.with_compute_fusion[F](),
         ],
     ):
@@ -2020,7 +2062,7 @@ struct ManagedTensorSlice[
         out result: ManagedTensorSlice[
             dtype=Self.dtype,
             rank=Self.rank,
-            io_spec=_FusedComputeOutputTile,
+            io_spec=IOSpec._FusedComputeOutputTile,
             static_spec=Self.static_spec.with_compute_fusion_tile[F](),
         ],
     ):
@@ -2134,11 +2176,11 @@ def trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:
 # VariadicTensors
 # ===----------------------------------------------------------------------=== #
 
-comptime InputVariadicTensors = VariadicTensors[io_spec=Input, ...]
-comptime OutputVariadicTensors = VariadicTensors[io_spec=Output, ...]
+comptime InputVariadicTensors = VariadicTensors[io_spec=IOSpec.Input, ...]
+comptime OutputVariadicTensors = VariadicTensors[io_spec=IOSpec.Output, ...]
 
 comptime _MutableInputVariadicTensors = VariadicTensors[
-    io_spec=MutableInput, ...
+    io_spec=IOSpec.MutableInput, ...
 ]
 
 
@@ -2291,7 +2333,7 @@ struct _FusedInputVariadicTensors[
     Tensor data (ptr, shape, strides) is stored in a homogeneous StaticTuple.
     Per-element fusion structs are stored in a _FusionPack, where each
     element conforms to InputFusion. Every element must have a real fusion
-    struct — use plain VariadicTensors for unfused variadics.
+    struct; use plain VariadicTensors for unfused variadics.
     """
 
     var _tensors: StaticTuple[DynamicTensor[Self.dtype, Self.rank], Self.size]
@@ -2307,9 +2349,7 @@ struct _FusedInputVariadicTensors[
         fusions: _FusionPack[*Self.FusionTypes],
     ):
         comptime for i in range(Self.size):
-            comptime assert not _type_is_eq[
-                Self.FusionTypes[i], _NoFusionIn
-            ](), (
+            comptime assert Self.FusionTypes[i] != _NoFusionIn, (
                 "_FusedInputVariadicTensors requires a real fusion struct"
                 " for every element; use plain VariadicTensors for unfused"
                 " inputs"
@@ -2329,7 +2369,7 @@ struct _FusedInputVariadicTensors[
     ](
         self,
         out result: ManagedTensorSlice[
-            io_spec=FusedInput,
+            io_spec=IOSpec.FusedInput,
             static_spec=Self.static_specs[index].with_input_fusion[
                 Self.FusionTypes[index]
             ](),
@@ -2382,7 +2422,7 @@ struct _FusedOutputVariadicTensors[
 
     Tensor data is stored in a homogeneous StaticTuple. Per-element fusion
     structs are stored in a _FusionPack, where each element conforms
-    to OutputFusion. Every element must have a real fusion struct — use
+    to OutputFusion. Every element must have a real fusion struct; use
     plain VariadicTensors for unfused variadics.
     """
 
@@ -2399,9 +2439,7 @@ struct _FusedOutputVariadicTensors[
         fusions: _FusionPack[*Self.FusionTypes],
     ):
         comptime for i in range(Self.size):
-            comptime assert not _type_is_eq[
-                Self.FusionTypes[i], _NoFusionOut
-            ](), (
+            comptime assert Self.FusionTypes[i] != _NoFusionOut, (
                 "_FusedOutputVariadicTensors requires a real fusion struct"
                 " for every element; use plain VariadicTensors for unfused"
                 " outputs"
@@ -2421,7 +2459,7 @@ struct _FusedOutputVariadicTensors[
     ](
         self,
         out result: ManagedTensorSlice[
-            io_spec=FusedOutput,
+            io_spec=IOSpec.FusedOutput,
             static_spec=Self.static_specs[index].with_output_fusion[
                 Self.FusionTypes[index]
             ](),
@@ -2486,6 +2524,26 @@ def get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
     return simd_width_of[dtype]()
 
 
+@doc_hidden
+def get_kernel_tile_shape[dtype: DType, target: StaticString]() -> IndexList[2]:
+    """Get the 2D tile shape used by tile-programming-model fusion kernels.
+
+    The tile analog of `get_kernel_simd_width`: returns the `(rows, cols)` of
+    the register / on-chip tile a tile-based kernel (e.g. `Add.elementwise` on a
+    `TileTensor`) operates on for `target`. It is returned as an `IndexList[2]`
+    (the same lightweight, comptime-materializable shape descriptor used for
+    tensor shapes elsewhere in this file) so a driver can splat it into e.g.
+    `row_major[s[0], s[1]]()`.
+
+    Currently hardcoded for CPU/GPU; support for additional target devices will
+    be added in a future update.
+    """
+    comptime if _is_gpu[target]():
+        return IndexList[2](16, 16)
+
+    return IndexList[2](8, 8)
+
+
 def foreach[
     dtype: DType,
     rank: Int,
@@ -2518,21 +2576,19 @@ def foreach[
         ctx: The call context (forward this from the custom operation).
     """
 
-    @parameter
     @always_inline
     def elementwise_fn_wrapper[
         width: Int,
         alignment: Int = 1,
-    ](index: Coord) capturing:
+    ](index: Coord) {var}:
         var val = func[width](index)
         tensor._fused_store[element_alignment=alignment](index, val)
 
     std.algorithm.functional.elementwise[
-        elementwise_fn_wrapper,
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](tensor.shape_coord(), ctx)
+    ](elementwise_fn_wrapper, tensor.shape_coord(), ctx)
 
 
 def _shape_types_compatible[

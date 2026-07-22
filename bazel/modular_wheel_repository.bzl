@@ -49,12 +49,15 @@ def _rebuild_wheel(rctx):
     rctx.execute(["mkdir", "-p", "max/_mlir/_mlir_libs"])
     rctx.execute(["bash", "-c", "mv */platlib/max/_mlir/_mlir_libs/_mlir.*.so max/_mlir/_mlir_libs/"])
 
+    shared_lib_ext = "dylib" if rctx.attr.platform == "macos_arm64" else "so"
     rctx.file(
         "BUILD.bazel",
+        # buildifier: disable=canonical-repository
         """
 load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_cc//cc:defs.bzl", "cc_import")
 load("@rules_mojo//mojo:mojo_import.bzl", "mojo_import")
+load("@@//bazel:mojo_aliases.bzl", "INTERNAL_PACKAGES")
 
 # Subdirectories of the wheel that are part of this repo and therefore should
 # be removed so that they're not accidentally used when testing changes that
@@ -107,23 +110,40 @@ cc_import(
     target_compatible_with = ["@platforms//os:linux"],
 )
 
+# libmax dynamically links libnixl.so, which ships in the wheel on
+# linux_x86_64 only (NIXL is not built for aarch64 or macOS). Declared as a
+# cc_import dep of max_lib (like the other indirect deps) so it is co-located
+# with libmax in the solib tree and resolved at runtime.
+cc_import(
+    name = "nixl_lib",
+    shared_library = "modular/lib/libnixl.so",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
 cc_import(
     name = "max_lib",
     shared_library = glob(["modular/lib/libmax.*"])[0],
     visibility = ["//visibility:public"],
-    data = ["modular/lib/*.so"],
+    data = glob(["modular/lib/*.SHARED_LIB_EXT"]),
     deps = [":" + dep + "_lib" for dep in INDIRECT_DEPENDENCIES] + select({
-        "@platforms//os:linux": [":NVPTX_lib"],
+        "@//:linux_x86_64": [":NVPTX_lib", ":nixl_lib"],
+        "@//:linux_aarch64": [":NVPTX_lib"],
         "//conditions:default": [],
     })
 )
 
-mojo_import(
-    name = "msa_lib",
-    mojodeps = ["modular/lib/mojo/msa.mojoc"],
-    visibility = ["//visibility:public"],
-)
-""",
+[
+    mojo_import(
+        name = lib.split("/")[-1],
+        mojodeps = ["modular/lib/mojo/" + lib.split("/")[-1] + ".mojoc"],
+        visibility = ["//visibility:public"],
+    )
+    for lib in INTERNAL_PACKAGES
+]
+""".replace("SHARED_LIB_EXT", shared_lib_ext),
     )
 
 rebuild_wheel = repository_rule(
@@ -149,6 +169,7 @@ def _modular_wheel_repository_impl(rctx):
     rctx.file("BUILD.bazel", """
 load("@rules_pycross//pycross:defs.bzl", "pycross_wheel_library")
 load("@@//bazel:api.bzl", "requirement")
+load("@@//bazel:mojo_aliases.bzl", "INTERNAL_PACKAGES")
 load("@rules_python//python:defs.bzl", "py_binary")
 
 alias(
@@ -181,15 +202,18 @@ alias(
     visibility = ["//visibility:public"],
 )
 
-alias(
-    name = "msa_lib",
-    actual = select({
-        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:msa_lib",
-        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:msa_lib",
-        "@platforms//os:macos": "@module_platlib_macos_arm64//:msa_lib",
-    }),
-    visibility = ["//visibility:public"],
-)
+[
+    alias(
+        name = lib.split("/")[-1],
+        actual = select({
+            "@//:linux_aarch64": "@module_platlib_linux_aarch64//:" + lib.split("/")[-1],
+            "@//:linux_x86_64": "@module_platlib_linux_x86_64//:" + lib.split("/")[-1],
+            "@platforms//os:macos": "@module_platlib_macos_arm64//:" + lib.split("/")[-1],
+        }),
+        visibility = ["//visibility:public"],
+    )
+    for lib in INTERNAL_PACKAGES
+]
 
 pycross_wheel_library(
     name = "mblack-lib",

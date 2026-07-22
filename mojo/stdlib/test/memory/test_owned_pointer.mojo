@@ -36,8 +36,8 @@ def test_basic_ref() raises:
 def test_from_unsafe_pointer_constructor() raises:
     var deleted = False
     var unsafe_ptr = alloc[ObservableDel[]](1)
-    unsafe_ptr.init_pointee_move(
-        ObservableDel(UnsafePointer(to=deleted).as_unsafe_any_origin())
+    unsafe_ptr.unsafe_write(
+        ObservableDel(Pointer(to=deleted).as_unsafe_any_origin())
     )
 
     var ptr = OwnedPointer(unsafe_from_raw_pointer=unsafe_ptr)
@@ -99,7 +99,7 @@ def test_multiple_refs() raises:
 
 def test_basic_del() raises:
     var deleted = False
-    var b = OwnedPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var b = OwnedPointer(ObservableDel(Pointer(to=deleted)))
 
     assert_false(deleted)
 
@@ -116,7 +116,7 @@ def test_take() raises:
 
 def test_moveinit() raises:
     var deleted = False
-    var b = OwnedPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var b = OwnedPointer(ObservableDel(Pointer(to=deleted)))
     var p1 = Int(b.unsafe_ptr())
 
     var b2 = b^
@@ -133,7 +133,7 @@ def test_moveinit() raises:
 def test_steal_data() raises:
     var deleted = False
 
-    var owned_ptr = OwnedPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var owned_ptr = OwnedPointer(ObservableDel(Pointer(to=deleted)))
 
     var ptr = owned_ptr^.steal_data()
 

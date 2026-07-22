@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Mask types and the `MHAMask` trait for multi-head attention kernels.
+
+Defines the `MHAMask` trait and concrete implementations including
+`CausalMask`, `NullMask`, `SlidingWindowCausalMask`, and `MaterializedMask`.
+Masks encode which query-key pairs are visible and determine per-tile
+iteration strategies used by prefill and decode kernels.
+"""
 
 from std.utils import StaticTuple
 from std.math import align_down, iota, ceildiv
@@ -25,7 +32,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 struct MaskName(Writable):
-    """A tile's masking status."""
+    """A canonical string name identifying a mask type."""
 
     var name: String
 
@@ -115,6 +122,15 @@ struct TileMaskStatus(
 
 
 struct MaskStrategy(TrivialRegisterPassable):
+    """Bit-flag enum that selects the masking strategy for a tile iteration set.
+
+    Strategies are combined with bitwise OR. `NO_MASK` skips masking
+    entirely. `COMPUTED` calls the mask functor per element.
+    `OUT_OF_BOUNDS` clips keys at `num_keys`. `BITMASK` reads a 32-bit
+    column-visibility mask from `MHAMask.mask_bits()`, which subsumes the
+    older triangular and OOB strategies for SM100 kernels.
+    """
+
     var _value: Int32
     comptime NO_MASK = Self(0)
     """
@@ -199,11 +215,17 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
     ) -> SIMD[dtype, width]:
         """Return mask vector at given coordinates.
 
-        Arguments:
-          coord is (seq_id, head, q_idx, k_idx)
-          score_vec is at `coord` of the score matrix
-
         The functor could capture an mask tensor and add to the score e.g. Replit.
+
+        Parameters:
+            dtype: The element type of the score vector.
+            width: The SIMD width of the score vector.
+            element_type: The integer type for index coordinates (inferred;
+                defaults to `DType.uint32`).
+
+        Args:
+            coord: The coordinate tuple `(seq_id, head, q_idx, k_idx)`.
+            score_vec: The score vector at `coord` of the score matrix.
         """
         ...
 
@@ -221,6 +243,17 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         used by masks (e.g., `CausalPaddingMask`) whose status depends on
         per-sequence state. Implementations that don't need it should ignore
         it; the unused argument will be DCE'd.
+
+        Parameters:
+            element_type: The integer type for index coordinates (defaults
+                to `DType.uint32`).
+
+        Args:
+            seq_id: The sequence/batch index.
+            tile_offset: The `(row, col)` offset of the tile in the score
+                matrix.
+            tile_size: The `(height, width)` size of the tile in query rows
+                and key columns.
         """
         ...
 
@@ -240,6 +273,16 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         within a kernel that loop over columns need to be in agreement.
         Either they all loop over all columns and check status to skip,
         or they loop using the `masked_set_ends`.
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
+            page_size: The KV cache page size in key columns (0 or 1 if
+                unpaged).
+
+        Args:
+            seq_id: The sequence/batch index.
+            row: The starting query-row index of the current query tile.
         """
         ...
 
@@ -259,6 +302,12 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         equal to `BN`, this is automatic. An implementation whose
         natural alignment doesn't divide `BN` must wrap its return in
         `gcd(..., BN)` itself.
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
+            page_size: The KV cache page size in key columns (0 or 1 if
+                unpaged).
         """
         ...
 
@@ -270,13 +319,27 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         `TileMaskStatus.NO_MASK' or 'TileMaskStatus.PARTIAL_MASK'.
         This is to be used by warp specializations that do not need to
         use `kv_row`.
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
+            page_size: The KV cache page size in key columns (0 or 1 if
+                unpaged).
+
+        Args:
+            seq_id: The sequence/batch index.
+            row: The starting query-row index of the current query tile.
+            num_cols: The exclusive upper bound on key column indices.
         """
         ...
 
     @staticmethod
     def count_nonfull_sets(BM: Int, BN: Int) -> Int:
-        """
-        The number of blocks that are all partial-masks or not masked.
+        """The number of blocks that are all partial-masks or not masked.
+
+        Args:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
         """
         ...
 
@@ -292,14 +355,35 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         `total_iters`, if we have `UNKNOWN_MASK`s.
         In case of `UNKNOWN_MASK`s, `masked_set_ends` with tile-skipping
         must be used to have the correct kv_row values at each iteration.
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
+            page_size: The KV cache page size in key columns (0 or 1 if
+                unpaged).
+
+        Args:
+            seq_id: The sequence/batch index.
+            row: The starting query-row index of the current query tile.
+            num_cols: The exclusive upper bound on key column indices.
         """
         ...
 
     def last_masked_set_end[
         BM: Int, BN: Int, page_size: Int
     ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
-        """
-        Equivalent to `masked_set_ends[BM,BN,page_size](seq_id, row, num_cols)[-1]`.
+        """Equivalent to `masked_set_ends[BM,BN,page_size](seq_id, row, num_cols)[-1]`.
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
+            page_size: The KV cache page size in key columns (0 or 1 if
+                unpaged).
+
+        Args:
+            seq_id: The sequence/batch index.
+            row: The starting query-row index of the current query tile.
+            num_cols: The exclusive upper bound on key column indices.
         """
         ...
 
@@ -316,6 +400,10 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         hint that it's worth checking on each iteration at runtime for
         `FULL_MASK` (in which case we can skip the tile) or `NO_MASK`
         (in which case we can unswitch and avoid masking in an inner loop).
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
         """
         ...
 
@@ -326,6 +414,10 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         """
         For each set of iterations that are either partially masked or not masked,
         this indicates the `MaskStrategy` to use.
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
         """
         ...
 
@@ -634,6 +726,17 @@ struct NullMask(MHAMask, TrivialRegisterPassable):
         """
         The total number of column iterations for which this mask returns either
         `TileMaskStatus.NO_MASK' or 'TileMaskStatus.PARTIAL_MASK'.
+
+        Parameters:
+            BM: Query tile height (number of query rows per block).
+            BN: Key tile width (number of key columns per block).
+            page_size: The KV cache page size in key columns (0 or 1 if
+                unpaged).
+
+        Args:
+            seq_id: The sequence/batch index.
+            row: The starting query-row index of the current query tile.
+            num_cols: The exclusive upper bound on key column indices.
         """
         return ceildiv(num_cols, UInt32(BN))
 
@@ -715,6 +818,10 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
         4 | 0 0 0 0 1 1 1 1 0 0
         5 | 0 0 0 0 0 0 0 0 1 1
         6 | 0 0 0 0 0 0 0 0 1 1
+
+    Parameters:
+        local_window_size: The chunk size in tokens; positions are grouped
+            into contiguous blocks of this width.
     """
 
     comptime apply_log2e_after_mask: Bool = False
@@ -841,15 +948,30 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
         BM: Int, BN: Int, page_size: Int
     ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
         start_col = self.start_column[BM, BN, page_size](seq_id, row)
-        # end_col is 1 past the end, the first that is masked off
-        end_col = (
-            1 + ((row + UInt32(BM) - 1) // UInt32(Self.local_window_size))
-        ) * UInt32(Self.local_window_size)
+        # `end_col` is 1 past the last potentially-visible column: the end of
+        # the chunk the last query row belongs to, clamped to the cache length.
+        # The clamp matters for the NO_MASK partition below: `status()` is
+        # chunk-only (ignores `num_keys`), so without it a `num_keys`-straddling
+        # tile would be marked NO_MASK and iterated past the valid extent.
+        var end_col = min(
+            (1 + ((row + UInt32(BM) - 1) // UInt32(Self.local_window_size)))
+            * UInt32(Self.local_window_size),
+            num_cols,
+        )
         return ceildiv(end_col - start_col, UInt32(BN))
 
     @staticmethod
     def count_nonfull_sets(BM: Int, BN: Int) -> Int:
-        return 1  # TODO: 3, for large chunk size
+        # When a query block can sit entirely inside one chunk (`W >= BM`) and
+        # the chunk boundary is tile-aligned (`W % BN == 0`, so `start_column`
+        # lands on the chunk start with no leading FULL tiles), a non-crossing
+        # block's interior tiles are fully visible -> a NO_MASK middle set.
+        # Boundary-straddling blocks leave that set empty (see
+        # `masked_set_ends`).
+        if Self.local_window_size % BN == 0 and Self.local_window_size >= BM:
+            return 3
+        else:
+            return 1
 
     @always_inline
     def last_masked_set_end[
@@ -863,19 +985,71 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
     ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> StaticTuple[
         UInt32, Self.count_nonfull_sets(BM, BN)
     ]:
-        return {self.total_iters[BM, BN, page_size](seq_id, row, num_cols)}
+        var total = self.total_iters[BM, BN, page_size](seq_id, row, num_cols)
+        comptime if (
+            Self.local_window_size % BN == 0 and Self.local_window_size >= BM
+        ):
+            # `W % BN == 0` guarantees `start_column == c0` (the first row's
+            # chunk start), so every offset below is relative to that chunk.
+            comptime W = UInt32(Self.local_window_size)
+            var c0 = (row // W) * W
+            var crossing = ((row + UInt32(BM) - 1) // W) * W != c0
+            if crossing:
+                # Block spans two chunks (`BM <= W`): every tile is PARTIAL (its
+                # columns are visible to only one of the two row groups), so the
+                # whole range goes in the leading BITMASK set and both trailing
+                # NO_MASK sets are empty.
+                return {total, total, total}
+            else:
+                # Non-crossing: every chunk column is visible to every row.
+                # Tiles fully below `num_keys` need no masking at all (set 1,
+                # NO_MASK strategy); the single `num_keys`-straddling tile (the
+                # ceil-vs-floor difference) needs only the OOB clip (set 2,
+                # OUT_OF_BOUNDS). FLOOR division is what keeps set 1 strictly
+                # in-bounds, so the NO_MASK strategy never reads past num_keys.
+                var in_bounds_end = (min(c0 + W, num_cols) - c0) // UInt32(BN)
+                return {UInt32(0), in_bounds_end, total}
+        else:
+            return {total}
 
     @staticmethod
     def nonfull_sets[
         BM: Int, BN: Int
     ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
-        return {TileMaskStatus.PARTIAL_MASK}
+        comptime if (
+            Self.local_window_size % BN == 0 and Self.local_window_size >= BM
+        ):
+            return {
+                TileMaskStatus.PARTIAL_MASK,
+                TileMaskStatus.NO_MASK,
+                TileMaskStatus.NO_MASK,
+            }
+        else:
+            return {TileMaskStatus.PARTIAL_MASK}
 
     @staticmethod
     def mask_strategies[
         BM: Int, BN: Int
     ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
-        return {MaskStrategy.BITMASK}
+        comptime if (
+            Self.local_window_size % BN == 0 and Self.local_window_size >= BM
+        ):
+            # Leading set holds boundary-crossing tiles -> BITMASK (`mask_bits`
+            # folds the chunk window and the OOB clip). The interior set is fully
+            # chunk-visible AND bounded strictly below `num_keys` by
+            # `masked_set_ends` -> NO_MASK (no clip, no select: the cheapest
+            # path). Only the single `num_keys`-straddling tile remains, in the
+            # trailing set -> OUT_OF_BOUNDS, which keeps the `col < num_keys`
+            # clip. Splitting the straddle tile out is what makes the NO_MASK
+            # interior safe for this non-causal mask (unlike
+            # SlidingWindowCausalMask, causality can't bound the OOB columns).
+            return {
+                MaskStrategy.BITMASK,
+                MaskStrategy.NO_MASK,
+                MaskStrategy.OUT_OF_BOUNDS,
+            }
+        else:
+            return {MaskStrategy.BITMASK}
 
     @always_inline
     def mask_bits(
@@ -940,6 +1114,10 @@ struct SlidingWindowCausalMask[window_size: Int](
         4 | 0 0 1 1 1 0 0
         5 | 0 0 0 1 1 1 0
         6 | 0 0 0 0 1 1 1
+
+    Parameters:
+        window_size: The sliding window size in tokens; a query at position `q`
+            attends only to keys in `[q - window_size + 1, q]`.
     """
 
     comptime apply_log2e_after_mask: Bool = False
@@ -1093,8 +1271,8 @@ struct SlidingWindowCausalMask[window_size: Int](
     def total_iters[
         BM: Int, BN: Int, page_size: Int
     ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
-        start_col = self.start_column[BM, BN, page_size](seq_id, row)
-        end_col = min(row + UInt32(BM), num_cols)  # one past end
+        var start_col = self.start_column[BM, BN, page_size](seq_id, row)
+        var end_col = min(row + UInt32(BM), num_cols)  # one past end
         return ceildiv(end_col - start_col, UInt32(BN))
 
     @staticmethod
@@ -1110,9 +1288,9 @@ struct SlidingWindowCausalMask[window_size: Int](
     ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> StaticTuple[
         UInt32, Self.count_nonfull_sets(BM, BN)
     ]:
-        start_col = self.start_column[BM, BN, page_size](seq_id, row)
+        var start_col = self.start_column[BM, BN, page_size](seq_id, row)
         # partial_exit_end_col = row + BM
-        partial_exit_end_col = min(row + UInt32(BM), num_cols)
+        var partial_exit_end_col = min(row + UInt32(BM), num_cols)
         # partial's end uses `ceildiv` and unmasked uses floored division
         # Partials must cover the entire `BN` tile with an masked entry
         # The unmasked region can't handle a tile with any
@@ -1237,6 +1415,11 @@ struct SlidingWindowNonCausalMask[window_size: Int](
         4 | 0 0 1 1 1 1 1
         5 | 0 0 0 1 1 1 1
         6 | 0 0 0 0 1 1 1
+
+    Parameters:
+        window_size: The sliding window size in tokens; a query at position
+            `q` attends only to keys at or after `q - window_size + 1`, with
+            no upper bound (future keys are always visible).
     """
 
     comptime apply_log2e_after_mask: Bool = False
@@ -1648,6 +1831,28 @@ struct CausalPaddingMask[layout_: Layout, origin_: Origin[mut=False]](
 def naively_compute_total_iters[
     MaskType: MHAMask, //, BM: Int, BN: Int
 ](mask: MaskType, seq_id: UInt32, q_row: UInt32, end: UInt32) -> UInt32:
+    """Count the non-fully-masked KV tile iterations for a query row by linear scan.
+
+    Walks every `BN`-wide column tile from `0` to `end`, calling
+    `mask.status()` for each and counting tiles that are not
+    `TileMaskStatus.FULL_MASK`. Intended as a reference fallback for mask
+    types that do not implement a closed-form `total_iters()`.
+
+    Parameters:
+        MaskType: Concrete `MHAMask` implementation to query.
+        BM: Query tile height (number of query rows per block).
+        BN: Key tile width (number of key columns per block).
+
+    Args:
+        mask: The mask instance.
+        seq_id: Sequence/batch index.
+        q_row: Starting query-row index of the current query tile.
+        end: Exclusive upper bound on key column indices.
+
+    Returns:
+        The number of KV tiles in `[0, end)` that are not fully masked.
+    """
+
     var iter_count: UInt32 = 0
     var kv_row: UInt32 = 0
     while kv_row < end:
@@ -1669,6 +1874,28 @@ def naively_compute_total_iters[
 def naively_get_first_nonempty_mask_col[
     MaskType: MHAMask, //, BM: Int, BN: Int
 ](mask: MaskType, seq_id: UInt32, q_row: UInt32) -> UInt32:
+    """Find the first KV tile column whose mask status is not `FULL_MASK`.
+
+    Scans KV column tiles starting at 0 with stride `BN`, calling
+    `mask.status()` until a tile that is not fully masked is found. Used as
+    a fallback `start_column()` implementation for mask types that do not
+    have a closed-form expression.
+
+    Parameters:
+        MaskType: Concrete `MHAMask` implementation to query.
+        BM: Query tile height (number of query rows per block).
+        BN: Key tile width (number of key columns per block).
+
+    Args:
+        mask: The mask instance.
+        seq_id: Sequence/batch index.
+        q_row: Starting query-row index of the current query tile.
+
+    Returns:
+        The column index of the first non-fully-masked KV tile, aligned to
+        a multiple of `BN`.
+    """
+
     var kv_row: UInt32 = 0
     while (
         mask.status(
@@ -1685,7 +1912,14 @@ def naively_get_first_nonempty_mask_col[
 struct MaterializedMask[
     dtype_: DType, layout_: Layout, origin_: Origin[mut=False]
 ](MHAMask, TrivialRegisterPassable):
-    """Mask that's backed by a materialized tensor."""
+    """Mask that's backed by a materialized tensor.
+
+    Parameters:
+        dtype_: Element type of the backing mask tensor.
+        layout_: Memory layout of the backing mask tensor.
+        origin_: Origin (ownership/mutability qualifier) of the backing mask
+            tensor.
+    """
 
     comptime apply_log2e_after_mask: Bool = True
     comptime mask_out_of_bound: Bool = True
@@ -1900,6 +2134,80 @@ def _supports_bitmask[M: MHAMask, BM: Int, BN: Int]() -> Bool:
     return ok
 
 
+@always_inline
+def _nonfull_sets_known[M: MHAMask, BM: Int, BN: Int]() -> Bool:
+    """Reports whether `M` publishes a statically-known iteration partition,
+    i.e. no element of its `nonfull_sets` is `UNKNOWN_MASK`. Used by
+    `AndMask` / `OrMask` to decide whether they can advertise a precise
+    `PARTIAL_MASK` set (driving the cheaper known-partition consumer path
+    that skips the per-tile runtime `status()` check) instead of falling
+    back to `UNKNOWN_MASK`.
+    """
+    comptime sets = M.nonfull_sets[BM, BN]()
+    var known: Bool = True
+    comptime for i in range(len(sets)):
+        if sets[i] == TileMaskStatus.UNKNOWN_MASK:
+            known = False
+    return known
+
+
+@always_inline
+def _both_multiset[T: MHAMask, S: MHAMask](BM: Int, BN: Int) -> Bool:
+    """Reports whether both inner masks expose a multi-set (`>= 2`) known
+    partition for `(BM, BN)`.
+
+    Relies on the in-tree invariant that an `UNKNOWN_MASK` mask is always
+    single-set (`count_nonfull_sets == 1`), so any mask whose
+    `count_nonfull_sets >= 2` is a statically-known partition that contains a
+    `NO_MASK` set. Hence `_both_multiset` ⟺ "both inners are known AND each has
+    a `NO_MASK` band", exactly the precondition for an `OrMask` to expose a
+    combined `NO_MASK` middle (intersection of two `NO_MASK` bands).
+
+    This is callable from `count_nonfull_sets` (whose `BM`/`BN` are runtime
+    `Int` arguments) because it takes `BM`/`BN` as arguments and only ever uses
+    them in arithmetic / argument-position calls to the inners'
+    `count_nonfull_sets`, never as parameters (which a runtime `Int` cannot
+    satisfy).
+    """
+    return (
+        T.count_nonfull_sets(BM, BN) >= 2 and S.count_nonfull_sets(BM, BN) >= 2
+    )
+
+
+@always_inline
+def _child_nomask_cols[
+    M: MHAMask, //, BM: Int, BN: Int, page_size: Int
+](m: M, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> StaticTuple[
+    UInt32, 2
+]:
+    """Returns a known child's contiguous `NO_MASK` run as an absolute
+    `[lo_col, hi_col)` column interval (empty, `lo == hi == start_column`, when
+    the child exposes no `NO_MASK` set). Adjacent `NO_MASK` sets (e.g.
+    `NullMask`'s `{NO_MASK, NO_MASK}` or `ChunkedMask`'s
+    `{PARTIAL, NO_MASK, NO_MASK}`) collapse into one run via first..last
+    `NO_MASK` indices. Used by `OrMask` to intersect the two inners' `NO_MASK`
+    bands. Assumes a `BN`-aligned `start_column` (the caller gates on this).
+    """
+    comptime sets = M.nonfull_sets[BM, BN]()
+    var start_col = m.start_column[BM, BN, page_size](seq_id, row)
+    var first_nm: Int = -1
+    var last_nm: Int = -1
+    for i in range(len(sets)):
+        if sets[i] == TileMaskStatus.NO_MASK:
+            if first_nm < 0:
+                first_nm = i
+            last_nm = i
+    if first_nm < 0:
+        return {start_col, start_col}
+    var ends = m.masked_set_ends[BM, BN, page_size](seq_id, row, num_cols)
+    var lo_rel: UInt32 = 0 if first_nm == 0 else UInt32(ends[first_nm - 1])
+    var hi_rel: UInt32 = ends[last_nm]
+    return {
+        start_col + lo_rel * UInt32(BN),
+        start_col + hi_rel * UInt32(BN),
+    }
+
+
 # ===-----------------------------------------------------------------------===#
 # AndMask
 # ===-----------------------------------------------------------------------===#
@@ -2006,6 +2314,17 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     def nonfull_sets[
         BM: Int, BN: Int
     ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        # `AndMask` visibility is the *union* of the inners' visibility, so its
+        # non-full region can be DISCONTIGUOUS (a `FULL` gap between two
+        # non-overlapping operands) and its `NO_MASK` runs can sit anywhere --
+        # neither is expressible as a fixed comptime set sequence the way
+        # `OrMask`'s contiguous `{PARTIAL, NO_MASK, PARTIAL}` is (per-row
+        # contiguity is a runtime property the trait surface can't prove at
+        # comptime). Since `AndMask` is not instantiated by any kernel today,
+        # we keep the always-safe `{UNKNOWN_MASK}` fallback (runtime per-tile
+        # `status()` skip) rather than a partial/unsound merge. See `OrMask`
+        # for the merge machinery to lift here once a contiguous `AndMask`
+        # composition actually needs it.
         return {TileMaskStatus.UNKNOWN_MASK}
 
     @staticmethod
@@ -2062,7 +2381,14 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     MHAMask, TrivialRegisterPassable
 ):
     """Mask that's the OR of two masks.
-    If either mask masks off an element, the element is masked off."""
+    If either mask masks off an element, the element is masked off.
+
+    Parameters:
+        T: The type of the first (left) inner mask.
+        S: The type of the second (right) inner mask.
+        lhs: The first (left) inner mask instance.
+        rhs: The second (right) inner mask instance.
+    """
 
     comptime apply_log2e_after_mask: Bool = Self.T.apply_log2e_after_mask or Self.S.apply_log2e_after_mask
     comptime mask_out_of_bound: Bool = Self.T.mask_out_of_bound and Self.S.mask_out_of_bound
@@ -2134,13 +2460,27 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 
     @staticmethod
     def count_nonfull_sets(BM: Int, BN: Int) -> Int:
-        return 1
+        # 3 ({PARTIAL, NO_MASK, PARTIAL}) when both inners expose a `NO_MASK`
+        # band (so a combined `NO_MASK` middle can exist); otherwise 1 (a
+        # single `PARTIAL` set when both inners are known, else `UNKNOWN`).
+        if _both_multiset[Self.T, Self.S](BM, BN):
+            return 3
+        else:
+            return 1
 
     @always_inline
     def last_masked_set_end[
         BM: Int, BN: Int, page_size: Int
     ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
-        return ceildiv(num_cols, UInt32(BN))
+        comptime if (
+            _nonfull_sets_known[Self.T, BM, BN]()
+            and _nonfull_sets_known[Self.S, BM, BN]()
+        ):
+            # Tight, `start_column`-relative span (== `total_iters`, since the
+            # `OrMask` non-full region is contiguous).
+            return self.total_iters[BM, BN, page_size](seq_id, row, num_cols)
+        else:
+            return ceildiv(num_cols, UInt32(BN))
 
     @always_inline
     def masked_set_ends[
@@ -2148,34 +2488,112 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> StaticTuple[
         UInt32, Self.count_nonfull_sets(BM, BN)
     ]:
-        return {
-            self.last_masked_set_end[BM, BN, page_size](seq_id, row, num_cols)
-        }
+        comptime if _both_multiset[Self.T, Self.S](BM, BN):
+            # 3-set {PARTIAL, NO_MASK, PARTIAL}, cumulative and relative to
+            # `start_column` (= the combined first non-FULL tile). The
+            # `NO_MASK` middle is the intersection of the two inners' `NO_MASK`
+            # bands, lifted into a common absolute-column frame and lowered
+            # back to relative BN-tiles.
+            var cs_col = self.start_column[BM, BN, page_size](seq_id, row)
+            var total = self.total_iters[BM, BN, page_size](
+                seq_id, row, num_cols
+            )
+            var ce_col = cs_col + total * UInt32(BN)
+            var l_start = self.lhs.start_column[BM, BN, page_size](seq_id, row)
+            var r_start = self.rhs.start_column[BM, BN, page_size](seq_id, row)
+            # The absolute-column intersection is exact only when both inners'
+            # start columns lie on the BN grid (offsets are multiples of BN).
+            # This holds for every real composition (CausalMask starts at 0;
+            # ChunkedMask's 3-set starts at a chunk boundary, a multiple of
+            # BN). Otherwise leave the `NO_MASK` middle empty -> all PARTIAL.
+            if (l_start % UInt32(BN) == 0) and (r_start % UInt32(BN) == 0):
+                var l_nm = _child_nomask_cols[BM, BN, page_size](
+                    self.lhs, seq_id, row, num_cols
+                )
+                var r_nm = _child_nomask_cols[BM, BN, page_size](
+                    self.rhs, seq_id, row, num_cols
+                )
+                var nm_lo = max(l_nm[0], r_nm[0])
+                var nm_hi = min(l_nm[1], r_nm[1])
+                nm_lo = min(max(nm_lo, cs_col), ce_col)
+                nm_hi = min(max(nm_hi, nm_lo), ce_col)
+                return {
+                    (nm_lo - cs_col) // UInt32(BN),
+                    (nm_hi - cs_col) // UInt32(BN),
+                    total,
+                }
+            else:
+                return {UInt32(0), UInt32(0), total}
+        else:
+            comptime if (
+                _nonfull_sets_known[Self.T, BM, BN]()
+                and _nonfull_sets_known[Self.S, BM, BN]()
+            ):
+                # Single PARTIAL set spanning the (contiguous) intersection.
+                return {
+                    self.total_iters[BM, BN, page_size](seq_id, row, num_cols)
+                }
+            else:
+                return {
+                    self.last_masked_set_end[BM, BN, page_size](
+                        seq_id, row, num_cols
+                    )
+                }
 
     @staticmethod
     def nonfull_sets[
         BM: Int, BN: Int
     ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
-        return {TileMaskStatus.UNKNOWN_MASK}
+        # Precise partition when both inners are statically known. `OrMask`
+        # visibility is the *intersection*, whose non-full region is contiguous
+        # and whose `NO_MASK` band is `intersect(lhs_nm, rhs_nm)` (one
+        # interval) -> the `{PARTIAL, NO_MASK, PARTIAL}` shape, possible only
+        # when both inners expose a `NO_MASK` band (`_both_multiset`). When
+        # only one (or neither) does but both are known, no combined `NO_MASK`
+        # can exist, so a single `PARTIAL` set spanning the intersection
+        # suffices. Fall back to `UNKNOWN_MASK` only when an inner is itself
+        # unknown (e.g. `MaterializedMask`).
+        comptime if _both_multiset[Self.T, Self.S](BM, BN):
+            return {
+                TileMaskStatus.PARTIAL_MASK,
+                TileMaskStatus.NO_MASK,
+                TileMaskStatus.PARTIAL_MASK,
+            }
+        else:
+            comptime if (
+                _nonfull_sets_known[Self.T, BM, BN]()
+                and _nonfull_sets_known[Self.S, BM, BN]()
+            ):
+                return {TileMaskStatus.PARTIAL_MASK}
+            else:
+                return {TileMaskStatus.UNKNOWN_MASK}
 
     @staticmethod
     def mask_strategies[
         BM: Int, BN: Int
     ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
         # `OrMask` masks off an element iff AT LEAST ONE inner masks it off,
-        # i.e. intersection of visibility. The float branch is
-        # `min(lhs, rhs)` (picks the more-masked operand) and `mask_bits` is
-        # `lhs & rhs` (visible iff both inners say visible).
-        # `ChunkedCausalMask = OrMask[CausalMask, ChunkedMask]` relies on
-        # this. We can route through BITMASK iff both inners provide a real
-        # `mask_bits` (no `COMPUTED` in any partition).
-        comptime if (
-            _supports_bitmask[Self.T, BM, BN]()
-            and _supports_bitmask[Self.S, BM, BN]()
-        ):
-            return {MaskStrategy.BITMASK}
+        # i.e. intersection of visibility (`status = lhs | rhs`, float branch
+        # `min(lhs, rhs)`, `mask_bits = lhs & rhs`). `ChunkedCausalMask =
+        # OrMask[CausalMask, ChunkedMask]` relies on this.
+        #
+        # `edge` is the strategy for the (leading/trailing) PARTIAL sets:
+        # BITMASK iff both inners provide a real `mask_bits` (no `COMPUTED`),
+        # else the per-element `COMPUTED | OUT_OF_BOUNDS` path. The combined
+        # `NO_MASK` middle is fully visible, so it needs no `mask_bits`/select
+        # -- only `OUT_OF_BOUNDS` to keep the `col < num_keys` clip (the band
+        # is `intersect(lhs_nm, rhs_nm)` and can inherit a `num_keys`-straddling
+        # tile from an inner).
+        comptime both_bm = _supports_bitmask[
+            Self.T, BM, BN
+        ]() and _supports_bitmask[Self.S, BM, BN]()
+        comptime edge = MaskStrategy.BITMASK if both_bm else (
+            MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS
+        )
+        comptime if _both_multiset[Self.T, Self.S](BM, BN):
+            return {edge, MaskStrategy.OUT_OF_BOUNDS, edge}
         else:
-            return {MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS}
+            return {edge}
 
     @always_inline
     def mask_bits(

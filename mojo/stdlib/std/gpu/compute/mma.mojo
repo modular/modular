@@ -47,34 +47,34 @@ from .arch.mma_amd import _mma_amd
 from .arch.mma_apple import _mma_apple
 
 
-def get_amd_fp8_dtype() -> DType:
+def get_amd_fp8_dtype() -> Optional[DType]:
     """Gets the appropriate FP8 dtype for the current AMD GPU architecture.
 
     Returns:
         - `DType.float8_e4m3fn` for CDNA4+ and RDNA4+ GPUs
         - `DType.float8_e4m3fnuz` for CDNA1-3 GPUs
-        - `DType.invalid` for RDNA3 (no native FP8 support).
+        - `None` for RDNA3 (no native FP8 support).
     """
 
     comptime if _is_amd_rdna3():
-        return DType.invalid
+        return None
     elif _is_amd_rdna4() or _cdna_4_or_newer():
         return DType.float8_e4m3fn
     else:
         return DType.float8_e4m3fnuz
 
 
-def get_amd_bf8_dtype() -> DType:
+def get_amd_bf8_dtype() -> Optional[DType]:
     """Gets the appropriate BF8 dtype for the current AMD GPU architecture.
 
     Returns:
         - `DType.float8_e5m2` for CDNA4+ and RDNA4+ GPUs
         - `DType.float8_e5m2fnuz` for CDNA1-3 GPUs
-        - `DType.invalid` for RDNA3 (no native BF8 support).
+        - `None` for RDNA3 (no native BF8 support).
     """
 
     comptime if _is_amd_rdna3():
-        return DType.invalid
+        return None
     elif _is_amd_rdna4() or _cdna_4_or_newer():
         return DType.float8_e5m2
     else:

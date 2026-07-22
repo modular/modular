@@ -14,7 +14,7 @@
 from std.collections import Set
 from std.hashlib import hash
 
-from test_utils import MoveOnly, check_write_to
+from test_utils import ExplicitDestroyKey, MoveOnly, check_write_to
 from std.testing import (
     assert_false,
     assert_equal,
@@ -559,6 +559,7 @@ def test_set_conditional_conformances() raises:
     assert_true(conforms_to(Set[Int], Comparable))
     assert_true(conforms_to(Set[Int], Hashable))
     assert_true(conforms_to(Set[Int], Writable))
+    assert_true(conforms_to(Set[MoveOnly[Int]], IterableOwned))
 
     # Move-only element type drops the copy-requiring conformances.
     assert_false(conforms_to(Set[MoveOnly[Int]], Copyable))
@@ -567,12 +568,24 @@ def test_set_conditional_conformances() raises:
     assert_false(conforms_to(Set[MoveOnly[Int]], Hashable))
     assert_false(conforms_to(Set[MoveOnly[Int]], Writable))
 
+    # ImplicitlyDeletable conformance is conditional on the element type.
+    assert_true(conforms_to(Set[Int], ImplicitlyDeletable))
+    assert_true(conforms_to(Set[String], ImplicitlyDeletable))
+    assert_true(conforms_to(Set[MoveOnly[Int]], ImplicitlyDeletable))
+    # A linear (explicitly-destroyed) element makes the set itself linear.
+    assert_false(conforms_to(Set[ExplicitDestroyKey], ImplicitlyDeletable))
+
 
 def test_set_iter_owned() raises:
-    var s = Set[Int](1, 2, 3)
+    # Test that owned iteration works, for non-Copyable types
+    var s = Set[MoveOnly[Int]]()
+    s.add(MoveOnly(1))
+    s.add(MoveOnly(2))
+    s.add(MoveOnly(3))
+
     var elems = List[Int]()
-    for elem in s^:
-        elems.append(elem)
+    for var elem in s^:
+        elems.append(elem.data)
 
     assert_equal(len(elems), 3)
     assert_true(1 in elems)
@@ -631,6 +644,22 @@ def test_set_move_only_element() raises:
     s.clear()
     assert_equal(len(s), 0)
     assert_false(s.__bool__())
+
+
+def test_set_deinit_with_empty() raises:
+    # A `Set` with a linear (non-`ImplicitlyDeletable`) element type has no
+    # implicit destructor and must be torn down with `deinit_with()`. Populating
+    # a linear-keyed set isn't supported yet (adding requires
+    # `ImplicitlyDeletable`), so this exercises the empty teardown path.
+    var s = Set[ExplicitDestroyKey]()
+    var calls = 0
+
+    def dispose(var key: ExplicitDestroyKey) {mut}:
+        calls += 1
+        key^.destroy()
+
+    s^.deinit_with(dispose)
+    assert_equal(calls, 0)
 
 
 def main() raises:

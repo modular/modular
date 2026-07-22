@@ -10,9 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements a float-integer packed top-K kernel that jointly tracks values and indices in a single register."""
 
 from std.bit import log2_floor
 from std.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
     block_dim,
@@ -51,6 +53,19 @@ from std.utils.static_tuple import StaticTuple
 from .normalization import (
     _APPLE_STATIC_SHMEM_MAX_COUNT,
     _APPLE_STATIC_SHMEM_MAX_BYTES,
+)
+
+# Apple-only `topk_softmax_sample` cache budget. The kernel statically allocates
+# `s_vals` (the top-k cache) plus auxiliary SMEM (`s_count` + block-reduction
+# per-warp scratch). Allocating the full 32K bucket for the cache alone left no
+# room for the auxiliary SMEM and overflowed Apple's 32K threadgroup limit
+# (33932 > 32768). Reserve 2K of headroom for the auxiliary SMEM.
+comptime _APPLE_STATIC_SHMEM_RESERVE_BYTES = 2 * 1024
+comptime _APPLE_STATIC_SHMEM_CACHE_BYTES = (
+    _APPLE_STATIC_SHMEM_MAX_BYTES - _APPLE_STATIC_SHMEM_RESERVE_BYTES
+)
+comptime _APPLE_STATIC_SHMEM_CACHE_COUNT = (
+    _APPLE_STATIC_SHMEM_CACHE_BYTES // size_of[Float32]()
 )
 
 
@@ -202,7 +217,7 @@ def TopKMaskLogitsKernel[
     dtype: DType,
     out_idx_type: DType,
     LogitsLayoutType: TensorLayout,
-    logits_origin: ImmutOrigin,
+    logits_origin: ImmOrigin,
     MaskedLogitsLayoutType: TensorLayout,
     masked_logits_origin: MutOrigin,
 ](
@@ -216,6 +231,31 @@ def TopKMaskLogitsKernel[
     top_k_val: Int,
     d: Int,
 ):
+    """Masks logits to retain only the top-k values per row, setting the rest to negative infinity.
+
+    Each block processes one row. A ternary search over the logit range finds
+    the k-th largest value (the pivot), then every element greater than the
+    pivot is kept while the rest are replaced with the dtype's minimum value.
+
+    Parameters:
+        block_size: Number of threads per block.
+        vec_size: Number of elements each thread loads per vectorized access.
+        dtype: Element type of the `logits` and `masked_logits` tiles.
+        out_idx_type: Index type used for per-row top-k override values.
+        LogitsLayoutType: Memory layout of the input `logits` tile.
+        logits_origin: Origin tag for the immutable input `logits` tile.
+        MaskedLogitsLayoutType: Memory layout of the output `masked_logits`
+            tile.
+        masked_logits_origin: Origin tag for the mutable output
+            `masked_logits` tile.
+
+    Args:
+        logits: Input logits tile [batch_size, d].
+        masked_logits: Output buffer for masked logits, same shape as logits.
+        top_k_arr: Optional per-row top-k values; overrides top_k_val when present.
+        top_k_val: Default number of largest logits to retain per row.
+        d: Row length (vocabulary size).
+    """
     var bx = block_idx.x
     var tx = thread_idx.x
     var row_idx = bx
@@ -362,6 +402,29 @@ def topk_mask_logits[
         TileTensor[out_idx_type, TopKArrLayoutType, MutUntrackedOrigin]
     ] = None,
 ) raises:
+    """Masks logits to keep only the top-k largest values per row.
+
+    Launches `TopKMaskLogitsKernel` with one block per batch row. Elements below
+    the k-th largest logit are set to the dtype's minimum value so downstream
+    sampling ignores them.
+
+    Parameters:
+        dtype: Element type of the `logits` and `masked_logits` tensors.
+        out_idx_type: Index type used for per-row top-k override values in
+            `top_k_arr`.
+        block_size: Number of threads per block (defaults to 1024).
+        TopKArrLayoutType: Memory layout of the optional `top_k_arr` tensor.
+
+    Args:
+        ctx: Device context for kernel execution.
+        logits: Input logits tensor [batch_size, d].
+        masked_logits: Output buffer for masked logits, same shape as logits.
+        top_k_val: Default number of largest logits to retain per row.
+        top_k_arr: Optional per-row top-k values that override top_k_val.
+
+    Raises:
+        Error: If masked_logits shape does not match logits shape.
+    """
     comptime assert logits.rank == 2, "logits rank must be 2"
     comptime assert (
         logits.rank == masked_logits.rank
@@ -411,7 +474,7 @@ def topk_mask_logits[
                 dtype,
                 out_idx_type,
                 LogitsLayoutType=logits.LayoutType,
-                logits_origin=ImmutOrigin(logits.origin),
+                logits_origin=ImmOrigin(logits.origin),
                 MaskedLogitsLayoutType=masked_logits.LayoutType,
                 masked_logits_origin=masked_logits.origin,
             ]
@@ -450,6 +513,28 @@ def device_sampling_from_prob[
     ],
 ) -> Tuple[Float32, Int]:
     """Device-level sampling from probability distribution with atomic operations.
+
+    Parameters:
+        vec_size: Number of elements each thread loads per vectorized
+            access.
+        block_size: Number of threads per block.
+        dtype: Element type of the probability distribution.
+        deterministic: If True, use deterministic sampling (defaults to
+            False).
+
+    Args:
+        i: Chunk iteration index used to compute element offsets within
+            the row.
+        d: Total number of elements in the row (vocabulary size).
+        low: Lower-bound threshold; only probabilities greater than this
+            value participate in sampling.
+        u: Target cumulative probability to locate, scaled by the
+            remaining mass `q`.
+        prob_vec: Vector of probabilities for the current chunk.
+        aggregate: Running sum of filtered probabilities from previously
+            processed chunks.
+        sampled_id_sram: Shared-memory slot holding the sampled index,
+            updated via atomic minimum.
 
     Returns:
         Tuple of (new_aggregate, thread_local_max_valid_idx).
@@ -675,7 +760,7 @@ def _block_reduce_value_count[
 )
 def TopKSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
-    probs_origin: ImmutOrigin,
+    probs_origin: ImmOrigin,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     block_size: Int,
@@ -702,6 +787,18 @@ def TopKSamplingFromProbKernel[
     2. Rejecting samples iteratively until acceptance criteria is met.
     3. Sampling an index using uniform random numbers from Random generator.
 
+    Parameters:
+        ProbsLayoutType: Memory layout of the input `probs` tile.
+        probs_origin: Origin tag for the immutable input `probs` tile.
+        OutputLayoutType: Memory layout of the output `output` tile.
+        output_origin: Origin tag for the mutable output `output` tile.
+        block_size: Number of threads per block.
+        vec_size: Number of elements each thread loads per vectorized
+            access.
+        dtype: Element type of the `probs` tensor.
+        out_idx_type: Index type used for the sampled output indices.
+        deterministic: If True, use deterministic sampling.
+
     Args:
         probs: Input probability distribution [batch_size, d].
         output: Output sampled indices [batch_size].
@@ -717,13 +814,6 @@ def TopKSamplingFromProbKernel[
     var bx = block_idx.x
     var tx = thread_idx.x
 
-    var sampled_id_sram = stack_allocation[
-        1, Int, address_space=AddressSpace.SHARED
-    ]()
-    var last_valid_id_sram = stack_allocation[
-        1, Int, address_space=AddressSpace.SHARED
-    ]()
-
     with PDL():
         var generator = Random(seed=rng_seed, offset=UInt64(bx) + rng_offset)
         var k = top_k_val
@@ -736,141 +826,280 @@ def TopKSamplingFromProbKernel[
         var probs_ptr = probs.ptr + row_idx * d
         var probs_row = TileTensor(probs_ptr, row_major(Idx[1], d))
 
-        var probs_vec: SIMD[DType.float32, vec_size]
-        var aggregate: Float32
+        # The final sampled index, produced by whichever search path runs.
         var sampled_id = 0
-        var q: Float32 = 1.0
-        var low: Float32 = 0.0
-        var high: Float32 = 1.0
 
-        while low < high:
+        comptime if is_apple_gpu():
+            # Single-thread-driven ternary search (Apple/Metal only).
+            #
+            # The block-collective `while low < high` loop (the non-Apple path
+            # below) computes the Case decision (`count_0 < k`, `count_1 < k`)
+            # PER THREAD from broadcast block reductions. On Metal, at the
+            # ghost-warp geometry (block=1024 but only the first few warps carry
+            # data), repeated/interleaved block collectives inside the loop —
+            # specifically the `block.sum` + `block.prefix_sum` pair inside
+            # `device_sampling_from_prob` — progressively DESYNCHRONIZE the
+            # warps by a full loop iteration (verified: a single-cell publish +
+            # barrier is uniform in isolation and stays uniform after
+            # `block.sum`/`block.prefix_sum`/`block.max` individually, but BREAKS
+            # once `device_sampling_from_prob` runs in the loop; ghost warps then
+            # lag warp 0 by one iteration). With the warps desynced, `count_0`
+            # differed per thread => different Case branches => divergent trip
+            # count => in-body barriers on a partial threadgroup (UB),
+            # compounding into out-of-top-K results. No per-iteration
+            # publish/broadcast mechanism fixes this because the warps are
+            # already drifting.
+            #
+            # The robust structural fix: run the ENTIRE search on a single
+            # thread (tx==0) with sequential scans over the row — NO block
+            # collectives in the loop — and publish only the final id. A
+            # FIXED-BOUND `for` loop keeps every thread executing the same
+            # iteration count; the other threads merely hit the per-iteration
+            # `barrier()` and advance the RNG in lockstep. With no in-loop
+            # collective there is nothing to desynchronize, so the search is
+            # correct by construction. The vocab is one row per block and K is
+            # small, so the sequential O(d) scans per iteration are acceptable
+            # for a sampler.
+            #
+            # MAX_ITERS bound: the ternary search strictly narrows [low, high]
+            # each rejected iteration and converges in <=4 iterations in the
+            # host replay. 64 is a large safety margin; the `done` flag no-ops
+            # the rest.
+            comptime MAX_ITERS = 64
+
+            var done_sram = stack_allocation[
+                1, Int32, address_space=AddressSpace.SHARED
+            ]()
+            var out_id_sram = stack_allocation[
+                1, Int, address_space=AddressSpace.SHARED
+            ]()
+
+            # Initialize control once, uniformly.
             if tx == 0:
-                sampled_id_sram[0] = d
+                done_sram[0] = 0
+                out_id_sram[0] = 0
             barrier()
 
-            var u = generator.step_uniform()[0] * q
-            aggregate = 0.0
-            var thread_max_valid = -1
+            # The ENTIRE ternary search runs on tx==0 with sequential scans (no
+            # block collectives), then publishes only the final id. Every other
+            # thread just participates in the per-iteration barrier so the loop
+            # stays a uniform fixed-bound `for`. The non-tx0 threads advance the
+            # SAME RNG stream so `u` stays identical, but only tx==0's draw is
+            # used.
+            var low: Float32 = 0.0
+            var high: Float32 = 1.0
+            var q: Float32 = 1.0
 
-            for i in range(ceildiv(d, block_size * vec_size)):
-                probs_vec = 0
-                if (i * block_size + tx) * vec_size < d:
-                    probs_vec = probs_row.load[width=vec_size](
-                        (Idx[0], ((i * block_size + tx) * vec_size))
-                    ).cast[DType.float32]()
+            for _it in range(MAX_ITERS):
+                var done = done_sram[0] != 0
+                var u = generator.step_uniform()[0] * q
 
-                var result = device_sampling_from_prob[
-                    vec_size, block_size, dtype, deterministic
-                ](
-                    i,
-                    d,
-                    low,
-                    u,
-                    probs_vec,
-                    aggregate,
-                    sampled_id_sram,
+                if tx == 0 and not done:
+                    # Sequential CDF sample over the row: first index whose
+                    # inclusive CDF (restricted to prob > low) exceeds u. Falls
+                    # back to the last valid (prob > low) index if the mass is
+                    # smaller than u (u very close to 1).
+                    var cum: Float32 = 0.0
+                    var search_id = d
+                    var last_valid_id = 0
+                    for j in range(d):
+                        var pv = Float32(probs_row.load[width=1]((Idx[0], j)))
+                        if pv > low:
+                            last_valid_id = j
+                            cum += pv
+                            if cum > u and search_id == d:
+                                search_id = j
+                    if search_id == d:
+                        search_id = last_valid_id
+
+                    var pivot_0 = Float32(
+                        probs_row.load[width=1]((Idx[0], search_id))
+                    )
+                    var pivot_1 = (pivot_0 + high) / 2.0
+
+                    # Sequential counts of #{prob > pivot} and their prob mass.
+                    var count_0: Int = 0
+                    var value_0: Float32 = 0.0
+                    var count_1: Int = 0
+                    var value_1: Float32 = 0.0
+                    for j in range(d):
+                        var pv = Float32(probs_row.load[width=1]((Idx[0], j)))
+                        if pv > pivot_0:
+                            count_0 += 1
+                            value_0 += pv
+                        if pv > pivot_1:
+                            count_1 += 1
+                            value_1 += pv
+
+                    if count_0 < k:
+                        # Case 1: pivot_0 accepted - found acceptable threshold.
+                        out_id_sram[0] = search_id
+                        done_sram[0] = 1
+                    elif count_1 < k:
+                        # Case 2: pivot_0 rejected, pivot_1 accepted.
+                        low = pivot_0
+                        high = pivot_1
+                        q = value_0
+                    else:
+                        # Case 3: both pivots rejected.
+                        low = pivot_1
+                        q = value_1
+
+                    # Bracket collapse: emit the current candidate as a fallback.
+                    if low >= high:
+                        out_id_sram[0] = search_id
+                        done_sram[0] = 1
+                barrier()
+
+            sampled_id = out_id_sram[0]
+        else:
+            var sampled_id_sram = stack_allocation[
+                1, Int, address_space=AddressSpace.SHARED
+            ]()
+            var last_valid_id_sram = stack_allocation[
+                1, Int, address_space=AddressSpace.SHARED
+            ]()
+
+            var probs_vec: SIMD[DType.float32, vec_size]
+            var aggregate: Float32
+            var q: Float32 = 1.0
+            var low: Float32 = 0.0
+            var high: Float32 = 1.0
+
+            while low < high:
+                if tx == 0:
+                    sampled_id_sram[0] = d
+                barrier()
+
+                var u = generator.step_uniform()[0] * q
+                aggregate = 0.0
+                var thread_max_valid = -1
+
+                for i in range(ceildiv(d, block_size * vec_size)):
+                    probs_vec = 0
+                    if (i * block_size + tx) * vec_size < d:
+                        probs_vec = probs_row.load[width=vec_size](
+                            (Idx[0], ((i * block_size + tx) * vec_size))
+                        ).cast[DType.float32]()
+
+                    var result = device_sampling_from_prob[
+                        vec_size, block_size, dtype, deterministic
+                    ](
+                        i,
+                        d,
+                        low,
+                        u,
+                        probs_vec,
+                        aggregate,
+                        sampled_id_sram,
+                    )
+                    aggregate = result[0]
+                    thread_max_valid = max(thread_max_valid, result[1])
+                    if aggregate > u:
+                        break
+
+                # Reduce last_valid_id across block (single reduction after loop).
+                var block_max_valid = block.max[
+                    block_size=block_size,
+                    broadcast=False,
+                ](Int32(thread_max_valid))
+
+                if tx == 0 and block_max_valid != -1:
+                    last_valid_id_sram[0] = Int(block_max_valid)
+
+                barrier()
+
+                sampled_id = sampled_id_sram[0]
+                if sampled_id == d:
+                    # This would happen when u is very close to 1 and the
+                    # sum of probabilities is smaller than u. In this case
+                    # we use the last valid index as the sampled id.
+                    sampled_id = last_valid_id_sram[0]
+
+                var pivot_0 = Float32(
+                    probs_row.load[width=1]((Idx[0], sampled_id))
                 )
-                aggregate = result[0]
-                thread_max_valid = max(thread_max_valid, result[1])
-                if aggregate > u:
+                var pivot_1 = (pivot_0 + high) / 2.0
+
+                # Accumulate thread-local value counts across all chunks.
+                var thread_vc_0_total = ValueCount[DType.float32](0.0, 0)
+                var thread_vc_1_total = ValueCount[DType.float32](0.0, 0)
+
+                for i in range(ceildiv(d, block_size * vec_size)):
+                    probs_vec = 0
+                    if (i * block_size + tx) * vec_size < d:
+                        probs_vec = probs_row.load[width=vec_size](
+                            (Idx[0], ((i * block_size + tx) * vec_size))
+                        ).cast[DType.float32]()
+
+                    var probs_gt_pivot_0_values = SIMD[
+                        DType.float32, vec_size
+                    ]()
+                    var probs_gt_pivot_0_counts = SIMD[DType.int32, vec_size]()
+                    var probs_gt_pivot_1_values = SIMD[
+                        DType.float32, vec_size
+                    ]()
+                    var probs_gt_pivot_1_counts = SIMD[DType.int32, vec_size]()
+
+                    comptime for j in range(vec_size):
+                        var idx = (i * block_size + tx) * vec_size + j
+                        var is_valid = idx < d
+
+                        # For pivot_0.
+                        var gt_pivot_0 = probs_vec[j] > pivot_0
+                        probs_gt_pivot_0_values[j] = probs_vec[
+                            j
+                        ] if gt_pivot_0 else 0.0
+                        probs_gt_pivot_0_counts[j] = Int32(1) if (
+                            gt_pivot_0 and is_valid
+                        ) else Int32(0)
+
+                        # For pivot_1.
+                        var gt_pivot_1 = probs_vec[j] > pivot_1
+                        probs_gt_pivot_1_values[j] = probs_vec[
+                            j
+                        ] if gt_pivot_1 else 0.0
+                        probs_gt_pivot_1_counts[j] = Int32(1) if (
+                            gt_pivot_1 and is_valid
+                        ) else Int32(0)
+
+                    # Accumulate thread-local (no block reduction per chunk).
+                    thread_vc_0_total += ValueCount[DType.float32](
+                        probs_gt_pivot_0_values.reduce_add(),
+                        probs_gt_pivot_0_counts.reduce_add(),
+                    )
+                    thread_vc_1_total += ValueCount[DType.float32](
+                        probs_gt_pivot_1_values.reduce_add(),
+                        probs_gt_pivot_1_counts.reduce_add(),
+                    )
+
+                # Reduce pivot_0 first; defer pivot_1 until needed.
+                # For small K, acceptance (count_0 < k) is common, saving
+                # the pivot_1 reduction (2 barriers) on the fast path.
+                var aggregate_gt_pivot_0 = _block_reduce_value_count[
+                    DType.float32, broadcast=True
+                ](thread_vc_0_total)
+
+                if aggregate_gt_pivot_0.count < Int32(k):
+                    # Case 1: pivot_0 accepted - found acceptable threshold.
                     break
 
-            # Reduce last_valid_id across block (single reduction after loop).
-            var block_max_valid = block.max[
-                block_size=block_size,
-                broadcast=False,
-            ](Int32(thread_max_valid))
+                # Only reduce pivot_1 when pivot_0 is rejected.
+                var aggregate_gt_pivot_1 = _block_reduce_value_count[
+                    DType.float32, broadcast=True
+                ](thread_vc_1_total)
 
-            if tx == 0 and block_max_valid != -1:
-                last_valid_id_sram[0] = Int(block_max_valid)
+                if aggregate_gt_pivot_1.count < Int32(k):
+                    # Case 2: pivot_0 rejected, pivot_1 accepted.
+                    low = pivot_0
+                    high = pivot_1
+                    q = aggregate_gt_pivot_0.value
+                else:
+                    # Case 3: both pivots rejected.
+                    low = pivot_1
+                    q = aggregate_gt_pivot_1.value
 
             barrier()
-
-            sampled_id = sampled_id_sram[0]
-            if sampled_id == d:
-                # This would happen when u is very close to 1 and the
-                # sum of probabilities is smaller than u. In this case
-                # we use the last valid index as the sampled id.
-                sampled_id = last_valid_id_sram[0]
-
-            var pivot_0 = Float32(probs_row.load[width=1]((Idx[0], sampled_id)))
-            var pivot_1 = (pivot_0 + high) / 2.0
-
-            # Accumulate thread-local value counts across all chunks.
-            var thread_vc_0_total = ValueCount[DType.float32](0.0, 0)
-            var thread_vc_1_total = ValueCount[DType.float32](0.0, 0)
-
-            for i in range(ceildiv(d, block_size * vec_size)):
-                probs_vec = 0
-                if (i * block_size + tx) * vec_size < d:
-                    probs_vec = probs_row.load[width=vec_size](
-                        (Idx[0], ((i * block_size + tx) * vec_size))
-                    ).cast[DType.float32]()
-
-                var probs_gt_pivot_0_values = SIMD[DType.float32, vec_size]()
-                var probs_gt_pivot_0_counts = SIMD[DType.int32, vec_size]()
-                var probs_gt_pivot_1_values = SIMD[DType.float32, vec_size]()
-                var probs_gt_pivot_1_counts = SIMD[DType.int32, vec_size]()
-
-                comptime for j in range(vec_size):
-                    var idx = (i * block_size + tx) * vec_size + j
-                    var is_valid = idx < d
-
-                    # For pivot_0.
-                    var gt_pivot_0 = probs_vec[j] > pivot_0
-                    probs_gt_pivot_0_values[j] = probs_vec[
-                        j
-                    ] if gt_pivot_0 else 0.0
-                    probs_gt_pivot_0_counts[j] = Int32(1) if (
-                        gt_pivot_0 and is_valid
-                    ) else Int32(0)
-
-                    # For pivot_1.
-                    var gt_pivot_1 = probs_vec[j] > pivot_1
-                    probs_gt_pivot_1_values[j] = probs_vec[
-                        j
-                    ] if gt_pivot_1 else 0.0
-                    probs_gt_pivot_1_counts[j] = Int32(1) if (
-                        gt_pivot_1 and is_valid
-                    ) else Int32(0)
-
-                # Accumulate thread-local (no block reduction per chunk).
-                thread_vc_0_total += ValueCount[DType.float32](
-                    probs_gt_pivot_0_values.reduce_add(),
-                    probs_gt_pivot_0_counts.reduce_add(),
-                )
-                thread_vc_1_total += ValueCount[DType.float32](
-                    probs_gt_pivot_1_values.reduce_add(),
-                    probs_gt_pivot_1_counts.reduce_add(),
-                )
-
-            # Reduce pivot_0 first; defer pivot_1 until needed.
-            # For small K, acceptance (count_0 < k) is common, saving
-            # the pivot_1 reduction (2 barriers) on the fast path.
-            var aggregate_gt_pivot_0 = _block_reduce_value_count[
-                DType.float32, broadcast=True
-            ](thread_vc_0_total)
-
-            if aggregate_gt_pivot_0.count < Int32(k):
-                # Case 1: pivot_0 accepted - found acceptable threshold.
-                break
-
-            # Only reduce pivot_1 when pivot_0 is rejected.
-            var aggregate_gt_pivot_1 = _block_reduce_value_count[
-                DType.float32, broadcast=True
-            ](thread_vc_1_total)
-
-            if aggregate_gt_pivot_1.count < Int32(k):
-                # Case 2: pivot_0 rejected, pivot_1 accepted.
-                low = pivot_0
-                high = pivot_1
-                q = aggregate_gt_pivot_0.value
-            else:
-                # Case 3: both pivots rejected.
-                low = pivot_1
-                q = aggregate_gt_pivot_1.value
-
-        barrier()
 
         if tx == 0:
             output[bx] = Scalar[out_idx_type](sampled_id)
@@ -908,6 +1137,13 @@ def topk_sampling_from_prob[
     Performs stochastic sampling from a probability distribution, considering only
     the top-k most probable tokens. Uses rejection sampling with ternary search
     to efficiently find appropriate samples.
+
+    Parameters:
+        dtype: Element type of the `probs` tensor.
+        out_idx_type: Index type used for the sampled output indices.
+        block_size: Number of threads per block (defaults to 1024).
+        TopKArrLayoutType: Memory layout of the optional `top_k_arr` tensor.
+        IndicesLayoutType: Memory layout of the optional `indices` tensor.
 
     Args:
         ctx: Device context for kernel execution.
@@ -973,7 +1209,7 @@ def topk_sampling_from_prob[
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
             comptime kernel = TopKSamplingFromProbKernel[
                 probs.LayoutType,
-                ImmutOrigin(probs.origin),
+                ImmOrigin(probs.origin),
                 output.LayoutType,
                 output.origin,
                 block_size,
@@ -1016,7 +1252,7 @@ def apply_min_p_mask_kernel[
     block_size: Int,
 ](
     probs: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
-    min_p_arr: UnsafePointer[Float32, ImmutUntrackedOrigin],
+    min_p_arr: UnsafePointer[Float32, ImmUntrackedOrigin],
     d: Int,
 ):
     """Zero out probabilities below the per-row min_p threshold.
@@ -1024,6 +1260,10 @@ def apply_min_p_mask_kernel[
     Each block processes one batch row. Threads cooperatively find the
     row-wise max probability via a block reduction, compute the threshold
     as ``min_p * max_prob``, and then zero any element below it.
+
+    Parameters:
+        dtype: Element type of the `probs` buffer.
+        block_size: Number of threads per block.
 
     Args:
         probs: Probability buffer [batch_size * d], modified in-place.
@@ -1053,12 +1293,15 @@ def apply_min_p_mask_kernel[
             probs[row_start + i] = Scalar[dtype](0)
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
+)
 @__name(
-    t"topk_topp_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}",
+    t"topk_topp_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}_{from_logits}",
 )
 def TopKTopPSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
-    probs_origin: ImmutOrigin,
+    probs_origin: ImmOrigin,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     block_size: Int,
@@ -1066,6 +1309,7 @@ def TopKTopPSamplingFromProbKernel[
     dtype: DType,
     out_idx_type: DType,
     deterministic: Bool,
+    from_logits: Bool = False,
 ](
     probs: TileTensor[dtype, ProbsLayoutType, probs_origin],
     output: TileTensor[out_idx_type, OutputLayoutType, output_origin],
@@ -1077,6 +1321,8 @@ def TopKTopPSamplingFromProbKernel[
     d: Int,
     rng_seed: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]],
     rng_offset: UInt64,
+    temperature: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    min_p: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
 ):
     """Kernel for joint top-k + top-p sampling from probability distribution.
 
@@ -1088,8 +1334,35 @@ def TopKTopPSamplingFromProbKernel[
     When top_p_val = 1.0 and top_p_arr is null, this degrades to top-k-only
     with zero overhead since sum < 1.0 is always true.
 
+    When `from_logits` is True, `probs` contains raw logits and softmax with
+    per-row temperature scaling is fused into the kernel: every load is
+    transformed to `exp((logit - row_max) / temp)`, the unnormalized softmax
+    value with the row maximum shifted to exactly 1.0. The pivot search over
+    [0, 1] is unchanged; the total unnormalized mass `z` replaces the
+    normalized distribution's implicit total of 1.0 in the initial CDF budget
+    and scales the top-p threshold. The optional min-p mask is applied inline
+    (in this domain the max "probability" is 1.0, so the mask threshold is
+    simply `min_p`), matching `apply_min_p_mask_kernel` semantics in the
+    normalized domain.
+
+    Parameters:
+        ProbsLayoutType: Memory layout of the input `probs` tile.
+        probs_origin: Origin tag for the immutable input `probs` tile.
+        OutputLayoutType: Memory layout of the output `output` tile.
+        output_origin: Origin tag for the mutable output `output` tile.
+        block_size: Number of threads per block.
+        vec_size: Number of elements each thread loads per vectorized
+            access.
+        dtype: Element type of the `probs` tensor.
+        out_idx_type: Index type used for the sampled output indices.
+        deterministic: If True, use deterministic sampling.
+        from_logits: If True, `probs` holds raw logits and softmax with
+            per-row temperature scaling and min-p masking is fused into the
+            kernel (defaults to False).
+
     Args:
-        probs: Input probability distribution [batch_size, d].
+        probs: Input probability distribution [batch_size, d], or raw logits
+            when `from_logits` is True.
         output: Output sampled indices [batch_size].
         indices: Optional row indices for batch indexing [batch_size].
         top_k_arr: Optional per-row top_k values [batch_size].
@@ -1097,9 +1370,13 @@ def TopKTopPSamplingFromProbKernel[
         top_p_arr: Optional per-row top_p values [batch_size].
         top_p_val: Default top_p value if top_p_arr is null.
         d: Vocabulary size.
-        rng_seed: Pointer to seed value. If non-null, rng_seed[0] is used
-            as the seed. If null, defaults to 0.
+        rng_seed: Optional per-row seed array [batch_size], indexed by
+            row_idx. If null, defaults to 0.
         rng_offset: Random offset for Random number generator.
+        temperature: Optional per-row temperature [batch_size]. Only used
+            when `from_logits` is True; defaults to 1.0 per row.
+        min_p: Optional per-row min-p thresholds [batch_size]. Only used
+            when `from_logits` is True.
     """
     comptime assert output.flat_rank == 1
 
@@ -1110,19 +1387,17 @@ def TopKTopPSamplingFromProbKernel[
     if indices:
         row_idx = Int(indices.unsafe_value().load(bx))
 
-    var sampled_id_sram = stack_allocation[
-        1, Int, address_space=AddressSpace.SHARED
-    ]()
-    var last_valid_id_sram = stack_allocation[
-        1, Int, address_space=AddressSpace.SHARED
-    ]()
-
     with PDL():
         var seed_val = UInt64(0)
         if rng_seed:
             seed_val = rng_seed.unsafe_value()[row_idx]
 
-        var generator = Random(seed=seed_val, offset=UInt64(bx) + rng_offset)
+        # Offset is keyed on row_idx (the request's logical row), not bx (the
+        # physical batch slot), so a request samples identically regardless of
+        # where it lands in the batch. The per-row seed already decorrelates rows.
+        var generator = Random(
+            seed=seed_val, offset=UInt64(row_idx) + rng_offset
+        )
 
         var k = top_k_val
         if top_k_arr:
@@ -1137,143 +1412,311 @@ def TopKTopPSamplingFromProbKernel[
         var probs_ptr = probs.ptr + row_idx * d
         var probs_row = TileTensor(probs_ptr, row_major(Idx[1], d))
 
-        var probs_vec: SIMD[DType.float32, vec_size]
-        var aggregate: Float32
-        var sampled_id = 0
-        var q: Float32 = 1.0
-        var low: Float32 = 0.0
-        var high: Float32 = 1.0
+        # From-logits mode: resolve per-row temperature / min-p and compute
+        # the row max and total unnormalized softmax mass z in two uniform
+        # passes. z defaults to 1.0 in from-prob mode so the CDF budget and
+        # top-p scaling below are domain-independent.
+        var inv_temp = Float32(1.0)
+        var row_max = Float32(0.0)
+        var min_p_thresh = Float32(0.0)
+        var z = Float32(1.0)
 
-        while low < high:
+        comptime if from_logits:
+            var temp_val = Float32(1.0)
+            if temperature:
+                temp_val = temperature.unsafe_value()[row_idx]
+            # Clamp to prevent division by zero on greedy (T=0) rows.
+            inv_temp = 1.0 / max(temp_val, Float32(1e-6))
+            if min_p:
+                min_p_thresh = min_p.unsafe_value()[row_idx]
+
+            # Pass 1: block max of the logits.
+            var thread_max = Scalar[DType.float32].MIN
+            for i in range(tx, d // vec_size, block_size):
+                var v = probs_row.load[width=vec_size](
+                    (Idx[0], i * vec_size)
+                ).cast[DType.float32]()
+                thread_max = max(thread_max, v.reduce_max())
+            row_max = block.max[block_size=block_size, broadcast=True](
+                thread_max
+            )
+
+            # Pass 2: block sum of exp((logit - row_max) / temp). The full
+            # (unmasked) mass is used, matching the separate-softmax path
+            # where probabilities are normalized before min-p masking.
+            var thread_sum = Float32(0.0)
+            for i in range(tx, d // vec_size, block_size):
+                var v = probs_row.load[width=vec_size](
+                    (Idx[0], i * vec_size)
+                ).cast[DType.float32]()
+                thread_sum += exp((v - row_max) * inv_temp).reduce_add()
+            z = block.sum[block_size=block_size, broadcast=True](thread_sum)
+
+        @parameter
+        @always_inline
+        def load_dist[width: Int](offset: Int) -> SIMD[DType.float32, width]:
+            # Load `width` elements of the sampling distribution at `offset`.
+            # In from-logits mode this is the unnormalized softmax value with
+            # the min-p mask applied inline.
+            var v = probs_row.load[width=width]((Idx[0], offset)).cast[
+                DType.float32
+            ]()
+
+            comptime if from_logits:
+                var e = exp((v - row_max) * inv_temp)
+                # Same predicate as apply_min_p_mask_kernel (`< threshold`
+                # zeroes; NaN compares false and is preserved).
+                if min_p_thresh > 0:
+                    comptime for j in range(width):
+                        if e[j] < min_p_thresh:
+                            e[j] = 0
+                return e
+            else:
+                return v
+
+        # Top-p budget in the working domain (z == 1.0 in from-prob mode).
+        var p_eff = p * z
+
+        # The final sampled index, produced by whichever search path runs.
+        var sampled_id = 0
+
+        comptime if is_apple_gpu():
+            # Single-thread-driven ternary search (Apple/Metal only; see the
+            # detailed comment on TopKSamplingFromProbKernel — this is the same
+            # fix with the joint top-k + top-p accept predicate). The ENTIRE
+            # search runs sequentially on tx==0 with no in-loop block
+            # collectives, so there is nothing to desynchronize the warps; a
+            # FIXED-BOUND `for` loop keeps the trip count uniform and the other
+            # threads merely hit the per-iteration barrier.
+            comptime MAX_ITERS = 64
+
+            var done_sram = stack_allocation[
+                1, Int32, address_space=AddressSpace.SHARED
+            ]()
+            var out_id_sram = stack_allocation[
+                1, Int, address_space=AddressSpace.SHARED
+            ]()
+
+            # Initialize control once, uniformly.
             if tx == 0:
-                sampled_id_sram[0] = d
+                done_sram[0] = 0
+                out_id_sram[0] = 0
             barrier()
 
-            var u = generator.step_uniform()[0] * q
-            aggregate = 0.0
-            var thread_max_valid = -1
+            # Entire search on tx==0 (sequential scans, no block collectives);
+            # all threads advance the RNG in lockstep and hit the per-iteration
+            # barrier.
+            var low: Float32 = 0.0
+            var high: Float32 = 1.0
+            var q: Float32 = z
 
-            for i in range(ceildiv(d, block_size * vec_size)):
-                probs_vec = 0
-                if (i * block_size + tx) * vec_size < d:
-                    probs_vec = probs_row.load[width=vec_size](
-                        (Idx[0], ((i * block_size + tx) * vec_size))
-                    ).cast[DType.float32]()
+            for _it in range(MAX_ITERS):
+                var done = done_sram[0] != 0
+                var u = generator.step_uniform()[0] * q
 
-                var result = device_sampling_from_prob[
-                    vec_size, block_size, dtype, deterministic
-                ](
-                    i,
-                    d,
-                    low,
-                    u,
-                    probs_vec,
-                    aggregate,
-                    sampled_id_sram,
-                )
-                aggregate = result[0]
-                thread_max_valid = max(thread_max_valid, result[1])
-                if aggregate > u:
+                if tx == 0 and not done:
+                    # Sequential CDF sample over the row (prob > low).
+                    var cum: Float32 = 0.0
+                    var search_id = d
+                    var last_valid_id = 0
+                    for j in range(d):
+                        var pv = Float32(load_dist[1](j))
+                        if pv > low:
+                            last_valid_id = j
+                            cum += pv
+                            if cum > u and search_id == d:
+                                search_id = j
+                    if search_id == d:
+                        search_id = last_valid_id
+
+                    var pivot_0 = Float32(load_dist[1](search_id))
+                    var pivot_1 = (pivot_0 + high) / 2.0
+
+                    # Sequential counts + prob mass for both pivots.
+                    var count_0: Int = 0
+                    var value_0: Float32 = 0.0
+                    var count_1: Int = 0
+                    var value_1: Float32 = 0.0
+                    for j in range(d):
+                        var pv = Float32(load_dist[1](j))
+                        if pv > pivot_0:
+                            count_0 += 1
+                            value_0 += pv
+                        if pv > pivot_1:
+                            count_1 += 1
+                            value_1 += pv
+
+                    if count_0 < k and value_0 <= p_eff:
+                        # Case 1: pivot_0 accepted - count below k AND mass
+                        # below p. Use <= so that p=0 correctly accepts the
+                        # argmax.
+                        out_id_sram[0] = search_id
+                        done_sram[0] = 1
+                    elif count_1 < k and value_1 <= p_eff:
+                        # Case 2: pivot_0 rejected, pivot_1 accepted.
+                        low = pivot_0
+                        high = pivot_1
+                        q = value_0
+                    else:
+                        # Case 3: both pivots rejected.
+                        low = pivot_1
+                        q = value_1
+
+                    # Bracket collapse: emit the current candidate as a fallback.
+                    if low >= high:
+                        out_id_sram[0] = search_id
+                        done_sram[0] = 1
+                barrier()
+
+            sampled_id = out_id_sram[0]
+        else:
+            var sampled_id_sram = stack_allocation[
+                1, Int, address_space=AddressSpace.SHARED
+            ]()
+            var last_valid_id_sram = stack_allocation[
+                1, Int, address_space=AddressSpace.SHARED
+            ]()
+
+            var probs_vec: SIMD[DType.float32, vec_size]
+            var aggregate: Float32
+            var q: Float32 = z
+            var low: Float32 = 0.0
+            var high: Float32 = 1.0
+
+            while low < high:
+                if tx == 0:
+                    sampled_id_sram[0] = d
+                barrier()
+
+                var u = generator.step_uniform()[0] * q
+                aggregate = 0.0
+                var thread_max_valid = -1
+
+                for i in range(ceildiv(d, block_size * vec_size)):
+                    probs_vec = 0
+                    if (i * block_size + tx) * vec_size < d:
+                        probs_vec = load_dist[vec_size](
+                            (i * block_size + tx) * vec_size
+                        )
+
+                    var result = device_sampling_from_prob[
+                        vec_size, block_size, dtype, deterministic
+                    ](
+                        i,
+                        d,
+                        low,
+                        u,
+                        probs_vec,
+                        aggregate,
+                        sampled_id_sram,
+                    )
+                    aggregate = result[0]
+                    thread_max_valid = max(thread_max_valid, result[1])
+                    if aggregate > u:
+                        break
+
+                # Reduce last_valid_id across block (single reduction after loop).
+                var block_max_valid = block.max[
+                    block_size=block_size,
+                    broadcast=False,
+                ](Int32(thread_max_valid))
+
+                if tx == 0 and block_max_valid != -1:
+                    last_valid_id_sram[0] = Int(block_max_valid)
+
+                barrier()
+
+                sampled_id = sampled_id_sram[0]
+                if sampled_id == d:
+                    sampled_id = last_valid_id_sram[0]
+
+                var pivot_0 = Float32(load_dist[1](sampled_id))
+                var pivot_1 = (pivot_0 + high) / 2.0
+
+                # Accumulate thread-local value counts across all chunks.
+                var thread_vc_0_total = ValueCount[DType.float32](0.0, 0)
+                var thread_vc_1_total = ValueCount[DType.float32](0.0, 0)
+
+                for i in range(ceildiv(d, block_size * vec_size)):
+                    probs_vec = 0
+                    if (i * block_size + tx) * vec_size < d:
+                        probs_vec = load_dist[vec_size](
+                            (i * block_size + tx) * vec_size
+                        )
+
+                    var probs_gt_pivot_0_values = SIMD[
+                        DType.float32, vec_size
+                    ]()
+                    var probs_gt_pivot_0_counts = SIMD[DType.int32, vec_size]()
+                    var probs_gt_pivot_1_values = SIMD[
+                        DType.float32, vec_size
+                    ]()
+                    var probs_gt_pivot_1_counts = SIMD[DType.int32, vec_size]()
+
+                    comptime for j in range(vec_size):
+                        var idx = (i * block_size + tx) * vec_size + j
+                        var is_valid = idx < d
+
+                        var gt_pivot_0 = probs_vec[j] > pivot_0
+                        probs_gt_pivot_0_values[j] = probs_vec[
+                            j
+                        ] if gt_pivot_0 else 0.0
+                        probs_gt_pivot_0_counts[j] = Int32(1) if (
+                            gt_pivot_0 and is_valid
+                        ) else Int32(0)
+
+                        var gt_pivot_1 = probs_vec[j] > pivot_1
+                        probs_gt_pivot_1_values[j] = probs_vec[
+                            j
+                        ] if gt_pivot_1 else 0.0
+                        probs_gt_pivot_1_counts[j] = Int32(1) if (
+                            gt_pivot_1 and is_valid
+                        ) else Int32(0)
+
+                    # Accumulate thread-local (no block reduction per chunk).
+                    thread_vc_0_total += ValueCount[DType.float32](
+                        probs_gt_pivot_0_values.reduce_add(),
+                        probs_gt_pivot_0_counts.reduce_add(),
+                    )
+                    thread_vc_1_total += ValueCount[DType.float32](
+                        probs_gt_pivot_1_values.reduce_add(),
+                        probs_gt_pivot_1_counts.reduce_add(),
+                    )
+
+                # Reduce pivot_0 first; defer pivot_1 until needed.
+                # For small K, acceptance (count_0 < k) is common, saving
+                # the pivot_1 reduction (2 barriers) on the fast path.
+                var aggregate_gt_pivot_0 = _block_reduce_value_count[
+                    DType.float32, broadcast=True
+                ](thread_vc_0_total)
+
+                if (
+                    aggregate_gt_pivot_0.count < Int32(k)
+                    and aggregate_gt_pivot_0.value <= p_eff
+                ):
+                    # Case 1: pivot_0 accepted - count below k AND prob mass below p.
+                    # Use <= so that p=0 correctly accepts the argmax (sum_above=0).
                     break
 
-            # Reduce last_valid_id across block (single reduction after loop).
-            var block_max_valid = block.max[
-                block_size=block_size,
-                broadcast=False,
-            ](Int32(thread_max_valid))
+                # Only reduce pivot_1 when pivot_0 is rejected.
+                var aggregate_gt_pivot_1 = _block_reduce_value_count[
+                    DType.float32, broadcast=True
+                ](thread_vc_1_total)
 
-            if tx == 0 and block_max_valid != -1:
-                last_valid_id_sram[0] = Int(block_max_valid)
+                if (
+                    aggregate_gt_pivot_1.count < Int32(k)
+                    and aggregate_gt_pivot_1.value <= p_eff
+                ):
+                    # Case 2: pivot_0 rejected, pivot_1 accepted.
+                    low = pivot_0
+                    high = pivot_1
+                    q = aggregate_gt_pivot_0.value
+                else:
+                    # Case 3: both pivots rejected.
+                    low = pivot_1
+                    q = aggregate_gt_pivot_1.value
 
             barrier()
-
-            sampled_id = sampled_id_sram[0]
-            if sampled_id == d:
-                sampled_id = last_valid_id_sram[0]
-
-            var pivot_0 = Float32(probs_row.load[width=1]((Idx[0], sampled_id)))
-            var pivot_1 = (pivot_0 + high) / 2.0
-
-            # Accumulate thread-local value counts across all chunks.
-            var thread_vc_0_total = ValueCount[DType.float32](0.0, 0)
-            var thread_vc_1_total = ValueCount[DType.float32](0.0, 0)
-
-            for i in range(ceildiv(d, block_size * vec_size)):
-                probs_vec = 0
-                if (i * block_size + tx) * vec_size < d:
-                    probs_vec = probs_row.load[width=vec_size](
-                        (Idx[0], ((i * block_size + tx) * vec_size))
-                    ).cast[DType.float32]()
-
-                var probs_gt_pivot_0_values = SIMD[DType.float32, vec_size]()
-                var probs_gt_pivot_0_counts = SIMD[DType.int32, vec_size]()
-                var probs_gt_pivot_1_values = SIMD[DType.float32, vec_size]()
-                var probs_gt_pivot_1_counts = SIMD[DType.int32, vec_size]()
-
-                comptime for j in range(vec_size):
-                    var idx = (i * block_size + tx) * vec_size + j
-                    var is_valid = idx < d
-
-                    var gt_pivot_0 = probs_vec[j] > pivot_0
-                    probs_gt_pivot_0_values[j] = probs_vec[
-                        j
-                    ] if gt_pivot_0 else 0.0
-                    probs_gt_pivot_0_counts[j] = Int32(1) if (
-                        gt_pivot_0 and is_valid
-                    ) else Int32(0)
-
-                    var gt_pivot_1 = probs_vec[j] > pivot_1
-                    probs_gt_pivot_1_values[j] = probs_vec[
-                        j
-                    ] if gt_pivot_1 else 0.0
-                    probs_gt_pivot_1_counts[j] = Int32(1) if (
-                        gt_pivot_1 and is_valid
-                    ) else Int32(0)
-
-                # Accumulate thread-local (no block reduction per chunk).
-                thread_vc_0_total += ValueCount[DType.float32](
-                    probs_gt_pivot_0_values.reduce_add(),
-                    probs_gt_pivot_0_counts.reduce_add(),
-                )
-                thread_vc_1_total += ValueCount[DType.float32](
-                    probs_gt_pivot_1_values.reduce_add(),
-                    probs_gt_pivot_1_counts.reduce_add(),
-                )
-
-            # Reduce pivot_0 first; defer pivot_1 until needed.
-            # For small K, acceptance (count_0 < k) is common, saving
-            # the pivot_1 reduction (2 barriers) on the fast path.
-            var aggregate_gt_pivot_0 = _block_reduce_value_count[
-                DType.float32, broadcast=True
-            ](thread_vc_0_total)
-
-            if (
-                aggregate_gt_pivot_0.count < Int32(k)
-                and aggregate_gt_pivot_0.value <= p
-            ):
-                # Case 1: pivot_0 accepted - count below k AND prob mass below p.
-                # Use <= so that p=0 correctly accepts the argmax (sum_above=0).
-                break
-
-            # Only reduce pivot_1 when pivot_0 is rejected.
-            var aggregate_gt_pivot_1 = _block_reduce_value_count[
-                DType.float32, broadcast=True
-            ](thread_vc_1_total)
-
-            if (
-                aggregate_gt_pivot_1.count < Int32(k)
-                and aggregate_gt_pivot_1.value <= p
-            ):
-                # Case 2: pivot_0 rejected, pivot_1 accepted.
-                low = pivot_0
-                high = pivot_1
-                q = aggregate_gt_pivot_0.value
-            else:
-                # Case 3: both pivots rejected.
-                low = pivot_1
-                q = aggregate_gt_pivot_1.value
-
-        barrier()
 
         if tx == 0:
             output[bx] = Scalar[out_idx_type](sampled_id)
@@ -1283,6 +1726,7 @@ def topk_topp_sampling_from_prob[
     dtype: DType,
     out_idx_type: DType,
     block_size: Int = 1024,
+    from_logits: Bool = False,
     TopKArrLayoutType: TensorLayout = Layout[
         shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
@@ -1296,6 +1740,14 @@ def topk_topp_sampling_from_prob[
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     SeedLayoutType: TensorLayout = Layout[
+        shape_types=Coord[Int64].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
+    ],
+    TemperatureLayoutType: TensorLayout = Layout[
+        shape_types=Coord[Int64].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
+    ],
+    MinPLayoutType: TensorLayout = Layout[
         shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
@@ -1319,6 +1771,12 @@ def topk_topp_sampling_from_prob[
     top_p_arr: Optional[
         TileTensor[DType.float32, TopPArrLayoutType, ImmutAnyOrigin]
     ] = None,
+    temperature: Optional[
+        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+    ] = None,
+    min_p: Optional[
+        TileTensor[DType.float32, MinPLayoutType, ImmutAnyOrigin]
+    ] = None,
 ) raises:
     """Joint top-k + top-p sampling from probability distribution.
 
@@ -1326,19 +1784,44 @@ def topk_topp_sampling_from_prob[
     top-k count constraint AND the top-p nucleus constraint. When top_p_val is
     1.0 (default) this behaves identically to topk_sampling_from_prob.
 
+    When `from_logits` is True, `probs` contains raw logits: softmax with
+    per-row temperature scaling and the optional min-p mask are fused into
+    the sampling kernel, avoiding the [batch_size, d] probability round-trip
+    through global memory and the separate softmax / mask kernel launches.
+
+    Parameters:
+        dtype: Element type of the `probs` tensor.
+        out_idx_type: Index type used for the sampled output indices.
+        block_size: Number of threads per block (defaults to 1024).
+        from_logits: If True, `probs` holds raw logits and softmax with
+            per-row temperature scaling and min-p masking is fused into
+            the kernel (defaults to False).
+        TopKArrLayoutType: Memory layout of the optional `top_k_arr` tensor.
+        IndicesLayoutType: Memory layout of the optional `indices` tensor.
+        TopPArrLayoutType: Memory layout of the optional `top_p_arr` tensor.
+        SeedLayoutType: Memory layout of the optional `rng_seed` tensor.
+        TemperatureLayoutType: Memory layout of the optional `temperature`
+            tensor.
+        MinPLayoutType: Memory layout of the optional `min_p` tensor.
+
     Args:
         ctx: Device context for kernel execution.
-        probs: Input probability distribution [batch_size, d].
+        probs: Input probability distribution [batch_size, d], or raw logits
+            when `from_logits` is True.
         output: Output sampled indices [batch_size].
         top_k_val: Default top-k value (number of top tokens to consider).
         top_p_val: Default top-p value (nucleus probability threshold).
         deterministic: Whether to use deterministic sampling.
-        rng_seed: Optional seed tensor. If provided, rng_seed[0] is used
-            as the seed. If None, defaults to 0.
+        rng_seed: Optional per-row seed tensor [batch_size], indexed by the
+            request's logical row (see `indices`). If None, defaults to 0.
         rng_offset: Random offset for Random number generator.
         indices: Optional row indices for batch indexing [batch_size].
         top_k_arr: Optional per-row top-k values [batch_size].
         top_p_arr: Optional per-row top-p values [batch_size].
+        temperature: Optional per-row temperature values [batch_size]. Only
+            used when `from_logits` is True; defaults to 1.0 per row.
+        min_p: Optional per-row min-p thresholds [batch_size]. Only used
+            when `from_logits` is True.
 
     Raises:
         Error: If tensor ranks or shapes are invalid.
@@ -1398,11 +1881,21 @@ def topk_topp_sampling_from_prob[
         if rng_seed:
             seed_ptr = rng_seed.unsafe_value().ptr
 
+        var temperature_ptr: Optional[
+            UnsafePointer[Float32, ImmutAnyOrigin]
+        ] = None
+        if temperature:
+            temperature_ptr = temperature.unsafe_value().ptr
+
+        var min_p_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]] = None
+        if min_p:
+            min_p_ptr = min_p.unsafe_value().ptr
+
         @parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
             comptime kernel = TopKTopPSamplingFromProbKernel[
                 probs.LayoutType,
-                ImmutOrigin(probs.origin),
+                ImmOrigin(probs.origin),
                 output.LayoutType,
                 output.origin,
                 block_size,
@@ -1410,6 +1903,7 @@ def topk_topp_sampling_from_prob[
                 dtype,
                 out_idx_type,
                 deterministic,
+                from_logits,
             ]
             ctx.enqueue_function[kernel](
                 probs.as_immut(),
@@ -1422,6 +1916,8 @@ def topk_topp_sampling_from_prob[
                 d,
                 seed_ptr,
                 rng_offset,
+                temperature_ptr,
+                min_p_ptr,
                 grid_dim=batch_size,
                 block_dim=block_size,
                 attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -1446,7 +1942,7 @@ def topk_softmax_sample_kernel[
     dtype: DType,
     out_idx_type: DType,
     LogitsLayoutType: TensorLayout,
-    logits_origin: ImmutOrigin,
+    logits_origin: ImmOrigin,
     SampledLayoutType: TensorLayout,
     sampled_origin: MutOrigin,
 ](
@@ -1464,6 +1960,36 @@ def topk_softmax_sample_kernel[
     seed: Optional[UnsafePointer[UInt64, MutUntrackedOrigin]],
     d: Int,
 ):
+    """Samples a token index from the top-k logits using softmax probabilities in a single kernel.
+
+    Each block processes one row. The kernel finds the k-th largest logit via
+    ternary search, computes softmax over the top-k elements cached in shared
+    memory, then draws a single categorical sample on thread 0.
+
+    Parameters:
+        block_size: Number of threads per block.
+        vec_size: Number of elements each thread loads per vectorized
+            access.
+        dtype: Element type of the `logits` tile.
+        out_idx_type: Index type used for the sampled output indices.
+        LogitsLayoutType: Memory layout of the input `logits` tile.
+        logits_origin: Origin tag for the immutable input `logits` tile.
+        SampledLayoutType: Memory layout of the output `sampled_indices`
+            tile.
+        sampled_origin: Origin tag for the mutable output
+            `sampled_indices` tile.
+
+    Args:
+        logits: Input logits tile [batch_size, d].
+        sampled_indices: Output buffer for sampled token indices [batch_size].
+        top_k_arr: Optional per-row top-k values; overrides top_k_val when present.
+        top_k_val: Default number of largest logits to consider per row.
+        temperature_val: Default softmax temperature scaling factor.
+        temperature: Optional per-row temperature values; overrides temperature_val.
+        seed_val: Default random seed for the generator.
+        seed: Optional per-row seed values; overrides seed_val.
+        d: Row length (vocabulary size).
+    """
     comptime assert sampled_indices.flat_rank == 1
 
     var bx = block_idx.x
@@ -1485,8 +2011,13 @@ def topk_softmax_sample_kernel[
     # Round up to ensure proper alignment for Int array.
     var k_rounded = ceildiv(k, WARP_SIZE) * WARP_SIZE
 
+    # On Apple the cache is a static allocation. Reserve headroom below the 32K
+    # threadgroup limit for the kernel's auxiliary SMEM (`s_count` + the block
+    # reductions' per-warp scratch); allocating the full 32K bucket for the
+    # cache alone overflowed the limit (33932 > 32768). The host launcher's
+    # guard (`_APPLE_STATIC_SHMEM_CACHE_BYTES`) bounds k to this reduced budget.
     var s_vals = stack_allocation[
-        _APPLE_STATIC_SHMEM_MAX_COUNT[Float32],
+        _APPLE_STATIC_SHMEM_CACHE_COUNT,
         Float32,
         address_space=AddressSpace.SHARED,
     ]() if comptime (is_apple_gpu()) else external_memory[
@@ -1766,11 +2297,11 @@ def topk_softmax_sample[
         var k_rounded = ceildiv(top_k_val, WARP_SIZE) * WARP_SIZE
         var shared_mem_bytes = k_rounded * (size_of[Float32]() + size_of[Int]())
         comptime if has_apple_gpu_accelerator():
-            if shared_mem_bytes > _APPLE_STATIC_SHMEM_MAX_BYTES:
+            if shared_mem_bytes > _APPLE_STATIC_SHMEM_CACHE_BYTES:
                 raise Error(
                     t"shared memory of {shared_mem_bytes} exceeds static"
                     t" allocation capacity of"
-                    t" {_APPLE_STATIC_SHMEM_MAX_BYTES} when evaluating"
+                    t" {_APPLE_STATIC_SHMEM_CACHE_BYTES} when evaluating"
                     t" topk_softmax_sample with top_k_val={top_k_val}"
                     t" and vec_size={vec_size}. Consider reducing"
                     t" top_k_val or using a smaller block_size."
@@ -1800,7 +2331,7 @@ def topk_softmax_sample[
                 dtype,
                 out_idx_type,
                 LogitsLayoutType=logits.LayoutType,
-                logits_origin=ImmutOrigin(logits.origin),
+                logits_origin=ImmOrigin(logits.origin),
                 SampledLayoutType=sampled_indices.LayoutType,
                 sampled_origin=sampled_indices.origin,
             ]

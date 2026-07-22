@@ -75,6 +75,7 @@ def __set_torch_memory_limit() -> None:
 def run():  # noqa: ANN201
     # Allow opt-out of using $TEST_TMPDIR for HF_HOME for performance reasons in
     # special cases
+    os.environ["HF_MODULES_CACHE"] = os.environ["TEST_TMPDIR"]
     if os.environ.get("HF_ESCAPES_SANDBOX") != "1":
         os.environ["HF_HOME"] = os.environ["TEST_TMPDIR"]
 

@@ -25,6 +25,8 @@ from std.math import ceildiv
 from std.sys import align_of
 
 from std.gpu.host import DeviceContext
+from std.memory import dealloc
+from std.memory.alloc import Layout as AllocLayout
 from layout import Coord, CoordLike, TileTensor, row_major
 from std.utils.index import IndexList
 from internal_utils import assert_almost_equal
@@ -55,6 +57,23 @@ def test_matmul_sm90_swapAB_comparison[
 
     Both compute: C[M,N] = A[M,K] @ B[N,K]^T
     swapAB internally swaps A/B and transposes C on store, but result should match.
+
+    Parameters:
+        a_type: Element type of the A operand matrix `A[M,K]`.
+        b_type: Element type of the B operand matrix `B[N,K]`.
+        c_type: Element type of the output matrix `C[M,N]`.
+        config: Compile-time matmul configuration for the normal kernel,
+            including block tile shape, cluster shape, MMA shape, pipeline
+            stages, and consumer count.
+        config_swapAB: Compile-time matmul configuration for the swapAB
+            kernel, which internally swaps the A/B operands and transposes
+            the C tile on store.
+        MType: Type carrying the M dimension value, either static or
+            dynamic.
+        NType: Type carrying the N dimension value, either static or
+            dynamic.
+        KType: Type carrying the K dimension value, either static or
+            dynamic.
 
     Args:
         ctx: The device context.
@@ -88,10 +107,20 @@ def test_matmul_sm90_swapAB_comparison[
     var c_size = M * N
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_normal_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_swapAB_host_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_alloc = alloc(
+        AllocLayout[Scalar[a_type]](count=a_size)
+    ).into_deletable()
+    var b_host_alloc = alloc(
+        AllocLayout[Scalar[b_type]](count=b_size)
+    ).into_deletable()
+    var c_normal_host_alloc = alloc(
+        AllocLayout[Scalar[c_type]](count=c_size)
+    ).into_deletable()
+    var c_normal_host_ptr = c_normal_host_alloc.unsafe_ptr()
+    var c_swapAB_host_alloc = alloc(
+        AllocLayout[Scalar[c_type]](count=c_size)
+    ).into_deletable()
+    var c_swapAB_host_ptr = c_swapAB_host_alloc.unsafe_ptr()
 
     # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
@@ -111,12 +140,12 @@ def test_matmul_sm90_swapAB_comparison[
     )
 
     # Initialize matmul operands with random values
-    rand(a_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
+    rand(a_host_alloc.unsafe_span())
+    rand(b_host_alloc.unsafe_span())
 
     # Move operands to the Device
-    ctx.enqueue_copy(a_dev_buffer, a_host_ptr)
-    ctx.enqueue_copy(b_dev_buffer, b_host_ptr)
+    ctx.enqueue_copy(a_dev_buffer, a_host_alloc.unsafe_ptr())
+    ctx.enqueue_copy(b_dev_buffer, b_host_alloc.unsafe_ptr())
 
     # Extract more config values for printing
     comptime BK = config.block_tile_shape[2]
@@ -338,10 +367,10 @@ def test_matmul_sm90_swapAB_comparison[
     print("=== SwapAB comparison test PASSED ===\n")
 
     # Cleanup host pointers
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_normal_host_ptr.free()
-    c_swapAB_host_ptr.free()
+    dealloc(a_host_alloc^.into_allocation())
+    dealloc(b_host_alloc^.into_allocation())
+    dealloc(c_normal_host_alloc^.into_allocation())
+    dealloc(c_swapAB_host_alloc^.into_allocation())
 
     # Consume device buffers
     _ = a_dev_buffer^
@@ -488,10 +517,20 @@ def test_matmul_sm90_swapAB_comparison_v2[
     var c_size = M * N
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_normal_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_swapAB_host_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_alloc = alloc(
+        AllocLayout[Scalar[a_type]](count=a_size)
+    ).into_deletable()
+    var b_host_alloc = alloc(
+        AllocLayout[Scalar[b_type]](count=b_size)
+    ).into_deletable()
+    var c_normal_host_alloc = alloc(
+        AllocLayout[Scalar[c_type]](count=c_size)
+    ).into_deletable()
+    var c_normal_host_ptr = c_normal_host_alloc.unsafe_ptr()
+    var c_swapAB_host_alloc = alloc(
+        AllocLayout[Scalar[c_type]](count=c_size)
+    ).into_deletable()
+    var c_swapAB_host_ptr = c_swapAB_host_alloc.unsafe_ptr()
 
     # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
@@ -511,12 +550,12 @@ def test_matmul_sm90_swapAB_comparison_v2[
     )
 
     # Initialize matmul operands with random values
-    rand(a_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
+    rand(a_host_alloc.unsafe_span())
+    rand(b_host_alloc.unsafe_span())
 
     # Move operands to the Device
-    ctx.enqueue_copy(a_dev_buffer, a_host_ptr)
-    ctx.enqueue_copy(b_dev_buffer, b_host_ptr)
+    ctx.enqueue_copy(a_dev_buffer, a_host_alloc.unsafe_span())
+    ctx.enqueue_copy(b_dev_buffer, b_host_alloc.unsafe_span())
 
     print(
         "=== SwapAB Comparison Test V2 ===\n",
@@ -834,10 +873,10 @@ def test_matmul_sm90_swapAB_comparison_v2[
     print("=== SwapAB comparison test V2 PASSED ===\n")
 
     # Cleanup host pointers
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_normal_host_ptr.free()
-    c_swapAB_host_ptr.free()
+    dealloc(a_host_alloc^.into_allocation())
+    dealloc(b_host_alloc^.into_allocation())
+    dealloc(c_normal_host_alloc^.into_allocation())
+    dealloc(c_swapAB_host_alloc^.into_allocation())
 
     # Consume device buffers
     _ = a_dev_buffer^

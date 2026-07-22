@@ -10,6 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""
+Provides SM90 warp-specialized GEMM dispatchers with TMA multicasting, split-K
+reduction, and optional epilogue fusion for Hopper matmuls.
+"""
 from std.math import ceildiv
 from std.sys import size_of
 
@@ -115,7 +119,49 @@ def warp_specialize_gemm_with_multicasting[
     b_device: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
-    """Unified dispatcher for all matmul kernel variants."""
+    """Dispatches an SM90 warp-specialized matmul to split-K or regular kernel paths.
+
+    Routes to `warp_specialize_gemm_with_multicasting_splitk` when `splits > 0`
+    (partitioning K across multiple thread blocks with a reduction pass), or to
+    the persistent `_warp_specialize_gemm_with_multicasting_impl` otherwise.
+    Supports optional TMA stores, epilogue functions, scheduling strategies, and
+    A/B swapping for small-M problems.
+
+    Parameters:
+        c_type: Element type of the output `C` tensor.
+        a_type: Element type of the input `A` tensor.
+        b_type: Element type of the input `B` tensor.
+        transpose_b: Whether `B` is stored transposed. Must be `True` on H100.
+        config: Kernel configuration holding block tile shape, cluster shape,
+            MMA shape, pipeline stages, and consumer count.
+        grid_shape: Optional override for the launch grid shape
+            `(blocks_m, blocks_n)`. Required when `schedule` is `DS_SCHEDULER`
+            (defaults to `None`).
+        use_tma_store: Whether to use TMA for storing the output tile to global
+            memory (defaults to `False`).
+        elementwise_lambda_fn: Optional epilogue function applied to the output
+            tile after the matmul (defaults to `None`).
+        elementwise_compute_lambda_fn: Optional compute lambda fused into the
+            MMA loop (defaults to `None`). Mutually exclusive with
+            `elementwise_lambda_fn`.
+        schedule: Persistent kernel scheduling strategy (defaults to
+            `MatmulSchedule.NONE`).
+        hilbert_swizzle: Whether to reorder tile iteration via a Hilbert curve
+            for improved L2 locality (defaults to `False`).
+        splits: Number of partitions along `K` for split-K reduction. Routes to
+            the split-K kernel when greater than zero (defaults to `0`).
+        raster_order: Tile rasterization direction, `AlongM` or `AlongN`
+            (defaults to `AlongM`).
+        swapAB: Whether to swap the `A` and `B` operands for small-`M` problems
+            (defaults to `False`).
+
+    Args:
+        c_device: Output `C` tensor on device with shape `(M, N)`.
+        a_device: Input `A` tensor on device with shape `(M, K)`.
+        b_device: Input `B` tensor on device with shape `(N, K)` when
+            `transpose_b` is `True`.
+        ctx: Device context used to enqueue the kernel.
+    """
 
     comptime if splits > 0:
         # TODO: Remove if unnecessary otherwise add support
@@ -661,6 +707,39 @@ def warp_specialize_gemm_with_multicasting_splitk[
     b_device: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
+    """Dispatches an SM90 warp-specialized split-K matmul that partitions the K dimension across thread blocks and reduces partial sums via a workspace buffer and locks.
+
+    Allocates a workspace accumulation buffer and a locks buffer, builds a
+    `SplitKTileScheduler` to map tiles to thread blocks, and enqueues the
+    split-K kernel variant of `HopperMatmulSM90Kernel`. Supports optional TMA
+    stores and epilogue or compute lambda functions.
+
+    Parameters:
+        c_type: Element type of the output `C` tensor.
+        a_type: Element type of the input `A` tensor.
+        b_type: Element type of the input `B` tensor.
+        transpose_b: Whether `B` is stored transposed. Must be `True` on H100.
+        config: Kernel configuration holding block tile shape, cluster shape,
+            MMA shape, pipeline stages, and consumer count.
+        splits: Number of partitions along `K`. Each partition is computed by a
+            separate thread block and reduced via a workspace buffer.
+        raster_order: Tile rasterization direction, `AlongM` or `AlongN`.
+        use_tma_store: Whether to use TMA for storing the output tile to global
+            memory (defaults to `False`).
+        elementwise_lambda_fn: Optional epilogue function applied to the output
+            tile after the matmul (defaults to `None`).
+        elementwise_compute_lambda_fn: Optional compute lambda fused into the
+            MMA loop (defaults to `None`). Mutually exclusive with
+            `elementwise_lambda_fn`.
+
+    Args:
+        c_device: Output `C` tensor on device with shape `(M, N)`.
+        a_device: Input `A` tensor on device with shape `(M, K)`.
+        b_device: Input `B` tensor on device with shape `(N, K)` when
+            `transpose_b` is `True`.
+        ctx: Device context used to enqueue the kernel.
+    """
+
     comptime assert c_device.rank == 2, "c must be rank 2"
     comptime assert a_device.rank == 2, "a must be rank 2"
     comptime assert b_device.rank == 2, "b must be rank 2"

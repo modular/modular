@@ -10,6 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""SM100 (Blackwell) MLA prefill kernels.
+
+Provides dense and sparse multi-latent attention (MLA) prefill entry points
+for NVIDIA SM100 GPUs, including the generic (non-blockscale), blockwise-scale,
+and sparse (with optional FP8 KV cache) variants.
+"""
 
 from std.memory import UnsafePointer
 
@@ -22,11 +28,9 @@ from layout import TileTensor
 from std.gpu.memory import AddressSpace
 from .mla_prefill_generic import mla_sm100_prefill_generic
 from .mla_prefill_blockscale import mla_sm100_prefill_blockscale
-from .mla_prefill_sparse import (
-    MLASparseConfig,
-    mla_prefill_sparse,
-    mla_prefill_sparse_fp8,
-)
+from .mla_prefill_sparse_utils import MLASparseConfig
+from .mla_prefill_sparse import mla_prefill_sparse
+from .mla_prefill_sparse_kv_fp8 import mla_prefill_sparse_fp8
 
 
 @always_inline
@@ -45,6 +49,8 @@ def mla_sm100_prefill[
     cache_depth: Int,
     _ndbuffer_mha_operand: Bool,
     blockwise_scale: Int = 0,
+    # -1 => V width == nope width (DeepSeek); resolved in `MLAConfig.__init__`.
+    v_depth: Int = -1,
 ](
     output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
@@ -60,6 +66,46 @@ def mla_sm100_prefill[
     batch_size: Int,
     ctx: DeviceContext,
 ) raises:
+    """Dense MLA prefill dispatcher for SM100 (Blackwell).
+
+    Routes to ``mla_sm100_prefill_generic`` when ``blockwise_scale`` is zero
+    and the query, key, value, and rope dtypes all match, otherwise routes
+    to ``mla_sm100_prefill_blockscale``. Asserts that the output is BF16 and
+    that the key and value share an element dtype.
+
+    Parameters:
+        output_type: Output element type (must be ``DType.bfloat16``).
+        q_type: Query element type.
+        KVType: Key operand type (an ``MHAOperand``).
+        VType: Value operand type (an ``MHAOperand``).
+        KRopeType: Rope key operand type (an ``MHAOperand``).
+        MaskType: Attention mask functor type (an ``MHAMask``).
+        MaxPromptLenType: Maximum prompt length type (an
+            ``OptionallyStaticInt``).
+        config: MHA configuration struct.
+        group: Number of query heads per KV head (GQA group size).
+        q_depth: Per-head query depth.
+        cache_depth: Per-head KV cache depth.
+        _ndbuffer_mha_operand: Whether operands are ND buffers.
+        blockwise_scale: Blockwise quantization scale size; zero disables
+            blockwise scaling and selects the generic path.
+        v_depth: Per-head value depth; ``-1`` resolves to the nope width
+            (DeepSeek convention) inside ``MLAConfig.__init__``.
+
+    Args:
+        output: Output tile tensor with shape
+            ``[total_q_tokens, num_q_heads, v_depth]``.
+        q: Query tile tensor.
+        k: Key operand.
+        v: Value operand.
+        k_rope: Rope-applied key operand.
+        mask_functor: Attention mask functor.
+        valid_length: Per-sequence valid lengths (uint32).
+        max_prompt_len: Maximum prompt length (static or dynamic).
+        scale: Softmax scale.
+        batch_size: Number of sequences in the batch.
+        ctx: GPU device context.
+    """
     comptime assert (
         output_type == DType.bfloat16
     ), "Only support bfloat16 output for SM100 MLA prefill"
@@ -79,6 +125,7 @@ def mla_sm100_prefill[
             q_depth=q_depth,
             cache_depth=cache_depth,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
+            v_depth=v_depth,
         ](
             output,
             q,
@@ -100,6 +147,7 @@ def mla_sm100_prefill[
             cache_depth=cache_depth,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
             blockwise_scale=blockwise_scale,
+            v_depth=v_depth,
         ](
             output,
             q,
@@ -141,9 +189,11 @@ def mla_sm100_prefill_sparse[
 
     Thin wrapper around ``mla_prefill_sparse`` that builds the
     ``MLASparseConfig`` from the passed dimensions so callers don't have to
-    reach into the kernel's config type. The kernel itself hardcodes the
-    DSv3.2 absorbed/latent shape (``qk_depth=576``, ``v_depth=512``,
-    ``num_q_heads=128``, ``num_kv_heads=1``) and asserts on those values.
+    reach into the kernel's config type. The kernel targets the DSv3.2
+    absorbed/latent shape and comptime-asserts ``qk_depth==576``,
+    ``num_q_heads`` is 128 or 64, and ``num_kv_heads==1``, plus equal
+    output/query bit-width. ``v_depth`` is assumed to be 512 (=
+    ``kv_lora_rank``) by that shape but is not asserted.
 
     Parameters:
         output_type: Output element type (must be the same width as
@@ -151,11 +201,11 @@ def mla_sm100_prefill_sparse[
         q_type: Query element type (BF16 in the supported DSv3.2 shape).
         cache_t: KV cache type (typically a paged MLA cache obtained from
             ``kv_collection.get_key_cache(layer_idx)``).
-        num_q_heads: Number of query heads (must be 128 for the DSv3.2
-            absorbed shape).
+        num_q_heads: Number of query heads (asserted to be 128 or 64).
         qk_depth: Per-head Q/K depth (must be 576 = ``kv_lora_rank(512) +
             qk_rope_head_dim(64)``).
-        v_depth: Per-head V depth (must be 512 = ``kv_lora_rank``).
+        v_depth: Per-head V depth (512 = ``kv_lora_rank`` for the DSv3.2
+            absorbed shape; not asserted).
         indices_stride: Per-query indices buffer stride (= the indexer's
             ``index_topk``). Also used as the runtime ``indices_stride`` to
             the kernel.
@@ -177,7 +227,13 @@ def mla_sm100_prefill_sparse[
             mscale^2``; for DSv3.2 with mscale=1, ``1 / sqrt(192)``).
         ctx: GPU device context.
     """
-    comptime config = MLASparseConfig[q_type](
+    # head128 uses 2SM (cta_group=2, B_TOPK=128); head64 uses single-CTA WS
+    # (cta_group=1, B_TOPK=64), which fits SMEM where a 2SM split would not.
+    comptime cta_group = 2 if num_q_heads == 128 else 1
+    comptime b_topk = 128 if num_q_heads == 128 else 64
+    comptime config = MLASparseConfig[
+        q_type, b_topk_=b_topk, cta_group_=cta_group
+    ](
         num_q_heads=num_q_heads,
         num_kv_heads=1,
         qk_depth=qk_depth,
@@ -202,7 +258,15 @@ def mla_sm100_prefill_sparse[
     )
 
 
-@always_inline
+# SM100 host launch wrapper. Deliberately NOT `@always_inline`: this wrapper's
+# transitively-inlined FP8 host launch path (the INT64-packed gather4 K+V TMA
+# descriptor construction, `mla_prefill_sparse_fp8` below) is a large store
+# chain. If it inlines into the model's giant fused host `region_0`, LLVM's SLP
+# vectorizer goes quadratic (`BoUpSLP::calculateDependencies` O(n^2) alias
+# queries) and the GLM-5.2 FP8-cache model compile blows up (~66 min vs ~15 for
+# bf16-cache). `@no_inline` keeps the store chain in its own small function
+# where SLP is cheap. Host-side only — the device kernel body is unchanged.
+@no_inline
 def mla_sm100_prefill_sparse_fp8[
     output_type: DType,
     q_type: DType,
@@ -242,10 +306,16 @@ def mla_sm100_prefill_sparse_fp8[
         v_depth: Per-head V depth (512 for DSv3.2).
         indices_stride: Per-query indices buffer stride (= top-k count).
         scale_block_size: Quantization block size along the depth axis.
-            Must be ``>= qk_depth`` (tensorwise, one scale per KV token).
-            Sub-token blockwise quantization is not yet supported because K
-            and V have different depths (``qk_depth != v_depth``), requiring
-            separate K/V scale pointers that this API does not expose.
+            ``0`` selects no-scale mode: FP8 latents are read at unit scale
+            (no dequant, ``scales_ptr`` unused / may be null), mirroring the
+            sparse-decode read of today's scale-less MLA latent cache — the
+            current DSv3.2 production path. ``>= qk_depth`` selects tensorwise
+            scaling (one scale per KV token). A smaller positive value (e.g.
+            32) selects cache-native blockwise scaling: MLA stores one
+            ``ceildiv(qk_depth, scale_block_size)``-wide scale vector per token
+            over the full latent, K consumes all of it and V the first
+            ``ceildiv(v_depth, scale_block_size)`` blocks, so a single
+            ``scales_ptr`` (stride ``ceildiv(qk_depth, sbs)``) serves both.
 
     Args:
         output: Output tile tensor ``[total_q_tokens, num_q_heads, v_depth]``.
@@ -254,12 +324,17 @@ def mla_sm100_prefill_sparse_fp8[
         indices: Per-query gather4 indices (uint32).
         topk_lengths: Per-query effective top-k count.
         attn_sink_ptr: Optional attention sink (pass ``None`` to skip).
-        scales_ptr: FP8 dequantization scales, one Float32 per physical KV
-            row (shape: ``[total_phys_rows]``).
+        scales_ptr: FP8 dequantization scales in ``get_tma_row`` space, laid
+            out ``[total_phys_rows, ceildiv(qk_depth, scale_block_size)]``
+            (i.e. ``k.scales_raw_ptr()`` for the paged cache).
         scale: Softmax scale.
         ctx: GPU device context.
     """
-    comptime config = MLASparseConfig[q_type](
+    comptime cta_group = 2 if num_q_heads == 128 else 1
+    comptime b_topk = 128 if num_q_heads == 128 else 64
+    comptime config = MLASparseConfig[
+        q_type, b_topk_=b_topk, cta_group_=cta_group
+    ](
         num_q_heads=num_q_heads,
         num_kv_heads=1,
         qk_depth=qk_depth,

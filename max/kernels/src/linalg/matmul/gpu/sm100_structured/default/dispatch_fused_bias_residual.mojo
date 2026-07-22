@@ -68,6 +68,32 @@ def fused_bias_residual_matmul_dispatch_sm100[
     ],
     ctx: DeviceContext,
 ) raises:
+    """Dispatches a fused matmul plus bias/residual on SM100 (Blackwell) GPUs.
+
+    Selects between a native TMA-epilogue GEMM path for aligned GEMM-shaped
+    problems and a fallback that applies the bias/residual as a normal
+    elementwise store epilogue through the generic `matmul_dispatch_sm100`
+    dispatcher (covering GEMV, small-MN, and vendor paths).
+
+    Parameters:
+        c_type: Output element dtype of `c`.
+        a_type: Element dtype of `a`; must equal `b_type` and be bfloat16.
+        b_type: Element dtype of `b`; must equal `a_type` and be bfloat16.
+        transpose_b: Whether `b` is transposed.
+        pdl_level: Persistent kernel launch grid control level.
+        epilogue_is_1d: Treats `epilogue_tensor` as a 1D bias broadcast across rows.
+        has_epilogue_tensor: Indicates an epilogue tensor is supplied for the TMA path.
+
+    Args:
+        c: Rank-2 output tile tensor accumulating `a @ b` plus the residual.
+        a: Rank-2 left-hand side input tile tensor.
+        b: Rank-2 right-hand side input tile tensor.
+        epilogue_tensor: Row-major bias/residual tensor added into `c`.
+        ctx: Device context used to launch the selected kernel.
+
+    Raises:
+        On comptime assertion failures for rank, dtype, or dtype-pair mismatches.
+    """
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"
@@ -81,6 +107,14 @@ def fused_bias_residual_matmul_dispatch_sm100[
         a_type == b_type == DType.bfloat16
     ), "a_type and b_type must be bfloat16 and must be the same"
     comptime assert c_type in (DType.bfloat16,), "c_type must be bfloat16"
+
+    # Zero-sized output (e.g. an ``(0, N)`` GEMM from the fused Linear layers
+    # of a diffusion VAE encoder running on the text-to-image ``(0, 0, 3)``
+    # placeholder image): nothing to compute.  The generic ``matmul`` entry
+    # guards this identically. The output buffer is pre-allocated zero-element
+    # by the caller, so an early return produces the correct empty output.
+    if m == 0 or Int(c.dim[1]()) == 0:
+        return
 
     # The bias/residual as a store epilogue: `c = (a @ b) + epilogue[coords]`,
     # broadcasting row 0 for a 1D bias. Every non-TMA kernel (GEMV, small-MN,
@@ -106,14 +140,13 @@ def fused_bias_residual_matmul_dispatch_sm100[
         _get_tuning_list_small_MN_gemms_bf16(), "small_MN_gemms_configs"
     )
 
-    @parameter
     @always_inline
-    def small_MN_gemms_rule(x: TuningConfigSmallMNGemms) -> Bool:
+    def small_MN_gemms_rule(x: TuningConfigSmallMNGemms) {} -> Bool:
         return x.K == static_K and x.N == static_N
 
-    comptime small_MN_gemms_configs = small_MN_gemms_table.find[
-        small_MN_gemms_rule
-    ]()
+    comptime small_MN_gemms_configs = small_MN_gemms_table.find(
+        rule=small_MN_gemms_rule
+    )
 
     comptime if small_MN_gemms_configs:
         comptime for config in small_MN_gemms_configs:

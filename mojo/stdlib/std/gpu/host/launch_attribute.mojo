@@ -29,6 +29,7 @@ These structures enable optimizing GPU kernel performance by controlling executi
 at a granular level, similar to CUDA's native launch attribute system.
 """
 
+from . import Dim
 from std.sys import size_of
 
 from std.utils import StaticTuple
@@ -221,8 +222,8 @@ struct LaunchAttributeValue(Defaultable, TrivialRegisterPassable):
             policy: The `AccessPolicyWindow` to store in this attribute value.
         """
         var tmp = policy
-        var ptr = UnsafePointer(to=tmp)
-        self._storage = ptr.bitcast[Self._storage_type]()[]
+        var ptr = Pointer(to=tmp)
+        self._storage = ptr.unsafe_bitcast[Self._storage_type]()[]
 
     def __init__(out self, dim: Dim):
         """Initializes a LaunchAttributeValue from a Dim (dimension) object.
@@ -233,8 +234,8 @@ struct LaunchAttributeValue(Defaultable, TrivialRegisterPassable):
         var tmp = StaticTuple[UInt32, 4](
             UInt32(dim.x()), UInt32(dim.y()), UInt32(dim.z()), 0
         )
-        var ptr = UnsafePointer(to=tmp)
-        self._storage = ptr.bitcast[Self._storage_type]()[]
+        var ptr = Pointer(to=tmp)
+        self._storage = ptr.unsafe_bitcast[Self._storage_type]()[]
 
     def __init__(out self, value: Bool):
         """Initializes a LaunchAttributeValue from a boolean object..
@@ -243,8 +244,8 @@ struct LaunchAttributeValue(Defaultable, TrivialRegisterPassable):
             value: The boolean value to store in this attribute value.
         """
         var tmp = StaticTuple[UInt32, 4](UInt32(Int(value)), 0, 0, 0)
-        var ptr = UnsafePointer(to=tmp)
-        self._storage = ptr.bitcast[Self._storage_type]()[]
+        var ptr = Pointer(to=tmp)
+        self._storage = ptr.unsafe_bitcast[Self._storage_type]()[]
 
 
 @fieldwise_init
@@ -315,6 +316,8 @@ struct LaunchAttribute(Defaultable, TrivialRegisterPassable):
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form
     a complete attribute that can be passed to GPU kernel launches. It provides
     a way to specify various execution parameters that control kernel behavior.
+
+    These are CUDA only, and are not supported on any other target.
     """
 
     var id: LaunchAttributeID
@@ -423,7 +426,7 @@ struct AccessPolicyWindow(
     ](
         out self,
         *,
-        base_ptr: UnsafePointer[T, ...],
+        base_ptr: Pointer[T, ...],
         count: Int,
         hit_ratio: Float32,
         hit_prop: AccessProperty = AccessProperty.NORMAL,
@@ -442,9 +445,9 @@ struct AccessPolicyWindow(
             miss_prop: Access property for miss segments (default: NORMAL).
         """
         self.base_ptr = Optional[OpaquePointer[MutUntrackedOrigin]](
-            base_ptr.bitcast[NoneType]()
+            base_ptr.unsafe_bitcast[NoneType]()
             .unsafe_mut_cast[True]()
-            .address_space_cast[AddressSpace.GENERIC]()
+            .unsafe_address_space_cast[AddressSpace.GENERIC]()
             .unsafe_origin_cast[MutUntrackedOrigin]()
         )
         self.num_bytes = count * size_of[T]()

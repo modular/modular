@@ -22,6 +22,7 @@ All GPU code (kernel structs, runtime functions) is in matmul_kernels.mojo.
 from std.math import align_up, ceildiv
 from std.sys import size_of
 
+from comm import MAX_GPUS, Signal
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
@@ -30,13 +31,15 @@ from layout import (
     Coord,
     Idx,
     RowMajorLayout,
+    TensorLayout,
     TileTensor,
     row_major as tt_row_major,
 )
 from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import _to_batched_3d
 
-from std.utils.index import Index
+from std.utils.index import Index, IndexList
+from std.collections import OptionalReg
 from std.utils.static_tuple import StaticTuple
 
 from linalg.utils import (
@@ -344,15 +347,23 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     else:
         workspace = {}
 
-    ctx.enqueue_function[kernel, dump_asm=False](
+    # This is wrapped in an InlineArray to match reduce-scatter friendly kernel interface
+    var c_tma_ops: InlineArray[type_of(c_tma_op), 1] = [c_tma_op]
+    var rank_sigs: Optional[
+        InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
+    ] = None
+
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
-        c_tma_op,
+        c_tma_ops,
         epi_load_tma_op,
         bias_1d_tile,
         cluster_dim,
         mnk,
         workspace,
+        rank_sigs,
+        0,
         grid_dim=grid_dim,
         block_dim=KernelType.NUM_THREADS,
         shared_mem_bytes=smem_size,
@@ -394,6 +405,30 @@ def blackwell_matmul_tma_umma_warp_specialized[
     Split-K uses separate 2D path. Non-split-K delegates to
     blackwell_batched_matmul_tma_umma_warp_specialized which handles
     _to_batched_3d wrapping and AB_swapped dispatch.
+
+    Parameters:
+        transpose_b: Whether B is stored transposed as (N, K). Must be True.
+        config: Matmul configuration holding tile shapes, dtypes, swizzle
+            modes, cluster shape, and pipeline stages.
+        elementwise_lambda_fn: Optional epilogue lambda applied in the
+            epilogue phase (defaults to None).
+        elementwise_compute_lambda_fn: Optional compute lambda applied in the
+            compute phase; mutually exclusive with elementwise_lambda_fn
+            (defaults to None).
+        pdl_level: Programmatic dependent launch level for the kernel
+            (defaults to PDLLevel()).
+        max_profiled_tiles_per_SM: Maximum number of tiles to profile per SM;
+            when set, enables kernel profiling (defaults to None).
+        EpilogueLayoutType: Layout type of the epilogue tensor (defaults to
+            RowMajorLayout[Int64, Int64]).
+    Args:
+        c_device: Output TileTensor of shape (M, N).
+        a_device: LHS TileTensor of shape (M, K).
+        b_device: RHS TileTensor of shape (N, K) (transposed).
+        ctx: Device context used to create TMA descriptors and enqueue the
+            kernel.
+        epilogue_tensor: Optional epilogue tensor (for example, bias) consumed
+            by the epilogue lambda (defaults to None).
     """
     comptime if config.num_split_k > 1:
         comptime if config.AB_swapped:
@@ -718,6 +753,30 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
     Accepts rank-2 (non-batched, batch=1) or rank-3 (batched) TileTensors.
     Rank-2 inputs are reshaped to 3D before calling the internal function.
     Handles AB_swapped dispatch.
+
+    Parameters:
+        transpose_b: Whether B is stored transposed as (N, K). Must be True.
+        config: Matmul configuration holding tile shapes, dtypes, swizzle
+            modes, cluster shape, and pipeline stages.
+        elementwise_lambda_fn: Optional epilogue lambda applied in the
+            epilogue phase (defaults to None).
+        elementwise_compute_lambda_fn: Optional compute lambda applied in the
+            compute phase; mutually exclusive with elementwise_lambda_fn
+            (defaults to None).
+        pdl_level: Programmatic dependent launch level for the kernel
+            (defaults to PDLLevel()).
+        max_profiled_tiles_per_SM: Maximum number of tiles to profile per SM;
+            when set, enables kernel profiling (defaults to None).
+        EpilogueLayoutType: Layout type of the epilogue tensor (defaults to
+            RowMajorLayout[Int64, Int64]).
+    Args:
+        c_device: Output TileTensor of shape (M, N) or (B, M, N).
+        a_device: LHS TileTensor of shape (M, K) or (B, M, K).
+        b_device: RHS TileTensor of shape (N, K) or (B, N, K) (transposed).
+        ctx: Device context used to create TMA descriptors and enqueue the
+            kernel.
+        epilogue_tensor: Optional epilogue tensor (for example, bias) consumed
+            by the epilogue lambda (defaults to None).
     """
     comptime if type_of(c_device).rank == 2:
         comptime if config.AB_swapped:
@@ -801,6 +860,35 @@ def matmul_sm100_fallback[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](c: TileTensor, a: TileTensor, b: TileTensor, ctx: DeviceContext,) raises:
+    """Launches the SM100 fallback matmul kernel for unsupported shapes or dtypes.
+
+    Uses a simple non-pipelined kernel without CLC/TMEM overhead, computing
+    shared memory from the actual tile sizes rather than the hardware maximum.
+    Only transposed-B, bfloat16, and float8_e4m3fn inputs are supported.
+
+    Parameters:
+        c_type: Output element dtype of the result matrix.
+        a_type: Input element dtype of the LHS matrix; must be
+            `bfloat16` or `float8_e4m3fn`.
+        b_type: Input element dtype of the RHS matrix; must equal `a_type`.
+        transpose_b: Whether B is stored transposed as (N, K). Must be True.
+        umma_shape: Tensor core MMA instruction shape as a 3-element
+            `IndexList` of (M, N, K).
+        block_tile_shape: CTA block tile shape as a 3-element
+            `IndexList` of (BM, BN, BK) giving the tile dimensions
+            along M, N, and K.
+        a_swizzle: TMA swizzle mode for A tensor loads (defaults to
+            `SWIZZLE_128B`).
+        b_swizzle: TMA swizzle mode for B tensor loads (defaults to
+            `SWIZZLE_128B`).
+        elementwise_lambda_fn: Optional epilogue lambda applied after
+            the matmul (defaults to None).
+    Args:
+        c: Output TileTensor of shape (M, N).
+        a: LHS TileTensor of shape (M, K).
+        b: RHS TileTensor of shape (N, K) (transposed).
+        ctx: Device context used to create TMA descriptors and enqueue the kernel.
+    """
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert a_type == b_type and a_type in (

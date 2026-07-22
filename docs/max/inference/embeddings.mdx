@@ -10,7 +10,6 @@ import TabItem from '@theme/TabItem';
 import SmallCards from '@site/src/components/SmallCards';
 import InstallModular from '../../_includes/install-modular.mdx';
 import InstallOpenAI from '../../_includes/install-openai.mdx';
-import MDXListing from '@site/src/components/Listing/MDXListing';
 import Requirements from '@site/src/components/Requirements';
 import { requirementsNoGPU } from '../../requirements';
 
@@ -118,7 +117,7 @@ client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
 # Create embeddings
 response = client.embeddings.create(
     model="sentence-transformers/all-mpnet-base-v2",
-    input="Run an embedding model with MAX Serve!",
+    input="Run an embedding model with MAX!",
 )
 
 print(f"{response.data[0].embedding[:5]}")
@@ -142,7 +141,7 @@ The following `curl` command sends an embeddings request to the model:
 curl http://localhost:8000/v1/embeddings \
 -H "Content-Type: application/json" \
 -d '{
-    "input": "Run an embedding model with MAX Serve!",
+    "input": "Run an embedding model with MAX!",
     "model": "sentence-transformers/all-mpnet-base-v2"
 }'
 ```
@@ -165,12 +164,10 @@ For complete details on all available API endpoints and options, see the
 ## Next steps
 
 Now that you have successfully set up MAX with an OpenAI-compatible embeddings
-endpoint, checkout out these other tutorials:
+endpoint, checkout out these other docs:
 
-export const docs = [
-  '../../develop/modules.mdx',
-  '../../develop/build-custom-ops.mdx',
-  '../../develop/custom-ops-matmul.mdx',
-];
-
-<MDXListing mdxList={docs} />
+- [Build a model graph with Module](/max/develop/modules): Learn how to
+  compose modules, write custom modules with explicit weights, load checkpoint
+  data, and construct a model graph.
+- [Build custom ops for GPUs](/max/develop/build-custom-ops): Write custom GPU
+  and CPU operations in Mojo and load them into a MAX graph.

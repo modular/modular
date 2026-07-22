@@ -64,14 +64,14 @@ struct _AsyncContext(ImplicitlyCopyable, RegisterPassable):
 
     @staticmethod
     def get_chain(
-        ctx: UnsafePointer[mut=True, _AsyncContext, _]
-    ) -> UnsafePointer[_Chain, origin_of(ctx[].chain)]:
-        return UnsafePointer(to=ctx[].chain)
+        ctx: Pointer[mut=True, _AsyncContext, _]
+    ) -> Pointer[_Chain, origin_of(ctx[].chain)]:
+        return Pointer(to=ctx[].chain)
 
     @staticmethod
     def complete(ch: _Chain):
         var tmp = ch
-        _async_complete(UnsafePointer(to=tmp))
+        _async_complete(Pointer(to=tmp))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -79,23 +79,17 @@ struct _AsyncContext(ImplicitlyCopyable, RegisterPassable):
 # ===-----------------------------------------------------------------------===#
 
 
-def _init_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
-        chain.address
-    )
+def _init_asyncrt_chain(chain: Pointer[mut=True, _Chain, _]):
+    external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](chain)
 
 
-def _del_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_DestroyChain", NoneType](
-        chain.address
-    )
+def _del_asyncrt_chain(chain: Pointer[mut=True, _Chain, _]):
+    external_call["KGEN_CompilerRT_AsyncRT_DestroyChain", NoneType](chain)
 
 
-def _async_and_then(
-    hdl: AnyCoroutine, chain: UnsafePointer[mut=True, _Chain, _]
-):
+def _async_and_then(hdl: AnyCoroutine, chain: Pointer[mut=True, _Chain, _]):
     external_call["KGEN_CompilerRT_AsyncRT_AndThen", NoneType](
-        _coro_resume_fn, chain.address, hdl
+        _coro_resume_fn, chain, hdl
     )
 
 
@@ -105,19 +99,19 @@ def _async_execute[type: AnyType](handle: AnyCoroutine, desired_worker_id: Int):
     )
 
 
-def _async_wait(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_Wait", NoneType](chain.address)
+def _async_wait(chain: Pointer[mut=True, _Chain, _]):
+    external_call["KGEN_CompilerRT_AsyncRT_Wait", NoneType](chain)
 
 
-def _async_complete(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_Complete", NoneType](chain.address)
+def _async_complete(chain: Pointer[mut=True, _Chain, _]):
+    external_call["KGEN_CompilerRT_AsyncRT_Complete", NoneType](chain)
 
 
 def _async_wait_timeout(
-    chain: UnsafePointer[mut=True, _Chain, _], timeout: Int
+    chain: Pointer[mut=True, _Chain, _], timeout: Int
 ) -> Bool:
     return external_call["KGEN_CompilerRT_AsyncRT_Wait_Timeout", Bool](
-        chain.address, timeout
+        chain, timeout
     )
 
 
@@ -206,7 +200,7 @@ def task_id_for_device(device_id: Int) -> Int:
         if no affinity mapping is configured.
     """
     return Int(
-        external_call["KGEN_CompilerRT_TaskIdForDevice", Int32](
+        external_call["MLRT_TaskIdForDevice", Int32](
             Int32(device_id),
         )
     )
@@ -258,7 +252,7 @@ def _run(var handle: Coroutine[...], out result: handle.type):
     _init_asyncrt_chain(_AsyncContext.get_chain(ctx))
     ctx[].callback = _AsyncContext.complete
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(result))
-    handle._set_result_slot(UnsafePointer(to=result))
+    handle._set_result_slot(Pointer(to=result))
     _async_execute[handle.type](handle._handle, -1)
     _async_wait(_AsyncContext.get_chain(ctx))
     _del_asyncrt_chain(_AsyncContext.get_chain(ctx))
@@ -300,7 +294,7 @@ struct Task[type: ImplicitlyDeletable, origins: OriginSet]:
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(self._result)
         )
-        self._handle._set_result_slot(UnsafePointer(to=self._result))
+        self._handle._set_result_slot(Pointer(to=self._result))
 
     def get(self) -> ref[self._result] Self.type:
         """Get the task's result value. Calling this on an incomplete task is
@@ -394,17 +388,18 @@ def create_raising_task[
     _async_execute[type](task._handle._handle, desired_worker_id=-1)
 
 
-@explicit_destroy
-struct RaisingTask[type: Movable, origins: OriginSet]:
+struct RaisingTask[type: Movable, origins: OriginSet](
+    ImplicitlyDeletable where False,
+):
     """Represents an async task that may raise an error upon completion.
 
     Wraps a `RaisingCoroutine` that executes asynchronously and either
     produces a result value or raises an error. The error is propagated
     to the caller when `wait()` is called.
 
-    This type uses `@explicit_destroy` because only one of the result or
-    error slots is valid after completion. The caller must call `wait()`
-    or `force_destroy()` to consume the task.
+    This type does not conform to `ImplicitlyDeletable` because only one of the
+    result or error slots is valid after completion. The caller must call
+    `wait()` or `force_destroy()` to consume the task.
 
     Parameters:
         type: The type of value produced on success.
@@ -547,7 +542,7 @@ struct TaskGroupContext(TrivialRegisterPassable):
     var callback: Self.tg_callback_fn_type
     """Callback function to be invoked on the TaskGroup when an operation completes."""
 
-    var task_group: UnsafePointer[TaskGroup, MutUntrackedOrigin]
+    var task_group: Pointer[TaskGroup, MutUntrackedOrigin]
     """Pointer to the TaskGroup that owns or is associated with this context."""
 
 
@@ -590,14 +585,14 @@ struct TaskGroup(Defaultable):
         """Initialize a new TaskGroup with an empty task list and initialized chain.
         """
         var chain = _Chain()
-        _init_asyncrt_chain(UnsafePointer(to=chain))
+        _init_asyncrt_chain(Pointer(to=chain))
         self.counter = Atomic[DType.int](1)
         self.chain = chain
         self.tasks = List[_TaskGroupBox](capacity=16)
 
     def __del__(deinit self):
         """Clean up resources associated with the TaskGroup."""
-        _del_asyncrt_chain(UnsafePointer(to=self.chain))
+        _del_asyncrt_chain(Pointer(to=self.chain))
 
     @always_inline
     def _counter_decr(mut self) -> Int:
@@ -610,7 +605,7 @@ struct TaskGroup(Defaultable):
 
     def _task_complete(mut self):
         if self._counter_decr() == 0:
-            _async_complete(UnsafePointer(to=self.chain))
+            _async_complete(Pointer(to=self.chain))
 
     def create_task(
         mut self,
@@ -637,7 +632,7 @@ struct TaskGroup(Defaultable):
         self.counter += 1
         task._get_ctx[TaskGroupContext]()[] = TaskGroupContext(
             Self._task_complete_callback,
-            UnsafePointer(to=self).unsafe_origin_cast[MutUntrackedOrigin](),
+            Pointer(to=self).unsafe_origin_cast[MutUntrackedOrigin](),
         )
         _async_execute[NoneType](task._handle, desired_worker_id)
         self.tasks.append(_TaskGroupBox(task^))
@@ -650,7 +645,7 @@ struct TaskGroup(Defaultable):
             hdl: The coroutine handle to be awaited.
             task_group: The TaskGroup to be awaited.
         """
-        _async_and_then(hdl, UnsafePointer(to=task_group.chain))
+        _async_and_then(hdl, Pointer(to=task_group.chain))
         task_group._task_complete()
 
     @always_inline
@@ -677,4 +672,4 @@ struct TaskGroup(Defaultable):
             origins: The origin set for the wait operation.
         """
         self._task_complete()
-        _async_wait(UnsafePointer(to=self.chain))
+        _async_wait(Pointer(to=self.chain))

@@ -25,13 +25,12 @@ Fragment layout differs by MMA size:
 
 - 16x16 MMA: 4 regs/lane, flat `(1, 4):(1, 1)`.
 - 32x32 MMA: 16 regs/lane organized as 4 groups of 4 cols with stride 8
-  between groups — nested `((1,(4,4)):(1,(1,8)))` (fp8 MFMA pattern).
+  between groups: nested `((1,(4,4)):(1,(1,8)))` (fp8 MFMA pattern).
 """
 
 from std.math.constants import log2e
 from std.math.uutils import umod
 from std.sys import _RegisterPackType
-from std.sys.intrinsics import _type_is_eq
 from std.sys._assembly import inlined_assembly
 from std.gpu import block_idx, lane_id
 from std.utils import IndexList
@@ -71,7 +70,35 @@ struct MaskTileOp[
     # dead-row guard must instead test the absolute row per-fragment (see below).
     num_warps_m: Int = 1,
 ]:
-    """Apply an `MHAMask` to the per-lane QK score registers in place."""
+    """Apply an `MHAMask` to the per-lane QK score registers in place.
+
+    Parameters:
+        accum_type: The element type of the QK score registers and `scale`.
+        token_gen: Whether the kernel runs in token-generation (decode) mode
+            versus prefill.
+        mma_shape: The MMA tile shape `(M, N, K)` used to compute per-fragment
+            row and column offsets.
+        num_m_mmas: Number of MMAs along the M (query-row) dimension of the
+            score tile.
+        num_n_mmas: Number of MMAs along the N (key-column) dimension of the
+            score tile.
+        mask_t: The `MHAMask` type to apply to the score registers.
+        group: GQA group size; the number of query heads sharing one KV head.
+        mma_m: MMA M extent (32 or 16 on gfx950) that selects the lane and
+            fragment geometry.
+        use_exp2: Whether the consumer softmax uses base-2 exponentiation
+            (defaults to False).
+        num_heads_per_token: Token-fold geometry; H heads per token mapping a
+            folded row to its token and head, where token = row // H and
+            head = row % H (defaults to `group`).
+        valid_rows: Number of live query rows M = H * S across all heads and
+            sequence positions (defaults to `group`).
+        mla_mode: Whether the token fold applies, for AMD MLA decode only;
+            when False the fold arithmetic is comptime-dead (defaults to
+            False).
+        num_warps_m: Number of warps splitting the MMA M dimension (= BM //
+            WM), which controls the dead-row guard strategy (defaults to 1).
+    """
 
     # Warp lane layout (col-major (warp_rows, warp_cols)) as a proper
     # TileLayout. idx2crd decomposes a lane into (lane_row, lane_col).
@@ -226,7 +253,7 @@ struct MaskTileOp[
                 var score_col = mask_frag_col
                 var score_col_with_cache_start_pos = score_col + cache_start_pos
                 var score_row_with_start_pos = score_row + start_pos
-                comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
+                comptime is_causal_mask = Self.mask_t == CausalMask
 
                 # Load the whole MMA fragment once, mutate lanes on a local
                 # SIMD (which `SIMD.__setitem__` supports), and store back

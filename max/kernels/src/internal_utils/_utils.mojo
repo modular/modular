@@ -460,7 +460,7 @@ def _init_block_scaled_scales_gpu[
 
 def _init_block_scaled_scales_launch[
     dtype: DType, block_dim: Int = 256
-](out_device: DeviceBuffer[dtype], length: Int, context: DeviceContext,) raises:
+](out_device: DeviceBuffer[dtype], length: Int, context: DeviceContext) raises:
     var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
     # using num-threads = 1/4th of length to initialize the array
 

@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides CPU kernels for block-wise quantized int4 matrix multiplication."""
+
 from std.collections import Optional
 from std.math import ceildiv
 from std.sys import CompilationTarget, align_of, simd_width_of, size_of
@@ -34,8 +36,10 @@ from linalg.utils import partition_work
 from std.memory import (
     alloc,
     bitcast,
+    dealloc,
     stack_allocation,
 )
+from std.memory.alloc import Layout as AllocLayout
 
 from std.runtime.asyncrt import parallelism_level
 
@@ -57,6 +61,19 @@ def matmul_qint4_pack_b[
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
 ) raises:
+    """Repacks block-wise quantized int4 weights into the tiled layout
+    expected by the `matmul_qint4` kernels.
+
+    Parameters:
+        group_size: Number of elements per quantization group.
+
+    Args:
+        b_tt: Source tensor holding packed uint8 weights with float16 scales.
+        b_rot_tt: Destination tensor for the repacked weights.
+
+    Raises:
+        If N is not a multiple of 32.
+    """
     var b = b_tt.to_layout_tensor()
     var b_rot = b_rot_tt.to_layout_tensor()
     comptime assert b.rank == 2
@@ -1269,15 +1286,17 @@ def _matmul_qint4[
 
     comptime aq_type = kernel.aq_type()
 
-    var a_quant_base_ptr = alloc[Scalar[aq_type]](M * K, alignment=alignment)
-    var a_scale_base_ptr = alloc[Float32](M * k_groups)
+    var a_quant_base = alloc(
+        AllocLayout[Scalar[aq_type]](count=M * K, alignment=alignment)
+    )
+    var a_scale_base = alloc(AllocLayout[Float32](count=M * k_groups))
 
     var a_quant = LayoutTensor[aq_type, Layout.row_major[2]()](
-        a_quant_base_ptr,
+        a_quant_base.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, K)),
     )
     var a_scale = LayoutTensor[DType.float32, Layout.row_major[2]()](
-        a_scale_base_ptr,
+        a_scale_base.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, k_groups)),
     )
 
@@ -1292,8 +1311,8 @@ def _matmul_qint4[
             kernel, group_size, elementwise_lambda_fn=elementwise_lambda_fn
         ](a_quant, a_scale, b, c, ctx)
 
-    a_quant_base_ptr.free()
-    a_scale_base_ptr.free()
+    dealloc(a_quant_base^)
+    dealloc(a_scale_base^)
 
 
 def matmul_qint4[
@@ -1311,6 +1330,22 @@ def matmul_qint4[
     ],
     ctx: Optional[DeviceContext] = None,
 ):
+    """Computes a matrix multiply of a float32 A matrix against block-wise
+    quantized int4 B weights, producing a float32 result.
+
+    Dispatches to an architecture-specific kernel (VNNI, AVX2, NEON i8mm,
+    or NEON dotprod) at compile time.
+
+    Parameters:
+        group_size: Number of elements per quantization group.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+
+    Args:
+        a_tt: Input A tensor in float32.
+        b_tt: Input B tensor holding packed uint8 int4 weights.
+        c_tt: Output C tensor in float32.
+        ctx: Optional device context for parallel execution.
+    """
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
     var c = c_tt.to_layout_tensor()

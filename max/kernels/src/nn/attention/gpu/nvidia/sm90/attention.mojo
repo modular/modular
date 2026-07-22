@@ -11,6 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""
+SM90 (Hopper) multi-head attention producer-side helpers.
+
+Re-exports shared NVIDIA attention primitives from `common` and provides the
+SM90-specific implementations of `produce` (TMA-based Q/K/V tile staging),
+`_apply_mask`, `_get_position`, `get_q_head_idx`, `output_reg_to_smem`, and
+`_optional_lt_to_tt` consumed by the `sm90/mha.mojo` kernel.
+"""
+
 from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.uutils import ufloordiv
@@ -211,6 +220,26 @@ def get_q_head_idx[
     lane: UInt32,
     out indices: StaticTuple[UInt32, type_of(position).num_q_heads_per_thread],
 ):
+    """Computes the query head indices owned by the current thread.
+
+    In decoding mode each thread holds several grouped query heads spaced by 8,
+    while in prefill mode every thread shares the single current head index.
+
+    Parameters:
+        BM: Block size in the query-row (M) dimension of the attention tile.
+        BN: Block size in the key/value (N) dimension of the attention tile.
+        depth: Unpadded head dimension of each attention head.
+        padded_depth: Head dimension padded to the MMA alignment boundary.
+        num_heads: Number of query heads in the model.
+        group: Grouped-query attention group size, query heads per KV head.
+        decoding: Whether the kernel runs in single-token decoding mode.
+
+    Args:
+        position: Current tile position metadata carrying the head index,
+            query row and column offsets, and sequence info.
+        lane: Lane index of the calling thread within its warp, used to
+            distribute grouped query heads across threads.
+    """
     comptime if decoding:
         var q_head_idx_0: UInt32 = UInt32(group) * position.head_idx + lane // 4
 
@@ -467,6 +496,89 @@ def produce[
     num_keys_arg: UInt32,
     kv_input_row_offsets: KVInputRowOffsetsType,
 ):
+    """Stages Q, K, and V tiles into shared memory via TMA for the SM90 attention kernel.
+
+    Drives the producer side of the warp-specialized pipeline: it issues the
+    preheader Q and K copies, then runs the main loop emitting K and V copies
+    (full or partial-page) synchronized through the shared-memory barriers,
+    advancing the persistent scheduler across tiles when configured.
+
+    Parameters:
+        qkv_type: Element dtype of the query, key, and value tensors
+            (inferred).
+        BM: Block size in the query-row (M) dimension of the attention
+            tile (inferred).
+        BN: Block size in the key/value (N) dimension of the attention
+            tile (inferred).
+        q_rank: Rank of the query TMA tensor map descriptor (inferred).
+        q_tile_shape: Per-dimension tile shape for query TMA copies
+            (inferred).
+        q_desc_shape: Per-dimension descriptor shape of the query TMA
+            tensor map (inferred).
+        depth: Unpadded head dimension of each attention head (inferred).
+        padded_depth: Head dimension padded to the MMA alignment boundary
+            (inferred).
+        num_heads: Number of query heads in the model (inferred).
+        group: Grouped-query attention group size, query heads per KV head
+            (inferred).
+        PartitionType: Scheme dividing the KV range across producer
+            instances (inferred).
+        MaxSeqLenType: Statically or dynamically known maximum sequence
+            length (inferred).
+        SchedulerType: Tile scheduler driving persistent tile iteration
+            (inferred).
+        KVLUTType: KV cache operand type providing paged row lookup and
+            cache length queries (inferred).
+        MaskType: Attention mask type applied to score tiles (inferred).
+        KVInputRowOffsetsType: Optional pointer type for cross-attention
+            KV row offsets, null when unused (inferred).
+        ValidLengthType: Optional pointer type for per-batch valid lengths
+            passed to the tile scheduler (inferred).
+        swizzle_mode: Shared-memory swizzle mode applied to TMA tensor
+            maps.
+        pipeline_stages: Number of double-buffered pipeline stages for KV
+            copies, must be at least 2.
+        ragged: Whether ragged (variable-length) batching is in use.
+        _is_cache_length_accurate: Whether the KV cache length is already
+            accurate, skipping the per-batch cache_length lookup when
+            true.
+
+    Args:
+        q_tma_op: TMA tile descriptor issuing asynchronous query tile copies
+            into shared memory.
+        k_tma_op: TMA tile descriptor issuing asynchronous key tile copies
+            into shared memory.
+        v_tma_op: TMA tile descriptor issuing asynchronous value tile copies
+            into shared memory.
+        q_smem: Base shared-memory pointer for query tile staging.
+        kv_smem: Base shared-memory pointer for key and value tile staging.
+        produced_mbar_kv: Shared-memory barriers signaling KV tile
+            production completion to the consumer.
+        consumed_mbar_kv: Shared-memory barriers waited on before
+            overwriting a KV pipeline stage.
+        produced_mbar_q: Optional barriers signaling query tile production
+            for persistent kernels, unused otherwise.
+        consumed_mbar_q: Optional barriers waited on before overwriting a
+            query pipeline stage in persistent kernels.
+        kv_lut: KV cache operand providing paged row lookup and cache
+            length queries.
+        initial_position: Starting tile position metadata for the first
+            query and key tiles.
+        partition: Partition instance dividing the KV range for this
+            producer.
+        scheduler: Tile scheduler instance advancing persistent tile
+            iteration.
+        mask: Attention mask instance applied to score tiles.
+        tile_summary: Tile summary carrying per-batch valid lengths for
+            the scheduler.
+        tile_state_arg: Initial scheduler state, mutated as tiles advance.
+        max_seq_len: Maximum sequence length after padding, used for
+            homogeneous batch query row offsets.
+        num_keys_arg: Number of cache keys for the current batch, used in
+            homogeneous batching.
+        kv_input_row_offsets: Optional per-batch KV row offsets for cross
+            attention, null when unused.
+    """
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[qkv_type]()
 
     comptime decoding: Bool = _is_decoding[MaxSeqLenType]()
@@ -979,6 +1091,37 @@ def output_reg_to_smem[
     MutAnyOrigin,
     address_space=AddressSpace.SHARED,
 ]:
+    """Stores the output accumulator registers from local memory into shared memory.
+
+    Selects the `stmatrix`-based path for float32 accumulators with half-precision
+    output and aligned depths, otherwise falls back to a per-thread
+    `copy_local_to_shared` store.
+
+    Parameters:
+        output_type: DType of the values written to shared memory.
+        accum_type: DType of the accumulator values held in registers.
+        num_m_mmas: Number of MMA tiles in the M dimension of the output
+            register tile.
+        o_frag_size: Number of elements per output fragment per MMA tile.
+        BM: Block size in the query-row (M) dimension of the output tile.
+        BN: Block size in the key/value (N) dimension of the output warp tile.
+        padded_depth: Head dimension padded to the MMA alignment boundary.
+        swizzle: Shared-memory swizzle pattern applied to the output store
+            layout.
+        num_consumer: Number of consumer warp groups writing the output
+            concurrently.
+
+    Args:
+        tid: Thread index of the calling thread, used to derive the warp-group
+            thread index for the stmatrix path.
+        local_warp_group_idx: Index of the calling warp group among the
+            consumer warp groups.
+        warp_y: Row index of the calling warp's 16-row tile within the
+            BM-row output block.
+        q_smem: Base pointer to shared memory where the output tile is stored.
+        output_reg_tile: Local register tile holding the accumulator output
+            fragments.
+    """
     accum_smem_tile = LayoutTensor[
         output_type,
         Layout.row_major(BM, padded_depth),

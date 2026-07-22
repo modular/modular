@@ -13,7 +13,6 @@
 
 from std.ffi import _CPointer
 from std.os import abort
-from std.sys.intrinsics import _type_is_eq
 
 from std.python import PythonObject as PO  # for brevity of signatures below
 from std.python._cpython import PyObjectPtr
@@ -202,27 +201,23 @@ struct PyObjectFunction[
     # ===-------------------------------------------------------------------===#
 
     comptime _1er_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin]
+        Pointer[Self.self_type, MutAnyOrigin]
     ) thin raises -> PO
-    comptime _1r_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin]
-    ) thin -> PO
-    comptime _1e_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin]
-    ) thin raises
-    comptime _1_self = def(UnsafePointer[Self.self_type, MutAnyOrigin]) thin
+    comptime _1r_self = def(Pointer[Self.self_type, MutAnyOrigin]) thin -> PO
+    comptime _1e_self = def(Pointer[Self.self_type, MutAnyOrigin]) thin raises
+    comptime _1_self = def(Pointer[Self.self_type, MutAnyOrigin]) thin
 
     comptime _1er_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
     ) thin raises -> PO
     comptime _1r_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
     ) thin -> PO
     comptime _1e_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
     ) thin raises
     comptime _1_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
     ) thin
 
     @doc_hidden
@@ -302,27 +297,27 @@ struct PyObjectFunction[
     # ===-------------------------------------------------------------------===#
 
     comptime _2er_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO
+        Pointer[Self.self_type, MutAnyOrigin], PO
     ) thin raises -> PO
     comptime _2r_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO
+        Pointer[Self.self_type, MutAnyOrigin], PO
     ) thin -> PO
     comptime _2e_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO
+        Pointer[Self.self_type, MutAnyOrigin], PO
     ) thin raises
-    comptime _2_self = def(UnsafePointer[Self.self_type, MutAnyOrigin], PO) thin
+    comptime _2_self = def(Pointer[Self.self_type, MutAnyOrigin], PO) thin
 
     comptime _2er_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
     ) thin raises -> PO
     comptime _2r_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
     ) thin -> PO
     comptime _2e_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
     ) thin raises
     comptime _2_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
     ) thin
 
     @doc_hidden
@@ -402,35 +397,33 @@ struct PyObjectFunction[
     # ===-------------------------------------------------------------------===#
 
     comptime _3er_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO
     ) thin raises -> PO
     comptime _3r_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO
     ) thin -> PO
     comptime _3e_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO
     ) thin raises
-    comptime _3_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO
-    ) thin
+    comptime _3_self = def(Pointer[Self.self_type, MutAnyOrigin], PO, PO) thin
 
     comptime _3er_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO, ** kwargs: PO,
     ) thin raises -> PO
     comptime _3r_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO, ** kwargs: PO,
     ) thin -> PO
     comptime _3e_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO, ** kwargs: PO,
     ) thin raises
     comptime _3_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO, ** kwargs: PO,
     ) thin
@@ -512,38 +505,38 @@ struct PyObjectFunction[
     # ===-------------------------------------------------------------------===#
 
     comptime _4er_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO
     ) thin raises -> PO
     comptime _4r_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO
     ) thin -> PO
     comptime _4e_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO
     ) thin raises
     comptime _4_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO
     ) thin
 
     comptime _4er_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO, ** kwargs: PO,
     ) thin raises -> PO
     comptime _4r_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO, ** kwargs: PO,
     ) thin -> PO
     comptime _4e_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO, ** kwargs: PO,
     ) thin raises
     comptime _4_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO, ** kwargs: PO,
@@ -880,41 +873,41 @@ struct PyObjectFunction[
     # ===-------------------------------------------------------------------===#
 
     comptime _5er_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
     ) thin raises -> PO
     comptime _5r_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
     ) thin -> PO
     comptime _5e_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
     ) thin raises
     comptime _5_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
     ) thin
 
     comptime _5er_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
         a3: PO, ** kwargs: PO,
     ) thin raises -> PO
     comptime _5r_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
         a3: PO, ** kwargs: PO,
     ) thin -> PO
     comptime _5e_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
         a3: PO, ** kwargs: PO,
     ) thin raises
     comptime _5_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
@@ -1088,20 +1081,20 @@ struct PyObjectFunction[
     # ===-------------------------------------------------------------------===#
 
     comptime _6er_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
     ) thin raises -> PO
     comptime _6r_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
     ) thin -> PO
     comptime _6e_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
     ) thin raises
     comptime _6_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
     ) thin
 
     comptime _6er_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
@@ -1109,7 +1102,7 @@ struct PyObjectFunction[
         a4: PO, ** kwargs: PO,
     ) thin raises -> PO
     comptime _6r_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
@@ -1117,7 +1110,7 @@ struct PyObjectFunction[
         a4: PO, ** kwargs: PO,
     ) thin -> PO
     comptime _6e_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
@@ -1125,7 +1118,7 @@ struct PyObjectFunction[
         a4: PO, ** kwargs: PO,
     ) thin raises
     comptime _6_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
@@ -1300,20 +1293,20 @@ struct PyObjectFunction[
     # ===-------------------------------------------------------------------===#
 
     comptime _7er_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO
     ) thin raises -> PO
     comptime _7r_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO
     ) thin -> PO
     comptime _7e_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO
     ) thin raises
     comptime _7_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO
     ) thin
 
     comptime _7er_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
@@ -1322,7 +1315,7 @@ struct PyObjectFunction[
         a5: PO, ** kwargs: PO,
     ) thin raises -> PO
     comptime _7r_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
@@ -1331,7 +1324,7 @@ struct PyObjectFunction[
         a5: PO, ** kwargs: PO,
     ) thin -> PO
     comptime _7e_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
@@ -1340,7 +1333,7 @@ struct PyObjectFunction[
         a5: PO, ** kwargs: PO,
     ) thin raises
     comptime _7_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
@@ -1516,20 +1509,20 @@ struct PyObjectFunction[
     # ===-------------------------------------------------------------------===#
 
     comptime _8er_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO, PO
     ) thin raises -> PO
     comptime _8r_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO, PO
     ) thin -> PO
     comptime _8e_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO, PO
     ) thin raises
     comptime _8_self = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO, PO
+        Pointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO, PO
     ) thin
 
     comptime _8er_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
@@ -1539,7 +1532,7 @@ struct PyObjectFunction[
         a6: PO, ** kwargs: PO,
     ) thin raises -> PO
     comptime _8r_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
@@ -1549,7 +1542,7 @@ struct PyObjectFunction[
         a6: PO, ** kwargs: PO,
     ) thin -> PO
     comptime _8e_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
@@ -1559,7 +1552,7 @@ struct PyObjectFunction[
         a6: PO, ** kwargs: PO,
     ) thin raises
     comptime _8_self_kwargs = def(
-        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
@@ -1766,8 +1759,8 @@ struct PyObjectFunction[
     @staticmethod
     @always_inline("nodebug")
     def _get_self_arg(
-        py_self: PythonObject,
-    ) -> UnsafePointer[Self.self_type, MutAnyOrigin]:
+        py_self: PO,
+    ) -> Pointer[Self.self_type, MutAnyOrigin]:
         """Get the appropriate self argument for method calls with automatic downcasting.
 
         Args:
@@ -1780,9 +1773,9 @@ struct PyObjectFunction[
             This function will abort if downcasting fails for non-PythonObject types.
         """
 
-        comptime assert not _type_is_eq[
-            Self.self_type, NoneType
-        ](), "Cannot get self arg for NoneType"
+        comptime assert (
+            Self.self_type != NoneType
+        ), "Cannot get self arg for NoneType"
         try:
             return py_self.downcast_value_ptr[Self.self_type]()
         except e:
@@ -1803,7 +1796,7 @@ struct PyObjectFunction[
     @staticmethod
     @always_inline("nodebug")
     def _has_type[other_func_type: TrivialRegisterPassable]() -> Bool:
-        return _type_is_eq[Self.func_type, other_func_type]()
+        return Self.func_type == other_func_type
 
     @staticmethod
     @always_inline("nodebug")
@@ -1985,7 +1978,7 @@ struct PyObjectFunction[
     ](
         func: Self.func_type,
         py_self: PO,
-        args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
+        args: Pointer[PyObjectPtr, MutUntrackedOrigin],
         nargs: Int,
     ) raises -> PO:
         """Compile-time dispatch for METH_FASTCALL non-kwargs function/method
@@ -2014,7 +2007,7 @@ struct PyObjectFunction[
         elif Self._has_arity(1):
             comptime if not is_method:
                 check_arguments_arity(1, nargs)
-                var a0 = PO(from_borrowed=args[0])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
                 comptime if Self._has_type[Self._1er]():
                     return rebind[Self._1er](func)(a0)
                 elif Self._has_type[Self._1r]():
@@ -2054,8 +2047,8 @@ struct PyObjectFunction[
         elif Self._has_arity(2):
             comptime if not is_method:
                 check_arguments_arity(2, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
                 comptime if Self._has_type[Self._2er]():
                     return rebind[Self._2er](func)(a0, a1)
                 elif Self._has_type[Self._2r]():
@@ -2068,7 +2061,7 @@ struct PyObjectFunction[
                     return PO(None)
             else:
                 check_arguments_arity(1, nargs)
-                var a0 = PO(from_borrowed=args[0])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
                 comptime if Self._has_type[Self._2er]():
                     return rebind[Self._2er](func)(py_self, a0)
                 elif Self._has_type[Self._2r]():
@@ -2096,9 +2089,9 @@ struct PyObjectFunction[
         elif Self._has_arity(3):
             comptime if not is_method:
                 check_arguments_arity(3, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
                 comptime if Self._has_type[Self._3er]():
                     return rebind[Self._3er](func)(a0, a1, a2)
                 elif Self._has_type[Self._3r]():
@@ -2111,8 +2104,8 @@ struct PyObjectFunction[
                     return PO(None)
             else:
                 check_arguments_arity(2, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
                 comptime if Self._has_type[Self._3er]():
                     return rebind[Self._3er](func)(py_self, a0, a1)
                 elif Self._has_type[Self._3r]():
@@ -2144,10 +2137,10 @@ struct PyObjectFunction[
         elif Self._has_arity(4):
             comptime if not is_method:
                 check_arguments_arity(4, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
                 comptime if Self._has_type[Self._4er]():
                     return rebind[Self._4er](func)(a0, a1, a2, a3)
                 elif Self._has_type[Self._4r]():
@@ -2160,9 +2153,9 @@ struct PyObjectFunction[
                     return PO(None)
             else:
                 check_arguments_arity(3, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
                 comptime if Self._has_type[Self._4er]():
                     return rebind[Self._4er](func)(py_self, a0, a1, a2)
                 elif Self._has_type[Self._4r]():
@@ -2194,11 +2187,11 @@ struct PyObjectFunction[
         elif Self._has_arity(5):
             comptime if not is_method:
                 check_arguments_arity(5, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
-                var a4 = PO(from_borrowed=args[4])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
+                var a4 = PO(from_borrowed=args[unsafe_offset=4])
                 comptime if Self._has_type[Self._5er]():
                     return rebind[Self._5er](func)(a0, a1, a2, a3, a4)
                 elif Self._has_type[Self._5r]():
@@ -2211,10 +2204,10 @@ struct PyObjectFunction[
                     return PO(None)
             else:
                 check_arguments_arity(4, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
                 comptime if Self._has_type[Self._5er]():
                     return rebind[Self._5er](func)(py_self, a0, a1, a2, a3)
                 elif Self._has_type[Self._5r]():
@@ -2246,12 +2239,12 @@ struct PyObjectFunction[
         elif Self._has_arity(6):
             comptime if not is_method:
                 check_arguments_arity(6, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
-                var a4 = PO(from_borrowed=args[4])
-                var a5 = PO(from_borrowed=args[5])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
+                var a4 = PO(from_borrowed=args[unsafe_offset=4])
+                var a5 = PO(from_borrowed=args[unsafe_offset=5])
                 comptime if Self._has_type[Self._6er]():
                     return rebind[Self._6er](func)(a0, a1, a2, a3, a4, a5)
                 elif Self._has_type[Self._6r]():
@@ -2264,11 +2257,11 @@ struct PyObjectFunction[
                     return PO(None)
             else:
                 check_arguments_arity(5, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
-                var a4 = PO(from_borrowed=args[4])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
+                var a4 = PO(from_borrowed=args[unsafe_offset=4])
                 comptime if Self._has_type[Self._6er]():
                     return rebind[Self._6er](func)(py_self, a0, a1, a2, a3, a4)
                 elif Self._has_type[Self._6r]():
@@ -2300,13 +2293,13 @@ struct PyObjectFunction[
         elif Self._has_arity(7):
             comptime if not is_method:
                 check_arguments_arity(7, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
-                var a4 = PO(from_borrowed=args[4])
-                var a5 = PO(from_borrowed=args[5])
-                var a6 = PO(from_borrowed=args[6])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
+                var a4 = PO(from_borrowed=args[unsafe_offset=4])
+                var a5 = PO(from_borrowed=args[unsafe_offset=5])
+                var a6 = PO(from_borrowed=args[unsafe_offset=6])
                 comptime if Self._has_type[Self._7er]():
                     return rebind[Self._7er](func)(a0, a1, a2, a3, a4, a5, a6)
                 elif Self._has_type[Self._7r]():
@@ -2319,12 +2312,12 @@ struct PyObjectFunction[
                     return PO(None)
             else:
                 check_arguments_arity(6, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
-                var a4 = PO(from_borrowed=args[4])
-                var a5 = PO(from_borrowed=args[5])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
+                var a4 = PO(from_borrowed=args[unsafe_offset=4])
+                var a5 = PO(from_borrowed=args[unsafe_offset=5])
                 comptime if Self._has_type[Self._7er]():
                     return rebind[Self._7er](func)(
                         py_self, a0, a1, a2, a3, a4, a5
@@ -2360,14 +2353,14 @@ struct PyObjectFunction[
         elif Self._has_arity(8):
             comptime if not is_method:
                 check_arguments_arity(8, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
-                var a4 = PO(from_borrowed=args[4])
-                var a5 = PO(from_borrowed=args[5])
-                var a6 = PO(from_borrowed=args[6])
-                var a7 = PO(from_borrowed=args[7])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
+                var a4 = PO(from_borrowed=args[unsafe_offset=4])
+                var a5 = PO(from_borrowed=args[unsafe_offset=5])
+                var a6 = PO(from_borrowed=args[unsafe_offset=6])
+                var a7 = PO(from_borrowed=args[unsafe_offset=7])
                 comptime if Self._has_type[Self._8er]():
                     return rebind[Self._8er](func)(
                         a0, a1, a2, a3, a4, a5, a6, a7
@@ -2384,13 +2377,13 @@ struct PyObjectFunction[
                     return PO(None)
             else:
                 check_arguments_arity(7, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
-                var a4 = PO(from_borrowed=args[4])
-                var a5 = PO(from_borrowed=args[5])
-                var a6 = PO(from_borrowed=args[6])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
+                var a4 = PO(from_borrowed=args[unsafe_offset=4])
+                var a5 = PO(from_borrowed=args[unsafe_offset=5])
+                var a6 = PO(from_borrowed=args[unsafe_offset=6])
                 comptime if Self._has_type[Self._8er]():
                     return rebind[Self._8er](func)(
                         py_self, a0, a1, a2, a3, a4, a5, a6

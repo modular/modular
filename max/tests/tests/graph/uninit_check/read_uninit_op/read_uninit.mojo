@@ -17,13 +17,13 @@ allocator poison + MOJO_STDLIB_SIMD_UNINIT_CHECK detection pipeline
 works correctly.
 """
 
-import compiler
+import extensibility
 
 from std.gpu.host import DeviceContext
 from extensibility import InputTensor, OutputTensor
 
 
-@compiler.register("read_uninit_output")
+@extensibility.register("read_uninit_output")
 struct ReadUninitOutput:
     """Reads from the output tensor before writing to it.
 

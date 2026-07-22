@@ -195,6 +195,9 @@ def _build_overlap_smoke_graph(
     binding rule ("Pinned tensors can only be used in place of CPU
     graph inputs"), even though the runtime ``DevicePinnedBuffer``'s
     ``.device`` is the accelerator.
+
+    Both pinned and scratch use int32 because the bitmask is packed:
+    one bit per vocab token stored in 32-bit words.
     """
     device_ref = DeviceRef.from_device(accelerator)
     with Graph(
@@ -403,6 +406,9 @@ def _build_overlap_smoke_graph_with_output(
     might let ``execute`` return as soon as work is queued, which would
     defeat the timing-based hoist detection in
     :func:`test_in_graph_h2d_is_gated_by_wait_host_value`.
+
+    Both pinned and scratch use int32 because the bitmask is packed:
+    one bit per vocab token stored in 32-bit words.
     """
     device_ref = DeviceRef.from_device(accelerator)
     with Graph(

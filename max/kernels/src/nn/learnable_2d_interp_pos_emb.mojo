@@ -68,13 +68,13 @@ def _gpu_kernel[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     XLayoutType: TensorLayout,
-    x_origin: ImmutOrigin,
+    x_origin: ImmOrigin,
     WeightLayoutType: TensorLayout,
-    weight_origin: ImmutOrigin,
+    weight_origin: ImmOrigin,
     GridLayoutType: TensorLayout,
-    grid_origin: ImmutOrigin,
+    grid_origin: ImmOrigin,
     TimeLayoutType: TensorLayout,
-    time_origin: ImmutOrigin,
+    time_origin: ImmOrigin,
 ](
     output: TileTensor[dtype, OutputLayoutType, output_origin],
     x: TileTensor[dtype, XLayoutType, x_origin],
@@ -194,6 +194,9 @@ def learnable_2d_interp_pos_emb[
     from (H, W) to (h, w), optionally adds temporal sincos embedding, and
     adds the result element-wise to ``x``.
 
+    Parameters:
+        dtype: Element type of ``x``, ``weight``, and ``output``.
+
     Args:
         output: (L, dim) output tensor.
         x: (L, dim) input patch embeddings.
@@ -221,13 +224,13 @@ def learnable_2d_interp_pos_emb[
         output.LayoutType,
         output.origin,
         x.LayoutType,
-        ImmutOrigin(x.origin),
+        ImmOrigin(x.origin),
         weight.LayoutType,
-        ImmutOrigin(weight.origin),
+        ImmOrigin(weight.origin),
         grid_thws.LayoutType,
-        ImmutOrigin(grid_thws.origin),
+        ImmOrigin(grid_thws.origin),
         time_weight.LayoutType,
-        ImmutOrigin(time_weight.origin),
+        ImmOrigin(time_weight.origin),
     ]
     ctx.enqueue_function[kernel](
         output,

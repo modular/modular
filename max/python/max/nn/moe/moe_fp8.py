@@ -19,7 +19,11 @@ from typing import TypeVar
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
-from ..comm.ep.ep_kernels import ep_mxfp4_max_padded_m, fused_silu
+from ..comm.ep.ep_kernels import (
+    ep_mxfp4_down_slot_stride,
+    ep_mxfp4_max_padded_m,
+    fused_silu,
+)
 from ..kernels import moe_create_indices
 from .moe import MoE
 from .quant_strategy import (
@@ -68,19 +72,14 @@ class MoEQuantized(MoE):
         op (the dispatch output shape depends on this flag); the EP forward
         driver calls it once per layer before dispatch.
 
-        The fold writes the up-proj (KS224, ``ep_wait``) and down-proj (KS64,
-        ``fused_silu``) A-scale directly into the grouped-matmul slot layout,
-        dropping the standalone preshuffle kernels from the decode critical
-        path. It is enabled whenever this is an MXFP4 preshuffled-B EP layer and
-        the selected dispatch path wires the fold. It implements standard SiLU
-        only, so OAI-clamped SwiGLU (e.g. gpt-oss) is excluded and routed
-        through the generic quantize path.
+        The fold writes the up-proj A-scale during dispatch and the down-proj
+        A-scale during ``fused_silu`` directly into the grouped-matmul slot
+        layout, dropping the standalone preshuffle kernels from the decode
+        critical path.
 
         Args:
-            dispatch_supports_fold: Whether the dispatch path selected for this
-                forward threads the fold params. The multi-device single-op
-                ``call_distributed_ep_dispatch`` does not, so the fold stays off
-                there and the standalone preshuffle runs.
+            dispatch_supports_fold: Whether the selected dispatch path threads the
+                fold parameters.
         """
         if self._ep_batch_manager is None:
             return
@@ -89,7 +88,6 @@ class MoEQuantized(MoE):
             and self.quant_config is not None
             and self.quant_config.is_mxfp4
             and self.quant_config.mxfp4_preshuffled_b
-            and not self.use_swigluoai
         )
 
     @property
@@ -293,9 +291,10 @@ class MoEQuantized(MoE):
         # grouped-matmul A-scale directly into the matmul's per-expert slot
         # layout, so the standalone preshuffle kernels are dropped.  `ep_wait`
         # does this for the up/gate proj (KS224) and `fused_silu` for the down
-        # proj (KS64); both share the SAME graph-build-time `max_padded_M`
-        # (single source of truth — the dispatch producer wrote the up-proj
-        # scales with it, and the matmul reader MUST use the same constant).
+        # proj (KS64). For SiLU both share the SAME graph-build-time
+        # `max_padded_M`; for OAI-clamped SwiGLU the up fold stays off and the
+        # down proj folds locally via the independent `ep_mxfp4_down_slot_stride`.
+        # Each matmul reader MUST use the constant its own producer wrote with.
         # Read the flag the EP forward driver already resolved via
         # `configure_ep_scale_fusion` (single source of truth) so the matmul
         # reader and the dispatch producer agree on the slot layout.
@@ -308,10 +307,31 @@ class MoEQuantized(MoE):
             if mxfp4_ep_scale_fusion
             else 0
         )
+        # Decode cap = global decode batch; sizes the preb direct grid.y. 0
+        # disables (full-stride fallback).
+        mxfp4_decode_grid_m_cap = (
+            self.ep_batch_manager.config.max_batch_size
+            if self._ep_batch_manager
+            else 0
+        )
         # The up-proj reads its A-scale from the dispatched tokens, which
         # `ep_wait` wrote in slot layout when the fusion is on.
         up_a_scales_preshuffled = (
             isinstance(strategy, Mxfp4Strategy) and mxfp4_ep_scale_fusion
+        )
+        # Local SwiGLU down-proj A-scale fold: fold the down scale into the matmul
+        # slot layout, dropping the standalone preshuffle. Independent of the
+        # distributed up-fold above, so it engages on M3's distributed path.
+        mxfp4_down_slot_stride = (
+            ep_mxfp4_down_slot_stride(self.ep_batch_manager.config)
+            if (
+                self._ep_batch_manager
+                and self.use_swigluoai
+                and isinstance(strategy, Mxfp4Strategy)
+                and self.quant_config is not None
+                and self.quant_config.mxfp4_preshuffled_b
+            )
+            else 0
         )
 
         if self._can_fuse_swiglu_nvfp4():
@@ -328,13 +348,13 @@ class MoEQuantized(MoE):
                 swiglu_limit=self.swiglu_limit,
             )
         else:
-            if isinstance(strategy, Mxfp4Strategy) and not self.use_swigluoai:
-                # MXFP4 EP fold: ep_wait writes the up-proj A-scale
-                # (KS224) and fused_silu the down-proj A-scale (KS64) directly
-                # into the grouped-matmul slot layout. This covers standard
-                # SiLU only; OAI-clamped SwiGLU (e.g. gpt-oss) is excluded in
-                # `configure_ep_scale_fusion` and handled by the generic path
-                # below.
+            if isinstance(strategy, Mxfp4Strategy):
+                # MXFP4 EP down path: fuse activation (SiLU or clamped SwiGLU) +
+                # MXFP4 quantize in one kernel. Up-proj A-scale folds into the
+                # slot layout when the dispatch fold is on (KS224, ep_wait); the
+                # down-proj A-scale folds (KS64) when it's on OR, for OAI-SwiGLU,
+                # via the local down-slot stride; else the standalone preshuffle
+                # runs.
                 gate_up = strategy.grouped_matmul(
                     self.gate_up_proj,
                     gate_up_scales,
@@ -343,12 +363,17 @@ class MoEQuantized(MoE):
                     # KS224: ep_wait wrote the up-proj A-scale in slot layout.
                     a_scales_preshuffled=up_a_scales_preshuffled,
                     a_scales_max_padded_m=mxfp4_ep_max_padded_m,
+                    decode_grid_m_cap=mxfp4_decode_grid_m_cap,
                 )
                 down_in, silu_scales = strategy.fused_silu_quantize(
                     gate_up,
                     input_scales=None,
                     expert_inputs=expert_inputs,
-                    max_padded_M=mxfp4_ep_max_padded_m,
+                    max_padded_M=mxfp4_ep_max_padded_m
+                    or mxfp4_down_slot_stride,
+                    clamp_activation=self.use_swigluoai,
+                    swiglu_alpha=self.swiglu_alpha,
+                    swiglu_limit=self.swiglu_limit,
                 )
             else:
                 gate_up = strategy.grouped_matmul(
@@ -386,17 +411,18 @@ class MoEQuantized(MoE):
 
         down_inputs = (down_in, silu_scales) + expert_inputs[2:]
         if isinstance(strategy, Mxfp4Strategy):
+            # Whichever producer wrote the down A-scale in slot layout (up-fold or
+            # local SwiGLU down-fold; the other is 0), the reader stride MUST match
+            # that constant, not the runtime per-expert max, or it reads wrong scales.
+            down_slot_stride = mxfp4_ep_max_padded_m or mxfp4_down_slot_stride
             return strategy.grouped_matmul(
                 self.down_proj,
                 down_scales,
                 expert_inputs=down_inputs,
                 estimated_total_m=estimated_total_m,
-                # KS64: fused_silu wrote the down-proj A-scale in slot layout.
-                a_scales_preshuffled=mxfp4_ep_max_padded_m > 0,
-                # Reader slot stride MUST equal the constant the producer wrote
-                # with (single source of truth) — not the runtime per-expert
-                # max — or the matmul reads the wrong expert's scales.
-                a_scales_max_padded_m=mxfp4_ep_max_padded_m,
+                a_scales_preshuffled=down_slot_stride > 0,
+                a_scales_max_padded_m=down_slot_stride,
+                decode_grid_m_cap=mxfp4_decode_grid_m_cap,
             )
         return strategy.grouped_matmul(
             self.down_proj,
@@ -445,7 +471,10 @@ class MoEQuantized(MoE):
 
         permuted = ops.gather(
             x,
-            ops.cast(token_order // self.num_experts_per_token, DType.int32),
+            ops.cast(
+                ops.floor_div(token_order, self.num_experts_per_token),
+                DType.int32,
+            ),
             axis=0,
         )
 

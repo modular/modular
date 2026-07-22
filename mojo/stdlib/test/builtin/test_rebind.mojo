@@ -82,7 +82,7 @@ def test_rebind_var_does_not_copy_only_moves() raises:
 
 def test_rebind_does_not_call_del() raises:
     var n_dels = 0
-    var counter = DelCounter(UnsafePointer(to=n_dels))
+    var counter = DelCounter(Pointer(to=n_dels))
     var rebound = rebind_var[type_of(counter)](counter^)
     assert_equal(n_dels, 0)
     _ = rebound

@@ -50,22 +50,30 @@ from nn.normalization import _rms_norm_gpu_block_subkernel, _sum_to_mean
 
 def _rms_norm_fused_residual_cpu_2d[
     dtype: DType,
+    InputFnType: ImplicitlyCopyable
+    & def[width: Int](Int, Int) -> SIMD[dtype, width],
+    ResidualInputFnType: ImplicitlyCopyable
+    & def[width: Int](Int, Int) -> SIMD[dtype, width],
+    OutputFnType: ImplicitlyCopyable
+    & def[width: SIMDSize, alignment: Int](
+        Int, Int, SIMD[dtype, width]
+    ) -> None,
+    OutputResidualFnType: ImplicitlyCopyable
+    & def[width: SIMDSize, alignment: Int](
+        Int, Int, SIMD[dtype, width]
+    ) -> None,
+    ResidualReadFnType: ImplicitlyCopyable
+    & def[width: Int](Int, Int) -> SIMD[dtype, width],
     //,
-    input_fn: def[width: Int](Int, Int) capturing -> SIMD[dtype, width],
-    residual_input_fn: def[width: Int](Int, Int) capturing -> SIMD[
-        dtype, width
-    ],
-    output_fn: def[width: SIMDSize, alignment: Int](
-        Int, Int, SIMD[dtype, width]
-    ) capturing -> None,
-    output_residual_fn: def[width: SIMDSize, alignment: Int](
-        Int, Int, SIMD[dtype, width]
-    ) capturing -> None,
-    residual_read_fn: def[width: Int](Int, Int) capturing -> SIMD[dtype, width],
     multiply_before_cast: Bool = True,
 ](
+    input_fn: InputFnType,
+    residual_input_fn: ResidualInputFnType,
+    output_fn: OutputFnType,
+    output_residual_fn: OutputResidualFnType,
+    residual_read_fn: ResidualReadFnType,
     gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     out_shape: IndexList[2],
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
@@ -152,7 +160,9 @@ def _rms_norm_fused_residual_cpu_2d[
         var norm_factor = rsqrt(mean_val + epsilon.cast[intermediate_type]())
 
         # Second pass: apply normalization
-        def _normalize[sw: Int](col: Int) {gamma, weight_offset, mut}:
+        def _normalize[
+            sw: Int
+        ](col: Int) {gamma, weight_offset, residual_read_fn, output_fn, mut}:
             # Read the pre-computed sum values (input + residual) from first pass
             var sum_vals = residual_read_fn[sw](row, col).cast[
                 intermediate_type
@@ -177,28 +187,31 @@ def _rms_norm_fused_residual_cpu_2d[
 def rms_norm_fused_residual_cpu[
     dtype: DType,
     rank: Int,
+    InputFnType: ImplicitlyCopyable
+    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[dtype, width],
+    ResidualInputFnType: ImplicitlyCopyable
+    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[dtype, width],
+    OutputFnType: ImplicitlyCopyable
+    & def[width: SIMDSize, alignment: Int](
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) -> None,
+    OutputResidualFnType: ImplicitlyCopyable
+    & def[width: SIMDSize, alignment: Int](
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) -> None,
+    ResidualReadFnType: ImplicitlyCopyable
+    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[dtype, width],
     //,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
-    residual_input_fn: def[width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing -> SIMD[dtype, width],
-    output_fn: def[width: SIMDSize, alignment: Int](
-        idx: IndexList[rank], val: SIMD[dtype, width]
-    ) capturing -> None,
-    output_residual_fn: def[width: SIMDSize, alignment: Int](
-        idx: IndexList[rank], val: SIMD[dtype, width]
-    ) capturing -> None,
-    residual_read_fn: def[width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing -> SIMD[dtype, width],
-    /,
     multiply_before_cast: Bool = True,
 ](
+    input_fn: InputFnType,
+    residual_input_fn: ResidualInputFnType,
+    output_fn: OutputFnType,
+    output_residual_fn: OutputResidualFnType,
+    residual_read_fn: ResidualReadFnType,
     shape: IndexList[rank],
     gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
@@ -207,6 +220,37 @@ def rms_norm_fused_residual_cpu[
 
     Creates 2D wrapper lambdas that translate (row, col) to IndexList[rank]
     at runtime, avoiding compile-time evaluation issues with _lambda_load.
+
+    Parameters:
+        dtype: Element data type of the tensors (inferred).
+        rank: Tensor rank of `shape` (inferred).
+        InputFnType: Type of the `input_fn` lambda (inferred).
+        ResidualInputFnType: Type of the `residual_input_fn` lambda (inferred).
+        OutputFnType: Type of the `output_fn` lambda (inferred).
+        OutputResidualFnType: Type of the `output_residual_fn` lambda
+            (inferred).
+        ResidualReadFnType: Type of the `residual_read_fn` lambda (inferred).
+        multiply_before_cast: When `True`, multiplies by `gamma` before
+            casting to the output dtype (defaults to `True`).
+
+    Args:
+        input_fn: Lambda that loads the primary input `SIMD[dtype, width]`
+            at a given `IndexList[rank]`.
+        residual_input_fn: Lambda that loads the residual input at a given
+            index.
+        output_fn: Lambda that stores the normalized output at a given
+            index.
+        output_residual_fn: Lambda that stores the summed residual (input
+            plus residual) before normalization.
+        residual_read_fn: Lambda that re-reads the summed residual during
+            the second normalization pass.
+        shape: Shape of the tensors; the last dimension is normalized over.
+        gamma: Scale (weight) vector with shape `(last_dim,)`.
+        epsilon: Small constant added to the RMS denominator.
+        weight_offset: Scalar added to each `gamma` element before scaling.
+        dropout_p: Dropout probability applied to the primary input before
+            the residual add (defaults to 0.0, which disables dropout).
+        seed: RNG seed for dropout.
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
@@ -214,64 +258,163 @@ def rms_norm_fused_residual_cpu[
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
 
     # Create 2D wrapper lambdas that translate indices at runtime
-    @parameter
     @always_inline
     def input_fn_2d[
         simd_width: Int
-    ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
+    ](row: Int, col: Int) {shape, input_fn} -> SIMD[dtype, simd_width]:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width, rank](indices)
 
-    @parameter
     @always_inline
     def residual_input_fn_2d[
         simd_width: Int
-    ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
+    ](row: Int, col: Int) {shape, residual_input_fn} -> SIMD[dtype, simd_width]:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return residual_input_fn[simd_width, rank](indices)
 
-    @parameter
     @always_inline
     def output_fn_2d[
         simd_width: SIMDSize, alignment: Int
-    ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
+    ](row: Int, col: Int, val: SIMD[dtype, simd_width]) {
+        shape, output_fn
+    } -> None:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         output_fn[simd_width, alignment](indices, val)
 
-    @parameter
     @always_inline
     def output_residual_fn_2d[
         simd_width: SIMDSize, alignment: Int
-    ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
+    ](row: Int, col: Int, val: SIMD[dtype, simd_width]) {
+        shape, output_residual_fn
+    } -> None:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         output_residual_fn[simd_width, alignment](indices, val)
 
-    @parameter
     @always_inline
-    def residual_read_fn_2d[sw: Int](row: Int, col: Int) -> SIMD[dtype, sw]:
+    def residual_read_fn_2d[
+        sw: Int
+    ](row: Int, col: Int) {shape, residual_read_fn} -> SIMD[dtype, sw]:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return residual_read_fn[sw, rank](indices)
 
     # Call the 2D core implementation
-    _rms_norm_fused_residual_cpu_2d[
+    _rms_norm_fused_residual_cpu_2d[multiply_before_cast=multiply_before_cast](
         input_fn_2d,
         residual_input_fn_2d,
         output_fn_2d,
         output_residual_fn_2d,
         residual_read_fn_2d,
-        multiply_before_cast=multiply_before_cast,
-    ](
         gamma,
         epsilon,
         weight_offset,
         out_shape=IndexList[2](prod_all_but_last_dim, last_dim),
         dropout_p=dropout_p,
         seed=seed,
+    )
+
+
+def _rms_norm_fused_residual_cpu_entry[
+    dtype: DType,
+    rank: Int,
+    InputFnType: ImplicitlyCopyable
+    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[dtype, width],
+    ResidualInputFnType: ImplicitlyCopyable
+    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[dtype, width],
+    OutputFnType: ImplicitlyCopyable
+    & def[width: SIMDSize, alignment: Int](
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) -> None,
+    OutputResidualFnType: ImplicitlyCopyable
+    & def[width: SIMDSize, alignment: Int](
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) -> None,
+    //,
+    multiply_before_cast: Bool = True,
+](
+    input_fn: InputFnType,
+    residual_input_fn: ResidualInputFnType,
+    output_fn: OutputFnType,
+    output_residual_fn: OutputResidualFnType,
+    shape: IndexList[rank],
+    gamma: TileTensor[dtype, ...],
+    epsilon: Float32,
+    weight_offset: Scalar[dtype],
+    dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
+    seed: UInt64 = 0,
+) raises:
+    """CPU entry point that builds the residual read closure and dispatches.
+
+    The op registration calls this for the CPU target, passing unified closures
+    that capture the underlying tensors. The CPU kernel reads back the
+    `input + residual` values it wrote in its first pass; since we have no
+    direct handle to that buffer here, we recompute them from the input
+    closures, matching the first pass exactly. Keeping this on the CPU path lets
+    the whole chain use runtime closures end to end, while the GPU path keeps
+    its `capturing` comptime closures (see `_rms_norm_fused_residual_impl`).
+    """
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+
+    # Note: we only support reduction along the last dimension
+    if Int(gamma.dim[0]()) != shape[rank - 1]:
+        raise Error(
+            "Gamma size "
+            + String(gamma.dim[0]())
+            + " does not match dimension of reduction "
+            + String(shape[rank - 1])
+            + "."
+        )
+
+    if shape.flattened_length() == 0:
+        # Nothing to do.
+        return
+
+    @always_inline
+    def residual_read_fn[
+        width: Int, _rank: Int
+    ](coords: IndexList[_rank]) {
+        input_fn, residual_input_fn, dropout_p, seed, shape
+    } -> SIMD[dtype, width]:
+        var input_vals = input_fn[width, _rank](coords)
+        var residual_vals = residual_input_fn[width, _rank](coords)
+
+        # Apply dropout if enabled (matching first pass exactly)
+        var zero_scalar = Scalar[dtype](0.0)
+        if dropout_p > zero_scalar:
+            var one_scalar = Scalar[dtype](1.0)
+            var dropout_scale = one_scalar / (one_scalar - dropout_p)
+            var last_dim = shape[_rank - 1]
+            var row = coords.flattened_length() // last_dim
+
+            comptime for i in range(width):
+                var col_idx = coords[_rank - 1] + i
+                var element_offset = row * last_dim + col_idx
+                var generator = Random(seed=seed, offset=UInt64(element_offset))
+                var rng = generator.step_uniform()
+                var rng_val = rng[0].cast[dtype]()
+                if rng_val >= dropout_p:
+                    input_vals[i] = input_vals[i] * dropout_scale
+                else:
+                    input_vals[i] = zero_scalar
+
+        return input_vals + residual_vals
+
+    rms_norm_fused_residual_cpu[multiply_before_cast=multiply_before_cast](
+        input_fn,
+        residual_input_fn,
+        output_fn,
+        output_residual_fn,
+        residual_read_fn,
+        shape,
+        gamma,
+        epsilon,
+        weight_offset,
+        dropout_p,
+        seed,
     )
 
 
@@ -304,12 +447,44 @@ def rms_norm_fused_residual_gpu_block[
     multiply_before_cast: Bool,
 ](
     gamma: TileTensor[dtype, GammaLayout, MutAnyOrigin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     num_cols: Int,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ):
+    """GPU block kernel: fused residual add, optional dropout, and RMS normalization.
+
+    Processes one row per thread block. Each block cooperatively computes the
+    RMS over `num_cols` elements using a warp-level reduction, then normalizes
+    and scales by `gamma + weight_offset`. Input, residual, output, and
+    residual-output are accessed through caller-supplied lambda functions so the
+    kernel can be composed with arbitrary fused load/store patterns.
+
+    Parameters:
+        dtype: Element data type.
+        GammaLayout: Layout of the `gamma` `TileTensor`.
+        simd_width: SIMD vector width used for memory access.
+        max_warps_per_block: Maximum number of warps per block, used to size
+            shared memory.
+        input_fn: Lambda that loads a `SIMD[dtype, width]` vector for
+            `(row, col)`.
+        residual_input_fn: Lambda that loads the residual vector for
+            `(row, col)`.
+        output_fn: Lambda that stores the normalized output vector.
+        output_residual_fn: Lambda that stores the updated residual vector
+            (input + residual, before normalization).
+        multiply_before_cast: When `True`, multiplies by `gamma` before
+            casting to the output dtype.
+
+    Args:
+        gamma: Scale vector with shape `(num_cols,)`.
+        epsilon: Small constant added to the RMS denominator.
+        weight_offset: Scalar added to each `gamma` element before scaling.
+        num_cols: Number of columns in the input row.
+        dropout_p: Dropout probability; 0.0 disables dropout.
+        seed: RNG seed for dropout.
+    """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     var shared_mem = external_memory[
@@ -409,12 +584,41 @@ def rms_norm_fused_residual_gpu[
 ](
     shape: IndexList[rank, ...],
     gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
+    """Dispatches the fused RMS-norm-plus-residual kernel on GPU.
+
+    Selects the optimal SIMD width and warp count for `shape`, then enqueues
+    `rms_norm_fused_residual_gpu_block` on `ctx`. Input, residual, normalized
+    output, and residual output are all accessed through caller-supplied
+    lambdas, enabling fusion with arbitrary prologue/epilogue patterns.
+
+    Parameters:
+        dtype: Element data type.
+        rank: Tensor rank of `shape`.
+        input_fn: Lambda that loads a `SIMD[dtype, width]` for a given index.
+        residual_input_fn: Lambda that loads the residual value for a given index.
+        output_residual_fn: Lambda that stores the summed residual value.
+        output_fn: Lambda that stores the normalized output value.
+        multiply_before_cast: When `True`, multiplies by `gamma` before
+            casting to the output dtype.
+
+    Args:
+        shape: Shape of the input tensor (the last dim is normalized over).
+        gamma: Scale vector with shape `(last_dim,)`.
+        epsilon: Small constant added to the RMS denominator.
+        weight_offset: Scalar added to each `gamma` element before scaling.
+        ctx: Device context for GPU execution.
+        dropout_p: Dropout probability; 0.0 disables dropout.
+        seed: RNG seed for dropout.
+
+    Raises:
+        If the GPU kernel launch fails.
+    """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     if rank == 0:
@@ -527,13 +731,19 @@ def _rms_norm_fused_residual_impl[
 ](
     shape: IndexList[rank],
     gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert is_gpu[target](), (
+        "`_rms_norm_fused_residual_impl` only handles the GPU path; the CPU"
+        " path is dispatched directly from the op registration via"
+        " `_rms_norm_fused_residual_cpu_entry`, where the runtime closures can"
+        " capture the underlying tensors."
+    )
 
     # Note: we only support reduction along the last dimension
     if Int(gamma.dim[0]()) != shape[rank - 1]:
@@ -549,72 +759,21 @@ def _rms_norm_fused_residual_impl[
         # Nothing to do.
         return
 
-    comptime if is_gpu[target]():
-        rms_norm_fused_residual_gpu[
-            input_0_fn,
-            input_1_fn,
-            output_residual_fn,
-            output_fn,
-            multiply_before_cast=multiply_before_cast,
-        ](
-            shape,
-            gamma,
-            epsilon,
-            weight_offset,
-            ctx,
-            dropout_p,
-            seed,
-        )
-    else:
-        # Create a read function that re-computes the sum (matching first pass)
-        # This is needed because we don't have direct access to the residual output buffer
-        @__copy_capture(dropout_p, seed, shape)
-        @parameter
-        @always_inline
-        def residual_read_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            var input_vals = input_0_fn[width, _rank](coords)
-            var residual_vals = input_1_fn[width, _rank](coords)
-
-            # Apply dropout if enabled (matching first pass exactly)
-            var zero_scalar = Scalar[dtype](0.0)
-            if dropout_p > zero_scalar:
-                var one_scalar = Scalar[dtype](1.0)
-                var dropout_scale = one_scalar / (one_scalar - dropout_p)
-                var last_dim = shape[_rank - 1]
-                var row = coords.flattened_length() // last_dim
-
-                comptime for i in range(width):
-                    var col_idx = coords[_rank - 1] + i
-                    var element_offset = row * last_dim + col_idx
-                    var generator = Random(
-                        seed=seed, offset=UInt64(element_offset)
-                    )
-                    var rng = generator.step_uniform()
-                    var rng_val = rng[0].cast[dtype]()
-                    if rng_val >= dropout_p:
-                        input_vals[i] = input_vals[i] * dropout_scale
-                    else:
-                        input_vals[i] = zero_scalar
-
-            return input_vals + residual_vals
-
-        rms_norm_fused_residual_cpu[
-            input_0_fn,
-            input_1_fn,
-            output_fn,
-            output_residual_fn,
-            residual_read_fn,
-            multiply_before_cast=multiply_before_cast,
-        ](
-            shape,
-            gamma,
-            epsilon,
-            weight_offset,
-            dropout_p,
-            seed,
-        )
+    rms_norm_fused_residual_gpu[
+        input_0_fn,
+        input_1_fn,
+        output_residual_fn,
+        output_fn,
+        multiply_before_cast=multiply_before_cast,
+    ](
+        shape,
+        gamma,
+        epsilon,
+        weight_offset,
+        ctx,
+        dropout_p,
+        seed,
+    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -645,12 +804,47 @@ def rms_norm_fused_residual[
 ](
     shape: IndexList[rank],
     gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
+    """Applies fused residual add and RMS layer normalization.
+
+    Computes `output = rms_norm(input + residual) * (gamma + weight_offset)`
+    and writes the updated residual `input + residual` to `output_residual_fn`.
+    Dispatches to a CPU or GPU implementation based on `target`.
+
+    All tensor accesses go through caller-supplied lambdas, which lets the
+    graph compiler fuse adjacent elementwise prologue/epilogue operations
+    without materializing intermediate buffers.
+
+    Parameters:
+        dtype: Element data type.
+        rank: Tensor rank of `shape`.
+        input_0_fn: Lambda that loads the primary input.
+        input_1_fn: Lambda that loads the residual input.
+        output_0_fn: Lambda that stores the normalized output.
+        output_residual_fn: Lambda that stores the summed residual before
+            normalization.
+        target: Compilation target, e.g. `"cpu"` or `"gpu"`.
+        multiply_before_cast: When `True`, multiplies by `gamma` before
+            casting to the output dtype.
+
+    Args:
+        shape: Shape of the tensors; the last dimension is normalized over.
+        gamma: Scale (weight) vector with shape `(last_dim,)`.
+        epsilon: Small constant added to the RMS denominator.
+        weight_offset: Scalar added to each `gamma` element before scaling.
+        ctx: Device context for GPU execution; unused on CPU.
+        dropout_p: Dropout probability applied to the primary input before the
+            residual add; 0.0 disables dropout.
+        seed: RNG seed for dropout.
+
+    Raises:
+        If the GPU kernel launch fails.
+    """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     @always_inline

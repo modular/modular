@@ -75,6 +75,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     maximum,
     apply_mask,
     peel_mask,
+    scale_pack_o_row,
 )
 from nn.attention.mha_mask import MHAMask, TileMaskStatus, MaskStrategy
 from nn.attention.mha_operand import MHAOperand
@@ -96,6 +97,7 @@ def depth512_scale_write_output[
     output_type: DType,
     qkv_dtype: DType,
     config: Depth512SM100Config[qkv_dtype],
+    tma_bpo: Int = 0,
 ](
     tid: UInt32,
     m_row: UInt32,
@@ -105,10 +107,15 @@ def depth512_scale_write_output[
     tmem_addr: UInt32,
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
-        config.swizzle_mode,
+        TensorMapSwizzle.SWIZZLE_NONE,
         BM=config.BM,
         BN=config.ov_depth,
+        middle_dim=_,
         group=config.group if config.fuse_gqa else 1,
+        # `tma_bpo` (blocks per batched TMA op) is inferred from the store arg:
+        # full depth (one batched copy: rank-4 group==1, rank-5 group>1),
+        # 0 => per-block (swizzled-output fallback).
+        tma_blocks_per_op=tma_bpo,
     ],
     num_output_rows: Int32,
     out_head_idx: UInt32,
@@ -120,6 +127,28 @@ def depth512_scale_write_output[
       physical TMEM cols per phase, with is_lower determining output col base.
     !split_o (d256): Single phase. Each thread processes MMA_M*ov_depth/256
       physical TMEM cols. All threads write to col base 0.
+
+    Parameters:
+        output_type: DType of the output store to global memory.
+        qkv_dtype: DType of the Q/K/V inputs; specializes the config.
+        config: Depth512 SM100 kernel config struct (tile sizes, split_o).
+        tma_bpo: Blocks per batched TMA op; 0 selects the per-block
+            swizzled-output fallback, nonzero selects a full-depth batched
+            copy (defaults to 0).
+
+    Args:
+        tid: Thread ID within the softmax warpgroup.
+        m_row: M-row index within the BM tile (0..BM-1).
+        is_lower: True for the lower half of paired threads in split_o
+            mode; selects the O column base.
+        inv_row_sum: Reciprocal of the total row sum used to normalize O.
+        smem: Shared-memory allocator holding the O buffer.
+        tmem_addr: Base TMEM address for the O accumulator tiles.
+        ragged_tma_store: Ragged TMA descriptor for the output store.
+        num_output_rows: Dynamic output row count for the TMA store; 0
+            skips the store.
+        out_head_idx: Output head index passed to the TMA store.
+        out_row_idx: Output row index passed to the TMA store.
     """
     comptime accum_dtype = DType.float32
     comptime BM = config.BM
@@ -136,10 +165,24 @@ def depth512_scale_write_output[
 
     # Output SMEM base (reuses Q buffer).
     var o_smem = smem.o_smem[output_type]()
+    # O SMEM is row-major (SWIZZLE_NONE): the gmem output is row-major and the
+    # O accumulator is loaded one-row-per-thread, so no swizzle is needed and
+    # the per-row writes stay bank-conflict-free (8 rows * 16 B = 128 B = all
+    # 32 banks once). O's TMA store swizzle is decoupled from `config.swizzle_mode`
+    # (which still governs the swizzled Q/K/V/S/P buffers).
+    comptime o_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE
     # O SMEM must match tile_layout_k_major[BM, ov_depth] for TMA store.
-    # Decompose col into k-block + inner offset, swizzle only the inner part.
-    comptime o_swizzle = make_swizzle[output_type, config.swizzle_mode]()
-    comptime o_sw_K = config.swizzle_mode.bytes() // size_of[output_type]()
+    # Decompose col into k-block + inner offset; SWIZZLE_NONE makes the inner
+    # swizzle the identity, so the layout is plain row-major within each k-block.
+    comptime o_swizzle = make_swizzle[output_type, o_swizzle_mode]()
+    comptime o_sw_K = o_swizzle_mode.bytes() // size_of[output_type]()
+    # ov_depth is a multiple of o_sw_K for every supported head size.
+    comptime n_blocks = config.ov_depth // o_sw_K
+    comptime batched = tma_bpo > 0
+    comptime if batched:
+        comptime assert (
+            tma_bpo == n_blocks
+        ), "batched depth512 store expects a full-depth box (single issuer)."
 
     # ---- Helper: load from TMEM, scale, write to SMEM --------------------
     @parameter
@@ -159,27 +202,20 @@ def depth512_scale_write_output[
                 width=batch_size,
             ]((o_tmem + col_offset).addr)
 
-            # Scale and cast in groups of 8, write to swizzled SMEM.
+            # Scale+pack each group of 8 into one 16 B row-major (SWIZZLE_NONE)
+            # store (f32x2 compute, wide store; see scale_pack_o_row).
             comptime for g in range(batch_size // 8):
                 comptime base = g * 8
-                var vals: SIMD[accum_dtype, 8] = {
-                    o_vals[base],
-                    o_vals[base + 1],
-                    o_vals[base + 2],
-                    o_vals[base + 3],
-                    o_vals[base + 4],
-                    o_vals[base + 5],
-                    o_vals[base + 6],
-                    o_vals[base + 7],
-                }
-                vals = vals * inv_row_sum
+                var packed = scale_pack_o_row[output_type, w=8, start=base](
+                    o_vals, inv_row_sum
+                )
 
                 var col = col_base + col_offset + base
                 var o_k_block = col // o_sw_K
                 var o_inner = Int(m_row) * o_sw_K + col % o_sw_K
                 (o_smem + o_k_block * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
                     Scalar[DType.uint32]
-                ]().store(bitcast[DType.uint32, 4](vals.cast[output_type]()))
+                ]().store(packed)
 
     comptime if config.split_o:
         comptime ov_quarter = config.ov_depth // 4
@@ -204,22 +240,29 @@ def depth512_scale_write_output[
     var local_warp_idx = (tid // UInt32(WARP_SIZE)) % 4
 
     if local_warp_idx == 0:
-        if e != 0:
-            fence_async_view_proxy()
-        comptime swizzle_granularity = config.swizzle_mode.bytes() // size_of[
-            output_type
-        ]()
-        comptime num_col_chunks = config.ov_depth // swizzle_granularity
-        comptime for col in range(num_col_chunks):
-            if e != 0:
+        fence_async_view_proxy()
+        comptime if batched:
+            # Single full-depth batched copy (no combine path). Covers fused GQA
+            # too: the RaggedTMA3DTile selector merge keeps group>1 within the
+            # 5D limit (rank-5; rank-4 for group==1).
+            ragged_tma_store.async_copy_batched[0](
+                o_smem,
+                ragged_idx=out_row_idx,
+                dynamic_dim=UInt32(num_output_rows),
+                middle_idx=out_head_idx,
+                elect=e,
+            )
+        else:
+            # tma_bpo == 0: swizzled-output fallback -> one per-block TMA each.
+            comptime for col in range(n_blocks):
                 ragged_tma_store.async_copy_from_col[col](
                     o_smem,
                     ragged_idx=out_row_idx,
                     dynamic_dim=UInt32(num_output_rows),
                     middle_idx=out_head_idx,
+                    elect=e,
                 )
-        if e != 0:
-            cp_async_bulk_commit_group()
+        cp_async_bulk_commit_group()
 
     # Wait for all TMA stores to complete.
     cp_async_bulk_wait_group[0]()
@@ -242,15 +285,51 @@ def depth512_softmax[
     scale: Float32,
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
-        config.swizzle_mode,
+        TensorMapSwizzle.SWIZZLE_NONE,
         BM=config.BM,
         BN=config.ov_depth,
+        middle_dim=_,
         group=config.group if config.fuse_gqa else 1,
+        # Inferred from the store the kernel built; forwarded to the writeback
+        # helper, which infers its own `tma_bpo` from this arg.
+        tma_blocks_per_op=_,
     ],
     num_output_rows: Int32,
     out_head_idx: UInt32,
     out_row_idx: UInt32,
 ):
+    """Runs the online softmax warp group for pair-CTA SM100 attention.
+
+    Loads Q@K' scores (S) from TMEM in pipelined batches, applies the causal
+    mask, computes a running row max and exponentiated probabilities P, writes
+    P to SMEM for the P@V SS MMA, accumulates the row sum, and finally scales
+    the O accumulator by the inverse row sum and TMA-stores the result to
+    global memory. For split_o (d512) configs, cross-thread partial max and
+    sum values are combined via correction SMEM; for d256 each thread owns a
+    unique M row and no exchange is needed.
+
+    Parameters:
+        MaskType: Compile-time mask type for causal/attention masking.
+        qkv_dtype: DType of the Q/K/V inputs; specializes the config.
+        output_type: DType of the output store to global memory.
+        config: Depth512 SM100 kernel config struct (tile sizes, split_o).
+        page_size: KV cache page size in tokens, used for paged-attention
+            masking.
+
+    Args:
+        smem: Shared-memory allocator holding S/P/O buffers and barriers.
+        tmem_addr: Base TMEM address for S and O tiles (read once post
+            cluster_sync).
+        seq_id: Sequence index for mask evaluation.
+        score_row: Row offset of the query tile within the sequence.
+        num_keys: Number of valid key columns for masking.
+        mask: Causal/attention mask applied to score batches.
+        scale: Softmax scale factor (applied in the log2 domain).
+        ragged_tma_store: Ragged TMA descriptor for the output store.
+        num_output_rows: Dynamic output row count for the TMA store.
+        out_head_idx: Output head index for the TMA store.
+        out_row_idx: Output row index for the TMA store.
+    """
     comptime accum_dtype = DType.float32
     comptime BM = config.BM
     comptime BN = config.BN
@@ -303,6 +382,35 @@ def depth512_softmax[
 
     # ---- Scale -----------------------------------------------------------
     var scale_log2e: Scalar[accum_dtype] = scale * log2e
+
+    # ---- FP8 P-scale / lazy-rescale knob ---------------------------------
+    # Fixed P scale for FP8-QKV only. Lifts the un-normalized
+    # softmax probabilities P = exp2(score - row_max) out of the e4m3
+    # subnormal floor before the fp8 cast that feeds the P@V SS MMA, reducing
+    # PV-GEMM quantization error. Since the softmax uses exp2, the scale is
+    # exactly an additive +bias in the exp2 argument (added raw, NOT
+    # multiplied by scale_log2e). row_sum is accumulated from the SAME scaled
+    # P and the output is normalized by 1/row_sum, so the scale cancels
+    # exactly -- no explicit descale. This path has no sink term.
+    #
+    # `p_fp8_bias` and the lazy-rescale gate `rescale_threshold` are the same
+    # knob (both in the exp2/log2 domain), linked as
+    # `p_fp8_bias = 8 + rescale_threshold`:
+    #   fp8 : rescale_threshold = -2,  p_fp8_bias = 6   (a 64x P lift out of
+    #         the e4m3 subnormal floor)
+    #   bf16: rescale_threshold = -8,  p_fp8_bias = 0   (no bias)
+    # The fp8 threshold of -2 (bias 6) was chosen as the perf sweet spot: a
+    # prefill sweep of the threshold magnitude gained ~6% and saturated at
+    # T=2, and it is accuracy-neutral vs the prior x256 default (bit-identical
+    # tail-stress regression test + byte-identical Gemma-4-31B fp8-KV 16k
+    # e2e). The bias is applied ONLY inside `comptime if p_fp8_bias != 0:` so
+    # the bf16 codegen is byte-identical. Overflow-safe: the lazy-rescale
+    # gate (threshold -2) lets a non-rescaled tile's max lag the true max
+    # by up to 2 (log2), so max P = exp2(2 + 6) = 256 < 448 (e4m3 max).
+    comptime rescale_threshold: Scalar[accum_dtype] = Scalar[accum_dtype](
+        -8
+    ) if size_of[qkv_dtype]() >= 2 else Scalar[accum_dtype](-2)
+    comptime p_fp8_bias: Scalar[accum_dtype] = 8 + rescale_threshold
 
     # ---- Barriers --------------------------------------------------------
     var mbars = Depth512MBars[config.num_kv_stages, config.split_o](
@@ -521,8 +629,22 @@ def depth512_softmax[
         comptime vs_len = effective_bn // exp_simd
         comptime score_to_logit_ratio: Int = 4
 
+        # fp8 P scale: fold +p_fp8_bias into the exp2 bias via a single fused
+        # multiply-add, matching score_to_logit's fma_ftz:
+        # fma_ftz(-row_max, scale, p_fp8_bias) = -m*scale + p_fp8_bias, so
+        # score_to_logit = fma(score, scale, -m*scale + p_fp8_bias). ftz is
+        # harmless here -- any fp32 subnormal is lost when P truncates to fp8
+        # anyway. `p_fp8_bias` is the unified P-scale/lazy-rescale knob defined
+        # in the outer scope; `comptime if p_fp8_bias != 0` keeps the bf16
+        # expression byte-identical (no `+ 0.0` instruction emitted).
         var vscale = f32x2(scale_log2e)
-        var vneg_max_scaled = f32x2(-row_max * scale_log2e)
+        var vneg_max_scaled: f32x2
+        comptime if p_fp8_bias != 0:
+            vneg_max_scaled = fma_ftz(
+                f32x2(-row_max), f32x2(scale_log2e), f32x2(p_fp8_bias)
+            )
+        else:
+            vneg_max_scaled = f32x2(-row_max * scale_log2e)
 
         @parameter
         @always_inline
@@ -658,10 +780,6 @@ def depth512_softmax[
     var s_cur_tmem = s_odd_tmem
     var s_nxt_pipeline = pipeline_s_even
     var s_nxt_tmem = s_even_tmem
-
-    comptime rescale_threshold: Float32 = Float32(-8) if size_of[
-        qkv_dtype
-    ]() >= 2 else Float32(0)
 
     @parameter
     @always_inline

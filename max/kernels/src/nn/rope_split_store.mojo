@@ -14,7 +14,7 @@
 """Fused rope + split + KV store kernel.
 
 Reads a flat QKV matmul output, applies RoPE to Q and K regions, stores
-K/V to the paged KV cache, and writes roped Q to the output buffer — all
+K/V to the paged KV cache, and writes roped Q to the output buffer, all
 in a single GPU kernel to eliminate intermediate tensor round-trips.
 """
 
@@ -55,7 +55,7 @@ from std.utils.index import IndexList
 # separately-writable values in the store closure. Disabling the nested-origin
 # exclusivity check is a stopgap workaround; the proper fix is to give the k/v
 # views provably-disjoint origins instead of sharing the collection's.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 @always_inline
 def _rope_split_store_ragged_impl[
     dtype: DType,
@@ -80,7 +80,7 @@ def _rope_split_store_ragged_impl[
 
     The ``get_freq_pos`` closure resolves a head-dimension index and
     token position to the row of ``freqs_cis`` that supplies the RoPE
-    coefficients.  Callers swap in different closures to get
+    coefficients. Callers swap in different closures to get
     cache-derived positions vs. explicit position-ID lookups.
 
     Args:
@@ -124,6 +124,10 @@ def _rope_split_store_ragged_impl[
     var combined_dim = Int(qkv.dim[1]())
     var qk_offset = q_dim + k_dim
 
+    # TODO: This elementwise body captures KV cache views (`CacheType`), which
+    # fail codegen when stored into a unified closure ('pop.store' pointer
+    # element-type verification). Keep using the deprecated parameter-closure
+    # overload until cache captures in unified closures are supported.
     @parameter
     @__copy_capture(
         q_dim,
@@ -242,7 +246,10 @@ def _rope_split_store_ragged_impl[
             if col < qk_offset:
                 # K region: apply rope, store to k_cache.
                 var kv_col = col - q_dim
-                var hi, di = divmod(UInt(kv_col), UInt(kv_params.head_size))
+                var hi, di = divmod(
+                    UInt(kv_col),
+                    UInt(kv_params.head_size),
+                )
                 var freq_pos = get_freq_pos(
                     Int(di), global_token_idx, cache_pos
                 )
@@ -323,7 +330,10 @@ def _rope_split_store_ragged_impl[
                 alignment=align_qkv,
             ]()
             var v_col = col - qk_offset
-            var hi, di = divmod(UInt(v_col), UInt(kv_params.head_size))
+            var hi, di = divmod(
+                UInt(v_col),
+                UInt(kv_params.head_size),
+            )
             var cl = v_cache.value().cache_length(bi)
             v_cache.value().store(
                 bi,
@@ -363,7 +373,7 @@ def _rope_split_store_ragged_impl[
 # `blocks` buffer that share the collection's mutable origins) on to the store
 # impl, so it inherits the same false-positive aliasing rejection. See
 # `_rope_split_store_ragged_impl` for the full rationale. Stopgap workaround.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 @always_inline
 def _rope_split_store_ragged[
     dtype: DType,
@@ -432,7 +442,30 @@ def rope_split_store_paged_ragged[
     q_output: TileTensor[mut=True, q_out_dtype, ...],
     ctx: DeviceContext,
 ) raises:
-    """Rope+split+store with paged KV cache collection."""
+    """Rope+split+store with paged KV cache collection.
+
+    Parameters:
+        dtype: Element type of the QKV input buffer.
+        freq_dtype: Element type of the ``freqs_cis`` RoPE frequency
+            table.
+        q_out_dtype: Element type of the roped Q output buffer (defaults
+            to ``dtype``).
+        target: Compile target backend, for example ``"gpu"`` or
+            ``"cpu"`` (defaults to ``"cpu"``).
+        interleaved: Whether RoPE uses the interleaved real/imag layout
+            (defaults to ``True``).
+
+    Args:
+        qkv: Flat matmul output
+            [total_seq_len, q_dim + k_dim + v_dim].
+        input_row_offsets: [batch_size + 1] ragged offsets.
+        freqs_cis: [max_seq_len, head_dim] interleaved rope frequencies.
+        kv_collection: Paged KV cache collection to store K and V into.
+        layer_idx: Index of the layer whose K/V caches in
+            ``kv_collection`` to store into.
+        q_output: Output buffer for roped Q [total_seq_len, q_dim].
+        ctx: DeviceContext for GPU.
+    """
     var cuda_ctx: Optional[DeviceContext] = None
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
@@ -458,7 +491,7 @@ def rope_split_store_paged_ragged[
 # `blocks` buffer that share the collection's mutable origins) on to the store
 # impl, so it inherits the same false-positive aliasing rejection. See
 # `_rope_split_store_ragged_impl` for the full rationale. Stopgap workaround.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 @always_inline
 def _rope_split_store_ragged_with_position_ids[
     dtype: DType,
@@ -491,7 +524,7 @@ def _rope_split_store_ragged_with_position_ids[
     store K/V to cache.
 
     Like ``_rope_split_store_ragged`` but looks up RoPE frequencies using
-    ``position_ids`` instead of ``cache_length + token_offset``.  When
+    ``position_ids`` instead of ``cache_length + token_offset``. When
     ``mrope_section`` is provided, different head-dimension sections use
     different rows of ``position_ids`` (multi-axis RoPE for VL models).
 
@@ -582,7 +615,37 @@ def rope_split_store_paged_ragged_with_position_ids[
     q_output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext,
 ) raises:
-    """Rope+split+store with paged KV cache and explicit position IDs."""
+    """Rope+split+store with paged KV cache and explicit position IDs.
+
+    Parameters:
+        dtype: Element type of the QKV input buffer.
+        freq_dtype: Element type of the ``freqs_cis`` RoPE frequency
+            table.
+        target: Compile target backend, for example ``"gpu"`` or
+            ``"cpu"`` (defaults to ``"cpu"``).
+        interleaved: Whether RoPE uses the interleaved real/imag layout
+            (defaults to ``True``).
+        mrope_types: Element types of the ``mrope_section`` coord
+            (defaults to an empty `TypeList`).
+        mrope_section: Optional head-dimension section boundaries for
+            multi-axis RoPE; when set, each section indexes a different
+            row of ``position_ids`` (defaults to `None`).
+        PositionIdsLayoutType: Tensor layout of the ``position_ids``
+            buffer (defaults to `RowMajorLayout`).
+
+    Args:
+        qkv: Flat matmul output
+            [total_seq_len, q_dim + k_dim + v_dim].
+        input_row_offsets: [batch_size + 1] ragged offsets.
+        freqs_cis: [max_seq_len, head_dim] interleaved rope frequencies.
+        kv_collection: Paged KV cache collection to store K and V into.
+        position_ids: [num_sections, total_seq_len] explicit position
+            IDs used to look up RoPE frequencies.
+        layer_idx: Index of the layer whose K/V caches in
+            ``kv_collection`` to store into.
+        q_output: Output buffer for roped Q [total_seq_len, q_dim].
+        ctx: DeviceContext for GPU.
+    """
     var cuda_ctx: Optional[DeviceContext] = None
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)

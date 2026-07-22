@@ -17,6 +17,7 @@ from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3 import weight_adapters as llama3_weight_adapters
+from .batch_processor import UnifiedDflashLlama3BatchProcessor
 from .model import UnifiedDflashLlama3Model
 from .model_config import UnifiedDflashLlama3Config
 
@@ -33,7 +34,6 @@ unified_dflash_llama3_arch = SupportedArchitecture(
     pipeline_model=UnifiedDflashLlama3Model,
     context_type=TextContext,
     tokenizer=TextTokenizer,
-    rope_type="normal",
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     weight_adapters={
@@ -41,4 +41,6 @@ unified_dflash_llama3_arch = SupportedArchitecture(
     },
     task=PipelineTask.TEXT_GENERATION,
     config=UnifiedDflashLlama3Config,
+    supports_device_graph_capture=False,
+    batching=UnifiedDflashLlama3BatchProcessor,
 )

@@ -381,18 +381,27 @@ class StackedMoE(Module, Shardable):
         # FP8 scales (only for non-MXFP4 float8)
         if self.quant_config and self.quant_config.format != QuantFormat.MXFP4:
             block_size = self.quant_config.weight_scale.block_size
-            assert block_size is not None, "FP8 MoE requires block scaling"
+            if self.quant_config.weight_scale.is_rowwise:
+                # Per-output-channel (rowwise) scales, e.g. compressed-tensors
+                # FP8-dynamic: one scale per expert output channel. Stored in
+                # the same [E, out_features, 1] layout the matmul transposes to
+                # a per-N scale. ``gate_up`` output is the concatenated
+                # 2 * moe_dim; ``down`` output is hidden_dim.
+                gate_up_scale_shape = [self.num_experts, 2 * self.moe_dim, 1]
+                down_scale_shape = [self.num_experts, self.hidden_dim, 1]
+            else:
+                assert block_size is not None, "FP8 MoE requires block scaling"
 
-            gate_up_scale_shape = [
-                self.num_experts,
-                ceildiv(self.hidden_dim, block_size[0]),
-                ceildiv(2 * self.moe_dim, block_size[1]),
-            ]
-            down_scale_shape = [
-                self.num_experts,
-                ceildiv(self.moe_dim, block_size[0]),
-                ceildiv(self.hidden_dim, block_size[1]),
-            ]
+                gate_up_scale_shape = [
+                    self.num_experts,
+                    ceildiv(self.hidden_dim, block_size[0]),
+                    ceildiv(2 * self.moe_dim, block_size[1]),
+                ]
+                down_scale_shape = [
+                    self.num_experts,
+                    ceildiv(self.moe_dim, block_size[0]),
+                    ceildiv(self.hidden_dim, block_size[1]),
+                ]
 
             self._gate_up_scale = Weight(
                 name="experts.gate_up_proj_scale",

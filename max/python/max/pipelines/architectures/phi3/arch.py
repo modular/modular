@@ -38,7 +38,6 @@ phi3_arch = SupportedArchitecture(
     pipeline_model=Phi3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type="longrope",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
@@ -46,4 +45,6 @@ phi3_arch = SupportedArchitecture(
     config=Llama3Config,
     batching=Llama3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

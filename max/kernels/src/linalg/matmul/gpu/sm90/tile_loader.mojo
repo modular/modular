@@ -39,7 +39,7 @@ from std.gpu.sync import async_copy_arrive
 from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
-from std.sys import simd_width_of
+from std.sys import simd_width_of, size_of
 from std.utils.index import IndexList
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 
@@ -175,7 +175,7 @@ struct CPAsyncBarrierHandler(BarrierHandler):
 
 
 struct TileLoaderTMA[
-    tma_origin: ImmutOrigin,
+    tma_origin: ImmOrigin,
     dtype: DType,
     tma_rank: Int,
     tile_shape: IndexList[tma_rank],
@@ -260,7 +260,7 @@ struct TileLoaderTMA[
         """
         comptime assert type_of(dst).dtype == Self._dtype
         # Materialize the inferred destination as an exact TileTensor type for
-        # TMA overload resolution.  The trait method accepts any shared-memory
+        # TMA overload resolution. The trait method accepts any shared-memory
         # TileTensor, but TMATensorTile is parameterized on Self._dtype.
         var dst_exact = TileTensor[
             mut=True,
@@ -269,7 +269,6 @@ struct TileLoaderTMA[
             origin=MutAnyOrigin,
             address_space=AddressSpace.SHARED,
             linear_idx_type=type_of(dst).linear_idx_type,
-            element_size=type_of(dst).element_size,
         ](
             dst.ptr.mut_cast[True]()
             .unsafe_origin_cast[MutAnyOrigin]()
@@ -408,26 +407,26 @@ struct TileLoaderCPAsync[
             Coord(coords[0], coords[1])
         ).vectorize[1, Self.vector_size]()
 
-        # Perform the async copy with bounds checking and swizzling.  Rebind
+        # Perform the async copy with bounds checking and swizzling. Rebind
         # through an exact destination type so the dtype parameter can unify
         # across the source and destination TileTensor arguments.
-        var dst_vec_any = dst.as_unsafe_any_origin().vectorize[
-            1, Self.vector_size
-        ]()
-        var dst_vec = TileTensor[
+        # Materialize an exact, any-origin destination tile from the raw
+        # pointer (non-vectorized `PointerStorage[element_width=1]`), then vectorize it.
+        # Vectorized tiles cannot be reconstructed directly from a pointer.
+        var dst_exact = TileTensor[
             mut=True,
             dtype=Self._dtype,
-            LayoutType=type_of(dst_vec_any).LayoutType,
+            LayoutType=type_of(dst).LayoutType,
             origin=MutAnyOrigin,
             address_space=AddressSpace.SHARED,
-            linear_idx_type=type_of(dst_vec_any).linear_idx_type,
-            element_size=type_of(dst_vec_any).element_size,
+            linear_idx_type=type_of(dst).linear_idx_type,
         ](
-            dst_vec_any.ptr.mut_cast[True]()
+            dst.ptr.mut_cast[True]()
             .unsafe_origin_cast[MutAnyOrigin]()
             .bitcast[Scalar[Self._dtype]](),
-            dst_vec_any.layout,
+            dst.layout,
         )
+        var dst_vec = dst_exact.vectorize[1, Self.vector_size]()
         async_copy_with_bound_check[
             Self.thread_layout,
             Self.swizzle_mode,
@@ -469,12 +468,15 @@ def async_copy_with_bound_check[
     The method also handles shared memory swizzling to avoid bank conflicts
     and maximize memory bandwidth utilization.
 
-    Template Parameters:
-        dtype: Data type of the elements.
-        src_layout: Layout of the source tile.
-        dst_layout: Layout of the destination tile.
-        thread_layout: Thread arrangement for distributed copying.
-        swizzle_mode: Swizzling pattern for bank conflict avoidance.
+    Parameters:
+        dtype: Element type of the source and destination tiles (inferred).
+        src_layout: Static layout of the source tile in global memory (inferred).
+        dst_layout: Static layout of the destination tile in shared memory
+            (inferred).
+        thread_layout: Thread mapping that partitions the source and
+            destination tiles across threads.
+        swizzle_mode: Shared memory swizzle pattern applied to avoid bank
+            conflicts.
 
     Args:
         src: Source tensor fragment in global memory.

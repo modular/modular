@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides CPU and GPU implementations of the argmax and argmin reduction operations."""
 
 
 # ===-----------------------------------------------------------------------===#

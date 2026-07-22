@@ -94,6 +94,13 @@ def parse_args() -> argparse.Namespace:
         default=10.0,
         help="Minimum acceptable bandwidth in GiB/s (default: 10.0).",
     )
+    p.add_argument(
+        "--device",
+        choices=["gpu", "cpu"],
+        default="gpu",
+        help="Buffer placement: gpu (default) or cpu (host DRAM; lets the "
+        "transfer run on GPU-less hosts with a CPU-flavor plugin).",
+    )
     return p.parse_args()
 
 
@@ -118,15 +125,16 @@ class WorkloadConfig:
     tp_size: int  # number of GPU shards
 
 
-def _allocate_device_buffers(role: str, cfg: WorkloadConfig) -> list[Buffer]:
-    """Allocate one GPU buffer per TP shard.
+def _allocate_device_buffers(
+    role: str, cfg: WorkloadConfig, device_kind: str
+) -> list[Buffer]:
+    """Allocate one buffer per TP shard, on GPU or host DRAM.
 
     Sender pages are filled with sentinel values (page i gets value i+1) so
     scatter bugs are detectable on the receiver. Receiver buffers are zeroed.
     """
     buffers = []
     for rank in range(cfg.tp_size):
-        device = Accelerator(rank)
         total = cfg.num_pages * cfg.bytes_per_page
         if role == "sender":
             buf = np.empty(total, dtype=np.int8)
@@ -136,7 +144,11 @@ def _allocate_device_buffers(role: str, cfg: WorkloadConfig) -> list[Buffer]:
                 ) + 1
         else:
             buf = np.zeros(total, dtype=np.int8)
-        buffers.append(Buffer.from_numpy(buf).to(device))
+        host_buffer = Buffer.from_numpy(buf)
+        if device_kind == "gpu":
+            buffers.append(host_buffer.to(Accelerator(rank)))
+        else:
+            buffers.append(host_buffer)
     return buffers
 
 
@@ -344,7 +356,7 @@ def main() -> None:
     # Phase 1: establish ZMQ connection before creating the NIXL engine so
     # the EFA endpoint has a peer in its AV table from the start.
     sock = _setup_zmq(args.role, args.sender_addr)
-    all_blocks = _allocate_device_buffers(args.role, cfg)
+    all_blocks = _allocate_device_buffers(args.role, cfg, args.device)
     engine = KVTransferEngine(
         f"engine_{args.role}", [all_blocks], total_num_pages=cfg.num_pages
     )

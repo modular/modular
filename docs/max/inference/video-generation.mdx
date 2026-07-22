@@ -5,8 +5,6 @@ description: Generate videos from text prompts or animate existing images using 
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import ListingCard from '@site/src/components/Listing/ListingCard';
-import ListingCards from '@site/src/components/Listing/ListingCards';
 import InstallModular from '../../_includes/install-modular.mdx';
 import InstallOpenAI from '../../_includes/install-openai.mdx';
 import Requirements from '@site/src/components/Requirements';
@@ -320,14 +318,10 @@ For the full list of supported video generation models, see
 Now that you can generate videos, explore other inference capabilities and
 deployment options.
 
-<ListingCards>
-  <ListingCard title="Image generation"
-    url="/max/inference/image-generation"
-    description="Generate images from text prompts or transform existing images using the MAX v1/responses endpoint" />
-  <ListingCard title="Image and video to text"
-    url="/max/inference/image-to-text"
-    description="Use the MAX chat completions endpoint with image or video input to generate descriptions and answer questions about visual content" />
-  <ListingCard title="Deploy MAX on GPU with self-hosted endpoints"
-    url="/max/deploy/local-to-cloud"
-    description="Learn how to deploy MAX pipelines to cloud" />
-</ListingCards>
+- [Image generation](/max/inference/image-generation): Generate images from
+  text prompts or transform existing images using the MAX v1/responses endpoint.
+- [Image and video to text](/max/inference/image-to-text): Use the MAX chat
+  completions endpoint with image or video input to generate descriptions and
+  answer questions about visual content.
+- [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
+  Learn how to deploy MAX pipelines to cloud.

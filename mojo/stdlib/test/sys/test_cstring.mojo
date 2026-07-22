@@ -35,7 +35,7 @@ def test_init_from_invalid_string() raises:
 
 def test_init_from_invalid_byte_span() raises:
     with assert_raises(contains="not nul-terminated"):
-        _ = CStringSlice(Span[Byte, ImmutUntrackedOrigin]())
+        _ = CStringSlice(Span[Byte, ImmUntrackedOrigin]())
 
     with assert_raises(contains="not nul-terminated"):
         _ = CStringSlice(Span[Byte]([Byte(1), Byte(2)]))
@@ -141,7 +141,7 @@ def test_c_string_external_call() raises:
     var string = "THIS-ENV-VAR-DOES-NOT-EXIST-MOJO-IS-COOL"
     var result = external_call[
         "getenv",
-        Optional[CStringSlice[StaticConstantOrigin]],
+        Optional[CStringSlice[ImmStaticOrigin]],
     ](string.as_c_string_slice())
     assert_false(result)
 

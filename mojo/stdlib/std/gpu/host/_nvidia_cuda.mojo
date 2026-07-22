@@ -56,7 +56,7 @@ def CUDA(ctx: DeviceContext) raises -> CUcontext:
             "AsyncRT_DeviceContext_cuda_context",
             _CString[],
         ](
-            UnsafePointer(to=result),
+            Pointer(to=result),
             ctx._handle,
         )
     )
@@ -74,7 +74,7 @@ def CUDA(stream: DeviceStream) raises -> CUstream:
             "AsyncRT_DeviceStream_cuda_stream",
             _CString[],
         ](
-            UnsafePointer(to=result),
+            Pointer(to=result),
             stream._handle,
         )
     )
@@ -91,7 +91,7 @@ def CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
             "AsyncRT_DeviceFunction_cuda_module",
             _CString[],
         ](
-            UnsafePointer(to=result),
+            Pointer(to=result),
             func._handle,
         )
     )
@@ -103,7 +103,7 @@ def CUDA_get_current_context() raises -> CUcontext:
     # const char *AsyncRT_DeviceContext_cuda_current_context(CUcontext *result)
     _checked(
         external_call["AsyncRT_DeviceContext_cuda_current_context", _CString[]](
-            UnsafePointer(to=result),
+            Pointer(to=result),
         )
     )
     return result

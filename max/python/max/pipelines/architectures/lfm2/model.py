@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
@@ -23,20 +22,18 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
 )
-from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.modeling.types import RequestID
-from max.support.algorithm import flatten2d
+from typing_extensions import override
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
+from .batch_processor import LFM2BatchProcessor
 from .lfm2 import LFM2
 from .model_config import LFM2Config
 
@@ -202,6 +199,7 @@ class LFM2Model(LlamaModelBase):
     """LFM2 hybrid (full-attention + conv) pipeline model."""
 
     model_config_cls: ClassVar[type[Any]] = LFM2Config
+    batch_processor_cls: ClassVar[type[LFM2BatchProcessor]] = LFM2BatchProcessor
 
     norm_method = "rms_norm"
     attention_bias = False
@@ -216,6 +214,7 @@ class LFM2Model(LlamaModelBase):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -226,6 +225,7 @@ class LFM2Model(LlamaModelBase):
             adapter,
             return_logits,
             return_hidden_states,
+            max_batch_size=max_batch_size,
         )
         num_conv_layers = sum(
             1 for t in self._model_config.layer_types if t != "full_attention"
@@ -235,18 +235,16 @@ class LFM2Model(LlamaModelBase):
             hidden_size=self._model_config.hidden_size,
             conv_kernel=self._model_config.conv_L_cache,
             dtype=self._model_config.dtype,
-            max_slots=self.pipeline_config.runtime.max_batch_size or 1,
+            max_slots=self.max_batch_size,
             device=self.devices[0],
         )
+        if self._batch_processor is not None:
+            bind = getattr(self._batch_processor, "bind_conv_cache", None)
+            if bind is not None:
+                bind(self._conv_cache)
 
-    def _build_graph(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-    ) -> Graph:
-        state_dict = parse_state_dict_from_weights(
-            self.pipeline_config, weights, adapter
-        )
+    @override
+    def _create_model_config(self, state_dict: dict[str, Any]) -> LFM2Config:
         model_config = LFM2Config.initialize(self.pipeline_config)
         model_config.finalize(
             huggingface_config=self.huggingface_config,
@@ -255,7 +253,16 @@ class LFM2Model(LlamaModelBase):
             return_hidden_states=self.return_hidden_states,
         )
         self._model_config = model_config
+        return model_config
 
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: LFM2Config,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
         model = LFM2(model_config)
         model.load_state_dict(
             state_dict,
@@ -263,7 +270,7 @@ class LFM2Model(LlamaModelBase):
             weight_alignment=1,
             strict=True,
         )
-        self.state_dict = model.state_dict()
+        weights_registry = model.state_dict()
         self._num_kv_inputs = len(self.kv_params.flattened_kv_inputs())
 
         with Graph(
@@ -282,7 +289,7 @@ class LFM2Model(LlamaModelBase):
                 conv_states=conv_inputs,
             )
             graph.output(*outputs)
-            return graph
+            return graph, weights_registry
 
     def _num_logit_outputs(self) -> int:
         has_offsets = self.return_logits in (
@@ -327,26 +334,6 @@ class LFM2Model(LlamaModelBase):
             )
         return ModelOutputs(
             logits=logit_outputs[0], next_token_logits=logit_outputs[0]
-        )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> LFM2Inputs:
-        base = super().prepare_initial_token_inputs(
-            replica_batches, kv_cache_inputs, return_n_logits
-        )
-        context_batch = flatten2d(replica_batches)
-        request_ids = [ctx.request_id for ctx in context_batch]
-        for rid in request_ids:
-            self._conv_cache.claim(rid)
-        conv_states = self._conv_cache.get_states(request_ids)
-        return LFM2Inputs(
-            **{f.name: getattr(base, f.name) for f in dataclasses.fields(base)},
-            conv_states=conv_states,
-            request_ids=request_ids,
         )
 
     def release(self, request_id: RequestID) -> None:

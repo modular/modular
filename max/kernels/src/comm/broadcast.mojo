@@ -68,6 +68,21 @@ def broadcast_multimem_kernel[
 
     Root GPU writes to multicast address, data appears on all GPUs.
     Only root performs the stores; other GPUs just participate in barriers.
+
+    Parameters:
+        dtype: Element data type of the input and output tensors.
+        Layout: `TensorLayout` shared by both tensors.
+        BLOCK_SIZE: Number of threads per thread block.
+        ngpus: Number of GPUs participating in the broadcast.
+        simd_width: Vector width used for memory access (defaults to the
+            device-native SIMD width for `dtype`).
+
+    Args:
+        output: Output `TileTensor` for this GPU.
+        input: Input `TileTensor` (root's data, readable via P2P).
+        rank_sigs: Per-GPU `Signal` pointers for barrier synchronization.
+        my_rank: Rank of this GPU in the communicator.
+        root: Rank of the source GPU whose data is broadcast to all GPUs.
     """
     var my_sig = rank_sigs[my_rank]
 
@@ -126,7 +141,7 @@ def broadcast_multimem_kernel[
 
             # Handle any remaining sub-chunk elements with an overlapping
             # write that re-stores the last min_mm_width elements of the
-            # buffer.  The overlap is harmless because the data is identical.
+            # buffer. The overlap is harmless because the data is identical.
             comptime if min_mm_width > 1:
                 if (
                     tail_count % min_mm_width != 0
@@ -161,6 +176,28 @@ def broadcast_pull_1stage_kernel[
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
 ):
+    """Single-stage pull broadcast kernel: each GPU reads root's input directly.
+
+    All GPUs participate in the start and end barriers; after the start barrier
+    every GPU copies the root's input buffer to its own output buffer using a
+    grid-strided vectorized load/store loop. This one-stage path is preferred
+    for small messages (up to a few MiB) and for 2-GPU configurations where
+    the 2-stage scatter/gather overhead is not justified.
+
+    Parameters:
+        dtype: Element data type of the input and output tensors.
+        layout: `TensorLayout` shared by both tensors.
+        BLOCK_SIZE: Number of threads per thread block.
+        ngpus: Number of GPUs participating in the broadcast.
+        simd_width: Vector width used for memory access (defaults to the
+            device-native SIMD width for `dtype`).
+
+    Args:
+        output: Output `TileTensor` for this GPU.
+        input: Input `TileTensor` (root's data, readable via P2P).
+        rank_sigs: Per-GPU `Signal` pointers for barrier synchronization.
+        my_rank: Rank of this GPU in the communicator.
+    """
     var my_sig = rank_sigs[my_rank]
 
     # --- Thread Indexing ---

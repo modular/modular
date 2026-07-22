@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
-from enum import Enum, IntEnum
+from enum import Enum
 from pathlib import Path
 
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -39,17 +39,6 @@ class APIType(Enum):
 class RunnerType(Enum):
     PYTORCH = "pytorch"
     TOKEN_GEN = "token_gen"
-
-
-class MetricLevel(IntEnum):
-    """Metric levels in increasing granularity"""
-
-    # no metrics
-    NONE = 0
-    # basic api-worker and model worker metrics. minimal performance impact.
-    BASIC = 10
-    # high detail metrics. may impact performance
-    DETAILED = 20
 
 
 class MetricRecordingMethod(Enum):
@@ -115,6 +104,38 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_METRICS_ENDPOINT_PORT",
     )
 
+    max_queue_size: int | None = Field(
+        description=(
+            "Cap (N) on the request queue to the model worker. The queue to "
+            "the worker is bounded to roughly this many in-transit requests; "
+            "once full, new requests are rejected immediately with HTTP 429 "
+            "instead of being enqueued, giving a self-calibrating backpressure "
+            "mechanism to keep latency within SLAs. Enforced approximately via "
+            "the ZeroMQ high-water mark. Pair with 'max_pending_requests' so "
+            "the worker stops draining the queue under load and it actually "
+            "backs up. Defaults to None (unbounded)."
+        ),
+        default=None,
+        ge=0,
+        alias="MAX_SERVE_MAX_QUEUE_SIZE",
+    )
+    max_pending_requests: int | None = Field(
+        description=(
+            "Cap (M) on the scheduler's pending (context-encoding / prefill) "
+            "queue depth. When set, the model worker stops pulling new requests "
+            "from the request queue once it already holds this many "
+            "not-yet-running requests, so excess backlog stays in the bounded "
+            "request queue and exerts backpressure rather than growing the "
+            "worker's unbounded pending pool. Long requests that hold batch/KV "
+            "space keep this queue full and shed new admissions sooner. Should "
+            "be at least 'max_batch_size' to keep the scheduler fed. Defaults "
+            "to None (unbounded)."
+        ),
+        default=None,
+        ge=1,
+        alias="MAX_SERVE_MAX_PENDING_REQUESTS",
+    )
+
     # File URI configuration
     allowed_image_roots: list[str] = Field(
         description="List of allowed root directories for file:// URI access",
@@ -126,10 +147,42 @@ class Settings(BaseSettings):
         default=20 * 1024 * 1024,  # 20MiB
         alias="MAX_SERVE_MAX_LOCAL_IMAGE_BYTES",
     )
+    # Media (image/video) resolution configuration for http(s):// and data:
+    # URIs. ``max_bytes`` is a server-level cap applied on top of any
+    # per-model cap (the smaller of the two wins); 0 disables the
+    # server-level cap. ``media_kind`` is only the default label used in
+    # size-limit error messages when a resolver caller does not pass one.
+    max_bytes: int = Field(
+        description=(
+            "Server-level maximum size in bytes for media resolved from "
+            "http(s):// or data: URIs. Applied on top of any per-model cap "
+            "(the smaller wins). 0 disables the server-level cap."
+        ),
+        default=0,
+        alias="MAX_SERVE_MAX_BYTES",
+    )
+    media_kind: str = Field(
+        description=(
+            "Default media kind ('image' or 'video') used in size-limit error "
+            "messages when a resolver caller does not specify one."
+        ),
+        default="image",
+        alias="MAX_SERVE_MEDIA_KIND",
+    )
     generated_media_storage_mb: int = Field(
         description="Maximum amount of local disk space in MiB to use for generated image/video artifacts served via /content routes.",
         default=512,
         alias="MAX_SERVE_GENERATED_MEDIA_STORAGE_MB",
+    )
+    reject_invalid_utf8: bool = Field(
+        default=False,
+        description=(
+            "When True, reject a request whose text contains an unpaired UTF-16 "
+            "surrogate with HTTP 400 instead of normalizing it to U+FFFD. Such "
+            "text is valid JSON but not valid UTF-8 -- for example an emoji "
+            "whose surrogate pair was split by client-side truncation."
+        ),
+        alias="MAX_SERVE_REJECT_INVALID_UTF8",
     )
 
     # Telemetry and logging configuration
@@ -187,11 +240,48 @@ class Settings(BaseSettings):
         description="Maximum time to wait for a heartbeat & remain healthy.  This should be longer than ITL",
         alias="MAX_SERVE_MW_HEALTH_FAIL",
     )
+    eplb_profile: bool = Field(
+        default=False,
+        description=(
+            "When True, enables expert-parallel load balancing (EPLB) MoE routing "
+            "histogram profiling in the model worker. The accumulator "
+            "is opt-in and unused unless this flag is set."
+        ),
+        alias="MAX_SERVE_EPLB_PROFILE",
+    )
+
+    gc_debug: bool = Field(
+        default=False,
+        description=(
+            "When True, attaches a CPython garbage-collection callback in the "
+            "model worker that times every GC pass and logs metrics."
+        ),
+        alias="MAX_SERVE_GC_DEBUG",
+    )
+    gc_debug_top_objects: int = Field(
+        default=0,
+        description=(
+            "When gc_debug is enabled and this is greater than zero, log the N "
+            "most common live object types in the collected generation on each "
+            "GC pause. Walks the heap and is expensive; leave at 0 unless "
+            "actively investigating what is filling the heap."
+        ),
+        alias="MAX_SERVE_GC_DEBUG_TOP_OBJECTS",
+    )
 
     telemetry_worker_spawn_timeout: float | None = Field(
         default=None,
         description="Amount of time in seconds to wait for the telemetry worker to spawn and turn healthy",
         alias="MAX_SERVE_TELEMETRY_WORKER_SPAWN_TIMEOUT",
+    )
+
+    graceful_shutdown_timeout_s: int = Field(
+        default=5,
+        description=(
+            "Seconds to wait for in-flight requests to finish after SIGTERM "
+            "before cancelling them and exiting."
+        ),
+        alias="MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S",
     )
 
     metric_recording: MetricRecordingMethod = Field(
@@ -200,24 +290,19 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_METRIC_RECORDING_METHOD",
     )
 
-    metric_level: MetricLevel = Field(
-        default=MetricLevel.BASIC,
-        description="Determines the level of detail in the metrics emitted. Metrics tagged at a higher level will be dropped. This does nothing if metric recording is disabled.",
-        alias="MAX_SERVE_METRIC_LEVEL",
+    stream_min_chunk_tokens: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Minimum number of generated tokens to coalesce into a single "
+            "streaming (SSE) chunk. 1 (default) emits each scheduler response "
+            "as its own chunk with no buffering. Higher values buffer decode "
+            "tokens into larger chunks and suppress empty deltas; the first "
+            "chunk is always flushed early so time-to-first-token is "
+            "unaffected."
+        ),
+        alias="MAX_SERVE_STREAM_MIN_CHUNK_TOKENS",
     )
-
-    detailed_metric_buffer_factor: int = Field(
-        default=20,
-        description="How many detailed metrics to buffer before sending them to the telemetry worker",
-        alias="MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR",
-    )
-
-    @field_validator("metric_level", mode="before")
-    def validate_metric_level(cls, value: str | MetricLevel) -> MetricLevel:
-        # Support string values ("BASIC") even though Metric is an IntEnum
-        if isinstance(value, str):
-            return MetricLevel[value]
-        return value
 
     transaction_recording_file: Path | None = Field(
         default=None,
@@ -308,6 +393,15 @@ class Settings(BaseSettings):
         logger.info(f"    metrics_port           : {self.metrics_port}")
         logger.info(f"    api_types              : {api_types_str}")
         logger.info(f"    operation_mode         : {mode_str}")
+        logger.info(
+            f"    max_queue_size         : "
+            f"{self.max_queue_size if self.max_queue_size is not None else 'unbounded'}"
+        )
+        logger.info(
+            f"    max_pending_requests   : "
+            f"{self.max_pending_requests if self.max_pending_requests is not None else 'unbounded'}"
+        )
+        logger.info(f"    reject_invalid_utf8    : {self.reject_invalid_utf8}")
         logger.info("")
 
         # File System Configuration
@@ -317,6 +411,13 @@ class Settings(BaseSettings):
         logger.info(
             f"    max_local_image_bytes  : {to_human_readable_bytes(self.max_local_image_bytes)}"
         )
+        max_bytes_str = (
+            to_human_readable_bytes(self.max_bytes)
+            if self.max_bytes
+            else "None"
+        )
+        logger.info(f"    max_bytes              : {max_bytes_str}")
+        logger.info(f"    media_kind             : {self.media_kind}")
         logger.info("")
 
         # Metrics and Telemetry Configuration
@@ -324,12 +425,6 @@ class Settings(BaseSettings):
         logger.info("=" * 60)
         logger.info(
             f"    metric_recording       : {self.metric_recording.value}"
-        )
-        logger.info(
-            f"    metric_level           : {self.metric_level.name} ({self.metric_level.value})"
-        )
-        logger.info(
-            f"    detailed_buffer_factor : {self.detailed_metric_buffer_factor}"
         )
         logger.info(f"    disable_telemetry      : {self.disable_telemetry}")
 

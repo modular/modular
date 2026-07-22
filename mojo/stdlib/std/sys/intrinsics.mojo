@@ -61,7 +61,7 @@ def llvm_intrinsic[
 
     comptime intrin_kgen_string = _get_kgen_string[intrin]()
 
-    comptime if _type_is_eq[type, NoneType]():
+    comptime if type == NoneType:
         __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=None,
@@ -140,9 +140,9 @@ def gather[
     """
 
     comptime if size == 1:
-        return UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
+        return Pointer[Scalar[dtype], MutUntrackedOrigin](
             unsafe_from_address=Int(base[0])
-        ).load[invariant=invariant]() if mask else SIMD[dtype, size](
+        ).unsafe_load[invariant=invariant]() if mask else SIMD[dtype, size](
             passthrough[0]
         )
 
@@ -150,9 +150,9 @@ def gather[
         var result = SIMD[dtype, size]()
 
         comptime for i in range(size):
-            result[i] = UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
+            result[i] = Pointer[Scalar[dtype], MutUntrackedOrigin](
                 unsafe_from_address=Int(base[i])
-            ).load[invariant=invariant]() if mask[i] else Scalar[dtype](
+            ).unsafe_load[invariant=invariant]() if mask[i] else Scalar[dtype](
                 passthrough[i]
             )
         return result
@@ -161,7 +161,7 @@ def gather[
         "llvm.masked.gather",
         SIMD[dtype, size]._mlir_type,
     ](
-        UnsafePointer(to=base).bitcast[
+        Pointer(to=base).unsafe_bitcast[
             __mlir_type[`!kgen.simd<`, size._mlir_value, `, address>`],
         ]()[],
         Int32(alignment),
@@ -242,14 +242,14 @@ def scatter[
 
     comptime if size == 1:
         if mask:
-            var ptr = UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
+            var ptr = Pointer[Scalar[dtype], MutUntrackedOrigin](
                 unsafe_from_address=Int(base[0])
             )
-            ptr.store(value[0])
+            ptr.unsafe_store(value[0])
         return
     llvm_intrinsic["llvm.masked.scatter", NoneType](
         value,
-        UnsafePointer(to=base).bitcast[
+        Pointer(to=base).unsafe_bitcast[
             __mlir_type[`!kgen.simd<`, size._mlir_value, `, address>`],
         ]()[],
         Int32(alignment),
@@ -554,7 +554,7 @@ def masked_load[
         return addr.load() if mask else SIMD[dtype, size](passthrough[0])
 
     var result = llvm_intrinsic["llvm.masked.load", SIMD[dtype, size]](
-        addr.bitcast[NoneType]().address,
+        addr.bitcast[NoneType](),
         Int32(alignment),
         mask,
         passthrough,
@@ -598,7 +598,7 @@ def masked_store[
 
     llvm_intrinsic["llvm.masked.store", NoneType](
         value,
-        addr.bitcast[NoneType]().address,
+        addr.bitcast[NoneType](),
         Int32(alignment),
         mask,
     )
@@ -637,7 +637,7 @@ def compressed_store[
 
     llvm_intrinsic["llvm.masked.compressstore", NoneType](
         value,
-        addr.bitcast[NoneType]().address,
+        addr.bitcast[NoneType](),
         mask,
     )
 
@@ -735,58 +735,6 @@ def strided_store[
         * std.math.iota[DType.int, simd_width]()
     )
     scatter(value, offset, mask)
-
-
-# ===-------------------------------------------------------------------===#
-# _type_is_eq
-# ===-------------------------------------------------------------------===#
-
-
-def _type_is_eq[t1: AnyType, t2: AnyType]() -> Bool:
-    """Compares the two type for equality.
-
-    Parameters:
-        t1: The LHS of the type comparison.
-        t2: The RHS of the type comparison.
-
-    Returns:
-        Returns True if t1 and t2 are the same type and False otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        `#kgen.type<`,
-        +t1,
-        `> : !kgen.type`,
-        `,`,
-        `#kgen.type<`,
-        +t2,
-        `> : !kgen.type`,
-        `> : !kgen.scalar<bool>`,
-    ]
-
-
-@always_inline("builtin")
-def _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
-    """Compares the two type for equality at parse-time.
-
-    Parameters:
-        t1: The LHS of the type comparison.
-        t2: The RHS of the type comparison.
-
-    Returns:
-        Returns True if t1 and t2 are the same type and False otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        `#kgen.type<`,
-        +t1,
-        `> : !kgen.type`,
-        `,`,
-        `#kgen.type<`,
-        +t2,
-        `> : !kgen.type`,
-        `> : !kgen.scalar<bool>`,
-    ]
 
 
 # ===----------------------------------------------------------------------=== #

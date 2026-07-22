@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import compiler
+import extensibility
 
 from std.math import ceildiv
 from std.math.uutils import udivmod
@@ -68,7 +68,7 @@ from std.utils import StaticTuple
 from std.utils.index import Index, IndexList
 
 
-@compiler.register("tensor_core_mma")
+@extensibility.register("tensor_core_mma")
 struct TensorCoreMMA[algorithm: StaticString]:
     """
     The central custom operation that dispatches to multiple different

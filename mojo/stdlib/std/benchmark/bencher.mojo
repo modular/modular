@@ -18,6 +18,7 @@ It includes support for throughput metrics, warmup iterations, batch execution,
 and both CPU and GPU kernel benchmarking.
 """
 
+from . import Report, Unit
 import std.time
 from std.collections import Dict, Optional
 import std.format._utils as fmt
@@ -681,12 +682,13 @@ struct Bench(Writable):
             suffix: Suffix string to append to output file name.
         """
         if self.config.out_file:
-            stem = String(self.config.out_file.value())
-            current_suffix = String("")
-            split = stem.split(".")
+            var stem = String(self.config.out_file.value())
+            var current_suffix = String("")
+            var split = stem.split(".")
             if len(split) > 1:
-                stem = ".".join(split[:-1])
                 current_suffix = String(split[len(split) - 1])
+                var new_stem = String(".".join(split[:-1]))
+                stem = new_stem^
 
             self.config.out_file = Path(
                 ".".join(Span[String]([stem + suffix, current_suffix^]))
@@ -986,7 +988,7 @@ struct Bench(Writable):
         @always_inline
         def bench_iter(
             mut b: Bencher,
-        ) {read func,}:
+        ) {imm func,}:
             b.iter(func)
 
         self.bench_function(bench_iter, bench_id, measures=measures)
@@ -1170,8 +1172,7 @@ struct Bench(Writable):
             fixed_iterations: Just run a fixed number of iterations.
         """
 
-        @parameter
-        def bench_fn(mut b: Bencher):
+        def bench_fn(mut b: Bencher) {ref}:
             """Executes benchmark for a target function.
 
             Args:
@@ -1184,9 +1185,8 @@ struct Bench(Writable):
             else:
                 func(b)
 
-        @parameter
         @always_inline
-        def benchmark_fn(num_iters: Int) raises -> Int:
+        def benchmark_fn(num_iters: Int) raises {ref} -> Int:
             """Executes benchmark for a target function.
 
             Args:
@@ -1209,10 +1209,11 @@ struct Bench(Writable):
         var res: Report
 
         if fixed_iterations:
-            res = _run_impl_fixed[benchmark_fn](fixed_iterations.value())
+            res = _run_impl_fixed(benchmark_fn, fixed_iterations.value())
         else:
             res = _run_impl(
-                _RunOptions[benchmark_fn](
+                _RunOptions(
+                    timing_fn=benchmark_fn,
                     num_warmup_iters=self.config.num_warmup_iters,
                     max_iters=self.config.max_iters,
                     min_runtime_secs=self.config.min_runtime_secs,

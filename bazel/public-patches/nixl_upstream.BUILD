@@ -10,6 +10,7 @@
 # `etcd-cpp-api` here.
 
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
@@ -65,8 +66,8 @@ cc_library(
     ]),
     copts = [
         # Upstream's meson defines these on the command line.
-        '-DNIXL_VERSION=\\"1.1.0\\"',
-        '-DNIXL_GIT_HASH=\\"upstream-v1.1.0\\"',
+        '-DNIXL_VERSION=\\"1.3.0\\"',
+        '-DNIXL_GIT_HASH=\\"upstream-v1.3.0\\"',
     ],
     # Upstream's meson sets utils_inc_dirs=src/utils so `#include "common/..."`
     # works; but telemetry.cpp also uses bare `#include "util.h"` which
@@ -159,6 +160,11 @@ cc_library(
         "src/core/nixl_plugin_manager.cpp",
         "src/core/telemetry/buffer_exporter.cpp",
         "src/core/telemetry/buffer_plugin.cpp",
+        # nop_plugin.cpp defines createStaticNOPPlugin(), which
+        # nixl_plugin_manager.cpp references unconditionally via
+        # registerBuiltinPlugins() since upstream v1.3.0. Without it the
+        # consumer link fails with an undefined reference.
+        "src/core/telemetry/nop_plugin.cpp",
         "src/core/telemetry/telemetry.cpp",
     ],
     hdrs = glob([
@@ -366,22 +372,97 @@ cc_library(
 # Upstream's plugin loader (nixl_plugin_manager.cpp) looks for files named
 # `libplugin_<NAME>.so` where <NAME> matches the plugin id (UCX, LIBFABRIC).
 # Use cc_binary with linkshared so Bazel emits exactly those filenames.
+#
+# The GPU-flavored plugins live in per-vendor cuda/ and rocm/ subdirectories
+# (the slash in the target name is what creates the subdir): NIXL discovers
+# plugins by the fixed filename in a single NIXL_PLUGIN_DIR, and one universal
+# linux_x86_64 package serves both GPU vendors, so max._core points that var
+# at the subdir matching the host GPU vendor. The plugin sources are
+# GPU-vendor-agnostic; the flavor difference is which static UCX/libfabric
+# gets folded in.
 cc_binary(
-    name = "libplugin_UCX.so",
+    name = "cuda/libplugin_UCX.so",
     linkopts = [
         "-Wl,-z,undefs",
-        "-Wl,-rpath,$$ORIGIN/../../lib",
+        # Installed layout: <root>/lib/nixl/cuda/ → <root>/lib.
+        "-Wl,-rpath,$$ORIGIN/../../../lib",
     ],
     linkshared = True,
     linkstatic = True,
     target_compatible_with = _LINUX_X86,
-    # Default to the CUDA flavor. Multi-variant selection happens in the
-    # parent BUILD via additional libplugin_*.so targets if needed.
     deps = [":ucx_plugin_lib_cuda"],
 )
 
+# CPU flavor of the UCX plugin, linked against the CUDA-free static UCX
+# (tcp/shm/cma transports only). Unlike the CUDA flavor it has no load-time
+# GPU driver dependencies, so it is dlopen-able on hosts with no GPU stack.
+# The subdirectory in the target name gives the flavor its own directory:
+# NIXL discovers plugins by the fixed filename `libplugin_UCX.so` within a
+# single NIXL_PLUGIN_DIR, so consumers (e.g. the hermetic DRAM transfer tests
+# on CPU-only CI workers) point NIXL_PLUGIN_DIR at the cpu/ directory.
 cc_binary(
-    name = "libplugin_LIBFABRIC.so",
+    name = "cpu/libplugin_UCX.so",
+    linkopts = [
+        "-Wl,-z,undefs",
+    ],
+    linkshared = True,
+    linkstatic = True,
+    target_compatible_with = _LINUX_X86,
+    deps = [":ucx_plugin_lib_cpu"],
+)
+
+# ROCm flavor for AMD-GPU hosts: carries the rocm_copy/rocm_ipc transports
+# (libuct_rocm.a resolves against libhsa-runtime64.so.1 at load time). The
+# non-verbs flavor keeps the plugin loadable on hosts without rdma-core
+# (intranode transfers only); the rocm-verbs flavor below is preferred where
+# rdma-core is present.
+cc_binary(
+    name = "rocm/libplugin_UCX.so",
+    linkopts = [
+        "-Wl,-z,undefs",
+        # Installed layout: <root>/lib/nixl/rocm/ → <root>/lib.
+        "-Wl,-rpath,$$ORIGIN/../../../lib",
+    ],
+    linkshared = True,
+    linkstatic = True,
+    target_compatible_with = _LINUX_X86,
+    deps = [":ucx_plugin_lib_rocm"],
+)
+
+# ROCm + verbs flavor: a strict superset of the rocm flavor that adds the
+# uct_ib RDMA transports for internode transfers (UCX picks transports per
+# connection at runtime — same-node peers still use rocm_ipc/shm). The verbs
+# libs make libibverbs.so.1 and libmlx5.so.1 hard load-time dependencies, so
+# max._core selects this flavor only when those resolve (rdma-core present)
+# and otherwise falls back to the plain rocm flavor above.
+cc_binary(
+    name = "rocm-verbs/libplugin_UCX.so",
+    linkopts = [
+        "-Wl,-z,undefs",
+        # Installed layout: <root>/lib/nixl/rocm-verbs/ → <root>/lib.
+        "-Wl,-rpath,$$ORIGIN/../../../lib",
+    ],
+    linkshared = True,
+    linkstatic = True,
+    target_compatible_with = _LINUX_X86,
+    deps = [
+        ":ucx_plugin_lib_rocm_verbs",
+        # Link against a real libibverbs.so.1 so the plugin's ibv_* undefined
+        # symbols are recorded WITH version info (@IBVERBS_1.1 etc.). Left
+        # unversioned (via -z undefs alone), the dynamic linker binds them to
+        # the IBVERBS_1.0 compat definitions, whose struct ibv_device ABI
+        # differs — device names read as garbage and UCX silently enumerates
+        # zero RDMA devices. The DT_NEEDED this adds is the verbs flavor's
+        # intended hard dependency on rdma-core.
+        "@efa_libfabric_prebuilt//:libibverbs_import",
+    ],
+)
+
+# In cuda/ because it is the CUDA-flavor libfabric build (EFA is an
+# NVIDIA/AWS path; no ROCm libfabric exists) and it must sit in the same
+# directory as the cuda UCX plugin for NIXL's single-dir discovery.
+cc_binary(
+    name = "cuda/libplugin_LIBFABRIC.so",
     linkopts = [
         "-Wl,-z,undefs",
     ],
@@ -424,6 +505,10 @@ cc_binary(
     name = "libnixl.so",
     linkopts = [
         "-Wl,-z,undefs",
+        # Set the SONAME so a downstream link records a clean `libnixl.so`
+        # DT_NEEDED (rather than the bazel link-time path) and the runtime
+        # loader keys off the SONAME.
+        "-Wl,-soname,libnixl.so",
     ],
     linkshared = True,
     linkstatic = True,
@@ -435,6 +520,7 @@ cc_binary(
     name = "libnixl_build.so",
     linkopts = [
         "-Wl,-z,undefs",
+        "-Wl,-soname,libnixl_build.so",
     ],
     linkshared = True,
     linkstatic = True,
@@ -446,11 +532,47 @@ cc_binary(
     name = "libnixl_common.so",
     linkopts = [
         "-Wl,-z,undefs",
+        "-Wl,-soname,libnixl_common.so",
     ],
     linkshared = True,
     linkstatic = True,
     target_compatible_with = _LINUX_X86,
     deps = [":nixl_common"],
+)
+
+# Dynamic-link import of libnixl.so for in-tree consumers (e.g. libmax) that
+# want a DT_NEEDED on libnixl.so instead of folding the NIXL core object code
+# into their own shared object. libnixl.so already folds the full transitive
+# symbol set (core + infra + common + serdes + stream via alwayslink), so a
+# single import resolves everything the `:nixl*` object libraries used to
+# provide. Pair this with `:nixl_api_headers` for the compile-side includes.
+cc_import(
+    name = "nixl_shared",
+    shared_library = ":libnixl.so",
+    target_compatible_with = _LINUX_X86,
+)
+
+# Consumption wrapper for in-tree consumers (libmax, MLRT tests): NIXL public
+# headers everywhere; on linux_x86_64 it also links libnixl.so (:nixl_shared)
+# and carries the dlopen'd transport plugins as runfiles. Degrades to
+# headers-only on macOS/aarch64 (the Linux-only targets enter the graph only via
+# the linux_x86_64 select arm) so downstream targets like libmax still build
+# there. This replaces the former //MLRT:Driver/NIXL wrapper.
+cc_library(
+    name = "nixl_runtime",
+    data = select({
+        "@@//:linux_x86_64": [
+            ":cuda/libplugin_LIBFABRIC.so",
+            ":cuda/libplugin_UCX.so",
+            ":rocm-verbs/libplugin_UCX.so",
+            ":rocm/libplugin_UCX.so",
+        ],
+        "//conditions:default": [],
+    }),
+    deps = [":nixl_api_headers"] + select({
+        "@@//:linux_x86_64": [":nixl_shared"],
+        "//conditions:default": [],
+    }),
 )
 
 # --- Install prefix -------------------------------------------------------

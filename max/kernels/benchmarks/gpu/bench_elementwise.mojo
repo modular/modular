@@ -106,9 +106,7 @@ def run_elementwise[
             )
 
             @always_inline
-            @__copy_capture(in_tensor, out_tensor)
-            @parameter
-            def func[simd_width: Int, alignment: Int = 1](coord: Coord):
+            def func[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
                 comptime assert out_tensor.flat_rank >= coord.flat_rank
                 comptime assert in_tensor.flat_rank >= coord.flat_rank
 
@@ -119,7 +117,8 @@ def run_elementwise[
                     ),
                 )
 
-            elementwise[func, pack_size, target="gpu"](
+            elementwise[pack_size, target="gpu"](
+                func,
                 Coord(dims),
                 ctx,
             )
@@ -164,7 +163,7 @@ def main() raises:
     var op = arg_parse("op", "sqrt")
     comptime dtype = DType._from_str(
         get_defined_string["dtype", "DType.bfloat16"]()
-    )
+    ).value()
     comptime dims_str = get_defined_string["dims", "1x1024x3072"]()
     comptime dims = list_to_static_tuple[parse_shape[dims_str]()]()
     var m = Bench()

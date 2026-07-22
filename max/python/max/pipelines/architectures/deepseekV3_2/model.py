@@ -17,14 +17,12 @@ from __future__ import annotations
 import logging
 from typing import Any, ClassVar
 
-import numpy as np
-from max.driver import Buffer
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.pipelines.lib import CompilationTimer, PipelineConfig
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.weights.quant import parse_quant_config
 from typing_extensions import override
 
@@ -113,7 +111,8 @@ class DeepseekV3_2Model(DeepseekV3Model):
                     ep_kwargs["fused_shared_expert"] = True
                 else:
                     ep_kwargs["fused_shared_expert"] = (
-                        quant_config.shared_experts_weight_dtype is None
+                        quant_config.shared_experts_dtype(DType.bfloat16)
+                        == dtype
                     )
 
             if quant_config is not None:
@@ -149,6 +148,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
         model_config.graph_mode = graph_mode
         model_config.data_parallel_degree = data_parallel_degree
         model_config.return_logits = self.return_logits
+        model_config.return_hidden_states = self.return_hidden_states
 
         if ep_size > 1:
             attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
@@ -161,109 +161,75 @@ class DeepseekV3_2Model(DeepseekV3Model):
         return model_config
 
     @override
-    def load_model(self, session: InferenceSession) -> Model:
-        """Load the model with the given weights."""
-
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        # `_host_input_row_offsets_prealloc` tensor needs to reserve space for
-        # `max_batch_size` of requests on each DP rank.
-        dp_size = self.pipeline_config.model.data_parallel_degree
-        max_batch_size *= dp_size
-
-        self._host_input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        )
-        self._device_input_row_offsets_prealloc = (
-            self._host_input_row_offsets_prealloc.to(self.devices[0])
-        )
-
-        # create batch context lengths tensor for each device
-        self._batch_context_lengths_prealloc_cpu = [
-            Buffer.zeros(shape=[1], dtype=DType.int32)
-            for _ in range(len(self.devices))
-        ]
-
-        with CompilationTimer("model") as timer:
-            if self.adapter:
-                state_dict = self.adapter(
-                    dict(self.weights.items()),
-                    huggingface_config=self.huggingface_config,
-                    pipeline_config=self.pipeline_config,
-                )
-            else:
-                state_dict = {
-                    key: value.data() for key, value in self.weights.items()
-                }
-            # Create the model
-            config = self._create_model_config(state_dict)
-
-            self.ep_comm_initializer: EPCommInitializer | None = None
-            if config.ep_config is not None:
-                self.ep_comm_initializer = EPCommInitializer(config.ep_config)
-                self.ep_comm_initializer.ep_init(session)
-                if config.ep_config.node_id == -1:
-                    raise ValueError(
-                        "EP node ID is not set. Please check if the EP initialization is successful."
-                    )
-
-            nn_model = DeepseekV3_2(config)
-            nn_model.load_state_dict(
-                state_dict, weight_alignment=1, strict=True
+    def _init_distributed_runtime(
+        self,
+        session: InferenceSession,
+        model_config: DeepseekV3_2Config,
+    ) -> None:
+        self.ep_comm_initializer = None
+        if model_config.ep_config is None:
+            return
+        self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
+        self.ep_comm_initializer.ep_init(session)
+        if model_config.ep_config.node_id == -1:
+            raise ValueError(
+                "EP node ID is not set. Please check if the EP initialization is successful."
             )
 
-            # Create the graph
-            with Graph(
-                "deepseekV3_2_graph",
-                input_types=nn_model.input_types(self.kv_params),
-            ) as graph:
-                (
-                    tokens,
-                    devices_input_row_offsets,
-                    host_input_row_offsets,
-                    return_n_logits,
-                    data_parallel_splits,
-                    *variadic_args,
-                ) = graph.inputs
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, WeightData],
+        model_config: DeepseekV3_2Config,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        nn_model = DeepseekV3_2(model_config)
+        nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
+        weights_registry = nn_model.state_dict()
 
-                variadic_args_iter = iter(variadic_args)
-                # Multi-GPU passes a signal buffer per device: unmarshal these.
-                signal_buffers = [
-                    next(variadic_args_iter).buffer
-                    for _ in range(len(self.devices))
-                ]
+        with Graph(
+            "deepseekV3_2_graph",
+            input_types=nn_model.input_types(self.kv_params),
+        ) as graph:
+            (
+                tokens,
+                devices_input_row_offsets,
+                host_input_row_offsets,
+                return_n_logits,
+                data_parallel_splits,
+                *variadic_args,
+            ) = graph.inputs
 
-                # Unflatten the whole {mla, indexer} tree.
-                mla_kv_caches_per_dev, indexer_kv_caches_per_dev = (
-                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
-                )
+            variadic_args_iter = iter(variadic_args)
+            signal_buffers = [
+                next(variadic_args_iter).buffer
+                for _ in range(len(self.devices))
+            ]
 
-                # Unmarshal the batch context lengths
-                batch_context_lengths = [
-                    next(variadic_args_iter).tensor
-                    for _ in range(len(self.devices))
-                ]
+            mla_kv_caches_per_dev, indexer_kv_caches_per_dev = (
+                self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
+            )
 
-                # all remaining arguments are for EP inputs
-                ep_model_inputs = list(variadic_args_iter)
+            batch_context_lengths = [
+                next(variadic_args_iter).tensor
+                for _ in range(len(self.devices))
+            ]
 
-                outputs = nn_model(
-                    tokens.tensor,
-                    signal_buffers,
-                    mla_kv_caches_per_dev,
-                    indexer_kv_caches_per_dev,
-                    return_n_logits.tensor,
-                    devices_input_row_offsets.tensor,
-                    host_input_row_offsets.tensor,
-                    data_parallel_splits.tensor,
-                    batch_context_lengths,
-                    ep_model_inputs,
-                )
+            ep_model_inputs = list(variadic_args_iter)
 
-                graph.output(*outputs)
+            outputs = nn_model(
+                tokens.tensor,
+                signal_buffers,
+                mla_kv_caches_per_dev,
+                indexer_kv_caches_per_dev,
+                return_n_logits.tensor,
+                devices_input_row_offsets.tensor,
+                host_input_row_offsets.tensor,
+                data_parallel_splits.tensor,
+                batch_context_lengths,
+                ep_model_inputs,
+            )
 
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=nn_model.state_dict())
-
-        return model
+            graph.output(*outputs)
+            return graph, weights_registry

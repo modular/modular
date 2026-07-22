@@ -19,7 +19,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass, fields, replace
 from typing import Any
 
-import numpy as np
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
@@ -133,23 +132,6 @@ class Eagle3KimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
 
     @override
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        dp_size = self.pipeline_config.model.data_parallel_degree
-        max_batch_size *= dp_size
-
-        self._host_input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        )
-        self._device_input_row_offsets_prealloc = (
-            self._host_input_row_offsets_prealloc.to(self.devices[0])
-        )
-        self._batch_context_lengths_prealloc_cpu = [
-            Buffer.zeros(shape=[1], dtype=DType.int32)
-            for _ in range(len(self.devices))
-        ]
-
         if self.adapter:
             target_state_dict = self.adapter(
                 dict(self.weights.items()),
@@ -313,8 +295,9 @@ class Eagle3KimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
 
         with CompilationTimer("vision + eagle3 language model") as timer:
             graph_module = Module()
-            vision_graph = self._build_vision_graph(
-                kimik2_5_config, vision_state_dict, module=graph_module
+            assert self.model_config is not None
+            vision_graph, _ = self._build_vision_graph(
+                self.model_config, vision_state_dict, module=graph_module
             )
             with Graph(
                 "eagle3_kimik25_graph",

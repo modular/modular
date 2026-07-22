@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import List
-from std.memory import Span
+from std.collections import List, Span
 
 
 def to_byte_span[

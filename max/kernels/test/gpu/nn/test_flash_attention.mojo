@@ -17,12 +17,11 @@ from std.sys import argv
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from std.sys import has_amd_gpu_accelerator
+from std.sys import Vendor, has_amd_gpu_accelerator
 from std.gpu.host.info import (
     A100,
     H100,
     GPUInfo,
-    Vendor,
     _is_sm10x_gpu,
 )
 from layout import (
@@ -574,7 +573,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     )
 
     @always_inline
-    def launch(ctx: DeviceContext) raises {read}:
+    def launch(ctx: DeviceContext) raises {imm}:
         flash_attention[sink=True](
             out_device,
             q_device,
@@ -606,6 +605,19 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             var got1 = out_host[0, s, 1, d].cast[DType.float32]()
             assert_almost_equal(got0, want0, atol=2e-2, rtol=2e-2)
             assert_almost_equal(got1, want1, atol=2e-2, rtol=2e-2)
+
+    # Keep every device buffer alive until the kernel and the readback have both
+    # completed. `sinks_device` wraps `sinks_dev.unsafe_ptr()` (a raw pointer,
+    # no ownership), so without this keepalive `sinks_dev` can be freed before
+    # the async attention kernel reads it; the allocator then reuses that memory
+    # and the kernel reads a garbage sink weight (intermittently 0 -> output
+    # num_keys/(num_keys+1), or a large value -> output ~0). Mirrors the
+    # `_ = sink_d^` keepalive in `test_apple_fa_prefill.mojo`.
+    _ = q_dev^
+    _ = k_dev^
+    _ = v_dev^
+    _ = out_dev^
+    _ = sinks_dev^
 
 
 def main() raises:

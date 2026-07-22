@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import Vendor
+from std.sys import Vendor
 from layout import TileTensor, coord, row_major
 from nn.irfft import irfft
 from std.testing import assert_almost_equal
@@ -45,8 +45,8 @@ def test_irfft_basic[
 
     # Input shape: [batch_size, input_size*2] because complex values are stored
     # as interleaved float32 (real, imag, real, imag, ...)
-    comptime input_shape = coord[batch_size, input_size * 2]()
-    comptime output_shape = coord[batch_size, output_size]()
+    comptime input_shape = coord[batch_size, input_size * 2]
+    comptime output_shape = coord[batch_size, output_size]
 
     var input_runtime_layout = row_major(input_shape)
     var output_runtime_layout = row_major(output_shape)

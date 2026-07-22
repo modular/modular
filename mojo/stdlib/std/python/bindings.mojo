@@ -20,9 +20,10 @@ conversion. This enables seamless bidirectional interoperability between Mojo
 and Python code.
 """
 
-from std.ffi import _Global, _CPointer, c_int
+from . import ConvertibleFromPython
+from std.ffi import _Global, _CPointer, c_int, c_char
 from std.sys.info import size_of
-from std.collections import OwnedKwargsDict
+from std.collections import StringDict
 
 from std.builtin._startup import _ensure_runtime_init
 from std.reflection import reflect
@@ -191,7 +192,7 @@ def _tp_dealloc_wrapper[T: ImplicitlyDeletable](py_self: PyObjectPtr) abi("C"):
     #   Is this always safe? Wrap in GIL, because this could
     #   evaluate arbitrary code?
     if self.is_initialized:
-        UnsafePointer(to=self.mojo_value).destroy_pointee()
+        Pointer(to=self.mojo_value).unsafe_deinit_pointee()
 
     cpython.PyObject_Free(py_self.bitcast[NoneType]())
 
@@ -225,7 +226,7 @@ def _tp_repr_wrapper[
         comptime assert conforms_to(
             T, Writable
         ), "_tp_repr_wrapper requires conformance to Writable."
-        trait_downcast[Writable](self.mojo_value).write_repr_to(repr_str)
+        self.mojo_value.write_repr_to(repr_str)
     else:
         repr_str = String(t"<uninitialized {reflect[T].name()}>")
 
@@ -338,7 +339,7 @@ struct PythonModuleBuilder:
     def add_type[
         T: ImplicitlyDeletable
     ](mut self, type_name: StaticString) -> ref[
-        self.type_builders
+        self.type_builders[0]
     ] PythonTypeBuilder:
         """Add a type to the module and return a builder for it.
 
@@ -663,7 +664,7 @@ struct PythonTypeBuilder(Copyable):
 
         var type_spec = PyType_Spec(
             # FIXME(MOCO-1306): This should be `T.__name__`.
-            self.type_name.unsafe_ptr().bitcast[ffi.c_char](),
+            self.type_name.unsafe_ptr().bitcast[c_char](),
             c_int(self.basicsize),
             0,
             Py_TPFLAGS_DEFAULT,
@@ -672,7 +673,9 @@ struct PythonTypeBuilder(Copyable):
         )
 
         # Construct a Python 'type' object from our type spec.
-        var type_obj_ptr = cpython.PyType_FromSpec(UnsafePointer(to=type_spec))
+        var type_obj_ptr = cpython.PyType_FromSpec(
+            Pointer(to=type_spec).as_unsafe_any_origin()
+        )
 
         if not type_obj_ptr:
             raise cpython.get_error()
@@ -1085,7 +1088,8 @@ def _set_python_error(
     var error_message = String(e)
     var error_type = cpython.get_error_global(exc_type.global_name)
     cpython.PyErr_SetString(
-        error_type, error_message.as_c_string_slice().unsafe_ptr()
+        error_type,
+        error_message.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
     )
 
 
@@ -1140,7 +1144,10 @@ def _py_init_function_nonregistered(
     var error_type = cpython.get_error_global("PyExc_TypeError")
     cpython.PyErr_SetString(
         error_type,
-        "No initializer registered for this type. Use def_py_init() or def_init_defaultable() to register an initializer.".as_c_string_slice().unsafe_ptr(),
+        "No initializer registered for this type. Use def_py_init() or"
+        " def_init_defaultable() to register an initializer.".as_c_string_slice()
+        .unsafe_ptr()
+        .as_unsafe_any_origin(),
     )
     return -1
 
@@ -1264,22 +1271,22 @@ def _py_c_function_wrapper[
 
 def _convert_kwargs(
     py_kwargs: PythonObject,
-) raises -> OwnedKwargsDict[PythonObject]:
-    """Convert a Python dictionary to an OwnedKwargsDict.
+) raises -> StringDict[PythonObject]:
+    """Convert a Python dictionary to a StringDict.
 
     Args:
         py_kwargs: Python dictionary containing keyword arguments.
 
     Returns:
-        An OwnedKwargsDict containing the keyword arguments.
+        A StringDict containing the keyword arguments.
     """
-    var result = OwnedKwargsDict[PythonObject]()
+    var result = StringDict[PythonObject]()
 
     # Handle the case where kwargs is None or empty
     if not py_kwargs._obj_ptr:
         return result^
 
-    # Iterate through the Python dictionary and populate OwnedKwargsDict
+    # Iterate through the Python dictionary and populate StringDict
     var items = py_kwargs.items()
     for item in items:
         var key = item[0]
@@ -1371,7 +1378,7 @@ def _py_function_fastcall_wrapper[
     @always_inline
     def fastcall(
         py_self_ptr: PyObjectPtr,
-        args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
+        args: Pointer[PyObjectPtr, MutUntrackedOrigin],
         nargs: Py_ssize_t,
     ) abi("C") -> PyObjectPtr:
         var py_self = PythonObject(from_borrowed=py_self_ptr)
@@ -1380,7 +1387,7 @@ def _py_function_fastcall_wrapper[
         # non-null for every METH_FASTCALL invocation, including the
         # `nargs == 0` case (CPython hands the callee a pointer into a
         # cached empty tuple). `_dispatch_fast` therefore accepts a plain
-        # `UnsafePointer` rather than `OptionalUnsafePointer`.
+        # `Pointer` rather than `OptionalPointer`.
         try:
             return FuncT._dispatch_fast[is_method](
                 func._func, py_self, args, Int(nargs)
@@ -1537,9 +1544,9 @@ def check_arguments_arity(
 
 def check_and_get_arg[
     T: ImplicitlyDeletable
-](
-    func_name: StaticString, py_args: PythonObject, index: Int
-) raises -> UnsafePointer[T, MutAnyOrigin]:
+](func_name: StaticString, py_args: PythonObject, index: Int) raises -> Pointer[
+    T, MutAnyOrigin
+]:
     """Get the argument at the given index and downcast it to a given Mojo type.
 
     Parameters:
@@ -1614,9 +1621,9 @@ def _try_convert_arg[
 @always_inline
 def check_and_get_or_convert_arg[
     T: ConvertibleFromPython
-](
-    func_name: StaticString, py_args: PythonObject, index: Int
-) raises -> UnsafePointer[T, MutAnyOrigin]:
+](func_name: StaticString, py_args: PythonObject, index: Int) raises -> Pointer[
+    T, MutAnyOrigin
+]:
     """Get the argument at the given index and convert it to a given Mojo type.
 
     If the argument cannot be directly downcast to the given type, it will be
@@ -1644,7 +1651,7 @@ def check_and_get_or_convert_arg[
     try:
         return check_and_get_arg[T](func_name, py_args, index)
     except e:
-        converted_arg_ptr.init_pointee_move(
+        converted_arg_ptr.unsafe_write(
             _try_convert_arg[T](
                 func_name,
                 py_args,
@@ -1659,9 +1666,9 @@ def check_and_get_or_convert_arg[
 @always_inline
 def check_and_get_or_convert_arg[
     T: type_of(Int)
-](
-    func_name: StaticString, py_args: PythonObject, index: Int
-) raises -> UnsafePointer[Int, MutAnyOrigin]:
+](func_name: StaticString, py_args: PythonObject, index: Int) raises -> Pointer[
+    Int, MutAnyOrigin
+]:
     """Get the argument at the given index and convert it to a given Mojo type.
 
     If the argument cannot be directly downcast to the given type, it will be
@@ -1689,7 +1696,7 @@ def check_and_get_or_convert_arg[
     try:
         return check_and_get_arg[Int](func_name, py_args, index)
     except e:
-        converted_arg_ptr.init_pointee_move(
+        converted_arg_ptr.unsafe_write(
             _try_convert_arg[Int](
                 func_name,
                 py_args,

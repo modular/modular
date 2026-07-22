@@ -21,7 +21,8 @@ from std.sys import argv
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc, bitcast
+from std.memory import alloc, bitcast, dealloc, ThinAllocation
+from std.memory.alloc import Layout as AllocLayout
 from std.random import rand, random_ui64, seed
 from internal_utils import assert_almost_equal
 from layout import (
@@ -71,6 +72,11 @@ def _rand_mxfp4[
 
 
 def simple_init() -> Bool:
+    """Returns whether the `--simple-init` flag was passed on the command line.
+
+    When enabled, matmul operands are filled with deterministic values derived
+    from their indices instead of random data, which simplifies debugging.
+    """
     for arg in argv():
         if arg == "--simple-init":
             return True
@@ -109,6 +115,46 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     k: KType,
     alpha: Float32 = 1.0,
 ) raises:
+    """Runs a block-scaled FP4 matmul on SM100 and checks it against a reference.
+
+    Allocates and initializes the FP4 operands and their scale-factor tensors,
+    dispatches either the small-BN or structured 2SM kernel based on
+    `is_small_bn`, computes a reference output via `naive_block_scaled_matmul`
+    (MXFP4) or a vendor BLAS matmul (NVFP4), and asserts the kernel output
+    matches the reference within tolerance.
+
+    Parameters:
+        MType: Coord type carrying the M dimension of the matmul (inferred).
+        NType: Coord type carrying the N dimension of the matmul (inferred).
+        KType: Coord type carrying the K dimension of the matmul (inferred).
+        a_type: Element dtype of the left operand (packed FP4 pairs).
+        b_type: Element dtype of the right operand (packed FP4 pairs).
+        c_type: Element dtype of the output tensor.
+        scales_dtype: Scale-factor dtype, selecting NVFP4 or MXFP4 format.
+        block_tile_shape: Per-CTA tile shape over (M, N, K) dimensions.
+        mma_shape: Hardware MMA shape over (M, N, K) dimensions.
+        cluster_shape: Thread-block cluster shape along (X, Y, Z).
+        cta_group: Number of CTAs cooperating per output tile.
+        transpose_b: Whether the right operand is stored transposed.
+        a_swizzle: TMA swizzle pattern for the left operand.
+        b_swizzle: TMA swizzle pattern for the right operand.
+        c_swizzle: TMA swizzle pattern for the output tensor.
+        block_swizzle_size: Block-level swizzle stride, or 0 to disable.
+        benchmark: Whether the invocation is being run under a benchmark harness.
+        swapAB: Whether to swap the A and B operands before the matmul.
+        k_group_size: Number of K tiles grouped together for accumulation.
+        num_clc_pipeline_stages: Number of CLC pipeline stages to use.
+        SF_VECTOR_SIZE: Number of FP4 elements covered by one scale factor.
+        is_small_bn: Selects the small-BN (1SM/2SM cooperative) kernel variant.
+        normal_epilogue: Applies a 2x scaling epilogue to verify the lambda runs.
+
+    Args:
+        ctx: Device context used for allocation and kernel dispatch.
+        m: M dimension of the matmul.
+        n: N dimension of the matmul.
+        k: K dimension of the matmul.
+        alpha: Scalar multiplier applied to the matmul result.
+    """
     seed(42)
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type}, {scales_dtype})  problem"
@@ -134,14 +180,22 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var b_size = Int(n.value()) * (KType.static_value // 2)
     var c_size = Int(m.value()) * Int(n.value())
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
+    var a_host_alloc = alloc(
+        AllocLayout[Scalar[a_type]](count=a_size)
+    ).into_deletable()
+    var a_host = TileTensor(a_host_alloc.unsafe_ptr(), a_shape)
+    var b_host_alloc = alloc(
+        AllocLayout[Scalar[b_type]](count=b_size)
+    ).into_deletable()
+    var b_host = TileTensor(b_host_alloc.unsafe_ptr(), b_shape)
+    var c_host_alloc = alloc(
+        AllocLayout[Scalar[c_type]](count=c_size)
+    ).into_deletable()
+    var c_host = TileTensor(c_host_alloc.unsafe_ptr(), c_shape)
+    var c_host_ref_alloc = alloc(
+        AllocLayout[Scalar[c_type]](count=c_size)
+    ).into_deletable()
+    var c_host_ref = TileTensor(c_host_ref_alloc.unsafe_ptr(), c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_tensor = TileTensor(a_device, a_shape)
@@ -187,10 +241,18 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var a_scales_total = a_scales_shape.product()
     var b_scales_total = b_scales_shape.product()
 
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
-    var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
-    var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
+    var a_scales_host_alloc = alloc(
+        AllocLayout[Scalar[scales_dtype]](count=a_scales_total)
+    ).into_deletable()
+    var a_scales_host = TileTensor(
+        a_scales_host_alloc.unsafe_ptr(), a_scales_shape
+    )
+    var b_scales_host_alloc = alloc(
+        AllocLayout[Scalar[scales_dtype]](count=b_scales_total)
+    ).into_deletable()
+    var b_scales_host = TileTensor(
+        b_scales_host_alloc.unsafe_ptr(), b_scales_shape
+    )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
@@ -249,10 +311,10 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 )
 
     # Move operands to the Device
-    ctx.enqueue_copy(a_device, a_host_ptr)
-    ctx.enqueue_copy(b_device, b_host_ptr)
-    ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
-    ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
+    ctx.enqueue_copy(a_device, a_host_alloc.unsafe_ptr())
+    ctx.enqueue_copy(b_device, b_host_alloc.unsafe_ptr())
+    ctx.enqueue_copy(a_scales_device, a_scales_host_alloc.unsafe_ptr())
+    ctx.enqueue_copy(b_scales_device, b_scales_host_alloc.unsafe_ptr())
 
     comptime matmul_config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
@@ -351,8 +413,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy(c_host_ptr, c_device)
-    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+    ctx.enqueue_copy(c_host_alloc.unsafe_ptr(), c_device)
+    ctx.enqueue_copy(c_host_ref_alloc.unsafe_ptr(), c_device_ref)
     ctx.synchronize()
 
     # When epilogue multiplies by 2, scale reference to match.
@@ -370,12 +432,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
+    dealloc(a_host_alloc^.into_allocation())
+    dealloc(b_host_alloc^.into_allocation())
+    dealloc(c_host_alloc^.into_allocation())
+    dealloc(c_host_ref_alloc^.into_allocation())
+    dealloc(a_scales_host_alloc^.into_allocation())
+    dealloc(b_scales_host_alloc^.into_allocation())
     _ = a_device^
     _ = b_device^
     _ = c_device^

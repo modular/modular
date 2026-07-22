@@ -32,7 +32,6 @@ def main() raises:
 """
 
 from std.math import isclose
-from std.reflection.traits import AllWritable
 
 from std.reflection import call_location, SourceLocation
 from std.memory import memcmp
@@ -146,7 +145,7 @@ def assert_equal[
 #   compared, then drop this overload.
 @always_inline
 def assert_equal[
-    O1: ImmutOrigin, O2: ImmutOrigin
+    O1: ImmOrigin, O2: ImmOrigin
 ](
     lhs: List[StringSlice[O1]],
     rhs: List[StringSlice[O2]],
@@ -560,7 +559,5 @@ struct assert_raises:
             comptime assert conforms_to(
                 E, Writable
             ), "assert_raises(contains=...) requires a Writable error type"
-            return self.message_contains.value() in String.write(
-                trait_downcast[Writable](error)
-            )
+            return self.message_contains.value() in String.write(error)
         return True

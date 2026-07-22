@@ -38,7 +38,6 @@ exaone_modulev3_arch = SupportedArchitecture(
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type="neox",
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     weight_adapters={
@@ -47,4 +46,6 @@ exaone_modulev3_arch = SupportedArchitecture(
     },
     config=Llama3Config,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

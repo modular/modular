@@ -28,12 +28,7 @@ def test_gpu_print_formattable() raises:
         print("Hello I got", x, y)
 
         # CHECK: Printing Int zero  = 0
-        # CHECK: Printing UInt zero = 0
         print("Printing Int zero  =", Int(0))
-        print("Printing UInt zero =", UInt(0))
-
-        # CHECK: UInt values are: 1 99 18446744073709551615 0
-        print("UInt values are:", UInt(1), UInt(99), UInt.MAX, UInt.MIN)
 
         #
         # Test printing SIMD values
@@ -45,7 +40,7 @@ def test_gpu_print_formattable() raises:
         # CHECK: SIMD values are: [0.0, -1.0, -inf, 1.7976931348623157e+308]
         print("SIMD values are:", simd)
 
-        # CHECK: test_print.mojo:49:30
+        # CHECK: test_print.mojo:44:30
         print(source_location())
 
         # ------------------------------

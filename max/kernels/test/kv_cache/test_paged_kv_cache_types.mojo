@@ -22,11 +22,12 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
     UNKNOWN_VALUE,
-    coord,
+    Coord,
 )
 from std.memory import alloc
 from std.testing import assert_true
 
+from std.utils.coord import dyn_coord
 from std.utils.index import IndexList
 from std.collections import OptionalReg
 
@@ -34,7 +35,9 @@ comptime kv_params = KVCacheStaticParams(num_heads=16, head_size=16)
 
 
 def do_test[
-    page_size: Int, layout_block_size: Int, scale_dtype: DType = DType.invalid
+    page_size: Int,
+    layout_block_size: Int,
+    scale_dtype: Optional[DType] = None,
 ]() raises:
     comptime batch_size = 16
     comptime max_num_blocks = 100
@@ -75,14 +78,18 @@ def do_test[
     var max_seq_length = UInt32(2048)
     var max_cache_length = UInt32(2048)
 
+    # Concrete scales element type: the real scale dtype when set, else the
+    # block dtype (`float32`). Used for both the `scales` declaration and its
+    # assignment so the compiler folds the types without a rebind.
+    comptime scales_dtype = scale_dtype.or_else(DType.float32)
     var scales: OptionalReg[
-        LayoutTensor[scale_dtype, Layout.row_major[6](), MutUntrackedOrigin]
+        LayoutTensor[scales_dtype, Layout.row_major[6](), MutUntrackedOrigin]
     ] = None
 
     comptime if scale_dtype == DType.float8_e4m3fn:
-        # Use the same shape as the blocks
-        var scales_ptr = alloc[Scalar[scale_dtype]](shape.flattened_length())
-        scales = LayoutTensor[scale_dtype, Layout.row_major[6]()](
+        # Use the same shape as the blocks.
+        var scales_ptr = alloc[Scalar[scales_dtype]](shape.flattened_length())
+        scales = LayoutTensor[scales_dtype, Layout.row_major[6]()](
             scales_ptr,
             RuntimeLayout[Layout.row_major[6]()].row_major(shape),
         ).fill(0)
@@ -144,8 +151,8 @@ def test_paged_kv_cache_stride_is_unknown() raises:
         kv_params,
         16,
         MutUntrackedOrigin,
-        ImmutUntrackedOrigin,
-        ImmutUntrackedOrigin,
+        ImmUntrackedOrigin,
+        ImmUntrackedOrigin,
         MutUntrackedOrigin,
     ]
 
@@ -309,7 +316,7 @@ def test_paged_kv_cache_offset_correctness() raises:
     # we'd compute wrong offset: 1*16 + 0*8 + 1*4 + 2 = 22 (wrong!)
 
     # Access via the blocks TileTensor - this tests the layout offset computation
-    var idx = coord[DType.int64](Tuple(1, 0, 1, 2))
+    var idx = dyn_coord[DType.int64]((1, 0, 1, 2))
     var value = key_cache.blocks.raw_load[width=1](key_cache.blocks.layout(idx))
     var expected_value = Float32(expected_6d_offset)
 
@@ -331,8 +338,8 @@ def test_paged_kv_cache_quantization() raises:
         kv_params,
         16,
         MutUntrackedOrigin,
-        ImmutUntrackedOrigin,
-        ImmutUntrackedOrigin,
+        ImmUntrackedOrigin,
+        ImmUntrackedOrigin,
         MutUntrackedOrigin,
         scale_dtype_=DType.float8_e4m3fn,
         quantization_granularity_=256,

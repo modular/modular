@@ -16,6 +16,8 @@
 #
 # ===-----------------------------------------------------------------------===#
 
+"""Provides wrappers around Intel VNNI (Vector Neural Network Instructions) for dot-product and multiply-accumulate operations on integer data."""
+
 from std.sys import CompilationTarget, llvm_intrinsic
 
 from std.memory.unsafe import bitcast
@@ -32,6 +34,25 @@ def vpdpwssd[
     a: SIMD[a_type, width * 2],
     b: SIMD[b_type, width * 2],
 ) -> SIMD[c_type, width]:
+    """Computes a multiply-accumulate of signed 16-bit integers using the VPDPWSSD Intel AVX-512 VNNI instruction.
+
+    Multiplies pairs of adjacent signed 16-bit integers from a and b, accumulates
+    the 32-bit products into src, and returns the result.
+
+    Parameters:
+        width: Number of int32 output elements (4, 8, or 16).
+        a_type: DType of the a operand (int16).
+        b_type: DType of the b operand (int16).
+        c_type: DType of the accumulator; must be int32.
+
+    Args:
+        src: Int32 accumulator vector.
+        a: Int16 input vector, twice the output width.
+        b: Int16 input vector, twice the output width.
+
+    Returns:
+        Updated int32 accumulator after multiply-add.
+    """
     comptime assert c_type == DType.int32, "the type of C must be int32"
 
     comptime if width == 16:
@@ -61,6 +82,24 @@ def vpdpwssds[
     a: SIMD[a_type, width * 2],
     b: SIMD[b_type, width * 2],
 ) -> SIMD[c_type, width]:
+    """Computes a saturating multiply-accumulate of signed 16-bit integers using the VPDPWSSDS Intel AVX-512 VNNI instruction.
+
+    Like `vpdpwssd` but saturates the 32-bit accumulator on overflow instead of wrapping.
+
+    Parameters:
+        width: Number of int32 output elements (4, 8, or 16).
+        a_type: DType of the a operand (int16).
+        b_type: DType of the b operand (int16).
+        c_type: DType of the accumulator; must be int32.
+
+    Args:
+        src: Int32 accumulator vector.
+        a: Int16 input vector, twice the output width.
+        b: Int16 input vector, twice the output width.
+
+    Returns:
+        Updated int32 accumulator after saturating multiply-add.
+    """
     comptime assert c_type == DType.int32, "the type of C must be int32"
 
     comptime if width == 16:
@@ -88,6 +127,26 @@ def vpdpbusd[
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
+    """Computes a dot product of four unsigned-signed byte pairs per int32 element using the VPDPBUSD Intel AVX-512 VNNI instruction.
+
+    For each int32 lane, treats the corresponding four bytes of a as uint8 and
+    four bytes of b as int8, multiplies them element-wise, and adds the four
+    products to the accumulator src.
+
+    Parameters:
+        width: Number of int32 output elements (4, 8, or 16).
+        a_type: DType of the a operand.
+        b_type: DType of the b operand.
+        c_type: DType of the accumulator; must be int32.
+
+    Args:
+        src: Int32 accumulator vector.
+        a: Uint8 input packed as int32-wide vector.
+        b: Int8 input packed as int32-wide vector.
+
+    Returns:
+        Updated int32 accumulator after byte dot-product accumulation.
+    """
     comptime assert c_type == DType.int32, "the type of C must be int32"
 
     comptime if width == 16:
@@ -127,6 +186,24 @@ def vpdpbusds[
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
+    """Computes a saturating dot product of four unsigned-signed byte pairs per int32 element using the VPDPBUSDS Intel AVX-512 VNNI instruction.
+
+    Like `vpdpbusd` but saturates the 32-bit accumulator on overflow.
+
+    Parameters:
+        width: Number of int32 output elements (4, 8, or 16).
+        a_type: DType of the a operand.
+        b_type: DType of the b operand.
+        c_type: DType of the accumulator; must be int32.
+
+    Args:
+        src: Int32 accumulator vector.
+        a: Uint8 input packed as int32-wide vector.
+        b: Int8 input packed as int32-wide vector.
+
+    Returns:
+        Updated int32 accumulator after saturating byte dot-product accumulation.
+    """
     comptime assert c_type == DType.int32, "the type of C must be int32"
 
     comptime if width == 16:
@@ -241,6 +318,15 @@ def pmaddubs[
 ](a: SIMD[DType.int32, width], b: SIMD[DType.int32, width]) -> SIMD[
     DType.int32, width
 ]:
+    """Multiplies adjacent unsigned-signed byte pairs and returns the int16 results packed as int32.
+
+    Parameters:
+        width: Number of int32 output elements (4, 8, or 16).
+
+    Args:
+        a: Int32-typed SIMD vector reinterpreted as unsigned bytes.
+        b: Int32-typed SIMD vector reinterpreted as signed bytes.
+    """
     comptime if width == 16:
         return rebind[SIMD[DType.int32, width]](
             bitcast[DType.int32, 16](
@@ -282,6 +368,15 @@ def pmaddw[
 ](a: SIMD[DType.int32, width], b: SIMD[DType.int32, width]) -> SIMD[
     DType.int32, width
 ]:
+    """Multiplies adjacent signed 16-bit integer pairs and adds the products, returning int32 results.
+
+    Parameters:
+        width: Number of int32 output elements (4, 8, or 16).
+
+    Args:
+        a: Int32-typed SIMD vector reinterpreted as signed int16 pairs.
+        b: Int32-typed SIMD vector reinterpreted as signed int16 pairs.
+    """
     comptime if width == 16:
         return rebind[SIMD[DType.int32, width]](
             bitcast[DType.int32, 16](

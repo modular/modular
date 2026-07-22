@@ -14,7 +14,7 @@
 from std.memory import (
     UnsafeMaybeUninit,
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
     memcmp,
 )
@@ -33,7 +33,7 @@ def test_maybe_uninitialized() raises:
     # Every time an Int is destroyed, it's going to be recorded here.
     var destructor_recorder = List[Int]()
 
-    var ptr = UnsafePointer(to=destructor_recorder).as_immutable()
+    var ptr = Pointer(to=destructor_recorder).as_immutable()
     var a = UnsafeMaybeUninit[DelRecorder[ptr.origin]]()
     a.init_from(DelRecorder(42, ptr))
 
@@ -92,7 +92,9 @@ def test_zeroed() raises:
     var arr = InlineArray[Byte, size_of[String]()](fill=0)
     assert_equal(
         memcmp(
-            c.unsafe_ptr().bitcast[Byte](), arr.unsafe_ptr(), size_of[String]()
+            c.unsafe_ptr().unsafe_bitcast[Byte](),
+            arr.unsafe_ptr(),
+            size_of[String](),
         ),
         0,
     )
@@ -109,12 +111,12 @@ def test_triviality() raises:
 
     assert_true(is_trivially_copyable[Trivial]())
     assert_true(is_trivially_movable[Trivial]())
-    assert_true(is_trivially_destructible[Trivial]())
+    assert_true(is_trivially_deletable[Trivial]())
 
     assert_false(is_trivially_copyable[NotTrivial]())
     assert_false(is_trivially_movable[NotTrivial]())
     # UnsafeMaybeUninit always has a trivial destructor
-    assert_true(is_trivially_destructible[NotTrivial]())
+    assert_true(is_trivially_deletable[NotTrivial]())
 
 
 def test_conditional_register_passable() raises:

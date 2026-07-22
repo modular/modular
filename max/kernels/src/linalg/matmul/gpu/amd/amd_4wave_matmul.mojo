@@ -30,7 +30,7 @@ Body is driven by the framework schedule (`Pipeline4Wave` in
 `minimal_barriers` + `omit_mma_set_prio`. The schedule consumes the
 logical 24-op cross-stage-rotation body and derives wait counts /
 barriers from `KernelGeometry`. Supports FP8 (E4M3FN), BF16, and FP16
-through a single body — MMA shape and BK select on dtype.
+through a single body: MMA shape and BK select on dtype.
 """
 
 from std.bit import log2_floor
@@ -103,7 +103,7 @@ def _xcd_wgm_swizzle(
     Mirrors `4_wave.cu` lines 117-136 / 353-372 in HipKittens.
 
     The swizzle's L2 reuse only pays off when the WG count is large
-    enough that each CU runs multiple WGs in one kernel launch — i.e.
+    enough that each CU runs multiple WGs in one kernel launch: i.e.
     `num_wgs > num_CUs`. For our decode/prefill shapes (typically
     32-1024 WGs vs 304 CUs), the swizzle math would just add overhead
     without any L2 benefit. We gate on `num_wgs > 4 * num_CUs` to
@@ -146,7 +146,7 @@ def _xcd_wgm_swizzle(
 struct MatmulKernelConfig(ImplicitlyCopyable, Movable, Writable):
     """Block/warp/MMA shape configuration for 4-wave kernels.
 
-    Shared by `AMD4WaveMatmul`'s matmul and conv2d entry points — both
+    Shared by `AMD4WaveMatmul`'s matmul and conv2d entry points: both
     use the same 4-warp 2×2 quadrant layout and the same MFMA shape
     selection, so the per-call surface only needs the workgroup /
     warp / MMA tile shapes.
@@ -414,7 +414,7 @@ struct AMD4WaveMatmul[
 
     Line-by-line port of HipKittens FP8_4wave's `matmul_device_1024`
     (BM=64) and `matmul_device_2048` (BM=128). No declarative pipeline
-    framework — explicit waits, explicit barriers, explicit register
+    framework: explicit waits, explicit barriers, explicit register
     rotation matching the source's k+2 prefetch pattern.
 
     Parameters:
@@ -481,9 +481,9 @@ struct AMD4WaveMatmul[
     # Half-tile dimensions: each SMEM tile covers one M-subtile (or N-subtile)
     # of the WG-level BM x BK (or BN x BK) block.
     comptime half_BM = Self.BM // 2
-    """Half of `BM` — one M-subtile per SMEM stage."""
+    """Half of `BM`: one M-subtile per SMEM stage."""
     comptime half_BN = Self.BN // 2
-    """Half of `BN` — one N-subtile per SMEM stage."""
+    """Half of `BN`: one N-subtile per SMEM stage."""
     comptime mma_tile_m = Self.WM // 2
     """Per-quadrant M-tile size consumed by an MMA load."""
     comptime mma_tile_n = Self.WN // 2
@@ -689,7 +689,7 @@ struct AMD4WaveMatmul[
     def is_valid_config() -> Bool:
         """Returns whether the kernel's tile shapes are a viable config.
 
-        Pure predicate — does not raise. Use this from autotune drivers
+        Pure predicate, does not raise. Use this from autotune drivers
         and dispatcher fallbacks to filter out impossible (BM, BN, BK,
         dtype) combinations before instantiating the kernel. The full
         per-check set is in `validate_config`; this is its non-throwing
@@ -1121,36 +1121,29 @@ struct AMD4WaveMatmul[
             comptime for i in range(len(schedule.prologue)):
                 _bind[schedule.prologue[i]](0)
 
-            # `num_K_iters == 1` race fix: when `K_per_split == 2*BK`,
-            # the main loop below runs zero times and the framework
-            # epilogue follows the prologue immediately. The prologue's
-            # `partial_prologue_drain` only paired the first 2
-            # prefetches with bootstrap-frag drains; 6 prefetches
-            # remain in flight. The framework's per-block emit places
-            # the frag-load BEFORE the per-block `wait_vm[0]`, so the
-            # first epilogue block's `ds_read` would race with those
-            # in-flight `buffer_load_lds → LDS` writes (the LDS may
-            # not yet be cross-warp visible). Mirror the handwritten
-            # body's top-of-iter sync (`wait_vm(0) + wait_lgkm(0) +
-            # s_barrier`) to drain the prefetches before any epilogue
-            # `ds_read` fires. Empirically this only manifests at FP8
-            # BM=64 (1 MFMA / quadrant block, ~16 cycles of latency
-            # cushion is too small); BF16/FP16 and FP8 BM=128 have
-            # enough per-block MMA cycles for the race to land
-            # innocuously, but the drain is correct for all of them
-            # and adds one `wait_vm + barrier` cost only at this
-            # narrow corner.
-            comptime _num_K_iters_static = K_per_split // (2 * BK)
-            comptime if _num_K_iters_static == 1:
-                s_waitcnt[vmcnt=UInt32(0)]()
-                s_waitcnt[lgkmcnt=UInt32(0)]()
-                s_barrier()
-
             # Main loop: step 2*BK because each schedule iter unrolls 2
             # source K-iters (matches ping-pong's stepping).
             for k in range(BK * 2, K_per_split, BK * 2):
                 comptime for i in range(len(schedule.kernel)):
                     _bind[schedule.kernel[i]](k)
+
+            # The schedule leaves several buffer_load_lds prefetches in flight
+            # into the LDS double-buffer at the main-loop-to-epilogue boundary,
+            # counting on MMA-cycle latency to hide them before the epilogue's
+            # ds_read. Two cases erase that cushion: split-K launches
+            # grid_dim.z = num_splits extra workgroups so occupancy is high and
+            # per-workgroup latency hiding collapses, and K_per_split == 2*BK
+            # leaves no main loop so the prologue's partial drain runs straight
+            # into the epilogue with prefetches still in flight. Either way the
+            # epilogue can read LDS slots before the writes land, corrupting a
+            # few ULPs as run-to-run non-determinism. Drain VMEM and LDS once
+            # here; the num_splits == 1 loop case keeps the cushion and compiles
+            # this away.
+            comptime _num_K_iters_static = K_per_split // (2 * BK)
+            comptime if _num_K_iters_static == 1 or num_splits > 1:
+                s_waitcnt[vmcnt=UInt32(0)]()
+                s_waitcnt[lgkmcnt=UInt32(0)]()
+                s_barrier()
 
             # Epilogue.
             comptime for i in range(len(schedule.epilogue)):
@@ -1265,7 +1258,7 @@ struct AMD4WaveMatmul[
 
         Sibling of `run()` (the matmul entry point); both share the
         4-warp 2x2 quadrant layout, the same MFMA shapes, and the same
-        software-pipeline schedule — only the A-operand loader differs.
+        software-pipeline schedule; only the A-operand loader differs.
         `run()` uses `TileLoaderLDS` (linear MK source); this method
         uses `TileLoaderLDSIm2col`, which materializes the A operand
         from a 4D NHWC input via in-line im2col addressing.
@@ -1275,7 +1268,7 @@ struct AMD4WaveMatmul[
         `[M, C_out]`-aliased view of an NHWC residual buffer) into VGPRs
         at the start of the epilogue. By the time the FMA-and-store
         loop runs, all 32 per-lane residual loads are in flight in
-        parallel — replacing the per-store
+        parallel, replacing the per-store
         `global_load → wait → store` staircase that costs ~24% on
         memory-bound shapes. The launcher passes the residual pointer,
         row stride, and `beta` scale; the kernel applies
@@ -1941,7 +1934,7 @@ def structured_4wave_matmul[
 
     Production callers go through a higher-level dispatcher (e.g.
     `AMDMatmul`) that knows the shape, dtype, and which other kernels
-    are available — it should set `block_{m,n,k}_override` explicitly
+    are available; it should set `block_{m,n,k}_override` explicitly
     based on its own policy. The internal auto-pick below is a
     convenience default for direct/ad-hoc/benchmark callers; do not
     rely on it from a production dispatcher.
@@ -1949,7 +1942,7 @@ def structured_4wave_matmul[
     Recommended tile shapes (measured on MI355X, bf16 N=K=8192):
 
       M = 1         : use a dedicated GEMV kernel (`linalg/gemv.mojo`),
-                      not 4-wave — single-row matvec has its own
+                      not 4-wave; single-row matvec has its own
                       hardware-aligned dispatch.
       2 ≤ M ≤  64   : use `amd_4wave_split_k_matmul` with
                       `num_splits=4` and BK=128 (the plain kernel

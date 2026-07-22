@@ -125,7 +125,7 @@ trait ScheduleOps(Equatable):
 struct _Ops(ScheduleOps):
     """Framework-internal concrete ScheduleOps for accessing default tag values.
 
-    Kernels should not use this — define your own conforming struct instead.
+    Kernels should not use this; define your own conforming struct instead.
     """
 
     var value: Int
@@ -261,11 +261,11 @@ struct TargetCostModel(ImplicitlyCopyable, Movable):
     Separates the algorithm (what ops exist) from the target (how much they
     cost). The algorithm declares logical ops with buffer metadata (tag,
     stage, subtile, channel, k_offset). The cost model supplies resource
-    kind, latency, and role — the constraints that drive scheduling.
+    kind, latency, and role: the constraints that drive scheduling.
 
     Op tags 0-127 are kernel-specific (registered via set_cost).
     Op tags 128+ are framework infrastructure ops and are not looked up
-    in the cost model — they carry their own annotations.
+    in the cost model; they carry their own annotations.
 
     Usage:
 
@@ -282,12 +282,21 @@ struct TargetCostModel(ImplicitlyCopyable, Movable):
         self._costs = InlineArray[OpCost, 128](fill=OpCost.none())
 
     def set_cost(mut self, tag: Int, cost: OpCost):
-        """Register a cost annotation for a kernel op tag (0-127)."""
+        """Register a cost annotation for a kernel op tag (0-127).
+
+        Args:
+            tag: Kernel op tag to register the cost for (0-127).
+            cost: Hardware cost annotation to associate with the tag.
+        """
         debug_assert(tag < 128, "only kernel op tags (0-127) can be registered")
         self._costs[tag] = cost
 
     def get_cost(self, tag: Int) -> OpCost:
-        """Look up the cost for a kernel op tag."""
+        """Look up the cost for a kernel op tag.
+
+        Args:
+            tag: Kernel op tag to look up (0-127).
+        """
         debug_assert(tag < 128, "only kernel op tags (0-127) have costs")
         return self._costs[tag]
 
@@ -390,6 +399,31 @@ struct OpDesc(ImplicitlyCopyable, Movable):
         All scheduling metadata (tag, resource, latency, role, channel) is
         specified directly. Per-instance fields (stage, subtile, k_offset)
         are keyword arguments.
+
+        Args:
+            tag: Kernel-specific op tag (0-127) used by `_emit` dispatch.
+            resource: Hardware execution unit (`GLOBAL_MEM`, `LDS`,
+                `MMA_UNIT`, or `SCALAR`).
+            latency: Estimated execution latency in cycles.
+            role: Pipeline data-flow role (`GLOBAL_LOAD`,
+                `FRAGMENT_LOAD`, etc.).
+            channel: Data path identifier for edge derivation. Ops on the
+                same channel share a buffer (defaults to -1).
+            stage: Buffer stage index (0 or 1 for double-buffering)
+                (defaults to 0).
+            subtile: Subtile index within the stage (defaults to 0).
+            k_offset: How to compute the K dimension offset for loads
+                (defaults to `KOffsetKind.NONE`).
+            vm_cost: Number of `vmcnt` (global load) ops this produces
+                (defaults to 0).
+            lgkm_cost: Number of `lgkmcnt` (LDS) ops this produces
+                (defaults to 0).
+            wait_value: For `WAIT_VM`/`WAIT_LGKM` ops, the count to wait
+                for (defaults to 0).
+            vgpr_def: VGPRs this op brings into scope as new live register
+                values (defaults to 0).
+            vgpr_kill: VGPRs this op releases as last use of some register
+                buffer (defaults to 0).
         """
         return OpDesc(
             tag=tag,
@@ -419,12 +453,22 @@ struct OpDesc(ImplicitlyCopyable, Movable):
         subtile: Int = 0,
         k_offset: KOffsetKind = KOffsetKind.NONE,
     ) -> OpDesc:
-        """Declare a logical op — buffer metadata only, no hardware costs.
+        """Declare a logical op: buffer metadata only, no hardware costs.
 
         Resource, latency, and role are left as sentinel values (NONE/0).
         Call annotate_ops() with a TargetCostModel to fill them in before
         scheduling. This separates the algorithm (what ops exist) from the
         target (how expensive they are).
+
+        Args:
+            tag: Kernel-specific op tag (0-127) used by `_emit` dispatch.
+            channel: Data path identifier for edge derivation. Ops on the
+                same channel share a buffer (defaults to -1).
+            stage: Buffer stage index (0 or 1 for double-buffering)
+                (defaults to 0).
+            subtile: Subtile index within the stage (defaults to 0).
+            k_offset: How to compute the K dimension offset for loads
+                (defaults to `KOffsetKind.NONE`).
         """
         return OpDesc(
             tag=tag,
@@ -455,7 +499,12 @@ struct OpDesc(ImplicitlyCopyable, Movable):
 
     @staticmethod
     def wait_vm_n(count: Int) -> OpDesc:
-        """Runtime-parameterized wait_vm (for ScheduleConfig-driven waits)."""
+        """Runtime-parameterized wait_vm (for ScheduleConfig-driven waits).
+
+        Args:
+            count: Number of outstanding `vmcnt` (global load) ops to wait
+                for.
+        """
         return OpDesc(
             tag=_Ops.WAIT_VM.value,
             wait_value=count,
@@ -474,7 +523,12 @@ struct OpDesc(ImplicitlyCopyable, Movable):
 
     @staticmethod
     def wait_lgkm_n(count: Int) -> OpDesc:
-        """Runtime-parameterized wait_lgkm (for ScheduleConfig-driven waits)."""
+        """Runtime-parameterized wait_lgkm (for ScheduleConfig-driven waits).
+
+        Args:
+            count: Number of outstanding `lgkmcnt` (LDS / scalar-memory) ops
+                to wait for.
+        """
         return OpDesc(
             tag=_Ops.WAIT_LGKM.value,
             wait_value=count,
@@ -484,7 +538,12 @@ struct OpDesc(ImplicitlyCopyable, Movable):
 
     @staticmethod
     def set_prio[priority: Int]() -> OpDesc:
-        """Priority hint: s_setprio[priority]()."""
+        """Priority hint: s_setprio[priority]().
+
+        Parameters:
+            priority: Wave priority value passed to the `s_setprio`
+                instruction.
+        """
         return OpDesc(
             tag=_Ops.SET_PRIO.value,
             wait_value=priority,
@@ -509,7 +568,12 @@ struct OpDesc(ImplicitlyCopyable, Movable):
     @staticmethod
     def sched_group_barrier[mask: Int, count: Int]() -> OpDesc:
         """Schedule_group_barrier hint. Mask encoded in subtile, count in
-        wait_value."""
+        wait_value.
+
+        Parameters:
+            mask: Scheduling-group mask, encoded into the `subtile` field.
+            count: Barrier count, encoded into the `wait_value` field.
+        """
         return OpDesc(
             tag=_Ops.SCHED_GROUP_BARRIER.value,
             subtile=mask,
@@ -527,10 +591,15 @@ def annotate_ops(
 
     For each op with a kernel-specific tag (< 128), looks up the cost model
     and fills in resource, latency, and role. Infrastructure ops (tag >= 128)
-    are passed through unchanged — they carry their own annotations.
+    are passed through unchanged; they carry their own annotations.
 
     This is the bridge between the algorithm (which declares logical ops via
     OpDesc.logical()) and the scheduler (which needs resource/latency data).
+
+    Args:
+        ops: List of logical ops declared via `OpDesc.logical()`.
+        model: Target cost model supplying resource, latency, and role for
+            kernel op tags.
     """
     var result = List[OpDesc]()
     for i in range(len(ops)):
@@ -638,22 +707,22 @@ struct EdgeRule(ImplicitlyCopyable, Movable):
 
     Fields fall into five groups:
 
-    1. **Core** — producer/consumer roles, dependency kind, loop distance.
+    1. **Core**: producer/consumer roles, dependency kind, loop distance.
        `loop_distance = -1` means "derive from producer.k_offset":
        K_PREV → d=0 (current-iteration load), otherwise d=1 (prefetch).
 
-    2. **Field matching** — require same channel / stage / subtile between
-       the producer and consumer ops.  `use_config_match` activates the
+    2. **Field matching**: require same channel / stage / subtile between
+       the producer and consumer ops. `use_config_match` activates the
        `PipelineConfig.compute_match_key()` logic (Phase 1 register-FLOW).
 
-    3. **Half predicates** (double-buffer) — `same_half` / `cross_half` /
+    3. **Half predicates** (double-buffer): `same_half` / `cross_half` /
        `producer_half` constrain which half each op lives in.
 
-    4. **K-offset filter** — 0=any, 1=K_PREV only, 2=non-K_PREV only.
+    4. **K-offset filter**: 0=any, 1=K_PREV only, 2=non-K_PREV only.
        Applied to the *consumer* for LDS-ANTI rules, to the *producer* for
        LDS-FLOW distance derivation.
 
-    5. **Single-buffer predicates** — `lc_producer`/`lc_consumer` (loop-
+    5. **Single-buffer predicates**: `lc_producer`/`lc_consumer` (loop-
        carried status), `producer_ordinal`/`consumer_ordinal` (Nth op of
        that role), `first_match_only` (break after first consumer match).
     """
@@ -723,7 +792,7 @@ struct EdgeRule(ImplicitlyCopyable, Movable):
 def _is_prefetch(op: OpDesc) -> Bool:
     """K-offset-based prefetch: K0/K1 loads are initial-fill data (used by
     the prologue to identify which loads pre-fill LDS). K_PREV/NONE are
-    not prefetch — they reference the previous iteration.
+    not prefetch; they reference the previous iteration.
 
     Note: this is the PROLOGUE meaning of prefetch. For kernel wait_vm
     derivation, derive_waits_from_blocks uses stage-based completion

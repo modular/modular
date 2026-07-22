@@ -13,7 +13,8 @@
 
 from std.sys import size_of
 from std.bit import rotate_bits_left
-from std.memory import Span, bitcast
+from std.memory import bitcast
+from std.collections import Span
 
 from .hasher import Hasher
 

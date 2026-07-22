@@ -87,7 +87,10 @@ def case_raise_string_error() -> PythonObject:
     var error_type = cpython.get_error_global("PyExc_ValueError")
 
     cpython.PyErr_SetString(
-        error_type, "sample value error".as_c_string_slice().unsafe_ptr()
+        error_type,
+        "sample value error".as_c_string_slice()
+        .unsafe_ptr()
+        .as_unsafe_any_origin(),
     )
 
     return PythonObject(from_owned=PyObjectPtr())
@@ -144,7 +147,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
     def change_name(
         self_: PythonObject, new_name: PythonObject
     ) raises -> PythonObject:
-        var self0 = UnsafePointer[Self, ...](
+        var self0 = Pointer[Self, ...](
             unchecked_downcast_value=self_
         ).unsafe_mut_cast[True]()
 
@@ -196,7 +199,7 @@ def incr_int__wrapper(
 ) raises -> PythonObject:
     check_arguments_arity(1, py_args, "incr_int")
 
-    var arg_0: UnsafePointer[Int, MutAnyOrigin] = check_and_get_arg[Int](
+    var arg_0: Pointer[Int, MutAnyOrigin] = check_and_get_arg[Int](
         "incr_int", py_args, 0
     )
 
@@ -211,13 +214,11 @@ def add_to_int__wrapper(
 ) raises -> PythonObject:
     check_arguments_arity(2, py_args, "add_to_int")
 
-    var arg_0: UnsafePointer[Int, MutAnyOrigin] = check_and_get_arg[Int](
+    var arg_0: Pointer[Int, MutAnyOrigin] = check_and_get_arg[Int](
         "add_to_int", py_args, 0
     )
 
-    var arg_1: UnsafePointer[Int, MutAnyOrigin] = check_and_get_or_convert_arg[
-        Int
-    ](
+    var arg_1: Pointer[Int, MutAnyOrigin] = check_and_get_or_convert_arg[Int](
         "add_to_int",
         py_args,
         1,

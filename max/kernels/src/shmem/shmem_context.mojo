@@ -11,6 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""SHMEM runtime context and multi-GPU launch helper.
+
+Provides `SHMEMContext`, which wraps the SHMEM runtime lifecycle and exposes a
+`DeviceContext`-compatible interface for submitting kernels and managing
+symmetric-heap buffers. Use `shmem_launch` to run a per-GPU function across
+all attached GPUs.
+"""
+
 from std.algorithm import parallelize
 from std.collections.optional import OptionalReg
 from std.os import abort
@@ -46,9 +54,12 @@ from .shmem_api import (
     shmem_init,
     shmem_init_thread_tcp,
     shmem_init_thread_mpi,
+    shmem_module_finalize,
     shmem_module_init,
+    shmem_team_my_pe,
     shmem_team_t,
 )
+from .shmem_buffer import SHMEMBuffer
 
 
 def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:

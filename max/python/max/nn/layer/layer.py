@@ -17,10 +17,9 @@ import difflib
 import threading
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from functools import wraps
 from inspect import signature
-from itertools import islice
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
@@ -77,6 +76,64 @@ class Shardable(Protocol):
             A sequence of sharded instances of this object.
         """
         ...
+
+
+@runtime_checkable
+class FlattenableGraphInput(Protocol):
+    """A structured graph input that can cross a subgraph boundary.
+
+    Objects implementing this protocol (for example
+    :class:`~max.nn.kv_cache.PagedCacheValues`) know how to serialize
+    themselves into a flat list of graph :class:`~max.graph.Value` objects and
+    reconstruct themselves from a flat iterator, letting them be passed as a
+    single logical argument through :meth:`Module.build_subgraph` /
+    :func:`~max.graph.ops.call` without manual field-by-field decomposition.
+    """
+
+    def flatten(self) -> list[Value[Any]]:
+        """Serializes this object into a flat list of graph values."""
+        ...
+
+    def unflatten(self, it: Iterator[Any]) -> Any:
+        """Reconstructs this object by consuming values from ``it``."""
+        ...
+
+
+# A single argument in a subgraph's input pytree: a leaf ``Value``, a
+# (possibly nested) list/tuple of such arguments, or a flattenable structured
+# node. ``Any`` is used for the recursive/leaf cases to keep the annotation
+# usable at call sites.
+SubgraphInput = Value[Any] | Sequence[Any] | FlattenableGraphInput
+
+
+def _flatten_graph_inputs(node: Any) -> list[Value[Any]]:
+    """Flattens a pytree of subgraph inputs into a flat list of values.
+
+    A leaf is anything that is neither a ``list``/``tuple`` nor a
+    :class:`FlattenableGraphInput`. Flattenable nodes are expanded via their
+    own ``flatten`` method, keeping their field order.
+    """
+    if isinstance(node, list | tuple):
+        result: list[Value[Any]] = []
+        for item in node:
+            result.extend(_flatten_graph_inputs(item))
+        return result
+    if isinstance(node, FlattenableGraphInput):
+        return list(node.flatten())
+    return [node]
+
+
+def _rebuild_graph_inputs(node: Any, it: Iterator[Value[Any]]) -> Any:
+    """Rebuilds ``node``'s structure, drawing fresh leaves from ``it``.
+
+    Mirrors :func:`_flatten_graph_inputs`: it must consume values from ``it`` in
+    the exact order that function produced them.
+    """
+    if isinstance(node, list | tuple):
+        return [_rebuild_graph_inputs(item, it) for item in node]
+    if isinstance(node, FlattenableGraphInput):
+        return node.unflatten(it)
+    return next(it)
 
 
 class Layer:
@@ -233,7 +290,7 @@ class Module(Layer, ABC):
     def build_subgraph(
         self,
         name: str,
-        input_types: Sequence[Type[Any] | list[Type[Any]]],
+        inputs: Sequence[SubgraphInput],
         weight_prefix: str = "",
     ) -> Graph:
         """Builds a subgraph encapsulating this layer's computation.
@@ -251,12 +308,10 @@ class Module(Layer, ABC):
 
             .. code-block:: python
 
-                input_types = [hidden.type for hidden in h]
-
-                # Build the subgraph once.
+                # Build the subgraph once from representative inputs.
                 subgraph = self.layers[0].build_subgraph(
                     "transformer_block",
-                    input_types=input_types,
+                    inputs=h,
                     weight_prefix="layers.0.",
                 )
 
@@ -270,10 +325,15 @@ class Module(Layer, ABC):
         Args:
             name: The name of the subgraph. Must be unique within the containing
                 graph.
-            input_types: The input types for the subgraph. Pass a flat
-                :class:`~max.graph.type.Type` for a single tensor, or a list of
-                :class:`~max.graph.type.Type` objects for a group of tensors that
-                should be passed together (for example, KV-cache blocks).
+            inputs: Representative input values for the subgraph, one per
+                positional argument of the layer's ``__call__``. Each argument
+                may be a single :class:`~max.graph.Value`, a (possibly nested)
+                list/tuple of values, or a structured
+                :class:`FlattenableGraphInput` such as
+                :class:`~max.nn.kv_cache.PagedCacheValues`. The subgraph's
+                signature is derived from the flattened leaves' types, and the
+                same structure is rebuilt from the subgraph's inputs before the
+                layer is invoked.
             weight_prefix: A prefix string to strip from weight names before
                 registering them as placeholder weights. At call time, the caller
                 supplies the same prefix via the ``prefix`` argument of
@@ -286,36 +346,28 @@ class Module(Layer, ABC):
         Notes:
             Weights with names that start with ``weight_prefix`` are marked as
             placeholders. Any :func:`~max.graph.ops.call` invocation for this
-            subgraph must supply a matching ``prefix``.
+            subgraph must supply a matching ``prefix``. Pass the flattened
+            leaves (via :func:`~max.graph.ops.call`) in the same order that
+            ``inputs`` flattens to.
         """
         layer_weights = list(self.raw_state_dict().values())
-        subgraph_input_types: list[Type[Any]] = []
 
-        def flatten(t: Any, result: list[Any]) -> None:
-            if isinstance(t, list | tuple):
-                for item in t:
-                    flatten(item, result)
-            else:
-                result.append(t)
+        flat_leaves: list[Value[Any]] = []
+        for arg in inputs:
+            flat_leaves.extend(_flatten_graph_inputs(arg))
+        subgraph_input_types: list[Type[Any]] = [
+            leaf.type for leaf in flat_leaves
+        ]
 
-        def take(it: Iterable[Value[Any]], n: int) -> list[Value[Any]]:
-            """Return the next *n* items from *it* as a list."""
-            return list(islice(it, n))
-
-        flatten(input_types, subgraph_input_types)
         with Graph.current.add_subgraph(
             name,
             input_types=subgraph_input_types,
             devices=list(Graph.current.device_chains.keys()),
         ) as subgraph:
-            subgraph_inputs = []
-            inputs = iter(subgraph.inputs)
-
-            for input_type in input_types:
-                if isinstance(input_type, list):
-                    subgraph_inputs.append(take(inputs, len(input_type)))
-                else:
-                    subgraph_inputs.append(next(inputs))
+            fresh_inputs = iter(subgraph.inputs)
+            subgraph_inputs = [
+                _rebuild_graph_inputs(arg, fresh_inputs) for arg in inputs
+            ]
 
             if weight_prefix:
                 for weight in filter(

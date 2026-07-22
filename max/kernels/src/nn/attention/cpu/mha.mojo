@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements CPU-based multi-head attention kernels, including flash attention and KV-cache-backed attention variants."""
+
 from std.collections import OptionalReg
 from std.math import align_down, align_up, ceildiv, exp
 
@@ -45,7 +47,8 @@ from linalg.matmul.cpu.apple_accelerate import (
 )
 from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
-from std.memory import memset_zero, stack_allocation
+from std.memory import alloc, dealloc, memset_zero, stack_allocation
+from std.memory.alloc import DeletableAllocation, Layout as AllocLayout
 from nn.attention.mha_mask import MHAMask
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -756,17 +759,21 @@ struct _FlashAttention[
                 Span(sum_vals_storage), row_major[Self._config.block_m]()
             )
 
-            var packed_ptr_allocated = max_seq_len != 1
-            var packed_ptr: UnsafePointer[
-                Scalar[Self.dtype], MutUntrackedOrigin
-            ]
-            if packed_ptr_allocated:
-                packed_ptr = alloc[Scalar[Self.dtype]](
-                    packed_size,
-                    alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
-                )
-            else:
-                packed_ptr = type_of(packed_ptr).unsafe_dangling()
+            var packed_alloc = Optional[
+                DeletableAllocation[Scalar[Self.dtype]]
+            ]()
+            var packed_ptr = type_of(
+                packed_alloc.value().unsafe_ptr()
+            ).unsafe_dangling()
+
+            if max_seq_len != 1:
+                packed_alloc = alloc(
+                    AllocLayout[Scalar[Self.dtype]](
+                        count=packed_size,
+                        alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
+                    )
+                ).into_deletable()
+                packed_ptr = packed_alloc.unsafe_value().unsafe_ptr()
 
             var q_seq_stride = num_heads * depth_dim
 
@@ -938,8 +945,14 @@ struct _FlashAttention[
                     o_ptr += q_seq_stride
                     oz_ptr += Self._config.o_block_n
 
-            if packed_ptr_allocated:
-                packed_ptr.free()
+            # NOTE: passing `dealloc[Scalar[Self.dtype]]` directly crashes the
+            # when the dtype is parametric; wrap it in a local function as a workaround.
+            def _dealloc_packed(
+                var packed: DeletableAllocation[Scalar[Self.dtype]],
+            ):
+                dealloc(packed^.into_allocation())
+
+            packed_alloc^.deinit_with(_dealloc_packed)
 
         sync_parallelize[task_func](num_threads, ctx)
 
@@ -1083,6 +1096,36 @@ def flash_attention[
     ] = None,
     ctx: Optional[DeviceContext] = None,
 ):
+    """Computes scaled dot-product flash attention on CPU for the given query, key, value, and mask accessors.
+
+    Parameters:
+        dtype: The element type of the query, key, value, and output
+            tensors (inferred).
+        rank: The number of dimensions in the query, key, value, and output
+            tensors, either 3 or 4 (inferred).
+        mask_rank: The number of dimensions in the attention mask tensor
+            (inferred).
+        q_origin: The memory origin of the read-only query tensor
+            (inferred).
+        output_origin: The memory origin of the writable output tensor
+            (inferred).
+        input_k_fn: Compile-time function loading a `SIMD` vector of key
+            elements at a given `IndexList` index.
+        input_v_fn: Compile-time function loading a `SIMD` vector of value
+            elements at a given `IndexList` index.
+        input_mask_fn: Compile-time function loading a `SIMD` vector of
+            additive mask values at a given `IndexList` index.
+
+    Args:
+        q: Query tensor in BSHD or BSD layout.
+        k_shape: Shape of the key tensor.
+        v_shape: Shape of the value tensor.
+        mask_shape: Shape of the attention mask tensor.
+        output: Output tensor to write the attention results into.
+        scale: Scaling factor applied to the query-key dot products.
+        sink_weights: Optional per-head attention sink weights.
+        ctx: Optional device context for controlling parallelism.
+    """
     _flash_attention[input_k_fn, input_v_fn, input_mask_fn](
         q,
         k_shape,
@@ -1137,6 +1180,38 @@ def flash_attention_split_kv[
     So this kernel does an in-place concat fusion by changing the input lambdas
     `input_{k,v}_cache_fn_wrapper` to take previous sequence KV elements from
     the KV cache, and current KV elements from tensors `k` and `v`.
+
+    Parameters:
+        dtype: The element type of the query, key, value, and output
+            tensors (inferred).
+        rank: The number of dimensions in the query, key, value, and output
+            tensors, either 3 or 4 (inferred).
+        mask_rank: The number of dimensions in the attention mask tensor
+            (inferred).
+        input_k_fn: Compile-time function loading a `SIMD` vector of current
+            key elements at a given `IndexList` index.
+        input_v_fn: Compile-time function loading a `SIMD` vector of current
+            value elements at a given `IndexList` index.
+        input_k_cache_fn: Compile-time function loading a `SIMD` vector of
+            cached key elements at a given `IndexList` index.
+        input_v_cache_fn: Compile-time function loading a `SIMD` vector of
+            cached value elements at a given `IndexList` index.
+        input_mask_fn: Compile-time function loading a `SIMD` vector of
+            additive mask values at a given `IndexList` index.
+
+    Args:
+        q: Query tensor in BSHD layout.
+        k_shape: Shape of the current key tensor in BSHD layout.
+        v_shape: Shape of the current value tensor in BSHD layout.
+        k_cache_shape: Shape of the cached key tensor with one extra
+            leading dimension.
+        v_cache_shape: Shape of the cached value tensor with one extra
+            leading dimension.
+        mask_shape: Shape of the attention mask tensor.
+        output: Output tensor to write the attention results into.
+        scale: Scaling factor applied to the query-key dot products.
+        ctx: Optional device context for controlling parallelism
+            (defaults to `None`).
     """
     # This expects the following layouts:
     # q: BSHD
@@ -1408,7 +1483,7 @@ def _flash_attention_kv_cache[
 
 # See the note on the ragged overload below: `k`/`v` alias the same `blocks`
 # buffer and are read-only here, so disable the nested-origin exclusivity check.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
@@ -1432,6 +1507,17 @@ def flash_attention_kv_cache[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ):
+    """Computes flash attention on CPU using a KV cache with an additive LayoutTensor mask.
+
+    Args:
+        q: Query tensor in BSHD layout.
+        k: Key cache.
+        v: Value cache.
+        mask: Additive attention mask tensor.
+        scale: Scaling factor applied to the query-key dot products.
+        output: Output tensor to write the attention results into.
+        sink_weights: Optional per-head attention sink weights."""
+
     @always_inline
     @parameter
     def mask_fn[
@@ -1450,7 +1536,7 @@ def flash_attention_kv_cache[
 
 # See the note on the ragged overload below: `k`/`v` alias the same `blocks`
 # buffer and are read-only here, so disable the nested-origin exclusivity check.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
@@ -1475,6 +1561,17 @@ def flash_attention_kv_cache[
         ]
     ] = None,
 ):
+    """Computes flash attention on CPU using a KV cache with an MHAMask-based mask.
+
+    Args:
+        q: Query tensor in BSHD layout.
+        k: Key cache.
+        v: Value cache.
+        mask: MHAMask applied to the attention scores.
+        scale: Scaling factor applied to the query-key dot products.
+        output: Output tensor to write the attention results into.
+        sink_weights: Optional per-head attention sink weights."""
+
     @always_inline
     @parameter
     def mask_fn[
@@ -1498,7 +1595,7 @@ def flash_attention_kv_cache[
 # exclusivity checker can't prove that and rejects passing both. Disabling the
 # nested-origin exclusivity check is safe here (read-only) and lets direct
 # callers pass `get_key_cache()`/`get_value_cache()` without a copy-capture shim.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
@@ -1527,7 +1624,33 @@ def flash_attention_kv_cache[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ):
-    """Entrypoint for ragged tensors."""
+    """Computes flash attention on CPU for ragged tensors using a KV cache with an `MHAMask`-based mask.
+
+    Parameters:
+        dtype: The element type of the query, key, value, and output
+            tensors (inferred).
+        cache_t: The KV cache type storing key and value states (inferred).
+        mask_t: The `MHAMask` type applied to the attention scores
+            (inferred).
+        q_origin: The memory origin of the read-only query tensor
+            (inferred).
+        output_origin: The memory origin of the writable output tensor
+            (inferred).
+
+    Args:
+        q: Flattened query tensor indexed by `(row_offset, head, depth)`.
+        q_input_row_offsets: Per-batch start offsets into the flattened
+            query tensor; batch `b` spans rows `[offsets[b], offsets[b + 1])`.
+        kv_input_row_offsets: Per-batch start offsets into the flattened KV
+            tensors; batch `b` spans rows `[offsets[b], offsets[b + 1])`.
+        k: Key cache storing per-head key states.
+        v: Value cache storing per-head value states.
+        mask: `MHAMask` applied additively to the query-key attention
+            scores.
+        scale: Scaling factor applied to the query-key dot products.
+        output: Output tensor to write the attention results into.
+        sink_weights: Optional per-head attention sink weights.
+    """
 
     @always_inline
     @parameter

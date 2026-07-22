@@ -34,7 +34,6 @@ olmo_modulev3_arch = SupportedArchitecture(
     pipeline_model=OlmoModel,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,

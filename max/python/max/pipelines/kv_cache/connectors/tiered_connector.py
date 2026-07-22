@@ -29,7 +29,7 @@ from dataclasses import dataclass
 
 from max.driver import Device, DevicePinnedBuffer
 from max.dtype import DType
-from max.nn.kv_cache.cache_params import KVCacheMemory
+from max.nn.kv_cache.cache_params import KVCacheMemory, KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import Tracer, traced
@@ -52,7 +52,7 @@ GiB = 1024**3
 
 @dataclass
 class _CacheHit:
-    block_hash: int
+    block_hash: bytes
     host_block: KVCacheBlock
     device_block_id: int
     future: Future[None] | None = None
@@ -75,11 +75,11 @@ class TieredConnector:
     def __init__(
         self,
         devices: Sequence[Device],
-        kv_memory: list[KVCacheMemory],
+        replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
         total_num_host_blocks: int,
         disk_cache_dir: str,
         max_disk_size_gb: float,
-        use_direct_io: bool = False,
+        kv_hash_algo: KVHashAlgo = "ahash64",
         synchronous_d2h_copy_mode: bool = False,
     ) -> None:
         if total_num_host_blocks <= 0:
@@ -88,9 +88,12 @@ class TieredConnector:
         self._devices = list(devices)
         self._total_num_host_blocks = total_num_host_blocks
 
+        # One pinned host buffer + disk tier shared by every DP replica
+        # (SERVOPT-1501); ``replica_kv_memory`` holds each replica's device
+        # buffers for the H2D/D2H endpoints.
         self._block_copy_engine = BlockOffloadEngine(
             total_num_host_blocks,
-            kv_memory,
+            replica_kv_memory,
         )
         self._host_buffer: DevicePinnedBuffer = (
             self._block_copy_engine.host_buffer
@@ -114,7 +117,7 @@ class TieredConnector:
             cache_dir=disk_cache_dir,
             block_nbytes=self._block_disk_bytes,
             max_disk_size_bytes=int(max_disk_size_gb * GiB),
-            use_direct_io=use_direct_io,
+            kv_hash_algo=kv_hash_algo,
         )
 
         logger.info(
@@ -175,9 +178,10 @@ class TieredConnector:
     def load(
         self,
         device_block_ids: list[int],
-        block_hashes: list[int],
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
     ) -> int:
-        """Load data from host or disk cache into device blocks.
+        """Load data from host or disk cache into ``replica_idx``'s blocks.
 
         Returns:
             Number of blocks loaded from host cache.
@@ -241,7 +245,7 @@ class TieredConnector:
                 if hit.future is not None and not hit.future.done():
                     # Flush accumulated ready blocks so their H2D overlaps with
                     # the disk wait below.
-                    self._block_copy_engine.memcpy_h2d(dsts, srcs)
+                    self._block_copy_engine.memcpy_h2d(dsts, srcs, replica_idx)
                     self._h2d_blocks_copied += len(dsts)
                     dsts = []
                     srcs = []
@@ -280,7 +284,7 @@ class TieredConnector:
                 srcs.append(hit.host_block.bid)
                 num_loaded += 1
 
-            self._block_copy_engine.memcpy_h2d(dsts, srcs)
+            self._block_copy_engine.memcpy_h2d(dsts, srcs, replica_idx)
             self._h2d_blocks_copied += len(dsts)
 
         # Wait for in-flight disk reads on unprocessed hits so their
@@ -294,6 +298,32 @@ class TieredConnector:
             wait(remaining)
 
         return num_loaded
+
+    def count_cached_prefix(
+        self, block_hashes: Sequence[bytes]
+    ) -> tuple[int, int]:
+        """Counts contiguous leading blocks resident in the CPU or disk tier.
+
+        Read-only companion to ``load``: same tier walk (CPU first, then disk
+        per block) and the same last-level-cache-only override, but no
+        promotions, allocations, or LRU updates. Unlike ``load`` it does not
+        require free host blocks to count a disk hit, so it reflects index
+        presence rather than immediate serviceability.
+        """
+        host_cache = self._host_block_pool.prefix_cache
+        num_host_hits = 0
+        num_disk_hits = 0
+        for block_hash in block_hashes:
+            if (
+                not self._only_use_kv_connector_last_level_cache
+                and block_hash in host_cache
+            ):
+                num_host_hits += 1
+            elif self._disk_tier.contains(block_hash):
+                num_disk_hits += 1
+            else:
+                break
+        return (num_host_hits, num_disk_hits)
 
     @traced
     def wait_for_offloads(self) -> None:
@@ -354,10 +384,11 @@ class TieredConnector:
     def offload(
         self,
         block_ids: list[int],
-        block_hashes: list[int],
-        parent_seq_hash: int = 0,
+        block_hashes: Sequence[bytes],
+        parent_seq_hash: bytes | None = None,
+        replica_idx: int = 0,
     ) -> None:
-        """Offload the device blocks to the external cache.
+        """Offload ``replica_idx``'s device blocks to the external cache.
 
         ``parent_seq_hash`` is ignored: blocks are keyed by hash at each tier.
 
@@ -379,12 +410,14 @@ class TieredConnector:
                 dsts.append(host_block.bid)
                 srcs.append(device_block_id)
 
-        self._block_copy_engine.memcpy_d2h(dsts, srcs)
+        self._block_copy_engine.memcpy_d2h(dsts, srcs, replica_idx)
         self._d2h_blocks_copied += len(dsts)
 
         if host_blocks:
             pending_disk_write = _PendingDiskWrite(
-                d2h_copy_complete_event=self._block_copy_engine.record_d2h_event(),
+                d2h_copy_complete_event=self._block_copy_engine.record_d2h_event(
+                    replica_idx
+                ),
                 host_blocks=host_blocks,
             )
             self._pending_disk_writes.appendleft(pending_disk_write)
@@ -392,6 +425,14 @@ class TieredConnector:
             # If flag is set, immediately synchronize the event.
             if self._synchronous_d2h_copy_mode:
                 pending_disk_write.d2h_copy_complete_event.synchronize()
+
+    def touch(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> None:
+        """No-op: this connector does not refresh recency on device-cache hits."""
+        return None
 
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""
@@ -446,7 +487,14 @@ class TieredConnector:
             inflight_disk_ops=self._disk_tier.inflight_disk_ops,
         )
 
-    def _maybe_offload_to_host(self, block_hash: int) -> KVCacheBlock | None:
+    def reset_metrics(self) -> None:
+        """Clear transfer counters after the scheduler samples a batch."""
+        self._h2d_blocks_copied = 0
+        self._d2h_blocks_copied = 0
+        self._disk_blocks_written = 0
+        self._disk_blocks_read = 0
+
+    def _maybe_offload_to_host(self, block_hash: bytes) -> KVCacheBlock | None:
         """Reserve a host slot for device_block_id if not already cached.
 
         Returns the host block (ref_cnt=1) so the caller can batch the D2H
@@ -480,7 +528,9 @@ class TieredConnector:
             bumped the ref_cnt by 1 prior to calling this method.
         """
         block_hash = host_block.block_hash
-        assert block_hash is not None
+        assert isinstance(block_hash, bytes), (
+            "host_block.block_hash should be bytes here"
+        )
         # Zero-copy NumPy view of the block's row; aliases the pinned memory.
         src = self._host_buffer[host_block.bid, :].to_numpy()
         future = self._disk_tier.write_block_async(block_hash, src)
@@ -490,3 +540,7 @@ class TieredConnector:
         else:
             # write_block_async returned None (already on disk / pending)
             self._host_block_pool.free_block(host_block)
+
+    @property
+    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
+        return frozenset({"ahash64", "sha256", "sha256_64"})

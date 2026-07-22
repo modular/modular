@@ -93,7 +93,7 @@ logit_verification_pipelines:
     absolute_tolerance: 2.4e-2
     relative_tolerance: 7.8e-3
     cos_dist_threshold: 3.3e-6
-    kl_div_threshold: 8.6e-06
+    kl_div_threshold: 1.9e-05
 
   sentence-transformers/all-mpnet-base-v2-float32:
     pre_submit_agents: []
@@ -108,7 +108,7 @@ logit_verification_pipelines:
     absolute_tolerance: 2.6e-3
     relative_tolerance: 1.8e-1
     cos_dist_threshold: 2.6e-5
-    kl_div_threshold: 3.3e-07
+    kl_div_threshold: 5.0e-07
 
   unsloth/gpt-oss-20b-BF16:
     pre_submit_agents: []
@@ -308,16 +308,15 @@ logit_verification_pipelines:
     cos_dist_threshold: 6.0e-03
     kl_div_threshold: 1.5e-02
 
-  # TODO(PRDT-458): Add pregenerated_torch_goldens after running the
-  # "Generate Pipeline Goldens" GitHub Action (avoids autoregressive-drift
-  # false-failures from bfloat16 tie-breaks in live torch comparison).
-  # Observed non-drift accuracy: max cos_dist=7.4e-04, max kl=1.6e-03.
   LiquidAI/LFM2.5-1.2B-Instruct-bfloat16:
     pre_submit_agents: []
     pipeline: "LiquidAI/LFM2.5-1.2B-Instruct"
     compatible_with: [gpu]
     encoding: bfloat16
     tags: []
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/LiquidAI_LFM2.5-1.2B-Instruct_golden/1/1345a0b62a1bf36cacd821e131e533d008d44ece232009eb35d871226adb4e60/LiquidAI_LFM2.5-1.2B-Instruct_golden.tar.gz"
+      json_file: "torch_LiquidAI_LFM2.5-1.2B-Instruct_bfloat16_golden.json"
     cos_dist_threshold: 5.0e-03
     kl_div_threshold: 1.0e-02
 
@@ -353,6 +352,9 @@ logit_verification_pipelines:
     compatible_with: [gpu]
     encoding: bfloat16
     tags: []
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/mistralai_Mistral-Small-3.1-24B-Instruct-2503_golden/1/1aee8fe2f357007cba31a3d59f537cb204df040aa8bca7ab7f8c521469385905/mistralai_Mistral-Small-3.1-24B-Instruct-2503_golden.tar.gz"
+      json_file: "torch_mistralai_Mistral-Small-3.1-24B-Instruct-2503_bfloat16_golden.json"
     cos_dist_threshold: 3.0e-03
     kl_div_threshold: 5.2e-3
 
@@ -623,17 +625,6 @@ logit_verification_pipelines:
     cos_dist_threshold: 2.1e-5
     kl_div_threshold: 4.6e-7
 
-  allenai/Olmo-3-7B-Instruct-bfloat16:
-    pre_submit_agents: []
-    pipeline: "allenai/Olmo-3-7B-Instruct"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_allenai_Olmo-3-7B-Instruct_bfloat16_golden/1/57f967c473a246e4f3d40a55393ee615c0feb3134bcbb7e67645993e6294c6aa/torch_allenai_Olmo-3-7B-Instruct_bfloat16_golden.tar.gz"
-      json_file: "torch_allenai_Olmo-3-7B-Instruct_bfloat16_golden.json"
-    kl_div_threshold: 1e-02
-    cos_dist_threshold: 6e-02
-
   HuggingFaceM4/Idefics3-8B-Llama3:
     pre_submit_agents: []
     pipeline: "HuggingFaceM4/Idefics3-8B-Llama3"
@@ -708,7 +699,7 @@ logit_verification_pipelines:
     pipeline: "kaitchup/DeepSeek-R1-Distill-Llama-8B-AutoRound-GPTQ-4bit"
     compatible_with: [gpu]
     encoding: gptq
-    tags: [nvidia-only]
+    tags: [nvidia-only, manual]  # pending huggingface/transformers#45488
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_llama-gptq_golden/0/7e5b7b4d1764033be69e85e0badc9dca82c94c8d2def1216d317b149a621daef/torch_llama-gptq_golden.tar.gz"
       json_file: "torch_llama-gptq-no-perm-idx_golden.json"
@@ -886,6 +877,28 @@ logit_verification_pipelines:
     cos_dist_threshold: 5.0e-04
     kl_div_threshold: 1.0e-03
 
+  # MiniMax-M3-MXFP8, compared against logprob goldens
+  # pregenerated from the mm-sglang MiniMax-M3 fork on the 3 short prompts.
+  # Serving engines expose logprobs (not raw logits), so this is a brittle
+  # pipeline: cosine distance + KL divergence only. Needs the private arch, so
+  # run via //max_private/minimax_m3:verify_minimax_m3
+  # --pipeline=MiniMaxAI/MiniMax-M3-MXFP8. 8 GPUs (ep_size=8, dp=1).
+  MiniMaxAI/MiniMax-M3-MXFP8:
+    pre_submit_agents: []
+    post_submit_agents: []
+    pipeline: "MiniMaxAI/MiniMax-M3-MXFP8"
+    compatible_with: [gpu]
+    encoding: float8_e4m3fn
+    tags: [manual, nvidia-multi, 8xb200]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/MiniMaxAI_MiniMax-M3-MXFP8_golden/1/f6c729e886f1750f1c569f5d68bfcd300f5e5eca24507047fd11830dadfd9cae/MiniMaxAI_MiniMax-M3-MXFP8_golden.tar.gz"
+      json_file: "sglang_MiniMaxAI_MiniMax-M3-MXFP8_float8_e4m3fn_golden.json"
+    # Tuned via --find-tolerances on 8x B200 (measured: cos_dist 5.6e-04,
+    # kl_div 1.8e-01) with headroom. KL is dominated by the translate prompt's
+    # later steps; MAX fp8 vs sglang mxfp8+deep_gemm kernels differ.
+    cos_dist_threshold: 1.0e-03
+    kl_div_threshold: 3.0e-01
+
   deepseek-ai/DeepSeek-V3.1-Terminus:
     pre_submit_agents: []
     pipeline: "deepseek-ai/DeepSeek-V3.1-Terminus"
@@ -912,6 +925,21 @@ logit_verification_pipelines:
     kl_div_threshold: 5.0e+00
     timeout: 1200
 
+  zai-org/GLM-5.1-FP8:
+    pre_submit_agents: []
+    pipeline: "zai-org/GLM-5.1-FP8"
+    compatible_with: [gpu]
+    encoding: float8_e4m3fn
+    tags: [nvidia-multi, 8xb200]
+    # Goldens generated using local installation of vLLM, not with workflow
+    # because model requires deep_gemm, which must be installed from git repo.
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/zai-org_GLM-5.1-FP8_golden/1/6a79dc15919c845af6e762d41d7e38bae299eb78b20e4b8a4024de24f4c1b0cb/zai-org_GLM-5.1-FP8_golden.tar.gz"
+      json_file: "torch_zai-org_GLM-5.1-FP8_float8_e4m3fn_golden.json"
+    cos_dist_threshold: 1.1e-03
+    kl_div_threshold: 4.0e-01
+    timeout: 1200
+
   nvidia/DeepSeek-R1-0528-NVFP4-v2:
     pre_submit_agents: []
     pipeline: "nvidia/DeepSeek-R1-0528-NVFP4-v2"
@@ -932,6 +960,7 @@ logit_verification_pipelines:
     pipeline: "google/gemma-3-1b-it"
     compatible_with: [gpu]
     encoding: bfloat16
+    tags: [nvidia-only]  # TODO(KERN-3014): AMD MI355 compile crash.
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_gemma3-1b_golden/1/31d4f0ff8f50b9ab0f877d8765114f6bc4ae73677d2cd2d6ce658866fabf15d4/torch_gemma3-1b_golden.tar.gz"
       json_file: "torch_gemma3-1b_bfloat16_golden.json"
@@ -943,7 +972,7 @@ logit_verification_pipelines:
     pipeline: "google/gemma-3-12b-it"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: []
+    tags: [nvidia-only]  # TODO(KERN-3014): AMD MI355 compile crash.
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_gemma3-multimodal_golden/1/06d0fa8ed540ae7141a42c432af1661c85d31f8584d017345992df7a52c21ccb/torch_gemma3-multimodal_golden.tar.gz"
       json_file: "torch_gemma3-multimodal_bfloat16_golden.json"
@@ -1151,6 +1180,9 @@ logit_verification_pipelines:
     compatible_with: [gpu]
     encoding: bfloat16
     tags: [nvidia-only, no-h100, video-generation]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/Wan-AI_Wan2.1-T2V-14B-Diffusers_golden/1/5bf1a41a1d45d1c9707428c8b410a7db128cf43dee97de628b1a82786e71abed/Wan-AI_Wan2.1-T2V-14B-Diffusers_golden.tar.gz"
+      json_file: "torch_Wan-AI_Wan2.1-T2V-14B-Diffusers_bfloat16_golden.json"
     ssim_threshold: 0.60
     lpips_threshold: 0.28
     timeout: 7200

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides register-file accumulator structures used by the matmul inner loop."""
+
 from std.collections.optional import Optional
 from layout import TileTensor
 from std.math import fma

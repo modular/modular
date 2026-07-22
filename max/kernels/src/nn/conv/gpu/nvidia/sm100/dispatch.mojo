@@ -90,6 +90,24 @@ def _transpose_fcrs_to_krsc[
 def test_alignment_sm100_conv2d[
     input_type: DType, output_type: DType
 ](in_channels: Int, out_channels: Int) -> Bool:
+    """Checks whether the input and output channel counts meet SM100 conv2d alignment requirements.
+
+    Returns True when the input activation row is 64-byte aligned and the
+    output row is 4-byte aligned, otherwise False.
+
+    Parameters:
+        input_type: Element type of the input activation tensor, used to
+            compute the per-row byte width for the 64-byte alignment check.
+        output_type: Element type of the output tensor, used to compute the
+            per-row byte width for the 4-byte alignment check.
+
+    Args:
+        in_channels: Number of input channels per activation row.
+        out_channels: Number of output channels per output row.
+
+    Returns:
+        True if both alignment constraints are satisfied, False otherwise.
+    """
     return (in_channels * size_of[input_type]()) % 64 == 0 and (
         out_channels * size_of[output_type]()
     ) % 4 == 0

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Generic
@@ -32,6 +32,18 @@ from max.serve.telemetry.metrics import METRICS
 logger = logging.getLogger("max.serve")
 
 from abc import ABC, abstractmethod
+
+
+class RequestQueueFull(Exception):
+    """Raised when the model-worker request queue is at capacity.
+
+    Surfaced by :meth:`ModelWorkerProxy.stream` when the bounded request queue
+    (``Settings.max_queue_size``) has no room for a new request. The API layer
+    maps this to an HTTP 429 so callers retry rather than letting the queue to
+    the worker grow without bound. Because the push is the admission gate
+    (awaited before any response status is committed), the rejection surfaces as
+    a clean status code even for streaming requests.
+    """
 
 
 async def sleep_with_backoff(count_no_progress: int) -> None:
@@ -72,13 +84,34 @@ class ModelWorkerProxy(ABC, Generic[BaseContextType, PipelineOutputType]):
         self._awaiting_admission_count += delta
         METRICS.reqs_awaiting_admission(delta)
 
+    async def wait_until_connected(self, timeout_s: float | None) -> None:
+        """Block until the proxy is ready to accept requests.
+
+        Transports that establish a connection to the worker (e.g. ZMQ)
+        override this to wait for that handshake at startup, before the server
+        serves traffic, so runtime admission never has to distinguish "not
+        connected yet" from a genuinely full queue. ``timeout_s`` of ``None``
+        waits indefinitely. The default is a no-op for transports that are
+        ready as soon as they are constructed.
+        """
+        return
+
     @abstractmethod
-    def stream(
+    async def stream(
         self,
         req_id: RequestID,
         data: BaseContextType,
-    ) -> AsyncIterator[list[PipelineOutputType]]:
-        pass
+    ) -> AsyncGenerator[list[PipelineOutputType], None]:
+        """Submit ``data`` to the model worker and return a response generator.
+
+        Awaiting this coroutine performs the handoff to the model worker (for
+        example, the request-queue put). A submission failure — such as a dead
+        worker — raises here, before any response has been streamed, so callers
+        can surface it as an error before response headers are sent. The
+        returned async generator yields batches of pipeline outputs as they
+        arrive.
+        """
+        ...
 
     @abstractmethod
     def cancel(self, req_id: RequestID) -> None:

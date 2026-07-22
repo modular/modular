@@ -17,6 +17,7 @@ from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture, TextAndVisionTokenizer
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from .batch_processor import Gemma3MultiModalBatchProcessor
 from .model import Gemma3_MultiModalModel
 from .model_config import Gemma3ForConditionalGenerationConfig
 
@@ -45,14 +46,16 @@ gemma3_multimodal_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
-    rope_type="normal",
     required_arguments={
         "enable_prefix_caching": False,
         "enable_chunked_prefill": False,
     },
     context_type=TextAndVisionContext,
     config=Gemma3ForConditionalGenerationConfig,
+    batching=Gemma3MultiModalBatchProcessor,
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         15 * 1024**3, always_signal_buffers=True
     ),
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

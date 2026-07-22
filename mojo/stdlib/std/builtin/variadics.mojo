@@ -18,9 +18,7 @@ These are Mojo built-ins, so you don't need to import them.
 from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, TypeNames
-from std.sys.intrinsics import _type_is_eq_parse_time
 from std.builtin.globals import global_constant
-from std.reflection.traits import AllWritable
 
 
 struct _MLIR:
@@ -68,7 +66,6 @@ struct TypeList[
 
     ```mojo
     from std.builtin.variadics import TypeList
-    from std.sys.intrinsics import _type_is_eq
     from std.testing import assert_equal
 
     # Create a type list
@@ -83,7 +80,7 @@ struct TypeList[
         comptime assert not tl.contains[Bool]()
 
         # Index into the list
-        comptime assert _type_is_eq[tl[0], Int]()
+        comptime assert tl[0] == Int
     ```
     """
 
@@ -115,6 +112,27 @@ struct TypeList[
 
     Parameters:
         idx: The index of the type to access.
+    """
+
+    comptime _get_type_at_index[idx: __mlir_type.index] = __mlir_attr[
+        `#kgen.param_list.get<:`,
+        Self._mlir_type,
+        ` `,
+        +Self.values,
+        `, `,
+        idx,
+        `> : `,
+        +Self.Trait,
+    ]
+    """Gets a type at the given raw `index`.
+
+    Unlike `__getitem_param__`, this accepts a raw `!kgen.index` so callers can
+    index without constructing a `SIMDSize` (and thus without pulling in
+    `SIMDSize` comparison machinery). Used by the stdlib plugin router during
+    bootstrap.
+
+    Parameters:
+        idx: The raw `index` of the type to access.
     """
 
     @implicit
@@ -414,6 +432,19 @@ struct TypeList[
 
     @always_inline("builtin")
     @staticmethod
+    def all_conforms_to[_trait: type_of(AnyType)]() -> Bool:
+        """Returns true if all types in this list conform to `Trait`.
+
+        Parameters:
+            _trait: The trait to check for conformance to.
+
+        Returns:
+            True if all types in this list conform to `Trait`, False otherwise.
+        """
+        return conforms_to(Self.values, _trait)
+
+    @always_inline("builtin")
+    @staticmethod
     def all_satisfies[
         predicate: Self._TypePredicateGenerator,
     ]() -> Bool:
@@ -433,13 +464,13 @@ struct TypeList[
         ]
 
     comptime _ContainsTypePredicate[
-        search: Self.Trait,
+        search: AnyType,
         element: Self.Trait,
-    ] = _type_is_eq_parse_time[element, search]()
+    ] = element == search
 
     @always_inline("builtin")
     @staticmethod
-    def contains[type: Self.Trait]() -> Bool:
+    def contains[type: AnyType]() -> Bool:
         """Checks if a type is contained in this type list.
 
         Parameters:
@@ -648,7 +679,7 @@ struct _ParameterListIter[type: Copyable, //, *values: type](
     @always_inline
     def __next__(
         mut self,
-    ) raises StopIteration -> ref[StaticConstantOrigin] Self.type:
+    ) raises StopIteration -> ref[ImmStaticOrigin] Self.type:
         var index = self.index
 
         if index >= Self.values.size:
@@ -748,7 +779,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         return Self.size
 
     @staticmethod
-    def get_span() -> Span[Self.type, StaticConstantOrigin]:
+    def get_span() -> Span[Self.type, ImmStaticOrigin]:
         """Gets a span of the elements on the variadic list.
 
         Returns:
@@ -766,11 +797,11 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         # Map it into a runtime constant.
         ref static_array = global_constant[array]()
         # Get a pointer to the first element, not the whole array.
-        var first_elt = UnsafePointer(to=static_array).bitcast[Self.type]()
+        var first_elt = Pointer(to=static_array).unsafe_bitcast[Self.type]()
         return Span(ptr=first_elt, length=Self.size)
 
     @always_inline
-    def __getitem__(self, idx: Int) -> ref[StaticConstantOrigin] Self.type:
+    def __getitem__(self, idx: Int) -> ref[ImmStaticOrigin] Self.type:
         """Gets a single element on the variadic list.
 
         Args:
@@ -993,11 +1024,17 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             Self._AllSatisfiesReducer[predicate, ...],
         ]
 
-    # FIXME(MOCO-3855): Add decl-where `where conforms_to(Self.type, Equatable)`
+    # TODO(MOCO-3531): Remove downcasts here.
     comptime _ContainsValuePredicate[
         search_value: Self.type,
         element_value: Self.type,
-    ] = trait_downcast[Equatable](search_value) == trait_downcast[Equatable](
+    ] where conforms_to(Self.type, Equatable) = rebind[
+        downcast[Self.type, Equatable]
+    ](
+        search_value
+    ) == rebind[
+        downcast[Self.type, Equatable]
+    ](
         element_value
     )
 
@@ -1060,15 +1097,16 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             ParentConformsTo="Writable",
             ElementConformsTo="Writable",
         ]()
+        comptime assert conforms_to(Self.type, Writable)
         writer.write_string("(")
         for i in range(len(self)):
             if i > 0:
                 writer.write_string(", ")
 
             comptime if is_repr:
-                trait_downcast[Writable](self[i]).write_repr_to(writer)
+                self[i].write_repr_to(writer)
             else:
-                trait_downcast[Writable](self[i]).write_to(writer)
+                self[i].write_to(writer)
         writer.write_string(")")
 
     @no_inline
@@ -1133,7 +1171,7 @@ struct _VariadicListIter[
     //,
     elt_type: AnyType,
     elt_origin: Origin[mut=elt_is_mutable],
-    list_origin: ImmutOrigin,
+    list_origin: ImmOrigin,
     is_owned: Bool,
 ](RegisterPassable):
     """Iterator for VariadicList.
@@ -1209,13 +1247,13 @@ struct VariadicList[
     @always_inline
     @implicit
     def __init__[
-        size: __mlir_type.index, container_origin: ImmutOrigin
+        size: __mlir_type.index, container_origin: ImmOrigin
     ](
         out self,
         value: Pointer[
-            _MLIR.POPArrayType[size, Self._EltPointerType._mlir_type],
+            _MLIR.POPArrayType[size, Self._EltPointerType._mlir_lit_ref],
             container_origin,
-        ]._mlir_type,
+        ]._mlir_lit_ref,
     ):
         """Constructs a VariadicList from a compiler-generated array of element
         pointers.
@@ -1227,17 +1265,17 @@ struct VariadicList[
         Args:
             value: The raw reference to the array of element pointers.
         """
-        # Convert the !lit.ref to an UnsafePointer, then cast to a pointer to
+        # Convert the !lit.ref to a pointer, then cast to a pointer to
         # the first element.
-        var array_up = UnsafePointer(
+        var array_up = Pointer(
             to=Pointer(_mlir_value=value)[]
         ).unsafe_origin_cast[UntrackedOrigin[mut=False]]()
-        var elt_ptr = UnsafePointer[_, UntrackedOrigin[mut=False]](
-            __mlir_op.`pop.array.gep`(
-                array_up.address,
+        var elt_ptr = Pointer[_, UntrackedOrigin[mut=False]](
+            _mlir_value=__mlir_op.`pop.array.gep`(
+                array_up._get_kgen_pointer(),
                 Int(0).__mlir_index__(),
             )
-        ).bitcast[Self._EltPointerType]()
+        ).unsafe_bitcast[Self._EltPointerType]()
         self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size))
 
     # The destructor for this type is trivial if not an "owned" list.
@@ -1257,15 +1295,11 @@ struct VariadicList[
                 Element=Self.element_type,
                 ParentConformsTo="ImplicitlyDeletable",
             ]()
-            comptime TDestructible = downcast[
-                Self.element_type, ImplicitlyDeletable
-            ]
+            comptime assert conforms_to(Self.element_type, ImplicitlyDeletable)
 
             for i in reversed(range(len(self))):
                 # Safety: We own the elements in this list.
-                UnsafePointer(to=self[i]).mut_cast[True]().bitcast[
-                    TDestructible
-                ]().destroy_pointee()
+                Pointer(to=self[i]).mut_cast[True]().unsafe_deinit_pointee()
 
     def consume_elements(
         deinit self,
@@ -1285,10 +1319,12 @@ struct VariadicList[
         ), "consume_elements may only be called on owned variadic lists"
 
         for i in range(len(self)):
-            var ptr = UnsafePointer(to=self[i])
+            var ptr = Pointer(to=self[i])
             # TODO: Cannot use UnsafePointer.take_pointee because it requires
             # the element to be Movable, which is not required here.
-            elt_handler(i, __get_address_as_owned_value(ptr.address))
+            elt_handler(
+                i, __get_address_as_owned_value(ptr._get_kgen_pointer())
+            )
 
     # FIXME: This is a hack to work around a miscompile, do not use.
     def _annihilate(deinit self):
@@ -1313,7 +1349,7 @@ struct VariadicList[
 
     @always_inline
     def __getitem__[
-        self_origin: ImmutOrigin
+        self_origin: ImmOrigin
     ](ref[self_origin] self, idx: Int) -> ref[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
@@ -1344,15 +1380,16 @@ struct VariadicList[
             ParentConformsTo="Writable",
             ElementConformsTo="Writable",
         ]()
+        comptime assert conforms_to(Self.element_type, Writable)
         writer.write_string("(")
         for i in range(len(self)):
             if i > 0:
                 writer.write_string(", ")
 
             comptime if is_repr:
-                trait_downcast[Writable](self[i]).write_repr_to(writer)
+                self[i].write_repr_to(writer)
             else:
-                trait_downcast[Writable](self[i]).write_to(writer)
+                self[i].write_to(writer)
         writer.write_string(")")
 
     @no_inline
@@ -1387,7 +1424,7 @@ struct VariadicList[
         ).fields[FieldsFn=write_fields]()
 
     def __iter__[
-        self_origin: ImmutOrigin
+        self_origin: ImmOrigin
     ](
         ref[self_origin] self,
     ) -> _VariadicListIter[
@@ -1489,7 +1526,7 @@ struct VariadicPack[
     # This disables nested origin exclusivity checking because it is taking a
     # raw variadic pack which can have nested origins in it (which this does not
     # dereference).
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __init__(out self, value: Self._mlir_type):
         """Constructs a VariadicPack from the internal representation.
 
@@ -1528,11 +1565,10 @@ struct VariadicPack[
                     Element=element_type,
                     ParentConformsTo="ImplicitlyDeletable",
                 ]()
+                comptime assert conforms_to(element_type, ImplicitlyDeletable)
 
                 # Safety: We own the elements in this pack.
-                UnsafePointer(
-                    to=trait_downcast[ImplicitlyDeletable](self[i])
-                ).mut_cast[True]().destroy_pointee()
+                Pointer(to=self[i]).mut_cast[True]().unsafe_deinit_pointee()
 
     def consume_elements[
         elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
@@ -1551,10 +1587,12 @@ struct VariadicPack[
         ), "consume_elements may only be called on owned variadic packs"
 
         comptime for i in range(Self.__len__()):
-            var ptr = UnsafePointer(to=self[i])
+            var ptr = Pointer(to=self[i])
             # TODO: Cannot use UnsafePointer.take_pointee because it requires
             # the element to be Movable, which is not required here.
-            elt_handler[i](__get_address_as_owned_value(ptr.address))
+            elt_handler[i](
+                __get_address_as_owned_value(ptr._get_kgen_pointer())
+            )
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -1663,9 +1701,9 @@ struct VariadicPack[
         return __mlir_op.`kgen.struct.load_indirect`(self.get_as_kgen_pack())
 
     def _write_to[
-        O1: ImmutOrigin,
-        O2: ImmutOrigin,
-        O3: ImmutOrigin,
+        O1: ImmOrigin,
+        O2: ImmOrigin,
+        O3: ImmOrigin,
         *,
         is_repr: Bool = False,
     ](
@@ -1674,7 +1712,7 @@ struct VariadicPack[
         start: StringSlice[O1] = StaticString(""),
         end: StringSlice[O2] = StaticString(""),
         sep: StringSlice[O3] = StaticString(", "),
-    ) where AllWritable[*Self.element_types]:
+    ) where Self.element_types.all_conforms_to[Writable]():
         """Writes a sequence of writable values from a pack to a writer with
         delimiters.
 
@@ -1697,20 +1735,23 @@ struct VariadicPack[
         writer.write_string(start)
 
         comptime for i in range(self.__len__()):
+            comptime assert conforms_to(
+                Self.element_types[i], Writable
+            ), "variadic pack element type is not Writable"
             comptime if i != 0:
                 writer.write_string(sep)
 
             comptime if is_repr:
-                trait_downcast[Writable](self[i]).write_repr_to(writer)
+                self[i].write_repr_to(writer)
             else:
-                trait_downcast[Writable](self[i]).write_to(writer)
+                self[i].write_to(writer)
         writer.write_string(end)
 
     @no_inline
     def write_to(
         self,
         mut writer: Some[Writer],
-    ) where AllWritable[*Self.element_types]:
+    ) where Self.element_types.all_conforms_to[Writable]():
         """Writes the elements of this pack to a writer.
 
         Args:
@@ -1726,7 +1767,7 @@ struct VariadicPack[
     def write_repr_to(
         self,
         mut writer: Some[Writer],
-    ) where AllWritable[*Self.element_types]:
+    ) where Self.element_types.all_conforms_to[Writable]():
         """Writes the repr of the elements of this pack to a writer.
 
         Args:

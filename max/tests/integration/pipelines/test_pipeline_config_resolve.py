@@ -36,6 +36,7 @@ from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import MAXModelConfig, MemoryEstimator
+from max.pipelines.lib.memory_estimation import _MemoryPlan
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
@@ -173,7 +174,7 @@ def _pipeline_resolve_mocks(
 
     Mocks external I/O and hardware while leaving the real resolution
     logic intact:
-    - devices_exist, load_devices — avoid GPU probes
+    - load_devices — avoid GPU probes
     - WeightPathParser.parse — avoid network
     - validate_hf_repo_access — avoid network
     - MemoryEstimator — avoid real memory estimation
@@ -184,10 +185,6 @@ def _pipeline_resolve_mocks(
 
     with (
         patch(
-            "max.pipelines.lib.config.model_config.devices_exist",
-            return_value=True,
-        ),
-        patch(
             "max.pipelines.lib.config.model_config.WeightPathParser.parse",
             return_value=weight_path_return,
         ),
@@ -196,8 +193,14 @@ def _pipeline_resolve_mocks(
             "max.pipelines.lib.config.config.load_devices",
             return_value=mock_devices,
         ),
+        patch(
+            "max.pipelines.lib.registry.load_devices",
+            return_value=mock_devices,
+        ),
         patch.object(
-            MemoryEstimator, "estimate_memory_footprint", return_value=0
+            MemoryEstimator,
+            "estimate_memory_footprint",
+            return_value=_MemoryPlan(max_batch_size=1, footprint=0),
         ),
         patch.object(
             MemoryEstimator,
@@ -248,6 +251,14 @@ def _resolve_config(config: PipelineConfig) -> None:
             " model architecture to MAX."
         )
     config.resolve(arch)
+    # Overlap-scheduler/DGC resolution now lives in the registry, after
+    # memory planning. Tests that call resolve() directly must replicate it.
+    from max.pipelines.lib.registry import _run_memory_planning
+
+    plan = _run_memory_planning(config, arch)
+    config._validate_and_resolve_overlap_scheduler(
+        arch=arch, max_batch_size=plan.max_batch_size
+    )
 
 
 def _make_pipeline_config(
@@ -581,9 +592,29 @@ class TestRopeTypeResolution:
     """Tests for RoPE type resolution from architecture defaults."""
 
     @prepare_registry
-    def test_rope_type_resolved_from_architecture(self) -> None:
-        """RoPE type should be inherited from architecture when not set."""
-        # DUMMY_GEMMA_ARCH has rope_type="normal"
+    def test_rope_type_preserved_through_resolution(self) -> None:
+        """A user-set rope_type survives resolution untouched.
+
+        Resolution no longer writes an architecture default onto
+        ``model.rope_type`` (the arch default is applied by each
+        architecture's ``ArchConfig.initialize``); the field is now purely the
+        user override, so an explicit value must pass through unchanged.
+        """
+        PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                hf_config=_GEMMA_CONFIG,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            config = _make_pipeline_config(tmpdir, rope_type="neox")
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+            assert _model(config).rope_type == "neox"
+
+    @prepare_registry
+    def test_rope_type_unset_stays_none(self) -> None:
+        """An unset rope_type stays None after resolution (no arch default)."""
         PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(
@@ -594,24 +625,7 @@ class TestRopeTypeResolution:
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
                 _resolve_config(config)
-            assert _model(config).rope_type == "normal"
-
-    @prepare_registry
-    def test_rope_type_preserved_if_already_set(self) -> None:
-        """Explicit RoPE type should not be overwritten by architecture."""
-        # DUMMY_LLAMA_ARCH has rope_type="none", so set a different valid value
-        PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            _make_local_repo(
-                tmpdir,
-                hf_config=_GEMMA_CONFIG,
-                safetensors_files={"model.safetensors": {"w": "BF16"}},
-            )
-            # Set rope_type="neox" which differs from DUMMY_GEMMA_ARCH's "normal"
-            config = _make_pipeline_config(tmpdir, rope_type="neox")
-            with _pipeline_resolve_mocks():
-                _resolve_config(config)
-            assert _model(config).rope_type == "neox"
+            assert _model(config).rope_type is None
 
 
 # ---------------------------------------------------------------------------
@@ -863,4 +877,44 @@ class TestDGCTaskDisambiguation:
                 ),
             ):
                 config.resolve(arch)
+                from max.pipelines.lib.registry import _run_memory_planning
+
+                plan = _run_memory_planning(config, arch)
+                config._validate_and_resolve_overlap_scheduler(
+                    arch=arch, max_batch_size=plan.max_batch_size
+                )
             assert config.runtime.device_graph_capture is True
+
+
+# ---------------------------------------------------------------------------
+# Category K: Chat Template Wiring Through retrieve_tokenizer()
+# ---------------------------------------------------------------------------
+
+
+class TestChatTemplateWiring:
+    """``PipelineConfig.model.chat_template`` (a ``Path``) must reach the
+    tokenizer.
+
+    Regression coverage for the ``registry.py`` call sites that read
+    ``pipeline_config.model.chat_template`` and pass it through
+    ``_retrieve_chat_template()`` when building the tokenizer.
+    """
+
+    @prepare_registry
+    def test_chat_template_path_reaches_tokenizer(self) -> None:
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
+            )
+            template_file = Path(tmpdir) / "custom_template.jinja"
+            template_file.write_text("{{ messages }}")
+            config = _make_pipeline_config(tmpdir, chat_template=template_file)
+
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+                PIPELINE_REGISTRY.retrieve_tokenizer(config)
+
+        assert DummyTextTokenizer.init_kwargs["chat_template"] == (
+            "{{ messages }}"
+        )

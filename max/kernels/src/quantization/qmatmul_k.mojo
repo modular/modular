@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides CPU kernels for K-quant block-wise quantized matrix multiplication."""
+
 from std.collections import Optional
 from std.math import ceildiv
 from std.sys import CompilationTarget, align_of, simd_width_of, size_of
@@ -29,8 +31,12 @@ from linalg.utils import partition_work
 from std.memory import (
     alloc,
     bitcast,
+    dealloc,
+    unsafe_memcpy,
     stack_allocation,
+    Allocation,
 )
+from std.memory.alloc import Layout as AllocLayout
 
 from std.runtime.asyncrt import parallelism_level
 
@@ -260,8 +266,8 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 
 def _quantize_a_Q8_K[
     group_size: Int, dtype: DType, *, interleave_group_sums: Bool = False
-](a: LayoutTensor[mut=False, dtype, ...]) -> UnsafePointer[
-    _block_Q8_K_packed[group_size], MutUntrackedOrigin
+](a: LayoutTensor[mut=False, dtype, ...]) -> Allocation[
+    _block_Q8_K_packed[group_size]
 ]:
     comptime assert a.rank == 2
     comptime quantized_k = _block_QK_K.quantized_k
@@ -270,10 +276,12 @@ def _quantize_a_Q8_K[
     var M = a.dim[0]()
     var K = a.dim[1]()
 
-    var packed_base_ptr = alloc[_block_Q8_K_packed[group_size]](
-        M * (K // quantized_k)
+    var packed_base_alloc = alloc(
+        AllocLayout[_block_Q8_K_packed[group_size]](
+            count=M * (K // quantized_k)
+        )
     )
-    var packed_ptr = packed_base_ptr
+    var packed_ptr = packed_base_alloc.unsafe_ptr()
 
     for ko in range(0, K, quantized_k):
         var am_ptr = a.ptr + ko
@@ -332,9 +340,7 @@ def _quantize_a_Q8_K[
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = am_ptr
 
-    # TODO(MOCO-2074): Suppress false positive unused var warning.
-    _ = packed_ptr
-    return packed_base_ptr
+    return packed_base_alloc^
 
 
 def _expand_q_bits_lo[
@@ -461,7 +467,7 @@ def _pack_block_Q4_K[
     )
 
     # Scales are not currently transformed.
-    memcpy(
+    unsafe_memcpy(
         dest=q_scales_reorder_buf,
         src=q_scales_buf.unsafe_ptr(),
         count=group_count * block_n,
@@ -556,6 +562,12 @@ def matmul_Q4_K_pack_b(
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
 ):
+    """Packs Q4_K quantized weights into the blocked layout consumed by the compute kernel.
+
+    Args:
+        b_tt: Source tensor holding the unpacked Q4_K quantized weights.
+        b_packed_tt: Destination tensor for the packed weights.
+    """
     var b = b_tt.to_layout_tensor()
     var b_packed = b_packed_tt.to_layout_tensor()
     comptime assert b.rank == 2
@@ -590,6 +602,12 @@ def matmul_Q6_K_pack_b(
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
 ):
+    """Packs Q6_K quantized weights into the blocked layout consumed by the compute kernel.
+
+    Args:
+        b_tt: Source tensor holding the unpacked Q6_K quantized weights.
+        b_packed_tt: Destination tensor for the packed weights.
+    """
     var b = b_tt.to_layout_tensor()
     var b_packed = b_packed_tt.to_layout_tensor()
     comptime assert b.rank == 2
@@ -1457,9 +1475,10 @@ def _matmul_Qb_K[
     var K = a.dim[1]()
     var k_blocks = K // _block_QK_K.quantized_k
 
-    var a_packed_base_ptr = _quantize_a_Q8_K[
+    var a_packed_base_alloc = _quantize_a_Q8_K[
         group_size, interleave_group_sums=interleave_group_sums
     ](a)
+    a_packed_base_ptr = a_packed_base_alloc.unsafe_ptr()
 
     comptime grain_size = simd_width * 2
 
@@ -1519,7 +1538,7 @@ def _matmul_Qb_K[
 
     sync_parallelize[task_func](num_workers, ctx)
 
-    a_packed_base_ptr.free()
+    dealloc(a_packed_base_alloc^)
 
 
 def matmul_Q4_K[
@@ -1536,6 +1555,20 @@ def matmul_Q4_K[
     ],
     ctx: Optional[DeviceContext] = None,
 ):
+    """Computes a matrix multiplication with Q4_K block-quantized weights.
+
+    Dispatches to an x86 or ARM NEON implementation at compile time; other
+    targets fail to compile.
+
+    Parameters:
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+
+    Args:
+        a_tt: Left-hand operand tensor in float32.
+        b_tt: Right-hand operand tensor holding Q4_K quantized uint8 weights.
+        c_tt: Output tensor in float32.
+        ctx: Optional device context for parallel execution.
+    """
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
     var c = c_tt.to_layout_tensor()
@@ -1566,6 +1599,20 @@ def matmul_Q6_K[
     ],
     ctx: Optional[DeviceContext] = None,
 ):
+    """Computes a matrix multiplication with Q6_K block-quantized weights.
+
+    Dispatches to an x86 or ARM NEON implementation at compile time; other
+    targets fail to compile.
+
+    Parameters:
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+
+    Args:
+        a_tt: Left-hand operand tensor in float32.
+        b_tt: Right-hand operand tensor holding Q6_K quantized uint8 weights.
+        c_tt: Output tensor in float32.
+        ctx: Optional device context for parallel execution.
+    """
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
     var c = c_tt.to_layout_tensor()

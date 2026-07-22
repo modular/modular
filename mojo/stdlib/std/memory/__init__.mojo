@@ -30,12 +30,13 @@ from .arc_pointer import ArcPointer
 from .memory import (
     memcmp,
     memcpy,
+    unsafe_memcpy,
     memmove,
     memset,
     memset_zero,
     destroy_n,
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
     uninit_copy_n,
     uninit_move_n,
@@ -45,20 +46,21 @@ from .stack_allocation import stack_allocation
 from .owned_pointer import OwnedPointer
 from .pointer import (
     AddressSpace,
-    _GPUAddressSpace,
-    GPUAddressSpace,
+    ImmPointer,
     ImmutPointer,
     MutPointer,
     Pointer,
 )
-from .span import ImmutSpan, MutSpan, Span
 from .unsafe import bitcast, pack_bits
 from .unsafe_pointer import (
     alloc,
+    ImmOpaquePointer,
     ImmutOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
+    OptionalPointer,
     OptionalUnsafePointer,
+    ImmUnsafePointer,
     ImmutUnsafePointer,
     MutUnsafePointer,
     UnsafePointer,

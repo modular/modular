@@ -23,16 +23,22 @@ from std.collections._conditional import _ComptimeConditional
 from std.memory import stack_allocation as _std_stack_allocation
 from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from std.gpu.host import DeviceBuffer, DeviceContext, DevicePointer, HostBuffer
 from layout._fillers import BATCH_SIZE
+from layout.layout_tensor import LayoutTensor
 from std.sys import prefetch
-from std.sys.intrinsics import PrefetchOptions, _type_is_eq_parse_time
+from std.sys.intrinsics import PrefetchOptions
 from std.utils import IndexList, StaticTuple
 from std.utils.coord import _coerce_dynamic
 
 from .swizzle import Swizzle
 
-from .tensor_storage import TensorStorage, PointerStorage
+from .tensor_storage import (
+    DevicePointerStorage,
+    TensorOps,
+    TensorStorage,
+    PointerStorage,
+)
 from .tile_layout import (
     Layout,
     RowMajorLayout,
@@ -65,37 +71,6 @@ def _default_invariant[mut: Bool]() -> Bool:
     return is_gpu() and mut == False
 
 
-def _copy_widen_factor[
-    dst_dtype: DType,
-    src_dtype: DType,
-    element_size: Int,
-    dst_row_major: Bool,
-    src_row_major: Bool,
-    num_elements: Int,
-]() -> Int:
-    """Returns the SIMD widen factor for `TileTensor.copy`.
-
-    Returns the number of elements to load/store together in a single
-    SIMD op. Returns 1 (no widening) unless both tensors are row-major
-    and element_size == 1, so that successive chunks cover contiguous
-    memory when walked in raw scalar order.
-    """
-
-    comptime if not dst_row_major or not src_row_major or element_size != 1:
-        return 1
-
-    # Use the narrower SIMD width so both load and store fit native lanes
-    comptime native = min(
-        simd_width_of[dst_dtype](), simd_width_of[src_dtype]()
-    )
-    var w = native
-    while w > 1:
-        if num_elements % w == 0:
-            return w
-        w //= 2
-    return 1
-
-
 struct TileTensor[
     mut: Bool,
     //,
@@ -103,10 +78,9 @@ struct TileTensor[
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
     *,
-    Storage: TensorStorage = PointerStorage,
+    Storage: TensorStorage = PointerStorage[element_width=1],
     address_space: AddressSpace = AddressSpace.GENERIC,
     linear_idx_type: DType = _get_index_type[LayoutType](address_space),
-    element_size: Int = 1,
 ](DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable, Writable):
     """A tensor type with trait-based layouts supporting nested and hierarchical
     indexing.
@@ -137,8 +111,6 @@ struct TileTensor[
             Defaults to GENERIC.
         linear_idx_type: Integer type for memory indexing. Defaults to int32 for
             shared/constant memory, int64 otherwise.
-        element_size: The number of scalar elements per logical element after vectorization.
-            Defaults to 1.
 
     Example:
 
@@ -173,6 +145,9 @@ struct TileTensor[
     For nested layouts (e.g., from blocked_product), flat_rank > rank.
     """
 
+    comptime element_size = Self.Storage.element_size
+    """Number of scalar elements per logical element, derived from `Storage`."""
+
     comptime ElementType = SIMD[Self.dtype, Self.element_size]
     """The SIMD type used for element access.
 
@@ -181,7 +156,9 @@ struct TileTensor[
     """
 
     comptime TileResultType[
-        tile_shape_types: TypeList[Trait=CoordLike, ...]
+        tile_shape_types: TypeList[Trait=CoordLike, ...],
+        *,
+        linear_idx_type: DType = DType.int,
     ] = TileTensor[
         Self.dtype,
         Layout[
@@ -189,12 +166,13 @@ struct TileTensor[
             stride_types=_NestedTileResultStrideTypes[Self.LayoutType],
         ],
         Self.origin,
-        Storage=Self.Storage,
+        Storage=Self.Storage.OffsetResultType[
+            TypeList.of[Scalar[linear_idx_type]]()
+        ],
         address_space=Self.address_space,
-        element_size=Self.element_size,
     ]
     """Result type of `.tile[]`. Per outer mode, the result stride is
-    parent's innermost sub-stride (CuTe `local_tile`) — identity for
+    parent's innermost sub-stride (CuTe `local_tile`): identity for
     scalar parent strides, last-sub-element for tuple parent strides.
 
     Trade-off: the `_NestedTileResultStrideTypes[Self.LayoutType]` wrap
@@ -210,6 +188,8 @@ struct TileTensor[
         tile_shape_types: The result tile's shape `TypeList` (typically
             built from the variadic `tile_sizes` of the calling
             `.tile[]` method).
+        linear_idx_type: Integer type keying the offset-derived storage of the
+            result (see `OffsetViewType`). Defaults to `DType.int`.
     """
 
     comptime shape_known = Self.LayoutType.shape_known
@@ -253,8 +233,8 @@ struct TileTensor[
         i: The dimension index.
     """
 
-    var _storage: UnsafePointer[
-        Scalar[Self.dtype], Self.origin, address_space=Self.address_space
+    var _storage: Self.Storage.StorageType[
+        Self.dtype, Self.origin, Self.address_space
     ]
     """Pointer to the tensor's underlying data storage."""
 
@@ -267,18 +247,17 @@ struct TileTensor[
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        encoder.encode(self, target)
+        encoder.encode_fields[Self](self, target)
 
     @staticmethod
     def _is_convertible_to_device_type[T: AnyType]() -> Bool:
         comptime if Self.mut:
             return TypeList.of[
-                Trait=AnyType,
                 Self,
-                Self.OriginCastType[ImmutOrigin(Self.origin)],
+                Self.OriginCastType[ImmOrigin(Self.origin)],
             ]().contains[T]()
         else:
-            return TypeList.of[Trait=AnyType, Self]().contains[T]()
+            return TypeList.of[Self]().contains[T]()
 
     @staticmethod
     def get_type_name() -> String:
@@ -288,36 +267,72 @@ struct TileTensor[
         Returns:
             The host type's name.
         """
-
-        return String(
-            "TileTensor[mut = ",
-            Self.mut,
-            ", dtype = ",
-            Self.dtype,
-            ", address_space = ",
-            Self.address_space,
-            ", linear_idx_type = ",
-            Self.linear_idx_type,
-            "]",
+        var writer = String()
+        t"TileTensor[mut={Self.mut}, dtype={Self.dtype}, Storage=".write_to(
+            writer
         )
+        Self.Storage.write_type_name_to(writer)
+        (
+            t", address_space={Self.address_space},"
+            t" linear_idx_type={Self.linear_idx_type}]"
+        ).write_to(writer)
+        return writer^
 
     comptime GenericType = TileTensor[
         Self.dtype,
         Self.LayoutType,
         Self.origin,
-        Storage=Self.Storage,
+        Storage=PointerStorage[element_width=1],
         address_space=AddressSpace.GENERIC,
         linear_idx_type=Self.linear_idx_type,
     ]
     """Type alias for this tensor with GENERIC address space.
 
-    Used by constructors that create tensors from Span, DeviceBuffer, or
-    HostBuffer, which all produce GENERIC address space tensors.
+    Used by constructors that create tensors from Span or HostBuffer, which
+    produce GENERIC address space tensors.
+    """
+
+    comptime DeviceGenericType[origin: Origin] = TileTensor[
+        Self.dtype,
+        Self.LayoutType,
+        origin,
+        Storage=DevicePointerStorage[element_width=1],
+        address_space=AddressSpace.GENERIC,
+        linear_idx_type=Self.linear_idx_type,
+    ]
+    """Type alias for this tensor backed by `DevicePointerStorage`.
+
+    Used by the `DeviceBuffer` and `DevicePointer` constructors, which carry the
+    buffer's `DevicePointer` (its owning reference plus offset and size) to the
+    kernel boundary instead of a bare pointer.
+
+    Parameters:
+        origin: The pointer origin for the returned device-pointer-backed
+            tensor.
     """
 
     @always_inline
     def __init__(
         out self,
+        var storage: Self.Storage.StorageType[
+            Self.dtype, Self.origin, Self.address_space
+        ],
+        var layout: Self.LayoutType,
+        /,
+    ):
+        """Create a TileTensor from a storage handle and layout.
+
+        Args:
+            storage: The storage handle referencing the tensor data.
+            layout: The layout defining the tensor's shape and strides.
+        """
+        self._storage = storage
+        self.layout = layout
+
+    @always_inline
+    def __init__(
+        out self,
+        *,
         var ptr: UnsafePointer[
             Scalar[Self.dtype], Self.origin, address_space=Self.address_space
         ],
@@ -326,10 +341,13 @@ struct TileTensor[
         """Create a TileTensor from an UnsafePointer and layout.
 
         Args:
-            ptr: The pointer containing the tensor data.
+            ptr: The pointer to the tensor data.
             layout: The layout defining the tensor's shape and strides.
         """
-        self._storage = ptr
+        comptime assert (
+            Self.Storage == PointerStorage[element_width=1]
+        ), "TileTensor.__init__ from UnsafePointer requires PointerStorage"
+        self._storage = rebind[type_of(self._storage)](ptr)
         self.layout = layout
 
     def __init__(
@@ -343,7 +361,10 @@ struct TileTensor[
             span: The memory span containing the tensor data.
             layout: The layout defining the tensor's shape and strides.
         """
-        self._storage = span.unsafe_ptr()
+        comptime assert (
+            Self.Storage == PointerStorage[element_width=1]
+        ), "TileTensor.__init__ from Span requires PointerStorage"
+        self._storage = rebind[type_of(self._storage)](span.unsafe_ptr())
         self.layout = layout
 
     @always_inline
@@ -396,12 +417,41 @@ struct TileTensor[
             device_buffer: Contains the underlying data to point to.
             layout: The layout of the tensor.
         """
-        self = Self.GenericType(
+        comptime assert (
+            Self.Storage == PointerStorage[element_width=1]
+        ), "TileTensor.__init__ from DeviceBuffer requires PointerStorage"
+        self._storage = rebind[type_of(self._storage)](
             device_buffer.unsafe_ptr()
-            .mut_cast[Self.mut]()
-            .unsafe_origin_cast[Self.origin](),
-            layout,
         )
+        self.layout = layout
+
+    @always_inline
+    def __init__(
+        out self: Self.DeviceGenericType[Self.origin],
+        var device_pointer: DevicePointer[Self.dtype, Self.origin],
+        var layout: Self.LayoutType,
+    ):
+        """Create a `DevicePointerStorage`-backed `TileTensor` from a
+        `DevicePointer`.
+
+        Like the `DeviceBuffer` constructor, this produces a
+        `DevicePointerStorage`-backed tile that carries the full `DevicePointer`
+        (its non-owning reference to the owning `DeviceBuffer` plus an element
+        offset and size) to the kernel boundary, where
+        `DevicePointer._to_device_type` encodes it to a bare device pointer.
+        Use this overload when you already hold a `DevicePointer` (for example
+        an offset one); construct it with `TileTensor(buffer.device_ptr(),
+        layout)`.
+
+        The tile borrows the `DevicePointer`'s origin; the backing
+        `DeviceBuffer` must outlive the tile.
+
+        Args:
+            device_pointer: The device pointer referencing the tensor data.
+            layout: The layout of the tensor.
+        """
+        self._storage = device_pointer
+        self.layout = layout
 
     @always_inline
     def __init__(
@@ -435,14 +485,13 @@ struct TileTensor[
             host_buffer: Contains the underlying data to point to.
             layout: The layout of the tensor.
         """
-        self = Self.GenericType(
-            host_buffer.unsafe_ptr()
-            .unsafe_mut_cast[Self.mut]()
-            .unsafe_origin_cast[Self.origin](),
-            layout,
-        )
+        comptime assert (
+            Self.Storage == PointerStorage[element_width=1]
+        ), "TileTensor.__init__ from HostBuffer requires PointerStorage"
+        self._storage = rebind[type_of(self._storage)](host_buffer.unsafe_ptr())
+        self.layout = layout
 
-    @always_inline("builtin")
+    @always_inline("nodebug")
     @implicit
     def __init__(
         other: TileTensor,
@@ -453,10 +502,12 @@ struct TileTensor[
         Args:
             other: The mutable TileTensor to cast from.
         """
-        self._storage = other._storage
+        self._storage = other._unsafe_storage_cast[
+            to_origin=type_of(self).origin
+        ]()
         self.layout = other.layout
 
-    @always_inline("builtin")
+    @always_inline("nodebug")
     @implicit
     def __init__(
         other: TileTensor[mut=Self.mut, ...],
@@ -467,8 +518,8 @@ struct TileTensor[
         Args:
             other: The TileTensor to cast from.
         """
-        self._storage = other._storage.unsafe_origin_cast[
-            AnyOrigin[mut=Self.mut]
+        self._storage = other._unsafe_storage_cast[
+            to_origin=type_of(self).origin
         ]()
         self.layout = other.layout
 
@@ -485,10 +536,66 @@ struct TileTensor[
         comptime assert (
             name == "ptr"
         ), "TileTensor.__getattr_param__ only support 'ptr'"
-        comptime assert _type_is_eq_parse_time[
-            type_of(self._storage), type_of(result)
-        ](), "TileTensor.ptr requires its storage to be a UnsafePointer"
-        return self._storage
+        try:
+            result = Self.Storage.unsafe_ptr(self._storage)
+        except e:
+            abort(t"TileTensor.ptr access not possible: {e}")
+
+    @always_inline("nodebug")
+    def _unsafe_storage_cast[
+        to_mut: Bool = Self.mut,
+        //,
+        to_dtype: DType = Self.dtype,
+        to_origin: Origin[mut=to_mut] = Self.origin.unsafe_mut_cast[to_mut](),
+        to_address_space: AddressSpace = Self.address_space,
+    ](self) -> Self.Storage.StorageType[to_dtype, to_origin, to_address_space]:
+        return Self.Storage.unsafe_cast[
+            to_dtype,
+            to_origin,
+            to_address_space,
+        ](self._storage)
+
+    @always_inline("nodebug")
+    def _offset_storage(
+        self, offset: Some[CoordLike]
+    ) -> Self.Storage.OffsetResultType[
+        TypeList.of[type_of(offset)]()
+    ].StorageType[Self.dtype, Self.origin, Self.address_space]:
+        """Advances `self`'s storage handle by `offset` elements via the
+        storage policy.
+        """
+        return Self.Storage.offset(self._storage, Coord(offset))
+
+    @always_inline("nodebug")
+    def _load_storage[
+        width: SIMDSize,
+        alignment: Int,
+        invariant: Bool = False,
+        non_temporal: Bool = False,
+    ](self, offset: Some[Indexer]) -> SIMD[Self.dtype, width]:
+        """Loads `width` elements from `self`'s storage handle at `offset` via
+        the storage policy."""
+        return Self.Storage.load[
+            width=width,
+            alignment=alignment,
+            invariant=invariant,
+            non_temporal=non_temporal,
+        ](
+            self._unsafe_storage_cast[to_mut=False](),
+            offset,
+        )
+
+    @always_inline("nodebug")
+    def _store_storage[
+        alignment: Int,
+        non_temporal: Bool = False,
+    ](self, offset: Some[Indexer], value: SIMD[Self.dtype, _]) where Self.mut:
+        """Stores `value` into `self`'s storage handle at `offset` via the
+        storage policy."""
+        Self.Storage.store[
+            alignment=alignment,
+            non_temporal=non_temporal,
+        ](self._unsafe_storage_cast[to_mut=True](), offset, value)
 
     @always_inline("nodebug")
     def __getitem__[
@@ -513,13 +620,34 @@ struct TileTensor[
         else:
             var coord = Coord[*CoordLikes]()
             comptime for i in range(CoordLikes.size):
-                UnsafePointer(to=coord[i]).init_pointee_copy(coords[i])
+                UnsafePointer(to=coord[i]).unsafe_write(coords[i])
             return self.load(coord)
+
+    @always_inline("nodebug")
+    def __getitem__[
+        *CoordLikes: CoordLike
+    ](self, coords: Tuple[*CoordLikes]) -> Self.ElementType:
+        """Retrieve a single element from the tensor at the specified coordinates.
+
+        Accepts either a single `Coord` argument or multiple scalar
+        `CoordLike` arguments packed into a `Coord`.
+
+        Parameters:
+            CoordLikes: The types of each index argument (`CoordLike`).
+
+        Args:
+            coords: The tuple containing coordinates specifying the element's position.
+
+        Returns:
+            The element at the specified position.
+        """
+        return self[Coord(coords)]
 
     @always_inline
     def slice[
         *IndexTypes: CoordLike
-    ](self, *indices: *IndexTypes) -> Self.ViewType[
+    ](self, *indices: *IndexTypes) -> Self.OffsetViewType[
+        TypeList.of[Scalar[Self.linear_idx_type]](),
         Layout[
             shape_types=Self.LayoutType._shape_types.filter_idx[
                 _KeepCoordWhereIndexIsAll[IndexTypes, ...]
@@ -553,7 +681,7 @@ struct TileTensor[
                 Use `_All` (via the `All` alias) for dimensions to keep.
 
         Args:
-            indices: One argument per dimension — either a concrete index or
+            indices: One argument per dimension: either a concrete index or
                 `All`.
 
         Returns:
@@ -582,7 +710,7 @@ struct TileTensor[
         var offset = Scalar[Self.linear_idx_type](0)
 
         comptime for i in range(Self.rank):
-            comptime if not _type_is_eq_parse_time[IndexTypes[i], _All]():
+            comptime if IndexTypes[i] != _All:
                 offset += Scalar[Self.linear_idx_type](
                     indices[i].value()
                 ) * Scalar[Self.linear_idx_type](
@@ -601,28 +729,18 @@ struct TileTensor[
         var new_stride = Coord[*KeptStrideTypes]()
 
         comptime for i in range(Self.rank):
-            comptime if _type_is_eq_parse_time[IndexTypes[i], _All]():
+            comptime if IndexTypes[i] == _All:
                 comptime kept_idx = _count_all_before[i, *IndexTypes]()
-                UnsafePointer(to=new_shape[kept_idx]).init_pointee_copy(
+                UnsafePointer(to=new_shape[kept_idx]).unsafe_write(
                     rebind[KeptShapeTypes[kept_idx]](self.layout.shape[i]())
                 )
-                UnsafePointer(to=new_stride[kept_idx]).init_pointee_copy(
+                UnsafePointer(to=new_stride[kept_idx]).unsafe_write(
                     rebind[KeptStrideTypes[kept_idx]](self.layout.stride[i]())
                 )
 
         var new_layout = Layout(new_shape, new_stride)
 
-        return TileTensor[
-            Self.dtype,
-            Layout[
-                shape_types=KeptShapeTypes,
-                stride_types=KeptStrideTypes,
-            ],
-            Self.origin,
-            Storage=Self.Storage,
-            address_space=Self.address_space,
-            element_size=Self.element_size,
-        ](self._storage + offset, new_layout)
+        return {self._offset_storage(offset), new_layout}
 
     @always_inline("nodebug")
     def __setitem__(self, coord: Coord, value: Self.ElementType) where Self.mut:
@@ -660,25 +778,24 @@ struct TileTensor[
         var linear_tuple = DynamicCoord[Self.linear_idx_type, arg_count]()
 
         comptime for i in range(arg_count):
-            UnsafePointer(to=linear_tuple[i]).init_pointee_copy(
+            UnsafePointer(to=linear_tuple[i]).unsafe_write(
                 rebind[type_of(linear_tuple).element_types[i]](
                     Scalar[Self.linear_idx_type](index(items[i]))
                 )
             )
 
         # Inline store logic to avoid constraint propagation issues
-        self._storage.mut_cast[True]().store[
-            alignment=align_of[
-                SIMD[Self.dtype, Self.element_size]
-            ]() if is_gpu() else 1,
-        ](
+        comptime alignment = align_of[
+            SIMD[Self.dtype, Self.element_size]
+        ]() if is_gpu() else 1
+        self._store_storage[alignment=alignment](
             self.layout[linear_idx_type=Self.linear_idx_type](linear_tuple),
             value,
         )
 
     @always_inline("nodebug")
     def load[
-        width: Int = Self.element_size,
+        width: SIMDSize = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]]() if is_gpu() else 1,
         invariant: Bool = _default_invariant[Self.mut](),
         non_temporal: Bool = False,
@@ -738,9 +855,10 @@ struct TileTensor[
         """
         comptime assert Self.is_compatible_with[coord.element_types]
 
-        self._storage.mut_cast[True]().store[
-            alignment=alignment, non_temporal=non_temporal
-        ](self.layout[linear_idx_type=Self.linear_idx_type](coord), value)
+        self._store_storage[alignment=alignment, non_temporal=non_temporal](
+            self.layout[linear_idx_type=Self.linear_idx_type](coord),
+            value,
+        )
 
     @always_inline("nodebug")
     def _linear_offset(
@@ -775,7 +893,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     def load_linear[
-        width: Int = Self.element_size,
+        width: SIMDSize = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
         invariant: Bool = _default_invariant[Self.mut](),
     ](self, idx: IndexList[_, ...]) -> SIMD[Self.dtype, width]:
@@ -825,7 +943,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     def raw_load[
-        width: Int = 1,
+        width: SIMDSize = 1,
         alignment: Int = align_of[Self.dtype](),
         invariant: Bool = _default_invariant[Self.mut](),
         non_temporal: Bool = False,
@@ -852,7 +970,7 @@ struct TileTensor[
         Returns:
             A SIMD vector containing the loaded elements.
         """
-        return self._storage.load[
+        return self._load_storage[
             width=width,
             alignment=alignment,
             invariant=invariant,
@@ -886,9 +1004,9 @@ struct TileTensor[
             offset: Linear element offset into the underlying storage.
             value: The SIMD vector to store.
         """
-        self._storage.unsafe_mut_cast[True]().store[
-            width=width, alignment=alignment, non_temporal=non_temporal
-        ](_index(offset), value)
+        self._store_storage[alignment=alignment, non_temporal=non_temporal](
+            _index(offset), value
+        )
 
     @always_inline("nodebug")
     def bitcast[
@@ -900,7 +1018,6 @@ struct TileTensor[
         Storage=Self.Storage,
         address_space=Self.address_space,
         linear_idx_type=Self.linear_idx_type,
-        element_size=Self.element_size,
     ]:
         """Reinterprets the tensor's element dtype, preserving layout.
 
@@ -915,14 +1032,21 @@ struct TileTensor[
             A `TileTensor[target_dtype, ...]` backed by the same pointer
             and layout as `self`.
         """
-        return {self._storage.bitcast[Scalar[target_dtype]](), self.layout}
+        return {
+            self._unsafe_storage_cast[
+                to_dtype=target_dtype, to_origin=Self.origin
+            ](),
+            self.layout,
+        }
 
     @always_inline
     def ptr_at_offset(
-        self, coords: Coord[...]
-    ) -> UnsafePointer[
-        Scalar[Self.dtype], Self.origin, address_space=Self.address_space
-    ] where (coords.flat_rank == Self.flat_rank or coords.flat_rank == 1):
+        self,
+        coords: Coord[...],
+        out result: UnsafePointer[
+            Scalar[Self.dtype], Self.origin, address_space=Self.address_space
+        ],
+    ) where coords.flat_rank == Self.flat_rank or coords.flat_rank == 1:
         """Get a pointer offset at the given flattened coordinates.
 
         Args:
@@ -931,8 +1055,10 @@ struct TileTensor[
         Returns:
             A pointer offset at the given flattened coordinates.
         """
-
-        return self._storage + self.layout[
+        comptime assert (
+            Self.Storage == PointerStorage[element_width=1]
+        ), "TileTensor.ptr_at_offset requires PointerStorage"
+        return rebind[type_of(result)](self._storage) + self.layout[
             linear_idx_type=Self.linear_idx_type
         ](coords)
 
@@ -985,10 +1111,7 @@ struct TileTensor[
         return result
 
     @always_inline("nodebug")
-    def copy_from(
-        self,
-        other: TileTensor[element_size=Self.element_size, ...],
-    ) where Self.mut:
+    def copy_from(self, other: TileTensor) where Self.mut:
         """Copy data from another tensor into this tensor.
 
         Performs an element-by-element copy from `other` into `self`,
@@ -1002,103 +1125,58 @@ struct TileTensor[
         the copy widens to SIMD load + cast + SIMD store,
         using the narrower of the two dtypes' native SIMD widths.
 
+        The copy loop lives in the storage policy (`Self.Storage.copy_from`);
+        this forwards `self` and `other` as `(storage, layout)` pairs.
+
         Constraints:
 
         - Both tensors must have statically known shapes with matching total
             element count.
-        - Both tensors must have the same logical element size.
         - Source and destination dtypes may differ; each logical element is
             cast to the destination dtype.
 
         Args:
             other: The source tensor to copy data from. Must have the same
-                `element_size` and total number of elements as `self`.
+                total number of elements as `self`.
         """
-        comptime OtherType = type_of(other)
-        comptime assert (
-            Self.LayoutType.shape_known and OtherType.LayoutType.shape_known
-        ), "TileTensor.copy_from requires statically known shapes"
-
-        comptime src_static = OtherType.LayoutType.static_product
-        comptime dst_static = Self.LayoutType.static_product
-
-        comptime assert (
-            src_static == dst_static
-        ), "TileTensor.copy_from requires matching total element count"
-
-        comptime num_elements = dst_static
-
-        comptime widen = _copy_widen_factor[
-            dst_dtype=Self.dtype,
-            src_dtype=OtherType.dtype,
-            element_size=Self.element_size,
-            dst_row_major=Self.is_row_major,
-            src_row_major=OtherType.is_row_major,
-            num_elements=num_elements,
-        ]()
-
-        comptime width = Self.element_size * widen
-        comptime dst_alignment = align_of[
-            SIMD[Self.dtype, width]
-        ]() if is_gpu() else 1
-        comptime src_alignment = align_of[
-            SIMD[OtherType.dtype, width]
-        ]() if is_gpu() else 1
-
-        comptime if widen > 1:
-            # Widening requires both tensors to be gap-free with unit
-            # inner stride. In that case the underlying memory is a
-            # `num_elements * element_size`-scalar contiguous run on
-            # each side, so we walk raw pointer offsets in chunks of
-            # `width` scalars instead of indexing through the layout
-            # (whose flat-index unravel is first-dim-fastest and
-            # doesn't step by 1 in memory for rank >= 2).
-            comptime num_scalars = num_elements * Self.element_size
-            comptime num_chunks = num_scalars // width
-            var src_ptr = other._storage
-            var dst_ptr = self._storage.mut_cast[True]()
-            comptime for i in range(num_chunks):
-                dst_ptr.store[alignment=dst_alignment](
-                    i * width,
-                    src_ptr.load[width=width, alignment=src_alignment](
-                        i * width
-                    ).cast[Self.dtype](),
-                )
-        else:
-            comptime for i in range(num_elements):
-                var src_offset = other.layout(Idx[i])
-                var dst_offset = self.layout(Idx[i])
-                self._storage.mut_cast[True]().store[alignment=dst_alignment](
-                    dst_offset,
-                    other._storage.load[
-                        width=Self.element_size, alignment=src_alignment
-                    ](src_offset).cast[Self.dtype](),
-                )
+        # `other` may carry a different (e.g. offset-derived) storage policy;
+        # the storage-level copy takes it as a distinct `OtherStorage` operand.
+        Self.Storage.copy_from(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (other._storage, other.layout),
+        )
 
     def _distance(
         self: Self.Immut,
-        addr: UnsafePointer[
+        other: TileTensor[
             mut=False,
-            Scalar[Self.dtype],
+            Self.dtype,
             _,
             address_space=Self.address_space,
+            ...,
         ],
     ) -> Scalar[Self.linear_idx_type]:
-        """Calculate the element-wise distance between this tensor's pointer
-        and another pointer.
+        """Calculate the element-wise distance between this tensor's storage
+        and another tensor's storage.
 
         Computes the number of elements (not bytes) between this tensor's
-        pointer and `addr`. Useful for determining offsets within a larger
+        storage and `other`. Useful for determining offsets within a larger
         memory allocation.
 
         Args:
-            addr: The target pointer to calculate the distance to.
+            other: The tensor to calculate the distance to.
 
         Returns:
-            The number of elements between `self.ptr` and `addr`.
+            The number of elements between `self` and `other`.
         """
+        # Storages are assumed copy-compatible: `other` may carry a different
+        # (e.g. offset-derived) `Storage` policy, so reinterpret its handle as
+        # `self`'s before measuring the scalar-element distance.
         return Scalar[Self.linear_idx_type](
-            (Int(self._storage) - Int(addr)) // size_of[Self.dtype]()
+            Self.Storage.distance(
+                self._storage,
+                rebind[type_of(self._storage)](other._storage),
+            )
         )
 
     def write_to(self, mut w: Some[Writer]):
@@ -1144,7 +1222,7 @@ struct TileTensor[
     def tile[
         *tile_sizes: Int
     ](self, coordinates: Coord) -> Self.TileResultType[
-        _IntToComptimeInt[*tile_sizes]
+        _IntToComptimeInt[*tile_sizes], linear_idx_type=Self.linear_idx_type
     ]:
         """Extract a sub-tile (CuTe `local_tile`). Works on both flat
         and nested parent layouts.
@@ -1169,12 +1247,13 @@ struct TileTensor[
             t"tile requires exactly one tile size per tensor dimension; got"
             t" {tile_sizes.size} tile sizes for tensor of rank {Self.rank}"
         )
-        return _tile(self, coord[*tile_sizes](), coordinates)
+        return _tile(self, coord[*tile_sizes], coordinates)
 
     @always_inline("nodebug")
     def tile[
         *tile_sizes: Int, stride_layout: TensorLayout
-    ](self, coordinates: Coord) -> Self.ViewType[
+    ](self, coordinates: Coord) -> Self.OffsetViewType[
+        TypeList.of[Scalar[Self.linear_idx_type]](),
         Layout[
             shape_types=_IntToComptimeInt[*tile_sizes],
             stride_types=stride_layout._shape_types,
@@ -1209,7 +1288,7 @@ struct TileTensor[
             t" {Self.rank}"
         )
         return _tile[stride_layout=stride_layout](
-            self, coord[*tile_sizes](), coordinates
+            self, coord[*tile_sizes], coordinates
         )
 
     @always_inline("nodebug")
@@ -1218,7 +1297,9 @@ struct TileTensor[
         //,
     ](
         self, tile_shape: Coord[*tile_shape_types], coordinates: Coord
-    ) -> Self.TileResultType[tile_shape_types]:
+    ) -> Self.TileResultType[
+        tile_shape_types, linear_idx_type=Self.linear_idx_type
+    ]:
         """Extract a tile (sub-tensor) with shape specified as a Coord argument.
 
         This overload accepts the tile shape as a Coord value rather than
@@ -1246,7 +1327,7 @@ struct TileTensor[
         var tensor = TileTensor(storage, row_major[4, 4]()).fill(1.0)
 
         # Extract the tile at position (1, 0) with tile size 2x2
-        var t = tensor.tile(coord[2, 2](), coord[1, 0]())
+        var t = tensor.tile(coord[2, 2], coord[1, 0])
         ```
         """
         comptime assert tile_shape_types.size == Self.rank, String(
@@ -1259,7 +1340,8 @@ struct TileTensor[
     def tile_with_offset[
         *tile_sizes: Int
     ](self, coordinates: Coord) -> Tuple[
-        Self.ViewType[
+        Self.OffsetViewType[
+            TypeList.of[Int](),
             Layout[
                 shape_types=_IntToComptimeInt[*tile_sizes],
                 stride_types=Self.LayoutType._stride_types,
@@ -1284,13 +1366,14 @@ struct TileTensor[
             t"tile_with_offset requires one tile size per tensor dimension;"
             t" got {tile_sizes.size} tile sizes for tensor of rank {Self.rank}"
         )
-        return _tile_with_offset(self, coord[*tile_sizes](), coordinates)
+        return _tile_with_offset(self, coord[*tile_sizes], coordinates)
 
     @always_inline("nodebug")
     def tile_with_offset[
         *tile_sizes: Int, stride_layout: TensorLayout
     ](self, coordinates: Coord) -> Tuple[
-        Self.ViewType[
+        Self.OffsetViewType[
+            TypeList.of[Int](),
             Layout[
                 shape_types=_IntToComptimeInt[*tile_sizes],
                 stride_types=stride_layout._shape_types,
@@ -1324,7 +1407,7 @@ struct TileTensor[
             t" {Self.rank}"
         )
         return _tile_with_offset[stride_layout=stride_layout](
-            self, coord[*tile_sizes](), coordinates
+            self, coord[*tile_sizes], coordinates
         )
 
     comptime ViewType[new_layout: TensorLayout] = TileTensor[
@@ -1333,7 +1416,6 @@ struct TileTensor[
         origin=Self.origin,
         Storage=Self.Storage,
         address_space=Self.address_space,
-        element_size=Self.element_size,
     ]
     """A TileTensor type with the same data properties but a different layout.
 
@@ -1343,6 +1425,29 @@ struct TileTensor[
 
     Parameters:
         new_layout: The new TensorLayout type for the view.
+    """
+    comptime OffsetViewType[
+        offsets: TypeList[Trait=CoordLike, ...],
+        LayoutType: TensorLayout = Self.LayoutType,
+    ] = TileTensor[
+        dtype=Self.dtype,
+        LayoutType=LayoutType,
+        origin=Self.origin,
+        Storage=Self.Storage.OffsetResultType[offsets],
+        address_space=Self.address_space,
+    ]
+    """The TileTensor type produced by offsetting into this tensor's storage.
+
+    Names the return type of offset-producing operations (slicing, tiling,
+    distribution). It preserves dtype, origin, and address_space, optionally
+    changes the layout, and carries the storage policy's
+    `OffsetResultType[offsets]` so an offset that yields a different storage
+    handle is reflected in the view's type.
+
+    Parameters:
+        offsets: The coordinate types of the offset applied to the storage.
+        LayoutType: The layout type of the resulting view. Defaults to this
+            tensor's `LayoutType`.
     """
 
     @always_inline("nodebug")
@@ -1395,10 +1500,10 @@ struct TileTensor[
     def tile[
         *tile_sizes: Int
     ](self, *tile_coords: Int) -> Self.TileResultType[
-        _IntToComptimeInt[*tile_sizes]
+        _IntToComptimeInt[*tile_sizes], linear_idx_type=Self.linear_idx_type
     ]:
         """Variadic-`Int`-coords form of `.tile[]`. Works on both flat
-        and nested parents — see the `Coord`-arg sibling above.
+        and nested parents: see the `Coord`-arg sibling above.
 
         Parameters:
             tile_sizes: The dimensions of each tile along each axis.
@@ -1429,19 +1534,20 @@ struct TileTensor[
         var coordinates = DynamicCoord[Self.linear_idx_type, Self.rank]()
 
         comptime for i in range(Self.rank):
-            UnsafePointer(to=coordinates[i]).init_pointee_copy(
+            UnsafePointer(to=coordinates[i]).unsafe_write(
                 rebind[coordinates.element_types[i]](
                     Scalar[Self.linear_idx_type](tile_coords[i])
                 )
             )
 
-        return _tile(self, coord[*tile_sizes](), coordinates)
+        return _tile(self, coord[*tile_sizes], coordinates)
 
     @always_inline("nodebug")
     def distribute[
         thread_layout: Layout,
         swizzle: Optional[Swizzle] = None,
-    ](self, thread_id: Int) -> Self.ViewType[
+    ](self, thread_id: Int) -> Self.OffsetViewType[
+        TypeList.of[Scalar[Self.linear_idx_type]](),
         Layout[
             shape_types=_Divide[
                 Self.LayoutType._shape_types,
@@ -1493,9 +1599,8 @@ struct TileTensor[
                     Self.LayoutType._stride_types, thread_layout.shape_types
                 ],
             ],
-            Storage=Self.Storage,
+            Storage=Self.Storage.OffsetResultType[TypeList.of[Int]()],
             address_space=Self.address_space,
-            element_size=Self.element_size,
         ],
         IndexList[thread_layout.shape_types.size],
         Int,
@@ -1588,13 +1693,13 @@ struct TileTensor[
             # TODO: MSTDL-1352 we can use memory element to fill the tensor.
             comptime for i in range(num_elements):
                 var idx = self.layout(Idx[i])
-                self._storage.mut_cast[True]()[idx] = val
+                self._store_storage[alignment=align_of[Self.dtype]()](idx, val)
         else:
             var num_elements = self.num_elements()
 
             for i in range(num_elements):
                 var idx = self.layout(i)
-                self._storage.mut_cast[True]()[idx] = val
+                self._store_storage[alignment=align_of[Self.dtype]()](idx, val)
         return self
 
     @always_inline("nodebug")
@@ -1603,7 +1708,7 @@ struct TileTensor[
 
         For a flat layout this is `shape[i]`. For a nested layout (where
         `shape[i]` is itself a `Coord`) this is the product of all leaf
-        dims under outer-mode `i` — the i-th mode's extent under CuTe
+        dims under outer-mode `i`: the i-th mode's extent under CuTe
         Layout Algebra. For shape `((a, b), (c, d))`: `dim[0] = a*b`,
         `dim[1] = c*d`.
 
@@ -1682,11 +1787,10 @@ struct TileTensor[
             _StaticSplitShape[count, axis, Self.LayoutType._shape_types](),
             Self.LayoutType._stride_types,
         ],
-        ImmutOrigin(Self.origin),
-        Storage=Self.Storage,
+        ImmOrigin(Self.origin),
+        Storage=Self.Storage.OffsetResultType[TypeList.of[Int]()],
         address_space=Self.address_space,
         linear_idx_type=Self.linear_idx_type,
-        element_size=Self.element_size,
     ]
     """Type alias for equal-sized split element tensors.
 
@@ -1769,7 +1873,10 @@ struct TileTensor[
 
         comptime for i in range(count):
             tiles[i] = Self.SplitElementType[count, axis](
-                self._storage.as_immutable() + i * tile_size * axis_stride,
+                Self.Storage.offset(
+                    self._unsafe_storage_cast[to_mut=False](),
+                    Coord(i * tile_size * axis_stride),
+                ),
                 split_layout,
             )
 
@@ -1785,11 +1892,10 @@ struct TileTensor[
             ](),
             Self.LayoutType._stride_types,
         ],
-        ImmutOrigin(Self.origin),
-        Storage=Self.Storage,
+        ImmOrigin(Self.origin),
+        Storage=Self.Storage.OffsetResultType[TypeList.of[Int]()],
         address_space=Self.address_space,
         linear_idx_type=Self.linear_idx_type,
-        element_size=Self.element_size,
     ]
     """Type alias for runtime-sized split element tensors.
 
@@ -1862,19 +1968,21 @@ struct TileTensor[
         comptime for i in range(Self.rank):
             comptime NewShapeType = NewShapeTypes[i]
             comptime if i == axis:
-                UnsafePointer(to=new_shape[i]).init_pointee_copy(
+                UnsafePointer(to=new_shape[i]).unsafe_write(
                     rebind[NewShapeType](
                         Scalar[Self.linear_idx_type](partition_dim)
                     )
                 )
             else:
-                UnsafePointer(to=new_shape[i]).init_pointee_copy(
+                UnsafePointer(to=new_shape[i]).unsafe_write(
                     rebind[NewShapeType](self.layout.shape[i]())
                 )
 
         return Self.DynamicSplitType[axis](
-            self._storage.as_immutable()
-            + idx * axis_partition_dim * axis_stride,
+            Self.Storage.offset(
+                self._unsafe_storage_cast[to_mut=False](),
+                Coord(idx * axis_partition_dim * axis_stride),
+            ),
             Layout(new_shape, self.layout.stride_coord()),
         )
 
@@ -1893,7 +2001,7 @@ struct TileTensor[
 
         comptime for i in range(Self.rank):
             comptime NewShapeType = NewShapeTypes[i]
-            UnsafePointer(to=new_shape[i]).init_pointee_copy(NewShapeType())
+            UnsafePointer(to=new_shape[i]).unsafe_write(NewShapeType())
 
         return Layout(new_shape, self.layout.stride_coord())
 
@@ -1907,9 +2015,10 @@ struct TileTensor[
             stride_types=Self.LayoutType._stride_types,
         ],
         Self.origin,
-        Storage=Self.Storage,
+        Storage=Self.Storage.OffsetResultType[
+            TypeList.of[Scalar[Self.linear_idx_type]]()
+        ],
         address_space=Self.address_space,
-        element_size=Self.element_size,
     ] where (slices.size == Self.flat_rank and Self.all_dims_known):
         """Extract a slice from the tensor using slice objects.
 
@@ -1988,14 +2097,14 @@ struct TileTensor[
             var shape_ptr = UnsafePointer(to=new_shape[i])
             comptime NewShapeType = NewShapeTypes[i]
 
-            shape_ptr.init_pointee_copy(
+            shape_ptr.unsafe_write(
                 rebind[NewShapeType](ComptimeInt[NewShapeType.static_value]())
             )
 
         # Strides remain unchanged
         var new_layout = Layout(new_shape, self.layout.stride_coord())
 
-        return {self._storage + offset, new_layout}
+        return {self._offset_storage(offset), new_layout}
 
     @always_inline
     def slice(
@@ -2008,9 +2117,10 @@ struct TileTensor[
             Self.LayoutType._stride_types,
         ],
         Self.origin,
-        Storage=Self.Storage,
+        Storage=Self.Storage.OffsetResultType[
+            TypeList.of[Scalar[Self.linear_idx_type]]()
+        ],
         address_space=Self.address_space,
-        element_size=Self.element_size,
     ]:
         """Slice tensor with runtime start/end indices.
 
@@ -2057,7 +2167,7 @@ struct TileTensor[
 
         var new_layout = Layout(new_shape, self.layout.stride_coord())
 
-        return {self._storage + offset, new_layout}
+        return {self._offset_storage(offset), new_layout}
 
     # ===------------------------------------------------------------------=== #
     # Vectorization
@@ -2075,10 +2185,13 @@ struct TileTensor[
                 Self.LayoutType._stride_types, _IntToComptimeInt[*vector_shape]
             ],
         ],
-        Storage=Self.Storage,
+        Storage=PointerStorage[
+            element_width=Coord[
+                *_IntToComptimeInt[*vector_shape]
+            ].static_product
+        ],
         address_space=Self.address_space,
         linear_idx_type=Self.linear_idx_type,
-        element_size=Coord[*_IntToComptimeInt[*vector_shape]].static_product,
     ]
     """Type alias for vectorized tensor types.
 
@@ -2129,10 +2242,14 @@ struct TileTensor[
         - Enables strided access patterns suitable for SIMD vector loads.
         - Zero-cost abstraction at compile time when used with static shapes.
         """
-        return _vectorize(self, coord[*vector_shape]())
+        comptime assert (
+            Self.Storage == PointerStorage[element_width=1]
+        ), "TileTensor.vectorize requires PointerStorage"
+
+        return _vectorize(self, coord[*vector_shape])
 
     @always_inline("nodebug")
-    def vectorize(self) -> Self.SIMDVectorizedType:
+    def vectorize(self) -> Self.VectorizedType[1, simd_width_of[Self.dtype]()]:
         """Return a SIMD-width vectorized view of this tensor.
 
         This is a convenience method that vectorizes along the last dimension
@@ -2398,7 +2515,7 @@ struct TileTensor[
         self,
         out result: LayoutTensor[
             Self.dtype,
-            layout.Layout(
+            _LegacyLayout(
                 coord_to_int_tuple[*Self.LayoutType._shape_types](),
                 coord_to_int_tuple[*Self.LayoutType._stride_types](),
             ),
@@ -2415,8 +2532,17 @@ struct TileTensor[
             A LayoutTensor with the same shape, stride, and address space of
             this tensor.
         """
+        comptime assert (
+            Self.Storage == PointerStorage[element_width=1]
+        ), "TileTensor.to_layout_tensor requires PointerStorage"
         return {
-            self._storage,
+            rebind[
+                UnsafePointer[
+                    Scalar[Self.dtype],
+                    Self.origin,
+                    address_space=Self.address_space,
+                ]
+            ](self._storage),
             type_of(result.runtime_layout)(
                 coord_to_index_list(self.layout.shape_coord()).cast[
                     result.layout_int_type
@@ -2427,7 +2553,7 @@ struct TileTensor[
             ),
         }
 
-    comptime Immut = Self.OriginCastType[ImmutOrigin(Self.origin)]
+    comptime Immut = Self.OriginCastType[ImmOrigin(Self.origin)]
     """Type alias for an immutably-casted tensor."""
 
     comptime OriginCastType[
@@ -2441,7 +2567,6 @@ struct TileTensor[
         Storage=Self.Storage,
         address_space=Self.address_space,
         linear_idx_type=Self.linear_idx_type,
-        element_size=Self.element_size,
     ]
     """Type alias for origin-cast result tensors.
 
@@ -2466,7 +2591,12 @@ struct TileTensor[
         operation that will silently extend unrelated lifetimes and turn off
         exclusivity checking.
         """
-        return {self._storage.as_unsafe_any_origin(), self.layout}
+        return {
+            self._unsafe_storage_cast[
+                to_origin=UnsafeAnyOrigin[mut=Self.mut]
+            ](),
+            self.layout,
+        }
 
     @doc_hidden
     @always_inline("nodebug")
@@ -2477,14 +2607,17 @@ struct TileTensor[
     @always_inline
     def as_immut(
         self,
-    ) -> Self.OriginCastType[ImmutOrigin(Self.origin)]:
+    ) -> Self.OriginCastType[ImmOrigin(Self.origin)]:
         """
         Return an immutable version of this tensor.
 
         Returns:
             A `LayoutTensor` covering the same elements, but without mutability.
         """
-        return {self._storage.as_immutable(), self.layout}
+        return {
+            self._unsafe_storage_cast[to_origin=ImmOrigin(Self.origin)](),
+            self.layout,
+        }
 
     comptime AddressSpaceCastType[address_space: AddressSpace] = TileTensor[
         dtype=Self.dtype,
@@ -2513,7 +2646,9 @@ struct TileTensor[
             A TileTensor covering the same elements in the new address space.
         """
         return {
-            self.ptr.address_space_cast[target_address_space](),
+            self._unsafe_storage_cast[
+                to_origin=Self.origin, to_address_space=target_address_space
+            ](),
             self.layout,
         }
 
@@ -2528,13 +2663,212 @@ struct TileTensor[
             A `DeviceBuffer` containing the tensor's data.
         """
         comptime assert (
+            Self.Storage == PointerStorage[element_width=1]
+        ), "TileTensor.to_device_buffer requires PointerStorage"
+        comptime assert (
             Self.address_space == Self.address_space.GENERIC
         ), "DeviceBuffer is only used on GENERIC address space"
         return DeviceBuffer[Self.dtype](
             ctx,
-            self._storage,
+            rebind[
+                UnsafePointer[
+                    Scalar[Self.dtype],
+                    Self.origin,
+                    address_space=Self.address_space,
+                ]
+            ](self._storage),
             self.num_elements(),
             owning=False,
+        )
+
+    @always_inline
+    def __iadd__(
+        self, rhs: TileTensor[Self.dtype, ...]
+    ) where Self.mut and conforms_to(Self.Storage, TensorOps):
+        """Adds `rhs` into this tensor elementwise, in place.
+
+        Args:
+            rhs: The tensor to add, broadcast against this tensor's layout.
+        """
+        comptime assert (
+            Self.Storage._BASE_TYPE_NAME == rhs.Storage._BASE_TYPE_NAME
+        ), "in-place binary ops require operands with the same storage class"
+        comptime assert (
+            self.element_size == rhs.element_size
+        ), "in-place binary ops require operands with the same element size"
+        Self.Storage.add(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (rhs._storage, rhs.layout),
+        )
+
+    @always_inline
+    def __imul__(
+        self, rhs: TileTensor[Self.dtype, ...]
+    ) where Self.mut and conforms_to(Self.Storage, TensorOps):
+        """Multiplies this tensor by `rhs` elementwise, in place.
+
+        Args:
+            rhs: The tensor to multiply by, broadcast against this tensor's
+                layout.
+        """
+        comptime assert (
+            Self.Storage._BASE_TYPE_NAME == rhs.Storage._BASE_TYPE_NAME
+        ), "in-place binary ops require operands with the same storage class"
+        comptime assert (
+            self.element_size == rhs.element_size
+        ), "in-place binary ops require operands with the same element size"
+        Self.Storage.mul(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (rhs._storage, rhs.layout),
+        )
+
+    @always_inline
+    def __isub__(
+        self, rhs: TileTensor[Self.dtype, ...]
+    ) where Self.mut and conforms_to(Self.Storage, TensorOps):
+        """Subtracts `rhs` from this tensor elementwise, in place.
+
+        Args:
+            rhs: The tensor to subtract, broadcast against this tensor's layout.
+        """
+        comptime assert (
+            Self.Storage._BASE_TYPE_NAME == rhs.Storage._BASE_TYPE_NAME
+        ), "in-place binary ops require operands with the same storage class"
+        comptime assert (
+            self.element_size == rhs.element_size
+        ), "in-place binary ops require operands with the same element size"
+        Self.Storage.sub(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (rhs._storage, rhs.layout),
+        )
+
+    @always_inline
+    def __ifloordiv__(
+        self, rhs: TileTensor[Self.dtype, ...]
+    ) where Self.mut and conforms_to(Self.Storage, TensorOps):
+        """Floor-divides this tensor by `rhs` elementwise, in place.
+
+        Args:
+            rhs: The tensor to floor-divide by, broadcast against this tensor's
+                layout.
+        """
+        comptime assert (
+            Self.Storage._BASE_TYPE_NAME == rhs.Storage._BASE_TYPE_NAME
+        ), "in-place binary ops require operands with the same storage class"
+        comptime assert (
+            self.element_size == rhs.element_size
+        ), "in-place binary ops require operands with the same element size"
+        Self.Storage.floordiv(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (rhs._storage, rhs.layout),
+        )
+
+    @always_inline
+    def __itruediv__(
+        self, rhs: TileTensor[Self.dtype, ...]
+    ) where Self.mut and conforms_to(Self.Storage, TensorOps):
+        """True-divides this tensor by `rhs` elementwise, in place.
+
+        Args:
+            rhs: The tensor to true-divide by, broadcast against this tensor's
+                layout.
+        """
+        comptime assert (
+            Self.Storage._BASE_TYPE_NAME == rhs.Storage._BASE_TYPE_NAME
+        ), "in-place binary ops require operands with the same storage class"
+        comptime assert (
+            self.element_size == rhs.element_size
+        ), "in-place binary ops require operands with the same element size"
+        Self.Storage.truediv(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (rhs._storage, rhs.layout),
+        )
+
+    @always_inline
+    def min(
+        self, rhs: TileTensor[Self.dtype, ...]
+    ) where Self.mut and conforms_to(Self.Storage, TensorOps):
+        """Takes the elementwise minimum with `rhs`, in place.
+
+        Args:
+            rhs: The tensor to take the minimum against, broadcast against this
+                tensor's layout.
+        """
+        comptime assert (
+            Self.Storage._BASE_TYPE_NAME == rhs.Storage._BASE_TYPE_NAME
+        ), "in-place binary ops require operands with the same storage class"
+        comptime assert (
+            self.element_size == rhs.element_size
+        ), "in-place binary ops require operands with the same element size"
+        Self.Storage.min(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (rhs._storage, rhs.layout),
+        )
+
+    @always_inline
+    def max(
+        self, rhs: TileTensor[Self.dtype, ...]
+    ) where Self.mut and conforms_to(Self.Storage, TensorOps):
+        """Takes the elementwise maximum with `rhs`, in place.
+
+        Args:
+            rhs: The tensor to take the maximum against, broadcast against this
+                tensor's layout.
+        """
+        comptime assert (
+            Self.Storage._BASE_TYPE_NAME == rhs.Storage._BASE_TYPE_NAME
+        ), "in-place binary ops require operands with the same storage class"
+        comptime assert (
+            self.element_size == rhs.element_size
+        ), "in-place binary ops require operands with the same element size"
+        Self.Storage.max(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (rhs._storage, rhs.layout),
+        )
+
+    @always_inline
+    def abs(self) where Self.mut and conforms_to(Self.Storage, TensorOps):
+        """Takes the elementwise absolute value of this tensor, in place.
+
+        For unsigned dtypes this is the identity.
+        """
+        Self.Storage.abs(self._unsafe_storage_cast[to_mut=True](), self.layout)
+
+    @always_inline
+    def recip(self) where Self.mut and conforms_to(Self.Storage, TensorOps):
+        """Replaces each element of this tensor with its reciprocal, in place.
+
+        Elements equal to zero produce infinity, following IEEE 754 division
+        semantics.
+
+        Constraints:
+            The tensor's dtype must be a floating-point type.
+        """
+        Self.Storage.recip(
+            self._unsafe_storage_cast[to_mut=True](), self.layout
+        )
+
+    @always_inline
+    def exp[
+        scale: Scalar[Self.dtype] = 1
+    ](self) where Self.mut and conforms_to(Self.Storage, TensorOps):
+        """Replaces each element `x` of this tensor with `exp(scale * x)`,
+        in place.
+
+        The scale factor is applied before exponentiation so that scaled
+        exponentials (for example softmax logit scaling) fuse into a single
+        pass over the elements. The default scale of `1` gives a plain
+        exponential.
+
+        Parameters:
+            scale: The compile-time factor each element is multiplied by
+                before exponentiation.
+
+        Constraints:
+            The tensor's dtype must be a floating-point type.
+        """
+        Self.Storage.exp[scale](
+            self._unsafe_storage_cast[to_mut=True](), self.layout
         )
 
 
@@ -2657,7 +2991,7 @@ struct NullableTileTensor[
         out self: NullableTileTensor[
             other.dtype,
             other.LayoutType,
-            ImmutOrigin(other.origin),
+            ImmOrigin(other.origin),
             address_space=other.address_space,
             linear_idx_type=other.linear_idx_type,
             element_size=other.element_size,
@@ -2689,7 +3023,7 @@ struct NullableTileTensor[
         Args:
             other: The TileTensor to cast from.
         """
-        self.ptr = other._storage
+        self.ptr = other.ptr
         self.layout = other.layout
 
     @always_inline
@@ -2699,7 +3033,7 @@ struct NullableTileTensor[
         out self: NullableTileTensor[
             other.dtype,
             other.LayoutType,
-            ImmutOrigin(other.origin),
+            ImmOrigin(other.origin),
             address_space=other.address_space,
             linear_idx_type=other.linear_idx_type,
             element_size=other.element_size,
@@ -2710,7 +3044,7 @@ struct NullableTileTensor[
         Args:
             other: The mutable TileTensor to cast from.
         """
-        self.ptr = other._storage.unsafe_mut_cast[
+        self.ptr = other.ptr.unsafe_mut_cast[
             type_of(self).mut
         ]().unsafe_origin_cast[type_of(self).origin]()
         self.layout = other.layout
@@ -2724,7 +3058,6 @@ struct NullableTileTensor[
         Self.origin,
         address_space=Self.address_space,
         linear_idx_type=Self.linear_idx_type,
-        element_size=Self.element_size,
     ]:
         """Returns a regular TileTensor with the underlying pointer.
 
@@ -2741,7 +3074,6 @@ struct NullableTileTensor[
             Self.origin,
             address_space=Self.address_space,
             linear_idx_type=Self.linear_idx_type,
-            element_size=Self.element_size,
         ](self.ptr.unsafe_value(), self.layout)
 
     # ===------------------------------------------------------------------=== #
@@ -2754,7 +3086,7 @@ struct NullableTileTensor[
 
         For a flat layout this is `shape[i]`. For a nested layout (where
         `shape[i]` is itself a `Coord`) this is the product of all leaf
-        dims under outer-mode `i` — the i-th mode's extent under CuTe
+        dims under outer-mode `i`: the i-th mode's extent under CuTe
         Layout Algebra. For shape `((a, b), (c, d))`: `dim[0] = a*b`,
         `dim[1] = c*d`.
 
@@ -2817,7 +3149,7 @@ struct NullableTileTensor[
         self,
         out result: LayoutTensor[
             Self.dtype,
-            layout.Layout(
+            _LegacyLayout(
                 coord_to_int_tuple[*Self.LayoutType._shape_types](),
                 coord_to_int_tuple[*Self.LayoutType._stride_types](),
             ),
@@ -2861,7 +3193,6 @@ comptime _ComptimeConditionalTileTensor[
     engaged: Bool = False,
     address_space: AddressSpace = AddressSpace.GENERIC,
     linear_idx_type: DType = _get_index_type[LayoutType](address_space),
-    element_size: Int = 1,
 ] = _ComptimeConditional[
     TileTensor[
         dtype,
@@ -2869,7 +3200,6 @@ comptime _ComptimeConditionalTileTensor[
         origin,
         address_space=address_space,
         linear_idx_type=linear_idx_type,
-        element_size=element_size,
     ],
     engaged=engaged,
 ]
@@ -2938,7 +3268,7 @@ def _pretty_print_elementwise[W: Writer](tensor: TileTensor, mut writer: W):
         var offset = tensor.layout[linear_idx_type=tensor.linear_idx_type](
             Scalar[tensor.linear_idx_type](i)
         )
-        writer.write(tensor.ptr.load[width=tensor.element_size](offset))
+        writer.write(tensor.raw_load[width=tensor.element_size](offset))
         if i < n - 1:
             writer.write(", ")
     writer.write("]")
@@ -2972,7 +3302,8 @@ def _distribute[
 ](
     data_layout_tensor: TileTensor,
     thread_id: Int,
-) -> data_layout_tensor.ViewType[
+) -> data_layout_tensor.OffsetViewType[
+    TypeList.of[Scalar[data_layout_tensor.linear_idx_type]](),
     Layout[
         shape_types=_Divide[
             data_layout_tensor.LayoutType._shape_types,
@@ -3040,14 +3371,14 @@ def _distribute[
     # Populate runtime values for dimensions that aren't statically known.
     comptime for i in range(NewShapeTypes.size):
         comptime if not NewShapeTypes[i].is_static_value:
-            UnsafePointer(to=shape[i]).init_pointee_copy(
+            UnsafePointer(to=shape[i]).unsafe_write(
                 _coerce_dynamic[NewShapeTypes[i]](
                     Int(data_layout_tensor.layout.shape_coord()[i].value())
                     // thread_layout.shape_types[i].static_value
                 )
             )
         comptime if not NewStrideTypes[i].is_static_value:
-            UnsafePointer(to=stride[i]).init_pointee_copy(
+            UnsafePointer(to=stride[i]).unsafe_write(
                 _coerce_dynamic[NewStrideTypes[i]](
                     Int(data_layout_tensor.layout.stride_coord()[i].value())
                     * thread_layout.shape_types[i].static_value
@@ -3060,10 +3391,10 @@ def _distribute[
         shape_types=NewShapeTypes,
         stride_types=NewStrideTypes,
     ]
-    return data_layout_tensor.ViewType[ResultLayout](
-        UnsafePointer(to=data_layout_tensor.ptr[swizzled_offset]),
+    return {
+        data_layout_tensor._offset_storage(swizzled_offset),
         layout,
-    )
+    }
 
 
 @always_inline("nodebug")
@@ -3074,7 +3405,8 @@ def _distribute_with_offset[
     data_layout_tensor: TileTensor,
     thread_id: Int,
 ) -> Tuple[
-    data_layout_tensor.ViewType[
+    data_layout_tensor.OffsetViewType[
+        TypeList.of[Int](),
         Layout[
             shape_types=_Divide[
                 data_layout_tensor.LayoutType._shape_types,
@@ -3137,14 +3469,14 @@ def _distribute_with_offset[
     # Populate runtime values for dimensions that aren't statically known.
     comptime for i in range(NewShapeTypes.size):
         comptime if not NewShapeTypes[i].is_static_value:
-            UnsafePointer(to=shape[i]).init_pointee_copy(
+            UnsafePointer(to=shape[i]).unsafe_write(
                 _coerce_dynamic[NewShapeTypes[i]](
                     Int(data_layout_tensor.layout.shape_coord()[i].value())
                     // thread_layout.shape_types[i].static_value
                 )
             )
         comptime if not NewStrideTypes[i].is_static_value:
-            UnsafePointer(to=stride[i]).init_pointee_copy(
+            UnsafePointer(to=stride[i]).unsafe_write(
                 _coerce_dynamic[NewStrideTypes[i]](
                     Int(data_layout_tensor.layout.stride_coord()[i].value())
                     * thread_layout.shape_types[i].static_value
@@ -3158,8 +3490,8 @@ def _distribute_with_offset[
         stride_types=NewStrideTypes,
     ]
     return (
-        data_layout_tensor.ViewType[ResultLayout](
-            UnsafePointer(to=data_layout_tensor.ptr[swizzled_offset]),
+        data_layout_tensor.OffsetViewType[TypeList.of[Int](), ResultLayout](
+            data_layout_tensor._offset_storage(swizzled_offset),
             layout,
         ),
         thread_coords,
@@ -3198,7 +3530,7 @@ comptime _NestedTileResultStrideTypes[
     ParentLayoutType._stride_types.size,
     _TileResultStrideTabulator[ParentLayoutType, _],
 ]()
-"""Result stride `TypeList` for `.tile[]` — each outer mode contributes
+"""Result stride `TypeList` for `.tile[]`: each outer mode contributes
 its innermost sub-stride. Identity-equivalent to parent's
 `_stride_types` for flat parents; innermost-extracted for nested
 parents."""
@@ -3217,7 +3549,9 @@ def _tile[
     ],
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
-) -> data_layout_tensor.TileResultType[tile_shape_types]:
+) -> data_layout_tensor.TileResultType[
+    tile_shape_types, linear_idx_type=data_layout_tensor.linear_idx_type
+]:
     """Extract a sub-tile from a TileTensor (CuTe `local_tile`). Works
     on both flat and nested parents via per-mode comptime dispatch.
 
@@ -3264,7 +3598,9 @@ def _tile[
                 )
             )
 
-    comptime ResultType = data_layout_tensor.TileResultType[tile_shape_types]
+    comptime ResultType = data_layout_tensor.TileResultType[
+        tile_shape_types, linear_idx_type=data_layout_tensor.linear_idx_type
+    ]
     comptime ParentIsFlat = (
         data_layout_tensor.LayoutType.rank
         == data_layout_tensor.LayoutType.flat_rank
@@ -3281,7 +3617,7 @@ def _tile[
             stride=data_layout_tensor.layout.stride_coord(),
         )
         return ResultType(
-            UnsafePointer(to=data_layout_tensor.ptr[offset]),
+            data_layout_tensor._offset_storage(offset),
             rebind[ResultType.LayoutType](tile_layout),
         )
     else:
@@ -3292,7 +3628,7 @@ def _tile[
         # is sufficient. A future dynamic-nested caller would need a
         # per-mode innermost extraction here.
         return ResultType(
-            UnsafePointer(to=data_layout_tensor.ptr[offset]),
+            data_layout_tensor._offset_storage(offset),
             ResultType.LayoutType(),
         )
 
@@ -3311,7 +3647,8 @@ def _tile_with_offset[
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
 ) -> Tuple[
-    data_layout_tensor.ViewType[
+    data_layout_tensor.OffsetViewType[
+        TypeList.of[Int](),
         Layout[
             shape_types=tile_shape_types,
             stride_types=data_layout_tensor.LayoutType._stride_types,
@@ -3350,13 +3687,14 @@ def _tile_with_offset[
     )
 
     return (
-        data_layout_tensor.ViewType[
+        data_layout_tensor.OffsetViewType[
+            TypeList.of[Int](),
             Layout[
                 shape_types=tile_shape_types,
                 stride_types=data_layout_tensor.LayoutType._stride_types,
             ],
         ](
-            UnsafePointer(to=data_layout_tensor.ptr[offset]),
+            data_layout_tensor._offset_storage(offset),
             tile_layout,
         ),
         corner_coords,
@@ -3379,7 +3717,8 @@ def _tile[
     ],
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
-) -> data_layout_tensor.ViewType[
+) -> data_layout_tensor.OffsetViewType[
+    TypeList.of[Scalar[data_layout_tensor.linear_idx_type]](),
     Layout[
         shape_types=tile_shape_types,
         stride_types=stride_layout._shape_types,
@@ -3410,13 +3749,14 @@ def _tile[
         stride=Coord[*stride_layout._shape_types](),
     )
 
-    return data_layout_tensor.ViewType[
+    return data_layout_tensor.OffsetViewType[
+        TypeList.of[Scalar[data_layout_tensor.linear_idx_type]](),
         Layout[
             shape_types=tile_shape_types,
             stride_types=stride_layout._shape_types,
         ],
     ](
-        UnsafePointer(to=data_layout_tensor.ptr[offset]),
+        data_layout_tensor._offset_storage(offset),
         tile_layout,
     )
 
@@ -3437,7 +3777,8 @@ def _tile_with_offset[
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
 ) -> Tuple[
-    data_layout_tensor.ViewType[
+    data_layout_tensor.OffsetViewType[
+        TypeList.of[Int](),
         Layout[
             shape_types=tile_shape_types,
             stride_types=stride_layout._shape_types,
@@ -3469,13 +3810,14 @@ def _tile_with_offset[
     )
 
     return (
-        data_layout_tensor.ViewType[
+        data_layout_tensor.OffsetViewType[
+            TypeList.of[Int](),
             Layout[
                 shape_types=tile_shape_types,
                 stride_types=stride_layout._shape_types,
             ],
         ](
-            UnsafePointer(to=data_layout_tensor.ptr[offset]),
+            data_layout_tensor._offset_storage(offset),
             tile_layout,
         ),
         corner_coords,
@@ -3504,10 +3846,11 @@ def _vectorize[
         ],
     ],
     data_layout_tensor.origin,
-    Storage=data_layout_tensor.Storage,
     address_space=data_layout_tensor.address_space,
     linear_idx_type=data_layout_tensor.linear_idx_type,
-    element_size=Coord[*vector_shape_types].static_product,
+    Storage=PointerStorage[
+        element_width=Coord[*vector_shape_types].static_product
+    ],
 ]:
     """Create a vectorized view of a TileTensor.
 
@@ -3545,7 +3888,7 @@ def _vectorize[
     # Populate runtime values for dimensions that aren't statically known.
     comptime for i in range(NewShapeTypes.size):
         comptime if not NewShapeTypes[i].is_static_value:
-            UnsafePointer(to=new_shape[i]).init_pointee_copy(
+            UnsafePointer(to=new_shape[i]).unsafe_write(
                 rebind[NewShapeTypes[i]](
                     Scalar[NewShapeTypes[i].DTYPE](
                         ceildiv(
@@ -3562,7 +3905,7 @@ def _vectorize[
                 )
             )
         comptime if not NewStrideTypes[i].is_static_value:
-            UnsafePointer(to=new_stride[i]).init_pointee_copy(
+            UnsafePointer(to=new_stride[i]).unsafe_write(
                 rebind[NewStrideTypes[i]](
                     Scalar[NewStrideTypes[i].DTYPE](
                         data_layout_tensor.layout.stride_coord()[i].value()
@@ -3583,7 +3926,19 @@ def _vectorize[
             vector_shape_types,
         ],
     ]
-    return {data_layout_tensor._storage, new_layout}
+    return {
+        rebind[
+            UnsafePointer[
+                SIMD[
+                    data_layout_tensor.dtype,
+                    Coord[*vector_shape_types].static_product,
+                ],
+                address_space=data_layout_tensor.address_space,
+                origin=data_layout_tensor.origin,
+            ]
+        ](data_layout_tensor.ptr),
+        new_layout,
+    }
 
 
 def _get_index_type[
@@ -3695,7 +4050,7 @@ comptime _KeepCoordWhereIndexIsAll[
     index_types: TypeList[Trait=CoordLike, ...],
     element: CoordLike,
     idx: Int,
-] = _type_is_eq_parse_time[index_types[idx], _All]()
+] = index_types[idx] == _All
 """Compile-time predicate: keep a shape/stride dimension when the slice index is `_All`."""
 
 comptime _IsRowMajorTabulator[

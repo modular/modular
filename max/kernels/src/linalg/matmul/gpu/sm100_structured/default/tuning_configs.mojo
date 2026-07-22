@@ -11,12 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Defines tuning configurations for SM100 structured matmul kernels.
+
+Holds the `TuningConfigSM100` and `TuningConfigSmallMNGemms` structs that
+bundle kernel launch parameters for specific MxNxK matmul shapes, along with
+the curated tuning lists used by the SM100 structured dispatch tables.
+"""
+
 from ...tile_scheduler import RasterOrder
 from linalg.gemv import GEMVAlgorithm
 from internal_utils import TuningConfig
+from std.utils.index import Index, IndexList
 
 
 struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
+    """Holds SM100 matmul kernel launch parameters for a range of MxNxK shapes.
+
+    Stores the MMA shape, block tile shape, cluster shape, swizzle and
+    rasterization settings, pipeline stage counts, and split-K factor that
+    select an optimized kernel configuration for matmuls whose M dimension
+    falls in the half-open interval `[M, M_end)`.
+    """
+
     # The kernel parameters are optimal for shape in [M:M_end]xNxK.
     var M: Int
     var M_end: Int
@@ -142,6 +158,13 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
 
 
 struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
+    """Holds launch parameters for small-M, small-N GEMM/GEMV kernels.
+
+    Stores the tile dimensions, thread count, unroll factor, K-tile size,
+    and GEMV algorithm kind that select an optimized kernel configuration for
+    matmuls whose M dimension falls in the half-open interval `[M, M_end)`.
+    """
+
     var M: Int
     var M_end: Int
     var N: Int
@@ -152,6 +175,7 @@ struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
     var num_threads: Int
     var unroll_factor: Int
     var tile_k: Int
+    var swapAB: Bool
 
     def __init__(
         out self,
@@ -165,6 +189,7 @@ struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
         kernel_kind: GEMVAlgorithm,
         unroll_factor: Int = 1,
         tile_k: Int = 128,
+        swapAB: Bool = False,
     ):
         self.M = M
         self.M_end = M_end
@@ -176,6 +201,7 @@ struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
         self.num_threads = num_threads
         self.unroll_factor = unroll_factor
         self.tile_k = tile_k
+        self.swapAB = swapAB
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write(
@@ -196,6 +222,8 @@ struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
             self.tile_n,
             "/threads:",
             self.num_threads,
+            "/swapAB:",
+            self.swapAB,
         )
 
 
@@ -340,17 +368,18 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
         ),
         TuningConfigSM100(
             M=32,
-            M_end=128 + 64,
+            M_end=32 + 1,
             N=1536,
             K=1536,
-            mma_shape=Index(256, 32, 16),
-            cta_group=2,
-            cluster_shape=Index(4, 2, 1),
+            mma_shape=Index(64, 8, 16),
+            cta_group=1,
+            cluster_shape=Index(2, 4, 1),
             block_swizzle_size=0,
             swapAB=True,
             rasterize_order=RasterOrder(0),
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
+            k_group_size=4,
         ),
         TuningConfigSM100(
             M=2048,

@@ -67,6 +67,7 @@ class TokenGenerationScheduler(Scheduler):
         kv_cache: PagedKVCacheManager,
         support_empty_batches: bool = False,
         dp_padder: DPBatchPadder | None = None,
+        max_pending_requests: int | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -74,6 +75,16 @@ class TokenGenerationScheduler(Scheduler):
         self.request_queue = request_queue
         self.response_queue = response_queue
         self.cancel_queue = cancel_queue
+
+        # Cap M on the scheduler's pending (CE/prefill) queue depth. When set,
+        # the scheduler stops pulling from the request queue once it already
+        # holds this many not-yet-running requests, so excess backlog stays in
+        # the bounded request queue and exerts backpressure (the API rejects
+        # with HTTP 429) instead of growing this unbounded pending pool. This
+        # naturally accounts for long requests holding batch/KV space: when
+        # they can't drain into a batch, the pending queue stays full and new
+        # admissions are shed sooner.
+        self.max_pending_requests = max_pending_requests
 
         # Parse batch scheduling strategy from environment variable
         batch_strategy = BatchSchedulingStrategy.PER_REPLICA
@@ -114,10 +125,22 @@ class TokenGenerationScheduler(Scheduler):
         This method is responsible for ensuring that new requests are continuously
         fetched and made available for batching and scheduling.
         """
+        max_items = self.max_items_per_drain
+        if self.max_pending_requests is not None:
+            # Cap M: only pull enough to keep the pending (CE/prefill) queue at
+            # or below max_pending_requests. Anything beyond that stays in the
+            # request queue, backing it up so the API can shed load.
+            available = self.max_pending_requests - len(
+                self.batch_constructor.all_ce_reqs
+            )
+            if available <= 0:
+                return
+            max_items = min(max_items, available)
+
         with Tracer("drain_queue"):
             items = drain_queue(
                 self.request_queue,
-                max_items=self.max_items_per_drain,
+                max_items=max_items,
             )
 
         with Tracer(f"adding_to_batch_constructor: {len(items)} items"):
@@ -151,10 +174,10 @@ class TokenGenerationScheduler(Scheduler):
 
         # When the overlap pipeline is actually overlapping, the wall-clock
         # time measured below reflects the previous batch's sync, not the
-        # current batch. Flag it so the logger emits "Previous Execution:".
-        is_overlap_active = (
-            isinstance(self.pipeline, OverlapTextGenerationPipeline)
-            and self.pipeline.overlap_active
+        # current batch. Flag it so the logger emits "Previous Execution:"
+        # and defers execution telemetry to the completed-batch stats below.
+        is_overlap_active = bool(
+            getattr(self.pipeline, "overlap_active", False)
         )
 
         # Schedule the batch
@@ -167,7 +190,15 @@ class TokenGenerationScheduler(Scheduler):
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
 
-        # Log batch metrics
+        # Log batch metrics. Under overlap scheduling the wall-clock time
+        # measured above describes the previously enqueued batch; the
+        # pipeline reports that batch's composition and timing so telemetry
+        # is attributed to the correct batch type.
+        completed_batch_stats = (
+            self.pipeline.take_completed_batch_stats()
+            if hasattr(self.pipeline, "take_completed_batch_stats")
+            else None
+        )
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             inputs=inputs,
@@ -180,7 +211,11 @@ class TokenGenerationScheduler(Scheduler):
             batch_spec_decode_metrics=self.pipeline.batch_spec_decode_metrics()
             if hasattr(self.pipeline, "batch_spec_decode_metrics")
             else None,
+            batch_vision_metrics=self.pipeline.batch_vision_metrics()
+            if hasattr(self.pipeline, "batch_vision_metrics")
+            else None,
             batch_execution_time_is_previous=is_overlap_active,
+            completed_batch_stats=completed_batch_stats,
         )
 
         for cancelled_id in get_cancelled_reqs(self.cancel_queue):
@@ -237,10 +272,11 @@ def load_text_generation_scheduler(
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ],
     cancel_queue: MAXPullQueue[list[RequestID]],
+    max_pending_requests: int | None = None,
 ) -> TokenGenerationScheduler:
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config
+        pipeline_config, pipeline.max_batch_size
     )
 
     # Build DP batch padder when DP > 1 with device graph capture.
@@ -272,4 +308,5 @@ def load_text_generation_scheduler(
         cancel_queue=cancel_queue,
         support_empty_batches=pipeline_config.runtime.execute_empty_batches,
         dp_padder=dp_padder,
+        max_pending_requests=max_pending_requests,
     )

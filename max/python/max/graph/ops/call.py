@@ -62,7 +62,7 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
             # Build the subgraph once from the first layer.
             subgraph = self.layers[0].build_subgraph(
                 "transformer_block",
-                input_types=input_types,
+                inputs=h,
                 weight_prefix="layers.0.",
             )
 

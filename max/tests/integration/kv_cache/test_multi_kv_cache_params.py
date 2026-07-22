@@ -19,9 +19,12 @@ import math
 
 import pytest
 from max.dtype import DType
-from max.graph import DeviceRef
+from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import (
     KVCacheParams,
+    KVCacheQuantizationConfig,
+    KVConnectorType,
+    MHAKVCacheParams,
     MultiKVCacheParams,
     compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
@@ -41,7 +44,7 @@ def create_kv_cache_params(
     dtype: DType = DType.bfloat16,
 ) -> KVCacheParams:
     """Helper to create KVCacheParams with common defaults."""
-    return KVCacheParams(
+    return MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
@@ -60,7 +63,7 @@ def create_leaf_params(
     page_size: int = 128,
 ) -> KVCacheParams:
     """Create a KVCacheParams leaf for any (n_devices, dp_degree) combination."""
-    return KVCacheParams(
+    return MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
@@ -156,7 +159,7 @@ class TestMultiKVCacheParamsValidation:
 
     def test_mismatched_data_parallel_degree_raises_error(self) -> None:
         """MultiKVCacheParams should raise if data parallel degrees don't match."""
-        params1 = KVCacheParams(
+        params1 = MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=8,
             head_dim=128,
@@ -165,7 +168,7 @@ class TestMultiKVCacheParamsValidation:
             page_size=128,
             data_parallel_degree=1,
         )
-        params2 = KVCacheParams(
+        params2 = MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=8,
             head_dim=128,
@@ -407,8 +410,8 @@ class TestDeepNestedKVCacheTree:
         symbolic = root.get_symbolic_inputs()
 
         flat = symbolic.flatten()
-        # Each leaf (single GPU) contributes 5 tensors; 6 leaves → 30 total.
-        assert len(flat) == 6 * 5
+        # Each leaf (single GPU) contributes 6 tensors; 6 leaves → 36 total.
+        assert len(flat) == 6 * 6
 
         it = iter(flat)
         reconstructed = symbolic.unflatten(it)
@@ -571,7 +574,7 @@ class TestDeepTreeParallelism:
     def test_flatten_element_count(
         self, n_devices: int, dp_degree: int
     ) -> None:
-        """Flat list length == n_devices x n_leaves x 5 items per device."""
+        """Flat list length == n_devices x n_leaves x 6 items per device."""
         a = create_leaf_params(n_devices=n_devices, dp_degree=dp_degree)
         b = create_leaf_params(n_devices=n_devices, dp_degree=dp_degree)
         flat = (
@@ -579,7 +582,7 @@ class TestDeepTreeParallelism:
             .get_symbolic_inputs()
             .flatten()
         )
-        assert len(flat) == n_devices * 2 * 5
+        assert len(flat) == n_devices * 2 * 6
 
     def test_deep_tree_flatten_unflatten_roundtrip(
         self, n_devices: int, dp_degree: int
@@ -588,8 +591,8 @@ class TestDeepTreeParallelism:
         root = _build_deep_tree(n_devices=n_devices, dp_degree=dp_degree)
         symbolic = root.get_symbolic_inputs()
         flat = symbolic.flatten()
-        # 6 leaves x n_devices entries x 5 items per device
-        assert len(flat) == 6 * n_devices * 5
+        # 6 leaves x n_devices entries x 6 items per device
+        assert len(flat) == 6 * n_devices * 6
 
         it = iter(flat)
         reconstructed = symbolic.unflatten(it)
@@ -621,3 +624,241 @@ class TestParallelismValidation:
         tp_leaf = create_leaf_params(n_devices=2, dp_degree=1)
         with pytest.raises(ValueError, match="same data parallel degree"):
             MultiKVCacheParams.from_params({"dp": dp_leaf, "tp": tp_leaf})
+
+
+class TestPerLayerBuffers:
+    """Symbolic-ABI tests for the gated ``per_layer_buffers`` flag.
+
+    A per-layer pool appends one single-layer buffer per layer at the *tail* of
+    the flattened inputs, keeping the leading fields byte-identical for every
+    non-per-layer cache. These are CPU-only (symbolic types; no device
+    allocation or execution).
+    """
+
+    def _mha(
+        self,
+        *,
+        num_layers: int,
+        per_layer_buffers: bool,
+        n_devices: int = 1,
+    ) -> KVCacheParams:
+        return MHAKVCacheParams(
+            dtype=DType.bfloat16,
+            n_kv_heads=8,
+            head_dim=128,
+            num_layers=num_layers,
+            devices=[DeviceRef.GPU()] * n_devices,
+            page_size=128,
+            per_layer_buffers=per_layer_buffers,
+        )
+
+    def test_default_off_is_byte_identical(self) -> None:
+        """Off by default: no per-layer field and 6 flat items per device."""
+        params = self._mha(num_layers=4, per_layer_buffers=False)
+        symbolic = params.get_symbolic_inputs()
+        assert symbolic.inputs[0].kv_blocks_per_layer is None
+        assert len(symbolic.flatten()) == 6
+
+    def test_per_layer_appends_num_layers_at_tail(self) -> None:
+        """On: ``num_layers`` single-layer buffers appended after the 6 fields."""
+        num_layers = 4
+        params = self._mha(num_layers=num_layers, per_layer_buffers=True)
+        symbolic = params.get_symbolic_inputs()
+        per_device = symbolic.inputs[0]
+        assert per_device.kv_blocks_per_layer is not None
+        assert len(per_device.kv_blocks_per_layer) == num_layers
+        # kv_blocks matches a single-layer buffer (layer dim pinned to 1) so it
+        # stays a valid single-buffer alias for kv_blocks_per_layer[0].
+        assert (
+            per_device.kv_blocks.shape
+            == per_device.kv_blocks_per_layer[0].shape
+        )
+        assert int(per_device.kv_blocks.shape[2]) == 1
+        assert len(symbolic.flatten()) == 6 + num_layers
+
+    def test_per_layer_flatten_unflatten_roundtrip(self) -> None:
+        """flatten -> unflatten fully consumes the iterator and rebuilds tail."""
+        num_layers = 3
+        params = self._mha(num_layers=num_layers, per_layer_buffers=True)
+        symbolic = params.get_symbolic_inputs()
+        it = iter(symbolic.flatten())
+        reconstructed = symbolic.unflatten(it)
+        assert list(it) == [], "unflatten left unconsumed elements"
+        rec = reconstructed.inputs[0]
+        assert rec.kv_blocks_per_layer is not None
+        assert len(rec.kv_blocks_per_layer) == num_layers
+
+    def test_multi_tree_only_flagged_child_extends(self) -> None:
+        """In a tree, only the per-layer child grows; others stay 6 per device."""
+        sliding = self._mha(num_layers=2, per_layer_buffers=True)
+        full = self._mha(num_layers=5, per_layer_buffers=False)
+        root = MultiKVCacheParams.from_params(
+            {"sliding": sliding, "full": full}
+        )
+        # sliding: 6 + 2 (per-layer tail); full: 6; one device each.
+        assert len(root.get_symbolic_inputs().flatten()) == (6 + 2) + 6
+
+    def test_allocate_zero_layers_raises(self) -> None:
+        """``num_layers == 0`` fails fast with a clear error, not IndexError.
+
+        The guards raise before any device buffer is materialized, so this runs
+        without a GPU.
+        """
+        params = self._mha(num_layers=0, per_layer_buffers=True)
+        with pytest.raises(ValueError, match="num_layers >= 1"):
+            params.allocate_buffers(total_num_pages=4)
+
+    def test_allocate_with_offload_connector_raises(self) -> None:
+        """An off-device connector is rejected: ``all_buffers`` sees only layer 0."""
+        params = MHAKVCacheParams(
+            dtype=DType.bfloat16,
+            n_kv_heads=8,
+            head_dim=128,
+            num_layers=4,
+            devices=[DeviceRef.GPU()],
+            page_size=128,
+            per_layer_buffers=True,
+            kv_connector=KVConnectorType.local,
+            enable_prefix_caching=True,
+            host_kvcache_swap_space_gb=1.0,
+        )
+        with pytest.raises(
+            NotImplementedError, match="off-device KV connector"
+        ):
+            params.allocate_buffers(total_num_pages=4)
+
+    def test_allocate_with_data_parallelism_raises(self) -> None:
+        """Data parallelism is rejected: cross-replica copy sees only layer 0."""
+        params = MHAKVCacheParams(
+            dtype=DType.bfloat16,
+            n_kv_heads=8,
+            head_dim=128,
+            num_layers=4,
+            devices=[DeviceRef.GPU()] * 2,
+            page_size=128,
+            per_layer_buffers=True,
+            data_parallel_degree=2,
+        )
+        with pytest.raises(NotImplementedError, match="data parallelism"):
+            params.allocate_buffers(total_num_pages=4)
+
+
+def _page_dim(kv: KVCacheInputs[TensorType, BufferType]) -> str:
+    """First (page-pool) symbolic dim name of a leaf's kv_blocks buffer."""
+    return str(kv.inputs[0].kv_blocks.shape[0])
+
+
+def _lookup_dims(kv: KVCacheInputs[TensorType, BufferType]) -> tuple[str, str]:
+    """The (batch_size, max_num_pages) symbolic dim names of the lookup table."""
+    shape = kv.inputs[0].lookup_table.shape
+    return str(shape[0]), str(shape[1])
+
+
+class TestPagePoolSymbolicNamespace:
+    """A windowed model gives each KV group an independently sized page pool
+    (mach sizes a sliding group smaller than the global one), so their
+    ``total_num_pages`` symbolic dims must not collapse onto one shared name.
+    The shared block table (``batch_size``/``max_num_pages``) must stay shared.
+    """
+
+    def test_sibling_groups_get_distinct_page_dims(self) -> None:
+        a = create_leaf_params()
+        b = create_leaf_params()
+        root = MultiKVCacheParams.from_params({"global": a, "local": b})
+        symbolic = root.get_symbolic_inputs()
+        assert isinstance(symbolic, MultiKVCacheInputs)
+
+        g = symbolic.children["global"]
+        loc = symbolic.children["local"]
+        assert isinstance(g, KVCacheInputs) and isinstance(loc, KVCacheInputs)
+        assert _page_dim(g) == "global_total_num_pages"
+        assert _page_dim(loc) == "local_total_num_pages"
+        assert _page_dim(g) != _page_dim(loc)
+
+    def test_shared_block_table_dims_stay_shared(self) -> None:
+        a = create_leaf_params()
+        b = create_leaf_params()
+        root = MultiKVCacheParams.from_params({"global": a, "local": b})
+        symbolic = root.get_symbolic_inputs()
+        assert isinstance(symbolic, MultiKVCacheInputs)
+        g = symbolic.children["global"]
+        loc = symbolic.children["local"]
+        assert isinstance(g, KVCacheInputs) and isinstance(loc, KVCacheInputs)
+        assert _lookup_dims(g) == _lookup_dims(loc)
+        assert _lookup_dims(g) == (
+            "replica_0_batch_size",
+            "replica_0_max_num_pages",
+        )
+
+    def test_nested_namespace_composes(self) -> None:
+        root = _build_deep_tree()
+        symbolic = root.get_symbolic_inputs()
+        assert isinstance(symbolic, MultiKVCacheInputs)
+        draft = symbolic.children["draft"]
+        assert isinstance(draft, MultiKVCacheInputs)
+        c = draft.children["c"]
+        assert isinstance(c, MultiKVCacheInputs)
+        e = c.children["e"]
+        assert isinstance(e, MultiKVCacheInputs)
+        f = e.children["f"]
+        assert isinstance(f, KVCacheInputs)
+        assert _page_dim(f) == "draft_c_e_f_total_num_pages"
+
+    def test_single_group_names_unchanged(self) -> None:
+        """A plain leaf keeps byte-identical names (empty namespace)."""
+        leaf = create_leaf_params()
+        symbolic = leaf.get_symbolic_inputs()
+        assert isinstance(symbolic, KVCacheInputs)
+        assert _page_dim(symbolic) == "total_num_pages"
+        assert _lookup_dims(symbolic) == (
+            "replica_0_batch_size",
+            "replica_0_max_num_pages",
+        )
+
+    def test_single_group_quantized_scales_page_dim_unchanged(self) -> None:
+        """The kv_scales page dim tracks total_num_pages and stays bare."""
+        leaf = MHAKVCacheParams(
+            dtype=DType.float8_e4m3fn,
+            n_kv_heads=8,
+            head_dim=128,
+            num_layers=4,
+            devices=[DeviceRef.GPU()],
+            page_size=128,
+            kvcache_quant_config=KVCacheQuantizationConfig(
+                scale_dtype=DType.float32
+            ),
+        )
+        symbolic = leaf.get_symbolic_inputs()
+        assert isinstance(symbolic, KVCacheInputs)
+        scales = symbolic.inputs[0].kv_scales
+        assert scales is not None
+        assert str(scales.shape[0]) == "total_num_pages"
+
+    def test_quantized_sibling_scales_page_dim_namespaced(self) -> None:
+        def quant_leaf() -> KVCacheParams:
+            return MHAKVCacheParams(
+                dtype=DType.float8_e4m3fn,
+                n_kv_heads=8,
+                head_dim=128,
+                num_layers=4,
+                devices=[DeviceRef.GPU()],
+                page_size=128,
+                kvcache_quant_config=KVCacheQuantizationConfig(
+                    scale_dtype=DType.float32
+                ),
+            )
+
+        root = MultiKVCacheParams.from_params(
+            {"global": quant_leaf(), "local": quant_leaf()}
+        )
+        symbolic = root.get_symbolic_inputs()
+        assert isinstance(symbolic, MultiKVCacheInputs)
+        g = symbolic.children["global"]
+        loc = symbolic.children["local"]
+        assert isinstance(g, KVCacheInputs) and isinstance(loc, KVCacheInputs)
+        g_scales = g.inputs[0].kv_scales
+        loc_scales = loc.inputs[0].kv_scales
+        assert g_scales is not None and loc_scales is not None
+        assert str(g_scales.shape[0]) == "global_total_num_pages"
+        assert str(loc_scales.shape[0]) == "local_total_num_pages"
+        assert str(g_scales.shape[0]) == _page_dim(g)

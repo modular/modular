@@ -17,6 +17,7 @@ from __future__ import annotations
 
 __all__ = [
     "BatchType",
+    "CompletedBatchStats",
     "ImageContentPart",
     "MessageContent",
     "TextContentPart",
@@ -105,7 +106,13 @@ class ImageContentPart(_MessageContentPart):
         default="image", description="Content type identifier"
     )
 
-    # Optional vendor sizing hint; ``None`` means unset and models may ignore it.
+    # Optional vendor sizing hints; ``None`` means unset and models may ignore
+    # them. ``detail`` is the OpenAI quality tier; models that honor it map the
+    # tier to a resolution.
+    detail: str | None = Field(
+        default=None,
+        description="Detail/quality tier hint for image preprocessing",
+    )
     max_long_side_pixel: int | None = Field(
         default=None,
         description="Max long-side length in pixels for image preprocessing",
@@ -117,6 +124,25 @@ class VideoContentPart(_MessageContentPart):
 
     type: Literal["video"] = Field(
         default="video", description="Content type identifier"
+    )
+
+    # Optional vendor sampling/sizing hints; ``None`` means unset and models
+    # may ignore them.
+    fps: float | None = Field(
+        default=None,
+        description="Frames-per-second to sample the video at",
+    )
+    max_frames: int | None = Field(
+        default=None,
+        description="Maximum number of frames to sample from the video",
+    )
+    detail: str | None = Field(
+        default=None,
+        description="Detail/quality tier hint for video preprocessing",
+    )
+    max_long_side_pixel: int | None = Field(
+        default=None,
+        description="Max long-side length in pixels for video preprocessing",
     )
 
 
@@ -399,6 +425,17 @@ class TextGenerationRequest:
     ``TextContext.external_block_metadata`` so the DKVConnector can
     fetch cached blocks before the forward pass.
     """
+    cache_salt: str | None = None
+    """Optional per-request salt that isolates this prompt's prefix-cache
+
+    entries from other requests sharing the same tokens.
+    Combined with the cluster-level ``kv_cache_hash_seed`` via XOR inside
+    ``BlockManager`` to derive the root parent hash. Has effect only when
+    ``kv_cache_hash_algo`` is ``sha256`` or ``sha256_64``; under
+    ``ahash64`` the salt is dropped with a one-time warning.
+
+    Capped at 512 chars at the OpenAI schema layer.
+    """
 
     def __str__(self) -> str:
         return str(self.request_id)
@@ -492,6 +529,30 @@ class BatchType(Enum):
     """Token generation batch."""
 
 
+@dataclass
+class CompletedBatchStats:
+    """Execution stats for a batch whose outputs have been synchronized."""
+
+    batch_type: BatchType
+    """Type of the completed batch."""
+
+    batch_size: int
+    """Number of requests in the completed batch."""
+
+    num_input_tokens: int
+    """Number of input tokens in the completed batch."""
+
+    num_context_tokens: int
+    """Number of context tokens in the completed batch."""
+
+    execution_time_s: float
+    """Execution time of the completed batch, in seconds."""
+
+    num_output_tokens: int | None = None
+    """Output tokens produced by the completed batch, when known (currently
+    only reported by speculative decoding). ``None`` otherwise."""
+
+
 @dataclass(eq=True)
 class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     """Input parameters for text generation pipeline operations."""
@@ -509,6 +570,15 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     batch_type: BatchType = BatchType.TG
     """Type of batch."""
 
+    per_replica_input_tokens: list[int] = field(default_factory=list)
+    """Per-replica active-token sums, excluding DP padding dummies. Frozen at
+    construction: token windows mutate during scheduling, so later reads of
+    ``active_length`` no longer describe this batch."""
+
+    per_replica_context_tokens: list[int] = field(default_factory=list)
+    """Per-replica processed-token (context) sums, excluding DP padding
+    dummies. Frozen at construction like ``per_replica_input_tokens``."""
+
     def __post_init__(self) -> None:
         self.input_tokens = sum(
             ctx.tokens.active_length for ctx in self.flat_batch
@@ -516,6 +586,22 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         self.context_tokens = sum(
             ctx.tokens.processed_length for ctx in self.flat_batch
         )
+        self.per_replica_input_tokens = [
+            sum(
+                ctx.tokens.active_length
+                for ctx in batch
+                if not getattr(ctx, "_is_padding_ctx", False)
+            )
+            for batch in self.batches
+        ]
+        self.per_replica_context_tokens = [
+            sum(
+                ctx.tokens.processed_length
+                for ctx in batch
+                if not getattr(ctx, "_is_padding_ctx", False)
+            )
+            for batch in self.batches
+        ]
         self.batch_type = BatchType.TG
         for context in self.flat_batch:
             if context.tokens.generated_length == 0:

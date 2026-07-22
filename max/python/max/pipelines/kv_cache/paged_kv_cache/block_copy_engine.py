@@ -20,6 +20,8 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+import psutil
+from max._distributed_ops import batched_copy_d2h, batched_copy_h2d
 from max.driver import (
     Buffer,
     Device,
@@ -64,14 +66,53 @@ class DeviceEventBundle:
 _GIB = 1024**3
 
 
+def _check_host_memory_capacity(requested_bytes: int) -> None:
+    """Raises when a pinned host allocation exceeds host availability."""
+    try:
+        available_bytes = psutil.virtual_memory().available
+    except (OSError, RuntimeError) as error:
+        _logger.warning(
+            "Unable to determine available host memory; skipping KV cache "
+            "host capacity preflight: %s",
+            error,
+        )
+        return
+    if requested_bytes > available_bytes:
+        raise RuntimeError(
+            "KV cache host offload buffer requires "
+            f"{requested_bytes / _GIB:.1f} GiB of pinned host memory but only "
+            f"{available_bytes / _GIB:.1f} GiB is available. Reduce "
+            "host_kvcache_swap_space_gb or provision more host memory."
+        )
+
+
+@dataclass
+class _ReplicaOffloadState:
+    """Per-replica device endpoints and copy streams for the offload engine."""
+
+    device_buffers: list[Buffer]
+    device_buffers_on_aux_stream: list[Buffer]
+    main_streams: dict[int, DeviceStream]
+    d2h_auxiliary_streams: dict[int, DeviceStream]
+    replicated_units: list[ReplicatedKVCacheMemory]
+    broadcast_devices: list[Device]
+    signals: Signals | None
+    signal_buffers: list[Buffer]
+
+
 class BlockOffloadEngine:
     """Engine for offloading gpu KVCache blocks to host memory.
 
-    This offload engine will allocate a DevicePinnedBuffer with the same shape
-    as the gpu buffer. It uses auxiliary d2h streams to hide the latency of
-    KV cache offloading copies on a stream detached from the main kernel exec
-    stream. However, it still issues the h2d transfers on the same stream as
-    kernel execution which is a major limitation (SERVOPT-1036).
+    This offload engine allocates a single ``DevicePinnedBuffer`` shared by
+    every data-parallel (DP) replica and uses auxiliary d2h streams to hide the
+    latency of KV cache offloading copies on a stream detached from the main
+    kernel exec stream. However, it still issues the h2d transfers on the same
+    stream as kernel execution which is a major limitation (SERVOPT-1036).
+
+    The host buffer is replica-agnostic: it is keyed purely by host block id,
+    so a block offloaded by one replica can be loaded back onto a *different*
+    replica's device (SERVOPT-1501). ``memcpy_h2d`` / ``memcpy_d2h`` take a
+    ``replica_idx`` selecting which replica's device buffers participate.
 
     For replicated KV caches (MLA), the host buffer holds a single replica per
     logical group. D2H copies from rank 0, then H2D fans back out to all peers
@@ -81,60 +122,49 @@ class BlockOffloadEngine:
     def __init__(
         self,
         total_num_host_blocks: int,
-        kv_memory: list[KVCacheMemory],
+        replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
     ) -> None:
-        gpu0 = kv_memory[0].buffer.device
+        if len(replica_kv_memory) < 1:
+            raise ValueError("BlockOffloadEngine requires at least one replica")
+
+        gpu0 = replica_kv_memory[0][0].buffer.device
         if gpu0.is_host:
             raise ValueError(
                 "KVCacheMemory is on the CPU. Unable to allocate host"
                 " offload buffer for already-on-CPU buffers."
             )
 
-        self._units = kv_memory
-        self._replicated_units: list[ReplicatedKVCacheMemory] = [
-            u for u in self._units if isinstance(u, ReplicatedKVCacheMemory)
+        self._num_replicas = len(replica_kv_memory)
+
+        # ``bytes_per_page`` must match across replicas so a host block written
+        # by one replica is layout-compatible when read back by another.
+        bytes_per_page_per_replica = {
+            sum(unit.buffer.shape[1] for unit in units)
+            for units in replica_kv_memory
+        }
+        if len(bytes_per_page_per_replica) > 1:
+            raise ValueError(
+                "all replicas must have the same bytes-per-page; got "
+                f"{bytes_per_page_per_replica}"
+            )
+        bytes_per_page = next(iter(bytes_per_page_per_replica))
+
+        self._replicas: list[_ReplicaOffloadState] = [
+            self._build_replica_state(units) for units in replica_kv_memory
         ]
 
-        # Validate that all units have the same number of pages.
-        unique_total_num_pages = {mem.total_num_pages for mem in kv_memory}
-        if len(unique_total_num_pages) > 1:
-            raise ValueError(
-                "all kv_memory units must have the same total_num_pages; got "
-                f"{unique_total_num_pages}"
-            )
+        # gpu0 owns the shared host buffer; its main stream is the sync hub in
+        # wait_for_completion(). Held by identity so the barrier can exclude it.
+        self._gpu0_stream = self._replicas[0].main_streams[gpu0.id]
 
-        # Validate device topology across all replicated units.
-        unique_topologies: set[tuple[int, ...]] = {
-            tuple(
-                d.id
-                for d in [unit.buffer.device, *(p.device for p in unit.peers)]
-            )
-            for unit in self._replicated_units
-        }
-        if len(unique_topologies) > 1:
-            raise ValueError(
-                "all replicated KVCacheMemory units must share the same "
-                "TP device topology; mixed topologies are not supported"
-            )
-
-        # Broadcast devices: rank-0 + peers from the first replicated unit
-        # (topology uniformity was validated above).
-        self._broadcast_devices: list[Device] = (
-            [
-                self._replicated_units[0].buffer.device,
-                *(p.device for p in self._replicated_units[0].peers),
-            ]
-            if self._replicated_units
-            else []
-        )
-
-        # The D2H/H2D endpoints — one per unit (rank-0 for replicated units).
-        self.device_buffers: list[Buffer] = [u.buffer for u in self._units]
-
-        bytes_per_page = sum(b.shape[1] for b in self.device_buffers)
-        # 2-D [num_host_blocks, bytes_per_page] page-locked host region; row
-        # ``bid`` is block ``bid``. Not GC-freed -- close() releases it.
+        # 2-D [num_host_blocks, bytes_per_page] page-locked host region shared
+        # by all replicas; row ``bid`` is block ``bid``. Not GC-freed --
+        # close() releases it.
         total_bytes = total_num_host_blocks * bytes_per_page
+        # Fail fast on an over-provisioned host budget: the pinned allocation
+        # below faults page by page and would otherwise OOM-kill the process
+        # instead of surfacing an actionable error.
+        _check_host_memory_capacity(total_bytes)
         total_gib = total_bytes / _GIB
         # Large allocations take minutes; log before so the wait is explained.
         _logger.info(
@@ -157,30 +187,83 @@ class BlockOffloadEngine:
             elapsed,
             total_gib / elapsed if elapsed > 0 else float("inf"),
         )
-        self.main_streams: dict[int, DeviceStream] = {
-            buffer.device.id: buffer.device.default_stream
-            for buffer in self.device_buffers
-        }
-        self.d2h_auxiliary_streams: dict[int, DeviceStream] = {
-            buffer.device.id: DeviceStream(buffer.device)
-            for buffer in self.device_buffers
-        }
-        self.device_buffers_on_aux_stream: list[Buffer] = [
-            buffer.to(self.d2h_auxiliary_streams[buffer.device.id])
-            for buffer in self.device_buffers
-        ]
-
-        self._signals: Signals | None = None
-        self._signal_buffers: list[Buffer] = []
-        if self._replicated_units:
-            self._signals = Signals(
-                devices=[
-                    DeviceRef.GPU(id=d.id) for d in self._broadcast_devices
-                ]
-            )
-            self._signal_buffers = self._signals.buffers()
 
         self._closed = False
+
+    @staticmethod
+    def _build_replica_state(
+        units: Sequence[KVCacheMemory],
+    ) -> _ReplicaOffloadState:
+        replicated_units = [
+            u for u in units if isinstance(u, ReplicatedKVCacheMemory)
+        ]
+
+        # Validate that all units have the same number of pages.
+        unique_total_num_pages = {mem.total_num_pages for mem in units}
+        if len(unique_total_num_pages) > 1:
+            raise ValueError(
+                "all kv_memory units must have the same total_num_pages; got "
+                f"{unique_total_num_pages}"
+            )
+
+        # Validate device topology across all replicated units.
+        unique_topologies: set[tuple[int, ...]] = {
+            tuple(
+                d.id
+                for d in [unit.buffer.device, *(p.device for p in unit.peers)]
+            )
+            for unit in replicated_units
+        }
+        if len(unique_topologies) > 1:
+            raise ValueError(
+                "all replicated KVCacheMemory units must share the same "
+                "TP device topology; mixed topologies are not supported"
+            )
+
+        # Broadcast devices: rank-0 + peers from the first replicated unit
+        # (topology uniformity was validated above).
+        broadcast_devices: list[Device] = (
+            [
+                replicated_units[0].buffer.device,
+                *(p.device for p in replicated_units[0].peers),
+            ]
+            if replicated_units
+            else []
+        )
+
+        # The D2H/H2D endpoints — one per unit (rank-0 for replicated units).
+        device_buffers: list[Buffer] = [u.buffer for u in units]
+        main_streams: dict[int, DeviceStream] = {
+            buffer.device.id: buffer.device.default_stream
+            for buffer in device_buffers
+        }
+        d2h_auxiliary_streams: dict[int, DeviceStream] = {
+            buffer.device.id: DeviceStream(buffer.device)
+            for buffer in device_buffers
+        }
+        device_buffers_on_aux_stream: list[Buffer] = [
+            buffer.to(d2h_auxiliary_streams[buffer.device.id])
+            for buffer in device_buffers
+        ]
+
+        signals: Signals | None = None
+        signal_buffers: list[Buffer] = []
+        if replicated_units:
+            signals = Signals(
+                devices=[DeviceRef.GPU(id=d.id) for d in broadcast_devices]
+            )
+            signal_buffers = signals.buffers()
+
+        return _ReplicaOffloadState(
+            device_buffers=device_buffers,
+            device_buffers_on_aux_stream=device_buffers_on_aux_stream,
+            main_streams=main_streams,
+            d2h_auxiliary_streams=d2h_auxiliary_streams,
+            replicated_units=replicated_units,
+            broadcast_devices=broadcast_devices,
+            signals=signals,
+            signal_buffers=signal_buffers,
+        )
 
     def close(self) -> None:
         """Host-synchronize the copy streams and free the host buffer.
@@ -194,95 +277,92 @@ class BlockOffloadEngine:
         if self._closed:
             return
         self._closed = True
-        for stream in self.main_streams.values():
-            stream.synchronize()
-        for stream in self.d2h_auxiliary_streams.values():
-            stream.synchronize()
+        for replica in self._replicas:
+            for stream in replica.main_streams.values():
+                stream.synchronize()
+            for stream in replica.d2h_auxiliary_streams.values():
+                stream.synchronize()
         _unsafe_free_fast_pinned_buffer(self.host_buffer)
 
-    @traced
-    def memcpy_h2d(self, dsts: list[int], srcs: list[int]) -> None:
-        """Copies blocks from host to device(s)."""
+    def memcpy_h2d(
+        self, dsts: list[int], srcs: list[int], replica_idx: int = 0
+    ) -> None:
+        """Copies blocks from host into ``replica_idx``'s device(s)."""
         if not dsts:
             return
 
-        # h2d on auxiliary stream.
-        for dst, src in zip(dsts, srcs, strict=True):
-            offset = 0
-            for buf in self.device_buffers_on_aux_stream:
-                page_bytes = buf.shape[1]
-                buf[dst, :].inplace_copy_from(
-                    self.host_buffer[src, offset : offset + page_bytes]
-                )
-                offset += page_bytes
+        replica = self._replicas[replica_idx]
 
-        if not self._replicated_units:
+        if replica.replicated_units:
+            root_and_peer_buffers = [
+                [unit.buffer, *unit.peers] for unit in replica.replicated_units
+            ]
+            main_streams = list(replica.main_streams.values())
+        else:
+            root_and_peer_buffers = []
+            main_streams = []
+
+        with Tracer(f"memcpy_h2d of {len(dsts)} blocks"):
+            batched_copy_h2d(
+                self.host_buffer,
+                replica.device_buffers_on_aux_stream,
+                dsts,
+                srcs,
+                main_streams=main_streams,
+                root_and_peer_buffers=root_and_peer_buffers,
+                signal_buffers=replica.signal_buffers,
+                broadcast_devices=replica.broadcast_devices,
+            )
+
+    def memcpy_d2h(
+        self, dsts: list[int], srcs: list[int], replica_idx: int = 0
+    ) -> None:
+        """Copies blocks from ``replica_idx``'s device(s) to host."""
+        if not dsts:
             return
 
-        # Imported lazily: instantiating the GPU broadcast collective at module
-        # load compiles it for the active GPU target, which fails on backends
-        # without a GPUInfo entry. Only the multi-device replicated path needs
-        # it, so defer the import (and its compile) to here.
-        from max._distributed_ops import distributed_broadcast
+        replica = self._replicas[replica_idx]
 
-        # main stream waits for completion of h2d on auxiliary stream.
-        for main_stream, d2h_auxiliary_stream in zip(
-            self.main_streams.values(),
-            self.d2h_auxiliary_streams.values(),
-            strict=True,
-        ):
-            main_stream.wait_for(d2h_auxiliary_stream)
-
-        # Broadcast all blocks to the other devices on main stream.
-        for dst in dsts:
-            for unit in self._replicated_units:
-                root = unit.buffer
-                with Tracer("distributed_broadcast"):
-                    distributed_broadcast(
-                        input_buffer=root[dst, :],
-                        output_buffers=[
-                            root[dst, :],
-                            *(p[dst, :] for p in unit.peers),
-                        ],
-                        signal_buffers=self._signal_buffers,
-                        devices=self._broadcast_devices,
-                        root=0,
-                    )
-
-    @traced
-    def memcpy_d2h(self, dsts: list[int], srcs: list[int]) -> None:
-        """Copies blocks from device(s) to host."""
-        for dst, src in zip(dsts, srcs, strict=True):
-            offset = 0
-            for buf in self.device_buffers_on_aux_stream:
-                page_bytes = buf.shape[1]
-                self.host_buffer[
-                    dst, offset : offset + page_bytes
-                ].inplace_copy_from(buf[src, :])
-                offset += page_bytes
+        with Tracer(f"memcpy_d2h of {len(dsts)} blocks"):
+            batched_copy_d2h(
+                self.host_buffer,
+                replica.device_buffers_on_aux_stream,
+                dsts,
+                srcs,
+            )
 
     @traced
     def wait_for_completion(self) -> None:
-        """Synchronize main stream with the auxiliary stream.
+        """Barrier across every main and auxiliary stream of all replicas.
 
-        This ensures that the d2h copies from BatchN completes before
-        BatchN+1 begins. This is needed because BatchN+1 may write to the
-        same blocks as BatchN is reading from.
+        This ensures the d2h copies from BatchN complete before BatchN+1
+        begins (BatchN+1 may overwrite blocks BatchN is still reading), and
+        that the d2h offload of BatchN starts only after BatchN completes.
 
-        Additionally, ensure that d2h offload of BatchN starts after BatchN
-        completes. As such this needs to be a duplex sync.
+        Because the host buffer is shared across replicas, the barrier must
+        also be cross-replica: a page written by one replica's d2h can be read
+        by another replica's h2d. gpu0's stream is used as a hub -- it first
+        waits for every other stream, then every other stream waits for it,
+        transitively ordering all streams against each other.
         """
-        for main_stream, d2h_auxiliary_stream in zip(
-            self.main_streams.values(),
-            self.d2h_auxiliary_streams.values(),
-            strict=True,
-        ):
-            main_stream.wait_for(d2h_auxiliary_stream)
-            d2h_auxiliary_stream.wait_for(main_stream)
+        hub = self._gpu0_stream
+        other_streams = [
+            stream
+            for replica in self._replicas
+            for stream in (
+                *replica.main_streams.values(),
+                *replica.d2h_auxiliary_streams.values(),
+            )
+            if stream is not hub
+        ]
+        for stream in other_streams:
+            hub.wait_for(stream)
+        for stream in other_streams:
+            stream.wait_for(hub)
 
     @traced
-    def record_d2h_event(self) -> DeviceEventBundle:
-        """Record an event on all the d2h auxiliary streams."""
+    def record_d2h_event(self, replica_idx: int = 0) -> DeviceEventBundle:
+        """Record an event on ``replica_idx``'s d2h auxiliary streams."""
         return DeviceEventBundle.record_on_streams(
-            list(self.d2h_auxiliary_streams.values())
+            list(self._replicas[replica_idx].d2h_auxiliary_streams.values())
         )

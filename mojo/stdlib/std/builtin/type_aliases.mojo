@@ -15,8 +15,13 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-comptime ImmutOrigin = Origin[mut=False]
+comptime ImmOrigin = Origin[mut=False]
 """Immutable origin reference type."""
+
+
+@doc_hidden
+@deprecated(use=ImmOrigin)
+comptime ImmutOrigin = ImmOrigin
 
 comptime MutOrigin = Origin[mut=True]
 """Mutable origin reference type."""
@@ -67,11 +72,16 @@ migrate away from; prefer a concrete origin so the compiler can continue to
 track lifetimes and exclusivity.
 """
 
-comptime ImmutUnsafeAnyOrigin = UnsafeAnyOrigin[mut=False]
+comptime ImmUnsafeAnyOrigin = UnsafeAnyOrigin[mut=False]
 """The immutable universal origin that might alias any memory value.
 
 This is an unsafe escape hatch slated for removal. See `UnsafeAnyOrigin`.
 """
+
+
+@doc_hidden
+@deprecated(use=ImmUnsafeAnyOrigin)
+comptime ImmutUnsafeAnyOrigin = ImmUnsafeAnyOrigin
 
 comptime MutUnsafeAnyOrigin = UnsafeAnyOrigin[mut=True]
 """The mutable universal origin that might alias any memory value.
@@ -86,8 +96,8 @@ comptime ExternalOrigin[*, mut: Bool] = UntrackedOrigin[mut=mut]
 
 
 @doc_hidden
-@deprecated(use=ImmutUntrackedOrigin)
-comptime ImmutExternalOrigin = ImmutUntrackedOrigin
+@deprecated(use=ImmUntrackedOrigin)
+comptime ImmutExternalOrigin = ImmUntrackedOrigin
 
 
 @doc_hidden
@@ -115,14 +125,19 @@ memory from outside the Mojo program. For example, the pointer returned by
 Mojo-owned value.
 """
 
-comptime ImmutUntrackedOrigin = UntrackedOrigin[mut=False]
+comptime ImmUntrackedOrigin = UntrackedOrigin[mut=False]
 """An immutable origin the lifetime checker does not track."""
+
+
+@doc_hidden
+@deprecated(use=ImmUntrackedOrigin)
+comptime ImmutUntrackedOrigin = ImmUntrackedOrigin
 
 comptime MutUntrackedOrigin = UntrackedOrigin[mut=True]
 """A mutable origin the lifetime checker does not track."""
 
 # Static constants are a named subset of the global origin.
-comptime StaticConstantOrigin = Origin[
+comptime ImmStaticOrigin = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.origin.field<`,
         `#lit.static.origin : !lit.origin<false>`,
@@ -130,6 +145,11 @@ comptime StaticConstantOrigin = Origin[
     ]
 ]()
 """An origin for strings and other always-immutable static constants."""
+
+
+@doc_hidden
+@deprecated(use=ImmStaticOrigin)
+comptime StaticConstantOrigin = ImmStaticOrigin
 
 comptime OriginSet = __mlir_type.`!lit.origin.set`
 """A set of origin parameters."""
@@ -168,7 +188,7 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
 
     @always_inline("builtin")
     @implicit
-    def __init__(v: Origin) -> ImmutOrigin[_mlir_origin=v._mlir_origin]:
+    def __init__(v: Origin) -> ImmOrigin[_mlir_origin=v._mlir_origin]:
         """Implicitly convert an origin to an immutable one.
 
         Args:
@@ -224,4 +244,25 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
 
     Parameters:
         element: The origin to check if it is a subset of Self.
+    """
+
+    comptime _get_owned_interior[name: StringLiteral] = Origin[
+        _mlir_origin=__mlir_attr[
+            `#lit.interior.origin<`,
+            Self._mlir_origin,
+            `, `,
+            name.value,
+            `> : `,
+            type_of(Self._mlir_origin),
+        ]
+    ]()
+    """Returns an interior sub-origin of this origin.
+
+    Interior origins are an experimental feature that name storage that is owned
+    by a container, usually reached through a pointer indirection or inlined
+    into it. The base origin governs invalidation of the interior origin.
+
+    Parameters:
+        name: A compile-time string that identifies the interior object in
+            diagnostics and invalidation tracking.
     """

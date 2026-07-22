@@ -28,7 +28,6 @@ from std.ffi import (
     _CPointer,
 )
 from std.memory.unsafe_pointer import unsafe_cast
-from std.reflection.traits import AllWritable
 from std.sys import (
     is_amd_gpu,
     is_apple_gpu,
@@ -45,7 +44,6 @@ from std.sys._amdgpu import (
 from std.sys._metal_print import _metal_print_write
 from std.sys._libc import dup, fclose, fdopen, fflush, FILE_ptr
 from std.sys.info import CompilationTarget
-from std.sys.intrinsics import _type_is_eq
 
 from std.memory import bitcast
 
@@ -151,8 +149,8 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
         var bytes_read = external_call["getdelim", c_ssize_t](
-            UnsafePointer(to=buffer),
-            UnsafePointer(to=n),
+            Pointer(to=buffer),
+            Pointer(to=n),
             ord(delimiter),
             self.handle,
         )
@@ -243,31 +241,31 @@ def _printf[
         # AMD printf calls:
         # https://github.com/triton-lang/triton/blob/1c28e08971a0d70c4331432994338ee05d31e633/third_party/amd/lib/TritonAMDGPUToLLVM/TargetInfo.cpp#L321
         def _to_uint64[T: AnyType, //](value: T) -> UInt64:
-            comptime if _type_is_eq[T, UInt64]():
+            comptime if T == UInt64:
                 return rebind[UInt64](value)
-            elif _type_is_eq[T, UInt32]():
+            elif T == UInt32:
                 return UInt64(rebind[UInt32](value))
-            elif _type_is_eq[T, UInt16]():
+            elif T == UInt16:
                 return UInt64(rebind[UInt16](value))
-            elif _type_is_eq[T, UInt8]():
+            elif T == UInt8:
                 return UInt64(rebind[UInt8](value))
-            elif _type_is_eq[T, Int64]():
+            elif T == Int64:
                 return UInt64(rebind[Int64](value))
-            elif _type_is_eq[T, Int32]():
+            elif T == Int32:
                 return UInt64(rebind[Int32](value))
-            elif _type_is_eq[T, Int16]():
+            elif T == Int16:
                 return UInt64(rebind[Int16](value))
-            elif _type_is_eq[T, Int8]():
+            elif T == Int8:
                 return UInt64(rebind[Int8](value))
-            elif _type_is_eq[T, Float16]():
+            elif T == Float16:
                 return bitcast[DType.uint64](Float64(rebind[Float16](value)))
-            elif _type_is_eq[T, Float32]():
+            elif T == Float32:
                 return bitcast[DType.uint64](Float64(rebind[Float32](value)))
-            elif _type_is_eq[T, Float64]():
+            elif T == Float64:
                 return bitcast[DType.uint64](rebind[Float64](value))
-            elif _type_is_eq[T, Int]():
+            elif T == Int:
                 return UInt64(rebind[Int](value))
-            elif _type_is_eq[T, UInt]():
+            elif T == UInt:
                 return UInt64(rebind[UInt](value))
             return 0
 
@@ -422,7 +420,9 @@ def print[
         file: The output stream.
     """
 
-    comptime assert AllWritable[*Ts]  # satisfy _write_to where clause.
+    comptime assert Ts.all_conforms_to[
+        Writable
+    ]()  # satisfy _write_to where clause.
 
     if __is_run_in_comptime_interpreter:
         var buffer = _WriteBufferStack(file)

@@ -45,7 +45,7 @@ def _get_run_name[
     transpose_b: Bool,
     cache_busting: Bool,
     use_vendor_blas: Bool,
-](shape_c: Coord, shape_a: Coord, shape_b: Coord,) -> String:
+](shape_c: Coord, shape_a: Coord, shape_b: Coord) -> String:
     var vendor_str = "vendor_matmul" if use_vendor_blas else "matmul"
     var type_str = String("(", dtype, ") : ")
     # M

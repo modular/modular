@@ -16,8 +16,8 @@ from std.memory import ArcPointer, UnsafePointer
 from std.os import abort, getenv
 from std.python import PythonObject
 from std.python.bindings import check_arguments_arity
-from std.sys._hal.driver import Driver as HALDriver
-from std.sys._hal.device import Device as HALDevice
+from _hal.driver import Driver as HALDriver
+from _hal.device import Device as HALDevice
 
 from .device import Device
 

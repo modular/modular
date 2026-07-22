@@ -24,7 +24,14 @@ default namespace that makes Mojo code immediately usable without explicit
 imports.
 """
 
-from std.collections import Dict, InlineArray, KeyElement, List, Optional
+from std.collections import (
+    Dict,
+    InlineArray,
+    KeyElement,
+    List,
+    Optional,
+    Span,
+)
 from std.collections.string import (
     Codepoint,
     StaticString,
@@ -86,7 +93,6 @@ from std.builtin.rebind import (
     rebind,
     rebind_var,
     trait_downcast,
-    trait_downcast_var,
 )
 from std.builtin.reversed import ReversibleRange, reversed
 from std.builtin.simd_size import SIMDSize
@@ -125,21 +131,25 @@ from std.builtin.tuple import Tuple
 from std.builtin.type_aliases import (
     AnyOrigin,
     ImmutAnyOrigin,
+    ImmOrigin,
     ImmutOrigin,
     MutAnyOrigin,
     MutOrigin,
     Never,
     Origin,
     OriginSet,
+    ImmStaticOrigin,
     StaticConstantOrigin,
     ExternalOrigin,
     ImmutExternalOrigin,
     MutExternalOrigin,
     UntrackedOrigin,
+    ImmUntrackedOrigin,
     ImmutUntrackedOrigin,
     MutUntrackedOrigin,
     UnsafeAnyOrigin,
     MutUnsafeAnyOrigin,
+    ImmUnsafeAnyOrigin,
     ImmutUnsafeAnyOrigin,
 )
 from std.builtin.value import (
@@ -172,12 +182,16 @@ from std.iter import (
 from std.memory import (
     alloc,
     AddressSpace,
+    ImmOpaquePointer,
     ImmutOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
+    OptionalPointer,
     OptionalUnsafePointer,
+    ImmPointer,
+    MutPointer,
     Pointer,
-    Span,
+    ImmUnsafePointer,
     ImmutUnsafePointer,
     MutUnsafePointer,
     UnsafePointer,

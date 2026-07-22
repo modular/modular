@@ -28,6 +28,17 @@ _Tensor = TypeVar("_Tensor", TensorValue, TensorType, Buffer, Tensor)
 _Buffer = TypeVar("_Buffer", BufferValue, BufferType, Buffer, Tensor)
 
 
+def _verify_rank1_int64_tensor(name: str, t: _Tensor | None) -> None:
+    if t is None:
+        return
+    if t.dtype != DType.int64:
+        raise ValueError(
+            f"Expected dtype int64, got {t.dtype} for tensor {name}"
+        )
+    if t.rank != 1:
+        raise ValueError(f"Expected rank 1, got {t.rank} for tensor {t}")
+
+
 @dataclass
 class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     """Symbolic graph input types for a single device's paged KV cache."""
@@ -35,56 +46,47 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     kv_blocks: _Buffer
     cache_lengths: _Tensor
     lookup_table: _Tensor
-    max_lengths: _Tensor
+    max_prompt_length: _Tensor
+    max_cache_length: _Tensor
     kv_scales: _Buffer | None = None  # KV scales for FP8 quantization
     attention_dispatch_metadata: _Tensor | None = None
     draft_attention_dispatch_metadata: _Tensor | None = None
-    # Capturable-graph scalar: when present, the SM100 MLA dispatcher uses
-    # this to align grid-time partition decisions with the kernel's divmod
-    # on scalar_args[2]. Only populated for MLA paths; None otherwise.
+    # Capturable-graph scalars: when present, the SM100 MLA dispatcher uses
+    # these to align grid-time partition decisions with the kernel's divmod.
+    # Populated only for MLA paths; ``None`` otherwise.
     mla_num_partitions: _Tensor | None = None
     draft_mla_num_partitions: _Tensor | None = None
+    # One single-layer KV buffer per layer, used when the backing pool
+    # allocates a standalone buffer per layer (``KVCacheParams.per_layer_buffers``)
+    # instead of one multi-layer buffer. ``kv_blocks`` aliases
+    # ``kv_blocks_per_layer[0]`` so single-buffer consumers stay valid; a
+    # per-layer attention dispatch picks ``kv_blocks_per_layer[layer_idx]``.
+    # ``None`` (the default) for every non-per-layer cache.
+    kv_blocks_per_layer: list[_Buffer] | None = None
 
     def __post_init__(self) -> None:
-        tensor = self.attention_dispatch_metadata
-        if tensor is not None:
-            if tensor.dtype != DType.int64:
-                raise ValueError(
-                    "expected attention_dispatch_metadata dtype int64, got "
-                    f"{tensor.dtype}"
-                )
-            if tensor.rank != 1:
-                raise ValueError(
-                    "expected attention_dispatch_metadata rank 1, got "
-                    f"{tensor.rank}"
-                )
-        for name in (
-            "mla_num_partitions",
-            "draft_mla_num_partitions",
-        ):
-            t = getattr(self, name)
-            if t is None:
-                continue
-            if t.dtype != DType.int64:
-                raise ValueError(f"expected {name} dtype int64, got {t.dtype}")
-            if t.rank != 1:
-                raise ValueError(f"expected {name} rank 1, got {t.rank}")
+        _verify_rank1_int64_tensor(
+            "attention_dispatch_metadata", self.attention_dispatch_metadata
+        )
+        _verify_rank1_int64_tensor(
+            "draft_attention_dispatch_metadata",
+            self.draft_attention_dispatch_metadata,
+        )
+        _verify_rank1_int64_tensor(
+            "mla_num_partitions", self.mla_num_partitions
+        )
+        _verify_rank1_int64_tensor(
+            "draft_mla_num_partitions", self.draft_mla_num_partitions
+        )
 
     def flatten(self) -> list[_Tensor | _Buffer]:
-        """Serialize fields into a flat list for graph input binding.
-
-        Ordering: [kv_blocks, cache_lengths, lookup_table, max_lengths,
-        kv_scales?, attention_dispatch_metadata?,
-        draft_attention_dispatch_metadata?, mla_num_partitions?,
-        draft_mla_num_partitions?].  Fields marked ``?`` emit zero elements
-        when ``None``; ``unflatten`` must consume ``next(it)`` in this exact
-        order.
-        """
+        """Serialize fields into a flat list for graph input binding."""
         return [
             self.kv_blocks,
             self.cache_lengths,
             self.lookup_table,
-            self.max_lengths,
+            self.max_prompt_length,
+            self.max_cache_length,
             *((self.kv_scales,) if self.kv_scales else ()),
             *(
                 (self.attention_dispatch_metadata,)
@@ -102,6 +104,9 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
                 if self.draft_mla_num_partitions
                 else ()
             ),
+            # Per-layer buffers are appended at the tail so the leading fields
+            # stay byte-identical for every non-per-layer cache (``None`` -> ()).
+            *(self.kv_blocks_per_layer or ()),
         ]
 
     # TODO: FIX THIS HACK!!!
@@ -112,8 +117,12 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             self.kv_blocks,
             self.cache_lengths,
             self.lookup_table,
-            self.max_lengths,
+            self.max_prompt_length,
+            self.max_cache_length,
             *((self.kv_scales,) if self.kv_scales else ()),
+            # Tail per-layer buffers (see ``flatten``). Attention dispatch clears
+            # this field before calling an op, so this is ``()`` at op sites.
+            *(self.kv_blocks_per_layer or ()),
         ]
 
     def unflatten(
@@ -128,7 +137,8 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             kv_blocks=next(it),
             cache_lengths=next(it),
             lookup_table=next(it),
-            max_lengths=next(it),
+            max_prompt_length=next(it),
+            max_cache_length=next(it),
             kv_scales=next(it) if self.kv_scales else None,
             attention_dispatch_metadata=next(it)
             if self.attention_dispatch_metadata
@@ -139,6 +149,12 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             mla_num_partitions=next(it) if self.mla_num_partitions else None,
             draft_mla_num_partitions=next(it)
             if self.draft_mla_num_partitions
+            else None,
+            # Consumed last, matching the tail append in ``flatten``.
+            kv_blocks_per_layer=[
+                next(it) for _ in range(len(self.kv_blocks_per_layer))
+            ]
+            if self.kv_blocks_per_layer
             else None,
         )
 

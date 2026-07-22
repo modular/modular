@@ -13,7 +13,7 @@
 
 from std.sys import get_defined_int
 
-import compiler
+import extensibility
 from std.gpu.host import DeviceContext
 from std.logger import Logger
 from extensibility import foreach, OutputTensor, InputTensor
@@ -25,7 +25,7 @@ from std.utils.index import IndexList
 comptime logger = Logger()
 
 
-@compiler.register("use_splitk_reduction_scheme")
+@extensibility.register("use_splitk_reduction_scheme")
 struct UseSplitkReductionScheme:
     @staticmethod
     def execute(
@@ -37,7 +37,7 @@ struct UseSplitkReductionScheme:
         output[0] = Int32(split_k_reduction_scheme)
 
 
-@compiler.register("use_logger")
+@extensibility.register("use_logger")
 struct UseLogger:
     @staticmethod
     def execute(
@@ -47,7 +47,7 @@ struct UseLogger:
         output[0] = Int32(logger.level._value)
 
 
-@compiler.register("add_one_custom")
+@extensibility.register("add_one_custom")
 struct AddOneCustom:
     @staticmethod
     def execute[
@@ -64,7 +64,7 @@ struct AddOneCustom:
         foreach[add_one, target=target](output, ctx)
 
 
-@compiler.register_shape_function("add_one_custom")
+@extensibility.register_shape_function("add_one_custom")
 def add_one_custom_shape(
     x: InputTensor,
 ) raises -> IndexList[x.rank]:

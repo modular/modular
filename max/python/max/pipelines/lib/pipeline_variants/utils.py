@@ -21,13 +21,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-import llguidance
-import llguidance.hf
-import llguidance.numpy
 import numpy as np
 import numpy.typing as npt
-from llguidance import LLMatcher, LLTokenizer
-from llguidance._tokenizer import TokenizerWrapper
 from max.pipelines.context import (
     GenerationStatus,
     LogProbabilities,
@@ -36,19 +31,21 @@ from max.pipelines.context import (
     TextGenerationOutput,
 )
 from max.pipelines.context.exceptions import InputError
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    GrammarBackend,
+    LlguidanceBackend,
+    make_grammar_backend,
+)
 from max.pipelines.lib.tool_parsing import (
     StructuralTagToolParser,
     get_parser_cls,
 )
 from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.types import RequestID
+from max.pipelines.sampling import DEFAULT_STRUCTURED_OUTPUT_BACKEND
 from max.profiler import Tracer, traced
 from max.support.math import ceildiv
-from transformers import (
-    AutoConfig,
-    PreTrainedTokenizerBase,
-    PreTrainedTokenizerFast,
-)
+from transformers import AutoConfig
 
 if TYPE_CHECKING:
     from max.pipelines.modeling.types import PipelineTokenizer
@@ -81,81 +78,6 @@ def _count_token_subsequence(
         else:
             i += 1
     return count
-
-
-class _TikTokenAdapter:
-    """Adapter to make TikToken-based tokenizers compatible with llguidance.
-
-    llguidance's TokenizerWrapper expects a tokenizer object with specific
-    attributes (eos_token_id, bos_token_id, tokens, special_token_ids) and
-    a callable interface for encoding. This adapter wraps TikToken-based
-    tokenizers (which don't inherit from PreTrainedTokenizerFast) to provide
-    that interface.
-
-    Raises:
-        ValueError: If the tokenizer is not a TikToken-based tokenizer.
-    """
-
-    def __init__(self, tokenizer: PreTrainedTokenizerBase) -> None:
-        if "TikToken" not in type(tokenizer).__name__:
-            raise ValueError(
-                f"Structured output requires PreTrainedTokenizerFast or "
-                f"TikToken-based tokenizers, but got {type(tokenizer).__name__}"
-            )
-
-        self._tokenizer = tokenizer
-        self.eos_token_id = tokenizer.eos_token_id
-        self.bos_token_id = tokenizer.bos_token_id
-        self.special_token_ids = getattr(tokenizer, "all_special_ids", [])
-
-        # Build byte representation for each token (required by TokenizerWrapper).
-        # convert_ids_to_tokens(i) returns the token's byte->unicode *surface
-        # form* (e.g. raw newline 0x0A -> 'Ċ', space 0x20 -> 'Ġ'); .encode("utf-8")
-        # then gives the UTF-8 bytes of those placeholder characters (b'\xc4\x8a'),
-        # not the token's true bytes (b'\n'). Feeding those to llguidance makes it
-        # mask against the wrong bytes and admit control-char tokens as legal JSON
-        # string content, leaking raw newlines into structured output. Reverse the
-        # map via the tokenizer's byte_decoder to recover the true bytes.
-        # byte_decoder is integral to a byte-level BPE tokenizer (its own decode
-        # depends on it).
-        byte_decoder = getattr(tokenizer, "byte_decoder", None)
-        if byte_decoder is None:
-            raise ValueError(
-                "TikToken-based structured output requires a tokenizer with a "
-                "`byte_decoder` (byte-level BPE inverse map); "
-                f"{type(tokenizer).__name__} does not provide one."
-            )
-        vocab_size = len(tokenizer.get_vocab())
-        self._tokens: list[bytes] = []
-        for i in range(vocab_size):
-            token_str = tokenizer.convert_ids_to_tokens(i)
-            if token_str is None:
-                self._tokens.append(b"")
-            else:
-                try:
-                    self._tokens.append(
-                        bytes(byte_decoder[c] for c in token_str)
-                    )
-                except KeyError:
-                    # A char outside the byte->unicode map (rare; e.g. some
-                    # special tokens, like an emoji): fall back to the UTF-8 encoding.
-                    # This fallback is not expected to be used for standard TikToken vocabs.
-                    self._tokens.append(
-                        token_str.encode("utf-8", errors="replace")
-                    )
-
-    @property
-    def tokens(self) -> list[bytes]:
-        """Returns byte representation of each token in vocabulary."""
-        return self._tokens
-
-    def __call__(self, text: str | bytes) -> list[int]:
-        """Encode text to token IDs."""
-        if isinstance(text, bytes):
-            text = text.decode("utf-8", errors="replace")
-
-        # TikToken tokenizers use allow_special_tokens (not add_special_tokens)
-        return self._tokenizer.encode(text, allow_special_tokens=True)
 
 
 def calculate_num_steps(
@@ -213,9 +135,21 @@ def build_response(
             upper_bound=max_seq_len, default=context.max_length
         )
 
-        # Mark as done if the next step would exceed the max length.
+        # Mark as done once the per-request cap is actually reached. Unlike
+        # the hard model/KV limit below, no growth slack is reserved here:
+        # the per-token accept loop above already truncates the final
+        # accepted chunk to land exactly on this cap, so reserving a full
+        # worst-case spec chunk of slack against it would stop the request
+        # up to `max_growth_per_step` tokens early (CENG-827).
         current_length = context.tokens.processed_length + 1
-        if current_length + max_growth_per_step > context_max_length:
+        if current_length >= context_max_length:
+            context.status = GenerationStatus.MAXIMUM_LENGTH
+        # Mark as done if the next step's worst-case growth (all drafts
+        # accepted + bonus token) would exceed the hard model/KV capacity.
+        # The KV pool reserves `max_seq_len + spec_slack` up front (see
+        # overlap_text_generation.py), so running one more speculative step
+        # here can never overflow it.
+        elif current_length + max_growth_per_step > max_seq_len:
             context.status = GenerationStatus.MAXIMUM_LENGTH
 
         output = context.to_generation_output()
@@ -463,7 +397,8 @@ class StructuredOutputHelper:
     """Whether user-provided json_schema is allowed."""
     vocab_size: int | None = None
     """Vocabulary size from the tokenizer, or None if disabled."""
-    _tokenizer_info: Any = field(default=None, repr=False)
+    backend: GrammarBackend[Any] | None = field(default=None, repr=False)
+    """Pluggable grammar backend (llguidance by default)."""
     tool_call_region_delimiters: StructuredOutputRegionDelimiters | None = None
     """Token sequences for tool call boundaries (conditional enforcement)."""
     # Serialises access to per-context ``ctx.matcher`` between the async
@@ -473,6 +408,10 @@ class StructuredOutputHelper:
     _matcher_lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False
     )
+
+    def __post_init__(self) -> None:
+        if self.enabled and self.backend is None:
+            self.backend = LlguidanceBackend(None)
 
     @staticmethod
     def _get_tool_region_tags(
@@ -517,6 +456,12 @@ class StructuredOutputHelper:
             return (None, None)
 
         if parser_cls.SECTION_BEGIN and parser_cls.SECTION_END:
+            # Parsers that opt into enforcement-to-EOS get no end tag:
+            # enforcement stays on after the section closes, so the
+            # completed grammar masks everything but EOS and the turn
+            # ends with its single section (e.g. MiniMax-M3; CENG-718).
+            if parser_cls.ENFORCE_TOOL_REGION_TO_EOS:
+                return (parser_cls.SECTION_BEGIN, None)
             return (parser_cls.SECTION_BEGIN, parser_cls.SECTION_END)
         if parser_cls.CALL_BEGIN:
             return (parser_cls.CALL_BEGIN, None)
@@ -529,6 +474,7 @@ class StructuredOutputHelper:
         tokenizer: PipelineTokenizer[Any, Any, Any],
         enable_structured_output: bool,
         tool_parser_name: str | None = None,
+        backend_name: str | None = None,
     ) -> StructuredOutputHelper:
         """Create a helper from a tokenizer.
 
@@ -538,6 +484,9 @@ class StructuredOutputHelper:
                 (e.g. to constrain to response format json_schema).
             tool_parser_name: Name of the registered tool parser. Used to extract
                 structural tags for tool call start/end markers.
+            backend_name: Structured-output backend to use. ``None`` (the
+                default, i.e. an unresolved ``SamplingConfig``) falls back to
+                ``"xgrammar"``.
 
         Returns:
             A configured StructuredOutputHelper instance.
@@ -549,17 +498,11 @@ class StructuredOutputHelper:
         tokenizer_delegate = tokenizer.delegate
         vocab_size = len(tokenizer_delegate)
 
-        if isinstance(tokenizer_delegate, PreTrainedTokenizerFast):
-            # Fast path for HuggingFace fast tokenizers
-            tokenizer_info = llguidance.hf.from_tokenizer(
-                tokenizer_delegate, n_vocab=vocab_size
-            )
-        else:
-            # Fallback for TikTokenTokenizer, used by KimiK2_5
-            # Use adapter -> TokenizerWrapper -> LLTokenizer chain
-            adapter = _TikTokenAdapter(tokenizer_delegate)
-            wrapper = TokenizerWrapper(adapter)
-            tokenizer_info = LLTokenizer(wrapper, n_vocab=vocab_size)
+        backend = make_grammar_backend(
+            backend_name or DEFAULT_STRUCTURED_OUTPUT_BACKEND,
+            tokenizer_delegate,
+            vocab_size,
+        )
 
         # Extract structural tags from tool parser if available
         tool_start, tool_end = cls._get_tool_region_tags(tool_parser_name)
@@ -588,7 +531,7 @@ class StructuredOutputHelper:
             enabled=True,
             enable_response_format_schema=enable_structured_output,
             vocab_size=vocab_size,
-            _tokenizer_info=tokenizer_info,
+            backend=backend,
             tool_call_region_delimiters=tool_call_region_delimiters,
         )
 
@@ -643,15 +586,16 @@ class StructuredOutputHelper:
                     "schema-constrained responses."
                 )
 
+            assert self.backend is not None
             try:
                 with Tracer("tool_grammar_compile"):
-                    matcher = LLMatcher(self._tokenizer_info, context.grammar)
+                    matcher = self.backend.create_matcher(context.grammar)
                 context.set_matcher(matcher)
                 self.set_context_tool_region(context)
             except Exception as e:
                 raise InputError(
                     f"Grammar provided in request cannot be compiled. "
-                    f"From llguidance: {e}"
+                    f"From {self.backend.name}: {e}"
                 ) from e
 
         # Fall back to json_schema if no grammar
@@ -663,20 +607,16 @@ class StructuredOutputHelper:
                     "Pass --enable-structured-output to enable this feature."
                 )
 
+            assert self.backend is not None
             try:
-                # Compact JSON (no structural whitespace) to match
-                # the tool-call grammar convention.
-                grammar = LLMatcher.grammar_from_json_schema(
-                    context.json_schema,
-                    overrides={"whitespace_pattern": ""},
-                )
-                matcher = LLMatcher(self._tokenizer_info, grammar)
+                grammar = self.backend.compile_json_schema(context.json_schema)
+                matcher = self.backend.create_matcher(grammar)
                 context.set_matcher(matcher)
             except Exception as e:
                 raise InputError(
                     f"JSON schema provided in request cannot be compiled to "
                     f"valid grammar. Update your JSON schema to produce valid "
-                    f"structured output. From llguidance: {e}"
+                    f"structured output. From {self.backend.name}: {e}"
                 ) from e
 
         if context.matcher:
@@ -700,9 +640,8 @@ class StructuredOutputHelper:
         """
         if self.vocab_size is None:
             raise ValueError("vocab_size must be set to allocate bitmask")
-        return llguidance.numpy.allocate_token_bitmask(
-            batch_size, self.vocab_size
-        )
+        assert self.backend is not None
+        return self.backend.allocate_token_bitmask(batch_size, self.vocab_size)
 
     def fill_bitmask(
         self,
@@ -723,8 +662,9 @@ class StructuredOutputHelper:
             index: Position in the bitmask for this request.
         """
         if context.matcher and context.grammar_enforced:
-            llguidance.numpy.fill_next_token_bitmask(
-                context.matcher, bitmask, index=index
+            assert self.backend is not None
+            self.backend.fill_next_token_bitmask(
+                context.matcher, bitmask, index
             )
 
     def set_context_tool_region(
@@ -799,12 +739,13 @@ class StructuredOutputHelper:
         # issue by taking a deep copy instead.
         matcher_copy = ctx.matcher.deep_copy()
 
+        assert self.backend is not None
         # Slot 0: state immediately after committed tokens.
         if ctx.grammar_enforced:
-            llguidance.numpy.fill_next_token_bitmask(
+            self.backend.fill_next_token_bitmask(
                 matcher_copy,
                 bitmask_window[0, :].reshape(1, -1),
-                index=0,
+                0,
             )
 
         vocab_size = self.vocab_size or 0
@@ -832,10 +773,10 @@ class StructuredOutputHelper:
                     break
 
             if consumed or ctx.grammar_enforced:
-                llguidance.numpy.fill_next_token_bitmask(
+                self.backend.fill_next_token_bitmask(
                     matcher_copy,
                     bitmask_window[i + 1, :].reshape(1, -1),
-                    index=0,
+                    0,
                 )
 
         ctx.restore_grammar_state(fsm_snap)
@@ -906,29 +847,55 @@ class StructuredOutputHelper:
         bonus_tokens: npt.NDArray[np.int64],
         next_draft_tokens: npt.NDArray[np.int64],
         bitmask_out: npt.NDArray[np.int32],
+        output_context_batch: list[TextGenerationContextType] | None = None,
     ) -> None:
         """Advance FSM through accepted tokens, then compute bitmasks for the next batch.
 
         Combines FSM advancement (Part 1) with bitmask computation (Part 2) for
         use in a CUDA host callback. Must NOT call any CUDA APIs.
 
-        Part 1 permanently advances the FSM through committed tokens from the
-        current batch (accepted draft tokens followed by the bonus token). This
-        mirrors what sync_and_process_outputs would do for structured output.
+        Part 1 permanently advances the FSM of every ``context_batch`` request
+        through its committed tokens (accepted draft tokens followed by the
+        bonus token). This mirrors what sync_and_process_outputs would do for
+        structured output, and is independent of the output row order. A row
+        preempted in flight (``reset()`` after enqueue) is skipped: ``reset()``
+        rewinds its token buffer but preserves its matcher, so advancing
+        through the dropped committed token would desync the matcher from the
+        sequence it re-primes on resume.
 
-        Part 2 speculatively advances through the next batch's draft tokens to
-        compute bitmasks, then rolls back to restore the FSM to the state after
-        Part 1.
+        Part 2 owns the **entire** ``output_context_batch`` rectangle and
+        writes each row's speculative bitmask **in that batch's row order**, by
+        speculatively advancing the already-advanced matcher through the next
+        batch's draft tokens and rolling back. Every row is first reset to -1
+        (all valid), then each constrained row is filled from its request's
+        ``next_draft_tokens``. This runs only from a callback enqueued when the
+        whole current batch verifies drafts, so every consumer row continues
+        from ``context_batch`` (the scheduler routes fresh/resumed requests
+        through the cold-start prime path instead; see the caller
+        ``_enqueue_prev_bitmask_callback`` and ``_assign_bitmask_inputs``). A
+        row preempted in flight (``reset()`` after enqueue) is degraded to the
+        all-valid -1 reset rather than raising, which would blanket-reset the
+        whole rectangle and unconstrain every other row. Writing directly in
+        the consumer's row order, with no second writer on the main thread, is
+        what lets the model graph consume the bitmask without an on-device
+        gather and without a host wait.
 
         Args:
-            context_batch: List of generation contexts.
+            context_batch: Requests whose FSM is advanced (the producing batch).
+                Indexes ``accepted_draft_tokens`` / ``num_accepted`` /
+                ``bonus_tokens`` / ``next_draft_tokens``.
             accepted_draft_tokens: Draft tokens verified this batch, shape [batch, K].
             num_accepted: Count of accepted draft tokens per request, shape [batch].
             bonus_tokens: Bonus (target) tokens per request, shape [batch].
             next_draft_tokens: Draft tokens for the next batch, shape [batch, K].
-            bitmask_out: Packed int32 bitmask output, shape [batch, K+1, packed_vocab].
-                Initialized to -1 (unconstrained) per context before filling.
+            bitmask_out: Packed int32 bitmask output, shape
+                [len(output_context_batch), K+1, packed_vocab]. Every row is
+                reset to -1 (unconstrained) before filling.
+            output_context_batch: Requests in the consuming batch's row order.
+                Defaults to ``context_batch`` when the batch did not change.
         """
+        if output_context_batch is None:
+            output_context_batch = context_batch
         # This method runs on an AsyncRT worker thread. The main thread
         # may try to access the same ``ctx.matcher`` via
         # ``compute_speculative_bitmasks`` for the next iter while this
@@ -936,17 +903,24 @@ class StructuredOutputHelper:
         # raises ``RuntimeError: Already borrowed`` and the worker dies.
         # See the comment on ``_matcher_lock``.
         with self._matcher_lock:
+            # Part 1: permanently advance every producing-batch matcher
+            # through its committed tokens. Order-independent of the output
+            # batch, so it always covers all of ``context_batch`` — which is
+            # what keeps the batch-level ``skip_fsm_advance`` contract intact
+            # for the producing batch's later sync.
             for ctx_idx, ctx in enumerate(context_batch):
-                bitmask_out[ctx_idx, :, :] = -1
-
-                if ctx.matcher is None:
+                if (
+                    ctx.matcher is None
+                    or ctx.is_initial_prompt
+                    or ctx._is_padding_ctx
+                ):
                     continue
 
-                # Part 1: Advance the enforcement state machine through
-                # committed tokens, one at a time so special tokens (e.g.
-                # tool-call structural tags) can flip grammar enforcement
-                # mid-sequence. This mirrors the synchronous
-                # ``advance_fsm`` in ``context.py`` exactly:
+                # Advance the enforcement state machine through committed
+                # tokens, one at a time so special tokens (e.g. tool-call
+                # structural tags) can flip grammar enforcement mid-sequence.
+                # This mirrors the synchronous ``advance_fsm`` in
+                # ``context.py`` exactly:
                 #
                 #   * EOS-class tokens are not part of the grammar — they
                 #     signal end of generation. Skip the matcher so it
@@ -1014,13 +988,60 @@ class StructuredOutputHelper:
                     )
                     ctx.grammar_enforced = False
 
-                # Part 2: speculative window for the next batch's bitmasks.
+            # Part 2: write each output row's speculative bitmask in the
+            # consuming batch's row order. ``rid_to_src`` maps a request id to
+            # its slot in the producing batch's ``next_draft_tokens``.
+            rid_to_src = {
+                ctx.request_id: i for i, ctx in enumerate(context_batch)
+            }
+            for out_idx, ctx in enumerate(output_context_batch):
+                # The callback owns every consumer row. Reset to -1 (all valid)
+                # up front so an unconstrained continuing row needs no further
+                # work and no row is ever left holding a previous iteration's
+                # bitmask for the next iter's in-graph H2D to copy.
+                bitmask_out[out_idx, :, :] = -1
+                # The callback is enqueued only when the whole current batch
+                # verifies drafts, so every consumer row should continue from
+                # the producing batch. But the callback runs on an AsyncRT
+                # worker and holds live references to these contexts: between
+                # its enqueue and its execution the scheduler can preempt a row
+                # (``reset()`` to an initial prompt, requeuing it to
+                # context-encoding) when KV pages run short. Degrade such a row
+                # to the all-valid -1 reset above and ``continue`` rather than
+                # raising -- a raise propagates to the callback's except and
+                # blanket-resets the *whole* rectangle to -1, unconstraining
+                # every other (correctly continuing) request in the batch.
+                if ctx._is_padding_ctx:
+                    continue
+                src = rid_to_src.get(ctx.request_id)
+                if src is None:
+                    logger.error(
+                        "bitmask callback: row %s absent from the producing "
+                        "batch -- a scheduler change admitted a new or resumed "
+                        "row into a verify batch without a synchronous fill. "
+                        "Leaving this row unconstrained for this step.",
+                        ctx.request_id,
+                    )
+                    continue
+                if ctx.is_initial_prompt:
+                    # Preempted in flight: its token is dropped and it re-primes
+                    # on resume, so -1 is the correct don't-care. Debug-only to
+                    # avoid per-row log spam on the hot path under KV pressure.
+                    logger.debug(
+                        "bitmask callback: row %s was preempted in flight; "
+                        "leaving it unconstrained for this step.",
+                        ctx.request_id,
+                    )
+                    continue
+                if ctx.matcher is None:
+                    # Continuing unconstrained row: all-valid, no fill needed.
+                    continue
                 # A draft that flips enforcement on mid-window causes
                 # downstream slots to be constrained.
                 self._speculatively_fill_bitmask_window(
                     ctx,
-                    drafts=next_draft_tokens[ctx_idx],
-                    bitmask_window=bitmask_out[ctx_idx],
+                    drafts=next_draft_tokens[src],
+                    bitmask_window=bitmask_out[out_idx],
                 )
 
     @traced
@@ -1076,8 +1097,8 @@ class StructuredOutputHelper:
                 dtype=np.int32,
             )
 
-        # Allocate packed bitmask (int32) for llguidance
-        packed_bitmask = llguidance.numpy.allocate_token_bitmask(
+        assert self.backend is not None
+        packed_bitmask = self.backend.allocate_token_bitmask(
             batch_size * num_positions, self.vocab_size
         )
         packed_vocab_size = packed_bitmask.shape[1]
