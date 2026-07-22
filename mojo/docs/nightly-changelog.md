@@ -770,6 +770,11 @@ This version is still a work in progress.
   `Optional` without a caller-provided deinitializer, aborting in safe-assert
   builds if it is non-empty.
 
+- `Optional.map()` and `Optional.and_then()` now work when the element type is
+  linear (not `ImplicitlyDeletable`): they move the contained value out and
+  destroy the emptied `Optional` explicitly, so a linear value can be
+  transformed and handed back to the caller.
+
 - Is is now possible to iterate over owned elements in
   `List`, `Dict`, `InlineArray`, `LinkedList`, and `Set`
   when the element type is not `Copyable`:
