@@ -1042,6 +1042,11 @@ This version is still a work in progress.
   `DType._from_str()` now returns an `Optional[DType]` (`None` when the string
   does not name a dtype) rather than `DType.invalid`.
 
+- Removed positional indexing on `StringLiteral` (`literal[i]`). It allowed
+  out-of-bounds reads and was inconsistent with the `[byte=]`, `[codepoint=]`,
+  and `[grapheme=]` indexing scheme used by `String` and `StringSlice`. Use
+  those keyword accessors instead (for example, on a `StaticString`).
+
 ## Fixed
 
 - [#6784](https://github.com/modular/modular/issues/6784),
