@@ -114,7 +114,7 @@ struct _GraphDepArgs(TrivialRegisterPassable):
     side never dereferences it).
     """
 
-    var ids: UnsafePointer[Int32, ImmUntrackedOrigin]
+    var ids: Pointer[Int32, ImmUntrackedOrigin]
     var count: Int64
 
 
@@ -127,7 +127,7 @@ def _pack_dep_args[
     the AsyncRT_DeviceGraphBuilder_add* C ABI exports.
 
     `DeviceGraphNode` is a single-Int32 struct, so `List.unsafe_ptr()` can
-    be bitcast directly to `UnsafePointer[Int32]`. The matching C++ side
+    be bitcast directly to `Pointer[Int32]`. The matching C++ side
     static_asserts this layout invariant in MojoBindings.cpp.
 
     The returned `ids` pointer borrows from the input `deps` and is only
@@ -135,7 +135,7 @@ def _pack_dep_args[
     """
     return _GraphDepArgs(
         ids=deps.unsafe_ptr()
-        .bitcast[Int32]()
+        .unsafe_bitcast[Int32]()
         .unsafe_origin_cast[ImmUntrackedOrigin](),
         count=Int64(len(deps)),
     )
@@ -286,12 +286,10 @@ struct DeviceGraph(ImplicitlyCopyable):
             external_call[
                 "AsyncRT_DeviceContext_createGraphBuilder",
                 _CString[],
-                UnsafePointer[
-                    _DeviceGraphBuilderPtr[mut=True], origin_of(result)
-                ],
+                Pointer[_DeviceGraphBuilderPtr[mut=True], origin_of(result)],
                 _DeviceContextPtr[mut=True],
             ](
-                UnsafePointer(to=result),
+                Pointer(to=result),
                 ctx._handle,
             )
         )
@@ -1174,7 +1172,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
                 _DeviceBufferPtr[mut=True],
                 UInt64,
                 c_size_t,
-                UnsafePointer[Int32, ImmutAnyOrigin],
+                Pointer[Int32, ImmutAnyOrigin],
                 Int64,
             ](
                 self._handle,
@@ -1223,7 +1221,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
                 "AsyncRT_DeviceGraphBuilder_addEmpty",
                 _CString[],
                 _DeviceGraphBuilderPtr[mut=True],
-                UnsafePointer[Int32, ImmutAnyOrigin],
+                Pointer[Int32, ImmutAnyOrigin],
                 Int64,
             ](self._handle, dep_args.ids.as_unsafe_any_origin(), dep_args.count)
         )
@@ -1394,10 +1392,10 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             external_call[
                 "AsyncRT_DeviceGraphBuilder_instantiate",
                 _CString[],
-                UnsafePointer[_DeviceGraphPtr[mut=True], origin_of(result)],
+                Pointer[_DeviceGraphPtr[mut=True], origin_of(result)],
                 _DeviceGraphBuilderPtr[mut=True],
             ](
-                UnsafePointer(to=result),
+                Pointer(to=result),
                 self._handle,
             )
         )
@@ -1470,11 +1468,11 @@ struct _DeviceGraphBuilderEnqueuer[
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int,
-        attributes: UnsafePointer[mut=True, LaunchAttribute, _],
+        attributes: Pointer[mut=True, LaunchAttribute, _],
         num_attributes: Int,
-        args: UnsafePointer[mut=True, OpaquePointer[args_origin], _],
+        args: Pointer[mut=True, OpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: OptionalUnsafePointer[mut=True, UInt64, _],
+        arg_sizes: OptionalPointer[mut=True, UInt64, _],
     ) -> _CString[]:
         """Adds a kernel-dispatch node to the borrowed graph builder.
 

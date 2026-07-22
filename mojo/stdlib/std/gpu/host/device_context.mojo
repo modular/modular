@@ -346,6 +346,10 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         dtype: Data type to be stored in the buffer.
     """
 
+    # TODO(MSTDL-2875): kept `UnsafePointer` because this is the type returned
+    # by the public `unsafe_ptr()` / `take_ptr()` accessors, whose documented
+    # spelling external callers rely on for gated raw-pointer arithmetic and
+    # bitcasts; mirrors `DeviceBuffer._DevicePtr`.
     comptime _HostPtr = UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
 
     # We cache the pointer of the buffer here to provide access to elements.
@@ -372,8 +376,8 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
                 "AsyncRT_DeviceContext_createHostBuffer",
                 _CString[],
             ](
-                UnsafePointer(to=cpp_handle),
-                UnsafePointer(to=host_ptr),
+                Pointer(to=cpp_handle),
+                Pointer(to=host_ptr),
                 ctx._handle,
                 c_size_t(size),
                 c_size_t(elem_size),
@@ -409,14 +413,14 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         external_call[
             "AsyncRT_DeviceContext_createBuffer_owning",
             NoneType,
-            UnsafePointer[_DeviceBufferPtr[mut=True], origin_of(cpp_handle)],
+            Pointer[_DeviceBufferPtr[mut=True], origin_of(cpp_handle)],
             _DeviceContextPtr[mut=True],
             Self._HostPtr,
             c_size_t,
             c_size_t,
             Bool,
         ](
-            UnsafePointer(to=cpp_handle),
+            Pointer(to=cpp_handle),
             ctx._handle,
             host_ptr,
             c_size_t(size),
@@ -508,7 +512,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime elem_size = size_of[view_type]()
         var new_handle: _DeviceBufferPtr[mut=True] = {}
         var new_host_ptr = Optional[
-            UnsafePointer[Scalar[view_type], MutUntrackedOrigin]
+            Pointer[Scalar[view_type], MutUntrackedOrigin]
         ]()
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
         #     const DeviceBuffer **result, void **device_ptr,
@@ -518,8 +522,8 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
                 "AsyncRT_DeviceBuffer_createSubBuffer",
                 _CString[],
             ](
-                UnsafePointer(to=new_handle),
-                UnsafePointer(to=new_host_ptr),
+                Pointer(to=new_handle),
+                Pointer(to=new_host_ptr),
                 self._handle,
                 c_size_t(offset),
                 c_size_t(size),
@@ -813,7 +817,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             The scalar value at the specified index.
         """
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
-        return self._host_ptr[idx]
+        return self._host_ptr[unsafe_offset=idx]
 
     @always_inline
     def __setitem__(self, idx: Int, val: Scalar[Self.dtype]):
@@ -827,7 +831,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             val: The new value to store at the specified index.
         """
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
-        self._host_ptr[idx] = val
+        self._host_ptr[unsafe_offset=idx] = val
 
     @__unsafe_nested_origins_read_only
     def as_span[
@@ -1240,6 +1244,10 @@ struct DevicePointer[
     # DevicePassable
     # ===------------------------------------------------------------------=== #
 
+    # TODO(MSTDL-2875): kernel-entry ABI type. Kept `UnsafePointer` because the
+    # enqueue machinery matches this against the declared kernel param type
+    # exactly (safe/unsafe decay does not apply at that boundary), and the type
+    # is mirrored by downstream copies of this struct.
     comptime device_type: AnyType = UnsafePointer[
         mut=True, Scalar[Self.dtype], AnyOrigin[mut=True]
     ]
@@ -1308,6 +1316,10 @@ struct DeviceBuffer[dtype: DType](
     """
 
     # Implementation of `DevicePassable`
+    # TODO(MSTDL-2875): kernel-entry ABI type. Kept `UnsafePointer` because the
+    # enqueue machinery matches this against the declared kernel param type
+    # exactly (safe/unsafe decay does not apply at that boundary), and the type
+    # is mirrored by downstream copies of this struct.
     comptime device_type: AnyType = UnsafePointer[
         mut=True, Scalar[Self.dtype], AnyOrigin[mut=True]
     ]
@@ -1336,6 +1348,9 @@ struct DeviceBuffer[dtype: DType](
         """
         return String(t"DeviceBuffer[{Self.dtype}]")
 
+    # TODO(MSTDL-2875): kept `UnsafePointer` — this is the ABI first word passed
+    # to kernels (see below), coherent with `device_type` and mirrored by
+    # downstream copies; migrates in lockstep with `device_type`.
     comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and
@@ -1370,8 +1385,8 @@ struct DeviceBuffer[dtype: DType](
                     "AsyncRT_DeviceContext_createBuffer_async",
                     _CString[],
                 ](
-                    UnsafePointer(to=cpp_handle),
-                    UnsafePointer(to=device_ptr),
+                    Pointer(to=cpp_handle),
+                    Pointer(to=device_ptr),
                     ctx._handle,
                     c_size_t(size),
                     c_size_t(elem_size),
@@ -1416,14 +1431,14 @@ struct DeviceBuffer[dtype: DType](
         external_call[
             "AsyncRT_DeviceContext_createBuffer_owning",
             NoneType,
-            UnsafePointer[_DeviceBufferPtr[mut=True], origin_of(cpp_handle)],
+            Pointer[_DeviceBufferPtr[mut=True], origin_of(cpp_handle)],
             _DeviceContextPtr[mut=True],
             Self._DevicePtr,
             c_size_t,
             c_size_t,
             Bool,
         ](
-            UnsafePointer(to=cpp_handle),
+            Pointer(to=cpp_handle),
             ctx._handle,
             ptr,
             c_size_t(size),
@@ -1470,14 +1485,14 @@ struct DeviceBuffer[dtype: DType](
         external_call[
             "AsyncRT_DeviceContext_createBuffer_owning",
             NoneType,
-            UnsafePointer[_DeviceBufferPtr[mut=True], origin_of(cpp_handle)],
+            Pointer[_DeviceBufferPtr[mut=True], origin_of(cpp_handle)],
             _DeviceContextPtr[mut=True],
             UnsafePointer[Scalar[_dtype], MutUntrackedOrigin],
             c_size_t,
             c_size_t,
             Bool,
         ](
-            UnsafePointer(to=cpp_handle),
+            Pointer(to=cpp_handle),
             ctx._handle,
             device_ptr,
             c_size_t(size),
@@ -1581,7 +1596,7 @@ struct DeviceBuffer[dtype: DType](
         comptime elem_size = size_of[view_type]()
         var new_handle: _DeviceBufferPtr[mut=True] = {}
         var new_device_ptr: Optional[
-            UnsafePointer[Scalar[view_type], MutUntrackedOrigin]
+            Pointer[Scalar[view_type], MutUntrackedOrigin]
         ] = {}
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
         #     const DeviceBuffer **result, void **device_ptr,
@@ -1591,8 +1606,8 @@ struct DeviceBuffer[dtype: DType](
                 "AsyncRT_DeviceBuffer_createSubBuffer",
                 _CString[],
             ](
-                UnsafePointer(to=new_handle),
-                UnsafePointer(to=new_device_ptr),
+                Pointer(to=new_handle),
+                Pointer(to=new_device_ptr),
                 self._handle,
                 c_size_t(offset),
                 c_size_t(size),
@@ -1854,10 +1869,10 @@ struct DeviceBuffer[dtype: DType](
         tensor_map: MutOpaquePointer[_],
         data_type: Int32,
         rank: Int32,
-        global_dim: UnsafePointer[mut=False, Int64, _],
-        global_strides: UnsafePointer[mut=False, Int64, _],
-        box_dim: UnsafePointer[mut=False, Int32, _],
-        element_strides: UnsafePointer[mut=False, Int32, _],
+        global_dim: Pointer[mut=False, Int64, _],
+        global_strides: Pointer[mut=False, Int64, _],
+        box_dim: Pointer[mut=False, Int32, _],
+        element_strides: Pointer[mut=False, Int32, _],
         interleave: Int32,
         swizzle: Int32,
         l2_promotion: Int32,
@@ -1887,13 +1902,13 @@ struct DeviceBuffer[dtype: DType](
         tensor_map: MutOpaquePointer[_],
         data_type: Int32,
         rank: Int32,
-        global_dim: UnsafePointer[mut=False, Int64, _],
-        global_strides: UnsafePointer[mut=False, Int64, _],
-        pixel_box_lower_corner: UnsafePointer[mut=False, Int32, _],
-        pixel_box_upper_corner: UnsafePointer[mut=False, Int32, _],
+        global_dim: Pointer[mut=False, Int64, _],
+        global_strides: Pointer[mut=False, Int64, _],
+        pixel_box_lower_corner: Pointer[mut=False, Int32, _],
+        pixel_box_upper_corner: Pointer[mut=False, Int32, _],
         channels_per_pixel: Int32,
         pixels_per_column: Int32,
-        element_strides: UnsafePointer[mut=False, Int32, _],
+        element_strides: Pointer[mut=False, Int32, _],
         interleave: Int32,
         swizzle: Int32,
         l2_promotion: Int32,
@@ -2056,11 +2071,11 @@ trait _FunctionEnqueuer:
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int,
-        attributes: UnsafePointer[mut=True, LaunchAttribute, _],
+        attributes: Pointer[mut=True, LaunchAttribute, _],
         num_attributes: Int,
-        args: UnsafePointer[mut=True, OpaquePointer[args_origin], _],
+        args: Pointer[mut=True, OpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: OptionalUnsafePointer[mut=True, UInt64, _],
+        arg_sizes: OptionalPointer[mut=True, UInt64, _],
     ) -> _CString[]:
         """Dispatches a kernel launch via the AsyncRT C ABI.
 
@@ -2133,11 +2148,11 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int,
-        attributes: UnsafePointer[mut=True, LaunchAttribute, _],
+        attributes: Pointer[mut=True, LaunchAttribute, _],
         num_attributes: Int,
-        args: UnsafePointer[mut=True, OpaquePointer[args_origin], _],
+        args: Pointer[mut=True, OpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: OptionalUnsafePointer[mut=True, UInt64, _],
+        arg_sizes: OptionalPointer[mut=True, UInt64, _],
     ) -> _CString[]:
         """Enqueues a kernel launch on this stream.
 
@@ -2210,7 +2225,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
             external_call[
                 "AsyncRT_DeviceContext_stream",
                 _CString[],
-            ](UnsafePointer(to=result), ctx._handle)
+            ](Pointer(to=result), ctx._handle)
         )
         self._handle = result
 
@@ -2634,7 +2649,7 @@ struct DeviceEvent(ImplicitlyCopyable):
             external_call[
                 "AsyncRT_DeviceContext_enqueue_event",
                 _CString[],
-            ](UnsafePointer(to=result), ctx._handle)
+            ](Pointer(to=result), ctx._handle)
         )
         self._handle = result
 
@@ -2835,7 +2850,7 @@ struct DeviceFunction[
             external_call[
                 "AsyncRT_DeviceContext_loadFunction",
                 _CString[],
-                UnsafePointer[_DeviceFunctionPtr[mut=True], origin_of(result)],
+                Pointer[_DeviceFunctionPtr[mut=True], origin_of(result)],
                 _DeviceContextPtr[mut=True],
                 CStringSlice[ImmStaticOrigin],
                 CStringSlice[ImmStaticOrigin],
@@ -2845,7 +2860,7 @@ struct DeviceFunction[
                 CStringSlice[origin_of(debug_level)],
                 Int32,
             ](
-                UnsafePointer(to=result),
+                Pointer(to=result),
                 ctx._handle,
                 self._func_impl.module_name.as_c_string_slice(),
                 self._func_impl.function_name.as_c_string_slice(),
@@ -3096,10 +3111,10 @@ struct DeviceFunction[
         # NOTE: Manual short buffer optimization. We could use a
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
-        var dense_args_addrs: UnsafePointer[
+        var dense_args_addrs: Pointer[
             OpaquePointer[MutAnyOrigin], MutUntrackedOrigin
         ]
-        var dense_args_sizes: UnsafePointer[UInt64, MutUntrackedOrigin]
+        var dense_args_sizes: Pointer[UInt64, MutUntrackedOrigin]
         if num_captures > num_captures_static:
             dense_args_addrs = alloc(
                 Layout[OpaquePointer[MutAnyOrigin]](
@@ -3110,7 +3125,7 @@ struct DeviceFunction[
                 Layout[UInt64](count=num_captures + num_args)
             ).unsafe_leak()
             for i in range(num_captures + num_args):
-                dense_args_sizes[i] = 0
+                dense_args_sizes[unsafe_offset=i] = 0
         else:
             dense_args_addrs = stack_allocation[
                 num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
@@ -3119,20 +3134,20 @@ struct DeviceFunction[
                 num_captures_static + num_args, UInt64
             ]()
             for i in range(num_captures_static + num_args):
-                dense_args_sizes[i] = 0
+                dense_args_sizes[unsafe_offset=i] = 0
 
         comptime for i in range(num_args):
             # TODO(MSTDL-1904): Validate the safety of this.
-            dense_args_addrs[i] = (
-                UnsafePointer(to=args[i])
-                .bitcast[NoneType]()
+            dense_args_addrs[unsafe_offset=i] = (
+                Pointer(to=args[i])
+                .unsafe_bitcast[NoneType]()
                 .unsafe_mut_cast[True]()
                 .as_unsafe_any_origin()
             )
 
         @parameter
         def _populate_arg_sizes[i: Int]():
-            dense_args_sizes[i] = UInt64(size_of[Ts[i]]())
+            dense_args_sizes[unsafe_offset=i] = UInt64(size_of[Ts[i]]())
 
         comptime for i in range(num_args):
             _populate_arg_sizes[i]()
@@ -3154,9 +3169,11 @@ struct DeviceFunction[
             # Because this closure uses stack allocated ptrs
             # to store the captured values in dense_args_addrs, they need to
             # not go out of the scope before dense_args_addr is being use.
-            var capture_args_start = dense_args_addrs + num_args
+            var capture_args_start = dense_args_addrs.unsafe_offset(num_args)
             populate(
-                capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
+                capture_args_start.unsafe_bitcast[
+                    NoneType
+                ]().as_unsafe_any_origin()
             )
 
             # Drop zero-sized captures so the packed slots (and their sizes)
@@ -3203,7 +3220,9 @@ struct DeviceFunction[
                     len(attributes),
                     dense_args_addrs.as_unsafe_any_origin(),
                     UInt32(effective_argc),
-                    dense_args_sizes,
+                    Optional[Pointer[UInt64, MutUntrackedOrigin]](
+                        dense_args_sizes
+                    ),
                 ),
                 device_context=self._context,
                 location=location.or_else(call_location()),
@@ -3369,7 +3388,7 @@ struct DeviceFunction[
         # NOTE: Manual short buffer optimization. We could use a
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
-        var dense_args_addrs: UnsafePointer[
+        var dense_args_addrs: Pointer[
             OpaquePointer[MutAnyOrigin], MutUntrackedOrigin
         ]
         if num_captures > num_captures_static:
@@ -3392,9 +3411,13 @@ struct DeviceFunction[
             # allocations live for the rest of this function, so it is safe
             # to call `populate` here even though `ctx.enqueue` below is
             # nested inside the per-backend branch.
-            var capture_args_start = dense_args_addrs + num_translated_args
+            var capture_args_start = dense_args_addrs.unsafe_offset(
+                num_translated_args
+            )
             populate(
-                capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
+                capture_args_start.unsafe_bitcast[
+                    NoneType
+                ]().as_unsafe_any_origin()
             )
 
         if self._context.api() == "metal":
@@ -3442,17 +3465,17 @@ struct DeviceFunction[
                 # kernel.
                 var translated_arg_offset = translated_arg_offsets[i]
                 if translated_arg_offset >= 0:
-                    var first_word_addr = UnsafePointer(
+                    var first_word_addr = Pointer(
                         to=translated_args.unsafe_ptr()[
                             translated_arg_offset + extra_align
                         ]
-                    ).bitcast[NoneType]()
+                    ).unsafe_bitcast[NoneType]()
                     args[i]._to_device_type(
                         device_type_encoder, first_word_addr
                     )
 
                     dense_args_addrs[
-                        translated_arg_idx
+                        unsafe_offset=translated_arg_idx
                     ] = first_word_addr.as_unsafe_any_origin()
                     translated_arg_idx += 1
 
@@ -3476,7 +3499,7 @@ struct DeviceFunction[
                     len(attributes),
                     dense_args_addrs.as_unsafe_any_origin(),
                     UInt32(effective_argc),
-                    Optional[UnsafePointer[UInt64, MutUntrackedOrigin]](),
+                    Optional[Pointer[UInt64, MutUntrackedOrigin]](),
                 ),
                 device_context=self._context,
                 location=location.or_else(call_location()),
@@ -3527,11 +3550,11 @@ struct DeviceFunction[
             external_call[
                 "AsyncRT_DeviceFunction_getAttribute",
                 _CString[],
-                UnsafePointer[Int32, origin_of(result)],
+                Pointer[Int32, origin_of(result)],
                 _DeviceFunctionPtr[mut=True],
                 Int32,
             ](
-                UnsafePointer(to=result),
+                Pointer(to=result),
                 self._handle,
                 attr.code,
             )
@@ -3560,12 +3583,12 @@ struct DeviceFunction[
             external_call[
                 "AsyncRT_occupancyMaxActiveBlocksPerMultiprocessor",
                 _CString[],
-                UnsafePointer[Int32, origin_of(result)],
+                Pointer[Int32, origin_of(result)],
                 _DeviceFunctionPtr[mut=True],
                 Int32,
                 c_size_t,
             ](
-                UnsafePointer(to=result),
+                Pointer(to=result),
                 self._handle,
                 Int32(block_size),
                 c_size_t(dynamic_shared_mem_size),
@@ -3694,7 +3717,7 @@ struct DeviceExternalFunction:
             external_call[
                 "AsyncRT_DeviceContext_loadFunction",
                 _CString[],
-                UnsafePointer[_DeviceFunctionPtr[mut=True], origin_of(result)],
+                Pointer[_DeviceFunctionPtr[mut=True], origin_of(result)],
                 _DeviceContextPtr[mut=True],
                 CStringSlice[ImmStaticOrigin],
                 CStringSlice[origin_of(function_name)],
@@ -3704,7 +3727,7 @@ struct DeviceExternalFunction:
                 CStringSlice[origin_of(debug_level)],
                 Int32,
             ](
-                UnsafePointer(to=result),
+                Pointer(to=result),
                 ctx._handle,
                 module_name.as_c_string_slice(),
                 function_name.as_c_string_slice(),
@@ -3795,8 +3818,8 @@ struct DeviceExternalFunction:
         comptime for i in range(num_args):
             # TODO(MSTDL-1904): Validate the safety of this.
             dense_args_addrs[i] = (
-                UnsafePointer(to=args[i])
-                .bitcast[NoneType]()
+                Pointer(to=args[i])
+                .unsafe_bitcast[NoneType]()
                 .unsafe_mut_cast[True]()
                 .as_unsafe_any_origin()
             )
@@ -3812,7 +3835,7 @@ struct DeviceExternalFunction:
 
         # External functions carry no argument-size metadata, so no per-arg
         # sizes are passed to the enqueuer (matching the previous direct call).
-        var no_arg_sizes = OptionalUnsafePointer[UInt64, MutAnyOrigin](None)
+        var no_arg_sizes = OptionalPointer[UInt64, MutAnyOrigin](None)
         _checked(
             ctx.enqueue(
                 self._handle,
@@ -3847,11 +3870,11 @@ struct DeviceExternalFunction:
             external_call[
                 "AsyncRT_DeviceFunction_getAttribute",
                 _CString[],
-                UnsafePointer[Int32, origin_of(result)],
+                Pointer[Int32, origin_of(result)],
                 _DeviceFunctionPtr[mut=True],
                 Int32,
             ](
-                UnsafePointer(to=result),
+                Pointer(to=result),
                 self._handle,
                 attr.code,
             )
@@ -3914,11 +3937,11 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int,
-        attributes: UnsafePointer[mut=True, LaunchAttribute, _],
+        attributes: Pointer[mut=True, LaunchAttribute, _],
         num_attributes: Int,
-        args: UnsafePointer[mut=True, OpaquePointer[args_origin], _],
+        args: Pointer[mut=True, OpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: OptionalUnsafePointer[mut=True, UInt64, _],
+        arg_sizes: OptionalPointer[mut=True, UInt64, _],
     ) -> _CString[]:
         """Enqueues a kernel launch on this context's default stream.
 
@@ -4007,11 +4030,11 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             external_call[
                 "AsyncRT_DeviceContext_create",
                 _CString[],
-                UnsafePointer[_DeviceContextPtr[mut=True], origin_of(result)],
-                UnsafePointer[c_char, ImmutAnyOrigin],
+                Pointer[_DeviceContextPtr[mut=True], origin_of(result)],
+                Pointer[c_char, ImmutAnyOrigin],
                 Int32,
             ](
-                UnsafePointer(to=result),
+                Pointer(to=result),
                 api.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
                 Int32(device_id),
             )
@@ -4045,7 +4068,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         `max._interpreter_ops`) where the pointer comes in as an opaque
         `void*` and needs to be retyped before construction.
         """
-        var ctx_ptr = UnsafePointer(to=handle).bitcast[
+        var ctx_ptr = Pointer(to=handle).unsafe_bitcast[
             _DeviceContextPtr[mut=True]
         ]()[]
         self._handle = ctx_ptr
@@ -4173,7 +4196,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         # void AsyncRT_DeviceContext_deviceApi(llvm::StringRef *result, const DeviceContext *ctx)
         var api_ptr = StaticString()
         external_call["AsyncRT_DeviceContext_deviceApi", NoneType](
-            UnsafePointer(to=api_ptr),
+            Pointer(to=api_ptr),
             self._handle,
         )
         return String(api_ptr)
@@ -6100,7 +6123,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 "AsyncRT_DeviceContext_startTimer",
                 _CString[],
             ](
-                UnsafePointer(to=timer_ptr),
+                Pointer(to=timer_ptr),
                 self._handle,
             )
         )
@@ -6113,7 +6136,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 "AsyncRT_DeviceContext_stopTimer",
                 _CString[],
             ](
-                UnsafePointer(to=elapsed_nanos),
+                Pointer(to=elapsed_nanos),
                 self._handle,
                 timer._handle,
             )
@@ -6245,7 +6268,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 "AsyncRT_DeviceContext_startTimer",
                 _CString[],
             ](
-                UnsafePointer(to=timer_ptr),
+                Pointer(to=timer_ptr),
                 self._handle,
             )
         )
@@ -6258,7 +6281,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 "AsyncRT_DeviceContext_stopTimer",
                 _CString[],
             ](
-                UnsafePointer(to=elapsed_nanos),
+                Pointer(to=elapsed_nanos),
                 self._handle,
                 timer._handle,
             )
@@ -6338,7 +6361,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 "AsyncRT_DeviceContext_startTimer",
                 _CString[],
             ](
-                UnsafePointer(to=timer_ptr),
+                Pointer(to=timer_ptr),
                 self._handle,
             )
         )
@@ -6351,7 +6374,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 "AsyncRT_DeviceContext_stopTimer",
                 _CString[],
             ](
-                UnsafePointer(to=elapsed_nanos),
+                Pointer(to=elapsed_nanos),
                 self._handle,
                 timer._handle,
             )
@@ -6991,10 +7014,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             external_call[
                 "AsyncRT_DeviceContext_eventCreate",
                 _CString[],
-                UnsafePointer[_DeviceEventPtr[mut=True], origin_of(result)],
+                Pointer[_DeviceEventPtr[mut=True], origin_of(result)],
                 _DeviceContextPtr[mut=True],
                 EventFlags,
-            ](UnsafePointer(to=result), self._handle, flags)
+            ](Pointer(to=result), self._handle, flags)
         )
         return DeviceEvent(result)
 
@@ -7015,8 +7038,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 "AsyncRT_DeviceContext_streamPriorityRange",
                 _CString[],
             ](
-                UnsafePointer(to=least_priority),
-                UnsafePointer(to=greatest_priority),
+                Pointer(to=least_priority),
+                Pointer(to=greatest_priority),
                 self._handle,
             )
         )
@@ -7050,7 +7073,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             external_call[
                 "AsyncRT_DeviceContext_createStream",
                 _CString[],
-            ](UnsafePointer(to=result), c_int(priority), self._handle)
+            ](Pointer(to=result), c_int(priority), self._handle)
         )
         return DeviceStream(result)
 
@@ -7082,7 +7105,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             external_call[
                 "AsyncRT_DeviceContext_createExternalStream",
                 _CString[],
-            ](UnsafePointer(to=result), external_stream, self._handle)
+            ](Pointer(to=result), external_stream, self._handle)
         )
         return DeviceStream(result)
 
@@ -7192,10 +7215,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             external_call[
                 "AsyncRT_DeviceContext_selectStream",
                 _CString[],
-                UnsafePointer[_DeviceContextPtr[mut=True], origin_of(result)],
+                Pointer[_DeviceContextPtr[mut=True], origin_of(result)],
                 _DeviceContextPtr[mut=True],
                 c_uint,
-            ](UnsafePointer(to=result), self._handle, c_uint(stream_id))
+            ](Pointer(to=result), self._handle, c_uint(stream_id))
         )
         # The runtime transferred ownership of the view's reference to us, so
         # the wrapper must own it (and release on destruction).
@@ -7236,7 +7259,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 "AsyncRT_DeviceContext_getApiVersion",
                 _CString[],
             ](
-                UnsafePointer(to=value),
+                Pointer(to=value),
                 self._handle,
             ),
             location=call_location(),
@@ -7277,7 +7300,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 "AsyncRT_DeviceContext_getAttribute",
                 _CString[],
             ](
-                UnsafePointer(to=value),
+                Pointer(to=value),
                 self._handle,
                 c_int(attr._value),
             ),
@@ -7402,7 +7425,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             external_call[
                 "AsyncRT_DeviceContext_computeCapability",
                 _CString[],
-            ](UnsafePointer(to=compute_capability), self._handle),
+            ](Pointer(to=compute_capability), self._handle),
             location=call_location(),
         )
         return Int(compute_capability)
@@ -7428,7 +7451,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         external_call[
             "AsyncRT_DeviceContext_archName",
             NoneType,
-        ](UnsafePointer(to=arch_name), self._handle)
+        ](Pointer(to=arch_name), self._handle)
         return String(arch_name)
 
     @always_inline
@@ -7468,12 +7491,12 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 "AsyncRT_DeviceContext_getMemoryInfo",
                 _CString[],
                 _DeviceContextPtr[mut=True],
-                UnsafePointer[c_size_t, origin_of(free)],
-                UnsafePointer[c_size_t, origin_of(total)],
+                Pointer[c_size_t, origin_of(free)],
+                Pointer[c_size_t, origin_of(total)],
             ](
                 self._handle,
-                UnsafePointer(to=free),
-                UnsafePointer(to=total),
+                Pointer(to=free),
+                Pointer(to=total),
             ),
             location=call_location(),
         )
@@ -7500,10 +7523,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 "AsyncRT_DeviceContext_maxSingleAllocationSize",
                 _CString[],
                 _DeviceContextPtr[mut=True],
-                UnsafePointer[c_size_t, origin_of(result)],
+                Pointer[c_size_t, origin_of(result)],
             ](
                 self._handle,
-                UnsafePointer(to=result),
+                Pointer(to=result),
             ),
             location=call_location(),
         )
@@ -7550,11 +7573,11 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             external_call[
                 "AsyncRT_DeviceContext_canAccess",
                 _CString[],
-                UnsafePointer[Bool, origin_of(result)],
+                Pointer[Bool, origin_of(result)],
                 _DeviceContextPtr[mut=True],
                 _DeviceContextPtr[mut=True],
             ](
-                UnsafePointer(to=result),
+                Pointer(to=result),
                 self._handle,
                 peer._handle,
             ),
@@ -7636,10 +7659,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             external_call[
                 "AsyncRT_DeviceContext_supportsMulticast",
                 _CString[],
-                UnsafePointer[Bool, origin_of(result)],
+                Pointer[Bool, origin_of(result)],
                 _DeviceContextPtr[mut=True],
             ](
-                UnsafePointer(to=result),
+                Pointer(to=result),
                 self._handle,
             ),
             location=call_location(),
@@ -7760,8 +7783,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             external_call[
                 "AsyncRT_DeviceContext_allPeerAccessEnabled",
                 _CString[],
-                UnsafePointer[Bool, origin_of(result)],
-            ](UnsafePointer(to=result)),
+                Pointer[Bool, origin_of(result)],
+            ](Pointer(to=result)),
             location=call_location(),
         )
         return result
@@ -7935,7 +7958,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
                 "AsyncRT_DeviceMulticastBuffer_allocate",
                 _CString[],
             ](
-                UnsafePointer(to=handle),
+                Pointer(to=handle),
                 c_size_t(ctxs_len),
                 ctxs.unsafe_ptr(),
                 c_size_t(size),
@@ -7958,8 +7981,8 @@ struct DeviceMulticastBuffer[dtype: DType]:
                 "AsyncRT_DeviceMulticastBuffer_unicastBufferFor",
                 _CString[],
             ](
-                UnsafePointer(to=buf_handle),
-                UnsafePointer(to=buf_ptr),
+                Pointer(to=buf_handle),
+                Pointer(to=buf_ptr),
                 self._handle,
                 ctx._handle,
             )
@@ -7980,8 +8003,8 @@ struct DeviceMulticastBuffer[dtype: DType]:
                 "AsyncRT_DeviceMulticastBuffer_multicastBufferFor",
                 _CString[],
             ](
-                UnsafePointer(to=buf_handle),
-                UnsafePointer(to=buf_ptr),
+                Pointer(to=buf_handle),
+                Pointer(to=buf_ptr),
                 self._handle,
                 ctx._handle,
             )
@@ -8040,7 +8063,7 @@ struct _DeviceContextScope:
                 "AsyncRT_DeviceContextScope_create",
                 _CString[],
             ](
-                UnsafePointer(to=cpp_handle),
+                Pointer(to=cpp_handle),
                 self._ctx._handle,
             )
         )

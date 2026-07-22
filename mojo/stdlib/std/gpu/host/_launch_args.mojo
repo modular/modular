@@ -22,15 +22,11 @@ from std.collections.optional import Optional
 
 @always_inline
 def _compact_zero_sized_capture_slots(
-    dense_args_addrs: UnsafePointer[
-        OpaquePointer[MutAnyOrigin], MutUntrackedOrigin
-    ],
-    capture_sizes: UnsafePointer[UInt64, ImmUntrackedOrigin],
+    dense_args_addrs: Pointer[OpaquePointer[MutAnyOrigin], MutUntrackedOrigin],
+    capture_sizes: Pointer[UInt64, ImmUntrackedOrigin],
     num_leading_args: Int,
     num_captures: Int,
-    dense_args_sizes: Optional[
-        UnsafePointer[UInt64, MutUntrackedOrigin]
-    ] = None,
+    dense_args_sizes: Optional[Pointer[UInt64, MutUntrackedOrigin]] = None,
 ) -> Int:
     """Compacts the capture slots of a packed launch-argument array in place,
     dropping zero-sized captures.
@@ -71,11 +67,13 @@ def _compact_zero_sized_capture_slots(
     """
     var effective_argc = num_leading_args
     for i in range(num_captures):
-        if capture_sizes[i] != 0:
-            dense_args_addrs[effective_argc] = dense_args_addrs[
-                num_leading_args + i
+        if capture_sizes[unsafe_offset=i] != 0:
+            dense_args_addrs[unsafe_offset=effective_argc] = dense_args_addrs[
+                unsafe_offset=num_leading_args + i
             ]
             if dense_args_sizes:
-                dense_args_sizes.value()[effective_argc] = capture_sizes[i]
+                dense_args_sizes.value()[
+                    unsafe_offset=effective_argc
+                ] = capture_sizes[unsafe_offset=i]
             effective_argc += 1
     return effective_argc
