@@ -24,6 +24,11 @@ def use(y: Thing):
 
 # CHECK-LABEL: lit.fn @"capture_implicit_origin
 def capture_implicit_origin(var x: Foo, y: Thing[origin_of(x)]):
-    # CHECK: lit.closure.init[{{.*}}](%y)() capturing -> !kgen.none
+    # COM: The closure captures `y`, whose `Thing` type carries `x`'s implicit
+    # COM: origin, so the closure storage struct is parametrized by `x`'s origin
+    # COM: and its initializer receives `y`.
+    # CHECK: lit.call {{.*}}capture_it::__storage"::@"__init__
+    # CHECK-SAME: <:origin<true> *"x
+    # CHECK-SAME: "y":
     def capture_it() {read y}:
         use(y)

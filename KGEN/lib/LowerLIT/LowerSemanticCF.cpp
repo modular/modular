@@ -627,9 +627,6 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
     if (isa<LIT::FnOp>(op))
       continue;
 
-    if (isa<LIT::ClosureInitOp>(op))
-      continue;
-
     // Import gates carry a region but are resolution-only artifacts and play no
     // part in control flow, so skip them.
     if (isa<LIT::ImportOp>(op))

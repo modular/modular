@@ -187,11 +187,13 @@ def s5_make_closure(x: Int, mem: String) -> Int:
 
     return x
 
-# COM: Verify the closure instance is created correctly.
-# S6-DAG: lit.closure.init{{.*}} closureType = !kgen.closure<@"{{.*}}s6_make_closure{{.*}}"
-# S6-DAG: lit.ownership.use {{.*}}struct<(!Int1, !String) memoryOnly>
-# S6-DAG: lit.var.decl "my_closure"{{.*}}struct<(!Int1, !String) memoryOnly>
-# S6-DAG: lit.call {{.*}}::@"def(y: Int) -> Int_{{.*}}::@"__init__($0$)"{{.*}}struct<(!Int1, !String) memoryOnly>{{.*}}
+# COM: Verify the closure instance is created correctly: the captured values are
+# COM: copied into the closure storage struct, then the closure wrapper is
+# COM: constructed from that storage.
+# S6-DAG: lit.var.decl "my_closure.storage" var
+# S6-DAG: lit.call {{.*}}s6_make_closure{{.*}}::my_closure::__storage"::@"__init__
+# S6-DAG: lit.var.decl "my_closure" var
+# S6-DAG: lit.call {{.*}}::@"def(y: Int) -> Int_{{.*}}::@"__init__($0$)"
 
 
 
@@ -308,7 +310,11 @@ def s12_bindIt(mem: String) -> Int:
 
 # COM: Check that the origin set is bound to the wrapper
 # S13-LABEL: lit.fn @"nonemptyOriginSet(::String&)"
-# S13: lit.closure.init[#kgen.type<!lit.struct<{{.*}}> : [[S13_TRAIT:!None_AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable.*]]
+# COM: The captured mutable reference contributes byRefMut's origin to the
+# COM: closure storage struct.
+# S13: lit.call {{.*}}::myclosure::__storage"::@"__init__
+# S13-SAME: <:origin<true> *"byRefMut
+# COM: The origin set is bound to the wrapper.
 # S13: lit.call @unified_closure::@"def() -> None_{{.*}}"::@"__init__({{.*}})"
 # S13-SAME: :origin.set {}
 

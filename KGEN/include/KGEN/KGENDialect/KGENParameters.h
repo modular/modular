@@ -196,33 +196,27 @@ public:
   /// `hasConstExpr` is set if unresolved param expressions are seen.
   /// `requiredSignatureDepth` is set to the intrinsic minimum number of
   /// surrounding signature scopes needed for this expression to be valid.
-  /// If `unresolvedCaptures` is non-null, any ClosureAttr encountered during
-  /// the walk is collected there instead of being walked into.
-  void collectUsesFromAttr(
-      Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
-      bool &hasConstExpr, size_t &requiredSignatureDepth,
-      SmallVectorImpl<ClosureAttr> *unresolvedCaptures = nullptr);
+  void collectUsesFromAttr(Attribute attr,
+                           SmallVectorImpl<ParamDeclRefAttr> &uses,
+                           bool &hasConstExpr, size_t &requiredSignatureDepth);
 
   /// Scan the specified type and its recursive uses, diagnosing incorrect
   /// parameter declarations and collecting parameter uses into `uses`.
   /// `hasConstExpr` is set if unresolved param expressions are seen.
   /// `requiredSignatureDepth` is set to the intrinsic minimum number of
   /// surrounding signature scopes needed for this type to be valid.
-  void collectUsesFromType(
-      Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
-      size_t &requiredSignatureDepth,
-      SmallVectorImpl<ClosureAttr> *unresolvedCaptures = nullptr);
+  void collectUsesFromType(Type type, SmallVectorImpl<ParamDeclRefAttr> &uses,
+                           bool &hasConstExpr, size_t &requiredSignatureDepth);
 
 private:
-  void
-  collectUsesFromAttrImpl(Attribute attr,
-                          SmallVectorImpl<ParamDeclRefAttr> &uses,
-                          bool &hasConstExpr, size_t &requiredSignatureDepth,
-                          SmallVectorImpl<ClosureAttr> *unresolvedCaptures);
-  void
-  collectUsesFromTypesImpl(Type type, SmallVectorImpl<ParamDeclRefAttr> &uses,
-                           bool &hasConstExpr, size_t &requiredSignatureDepth,
-                           SmallVectorImpl<ClosureAttr> *unresolvedCaptures);
+  void collectUsesFromAttrImpl(Attribute attr,
+                               SmallVectorImpl<ParamDeclRefAttr> &uses,
+                               bool &hasConstExpr,
+                               size_t &requiredSignatureDepth);
+  void collectUsesFromTypesImpl(Type type,
+                                SmallVectorImpl<ParamDeclRefAttr> &uses,
+                                bool &hasConstExpr,
+                                size_t &requiredSignatureDepth);
 
   /// The first time we encounter an attribute with a reference to an
   /// out-of-line declaration, verify it.
@@ -342,12 +336,6 @@ struct ParameterUseDefGraph {
   /// These are the parameter uses in the current scope that were captured from
   /// a higher scope.
   llvm::SetVector<ParamDeclRefAttr> usesFromAbove;
-
-  /// ClosureAttr instances found within this scope during parameter collection.
-  /// Each entry represents a deferred reference to another closure's parameter
-  /// captures that cannot be resolved to individual ParamDeclRefAttrs until the
-  /// referenced closure has been lifted.
-  llvm::SetVector<ClosureAttr> closureCaptures;
 
   /// Track the operations that reference parameters. Use this information to
   /// diagnose references to parameters without declarations.

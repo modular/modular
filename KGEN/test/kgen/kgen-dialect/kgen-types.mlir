@@ -119,13 +119,6 @@ kgen.func @func_types() {
   kgen.return
 }
 
-// COM: Param Capture Type
-
-// CHECK: kgen.generator @param_closure_types<capture: !kgen.param_closure<@foo "fn">>()
-kgen.generator @param_closure_types<capture: !kgen.param_closure<@foo "fn">>() {
-  kgen.return
-}
-
 // COM: Non-null pointer types
 
 // CHECK-LABEL: @nonnull_pointer

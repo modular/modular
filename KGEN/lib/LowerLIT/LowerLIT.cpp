@@ -229,32 +229,6 @@ void LITLowerer::lowerLITOps(FnOp func, bool &hadErrors) {
       HLCF::replaceElifWithIfOps(elifOp);
     } else if (auto funcOp = dyn_cast<FnOp>(op)) {
       lowerNestedFunction(funcOp);
-    } else if (auto closureInit = dyn_cast<LIT::ClosureInitOp>(op)) {
-      IRRewriter b{OpBuilder(closureInit)};
-      SmallVector<Attribute> captureConventions =
-          llvm::map_to_vector(closureInit.getCaptureConventions(),
-                              [&](Attribute attr) -> Attribute {
-                                if (isa<UnitAttr, MemSymbolTripleAttr>(attr))
-                                  return attr;
-                                return UnitAttr::get(attr.getContext());
-                              });
-      SmallVector<ParamDeclAttr> parameters(
-          closureInit.getInputParams().drop_back(
-              closureInit.getFuncTypeGenerator().getNumImplicitOriginDecls()));
-      removeSingletonParamDecls(singletonTypeHelper, parameters);
-      KGEN::ClosureInitOp closureInitKgen = KGEN::ClosureInitOp::create(
-          b, closureInit.getLoc(), closureInit->getResults().front().getType(),
-          closureInit.getFuncTypeGenerator(), closureInit.getCaptures(),
-          ArrayAttr::get(b.getContext(), captureConventions), parameters,
-          closureInit.getCaptureTypesAttr(), closureInit.getCaptureNamesAttr(),
-          closureInit.getTypeValue(), closureInit.getNestedFnScopeAttr(),
-          closureInit.getLLVMMetadataArray(),
-          closureInit.getLLVMArgMetadataArray(),
-          closureInit.getHoistedCapturesAttr(),
-          closureInit.getLinkageNameAttr());
-      if (Attribute closureType = closureInit->getAttr("closureType"))
-        closureInitKgen->setAttr("closureType", closureType);
-      b.replaceOp(closureInit, closureInitKgen);
     }
   });
 }

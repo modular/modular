@@ -56,8 +56,6 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
   }
 
   buildLowerLITPipeline(pm, options);
-  pm.addPass(createOutlineClosuresNew(OutlineClosuresNewOptions{
-      options.debugLevel != CompilationOptions::kNoDebug}));
 
   if (options.optimizationLevel >= 2)
     pm.addPass(createRemoveUnusedParams());
