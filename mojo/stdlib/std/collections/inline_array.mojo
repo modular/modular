@@ -208,7 +208,7 @@ struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
     "Use `deinit_with()` to explicitly destroy an `InlineArray` of"
     " non-`ImplicitlyDeletable` elements"
 )
-struct InlineArray[T: Movable, length: Int](
+struct InlineArray[T: AnyType, length: Int](
     Copyable where conforms_to(T, Copyable),
     Defaultable,
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
@@ -221,7 +221,7 @@ struct InlineArray[T: Movable, length: Int](
     Iterable,
     # TODO(MOCO-4308): Remove redundant 'Movable' constraint
     IterableOwned where conforms_to(T, Movable & ImplicitlyDeletable),
-    Movable,
+    Movable where conforms_to(T, Movable),
     Sized,
     Writable where conforms_to(T, Writable),
 ):
@@ -233,10 +233,11 @@ struct InlineArray[T: Movable, length: Int](
     changed.
 
     Parameters:
-        T: The type of the elements in the array. Must implement
-            `Movable`. Copy construction, `fill=` construction, and iteration
-            additionally require `Copyable` and are enforced via conditional
-            `where` clauses.
+        T: The type of the elements in the array. May be any type (`AnyType`).
+            Move construction (including list-literal construction) requires
+            `Movable`; copy and `fill=` construction and iteration additionally
+            require `Copyable`; these are enforced via conditional `where`
+            clauses.
         length: The number of elements in the array. Must be a positive integer
             constant.
 
@@ -271,7 +272,7 @@ struct InlineArray[T: Movable, length: Int](
     var _array: Self.type
     """The underlying storage for the array."""
 
-    comptime _DeviceElementType: Movable = downcast[
+    comptime _DeviceElementType: AnyType = downcast[
         Self.T.device_type, Movable
     ] if conforms_to(Self.T, DevicePassable) else Self.T
     """The device-side element type: the element's `device_type` when it is
@@ -382,7 +383,7 @@ struct InlineArray[T: Movable, length: Int](
         var unsafe_assume_initialized: InlineArray[
             UnsafeMaybeUninit[Self.T], Self.length
         ],
-    ):
+    ) where conforms_to(Self.T, Movable):
         """Constructs an `InlineArray` from an `InlineArray` of
         `UnsafeMaybeUninit`.
 
@@ -468,7 +469,9 @@ struct InlineArray[T: Movable, length: Int](
         )
 
     @always_inline
-    def __init__(out self, var *elems: Self.T, __list_literal__: NoneType):
+    def __init__(
+        out self, var *elems: Self.T, __list_literal__: NoneType
+    ) where conforms_to(Self.T, Movable):
         """Constructs an array from a variadic list of elements.
 
         Args:
@@ -497,7 +500,15 @@ struct InlineArray[T: Movable, length: Int](
         # Move each element into the array storage.
         comptime for i in range(Self.length):
             # Safety: We own the elements in the variadic list.
-            ptr.init_pointee_move_from(UnsafePointer(to=elems[i]))
+            # TODO(MOCO-4058): The `where conforms_to(Self.T, Movable)` clause
+            # narrows the `elems` pack element to `T(Movable)`, but
+            # `self.unsafe_ptr()` keeps the struct's `T` bound, so the two views
+            # don't unify at `init_pointee_move_from`. Reconcile the source
+            # pointer's element view; drop the bitcast once the compiler
+            # propagates `where`-clause evidence to the field type.
+            ptr.init_pointee_move_from(
+                UnsafePointer(to=elems[i]).bitcast[Self.T]()
+            )
             ptr += 1
 
         # Do not destroy the elements when their backing storage goes away.
@@ -532,7 +543,9 @@ struct InlineArray[T: Movable, length: Int](
             for idx in range(Self.length):
                 (base + idx).unsafe_write(copy=copy.unsafe_get(idx))
 
-    def __init__(out self, *, deinit move: Self):
+    def __init__(
+        out self, *, deinit move: Self
+    ) where conforms_to(Self.T, Movable):
         """Move constructs the array from another array.
 
         Args:

@@ -466,6 +466,18 @@ struct NonWritable(Copyable):
     var value: Int
 
 
+struct NonMovable(Movable where False):
+    """A non-`Movable` (pinned) type; still implicitly deletable by default."""
+
+    var value: Int
+
+
+struct LinearNonMovable(ImplicitlyDeletable where False, Movable where False):
+    """A fully linear type: neither `Movable` nor `ImplicitlyDeletable`."""
+
+    var value: Int
+
+
 def test_inline_array_eq() raises:
     var a: InlineArray[Int, 3] = [1, 2, 3]
     var b: InlineArray[Int, 3] = [1, 2, 3]
@@ -535,6 +547,18 @@ def test_inline_array_conditional_conformances() raises:
     # `ExplicitDestroy` is not implicitly deletable, so the consuming iterator
     # cannot destroy any unconsumed elements.
     assert_false(conforms_to(InlineArray[ExplicitDestroy, 3], IterableOwned))
+
+    # The element bound is `AnyType`, so a non-`Movable` element type is
+    # accepted, and the array's `Movable` conformance follows the element.
+    assert_true(conforms_to(InlineArray[Int, 3], Movable))
+    assert_false(conforms_to(InlineArray[NonMovable, 3], Movable))
+    assert_true(conforms_to(InlineArray[NonMovable, 3], ImplicitlyDeletable))
+    # A fully linear element (neither `Movable` nor `ImplicitlyDeletable`)
+    # yields an array that is likewise neither.
+    assert_false(conforms_to(InlineArray[LinearNonMovable, 3], Movable))
+    assert_false(
+        conforms_to(InlineArray[LinearNonMovable, 3], ImplicitlyDeletable)
+    )
 
 
 def test_inline_array_iter_bounds() raises:

@@ -704,6 +704,14 @@ This version is still a work in progress.
     - Consuming iteration (`for x in set^`) is likewise conditional, requiring
       `ElementType` to be `ImplicitlyDeletable`.
 
+- `InlineArray`'s element type bound loosened from `Movable` to `AnyType`, so an
+  `InlineArray` can now hold a non-`Movable` element type. The `Movable`
+  conformance is now conditional on the element: move construction (including
+  list-literal construction such as `[a, b, c]`) requires a `Movable` element,
+  while indexing, by-reference iteration, and destruction do not. Code that
+  uses `Movable` element types is unaffected, since a `Movable` element still
+  yields a movable array.
+
 - Is is now possible to iterate over owned elements in
   `List`, `Dict`, `InlineArray`, `LinkedList`, and `Set`
   when the element type is not `Copyable`:
