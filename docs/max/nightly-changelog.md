@@ -442,6 +442,14 @@ This version is still a work in progress.
 
 ### Python API
 
+- Added `max.graph.ops.reduce_scatter_rms_norm`, a distributed op that
+  reduce-scatters a bfloat16 tensor across devices and RMSNorm-normalizes each
+  device's row shard in a single collective launch, keeping the reduced sum in
+  float32 registers so there is no global-memory round-trip between the
+  reduce-scatter and the norm. It returns both the normed shard and the
+  reduce-scatter sum (residual) shard, and is numerically identical to a
+  standalone reduce-scatter followed by `rms_norm`.
+
 - Added an optional `init_value` argument to `max.graph.ops.buffer_create`.
   When set, the buffer becomes persistent state: it is allocated and filled
   with the scalar `init_value` exactly once when the model is loaded, and the

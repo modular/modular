@@ -27,4 +27,5 @@ from .lamport import (
     remove_neg_zero,
     set_neg_zero,
 )
+from .reducescatter_rmsnorm import reducescatter_rmsnorm
 from .sync import Signal, MAX_GPUS, group_start, group_end
