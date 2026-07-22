@@ -1294,7 +1294,10 @@ class MHAKVCacheParams(KVCacheParams):
                 ),
                 lookup_table=TensorType(
                     DType.uint32,
-                    shape=[prefix + "batch_size", prefix + "max_num_pages"],
+                    shape=[
+                        prefix + "batch_size",
+                        prefix + page_namespace + "max_num_pages",
+                    ],
                     device=device,
                 ),
                 max_prompt_length=TensorType(
@@ -1468,7 +1471,10 @@ class MLAKVCacheParams(KVCacheParams):
                 ),
                 lookup_table=TensorType(
                     DType.uint32,
-                    shape=[prefix + "batch_size", prefix + "max_num_pages"],
+                    shape=[
+                        prefix + "batch_size",
+                        prefix + page_namespace + "max_num_pages",
+                    ],
                     device=device,
                 ),
                 max_prompt_length=TensorType(

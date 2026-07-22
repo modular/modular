@@ -756,9 +756,11 @@ def _lookup_dims(kv: KVCacheInputs[TensorType, BufferType]) -> tuple[str, str]:
 
 class TestPagePoolSymbolicNamespace:
     """A windowed model gives each KV group an independently sized page pool
-    (mach sizes a sliding group smaller than the global one), so their
-    ``total_num_pages`` symbolic dims must not collapse onto one shared name.
-    The shared block table (``batch_size``/``max_num_pages``) must stay shared.
+    (mach sizes a sliding group smaller than the global one), so per-group
+    symbolic dims must not collapse onto one shared name: both the pool's
+    ``total_num_pages`` and the block table's ``max_num_pages`` (max pages per
+    sequence, which the smaller group caps lower) get the group namespace.
+    ``batch_size`` stays shared — the batch is identical across groups.
     """
 
     def test_sibling_groups_get_distinct_page_dims(self) -> None:
@@ -775,7 +777,10 @@ class TestPagePoolSymbolicNamespace:
         assert _page_dim(loc) == "local_total_num_pages"
         assert _page_dim(g) != _page_dim(loc)
 
-    def test_shared_block_table_dims_stay_shared(self) -> None:
+    def test_sibling_groups_get_distinct_max_num_pages(self) -> None:
+        """Each group caps pages-per-sequence independently, so their
+        ``max_num_pages`` block-table dims must be distinct; ``batch_size``
+        stays shared across groups."""
         a = create_leaf_params()
         b = create_leaf_params()
         root = MultiKVCacheParams.from_params({"global": a, "local": b})
@@ -784,11 +789,13 @@ class TestPagePoolSymbolicNamespace:
         g = symbolic.children["global"]
         loc = symbolic.children["local"]
         assert isinstance(g, KVCacheInputs) and isinstance(loc, KVCacheInputs)
-        assert _lookup_dims(g) == _lookup_dims(loc)
-        assert _lookup_dims(g) == (
-            "replica_0_batch_size",
-            "replica_0_max_num_pages",
-        )
+        g_batch, g_pages = _lookup_dims(g)
+        loc_batch, loc_pages = _lookup_dims(loc)
+        # batch_size is shared; max_num_pages is namespaced per group.
+        assert g_batch == loc_batch == "replica_0_batch_size"
+        assert g_pages == "replica_0_global_max_num_pages"
+        assert loc_pages == "replica_0_local_max_num_pages"
+        assert g_pages != loc_pages
 
     def test_nested_namespace_composes(self) -> None:
         root = _build_deep_tree()
