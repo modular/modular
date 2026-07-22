@@ -852,7 +852,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         return Span[
             Scalar[Self.dtype], origin_of(self)._get_owned_interior["buffer"]
         ](
-            ptr=UnsafePointer(
+            unsafe_ptr=UnsafePointer(
                 to=self._host_ptr._get_ref_with_unsafe_interior_origin[
                     "buffer", origin_of(self)
                 ]()

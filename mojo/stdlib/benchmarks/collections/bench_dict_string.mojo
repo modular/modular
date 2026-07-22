@@ -155,11 +155,13 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
             origin_of(self)
         ]()
         if index < 0 or index >= self.count:
-            return StringSlice(unsafe_from_utf8=Span(ptr=keys_ptr, length=0))
+            return StringSlice(
+                unsafe_from_utf8=Span(unsafe_ptr=keys_ptr, length=0)
+            )
         var start = 0 if index == 0 else Int(self.keys_end[index - 1])
         var length = Int(self.keys_end[index]) - start
         return StringSlice(
-            unsafe_from_utf8=Span(ptr=keys_ptr + start, length=length)
+            unsafe_from_utf8=Span(unsafe_ptr=keys_ptr + start, length=length)
         )
 
     @always_inline

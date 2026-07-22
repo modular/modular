@@ -37,8 +37,8 @@ def run_exp_approx_test[
         for i in range(length):
             in_host[i] = step * (Scalar[dtype](i) - length // 2)
 
-    var in_buffer = Span(ptr=in_device.unsafe_ptr(), length=length)
-    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=length)
+    var in_buffer = Span(unsafe_ptr=in_device.unsafe_ptr(), length=length)
+    var out_buffer = Span(unsafe_ptr=out_device.unsafe_ptr(), length=length)
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)

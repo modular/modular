@@ -150,7 +150,7 @@ struct _DirHandle:
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
                 unsafe_from_utf8=Span(
-                    ptr=name_ptr,
+                    unsafe_ptr=name_ptr,
                     length=Int(
                         _unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
                     ),
@@ -180,7 +180,7 @@ struct _DirHandle:
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
                 unsafe_from_utf8=Span(
-                    ptr=name_ptr,
+                    unsafe_ptr=name_ptr,
                     length=Int(
                         _unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)
                     ),

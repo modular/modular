@@ -135,6 +135,6 @@ def hash[
         A 64-bit integer hash value.
     """
     var hasher = HasherType()
-    hasher._update_with_bytes(Span(ptr=bytes, length=n))
+    hasher._update_with_bytes(Span(unsafe_ptr=bytes, length=n))
     var value = hasher^.finish()
     return value

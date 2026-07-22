@@ -68,8 +68,12 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     in_device.enqueue_copy_from(in_host)
 
     var shape = IndexList[2](2, 8)
-    var in_buffer = Span(ptr=in_device.unsafe_ptr(), length=flattened_length)
-    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=flattened_length)
+    var in_buffer = Span(
+        unsafe_ptr=in_device.unsafe_ptr(), length=flattened_length
+    )
+    var out_buffer = Span(
+        unsafe_ptr=out_device.unsafe_ptr(), length=flattened_length
+    )
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer, shape)
@@ -140,8 +144,12 @@ def run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     in_device.enqueue_copy_from(in_host)
 
     var shape = IndexList[2](3, 3)
-    var in_buffer = Span(ptr=in_device.unsafe_ptr(), length=flattened_length)
-    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=flattened_length)
+    var in_buffer = Span(
+        unsafe_ptr=in_device.unsafe_ptr(), length=flattened_length
+    )
+    var out_buffer = Span(
+        unsafe_ptr=out_device.unsafe_ptr(), length=flattened_length
+    )
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer, shape)
@@ -195,7 +203,9 @@ def run_elementwise_exact_boundary_uses_simd[
     var out_host = Span(out_host_stack)
 
     var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
-    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=flattened_length)
+    var out_buffer = Span(
+        unsafe_ptr=out_device.unsafe_ptr(), length=flattened_length
+    )
     var shape = IndexList[2](pack_size, pack_size + 1)
 
     @always_inline
@@ -248,8 +258,12 @@ def run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     # Transposed view: logical shape (4, 2, 5) with strides (5, 20, 1)
     var in_strides = IndexList[3](5, 20, 1)
     var out_shape = IndexList[3](4, 2, 5)
-    var in_buffer = Span(ptr=in_device.unsafe_ptr(), length=flattened_length)
-    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=flattened_length)
+    var in_buffer = Span(
+        unsafe_ptr=in_device.unsafe_ptr(), length=flattened_length
+    )
+    var out_buffer = Span(
+        unsafe_ptr=out_device.unsafe_ptr(), length=flattened_length
+    )
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer, in_strides, out_shape)
@@ -333,8 +347,10 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
     var input_device_ptr = ctx.enqueue_create_buffer[dtype](1)
     var output_device_ptr = ctx.enqueue_create_buffer[dtype](1)
 
-    var input_buffer = Span(ptr=input_device_ptr.unsafe_ptr(), length=1)
-    var output_buffer = Span(ptr=output_device_ptr.unsafe_ptr(), length=1)
+    var input_buffer = Span(unsafe_ptr=input_device_ptr.unsafe_ptr(), length=1)
+    var output_buffer = Span(
+        unsafe_ptr=output_device_ptr.unsafe_ptr(), length=1
+    )
 
     # Test with zero in first dimension
     var shape = IndexList[3](0, 4, 4)

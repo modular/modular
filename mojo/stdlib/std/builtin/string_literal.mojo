@@ -356,7 +356,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         #   guaranteed to be valid.
         return StaticString(
             unsafe_from_utf8=Span(
-                ptr=self.unsafe_ptr(),
+                unsafe_ptr=self.unsafe_ptr(),
                 length=self.byte_length(),
             )
         )
@@ -371,7 +371,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
 
         return Span[Byte, ImmStaticOrigin](
-            ptr=self.unsafe_ptr(), length=self.byte_length()
+            unsafe_ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
     def write_to(self, mut writer: Some[Writer]):

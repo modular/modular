@@ -185,7 +185,7 @@ def _write_float[
             writer.write_string(
                 StringSlice(
                     unsafe_from_utf8=Span(
-                        ptr=digits.unsafe_ptr() + pos + 1,
+                        unsafe_ptr=digits.unsafe_ptr() + pos + 1,
                         length=11 - pos,
                     )
                 )
@@ -211,7 +211,7 @@ def _write_float[
             writer.write_string(
                 StringSlice(
                     unsafe_from_utf8=Span(
-                        ptr=frac_digits.unsafe_ptr(),
+                        unsafe_ptr=frac_digits.unsafe_ptr(),
                         length=frac_len,
                     )
                 )

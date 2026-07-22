@@ -238,7 +238,7 @@ struct Allocation[T: AnyType](
         `alloc` returns uninitialized storage, so the returned span may cover
         uninitialized memory. Initialize the elements before reading them.
         """
-        return {ptr = self.unsafe_ptr(), length = self._layout.count()}
+        return {unsafe_ptr = self.unsafe_ptr(), length = self._layout.count()}
 
     def layout(self) -> Layout[Self.T]:
         """Returns the `Layout` the storage was allocated with.

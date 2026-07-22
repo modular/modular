@@ -140,7 +140,10 @@ def test_case_batched[
 
     var max_k = Int(
         reduce_max(
-            Span(ptr=K_host_ptr.unsafe_ptr(), length=K_shape.flattened_length())
+            Span(
+                unsafe_ptr=K_host_ptr.unsafe_ptr(),
+                length=K_shape.flattened_length(),
+            )
         )
     )
 
@@ -385,7 +388,10 @@ def test_case_multi_rank[
     ctx.synchronize()
     var max_k = Int(
         reduce_max(
-            Span(ptr=K_host_ptr.unsafe_ptr(), length=K_shape.flattened_length())
+            Span(
+                unsafe_ptr=K_host_ptr.unsafe_ptr(),
+                length=K_shape.flattened_length(),
+            )
         )
     )
 

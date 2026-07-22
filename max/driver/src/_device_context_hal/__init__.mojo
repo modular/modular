@@ -4601,7 +4601,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         # Safety: We are casting the pointer to the mutability and origin of
         # self and the pointer is already mutable.
         return {
-            ptr = self.unsafe_ptr()
+            unsafe_ptr = self.unsafe_ptr()
             .unsafe_mut_cast[mut]()
             .unsafe_origin_cast[origin](),
             length = len(self),

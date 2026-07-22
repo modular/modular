@@ -471,6 +471,11 @@ This version is still a work in progress.
 - `InlineArray`'s first parameter is renamed from `ElementType` to `T`.
   Any explicit usages must be updated.
 
+- `Span`'s pointer-and-length constructor argument is renamed from `ptr` to
+  `unsafe_ptr`, to flag that this construction path is memory-unsafe: the caller
+  must ensure the pointer addresses at least `length` valid elements. Update
+  `Span(ptr=..., length=...)` to `Span(unsafe_ptr=..., length=...)`.
+
 - `List.capacity` is now a `capacity()` method instead of a public field. This
   keeps the allocated capacity out of the stable public field surface, since it
   should only change indirectly through operations like `append()`. Replace

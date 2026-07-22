@@ -127,7 +127,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
         var device_buffer = ctx.enqueue_create_buffer[DType.uint64](length)
         device_buffer.enqueue_fill(0)
         return Span[UInt64, MutAnyOrigin](
-            ptr=device_buffer.unsafe_ptr().as_unsafe_any_origin(),
+            unsafe_ptr=device_buffer.unsafe_ptr().as_unsafe_any_origin(),
             length=length,
         )
 

@@ -83,7 +83,7 @@ def _argsort_cpu[
         Span[
             Scalar[indices.dtype],
             indices.origin,
-        ](ptr=indices.ptr, length=indices.num_elements())
+        ](unsafe_ptr=indices.ptr, length=indices.num_elements())
     )
 
 

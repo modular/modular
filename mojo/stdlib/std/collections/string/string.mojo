@@ -1487,7 +1487,7 @@ struct String(
         """
 
         return Span(
-            ptr=UnsafePointer(
+            unsafe_ptr=UnsafePointer(
                 to=self.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
                     "bytes", origin_of(self)
                 ]()
@@ -1520,7 +1520,7 @@ struct String(
               overall string.
         """
         return Span(
-            ptr=UnsafePointer(
+            unsafe_ptr=UnsafePointer(
                 to=self.unsafe_ptr_mut()._get_ref_with_unsafe_interior_origin[
                     "bytes", origin_of(self)
                 ]()
@@ -2395,7 +2395,9 @@ def _unsafe_chr_ascii(c: UInt8) -> String:
         c <= _LARGEST_UNICODE_ASCII_BYTE
     ), "Character is not single byte unicode"
 
-    return String(unsafe_from_utf8=Span(ptr=UnsafePointer(to=c), length=1))
+    return String(
+        unsafe_from_utf8=Span(unsafe_ptr=UnsafePointer(to=c), length=1)
+    )
 
 
 def _repr_ascii(c: UInt8) -> String:

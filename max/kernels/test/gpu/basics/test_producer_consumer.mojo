@@ -253,8 +253,8 @@ def test_cpasync_producer_consumer_pipeline[
 
     comptime kernel = cpaysnc_producer_consumer_pipeline_kernel[num_stages]
     ctx.enqueue_function[kernel](
-        Span[Float32](ptr=src_device.ptr, length=size).get_immutable(),
-        Span[Float32](ptr=dst_device.ptr, length=size),
+        Span[Float32](unsafe_ptr=src_device.ptr, length=size).get_immutable(),
+        Span[Float32](unsafe_ptr=dst_device.ptr, length=size),
         grid_dim=(1),
         block_dim=(256),
     )

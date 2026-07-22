@@ -348,7 +348,7 @@ def _top_k_cpu[
                         var ptr = idxs.unsafe_ptr() + i
                         sort(
                             Span[idxs.T, origin_of(idxs)](
-                                ptr=ptr, length=num_equal
+                                unsafe_ptr=ptr, length=num_equal
                             )
                         )
                     i += num_equal

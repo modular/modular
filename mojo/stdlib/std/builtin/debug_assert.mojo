@@ -551,7 +551,7 @@ def _debug_assert_msg(
             )
             # Append message and finalize
             _ = printf_append_string_n(
-                fd, Span(ptr=message, length=length), True
+                fd, Span(unsafe_ptr=message, length=length), True
             )
         else:
             _printf["At: %s:%llu:%llu: Assert Error: %s\n"](

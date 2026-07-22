@@ -166,7 +166,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         var s = String(
             StringSlice[MutUntrackedOrigin](
                 unsafe_from_utf8=Span(
-                    ptr=buffer.unsafe_value(), length=bytes_read - 1
+                    unsafe_ptr=buffer.unsafe_value(), length=bytes_read - 1
                 )
             )
         )

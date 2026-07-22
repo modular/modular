@@ -167,7 +167,7 @@ struct _FormatUtils:
             p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(
-                unsafe_from_utf8=Span(ptr=p + start, length=end - start)
+                unsafe_from_utf8=Span(unsafe_ptr=p + start, length=end - start)
             )
 
         var auto_arg_index = 0
@@ -528,7 +528,7 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
             p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(
-                unsafe_from_utf8=Span(ptr=p + start, length=end - start)
+                unsafe_from_utf8=Span(unsafe_ptr=p + start, length=end - start)
             )
 
         var field = _build_slice(fmt_src.unsafe_ptr(), start_value + 1, i)

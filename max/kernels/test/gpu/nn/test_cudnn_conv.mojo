@@ -94,25 +94,35 @@ def test_conv_cudnn[
 
     # Create host TileTensors
     var input_host = TileTensor(
-        Span(ptr=input_host_ptr.unsafe_ptr(), length=input_dim_flattened),
+        Span(
+            unsafe_ptr=input_host_ptr.unsafe_ptr(), length=input_dim_flattened
+        ),
         input_tt_layout,
     )
     var filter_host = TileTensor(
-        Span(ptr=filter_host_ptr.unsafe_ptr(), length=filter_dim_flattened),
+        Span(
+            unsafe_ptr=filter_host_ptr.unsafe_ptr(), length=filter_dim_flattened
+        ),
         filter_tt_layout,
     )
     var filter_nchw_host = TileTensor(
         Span(
-            ptr=filter_nchw_host_ptr.unsafe_ptr(), length=filter_dim_flattened
+            unsafe_ptr=filter_nchw_host_ptr.unsafe_ptr(),
+            length=filter_dim_flattened,
         ),
         filter_nchw_tt_layout,
     )
     var output_ref_host = TileTensor(
-        Span(ptr=output_ref_host_ptr.unsafe_ptr(), length=output_dim_flattened),
+        Span(
+            unsafe_ptr=output_ref_host_ptr.unsafe_ptr(),
+            length=output_dim_flattened,
+        ),
         output_tt_layout,
     )
     var output_host = TileTensor(
-        Span(ptr=output_host_ptr.unsafe_ptr(), length=output_dim_flattened),
+        Span(
+            unsafe_ptr=output_host_ptr.unsafe_ptr(), length=output_dim_flattened
+        ),
         output_tt_layout,
     )
 

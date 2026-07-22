@@ -61,13 +61,13 @@ def fused_reduce_inner_test[
     var res_device0 = ctx.enqueue_create_buffer[dtype](out_size)
     var res_device1 = ctx.enqueue_create_buffer[dtype](out_size)
     var input_buf_device = Span(
-        ptr=vec_device.unsafe_ptr(), length=shape.flattened_length()
+        unsafe_ptr=vec_device.unsafe_ptr(), length=shape.flattened_length()
     )
     var output_buf_device0 = Span(
-        ptr=res_device0.unsafe_ptr(), length=out_shape.flattened_length()
+        unsafe_ptr=res_device0.unsafe_ptr(), length=out_shape.flattened_length()
     )
     var output_buf_device1 = Span(
-        ptr=res_device1.unsafe_ptr(), length=out_shape.flattened_length()
+        unsafe_ptr=res_device1.unsafe_ptr(), length=out_shape.flattened_length()
     )
 
     @__copy_capture(input_buf_device, shape)
@@ -174,10 +174,10 @@ def reduce_inner_test[
 
     var res_device = ctx.enqueue_create_buffer[dtype](out_size)
     var input_buf_device = Span(
-        ptr=vec_device.unsafe_ptr(), length=shape.flattened_length()
+        unsafe_ptr=vec_device.unsafe_ptr(), length=shape.flattened_length()
     )
     var output_buf_device = Span(
-        ptr=res_device.unsafe_ptr(), length=out_shape.flattened_length()
+        unsafe_ptr=res_device.unsafe_ptr(), length=out_shape.flattened_length()
     )
 
     @always_inline

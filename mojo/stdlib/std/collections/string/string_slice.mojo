@@ -195,7 +195,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var ptr = UnsafePointer[mut=False, _, ImmStaticOrigin](
             _mlir_value=__mlir_op.`pop.string.address`(_kgen)
         ).unsafe_bitcast[Byte]()
-        self._slice = {ptr = ptr, length = length}
+        self._slice = {unsafe_ptr = ptr, length = length}
 
     @always_inline
     @implicit
@@ -233,7 +233,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         #     _is_valid_utf8(value.as_bytes()), "value is not valid utf8"
         # )
         self._slice = Span[Byte, Self.origin](
-            ptr=unsafe_from_utf8.unsafe_ptr(),
+            unsafe_ptr=unsafe_from_utf8.unsafe_ptr(),
             length=unsafe_from_utf8.__len__(),
         )
 
@@ -286,7 +286,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
 
         var byte_slice = Span(
-            ptr=unsafe_from_utf8_ptr,
+            unsafe_ptr=unsafe_from_utf8_ptr,
             length=Int(_unsafe_strlen(unsafe_from_utf8_ptr)),
         )
         self = Self(unsafe_from_utf8=byte_slice)
@@ -332,7 +332,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         var ptr = unsafe_from_utf8_ptr.bitcast[Byte]()
         var byte_slice = Span(
-            ptr=ptr,
+            unsafe_ptr=ptr,
             length=Int(_unsafe_strlen(ptr)),
         )
         self = Self(unsafe_from_utf8=byte_slice)
@@ -364,7 +364,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             - `ptr` must point to data that is live for the duration of
                 `origin`.
         """
-        self = Self(unsafe_from_utf8=Span(ptr=ptr, length=length))
+        self = Self(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=length))
 
     @implicit
     def __init__(out self, ref[Self.origin] value: String):
@@ -466,7 +466,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             hasher: The hasher instance.
         """
         hasher._update_with_bytes(
-            Span(ptr=self.unsafe_ptr(), length=self.byte_length())
+            Span(unsafe_ptr=self.unsafe_ptr(), length=self.byte_length())
         )
 
     def __fspath__(self) -> String:
@@ -526,7 +526,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var span = self._slice[: c_idx + 1 + i0_multi_case]
         var c_count = len(span) - _count_utf8_continuation_bytes(span)
         if likely(c_count == len(span)):  # ASCII
-            return Self(unsafe_from_utf8=Span(ptr=ptr + c_idx, length=1))
+            return Self(unsafe_from_utf8=Span(unsafe_ptr=ptr + c_idx, length=1))
         elif c_count == c_idx + 1:  # clipped the multi-byte sequence
             var b_idx = c_idx
             while _is_utf8_continuation_byte(ptr[b_idx]):
@@ -543,7 +543,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 c_count += 1
             return {
                 unsafe_from_utf8 = Span(
-                    ptr=ptr + self.byte_length() - 1, length=0
+                    unsafe_ptr=ptr + self.byte_length() - 1, length=0
                 )
             }
 
@@ -583,7 +583,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             var length = self.byte_length() - offset
             res = {
                 unsafe_from_utf8 = Span(
-                    ptr=cp_ptr, length=length - Int(cp.byte_length() == 0)
+                    unsafe_ptr=cp_ptr,
+                    length=length - Int(cp.byte_length() == 0),
                 )
             }
 
@@ -597,7 +598,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 var offset = Int(cp.unsafe_ptr()) - Int(r_ptr)
                 res = {
                     unsafe_from_utf8 = Span(
-                        ptr=r_ptr, length=offset + cp.byte_length()
+                        unsafe_ptr=r_ptr, length=offset + cp.byte_length()
                     )
                 }
 
@@ -964,7 +965,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         if not grapheme.end:
             return Self(
                 unsafe_from_utf8=Span[Byte, Self.origin](
-                    ptr=self._slice.unsafe_ptr() + start_bytes,
+                    unsafe_ptr=self._slice.unsafe_ptr() + start_bytes,
                     length=total_bytes - start_bytes,
                 )
             )
@@ -983,7 +984,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         return Self(
             unsafe_from_utf8=Span[Byte, Self.origin](
-                ptr=self._slice.unsafe_ptr() + start_bytes,
+                unsafe_ptr=self._slice.unsafe_ptr() + start_bytes,
                 length=end_bytes - start_bytes,
             )
         )
@@ -1008,7 +1009,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     def _unchecked_get_byte(self, idx: Int) -> Self:
         return StringSlice(
             unsafe_from_utf8=Span(
-                ptr=self.unsafe_ptr() + idx,
+                unsafe_ptr=self.unsafe_ptr() + idx,
                 length=_utf8_first_byte_sequence_length(
                     self._slice.unsafe_get(idx)
                 ),
@@ -1107,7 +1108,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return {
             unsafe_from_utf8 = Span(
-                ptr=self.unsafe_ptr()
+                unsafe_ptr=self.unsafe_ptr()
                 .unsafe_mut_cast[result.mut]()
                 .unsafe_origin_cast[result.origin](),
                 length=self.byte_length(),
@@ -1576,12 +1577,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var total = len(self._slice)
         var prefix = Self.Immutable(
             unsafe_from_utf8=Span[Byte, ImmOrigin(Self.origin)](
-                ptr=self._slice.unsafe_ptr(), length=split_bytes
+                unsafe_ptr=self._slice.unsafe_ptr(), length=split_bytes
             )
         )
         var suffix = Self.Immutable(
             unsafe_from_utf8=Span[Byte, ImmOrigin(Self.origin)](
-                ptr=self._slice.unsafe_ptr() + split_bytes,
+                unsafe_ptr=self._slice.unsafe_ptr() + split_bytes,
                 length=total - split_bytes,
             )
         )
@@ -1808,7 +1809,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             return self.find(prefix, start) == start
         return StringSlice[Self.origin](
             unsafe_from_utf8=Span(
-                ptr=self.unsafe_ptr() + start, length=end - start
+                unsafe_ptr=self.unsafe_ptr() + start, length=end - start
             )
         ).startswith(prefix)
 
@@ -1839,7 +1840,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         # FIXME: use normalize_index
         return StringSlice[Self.origin](
             unsafe_from_utf8=Span(
-                ptr=self.unsafe_ptr() + start, length=end - start
+                unsafe_ptr=self.unsafe_ptr() + start, length=end - start
             )
         ).endswith(suffix)
 
@@ -2259,7 +2260,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                         continue
                 var s = Self.Immutable(
                     unsafe_from_utf8=Span(
-                        ptr=ptr + line_start, length=Int(str_len)
+                        unsafe_ptr=ptr + line_start, length=Int(str_len)
                     )
                 )
                 output.append(s)
@@ -2532,7 +2533,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         var sep = StringSlice(
             unsafe_from_utf8=Span(
-                ptr=self.unsafe_ptr(), length=self.byte_length()
+                unsafe_ptr=self.unsafe_ptr(), length=self.byte_length()
             )
         )
         var total_bytes = _TotalWritableBytes(elems, sep=sep).size
@@ -2617,7 +2618,9 @@ def _to_string_list[
         var og_ptr = unsafe_ptr_fn(elt_ptr[])
         out_list.append(
             String(
-                StringSlice(unsafe_from_utf8=Span(ptr=og_ptr, length=og_len))
+                StringSlice(
+                    unsafe_from_utf8=Span(unsafe_ptr=og_ptr, length=og_len)
+                )
             )
         )
     return out_list^
@@ -2909,10 +2912,12 @@ def _split[
         var iterator = src_str.codepoint_slices()
         var i_len = len(iterator) + 2
         output = {capacity = i_len}
-        output.append(S(unsafe_from_utf8=Span(ptr=ptr, length=0)))
+        output.append(S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=0)))
         for s in iterator:
             output.append(s)
-        output.append(S(unsafe_from_utf8=Span(ptr=ptr + i_len - 1, length=0)))
+        output.append(
+            S(unsafe_from_utf8=Span(unsafe_ptr=ptr + i_len - 1, length=0))
+        )
         return
 
     comptime prealloc = 32  # guessing, Python's implementation uses 12
@@ -2938,7 +2943,9 @@ def _split[
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 
-        output.append(S(unsafe_from_utf8=Span(ptr=ptr + lhs, length=rhs - lhs)))
+        output.append(
+            S(unsafe_from_utf8=Span(unsafe_ptr=ptr + lhs, length=rhs - lhs))
+        )
         lhs = rhs + sep_len
 
 
@@ -2967,7 +2974,9 @@ def _split[
 
     @always_inline("nodebug")
     def _build_slice(p: PointerType, start: Int, end: Int) -> S:
-        return S(unsafe_from_utf8=Span(ptr=p + start, length=end - start))
+        return S(
+            unsafe_from_utf8=Span(unsafe_ptr=p + start, length=end - start)
+        )
 
     while lhs <= str_byte_len:
         # Python adds all "whitespace chars" as one separator
@@ -2990,5 +2999,7 @@ def _split[
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 
-        output.append(S(unsafe_from_utf8=Span(ptr=ptr + lhs, length=rhs - lhs)))
+        output.append(
+            S(unsafe_from_utf8=Span(unsafe_ptr=ptr + lhs, length=rhs - lhs))
+        )
         lhs = rhs

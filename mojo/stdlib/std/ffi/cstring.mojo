@@ -228,7 +228,7 @@ struct CStringSlice[origin: ImmOrigin](
             A span of the underlying `CStringSlice` as bytes.
         """
         return Span[Byte, Self.origin](
-            ptr=self._data.unsafe_bitcast[Byte](),
+            unsafe_ptr=self._data.unsafe_bitcast[Byte](),
             length=len(self),
         )
 
@@ -244,7 +244,7 @@ struct CStringSlice[origin: ImmOrigin](
             A span of the underlying `CStringSlice` as bytes.
         """
         return Span[Byte, Self.origin](
-            ptr=self._data.unsafe_bitcast[Byte](),
+            unsafe_ptr=self._data.unsafe_bitcast[Byte](),
             length=len(self) + 1,
         )
 

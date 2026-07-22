@@ -277,7 +277,7 @@ def _fill_scores(
     contract: Bool,
 ):
     var n = num_rows * num_blocks
-    var span = Span(ptr=scores_host, length=n)
+    var span = Span(unsafe_ptr=scores_host, length=n)
     if contract:
         # contract oracle: heavy NaN/Inf/+-0/+-max coverage over every row.
         fill_with_specials(span, density=0.35)

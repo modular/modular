@@ -2746,7 +2746,7 @@ struct CPython(Defaultable, Movable):
             return None
         return StringSlice[ImmutAnyOrigin](
             unsafe_from_utf8=Span(
-                ptr=ptr.value().bitcast[Byte](), length=Int(length)
+                unsafe_ptr=ptr.value().bitcast[Byte](), length=Int(length)
             )
         )
 

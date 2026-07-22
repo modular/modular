@@ -168,7 +168,7 @@ struct CodepointSliceIter[
             var curr_ptr = self._slice.unsafe_ptr()
             var byte_len = _utf8_first_byte_sequence_length(curr_ptr[])
             return StringSlice[Self.origin](
-                unsafe_from_utf8=Span(ptr=curr_ptr, length=byte_len)
+                unsafe_from_utf8=Span(unsafe_ptr=curr_ptr, length=byte_len)
             )
         else:
             return None
@@ -222,7 +222,7 @@ struct CodepointSliceIter[
                 back_ptr -= 1
 
             return StringSlice[Self.origin](
-                unsafe_from_utf8=Span(ptr=back_ptr, length=byte_len)
+                unsafe_from_utf8=Span(unsafe_ptr=back_ptr, length=byte_len)
             )
         else:
             return None
@@ -599,7 +599,9 @@ struct GraphemeSliceIter[
                 continue
 
             # Slow path: decode one codepoint and feed the state machine.
-            var sub = Span[Byte, Self.origin](ptr=ptr + pos, length=total - pos)
+            var sub = Span[Byte, Self.origin](
+                unsafe_ptr=ptr + pos, length=total - pos
+            )
             var cp, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(sub)
             if _is_grapheme_break(state, cp.to_u32()):
                 count += 1
@@ -656,7 +658,7 @@ struct GraphemeSliceIter[
         var found_break = False
         while consumed < total_bytes:
             var remaining = Span[Byte, Self.origin](
-                ptr=self._slice.unsafe_ptr() + consumed,
+                unsafe_ptr=self._slice.unsafe_ptr() + consumed,
                 length=total_bytes - consumed,
             )
             cp, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(remaining)
@@ -682,7 +684,7 @@ struct GraphemeSliceIter[
         self._back_safe_known = False
 
         return StringSlice[Self.origin](
-            unsafe_from_utf8=Span(ptr=start_ptr, length=consumed)
+            unsafe_from_utf8=Span(unsafe_ptr=start_ptr, length=consumed)
         )
 
     def peek_back(mut self) -> Optional[StringSlice[Self.origin]]:
@@ -703,7 +705,7 @@ struct GraphemeSliceIter[
         var grapheme_start = self._grapheme_start_of_last_cluster(total)
         return StringSlice[Self.origin](
             unsafe_from_utf8=Span(
-                ptr=self._slice.unsafe_ptr() + grapheme_start,
+                unsafe_ptr=self._slice.unsafe_ptr() + grapheme_start,
                 length=total - grapheme_start,
             )
         )
@@ -738,7 +740,7 @@ struct GraphemeSliceIter[
         var grapheme_start = self._grapheme_start_of_last_cluster(total)
         var result = StringSlice[Self.origin](
             unsafe_from_utf8=Span(
-                ptr=self._slice.unsafe_ptr() + grapheme_start,
+                unsafe_ptr=self._slice.unsafe_ptr() + grapheme_start,
                 length=total - grapheme_start,
             )
         )

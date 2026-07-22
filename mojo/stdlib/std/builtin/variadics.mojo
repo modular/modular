@@ -798,7 +798,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         ref static_array = global_constant[array]()
         # Get a pointer to the first element, not the whole array.
         var first_elt = Pointer(to=static_array).unsafe_bitcast[Self.type]()
-        return Span(ptr=first_elt, length=Self.size)
+        return Span(unsafe_ptr=first_elt, length=Self.size)
 
     @always_inline
     def __getitem__(self, idx: Int) -> ref[ImmStaticOrigin] Self.type:
@@ -1276,7 +1276,7 @@ struct VariadicList[
                 Int(0).__mlir_index__(),
             )
         ).unsafe_bitcast[Self._EltPointerType]()
-        self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size))
+        self._value = Span(unsafe_ptr=elt_ptr, length=Int(mlir_value=size))
 
     # The destructor for this type is trivial if not an "owned" list.
     comptime __del__is_trivial: Bool = not Self.is_owned

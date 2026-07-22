@@ -445,7 +445,9 @@ struct _WriteBufferHeap(Writable, Writer):
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write_string(
-            StringSlice(unsafe_from_utf8=Span(ptr=self._data, length=self._pos))
+            StringSlice(
+                unsafe_from_utf8=Span(unsafe_ptr=self._data, length=self._pos)
+            )
         )
 
     def nul_terminate(
@@ -471,7 +473,9 @@ struct _WriteBufferHeap(Writable, Writer):
     ](ref[origin] self) -> StringSlice[origin]:
         return StringSlice(
             unsafe_from_utf8=Span[Byte, origin](
-                ptr=self._data.mut_cast[mut]().unsafe_origin_cast[origin](),
+                unsafe_ptr=self._data.mut_cast[mut]().unsafe_origin_cast[
+                    origin
+                ](),
                 length=self._pos,
             )
         )
@@ -509,7 +513,7 @@ struct _WriteBufferStack[
         self.writer[].write_string(
             StringSlice(
                 unsafe_from_utf8=Span(
-                    ptr=self.data.unsafe_ptr(), length=self.pos
+                    unsafe_ptr=self.data.unsafe_ptr(), length=self.pos
                 )
             )
         )
@@ -594,11 +598,11 @@ def _hex_digits_to_hex_chars(
         comptime S = StringSlice[origin_of(items)]
         var ptr = items.unsafe_ptr()
         ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
-        assert_equal("0001f525", S(unsafe_from_utf8=Span(ptr=ptr, length=8)))
+        assert_equal("0001f525", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=8)))
         ptr.store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
-        assert_equal("4f60", S(unsafe_from_utf8=Span(ptr=ptr, length=4)))
+        assert_equal("4f60", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=4)))
         ptr.store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
-        assert_equal("d6", S(unsafe_from_utf8=Span(ptr=ptr, length=2)))
+        assert_equal("d6", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=2)))
     ```
     """
     comptime size = size_of[decimal.dtype]()

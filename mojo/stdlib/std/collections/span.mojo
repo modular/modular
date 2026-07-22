@@ -256,19 +256,20 @@ struct Span[
         """
         self = rebind[type_of(self)](other)
 
-    # TODO(MSTDL-2879): Rename `ptr` to `unsafe_ptr` to flag the raw-pointer
-    # memory-unsafety of this constructor.
     @always_inline("builtin")
     def __init__(
-        out self, *, ptr: UnsafePointer[Self.T, Self.origin], length: Int
+        out self,
+        *,
+        unsafe_ptr: UnsafePointer[Self.T, Self.origin],
+        length: Int,
     ):
         """Unsafe construction from a pointer and length.
 
         Args:
-            ptr: The underlying pointer of the span.
+            unsafe_ptr: The underlying pointer of the span.
             length: The length of the view.
         """
-        self._data = ptr
+        self._data = unsafe_ptr
         self._len = length
 
     @always_inline
@@ -359,7 +360,9 @@ struct Span[
         """
         var start, end = slc.indices(len(self))
 
-        return Self(ptr=self._data.unsafe_offset(start), length=end - start)
+        return Self(
+            unsafe_ptr=self._data.unsafe_offset(start), length=end - start
+        )
 
     @always_inline
     def __iter__(var self) -> Self.IteratorOwnedType:
@@ -769,9 +772,9 @@ struct Span[
             A pointer merged with the specified `other_type`.
         """
         return {
-            ptr = self._data.unsafe_mut_cast[result.mut]().unsafe_origin_cast[
-                result.origin
-            ](),
+            unsafe_ptr = self._data.unsafe_mut_cast[
+                result.mut
+            ]().unsafe_origin_cast[result.origin](),
             length = self._len,
         }
 
@@ -931,7 +934,7 @@ struct Span[
             offset,
         )
         assert 0 <= offset + length <= len(self), "subspan out of bounds."
-        return Self(ptr=self._data.unsafe_offset(offset), length=length)
+        return Self(unsafe_ptr=self._data.unsafe_offset(offset), length=length)
 
     def _binary_search_index[
         dtype: DType,

@@ -78,7 +78,9 @@ struct _POpenHandle:
 
             # Note: This will raise if the subprocess yields non-UTF-8 bytes.
             res += StringSlice(
-                from_utf8=Span(ptr=line.value().bitcast[Byte](), length=read)
+                from_utf8=Span(
+                    unsafe_ptr=line.value().bitcast[Byte](), length=read
+                )
             )
 
         libc.free(unsafe_cast[Type=NoneType](line))
