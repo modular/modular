@@ -798,81 +798,6 @@ def matmul_dispatch_sm90_fp8[
 # ===----------------------------------------------------------------------=== #
 
 
-def _get_llama_3_3_70b_list[
-    size_factor: Int, mma_k: Int, BK: Int
-]() -> List[TuningConfigSM90]:
-    return [
-        # static_N == 2560 and static_K == 8192
-        TuningConfigSM90(
-            M=16,
-            N=2560,
-            K=8192,
-            mma_shape=IndexList[3](64, 64 // size_factor, mma_k),
-            block_tile_shape=Index(64, 64 // size_factor, BK),
-            cluster_shape=Index(2, 1, 1),
-            num_pipeline_stages=12,
-            num_consumer=1,
-            partitioned_multicast=True,
-            schedule=MatmulSchedule.NONE,
-            grid_shape=None,
-        ),
-        TuningConfigSM90(
-            M=64,
-            N=2560,
-            K=8192,
-            mma_shape=IndexList[3](64, 64 // size_factor, mma_k),
-            block_tile_shape=Index(64, 64 // size_factor, BK),
-            cluster_shape=Index(1, 1, 1),
-            num_pipeline_stages=8,
-            num_consumer=1,
-            partitioned_multicast=False,
-            schedule=MatmulSchedule.NONE,
-            grid_shape=None,
-            splits=2,
-            raster_order=RasterOrder.AlongM,
-        ),
-        TuningConfigSM90(
-            M=512,
-            N=2560,
-            K=8192,
-            mma_shape=IndexList[3](64, 80 // size_factor, mma_k),
-            block_tile_shape=Index(128, 80 // size_factor, BK),
-            cluster_shape=Index(1, 2, 1),
-            num_pipeline_stages=8,
-            num_consumer=2,
-            partitioned_multicast=False,
-        ),
-        TuningConfigSM90(
-            M=4096,
-            N=2560,
-            K=8192,
-            mma_shape=IndexList[3](64, 256 // size_factor, mma_k),
-            block_tile_shape=Index(128, 256 // size_factor, BK),
-            cluster_shape=Index(2, 1, 1),
-            num_pipeline_stages=4,
-            num_consumer=2,
-            partitioned_multicast=False,
-            schedule=MatmulSchedule.TILE2D,
-        ),
-        TuningConfigSM90(
-            M=8192,
-            N=2560,
-            K=8192,
-            mma_shape=IndexList[3](64, 256 // size_factor, mma_k),
-            block_tile_shape=Index(128, 256 // size_factor, BK),
-            cluster_shape=Index(1, 1, 1),
-            num_pipeline_stages=4,
-            num_consumer=2,
-            partitioned_multicast=False,
-            grid_shape=Index(10, H100.sm_count // 10),
-            schedule=MatmulSchedule.TILE2D,
-        ),
-    ]
-
-
-# shapes for gemma.3.27b
-
-
 def _get_gemma_3_27b_list[
     size_factor: Int, mma_k: Int, BK: Int
 ]() -> List[TuningConfigSM90]:
@@ -1849,11 +1774,6 @@ def matmul_dispatch_sm90_bf16_fp32[
 
     # TODO: merge these custom lists into tuning_table_sm90_bf16.yaml
     # Then everything can just dispatch from the core list.
-    comptime llama_3_3_70b_list = _get_llama_3_3_70b_list[
-        size_factor, mma_k, BK
-    ]()
-    comptime llama_3_3_70b_table = Table(llama_3_3_70b_list, "llama_3_3_70b")
-
     comptime gemma_3_27b_list = _get_gemma_3_27b_list[size_factor, mma_k, BK]()
     comptime gemma_3_27b_table = Table(gemma_3_27b_list, "gemma_3_27b")
 
@@ -2334,15 +2254,14 @@ def matmul_dispatch_sm90_bf16_fp32[
 
     # matmul configs for llama_3_3_70b
     comptime if a_is_bfloat16_or_float32 and static_N == 2560 and static_K == 8192:
-        comptime nk_idx_list = llama_3_3_70b_table.query_index(rule=rule_eq_nk)
+        comptime nk_idx_list = tuning_table.query_index(
+            rule=rule_eq_nk_group[TuningGroup.LLAMA_3_3_70B]
+        )
 
         # In this case for m>64 the ranges are not supported.
         # TODO: add ranges for <=256, 512, 1024, 2048
         if m <= 64 or m in [512, 4096, 8192]:
-            if (
-                _search[llama_3_3_70b_table, domain=nk_idx_list]()
-                == DISPATCH_HIT
-            ):
+            if _search[tuning_table, domain=nk_idx_list]() == DISPATCH_HIT:
                 return DISPATCH_HIT
 
     # matmul configs for gemma_3_27b
