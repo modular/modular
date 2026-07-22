@@ -5951,57 +5951,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
     @always_inline
     def enqueue_cpu_range[
-        func: def(count: Int) capturing -> None,
-    ](self, count: Int) raises:
-        """Enqueues a function to be executed in parallel over a 1D range.
-
-        The function is called as `func(i)` for each `i` in `range(count)`.
-
-        Instances of the function are executed in parallel, but it is not
-        guaranteed that all instances will execute simultaneously.
-
-        Parameters:
-            func: The function to execute.
-
-        Args:
-            count: The number of parallel instances of the function to enqueue.
-
-        Raises:
-            If the operation fails.
-            If self is not a CPU DeviceContext.
-        """
-        if self.api() != "cpu":
-            raise Error(
-                "enqueue_cpu_range is only supported on CPU DeviceContexts"
-            )
-
-        var handles = List[AnyCoroutine](capacity=count)
-
-        @always_inline
-        @parameter
-        async def wrapper(idx: Int) capturing -> None:
-            func(idx)
-
-        for j in range(count):
-            var coro = wrapper(j)
-            coro._set_noop_callback()
-            handles.append(coro^._take_handle())
-
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_enqueueHostFunctionRange",
-                _CString[],
-            ](
-                self._handle,
-                _coro_resume_fn,
-                _coro_destroy_fn,
-                handles.unsafe_ptr(),
-                count,
-            )
-        )
-
-    @always_inline
-    def enqueue_cpu_range[
         FuncType: def(Int) -> None,
     ](self, func: FuncType, count: Int) raises:
         """Enqueues a function to be executed in parallel over a 1D range.

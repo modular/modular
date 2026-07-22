@@ -88,9 +88,8 @@ def sync_parallelize[
     # parent. Otherwise parent_id will be zero.
     var parent_id = tracing.get_current_trace_id[TraceLevel.THREAD]()
 
-    @parameter
     @always_inline
-    def func_wrapped(i: Int):
+    def func_wrapped(i: Int) {imm}:
         with FlushDenormals():
             try:
                 with Trace[TraceLevel.THREAD, target=StaticString("cpu")](
@@ -107,7 +106,7 @@ def sync_parallelize[
 
     try:
         var cpu_ctx = ctx.or_else(DeviceContext(api="cpu"))
-        cpu_ctx.enqueue_cpu_range[func_wrapped](count=num_work_items)
+        cpu_ctx.enqueue_cpu_range(func_wrapped, count=num_work_items)
         cpu_ctx.synchronize()
     except e:
         abort(String(e))
