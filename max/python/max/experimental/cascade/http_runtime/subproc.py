@@ -57,8 +57,11 @@ class SubprocHttpRuntime(Runtime):
 
     async def __aenter__(self) -> SubprocHttpRuntime:
         await super().__aenter__()
+        # daemon=False: the worker hosted here may spin up its own
+        # subprocesses (e.g. a MAXModelWorker launches a max.serve model
+        # worker), which daemonic processes are not allowed to do.
         proc = await self.enter_async_context(
-            subprocess_manager("Cascade HTTP Runtime")
+            subprocess_manager("Cascade HTTP Runtime", daemon=False)
         )
         proc.start(http_server.serve, self._address)
         client = HttpRuntimeProxy(self._address)

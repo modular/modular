@@ -63,14 +63,23 @@ async def test_build_pipeline_uses_arch_factory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Resolve the real Llama architecture (no HF download needed to get the
-    # SupportedArchitecture object) but stub the model-path -> arch resolution
-    # so the test never hits the network. The dispatcher should build the
-    # architecture's declared cascade pipeline class.
+    # SupportedArchitecture object) but stub both the model-path -> arch
+    # resolution and retrieve_factory so the test never hits the network. The
+    # dispatcher should build the architecture's declared cascade pipeline class
+    # and bind the (stubbed) model factory onto its model worker.
     register_all_models()
     arch = PIPELINE_REGISTRY.retrieve_architecture("LlamaForCausalLM")
     assert arch is not None
     monkeypatch.setattr(
         all_pipelines, "_resolve_architecture", lambda config: arch
+    )
+    monkeypatch.setattr(
+        all_pipelines.PIPELINE_REGISTRY,
+        "retrieve_factory",
+        lambda config: (
+            SimpleNamespace(_default_eos_token_ids=()),
+            lambda: None,
+        ),
     )
     pipeline = await all_pipelines.build_pipeline(_config("some-org/some-llm"))
     assert isinstance(pipeline, CommonTextGenPipeline)
@@ -95,11 +104,6 @@ async def test_build_pipeline_no_models() -> None:
     config = PipelineConfig(models=ModelManifest({}))
     with pytest.raises(ValueError, match="No models specified"):
         await all_pipelines.build_pipeline(config)
-
-
-def test_common_textgen_construction() -> None:
-    pipeline = CommonTextGenPipeline(_config("some-org/llm"))
-    assert pipeline.tokenizer.model_path == "some-org/llm"
 
 
 def test_llama_arch_declares_cascade_factory() -> None:

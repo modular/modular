@@ -54,8 +54,16 @@ class CommonTextGenPipeline(CascadePipeline, TextGenInterface):
         req: GenerateRequest,
         prompt: str | ChatMessages,
     ) -> AsyncIterator[str]:
-        """Tokenize, decode, and detokenize a text or chat prompt end to end."""
+        """Tokenize, decode, and detokenize a text or chat prompt end to end.
+
+        The orchestrator only *wires stages together*: it hands the model
+        worker's token stream straight to the tokenizer worker's
+        ``decode_stream`` and forwards the resulting text stream. The token
+        stream flows worker-to-worker (the ``ResultIter`` carries a runtime
+        handle to the model worker), so the orchestrator never sits in the
+        middle of every token doing per-chunk detokenization RPCs.
+        """
         tokens = await self.tokenizer.encode(prompt)
         gen_tokens = await self.model.decode(req, tokens)
-        async for chunk in gen_tokens:
-            yield await (await self.tokenizer.decode(chunk))
+        async for text in await self.tokenizer.decode_stream(gen_tokens):
+            yield text

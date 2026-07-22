@@ -106,14 +106,23 @@ async def build_pipeline(
     """Build the cascade pipeline described by *config*.
 
     Dummy fixtures (``dummy_textgen`` / ``dummy_imgen``) are matched by exact
-    model path. Every other model is resolved against the MAX architectures
-    registry, and its
+    model path and need no resolution. Every other model is resolved against
+    the MAX architectures registry, and its
     :attr:`~max.pipelines.lib.registry.SupportedArchitecture.cascade_pipeline_factory`
     class is constructed from *config*.
 
+    Config resolution and model-factory construction happen here, exactly where
+    ``max.serve``'s API process does them: ``retrieve_factory`` resolves
+    ``config`` in place (arch lookup, memory planning, ``max_length``) and
+    returns the picklable factory the model worker invokes. That factory (and
+    the tokenizer's eos set) is bound onto any :class:`MAXModelWorker` in the
+    pipeline. Callers just pass a ``config`` and get back a deployable pipeline;
+    ``config`` is fully resolved and never mutated again downstream, so workers
+    never resolve it themselves.
+
     Args:
-        config: Fully-specified ``PipelineConfig``, typically constructed
-            by cyclopts from ``--models.*`` CLI flags.
+        config: The pipeline configuration, typically constructed by cyclopts
+            from ``--models.*`` CLI flags.
 
     Raises:
         ValueError: If no model is specified.

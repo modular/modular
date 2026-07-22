@@ -70,7 +70,10 @@ modular_py_test(
 
 modular_py_test(
     name = "test_runtimes",
-    size = "small",
+    # Spins up ~40 parametrized cases, each booting gRPC/HTTP worker
+    # subprocesses; ~48s in isolation blows the 60s "small" budget under
+    # parallel contention.
+    size = "medium",
     srcs = ["test_runtimes.py"],
     deps = [
         "//max/python/max/experimental/cascade",
@@ -90,6 +93,7 @@ modular_py_test(
     srcs = ["test_context_config.py"],
     deps = [
         "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/core",
         "//max/python/max/experimental/cascade/deployment:context_config",
         "//max/python/max/experimental/cascade/deployment:routing",
         "//max/python/max/experimental/cascade/grpc_runtime",
@@ -132,6 +136,18 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_max_tokenizer_decode_stream",
+    size = "small",
+    srcs = ["test_max_tokenizer_decode_stream.py"],
+    deps = [
+        "//max/python/max/experimental/cascade/workers",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
     name = "test_all_pipelines",
     size = "medium",
     srcs = ["test_all_pipelines.py"],
@@ -154,27 +170,6 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "test_max_model_worker",
-    size = "small",
-    srcs = ["test_max_model_worker.py"],
-    # TODO(SERVSYS-1284): importing max.pipelines.lib alone blows the 300s
-    # budget on the shared BuildBuddy macOS workers (times out in pytest
-    # collection).
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/experimental/cascade/interfaces",
-        "//max/python/max/experimental/cascade/workers",
-        "//max/python/max/pipelines/lib",
-        requirement("numpy"),
-        requirement("pytest-asyncio"),
-    ],
-)
-
-modular_py_test(
     name = "test_max_model_worker_integration",
     size = "large",
     srcs = ["test_max_model_worker_integration.py"],
@@ -190,7 +185,6 @@ modular_py_test(
         # runtime); pipelines provides the CommonTextGenPipeline class.
         "//max/python/max/experimental/cascade/pipelines",
         "//max/python/max/experimental/cascade/pipelines:all_pipelines",
-        "//max/python/max/experimental/cascade/workers",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
         requirement("numpy"),
