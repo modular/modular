@@ -454,6 +454,11 @@ class TextBatchConstructor:
         )
         self._ce_arrival: dict[RequestID, float] = {}
         self._ce_deferred_replicas: set[int] = set()
+        # Per-replica CE token quota for this iteration, set by
+        # ``_plan_ce_step`` when it reduces a below-threshold step's chunk
+        # size to its balance level. ``None`` means no quota (full CE chunk
+        # budget).
+        self._ce_step_quota: list[int] | None = None
         self._probe_failure_logged = False
 
         self.total_preemption_count: int = 0
@@ -463,10 +468,16 @@ class TextBatchConstructor:
         self._prev_dp_padding: DPPaddingInfo | None = None
         self._current_dp_padding: DPPaddingInfo | None = None
 
-    def _create_new_token_budget(self) -> TokenBudgetCollection:
+    def _create_new_token_budget(
+        self, ce_capacity: int | None = None
+    ) -> TokenBudgetCollection:
         token_budgets: list[TokenBudget] = [
             ActiveTokenBudget(
-                capacity=self.scheduler_config.target_tokens_per_batch_ce,
+                capacity=(
+                    ce_capacity
+                    if ce_capacity is not None
+                    else self.scheduler_config.target_tokens_per_batch_ce
+                ),
                 allow_chunking=self.scheduler_config.enable_chunked_prefill,
                 applicable_types=RequestType.all(),
                 min_chunk_tokens=self.scheduler_config.chunked_prefill_min_chunk_size,
@@ -1023,10 +1034,21 @@ class TextBatchConstructor:
                 automatically based on queue state and scheduler configuration.
         """
 
-        # Initialize batch
+        # Initialize batch. When the DP CE balancer set a step quota for this
+        # replica, it becomes the CE budget capacity, sizing this step's
+        # chunks to the balance level instead of the full chunk target.
+        ce_capacity: int | None = None
+        if (
+            self._ce_step_quota is not None
+            and self._ce_step_quota[replica_idx] > 0
+            # Under in-flight batching the TG batch shares this budget; a
+            # small CE quota must not truncate it.
+            and not self.scheduler_config.enable_in_flight_batching
+        ):
+            ce_capacity = self._ce_step_quota[replica_idx]
         batch = ReplicaBatch(
             batch={},
-            token_budget=self._create_new_token_budget(),
+            token_budget=self._create_new_token_budget(ce_capacity),
         )
 
         # Use override if provided, otherwise identify priority automatically
@@ -1076,10 +1098,19 @@ class TextBatchConstructor:
         The assembled step is committed when the floor is non-empty (those
         tokens run regardless, so riders only improve the step), when its
         occupancy meets ``dp_ce_balance_threshold``, or when the fleet has
-        nothing else to do. Otherwise every deferrable piece waits: deferred
-        replicas run TG this iteration and pooled requests stay unbound.
+        nothing else to do. With ``dp_ce_balance_enable_dynamic_chunk_size``,
+        a below-threshold step with CE work on two or more replicas also
+        commits, at a reduced chunk size: each working replica's CE quota
+        (``_ce_step_quota``, enforced as that replica's CE budget capacity)
+        is reduced to the lightest working replica's level — never below a
+        replica's floor — so the balanced portion runs now as a shorter,
+        ~fully-occupied step and only the excess is deferred. Only a single
+        replica's deferrable work with no partner anywhere is held outright:
+        deferred replicas run TG this iteration and pooled requests stay
+        unbound.
         """
         self._ce_deferred_replicas.clear()
+        self._ce_step_quota = None
         if not self._dp_ce_balance_enabled:
             return
         if not self._ce_pending and not any(
@@ -1101,8 +1132,8 @@ class TextBatchConstructor:
         # into idleness loses throughput for nothing).
         #
         # ``step_load`` is this step's projection (capped at the CE chunk
-        # budget), used for occupancy. ``total_load`` is the uncapped
-        # per-replica queue total, used for binding decisions.
+        # budget), used for occupancy and quotas. ``total_load`` is the
+        # uncapped per-replica queue total, used for binding decisions.
         floor = [0] * self.num_replicas
         total_load = [0] * self.num_replicas
         deferrable_tails: list[tuple[int, int]] = []  # (step_tokens, replica)
@@ -1184,18 +1215,56 @@ class TextBatchConstructor:
         fleet_idle = not floor_exists and all(
             not replica.tg_reqs for replica in self.replicas
         )
+        threshold = self.scheduler_config.dp_ce_balance_threshold
+        occupancy = _occupancy(step_load)
+        # A below-threshold step with work on 2+ replicas need not be held:
+        # reducing the heavy replicas' chunk size to the balance level runs
+        # the balanced portion now (a shorter, ~100%-occupancy step) and
+        # defers only the excess. The balance level must be substantial
+        # (>= half the chunk target): each extra chunk re-reads the
+        # request's full context in attention, so undersized chunks cost
+        # more than the imbalance they avoid. The level never drops below
+        # any replica's floor (expired work is not deferrable and runs to
+        # the full chunk budget regardless).
+        loads_with_work = [tokens for tokens in step_load if tokens > 0]
+        balance_level = (
+            max(max(floor), min(loads_with_work)) if loads_with_work else 0
+        )
+        can_reduce_chunk_size = (
+            self.scheduler_config.dp_ce_balance_enable_dynamic_chunk_size
+            and len(loads_with_work) > 1
+            and balance_level >= target // 2
+        )
         if (
             floor_exists
             or fleet_idle
-            or _occupancy(step_load)
-            >= self.scheduler_config.dp_ce_balance_threshold
+            or occupancy >= threshold
+            or can_reduce_chunk_size
         ):
             for req_id, replica_idx in pool_binds:
                 pending = self._ce_pending.pop(req_id)
                 self._bind_request(pending.ctx, replica_idx)
             self._ce_deferred_replicas = deferred
+
+            if (
+                occupancy < threshold
+                and can_reduce_chunk_size
+                and not fleet_idle
+            ):
+                quotas = [
+                    self.scheduler_config.target_tokens_per_batch_ce
+                ] * self.num_replicas
+                for replica_idx in range(self.num_replicas):
+                    if step_load[replica_idx] > 0:
+                        quotas[replica_idx] = max(
+                            floor[replica_idx],
+                            min(step_load[replica_idx], balance_level),
+                        )
+                self._ce_step_quota = quotas
         else:
-            # Hold everything deferrable for a better-balanced step.
+            # No worthwhile balanced step exists (lone replica, or a balance
+            # level too small to shrink chunks to): hold everything
+            # deferrable for a better step.
             self._ce_deferred_replicas = {
                 replica_idx for _, replica_idx in deferrable_tails
             }

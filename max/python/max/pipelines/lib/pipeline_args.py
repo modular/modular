@@ -465,6 +465,15 @@ class PipelineArgs(ConfigFileModel):
         ),
     )
 
+    dp_ce_balance_enable_dynamic_chunk_size: bool = Field(
+        default=True,
+        description=(
+            "Whether below-threshold multi-replica CE steps run immediately "
+            "with chunk sizes reduced to the balance level (False = hold "
+            "whole)."
+        ),
+    )
+
     allow_unsupported_logprobs: bool = Field(
         default=False,
         description=(
@@ -826,6 +835,7 @@ class PipelineArgs(ConfigFileModel):
             enable_overlap_scheduler=runtime.enable_overlap_scheduler,
             dp_ce_balance_timeout_ms=runtime.dp_ce_balance_timeout_ms,
             dp_ce_balance_threshold=runtime.dp_ce_balance_threshold,
+            dp_ce_balance_enable_dynamic_chunk_size=runtime.dp_ce_balance_enable_dynamic_chunk_size,
             allow_unsupported_logprobs=runtime.allow_unsupported_logprobs,
             allow_extra_request_fields=runtime.allow_extra_request_fields,
             prefer_module_v3=runtime.prefer_module_v3,

@@ -87,6 +87,13 @@ class TokenGenerationSchedulerConfig:
     0-1) at or above which CE work is scheduled without further deferral.
     Only consulted when ``dp_ce_balance_timeout_ms`` > 0."""
 
+    dp_ce_balance_enable_dynamic_chunk_size: bool = True
+    """Whether a below-threshold CE step with work on 2+ replicas runs
+    immediately with each replica's chunk size reduced to the balance level
+    (deferring only the excess). When False, such steps are held whole until
+    the threshold is met, a deadline expires, or there is nothing else to
+    run."""
+
     def __post_init__(self) -> None:
         if self.max_batch_size <= 0:
             raise ValueError(
@@ -146,6 +153,7 @@ class TokenGenerationSchedulerConfig:
             decode_request_ttl_s=pipeline_config.runtime.decode_request_ttl_s,
             dp_ce_balance_timeout_ms=pipeline_config.runtime.dp_ce_balance_timeout_ms,
             dp_ce_balance_threshold=pipeline_config.runtime.dp_ce_balance_threshold,
+            dp_ce_balance_enable_dynamic_chunk_size=pipeline_config.runtime.dp_ce_balance_enable_dynamic_chunk_size,
             num_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
             if pipeline_config.speculative is not None
             else 0,

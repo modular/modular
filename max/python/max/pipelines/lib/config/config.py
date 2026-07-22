@@ -1654,6 +1654,7 @@ class PipelineConfig(ConfigFileModel):
                 enable_overlap_scheduler=args.enable_overlap_scheduler,
                 dp_ce_balance_timeout_ms=args.dp_ce_balance_timeout_ms,
                 dp_ce_balance_threshold=args.dp_ce_balance_threshold,
+                dp_ce_balance_enable_dynamic_chunk_size=args.dp_ce_balance_enable_dynamic_chunk_size,
                 allow_unsupported_logprobs=args.allow_unsupported_logprobs,
                 allow_extra_request_fields=args.allow_extra_request_fields,
                 prefer_module_v3=args.prefer_module_v3,
