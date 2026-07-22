@@ -42,6 +42,8 @@ filegroup(
         "//max/kernels/src/linalg:matmul/gpu/sm90/tuning_configs.mojo",
         "//max/kernels/src/linalg:matmul/gpu/sm90/tuning_custom.mojo.snippet",
         "//max/kernels/src/linalg:matmul/gpu/sm90/tuning_custom_grid.mojo.snippet",
+        "//max/kernels/src/linalg:matmul/gpu/sm90/tuning_custom_scaled.mojo.snippet",
+        "//max/kernels/src/linalg:matmul/gpu/sm90/tuning_custom_scaled_grid.mojo.snippet",
         "//max/kernels/src/linalg:matmul/gpu/sm90/tuning_table_bf16.yaml",
     ],
 )
@@ -70,6 +72,8 @@ modular_run_binary_test(
         "--snippet=max/kernels/src/linalg/matmul/gpu/sm90/tuning.mojo.snippet",
         "--snippet-variant=custom=max/kernels/src/linalg/matmul/gpu/sm90/tuning_custom.mojo.snippet",
         "--snippet-variant=custom_grid=max/kernels/src/linalg/matmul/gpu/sm90/tuning_custom_grid.mojo.snippet",
+        "--snippet-variant=custom_scaled=max/kernels/src/linalg/matmul/gpu/sm90/tuning_custom_scaled.mojo.snippet",
+        "--snippet-variant=custom_scaled_grid=max/kernels/src/linalg/matmul/gpu/sm90/tuning_custom_scaled_grid.mojo.snippet",
         "--target=max/kernels/src/linalg/matmul/gpu/sm90/tuning_configs.mojo",
         "--begin-marker=BEGIN-TUNING-LIST-BF16",
         "--end-marker=END-TUNING-LIST-BF16-SMALL",

@@ -8,6 +8,8 @@ exports_files(
         "matmul/gpu/sm90/tuning_configs.mojo",
         "matmul/gpu/sm90/tuning_custom.mojo.snippet",
         "matmul/gpu/sm90/tuning_custom_grid.mojo.snippet",
+        "matmul/gpu/sm90/tuning_custom_scaled.mojo.snippet",
+        "matmul/gpu/sm90/tuning_custom_scaled_grid.mojo.snippet",
         "matmul/gpu/sm90/tuning_table_bf16.yaml",
         "matmul/gpu/sm100_structured/default/tuning_configs.mojo",
         "matmul/gpu/sm100_structured/default/tuning_fp8.mojo.snippet",
