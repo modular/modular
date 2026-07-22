@@ -206,8 +206,8 @@ public:
       : b(loc, b), dl(dl) {}
 
   /// Generate the code required to materialize the provided value as a union
-  /// of the given LLVM type.
-  Value materializeLLVMUnion(mlir::LLVM::LLVMStructType type, Value value);
+  /// backed by the given byte-array LLVM type.
+  Value materializeLLVMUnion(mlir::LLVM::LLVMArrayType type, Value value);
 
   /// Walk a simple or aggregate LLVM type and generate the code to insert its
   /// elements into a variant's content type. This tightly packs the element

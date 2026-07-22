@@ -1691,10 +1691,21 @@ struct ConvertPOPUnionBitcast : public ConvertPOPToLLVMPattern<UnionBitcastOp> {
 // ConvertPOPUnionWrap
 //===----------------------------------------------------------------------===//
 
-static FailureOr<Value> materializeLLVMUnionAlloca(TargetInfoAttr target,
-                                                   OpBuilder &b, Operation *op,
-                                                   Type popUnionType,
-                                                   Type llvmUnionType) {
+namespace {
+/// A stack slot for union storage, plus the alignment it actually needs.
+/// The union's LLVM type is just a byte array, so LLVM assumes it only needs
+/// 1-byte alignment. Pass `align` explicitly to every load/store through
+/// `ptr`, or LLVM may generate slow byte-by-byte accesses instead of fast
+/// wide ones.
+struct UnionAlloca {
+  Value ptr;
+  int64_t align;
+};
+} // namespace
+
+static FailureOr<UnionAlloca>
+materializeLLVMUnionAlloca(TargetInfoAttr target, OpBuilder &b, Operation *op,
+                           Type popUnionType, Type llvmUnionType) {
   std::optional<int64_t> typeAllocSize =
       DataLayoutInterface::getTypeAllocSize(target, popUnionType);
   std::optional<int64_t> typeABIAlign =
@@ -1702,8 +1713,9 @@ static FailureOr<Value> materializeLLVMUnionAlloca(TargetInfoAttr target,
   if (!typeAllocSize || !typeABIAlign)
     return op->emitError("failed to get union type size and alignment");
 
-  return materializeLLVMAlloca(b, target, llvmUnionType, 1, op, *typeAllocSize,
-                               *typeABIAlign);
+  Value ptr = materializeLLVMAlloca(b, target, llvmUnionType, 1, op,
+                                    *typeAllocSize, *typeABIAlign);
+  return UnionAlloca{ptr, *typeABIAlign};
 }
 
 struct ConvertPOPUnionWrap : public ConvertPOPToLLVMPattern<UnionWrapOp> {
@@ -1712,20 +1724,24 @@ struct ConvertPOPUnionWrap : public ConvertPOPToLLVMPattern<UnionWrapOp> {
   LogicalResult matchAndRewrite(UnionWrapOp op, UnionWrapOpAdaptor adaptor,
                                 ConversionPatternRewriter &b) const override {
 
-    auto variantType =
-        dyn_cast_or_null<LLVM::LLVMStructType>(convertType(op.getType()));
+    // Usually a plain byte array (see the `POP::UnionType` conversion in
+    // LLVMLoweringUtils.cpp); an all-empty union instead becomes an empty
+    // struct `{}`. Either type is fine here.
+    Type variantType = convertType(op.getType());
     if (!variantType)
       return failure();
 
     TargetInfoAttr target = getTypeConverter()->getTarget();
-    FailureOr<Value> ptrOr =
+    FailureOr<UnionAlloca> allocaOr =
         materializeLLVMUnionAlloca(target, b, op, op.getType(), variantType);
 
-    if (failed(ptrOr))
+    if (failed(allocaOr))
       return failure();
 
-    LLVM::StoreOp::create(b, op->getLoc(), adaptor.getValue(), *ptrOr);
-    b.replaceOpWithNewOp<LLVM::LoadOp>(op, variantType, *ptrOr);
+    LLVM::StoreOp::create(b, op->getLoc(), adaptor.getValue(), allocaOr->ptr,
+                          allocaOr->align);
+    b.replaceOpWithNewOp<LLVM::LoadOp>(op, variantType, allocaOr->ptr,
+                                       allocaOr->align);
     return success();
   }
 };
@@ -1743,24 +1759,27 @@ struct ConvertPOPUnionUnwrap : public ConvertPOPToLLVMPattern<UnionUnwrapOp> {
     if (!valueType)
       return failure();
 
-    auto contentType = cast<LLVM::LLVMStructType>(adaptor.getValue().getType());
-    if (contentType.getBody().empty()) {
-      b.replaceOpWithNewOp<LLVM::UndefOp>(op, contentType);
+    // Usually a plain byte array (see the `POP::UnionType` conversion in
+    // LLVMLoweringUtils.cpp); an all-empty union instead becomes an empty
+    // struct `{}`.
+    Type contentType = adaptor.getValue().getType();
+    if (auto emptyStruct = dyn_cast<LLVM::LLVMStructType>(contentType);
+        emptyStruct && emptyStruct.getBody().empty()) {
+      b.replaceOpWithNewOp<LLVM::UndefOp>(op, emptyStruct);
       return success();
     }
-    assert((contentType.getBody().size() == 1 ||
-            contentType.getBody().size() == 2) &&
-           "must have 1 or 2 fields for union struct.");
 
     TargetInfoAttr target = getTypeConverter()->getTarget();
-    FailureOr<Value> ptrOr = materializeLLVMUnionAlloca(
+    FailureOr<UnionAlloca> allocaOr = materializeLLVMUnionAlloca(
         target, b, op, op.getValue().getType(), contentType);
 
-    if (failed(ptrOr))
+    if (failed(allocaOr))
       return failure();
 
-    LLVM::StoreOp::create(b, op->getLoc(), adaptor.getValue(), *ptrOr);
-    b.replaceOpWithNewOp<LLVM::LoadOp>(op, valueType, *ptrOr);
+    LLVM::StoreOp::create(b, op->getLoc(), adaptor.getValue(), allocaOr->ptr,
+                          allocaOr->align);
+    b.replaceOpWithNewOp<LLVM::LoadOp>(op, valueType, allocaOr->ptr,
+                                       allocaOr->align);
     return success();
   }
 };
