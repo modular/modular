@@ -14,6 +14,8 @@ exports_files(
         "matmul/gpu/sm100_structured/default/tuning_configs.mojo",
         "matmul/gpu/sm100_structured/default/tuning_fp8.mojo.snippet",
         "matmul/gpu/sm100_structured/default/tuning_fp8_ranged.mojo.snippet",
+        "matmul/gpu/sm100_structured/default/tuning_sm100.mojo.snippet",
+        "matmul/gpu/sm100_structured/default/tuning_table_sm100_bf16.yaml",
         "matmul/gpu/sm100_structured/default/tuning_table_sm100_fp8.yaml",
     ],
     visibility = ["//max/kernels/benchmarks/autotune:__pkg__"],

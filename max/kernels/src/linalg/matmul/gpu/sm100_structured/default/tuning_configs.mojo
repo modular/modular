@@ -246,9 +246,12 @@ struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
 
 def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
     return [
+        # ----------------BEGIN-TUNING-LIST-SM100-BF16----------------
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [0]
         TuningConfigSM100(
             M=256,
-            M_end=256 + 64,
+            M_end=320,
             N=20480,
             K=5376,
             mma_shape=Index(128, 224, 16),
@@ -256,10 +259,20 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=1,
             rasterize_order=RasterOrder(1),
+            swapAB=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [1]
         TuningConfigSM100(
             M=256,
-            M_end=256 + 64,
+            M_end=320,
             N=16384,
             K=5376,
             mma_shape=Index(128, 224, 16),
@@ -267,11 +280,20 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=4,
             rasterize_order=RasterOrder(1),
+            swapAB=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [2]
         TuningConfigSM100(
             M=256,
-            M_end=256 + 64,
+            M_end=320,
             N=43008,
             K=5376,
             mma_shape=Index(128, 256, 16),
@@ -279,10 +301,20 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=4,
             rasterize_order=RasterOrder(1),
+            swapAB=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [3]
         TuningConfigSM100(
             M=8192,
-            M_end=131072 + 64,
+            M_end=131136,
             N=1536,
             K=4096,
             mma_shape=Index(256, 256, 16),
@@ -290,10 +322,20 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=2,
             rasterize_order=RasterOrder(1),
+            swapAB=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [4]
         TuningConfigSM100(
             M=8192,
-            M_end=131072 + 64,
+            M_end=131136,
             N=1536,
             K=1536,
             mma_shape=Index(256, 256, 16),
@@ -301,10 +343,20 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=2,
             rasterize_order=RasterOrder(1),
+            swapAB=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [5]
         TuningConfigSM100(
             M=8192,
-            M_end=131072 + 64,
+            M_end=131136,
             N=4608,
             K=1536,
             mma_shape=Index(256, 256, 16),
@@ -312,35 +364,59 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=2,
             rasterize_order=RasterOrder(1),
+            swapAB=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [6]
         TuningConfigSM100(
             M=4096,
-            M_end=4096 + 64,
+            M_end=4160,
             N=1024,
             K=512,
             mma_shape=Index(256, 256, 16),
             cta_group=2,
             cluster_shape=Index(2, 2, 1),
             block_swizzle_size=0,
-            swapAB=True,
             rasterize_order=RasterOrder(0),
+            swapAB=True,
+            k_group_size=1,
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [7]
         TuningConfigSM100(
             M=4992,
-            M_end=5120 + 64,
+            M_end=5184,
             N=1024,
             K=512,
             mma_shape=Index(256, 160, 16),
             cta_group=2,
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=0,
-            swapAB=True,
             rasterize_order=RasterOrder(1),
+            swapAB=True,
+            k_group_size=1,
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [8]
         TuningConfigSM100(
             M=25,
             M_end=32,
@@ -350,14 +426,21 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cta_group=2,
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=0,
-            swapAB=True,
             rasterize_order=RasterOrder(0),
+            swapAB=True,
+            k_group_size=1,
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [9]
         TuningConfigSM100(
             M=2048,
-            M_end=2048 + 64,
+            M_end=2112,
             N=1536,
             K=1536,
             mma_shape=Index(256, 192, 16),
@@ -365,25 +448,41 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(4, 1, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(0),
+            swapAB=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [10]
         TuningConfigSM100(
             M=32,
-            M_end=32 + 1,
+            M_end=33,
             N=1536,
             K=1536,
             mma_shape=Index(64, 8, 16),
             cta_group=1,
             cluster_shape=Index(2, 4, 1),
             block_swizzle_size=0,
-            swapAB=True,
             rasterize_order=RasterOrder(0),
+            swapAB=True,
+            k_group_size=4,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
-            k_group_size=4,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [11]
         TuningConfigSM100(
             M=2048,
-            M_end=2048 + 64,
+            M_end=2112,
             N=16384,
             K=512,
             mma_shape=Index(256, 256, 16),
@@ -391,10 +490,20 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=4,
             rasterize_order=RasterOrder(0),
+            swapAB=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [12]
         TuningConfigSM100(
-            M=2048 + 64,
-            M_end=74368 + 64,
+            M=2112,
+            M_end=74432,
             N=16384,
             K=512,
             mma_shape=Index(256, 256, 16),
@@ -402,10 +511,20 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=8,
             rasterize_order=RasterOrder(1),
+            swapAB=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [13]
         TuningConfigSM100(
             M=3456,
-            M_end=3456 + 64,
+            M_end=3520,
             N=43008,
             K=5376,
             mma_shape=Index(256, 256, 16),
@@ -413,10 +532,20 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=1,
             rasterize_order=RasterOrder(1),
+            swapAB=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [14]
         TuningConfigSM100(
             M=48000,
-            M_end=48000 + 64,
+            M_end=48064,
             N=5376,
             K=21504,
             mma_shape=Index(256, 256, 16),
@@ -424,8 +553,17 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=4,
             rasterize_order=RasterOrder(1),
+            swapAB=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
-        # ------------ llama3-8b-tp2 ------------#
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [15]
         TuningConfigSM100(
             M=87,
             M_end=129,
@@ -436,10 +574,17 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
+            swapAB=False,
+            k_group_size=2,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
-            k_group_size=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [16]
         TuningConfigSM100(
             M=449,
             M_end=513,
@@ -450,10 +595,17 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
+            swapAB=False,
+            k_group_size=1,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
-            k_group_size=1,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [17]
         TuningConfigSM100(
             M=9,
             M_end=32,
@@ -465,11 +617,16 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=4,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
-            k_group_size=4,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
-        # ------------ llama3-8b-tp1 ------------#
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [18]
         TuningConfigSM100(
             M=65,
             M_end=81,
@@ -481,10 +638,16 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=2,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
-            k_group_size=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [19]
         TuningConfigSM100(
             M=81,
             M_end=97,
@@ -495,10 +658,17 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
+            swapAB=False,
+            k_group_size=2,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
-            k_group_size=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [20]
         TuningConfigSM100(
             M=9,
             M_end=32,
@@ -510,10 +680,16 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=2,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
-            k_group_size=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [21]
         TuningConfigSM100(
             M=9,
             M_end=17,
@@ -525,10 +701,16 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=2,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
-            k_group_size=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [22]
         TuningConfigSM100(
             M=17,
             M_end=64,
@@ -540,10 +722,16 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=2,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
-            k_group_size=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [23]
         TuningConfigSM100(
             M=9,
             M_end=22,
@@ -555,10 +743,16 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=4,
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=2,
-            k_group_size=4,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [24]
         TuningConfigSM100(
             M=23,
             M_end=47,
@@ -570,10 +764,16 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=4,
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=2,
-            k_group_size=4,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [25]
         TuningConfigSM100(
             M=48,
             M_end=65,
@@ -585,10 +785,16 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=2,
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=2,
-            k_group_size=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [26]
         TuningConfigSM100(
             M=65,
             M_end=81,
@@ -600,13 +806,19 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=2,
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=2,
-            k_group_size=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [27]
         TuningConfigSM100(
             M=4608,
-            M_end=4608 + 64,
+            M_end=4672,
             N=6144,
             K=24576,
             mma_shape=Index(256, 256, 16),
@@ -614,10 +826,20 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
+            swapAB=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [28]
         TuningConfigSM100(
             M=4608,
-            M_end=4608 + 64,
+            M_end=4672,
             N=6144,
             K=18432,
             mma_shape=Index(256, 256, 16),
@@ -625,10 +847,20 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=8,
             rasterize_order=RasterOrder(1),
+            swapAB=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [29]
         TuningConfigSM100(
             M=12,
-            M_end=64 + 1,
+            M_end=65,
             N=20480,
             K=7168,
             mma_shape=Index(128, 160, 16),
@@ -636,7 +868,16 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
+            swapAB=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # ----------------END-TUNING-LIST-SM100-BF16----------------
     ]
 
 
