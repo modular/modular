@@ -227,6 +227,16 @@ public:
   /// within it.
   void resolveAllWithin(ASTDecl &decl);
 
+  /// Walk the standard library's package tree looking for the package whose
+  /// public surface (its `__init__`'s declarations and re-exports) includes
+  /// `name`. Returns the dotted package path to import (e.g. "std.memory") so a
+  /// diagnostic can suggest the missing import, or nullopt when there is no
+  /// match, the name is private, or the match is a genuine ambiguity (packages
+  /// on diverging branches expose it; a single ancestor->descendant chain is
+  /// resolved to its shortest, most public path). Supported only for a prebuilt
+  /// (bytecode) `std`; see the definition for why.
+  std::optional<std::string> findUniqueStdlibImportFor(StringRef name);
+
   /// DeclResolution is an inherently recursive process - this return the
   /// current declaration that is being worked on.
   ASTDecl *getDeclCurrentlyProcessing() const {
