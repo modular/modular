@@ -89,8 +89,8 @@ struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
 
 def _get_tuning_list_bf16[mma_k: Int, BK: Int]() -> List[TuningConfigSM90]:
     # kprofile -s oss/modular/max/kernels/src/linalg/matmul/gpu/sm90/tuning.mojo.snippet oss/modular/max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml
-    # ----------------BEGIN-TUNING-LIST-BF16----------------
     comptime config_list = [
+        # ----------------BEGIN-TUNING-LIST-BF16----------------
         # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
         # index: [0]
         TuningConfigSM90(
@@ -1155,7 +1155,7 @@ def _get_tuning_list_bf16[mma_k: Int, BK: Int]() -> List[TuningConfigSM90]:
                 RasterOrder.AlongM
             ) if False else None,
         ),
+        # ----------------END-TUNING-LIST-BF16-SMALL----------------
     ]
-    # ----------------END-TUNING-LIST-BF16-SMALL----------------
 
     return materialize[config_list]()

@@ -4,6 +4,9 @@ package(default_visibility = ["//max:consumers"])
 
 exports_files(
     [
+        "matmul/gpu/sm90/tuning.mojo.snippet",
+        "matmul/gpu/sm90/tuning_configs.mojo",
+        "matmul/gpu/sm90/tuning_table_bf16.yaml",
         "matmul/gpu/sm100_structured/default/tuning_configs.mojo",
         "matmul/gpu/sm100_structured/default/tuning_fp8.mojo.snippet",
         "matmul/gpu/sm100_structured/default/tuning_fp8_ranged.mojo.snippet",
