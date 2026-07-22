@@ -192,7 +192,7 @@ def _tp_dealloc_wrapper[T: ImplicitlyDeletable](py_self: PyObjectPtr) abi("C"):
     #   Is this always safe? Wrap in GIL, because this could
     #   evaluate arbitrary code?
     if self.is_initialized:
-        UnsafePointer(to=self.mojo_value).unsafe_deinit_pointee()
+        Pointer(to=self.mojo_value).unsafe_deinit_pointee()
 
     cpython.PyObject_Free(py_self.bitcast[NoneType]())
 
@@ -674,7 +674,7 @@ struct PythonTypeBuilder(Copyable):
 
         # Construct a Python 'type' object from our type spec.
         var type_obj_ptr = cpython.PyType_FromSpec(
-            UnsafePointer(to=type_spec).as_unsafe_any_origin()
+            Pointer(to=type_spec).as_unsafe_any_origin()
         )
 
         if not type_obj_ptr:

@@ -47,7 +47,7 @@ struct _PythonGlobal(Defaultable, Movable):
         self.cpython.destroy()
 
 
-def _get_python_interface() raises -> UnsafePointer[CPython, ImmStaticOrigin]:
+def _get_python_interface() raises -> Pointer[CPython, ImmStaticOrigin]:
     """Returns an immutable static pointer to the CPython global.
 
     The returned pointer is immutable to prevent invalid shared mutation of
@@ -56,7 +56,7 @@ def _get_python_interface() raises -> UnsafePointer[CPython, ImmStaticOrigin]:
 
     var python = _PYTHON_GLOBAL.get_or_create_indexed_ptr(_Global._python_idx)
     var cpython_instance = (
-        UnsafePointer(to=python[].cpython)
+        Pointer(to=python[].cpython)
         .as_immutable()
         .unsafe_origin_cast[ImmStaticOrigin]()
     )
@@ -66,7 +66,7 @@ def _get_python_interface() raises -> UnsafePointer[CPython, ImmStaticOrigin]:
 struct Python(Defaultable, ImplicitlyCopyable):
     """Provides methods that help you use Python code in Mojo."""
 
-    var _impl: UnsafePointer[mut=False, CPython, ImmStaticOrigin]
+    var _impl: Pointer[mut=False, CPython, ImmStaticOrigin]
     """The underlying implementation of Mojo's Python interface."""
 
     # ===-------------------------------------------------------------------===#
@@ -87,7 +87,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Args:
             cpython: Reference to the `CPython` singleton.
         """
-        self._impl = UnsafePointer[mut=False, CPython, MutAnyOrigin](
+        self._impl = Pointer[mut=False, CPython, MutAnyOrigin](
             to=cpython
         ).unsafe_origin_cast[ImmStaticOrigin]()
 
@@ -293,7 +293,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     @staticmethod
     def _unsafe_add_functions(
         module: PythonObject,
-        functions: UnsafePointer[PyMethodDef, MutUntrackedOrigin],
+        functions: Pointer[PyMethodDef, MutUntrackedOrigin],
     ) raises:
         """Adds functions to a Python module object.
 

@@ -1403,6 +1403,7 @@ struct PythonObject(
         self._obj_ptr = {}
         return ptr
 
+    # TODO(MSTDL-2875): keep UnsafePointer until Kernels/max callers migrate.
     def unsafe_get_as_pointer[
         dtype: DType
     ](self) raises -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
@@ -1426,6 +1427,7 @@ struct PythonObject(
             unsafe_from_address=Int(py=self)
         )
 
+    # TODO(MSTDL-2875): keep UnsafePointer until max callers migrate.
     def downcast_value_ptr[
         T: ImplicitlyDeletable
     ](self, *, func: Optional[StaticString] = None) raises -> UnsafePointer[
@@ -1507,6 +1509,7 @@ struct PythonObject(
                 ).as_unsafe_any_origin()
         return None
 
+    # TODO(MSTDL-2875): kept for cohesion with downcast_value_ptr (max callers).
     def unchecked_downcast_value_ptr[
         mut: Bool, origin: Origin[mut=mut], //, T: ImplicitlyDeletable
     ](ref[origin] self) -> UnsafePointer[T, origin]:
@@ -1585,7 +1588,7 @@ def _unsafe_init[
      type object. Use of any other pointer is invalid.
     """
     ref mojo_obj = obj_ptr.bitcast[PyMojoObject[T]]().value()[]
-    UnsafePointer(to=mojo_obj.mojo_value).unsafe_write(mojo_value^)
+    Pointer(to=mojo_obj.mojo_value).unsafe_write(mojo_value^)
     mojo_obj.is_initialized = True
 
 
