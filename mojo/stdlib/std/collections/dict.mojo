@@ -1293,7 +1293,7 @@ struct Dict[
             assert is_occupied(
                 self._table._ctrl[slot_idx]
             ), "_find_slot returned found=True but ctrl byte is not occupied"
-            return UnsafePointer(
+            return Pointer(
                 to=(self._table._slots + slot_idx)[].value
             )._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
 
@@ -1761,7 +1761,7 @@ struct Dict[
             assert is_occupied(
                 self._table._ctrl[slot_idx]
             ), "_find_slot returned found=True but ctrl byte is not occupied"
-        return UnsafePointer(
+        return Pointer(
             to=(self._table._slots + slot_idx)[].value
         )._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
 

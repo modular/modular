@@ -793,7 +793,7 @@ struct Pointer[
         self,
     ) -> ref[
         base_origin._get_owned_interior[name], Self.address_space
-    ] Self.T where Self._is_unsafe:
+    ] Self.T:
         """Returns a reference to the pointee with an interior origin.
 
         The returned reference uses an interior sub-origin derived from
@@ -824,7 +824,7 @@ struct Pointer[
         name: StringLiteral,
     ](self, ref base: Some[AnyType]) -> ref[
         origin_of(base)._get_owned_interior[name], Self.address_space
-    ] Self.T where Self._is_unsafe:
+    ] Self.T:
         """Returns a reference to the pointee with an interior origin.
 
         The returned reference uses an interior sub-origin derived from

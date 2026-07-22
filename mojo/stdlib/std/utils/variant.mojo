@@ -570,12 +570,9 @@ struct Variant[*Ts: Movable](
         if not self.isa[T]():
             abort("get: wrong variant type", location=call_location())
 
-        # `_get_ref_with_unsafe_interior_origin` is unsafe-pointer-only, so
-        # bridge the safe storage pointer through UnsafePointer, as List, Deque,
-        # and String do.
-        return UnsafePointer(
-            self._storage.unsafe_ptr[T]()
-        )._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
+        return self._storage.unsafe_ptr[
+            T
+        ]()._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
 
     @always_inline
     def __eq__(
