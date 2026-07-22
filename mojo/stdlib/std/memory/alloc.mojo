@@ -486,7 +486,7 @@ struct ThinAllocation[T: AnyType](
     def __init__(
         out self,
         *,
-        unsafe_assume_ownership: UnsafePointer[Self.T, MutUntrackedOrigin],
+        unsafe_assume_ownership: Pointer[Self.T, MutUntrackedOrigin],
     ):
         """Initializes a `ThinAllocation` that takes ownership of a raw pointer.
 
@@ -529,7 +529,7 @@ struct ThinAllocation[T: AnyType](
 
     def unsafe_leak(
         deinit self,
-    ) -> UnsafePointer[Self.T, MutUntrackedOrigin]:
+    ) -> Pointer[Self.T, MutUntrackedOrigin]:
         """Consumes the `ThinAllocation` and returns its raw owning pointer.
 
         `ThinAllocation` is an explicitly destroyed type: it is never
@@ -550,7 +550,7 @@ struct ThinAllocation[T: AnyType](
         origin: Origin,
         address_space: AddressSpace,
         //,
-    ](ref[origin, address_space] self) -> UnsafePointer[
+    ](ref[origin, address_space] self) -> Pointer[
         Self.T, origin, address_space=address_space
     ]:
         """Returns a pointer to the allocated storage without consuming `self`.

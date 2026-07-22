@@ -35,7 +35,7 @@ from std.sys import CompilationTarget
 
 
 @always_inline
-def free(ptr: UnsafePointer[mut=True, NoneType, ...]):
+def free(ptr: Pointer[mut=True, NoneType, ...]):
     # manually construct the call to free and attach the
     # correct attributes
     __mlir_op.`pop.external_call`[
@@ -58,7 +58,7 @@ def free(ptr: OptionalUnsafePointer[mut=True, NoneType, ...]):
     """
     free(
         Pointer(to=ptr).unsafe_bitcast[
-            UnsafePointer[NoneType, UntrackedOrigin[mut=True]]
+            Pointer[NoneType, UntrackedOrigin[mut=True]]
         ]()[]
     )
 
@@ -76,7 +76,7 @@ comptime FILE_ptr = _CPointer[NoneType, UntrackedOrigin[mut=True]]
 
 
 @always_inline
-def fdopen(fd: c_int, mode: UnsafePointer[mut=False, c_char, _]) -> FILE_ptr:
+def fdopen(fd: c_int, mode: Pointer[mut=False, c_char, _]) -> FILE_ptr:
     return external_call["fdopen", FILE_ptr](fd, mode)
 
 
@@ -92,8 +92,8 @@ def fflush(stream: FILE_ptr) -> c_int:
 
 @always_inline
 def popen(
-    command: UnsafePointer[mut=False, c_char, _],
-    type: UnsafePointer[mut=False, c_char, _],
+    command: Pointer[mut=False, c_char, _],
+    type: Pointer[mut=False, c_char, _],
 ) -> FILE_ptr:
     return external_call["popen", FILE_ptr](command, type)
 
@@ -106,7 +106,7 @@ def pclose(stream: FILE_ptr) -> c_int:
 @always_inline
 def setvbuf(
     stream: FILE_ptr,
-    buffer: UnsafePointer[mut=True, c_char, _],
+    buffer: Pointer[mut=True, c_char, _],
     mode: c_int,
     size: c_size_t,
 ) -> c_int:
@@ -136,9 +136,9 @@ def posix_spawnp[
     argv_origin: ImmOrigin,
     //,
 ](
-    pid: UnsafePointer[mut=True, c_pid_t, _],
+    pid: Pointer[mut=True, c_pid_t, _],
     file: CStringSlice[_],
-    argv: UnsafePointer[Optional[CStringSlice[argv_origin]], _],
+    argv: Pointer[Optional[CStringSlice[argv_origin]], _],
     envp: _CPointer[Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin],
 ) -> c_int:
     """[`posix_spawn`](https://pubs.opengroup.org/onlinepubs/007904975/functions/posix_spawn.html)
@@ -208,8 +208,8 @@ def execvp[
     origin: ImmOrigin,
     //,
 ](
-    file: UnsafePointer[mut=False, c_char, _],
-    argv: UnsafePointer[mut=False, _CPointer[mut=False, c_char, origin], _],
+    file: Pointer[mut=False, c_char, _],
+    argv: Pointer[mut=False, _CPointer[mut=False, c_char, origin], _],
 ) -> c_int:
     """[`execvp`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/exec.html)
     — execute a file.
@@ -246,7 +246,7 @@ def kill(pid: c_int, sig: c_int) -> c_int:
 
 
 @always_inline
-def pipe(fildes: UnsafePointer[mut=True, c_int, _]) -> c_int:
+def pipe(fildes: Pointer[mut=True, c_int, _]) -> c_int:
     """[`pipe()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/pipe.html) — create an interprocess channel.
     """
     return external_call["pipe", c_int](fildes)
@@ -285,7 +285,7 @@ struct WaitFlags:
 @always_inline
 def waitpid(
     pid: c_pid_t,
-    status: UnsafePointer[mut=True, c_int, _],
+    status: Pointer[mut=True, c_int, _],
     options: c_int,
 ) -> c_pid_t:
     """[`waitpid()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/waitpid.html)
@@ -346,14 +346,14 @@ def dlsym[
     result_type: AnyType = NoneType
 ](
     handle: _CPointer[NoneType, _],
-    name: UnsafePointer[mut=False, c_char, _],
+    name: Pointer[mut=False, c_char, _],
     out result: _CPointer[result_type, MutUntrackedOrigin],
 ):
     result = external_call["dlsym", type_of(result)](handle, name)
 
 
 def realpath(
-    path: UnsafePointer[mut=False, c_char, _],
+    path: Pointer[mut=False, c_char, _],
     resolved_path: _CPointer[mut=True, c_char, _] = _CPointer[
         c_char, MutUntrackedOrigin
     ](),

@@ -1318,7 +1318,7 @@ def iota[
 def iota[
     dtype: DType, //
 ](
-    buff: UnsafePointer[mut=True, Scalar[dtype], _, address_space=_],
+    buff: Pointer[mut=True, Scalar[dtype], _, address_space=_],
     len: Int,
     offset: Int = 0,
 ):
@@ -1338,7 +1338,7 @@ def iota[
 
     @always_inline
     def fill[width: Int](i: Int) {var offset, var buff}:
-        buff.store(i, iota[dtype, width](Scalar[dtype](offset + i)))
+        buff.unsafe_store(i, iota[dtype, width](Scalar[dtype](offset + i)))
 
     vectorize[simd_width_of[dtype]()](len, fill)
 

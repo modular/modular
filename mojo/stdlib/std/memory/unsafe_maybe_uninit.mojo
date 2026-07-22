@@ -184,7 +184,7 @@ struct UnsafeMaybeUninit[T: AnyType](
     @always_inline
     def unsafe_ptr(
         ref self,
-    ) -> UnsafePointer[Self.T, origin_of(self._array)]:
+    ) -> Pointer[Self.T, origin_of(self._array)]:
         """Get a pointer to the underlying element.
 
         Note that this method does not assumes that the memory is initialized

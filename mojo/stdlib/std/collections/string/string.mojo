@@ -599,7 +599,7 @@ struct String(
     def __init__(
         out self,
         *,
-        unsafe_from_utf8_ptr: UnsafePointer[mut=False, c_char, _],
+        unsafe_from_utf8_ptr: Pointer[mut=False, c_char, _],
     ):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
@@ -620,7 +620,7 @@ struct String(
         )
 
     def __init__(
-        out self, *, unsafe_from_utf8_ptr: UnsafePointer[mut=False, UInt8, _]
+        out self, *, unsafe_from_utf8_ptr: Pointer[mut=False, UInt8, _]
     ):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
@@ -2395,9 +2395,7 @@ def _unsafe_chr_ascii(c: UInt8) -> String:
         c <= _LARGEST_UNICODE_ASCII_BYTE
     ), "Character is not single byte unicode"
 
-    return String(
-        unsafe_from_utf8=Span(unsafe_ptr=UnsafePointer(to=c), length=1)
-    )
+    return String(unsafe_from_utf8=Span(unsafe_ptr=Pointer(to=c), length=1))
 
 
 def _repr_ascii(c: UInt8) -> String:

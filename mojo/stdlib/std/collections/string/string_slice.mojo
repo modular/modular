@@ -192,7 +192,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var length: Int = Int(
             SIMDLength(mlir_value=__mlir_op.`pop.string.size`(_kgen))
         )
-        var ptr = UnsafePointer[mut=False, _, ImmStaticOrigin](
+        var ptr = Pointer[mut=False, _, ImmStaticOrigin](
             _mlir_value=__mlir_op.`pop.string.address`(_kgen)
         ).unsafe_bitcast[Byte]()
         self._slice = {unsafe_ptr = ptr, length = length}
@@ -2606,7 +2606,7 @@ def _to_string_list[
     T: Copyable,
     //,
     len_fn: def(T) thin -> Int,
-    unsafe_ptr_fn: def(T) thin -> UnsafePointer[Byte, O],
+    unsafe_ptr_fn: def(T) thin -> Pointer[Byte, O],
 ](items: List[T]) -> List[String]:
     var i_len = len(items)
 
@@ -2644,7 +2644,7 @@ def _to_string_list[
 
     def unsafe_ptr_fn(
         v: StringSlice[O],
-    ) -> UnsafePointer[Byte, O]:
+    ) -> Pointer[Byte, O]:
         return v.unsafe_ptr()
 
     def len_fn(v: StringSlice[O]) -> Int:
@@ -2669,7 +2669,7 @@ def _to_string_list[
         The list of created strings.
     """
 
-    def unsafe_ptr_fn(v: Span[Byte, O]) -> UnsafePointer[Byte, O]:
+    def unsafe_ptr_fn(v: Span[Byte, O]) -> Pointer[Byte, O]:
         return v.unsafe_ptr()
 
     def len_fn(v: Span[Byte, O]) -> Int:

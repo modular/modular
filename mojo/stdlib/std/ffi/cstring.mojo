@@ -54,7 +54,7 @@ struct CStringSlice[origin: ImmOrigin](
     def __init__(
         out self,
         *,
-        unsafe_from_ptr: UnsafePointer[Int8, Self.origin],
+        unsafe_from_ptr: Pointer[Int8, Self.origin],
     ):
         """Construct a `CStringSlice` from an `UnsafePointer`.
 

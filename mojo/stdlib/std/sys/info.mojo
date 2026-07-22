@@ -1422,7 +1422,7 @@ def _macos_version() raises -> Tuple[Int, Int, Int]:
         "kern.osproductversion".as_c_string_slice().unsafe_ptr(),
         osver.unsafe_ptr(),
         Pointer(to=buf_len),
-        Optional[UnsafePointer[NoneType, MutAnyOrigin]](),
+        Optional[Pointer[NoneType, MutAnyOrigin]](),
         Int(0),
     )
     if err:

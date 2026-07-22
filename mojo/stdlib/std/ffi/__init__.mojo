@@ -219,7 +219,7 @@ struct _DLCallable[
         at compile time. Strict-C-ABI support is tracked in MOCO-3692.
     """
 
-    var _opaque: UnsafePointer[NoneType, MutUntrackedOrigin]
+    var _opaque: Pointer[NoneType, MutUntrackedOrigin]
     """The raw function pointer resolved via `dlsym`, stored opaquely."""
 
     var _lib: Pointer[OwnedDLHandle, Self.origin]
@@ -259,13 +259,13 @@ struct _DLCallable[
         # can silently corrupt here, which is why multi-field aggregates
         # are rejected above.
         #
-        # The bitcast goes via `UnsafePointer(to=self._opaque)` — taking
+        # The bitcast goes via `Pointer(to=self._opaque)` — taking
         # the address of the field and reinterpreting it as pointing to a
         # function-pointer type, then loading — because an
         # `UnsafePointer[NoneType]` value cannot be directly reinterpreted
-        # as a function-pointer value (`.bitcast` only changes the pointee
-        # type).
-        var typed_fn = UnsafePointer(to=self._opaque).bitcast[
+        # as a function-pointer value (`.unsafe_bitcast` only changes the
+        # pointee type).
+        var typed_fn = Pointer(to=self._opaque).unsafe_bitcast[
             def(type_of(v)) thin -> Self.return_type
         ]()[]
         # The `_lib` field's origin parameter keeps `OwnedDLHandle` borrowed
@@ -469,7 +469,7 @@ struct OwnedDLHandle(Movable):
     @always_inline
     def _get_function[
         result_type: TrivialRegisterPassable
-    ](self, *, cstr_name: UnsafePointer[mut=False, c_char, _]) -> result_type:
+    ](self, *, cstr_name: Pointer[mut=False, c_char, _]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -505,7 +505,7 @@ struct OwnedDLHandle(Movable):
 
     def get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> Optional[
+    ](self, *, cstr_name: Pointer[mut=False, Int8, _]) -> Optional[
         UnsafePointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -731,7 +731,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
     @always_inline
     def _get_function[
         result_type: TrivialRegisterPassable
-    ](self, *, cstr_name: UnsafePointer[mut=False, c_char, _]) -> result_type:
+    ](self, *, cstr_name: Pointer[mut=False, c_char, _]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -780,7 +780,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
 
     def get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> Optional[
+    ](self, *, cstr_name: Pointer[mut=False, Int8, _]) -> Optional[
         UnsafePointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -1024,7 +1024,7 @@ struct _Global[
     init_fn: def() thin -> StorageType,
     on_error_msg: Optional[def() thin -> Error] = None,
 ](Defaultable):
-    comptime ResultType = UnsafePointer[Self.StorageType, MutUntrackedOrigin]
+    comptime ResultType = Pointer[Self.StorageType, MutUntrackedOrigin]
 
     def __init__(out self):
         pass

@@ -478,7 +478,7 @@ struct PrefetchOptions(Defaultable, TrivialRegisterPassable):
 @always_inline("nodebug")
 def prefetch[
     dtype: DType, //, params: PrefetchOptions = PrefetchOptions()
-](addr: UnsafePointer[Scalar[dtype], ...]):
+](addr: Pointer[Scalar[dtype], ...]):
     """Prefetches an instruction or data into cache before it is used.
 
     The prefetch function provides prefetching hints for the target
@@ -502,13 +502,13 @@ def prefetch[
             NoneType,
             constraints="l,~{memory}",
             has_side_effect=True,
-        ](addr.bitcast[NoneType]())
+        ](addr.unsafe_bitcast[NoneType]())
     elif is_apple_gpu():
         # Apple GPU officially does not support prefetch intrinsic
         pass
     else:
         llvm_intrinsic["llvm.prefetch", NoneType](
-            addr.bitcast[NoneType](),
+            addr.unsafe_bitcast[NoneType](),
             params.rw,
             params.locality,
             params.cache,
@@ -527,7 +527,7 @@ def masked_load[
     size: SIMDLength,
     alignment: Int = 1,
 ](
-    addr: UnsafePointer[mut=False, Scalar[dtype], ...],
+    addr: Pointer[mut=False, Scalar[dtype], ...],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
 ) -> SIMD[dtype, size]:
@@ -551,10 +551,10 @@ def masked_load[
       The loaded memory stored in a vector of type SIMD[dtype, size].
     """
     comptime if size == 1:
-        return addr.load() if mask else SIMD[dtype, size](passthrough[0])
+        return addr.unsafe_load() if mask else SIMD[dtype, size](passthrough[0])
 
     var result = llvm_intrinsic["llvm.masked.load", SIMD[dtype, size]](
-        addr.bitcast[NoneType](),
+        addr.unsafe_bitcast[NoneType](),
         Int32(alignment),
         mask,
         passthrough,
@@ -575,7 +575,7 @@ def masked_store[
     alignment: Int = 1,
 ](
     value: SIMD,
-    addr: UnsafePointer[mut=True, Scalar[value.dtype], ...],
+    addr: Pointer[mut=True, Scalar[value.dtype], ...],
     mask: SIMD[DType.bool, size],
 ):
     """Stores a value at a memory location, skipping masked lanes.
@@ -593,12 +593,12 @@ def masked_store[
     """
     comptime if size == 1:
         if mask:
-            addr.store(value[0])
+            addr.unsafe_store(value[0])
         return
 
     llvm_intrinsic["llvm.masked.store", NoneType](
         value,
-        addr.bitcast[NoneType](),
+        addr.unsafe_bitcast[NoneType](),
         Int32(alignment),
         mask,
     )
@@ -614,7 +614,7 @@ def compressed_store[
     dtype: DType, size: SIMDLength
 ](
     value: SIMD[dtype, size],
-    addr: UnsafePointer[mut=True, Scalar[dtype], ...],
+    addr: Pointer[mut=True, Scalar[dtype], ...],
     mask: SIMD[DType.bool, size],
 ):
     """Compresses the lanes of `value`, skipping `mask` lanes, and stores
@@ -632,12 +632,12 @@ def compressed_store[
     """
     comptime if size == 1:
         if mask:
-            addr.store(value[0])
+            addr.unsafe_store(value[0])
         return
 
     llvm_intrinsic["llvm.masked.compressstore", NoneType](
         value,
-        addr.bitcast[NoneType](),
+        addr.unsafe_bitcast[NoneType](),
         mask,
     )
 
@@ -651,7 +651,7 @@ def compressed_store[
 def strided_load[
     dtype: DType, //, simd_width: SIMDLength, *, invariant: Bool = False
 ](
-    addr: UnsafePointer[mut=False, Scalar[dtype], ...],
+    addr: Pointer[mut=False, Scalar[dtype], ...],
     stride: Int,
     mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
         fill=True
@@ -674,7 +674,9 @@ def strided_load[
       A vector containing the loaded data.
     """
     comptime if simd_width == 1:
-        return addr.load[invariant=invariant]() if mask else Scalar[dtype]()
+        return addr.unsafe_load[invariant=invariant]() if mask else Scalar[
+            dtype
+        ]()
 
     comptime if is_apple_gpu():
         # The `gather` path below would erase address space via
@@ -683,7 +685,9 @@ def strided_load[
         var result = SIMD[dtype, simd_width]()
         comptime for i in range(simd_width):
             if mask[i]:
-                result[i] = (addr + i * stride).load[invariant=invariant]()
+                result[i] = addr.unsafe_offset(i * stride).unsafe_load[
+                    invariant=invariant
+                ]()
         return result
 
     var offset = (
@@ -705,7 +709,7 @@ def strided_store[
     dtype: DType, //, simd_width: SIMDLength
 ](
     value: SIMD[dtype, simd_width],
-    addr: UnsafePointer[mut=True, Scalar[dtype], ...],
+    addr: Pointer[mut=True, Scalar[dtype], ...],
     stride: Int,
     mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
         fill=True
@@ -726,7 +730,7 @@ def strided_store[
     """
     comptime if simd_width == 1:
         if mask:
-            addr.store(value[0])
+            addr.unsafe_store(value[0])
         return
 
     var offset = (

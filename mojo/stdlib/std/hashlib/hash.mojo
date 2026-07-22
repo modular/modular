@@ -121,7 +121,7 @@ def hash[
 
 def hash[
     HasherType: Hasher = default_hasher
-](bytes: UnsafePointer[mut=False, UInt8, _], n: Int) -> UInt64:
+](bytes: Pointer[mut=False, UInt8, _], n: Int) -> UInt64:
     """Hash a sequence of bytes using the specified hasher.
 
     Parameters:

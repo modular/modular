@@ -43,7 +43,7 @@ def _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
 
 
 @always_inline
-def _read_small(data: UnsafePointer[mut=False, UInt8, _], length: Int) -> U128:
+def _read_small(data: Pointer[mut=False, UInt8, _], length: Int) -> U128:
     """Produce a `SIMD[DType.uint64, 2]` value from data which is smaller than or equal to `8` bytes.
 
     Args:
@@ -56,23 +56,31 @@ def _read_small(data: UnsafePointer[mut=False, UInt8, _], length: Int) -> U128:
     if length >= 2:
         if length >= 4:
             # len 4-8
-            var a = data.bitcast[UInt32]().load().cast[DType.uint64]()
+            var a = (
+                data.unsafe_bitcast[UInt32]().unsafe_load().cast[DType.uint64]()
+            )
             var b = (
-                (data + length - 4)
-                .bitcast[UInt32]()
-                .load()
+                data.unsafe_offset(length - 4)
+                .unsafe_bitcast[UInt32]()
+                .unsafe_load()
                 .cast[DType.uint64]()
             )
             return U128(a, b)
         else:
             # len 2-3
-            var a = data.bitcast[UInt16]().load().cast[DType.uint64]()
-            var b = (data + length - 1).load().cast[DType.uint64]()
+            var a = (
+                data.unsafe_bitcast[UInt16]().unsafe_load().cast[DType.uint64]()
+            )
+            var b = (
+                data.unsafe_offset(length - 1)
+                .unsafe_load()
+                .cast[DType.uint64]()
+            )
             return U128(a, b)
     else:
         # len 0-1
         if length > 0:
-            var a = data.load().cast[DType.uint64]()
+            var a = data.unsafe_load().cast[DType.uint64]()
             return U128(a, a)
         else:
             return U128(0, 0)

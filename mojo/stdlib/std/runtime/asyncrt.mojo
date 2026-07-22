@@ -465,11 +465,11 @@ struct RaisingTask[type: Movable, origins: OriginSet](
         self._handle^.force_destroy()
 
         if has_error:
-            var err = self._error_alloc.unsafe_ptr().take_pointee()
+            var err = self._error_alloc.unsafe_ptr().unsafe_take_pointee()
             dealloc(self._error_alloc^.unsafe_with_layout({count = 1}))
             dealloc(self._result_alloc^.unsafe_with_layout({count = 1}))
             raise err^
-        result = self._result_alloc.unsafe_ptr().take_pointee()
+        result = self._result_alloc.unsafe_ptr().unsafe_take_pointee()
         dealloc(self._error_alloc^.unsafe_with_layout({count = 1}))
         dealloc(self._result_alloc^.unsafe_with_layout({count = 1}))
 

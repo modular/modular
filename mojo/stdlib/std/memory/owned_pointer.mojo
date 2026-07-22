@@ -114,21 +114,21 @@ struct OwnedPointer[T: AnyType](
     def __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: UnsafePointer[Self.T, MutUntrackedOrigin],
+        unsafe_from_raw_pointer: Pointer[Self.T, MutUntrackedOrigin],
     ):
-        """Construct a new `OwnedPointer` by taking ownership of the provided `UnsafePointer`.
+        """Construct a new `OwnedPointer` by taking ownership of the provided `Pointer`.
 
         Args:
-            unsafe_from_raw_pointer: The `UnsafePointer` to take ownership of.
+            unsafe_from_raw_pointer: The `Pointer` to take ownership of.
 
         Safety:
 
-        This function is unsafe as the provided `UnsafePointer` must be initialize with a single valid `T`
+        This function is unsafe as the provided `Pointer` must be initialize with a single valid `T`
         initially allocated with this `OwnedPointer`'s backing allocator.
         This function is unsafe as other memory problems can arise such as a double-free if this function
         is called twice with the same pointer or a user manually deallocates the same data.
 
-        After using this constructor, the `UnsafePointer` is assumed to be owned by this `OwnedPointer`.
+        After using this constructor, the `Pointer` is assumed to be owned by this `OwnedPointer`.
         In particular, the destructor method will call `T.__del__` and `UnsafePointer.free`.
         """
         self._inner = ThinAllocation(

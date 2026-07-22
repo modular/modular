@@ -300,7 +300,7 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
         mut: Bool,
         origin: Origin[mut=mut],
         //,
-    ](ref[origin] self) -> UnsafePointer[Self.T, origin]:
+    ](ref[origin] self) -> Pointer[Self.T, origin]:
         """Retrieves a pointer to the underlying memory.
 
         Parameters:
@@ -308,7 +308,7 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
             origin: The origin of the pointer.
 
         Returns:
-            An `UnsafePointer` to the pointee.
+            A `Pointer` to the pointee.
         """
         # TODO: consider removing this method.
         return (
@@ -342,11 +342,11 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
         # is from a strong and there _must_ be exactly one implicit.
         return self._inner[].weak_count_with_implicit() - 1
 
-    def steal_data(deinit self) -> UnsafePointer[Self.T, MutUntrackedOrigin]:
+    def steal_data(deinit self) -> Pointer[Self.T, MutUntrackedOrigin]:
         """Consume this `ArcPointer`, returning a raw pointer to the underlying data.
 
         Returns:
-            An `UnsafePointer` to the underlying `T` value.
+            A `Pointer` to the underlying `T` value.
 
         **Safety:**
 
