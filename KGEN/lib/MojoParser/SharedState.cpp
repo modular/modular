@@ -1034,6 +1034,25 @@ auto SharedState::lookupAllDeclsWithName(StringRef name, SMLoc loc,
   return entry;
 }
 
+PackageOp SharedState::getPrecompiledStdlibPackage() {
+  ModuleState *stdState = impl->stdPackageState;
+  if (!stdState || !stdState->bytecodeReader)
+    return {};
+  return dyn_cast_or_null<PackageOp>(stdState->decl->getIfOperation());
+}
+
+void SharedState::materializePrecompiledStdlibOp(Operation *op) {
+  ModuleState *stdState = impl->stdPackageState;
+  if (!stdState || !stdState->bytecodeReader)
+    return;
+  mlir::BytecodeReader &reader = *stdState->bytecodeReader;
+  // Best-effort: a failed materialization just means this subtree contributes
+  // no import suggestion. The sole caller runs on the error path of an
+  // already-failing compile, so we never disturb the in-progress diagnostic.
+  if (reader.isMaterializable(op))
+    (void)reader.materialize(op);
+}
+
 std::optional<SharedState::ModuleSpec>
 SharedState::ModuleSpec::classify(const std::filesystem::path &path) {
   if (Filesystem::isMojoSourcePackagePath(path))

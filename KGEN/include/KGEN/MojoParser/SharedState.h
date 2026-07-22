@@ -259,6 +259,18 @@ public:
   LookupAllResult lookupAllDeclsWithName(StringRef name, llvm::SMLoc loc,
                                          ASTDecl &scope, bool resolve);
 
+  /// Return the standard-library package op, but only when `std` was loaded
+  /// from a prebuilt bytecode package (the form shipped to users). Returns null
+  /// for a source-built `std` or before `std` is loaded. The missing-import
+  /// suggestion (`DeclResolver::findUniqueStdlibImportFor`) uses this to walk
+  /// the package tree.
+  PackageOp getPrecompiledStdlibPackage();
+
+  /// Materialize a lazily-loaded op from the precompiled standard-library
+  /// bytecode package, making its nested ops visible. No-op if the op is
+  /// already materialized or `std` is not a bytecode package.
+  void materializePrecompiledStdlibOp(Operation *op);
+
   /// Given a parameter expression call to a function marked
   /// @always_inline("builtin"), scan the function to form an inlined parameter
   /// expression representation of the function given the specified argument

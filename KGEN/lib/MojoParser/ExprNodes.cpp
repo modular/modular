@@ -893,6 +893,14 @@ diagnoseUnknownDeclaration(StringRef spelling, ASTDecl &lookupScope,
              spelling == "originof") {
     diag << "; did you mean 'origin_of'?"
          << FixIt::replaceToken(loc, "origin_of");
+  } else {
+    // The name is unambiguously part of a standard-library package that wasn't
+    // imported; point the user at the missing import.
+    std::optional<std::string> importPath =
+        emitter.getDeclResolver().findUniqueStdlibImportFor(spelling);
+    if (importPath)
+      diag << "; did you mean to import it from '" << *importPath
+           << "'? Add 'from " << *importPath << " import " << spelling << "'";
   }
   return {};
 }

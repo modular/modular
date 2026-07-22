@@ -798,6 +798,408 @@ FailureOr<ASTDecl *> DeclResolver::bodyResolvePackageInit(ASTDecl &package,
   return &initDecl;
 }
 
+namespace {
+
+/// Walks a prebuilt standard-library package tree to find the unique package
+/// whose public surface exposes a queried name, for the missing-import
+/// suggestion. See DeclResolver::findUniqueStdlibImportFor for the full
+/// specification of what is and isn't resolved.
+class StdlibImportSearch {
+public:
+  StdlibImportSearch(SharedState &shared, StringRef name)
+      : shared(shared), name(name),
+        initName(StringAttr::get(shared.getContext(), "__init__")) {}
+
+  /// Walk the tree rooted at `stdPackage` and return the package path to
+  /// suggest for `name`, or nullopt if nothing matches or the matches are a
+  /// genuine ambiguity (see `uniqueImportPath`).
+  std::optional<std::string> run(PackageOp stdPackage) {
+    CompilerTimeTraceScope timeScope("findUniqueStdlibImportFor.walk");
+    Worklist worklist;
+    worklist.emplace_back(stdPackage,
+                          stdPackage.getSymNameAttr().getValue().str());
+    while (!worklist.empty()) {
+      auto [packageOp, packagePath] = worklist.pop_back_val();
+      visitPackage(packageOp, packagePath, worklist);
+    }
+    return uniqueImportPath();
+  }
+
+private:
+  using Worklist = SmallVector<std::pair<PackageOp, std::string>>;
+
+  /// How a package's `__init__` surfaces `name`. `Native` = the package owns
+  /// it: declared in `__init__`, re-exported from the package's own subtree, or
+  /// pulled in by a relative wildcard. `Foreign` = the package only re-exports
+  /// another package's symbol (a convenience aggregator, e.g. `std.ffi`
+  /// re-exporting `std.os.abort`). Native owners are preferred over foreign
+  /// re-exporters when choosing what to suggest (see `uniqueImportPath`).
+  enum class MatchKind { Native, Foreign };
+
+  /// A package's direct children, split for the surface check: its `__init__`
+  /// module (the package's own surface) and its other child modules/packages
+  /// keyed by leaf name (a `from .X import *` can name one of these as `X`).
+  /// `__init__` is the package's own surface, never named by a wildcard, so it
+  /// is kept out of `byLeaf`. `byLeaf` holds a mix of `FileModuleOp`s and
+  /// `PackageOp`s, so its values stay the common `Operation *`.
+  struct PackageChildren {
+    FileModuleOp initModule = nullptr;
+    llvm::StringMap<Operation *> byLeaf;
+  };
+
+  // Materialization convention: every method that iterates an op's regions
+  // (indexChildren, initExposesName, moduleExposesName, findInit) materializes
+  // that op first; callers do not pre-materialize. `materialize` is a cheap
+  // no-op once an op is materialized, so the overlapping calls cost nothing.
+
+  /// Inspect one package: record a match if its `__init__` exposes `name`,
+  /// tagged native vs foreign so `uniqueImportPath` can prefer the owner.
+  void visitPackage(PackageOp packageOp, StringRef packagePath,
+                    Worklist &worklist) {
+    PackageChildren children = indexChildren(packageOp, packagePath, worklist);
+    if (children.initModule)
+      if (std::optional<MatchKind> kind = initExposesName(
+              children.initModule, children.byLeaf, packagePath))
+        recordMatch(packagePath, *kind);
+  }
+
+  /// Index `packageOp`'s direct children (see `PackageChildren`) and, as a side
+  /// effect, enqueue its sub-packages onto `worklist` for the walk to visit.
+  PackageChildren indexChildren(PackageOp packageOp, StringRef packagePath,
+                                Worklist &worklist) {
+    materialize(packageOp);
+    PackageChildren children;
+    for (Region &region : packageOp->getRegions())
+      for (Operation &op : region.getOps()) {
+        auto fileModule = dyn_cast<FileModuleOp>(&op);
+        auto subPackage = dyn_cast<PackageOp>(&op);
+        if (!fileModule && !subPackage)
+          continue;
+        StringRef leaf = fileModule ? fileModule.getSymNameAttr().getValue()
+                                    : subPackage.getSymNameAttr().getValue();
+        if (fileModule && isInitModule(fileModule)) {
+          children.initModule = fileModule;
+        } else {
+          // Leaf names are unique among a package's children
+          assert(!children.byLeaf.contains(leaf) &&
+                 "duplicate leaf name among a package's children");
+          children.byLeaf[leaf] = &op;
+        }
+        if (subPackage)
+          worklist.emplace_back(subPackage,
+                                (packagePath + "." + leaf.str()).str());
+      }
+    return children;
+  }
+
+  /// Does a package's `__init__` expose `name` — via a direct declaration or a
+  /// re-export — and if so, how? Returns `Native` when the name is owned here
+  /// (declared, re-exported from the package's own subtree, or pulled in by a
+  /// relative wildcard), `Foreign` when it is only a convenience re-export of
+  /// another package's symbol, or nullopt when not exposed. A native exposure
+  /// outranks a foreign one within the same `__init__`.
+  std::optional<MatchKind>
+  initExposesName(FileModuleOp initModule,
+                  const llvm::StringMap<Operation *> &childByLeaf,
+                  StringRef packagePath) {
+    materialize(initModule);
+    bool sawForeign = false;
+    for (Region &region : initModule->getRegions()) {
+      for (Operation &op : region.getOps()) {
+        if (auto wild = dyn_cast<UnresolvedWildcardImportOp>(&op)) {
+          // Only single-component relative wildcards (`from .X import *`) are
+          // supported. Multi-component (`.a.b`), absolute (`pkg.foo`), and bare
+          // (`.`) forms are skipped here: they name modules that are not direct
+          // children, and matching them by leaf name alone would false-match an
+          // unrelated direct child that happens to share the leaf.
+          StringRef singleComponent =
+              singleComponentRelativeChild(wild.getModuleNameAttr());
+          if (singleComponent.empty())
+            continue;
+          auto it = childByLeaf.find(singleComponent);
+          // A relative wildcard pulls from the package's own child, so a hit
+          // means the name is owned here: native.
+          if (it != childByLeaf.end() && wildcardSourceExposesName(it->second))
+            return MatchKind::Native;
+        } else if (std::optional<MatchKind> kind =
+                       classifyOpExposure(op, packagePath)) {
+          if (*kind == MatchKind::Native)
+            return MatchKind::Native;
+          sawForeign = true;
+        }
+      }
+    }
+    return sawForeign ? std::optional(MatchKind::Foreign) : std::nullopt;
+  }
+
+  /// True if the `from .X import *` imports `name`.
+  /// Checks `X` itself if it is a module, or
+  ///  `X`'s `__init__` if it is a package.
+  /// Does not follow wildcards inside `X` (one level deep).
+  bool wildcardSourceExposesName(Operation *sourceOp) {
+    if (auto fileModule = dyn_cast<FileModuleOp>(sourceOp))
+      return moduleExposesName(fileModule);
+    if (auto subPackage = dyn_cast<PackageOp>(sourceOp))
+      if (FileModuleOp init = findInit(subPackage))
+        return moduleExposesName(init);
+    return false;
+  }
+
+  /// Scan a module's ops for a direct declaration or explicit re-export of
+  /// `name`; wildcard re-exports inside the module are ignored.
+  bool moduleExposesName(FileModuleOp modOp) {
+    materialize(modOp);
+    for (Region &region : modOp->getRegions())
+      for (Operation &op : region.getOps())
+        if (opExposesName(op))
+          return true;
+    return false;
+  }
+
+  /// True if a single op is an explicit re-export or a direct declaration of
+  /// `name` (wildcard re-exports are handled by `initExposesName`). Used to
+  /// scan a wildcard's target module, where only exposure (not native/foreign)
+  /// is needed.
+  bool opExposesName(Operation &op) const {
+    if (auto imp = dyn_cast<ImportOp>(&op))
+      return imp.getSymNameAttr().getValue() == name;
+    if (auto unresolved = dyn_cast<UnresolvedImportOp>(&op))
+      return unresolved.getImportNameAttr().getValue() == name;
+    return declMatches(&op);
+  }
+
+  /// Like `opExposesName`, but for a package `__init__` op: also classifies the
+  /// exposure. A direct declaration is native. A re-export is native when its
+  /// source module lives in `packagePath`'s own subtree and foreign when it
+  /// re-exports another package's symbol. Returns nullopt when `op` does not
+  /// expose `name`.
+  std::optional<MatchKind> classifyOpExposure(Operation &op,
+                                              StringRef packagePath) const {
+    if (auto imp = dyn_cast<ImportOp>(&op)) {
+      if (imp.getSymNameAttr().getValue() != name)
+        return std::nullopt;
+      return sourceKind(imp.getRealModuleNameAttr().getValue(), packagePath);
+    }
+    if (auto unresolved = dyn_cast<UnresolvedImportOp>(&op)) {
+      if (unresolved.getImportNameAttr().getValue() != name)
+        return std::nullopt;
+      return sourceKind(unresolved.getModuleNameAttr().getValue(), packagePath);
+    }
+    return declMatches(&op) ? std::optional(MatchKind::Native) : std::nullopt;
+  }
+
+  /// Classify a re-export by where its source module lives relative to the
+  /// re-exporting package: within the package's own subtree — a relative import
+  /// (`.x`), or an absolute path equal to or under `packagePath` — is native;
+  /// anything else re-exports a different package's symbol and is foreign.
+  MatchKind sourceKind(StringRef moduleName, StringRef packagePath) const {
+    if (moduleName.starts_with("."))
+      return MatchKind::Native;
+    return isDottedPrefix(packagePath, moduleName) ? MatchKind::Native
+                                                   : MatchKind::Foreign;
+  }
+
+  /// True if `op` is a top-level fn/struct/trait/alias declaration of `name`.
+  /// `getDeclName()` yields the user-visible (demangled) name for each kind.
+  bool declMatches(Operation *op) const {
+    if (!isa<FnOp, StructDeclOp, TraitDeclOp, AliasDeclOp>(op))
+      return false;
+    return cast<ASTDeclInterface>(op).getDeclName().getValue() == name;
+  }
+
+  /// The `__init__` file-module child of a package, or null.
+  FileModuleOp findInit(PackageOp packageOp) {
+    materialize(packageOp);
+    for (Region &region : packageOp->getRegions())
+      for (Operation &op : region.getOps())
+        if (auto fileModule = dyn_cast<FileModuleOp>(&op))
+          if (isInitModule(fileModule))
+            return fileModule;
+    return {};
+  }
+
+  /// True if `fileModule` is a package's `__init__` (its public surface).
+  bool isInitModule(FileModuleOp fileModule) const {
+    return fileModule.getSymNameAttr() == initName;
+  }
+
+  void materialize(Operation *op) { shared.materializePrecompiledStdlibOp(op); }
+
+  void recordMatch(StringRef modulePath, MatchKind kind) {
+    (kind == MatchKind::Native ? nativeMatches : foreignMatches)
+        .push_back(modulePath.str());
+  }
+
+  /// Reduce the collected matches to a single import path to suggest, or
+  /// nullopt. Packages that own `name` natively outrank packages that only
+  /// re-export it from elsewhere (a convenience aggregator like `std.ffi`), so
+  /// a foreign re-export never wins when a native owner exists. Within the
+  /// chosen set: a lone match is suggested directly; several matches are
+  /// suggestable only if they lie on one ancestor->descendant chain (each path
+  /// a dotted prefix of the next), which is what an upward re-export through a
+  /// package subtree produces (a symbol defined in `std.a.b.c` and re-exported
+  /// by `std.a.b` and `std.a`) — then the shortest (outermost, most public)
+  /// path is the canonical import. Matches on diverging branches (two siblings)
+  /// are a genuine ambiguity that we cannot resolve, and yield nullopt.
+  std::optional<std::string> uniqueImportPath() {
+    SmallVectorImpl<std::string> &candidates =
+        !nativeMatches.empty() ? nativeMatches : foreignMatches;
+    if (candidates.empty())
+      return std::nullopt;
+    // Order by depth (then lexicographically, for a deterministic result). A
+    // single chain is then exactly the case where each path is a dotted prefix
+    // of the next, and `candidates.front()` is the shortest.
+    llvm::sort(candidates, [](StringRef a, StringRef b) {
+      return std::make_tuple(a.count('.'), a) <
+             std::make_tuple(b.count('.'), b);
+    });
+    for (size_t i = 1, e = candidates.size(); i < e; ++i)
+      if (!isDottedPrefix(candidates[i - 1], candidates[i]))
+        return std::nullopt;
+    return candidates.front();
+  }
+
+  /// True if `prefix` is a component-wise (dotted) prefix of `path`: equal, or
+  /// `path` continues with a `.` immediately after `prefix` (so `std.mem` is
+  /// not a prefix of `std.memory`, but `std.a` is a prefix of `std.a.b`).
+  static bool isDottedPrefix(StringRef prefix, StringRef path) {
+    if (path == prefix)
+      return true;
+    return path.starts_with(prefix) && path.size() > prefix.size() &&
+           path[prefix.size()] == '.';
+  }
+
+  /// If `moduleName` is a single-component relative reference (`.X`, exactly
+  /// one leading dot and no interior dots), return the component `X`; otherwise
+  /// the empty string. Rejects multi-component (`.a.b`), absolute (`a.b`), and
+  /// bare
+  /// (`.`) forms so they are never matched against direct children by leaf
+  /// name.
+  static StringRef singleComponentRelativeChild(StringRef moduleName) {
+    if (!moduleName.starts_with(".") || moduleName.size() == 1)
+      return {};
+    StringRef component = moduleName.drop_front(1);
+    return component.contains('.') ? StringRef() : component;
+  }
+
+  SharedState &shared;
+  StringRef name;
+  StringAttr initName;
+  /// Dotted paths of packages whose `__init__` surface exposes `name`, split by
+  /// how they expose it (see `MatchKind`). Collected during the walk and
+  /// reduced by `uniqueImportPath`, which prefers native owners over foreign
+  /// re-exporters.
+  SmallVector<std::string> nativeMatches;
+  SmallVector<std::string> foreignMatches;
+};
+
+} // namespace
+
+// Suggest the standard-library import for an unresolved unqualified `name`:
+// finds the "canonical" (see below) std *package* whose public surface includes
+// `name` and returns its dotted path (e.g. "std.memory") for a "did you mean to
+// import ..." diagnostic, or nullopt when there is no canonical package. Runs
+// on the error path of an already-failing compile, and is not cached (the tree
+// is re-walked once per unresolved name).
+//
+// "Canonical" means: among the packages that expose `name`, prefer the ones
+// that own it *natively* (declare it, re-export it from their own subtree, or
+// pull it in via a relative wildcard) over packages that merely re-export it
+// from another package (a convenience aggregator like `std.ffi` re-exporting
+// `std.os.abort`). Then, within the preferred set, the canonical package is
+// either (1) the only one, or (2) when several lie on one ancestor->descendant
+// chain, the shortest (most public) path. When the preferred set still has
+// packages on diverging branches, there is no canonical package and no
+// suggestion is made (see the "Ambiguity" case below).
+//
+// A package's public surface is whatever its `__init__.mojo` exposes. The walk
+// visits each std package and tests that surface for `name`. This is the
+// specification of which forms of exposure are recognized; each lists the
+// scenario, an example, and what the implementation does with it.
+//
+// Supported (a match produces the suggestion):
+//
+//   - Direct declaration in the package `__init__`.
+//       `def name(): ...` in pkg/__init__.mojo          -> suggests `pkg`
+//     Impl: reads the decl name off the op and compares it to `name`.
+//
+//   - Explicit re-export in the package `__init__`.
+//       `from .sub import name` in pkg/__init__.mojo     -> suggests `pkg`
+//     Impl: whether this op matches turns only on the bound import name; the
+//     re-exported module's path then decides native vs foreign (see the "Name
+//     defined ... re-exported from another" case below).
+//
+//   - Single-component relative wildcard re-export in the package `__init__`.
+//       `from .sub import *`, `name` declared in `sub`   -> suggests `pkg`
+//     Impl: maps the wildcard's leaf (`sub`) to a direct child module (or
+//     sub-package) of the package, then scans that child's surface for `name`.
+//
+//   - Name defined in one package and re-exported from another.
+//       `abort` is defined in `std.os`, and std/ffi/__init__.mojo also
+//       re-exports it via `from std.os import abort`       -> suggests `std.os`
+//     The package that defines the name (native) wins and is suggested, over a
+//     package that just re-exports it (foreign). A re-export still counts as
+//     "defining" when its source is inside the package's own subtree, so a
+//     parent re-exporting from its own child (`std.a` with `from .b import
+//     name` or `from std.a.b import name`) is native to `std.a` — not foreign.
+//     Only re-exporting from a *different* package (`std.ffi` reaching into
+//     `std.os`) is foreign. If a parent and its child both define the name, the
+//     shortest wins (the ancestor->descendant chain case above); if only
+//     re-exporters expose it, they are the fallback — still a suggestion.
+//
+//     Impl: `classifyOpExposure` marks a re-export foreign when its source
+//     module is outside the package's own subtree; `uniqueImportPath` drops the
+//     foreign matches whenever any native match exists.
+//
+// Not supported (no suggestion; `name` is simply not found):
+//
+//   - Source-built `std` (stdlib developers only).
+//     Impl: bails immediately. A source std materializes its submodules lazily,
+//     so they are not all present in the IR and the structural walk would see
+//     an incomplete tree. A source-specific traversal is intentionally not
+//     built — significant complexity for a path end users never hit.
+//
+//   - Multi-component relative wildcard re-export.
+//       `from .sub.deeper import *`
+//     Impl: rejected up front by `singleComponentRelativeChild`; only
+//     single-component relative wildcards (`from .X import *`) are resolved.
+//     Matching `.sub.deeper` by its leaf (`deeper`) alone would false-match an
+//     unrelated direct child that happens to be named `deeper`.
+//
+//   - Absolute wildcard re-export.
+//       `from std.foo import *`
+//     Impl: same guard — an absolute name has no leading dot, so it is not a
+//     single-component relative wildcard and is skipped (avoiding the same
+//     leaf-collision false match as above).
+//
+//   - Nested (transitive) wildcard re-export.
+//       `from .sub import *` where `sub` itself does `from .deeper import *`
+//     Impl: wildcard resolution is one level deep; it scans `sub` directly but
+//     does not follow a wildcard found inside `sub`.
+//
+//   - Ambiguity: packages on diverging branches expose `name`.
+//     Impl: within the preferred (native, else foreign) set, `uniqueImportPath`
+//     suggests the shortest only if the packages form a single
+//     ancestor->descendant chain (the same name re-exported upward through one
+//     subtree). Packages on diverging branches (e.g. two sibling owners, like
+//     `std.subprocess.run` vs `std.benchmark.run`) cannot be disambiguated and
+//     are suppressed.
+//
+//   - Private query: `name` is underscore-prefixed.
+//     Impl: rejected up front, before the walk.
+std::optional<std::string>
+DeclResolver::findUniqueStdlibImportFor(StringRef name) {
+  // Private query names are never suggested (see header).
+  if (name.empty() || isInternalName(name))
+    return std::nullopt;
+
+  // Bytecode `std` only; null for a source build (see header).
+  PackageOp stdPackage = shared.getPrecompiledStdlibPackage();
+  if (!stdPackage)
+    return std::nullopt;
+  return StdlibImportSearch(shared, name).run(stdPackage);
+}
+
 LogicalResult DeclResolver::importDeclFromModule(
     ASTDecl &dest, PackageOp currentPackage, StringAttr moduleName,
     StringAttr sourceName, StringAttr destName, SMLoc loc, SMLoc sourceNameLoc,
