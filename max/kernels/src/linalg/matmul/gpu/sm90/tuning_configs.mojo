@@ -32,6 +32,7 @@ struct TuningGroup(Equatable, TrivialRegisterPassable, Writable):
     comptime MISCELLANEOUS = Self(1)
     comptime INTERNVL = Self(2)
     comptime LLAMA_3_3_70B = Self(3)
+    comptime GEMMA_3_27B = Self(4)
 
 
 struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
@@ -2223,6 +2224,1166 @@ def _get_tuning_list_bf16[
                 RasterOrder.AlongM
             ) if False else None,
             dispatch_group=TuningGroup(3),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [100]
+        TuningConfigSM90(
+            M=16,
+            N=5376,
+            K=4096,
+            mma_shape=IndexList[3](64, 64, mma_k),
+            block_tile_shape=Index(64 * 1, 64, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=7,
+            num_consumer=1,
+            partitioned_multicast=True,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if True else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if True else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [101]
+        TuningConfigSM90(
+            M=16,
+            N=8192,
+            K=5376,
+            mma_shape=IndexList[3](64, 64, mma_k),
+            block_tile_shape=Index(64 * 1, 64, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=12,
+            num_consumer=1,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(3),
+            splits=OptionalReg[Int](2) if True else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if True else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [102]
+        TuningConfigSM90(
+            M=16,
+            N=43008,
+            K=5376,
+            mma_shape=IndexList[3](64, 192, mma_k),
+            block_tile_shape=Index(64 * 1, 192, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=1,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(3),
+            splits=OptionalReg[Int](2) if True else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if True else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [103]
+        TuningConfigSM90(
+            M=16,
+            N=5376,
+            K=21504,
+            mma_shape=IndexList[3](64, 96, mma_k),
+            block_tile_shape=Index(64 * 1, 96, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=6,
+            num_consumer=1,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if True else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if True else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [104]
+        TuningConfigSM90(
+            M=32,
+            N=5376,
+            K=4096,
+            mma_shape=IndexList[3](64, 64, mma_k),
+            block_tile_shape=Index(64 * 1, 64, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=7,
+            num_consumer=1,
+            partitioned_multicast=True,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if True else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if True else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [105]
+        TuningConfigSM90(
+            M=32,
+            N=8192,
+            K=5376,
+            mma_shape=IndexList[3](64, 64, mma_k),
+            block_tile_shape=Index(64 * 1, 64, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=12,
+            num_consumer=1,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(3),
+            splits=OptionalReg[Int](2) if True else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if True else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [106]
+        TuningConfigSM90(
+            M=32,
+            N=43008,
+            K=5376,
+            mma_shape=IndexList[3](64, 112, mma_k),
+            block_tile_shape=Index(64 * 1, 112, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=1,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(3),
+            splits=OptionalReg[Int](2) if True else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if True else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [107]
+        TuningConfigSM90(
+            M=32,
+            N=5376,
+            K=21504,
+            mma_shape=IndexList[3](64, 96, mma_k),
+            block_tile_shape=Index(64 * 1, 96, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=6,
+            num_consumer=1,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if True else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if True else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [108]
+        TuningConfigSM90(
+            M=224,
+            N=5376,
+            K=4096,
+            mma_shape=IndexList[3](64, 96, mma_k),
+            block_tile_shape=Index(64 * 2, 96, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=7,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(2, H100.sm_count // 2),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [109]
+        TuningConfigSM90(
+            M=224,
+            N=8192,
+            K=5376,
+            mma_shape=IndexList[3](64, 128, mma_k),
+            block_tile_shape=Index(64 * 2, 128, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=6,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(2, H100.sm_count // 2),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [110]
+        TuningConfigSM90(
+            M=224,
+            N=43008,
+            K=5376,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=5,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(2, H100.sm_count // 2),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [111]
+        TuningConfigSM90(
+            M=224,
+            N=5376,
+            K=21504,
+            mma_shape=IndexList[3](64, 96, mma_k),
+            block_tile_shape=Index(64 * 2, 96, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=7,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [112]
+        TuningConfigSM90(
+            M=256,
+            N=8192,
+            K=5376,
+            mma_shape=IndexList[3](64, 128, mma_k),
+            block_tile_shape=Index(64 * 2, 128, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=6,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(2, H100.sm_count // 2),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [113]
+        TuningConfigSM90(
+            M=256,
+            N=43008,
+            K=5376,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=5,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(16, H100.sm_count // 16),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [114]
+        TuningConfigSM90(
+            M=256,
+            N=5376,
+            K=21504,
+            mma_shape=IndexList[3](64, 96, mma_k),
+            block_tile_shape=Index(64 * 2, 96, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=7,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [115]
+        TuningConfigSM90(
+            M=256,
+            N=5376,
+            K=4096,
+            mma_shape=IndexList[3](64, 96, mma_k),
+            block_tile_shape=Index(64 * 2, 96, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=5,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [116]
+        TuningConfigSM90(
+            M=288,
+            N=8192,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(4, H100.sm_count // 4),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [117]
+        TuningConfigSM90(
+            M=288,
+            N=5376,
+            K=21504,
+            mma_shape=IndexList[3](64, 168, mma_k),
+            block_tile_shape=Index(64 * 2, 168, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=5,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(2, H100.sm_count // 2),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [118]
+        TuningConfigSM90(
+            M=288,
+            N=5376,
+            K=4096,
+            mma_shape=IndexList[3](64, 192, mma_k),
+            block_tile_shape=Index(64 * 2, 192, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [119]
+        TuningConfigSM90(
+            M=512,
+            N=8192,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [120]
+        TuningConfigSM90(
+            M=512,
+            N=43008,
+            K=5376,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(16, H100.sm_count // 16),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [121]
+        TuningConfigSM90(
+            M=512,
+            N=5376,
+            K=21504,
+            mma_shape=IndexList[3](64, 168, mma_k),
+            block_tile_shape=Index(64 * 2, 168, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=5,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(2, H100.sm_count // 2),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [122]
+        TuningConfigSM90(
+            M=512,
+            N=5376,
+            K=4096,
+            mma_shape=IndexList[3](64, 168, mma_k),
+            block_tile_shape=Index(64 * 2, 168, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=6,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(2, H100.sm_count // 2),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [123]
+        TuningConfigSM90(
+            M=1024,
+            N=8192,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(16, H100.sm_count // 16),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [124]
+        TuningConfigSM90(
+            M=1024,
+            N=43008,
+            K=5376,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(16, H100.sm_count // 16),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [125]
+        TuningConfigSM90(
+            M=1024,
+            N=5376,
+            K=21504,
+            mma_shape=IndexList[3](64, 168, mma_k),
+            block_tile_shape=Index(64 * 2, 168, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(16, H100.sm_count // 16),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [126]
+        TuningConfigSM90(
+            M=2000,
+            N=5376,
+            K=4096,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [127]
+        TuningConfigSM90(
+            M=2000,
+            N=8192,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [128]
+        TuningConfigSM90(
+            M=2000,
+            N=43008,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [129]
+        TuningConfigSM90(
+            M=2000,
+            N=5376,
+            K=21504,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(4, H100.sm_count // 4),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [130]
+        TuningConfigSM90(
+            M=2048,
+            N=5376,
+            K=4096,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(6, H100.sm_count // 6),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [131]
+        TuningConfigSM90(
+            M=2048,
+            N=8192,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [132]
+        TuningConfigSM90(
+            M=2048,
+            N=43008,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [133]
+        TuningConfigSM90(
+            M=2048,
+            N=5376,
+            K=21504,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [134]
+        TuningConfigSM90(
+            M=3072,
+            N=5376,
+            K=4096,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [135]
+        TuningConfigSM90(
+            M=3072,
+            N=8192,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(16, H100.sm_count // 16),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [136]
+        TuningConfigSM90(
+            M=3072,
+            N=43008,
+            K=5376,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(16, H100.sm_count // 16),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [137]
+        TuningConfigSM90(
+            M=3072,
+            N=5376,
+            K=21504,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [138]
+        TuningConfigSM90(
+            M=3500,
+            N=5376,
+            K=4096,
+            mma_shape=IndexList[3](64, 192, mma_k),
+            block_tile_shape=Index(64 * 2, 192, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(4, H100.sm_count // 4),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [139]
+        TuningConfigSM90(
+            M=3500,
+            N=8192,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [140]
+        TuningConfigSM90(
+            M=3500,
+            N=43008,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(6, H100.sm_count // 6),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [141]
+        TuningConfigSM90(
+            M=3500,
+            N=5376,
+            K=21504,
+            mma_shape=IndexList[3](64, 192, mma_k),
+            block_tile_shape=Index(64 * 2, 192, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [142]
+        TuningConfigSM90(
+            M=4096,
+            N=5376,
+            K=4096,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [143]
+        TuningConfigSM90(
+            M=4096,
+            N=8192,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [144]
+        TuningConfigSM90(
+            M=4096,
+            N=43008,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [145]
+        TuningConfigSM90(
+            M=4096,
+            N=5376,
+            K=21504,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [146]
+        TuningConfigSM90(
+            M=7000,
+            N=5376,
+            K=4096,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [147]
+        TuningConfigSM90(
+            M=7000,
+            N=8192,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(16, H100.sm_count // 16),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [148]
+        TuningConfigSM90(
+            M=7000,
+            N=43008,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(1, H100.sm_count // 1),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [149]
+        TuningConfigSM90(
+            M=7000,
+            N=5376,
+            K=21504,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [150]
+        TuningConfigSM90(
+            M=8192,
+            N=5376,
+            K=4096,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(6, H100.sm_count // 6),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [151]
+        TuningConfigSM90(
+            M=8192,
+            N=8192,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [152]
+        TuningConfigSM90(
+            M=8192,
+            N=43008,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [153]
+        TuningConfigSM90(
+            M=8192,
+            N=5376,
+            K=21504,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(6, H100.sm_count // 6),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [154]
+        TuningConfigSM90(
+            M=48000,
+            N=5376,
+            K=4096,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [155]
+        TuningConfigSM90(
+            M=48000,
+            N=8192,
+            K=5376,
+            mma_shape=IndexList[3](64, 256, mma_k),
+            block_tile_shape=Index(64 * 2, 256, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(4, H100.sm_count // 4),
+            schedule=MatmulSchedule(0),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [156]
+        TuningConfigSM90(
+            M=48000,
+            N=43008,
+            K=5376,
+            mma_shape=IndexList[3](64, 192, mma_k),
+            block_tile_shape=Index(64 * 2, 192, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(16, H100.sm_count // 16),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
+        ),
+        # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
+        # index: [157]
+        TuningConfigSM90(
+            M=48000,
+            N=5376,
+            K=21504,
+            mma_shape=IndexList[3](64, 224, mma_k),
+            block_tile_shape=Index(64 * 2, 224, BK),
+            cluster_shape=Index(2, 1, 1),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(8, H100.sm_count // 8),
+            schedule=MatmulSchedule(2),
+            splits=OptionalReg[Int](2) if False else None,
+            raster_order=OptionalReg[RasterOrder](
+                RasterOrder.AlongM
+            ) if False else None,
+            dispatch_group=TuningGroup(4),
         ),
         # ----------------END-TUNING-LIST-BF16-SMALL----------------
     ]
