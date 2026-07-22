@@ -635,12 +635,23 @@ class VisionEncoderCache(Generic[VLMContextType]):
             for img in ctx.images:
                 assert img.image_hash is not None
                 entry = self.lookup(img.image_hash)
-                assert entry is not None, (
-                    f"Image {img.image_hash} not in cache — "
-                    "_cache_and_split must be called first"
-                )
-                for d in range(n_devices):
-                    all_device_bufs[d].append(entry.embeddings[d])
+                if entry is None:
+                    assert img.end_idx <= ctx.tokens.processed_length, (
+                        f"Active image {img.image_hash} not in cache"
+                    )
+                    count = img.end_idx - img.start_idx
+                    for d in range(n_devices):
+                        base = empty_embeddings[d]
+                        all_device_bufs[d].append(
+                            Buffer.zeros(
+                                shape=[count, int(base.shape[1])],
+                                dtype=base.dtype,
+                                device=base.device,
+                            )
+                        )
+                else:
+                    for d in range(n_devices):
+                        all_device_bufs[d].append(entry.embeddings[d])
 
         if not any(len(dl) > 0 for dl in all_device_bufs):
             return empty_embeddings
