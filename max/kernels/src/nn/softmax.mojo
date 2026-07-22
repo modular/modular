@@ -1155,17 +1155,95 @@ def _softmax_gpu[
                     num_rows, sm_overprovision_factor * sm_count
                 )
 
+                # Split-K: when `num_rows` blocks under-fill the GPU, split
+                # each row's columns across `num_splits` blocks. The per-row
+                # reduction serializes, so only more blocks per row helps.
+                # `num_splits == 1` keeps the single-block path below.
+                comptime blocks_per_sm = 6
+                comptime max_splits = 32
+                # Below this many tiles per split the two-launch overhead outweighs
+                # the parallelism (short rows like 256x4096 regress ~2x).
+                comptime min_tiles_per_split = 4
+                comptime accum_type = get_accum_type[dtype]()
+                var target_blocks = blocks_per_sm * sm_count
+                # Widest-tile count so no split ends up empty in either variant.
+                var total_tiles = ceildiv(
+                    shape_il[axis], BLOCK_SIZE * simd_width
+                )
+                var num_splits = min(
+                    min(max(target_blocks // num_rows, 1), max_splits),
+                    max(total_tiles // min_tiles_per_split, 1),
+                )
+
                 # Vectorised loads need each row to start on a `simd_width`-element
                 # boundary so per-row strides stay aligned, and need enough work
                 # per row to amortise the wider tile dispatch. Otherwise downgrade
                 # to scalar; `unswitch` lifts the predicate so each kernel variant
                 # has one inner-loop shape.
                 @parameter
-                @__copy_capture(num_blocks, shape_il, output)
+                @__copy_capture(num_blocks, shape_il, output, num_splits)
                 def dispatch[use_vectorized: Bool]() raises:
                     comptime kernel_simd_width = (
                         simd_width if use_vectorized else 1
                     )
+                    var null_temp_arr = Optional[
+                        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]
+                    ]()
+
+                    if num_splits > 1:
+                        var num_pairs = num_rows * num_splits
+                        var partial_max = ctx.enqueue_create_buffer[accum_type](
+                            num_pairs
+                        )
+                        var partial_sum = ctx.enqueue_create_buffer[accum_type](
+                            num_pairs
+                        )
+
+                        comptime partial_kernel = _softmax_split_partial_kernel[
+                            BLOCK_SIZE,
+                            kernel_simd_width,
+                            input_fn_wrapper,
+                            dtype,
+                            DType.float32,
+                            rank,
+                        ]
+                        ctx.enqueue_function[partial_kernel](
+                            shape_il,
+                            Float32(1),
+                            null_temp_arr,
+                            num_splits,
+                            partial_max,
+                            partial_sum,
+                            grid_dim=num_pairs,
+                            block_dim=BLOCK_SIZE,
+                        )
+
+                        comptime combine_kernel = _softmax_split_combine_kernel[
+                            BLOCK_SIZE,
+                            kernel_simd_width,
+                            input_fn_wrapper,
+                            dtype,
+                            DType.float32,
+                            rank,
+                            output.LayoutType,
+                            output.origin,
+                            output.Storage,
+                        ]
+                        ctx.enqueue_function[combine_kernel](
+                            shape_il,
+                            output,
+                            Float32(1),
+                            null_temp_arr,
+                            num_splits,
+                            partial_max,
+                            partial_sum,
+                            grid_dim=num_pairs,
+                            block_dim=BLOCK_SIZE,
+                        )
+                        _ = partial_max^
+                        _ = partial_sum^
+                        return
+
                     comptime kernel = _softmax_temperature_kernel[
                         BLOCK_SIZE,
                         kernel_simd_width,
@@ -1181,9 +1259,7 @@ def _softmax_gpu[
                         shape_il,
                         output,
                         Float32(1),
-                        Optional[
-                            UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]
-                        ](),
+                        null_temp_arr,
                         grid_dim=num_blocks,
                         block_dim=BLOCK_SIZE,
                         attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -1440,6 +1516,216 @@ def _softmax_temperature_kernel[
                         )
 
                     vectorize[simd_width](lane_count, normalize)
+
+
+# ===----------------------------------------------------------------------=== #
+# Split-K (column/vocab-parallel) softmax (GPU only, any family).
+# ===----------------------------------------------------------------------=== #
+#
+# For a few long rows the single-block-per-row kernel above leaves most SMs
+# idle. The split path partitions each row across `num_splits` blocks in two
+# passes: stage 1 reduces each column chunk to a partial `(max, sum)` in a
+# `[num_rows, num_splits]` scratch; stage 2 combines the partials per row (same
+# online rescale used within a block) and normalizes its own chunk. Two passes
+# avoid the cross-block atomics a single-kernel combine would need.
+
+
+@__name(t"softmax_split_partial_{dtype}_{temp_dtype}_{simd_width}")
+def _softmax_split_partial_kernel[
+    BLOCK_SIZE: Int,
+    simd_width: Int,
+    input_fn: def[_dtype: DType, _simd_width: Int, _rank: Int](
+        IndexList[_rank]
+    ) capturing[_] -> SIMD[_dtype, _simd_width],
+    dtype: DType,
+    temp_dtype: DType,
+    rank: Int,
+    accum_type: DType = get_accum_type[dtype](),
+](
+    shape: IndexList[rank],
+    temperature: Scalar[temp_dtype],
+    temperature_arr: Optional[
+        UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin]
+    ],
+    num_splits: Int,
+    partial_max: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
+    partial_sum: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
+):
+    """Stage 1 of split-K softmax: reduce one contiguous column chunk of one
+    row to a partial `(max, sum)`.
+
+    Grid is `num_rows * num_splits` blocks; block `b` owns `(row, split) =
+    (b // num_splits, b % num_splits)`. The chunk math and online recurrence
+    mirror step 1 of `_softmax_temperature_kernel`; a fully-masked chunk yields
+    `(NEG_INF, 0)`, which stage 2 skips.
+    """
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert (
+        accum_type.is_floating_point()
+    ), "accum_type must be floating point"
+    comptime axis = rank - 1
+    comptime BLOCK_SPAN = BLOCK_SIZE * simd_width
+    comptime NEG_INF = Scalar[accum_type].MIN
+
+    var row_size = shape[axis]
+    var num_rows = ufloordiv(shape.flattened_length(), row_size)
+    var num_pairs = num_rows * num_splits
+    var tid = thread_idx.x
+    var tiles_per_split = ceildiv(ceildiv(row_size, BLOCK_SPAN), num_splits)
+
+    for pair_idx in range(block_idx.x, num_pairs, grid_dim.x):
+        var row_idx = pair_idx // num_splits
+        var split = pair_idx % num_splits
+        var row_coords = _get_nd_indices_from_flat_index(row_idx, shape, axis)
+
+        # Every block owning this row must read the same temperature.
+        var temp = temperature.cast[accum_type]()
+        if temperature_arr:
+            temp = temperature_arr.unsafe_value()[row_idx].cast[accum_type]()
+        temp = max(temp, Scalar[accum_type](1e-6))
+        var inv_temp = Scalar[accum_type](1) / temp
+
+        var row_max = Scalar[accum_type].MIN
+        var exp_sum = Scalar[accum_type](0)
+
+        # BLOCK_SPAN-aligned chunk so `lane_base` stays simd_width-aligned and
+        # the caller's vectorized-load predicate still holds.
+        var col_lo = split * tiles_per_split * BLOCK_SPAN
+        var col_hi = min(col_lo + tiles_per_split * BLOCK_SPAN, row_size)
+
+        for tile_base in range(col_lo, col_hi, BLOCK_SPAN):
+            var lane_base = tile_base + tid * simd_width
+            if lane_base < row_size:
+                var lane_count = min(row_size - lane_base, simd_width)
+
+                @always_inline
+                def online_max_sum[
+                    width: Int
+                ](offset: Int) {row_coords, lane_base, mut}:
+                    var coords = row_coords
+                    coords[axis] = Int(lane_base) + offset
+                    var v = input_fn[dtype, width, rank](coords).cast[
+                        accum_type
+                    ]()
+                    var lane_max = v.reduce_max()
+                    if lane_max > NEG_INF:
+                        var new_max = max(row_max, lane_max)
+                        exp_sum = (
+                            exp_sum * exp((row_max - new_max) * inv_temp)
+                            + exp(
+                                (v - SIMD[accum_type, width](new_max))
+                                * SIMD[accum_type, width](inv_temp)
+                            ).reduce_add()
+                        )
+                        row_max = new_max
+
+                vectorize[simd_width](lane_count, online_max_sum)
+
+        var chunk_max = block.max[block_size=BLOCK_SIZE](row_max)
+        if chunk_max > NEG_INF:
+            exp_sum *= exp((row_max - chunk_max) * inv_temp)
+        var chunk_sum = block.sum[block_size=BLOCK_SIZE](exp_sum)
+
+        if tid == 0:
+            partial_max[pair_idx] = chunk_max
+            partial_sum[pair_idx] = chunk_sum
+
+
+@__name(t"softmax_split_combine_{dtype}_{temp_dtype}_{simd_width}")
+def _softmax_split_combine_kernel[
+    BLOCK_SIZE: Int,
+    simd_width: Int,
+    input_fn: def[_dtype: DType, _simd_width: Int, _rank: Int](
+        IndexList[_rank]
+    ) capturing[_] -> SIMD[_dtype, _simd_width],
+    dtype: DType,
+    temp_dtype: DType,
+    rank: Int,
+    OutputLayoutType: TensorLayout,
+    output_origin: MutOrigin,
+    OutputStorage: TensorStorage,
+    accum_type: DType = get_accum_type[dtype](),
+](
+    shape: IndexList[rank],
+    output: TileTensor[
+        dtype, OutputLayoutType, output_origin, Storage=OutputStorage
+    ],
+    temperature: Scalar[temp_dtype],
+    temperature_arr: Optional[
+        UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin]
+    ],
+    num_splits: Int,
+    partial_max: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
+    partial_sum: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
+):
+    """Stage 2 of split-K softmax: combine the row's partials into
+    `(global_max, global_sum)`, then normalize this block's column chunk.
+
+    A fully-masked chunk contributes `0` (not NaN) via the `my_max > NEG_INF`
+    guard; a fully-masked row keeps the single-block kernel's `1/0` NaN result.
+    """
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert (
+        accum_type.is_floating_point()
+    ), "accum_type must be floating point"
+    comptime axis = rank - 1
+    comptime BLOCK_SPAN = BLOCK_SIZE * simd_width
+    comptime NEG_INF = Scalar[accum_type].MIN
+
+    var row_size = shape[axis]
+    var num_rows = ufloordiv(shape.flattened_length(), row_size)
+    var num_pairs = num_rows * num_splits
+    var tid = thread_idx.x
+    var tiles_per_split = ceildiv(ceildiv(row_size, BLOCK_SPAN), num_splits)
+
+    for pair_idx in range(block_idx.x, num_pairs, grid_dim.x):
+        var row_idx = pair_idx // num_splits
+        var split = pair_idx % num_splits
+        var row_coords = _get_nd_indices_from_flat_index(row_idx, shape, axis)
+
+        var temp = temperature.cast[accum_type]()
+        if temperature_arr:
+            temp = temperature_arr.unsafe_value()[row_idx].cast[accum_type]()
+        temp = max(temp, Scalar[accum_type](1e-6))
+        var inv_temp = Scalar[accum_type](1) / temp
+
+        # Threads outside `[0, num_splits)` contribute the neutral `(NEG_INF, 0)`.
+        var my_max = Scalar[accum_type].MIN
+        var my_sum = Scalar[accum_type](0)
+        if tid < num_splits:
+            my_max = partial_max[row_idx * num_splits + tid]
+            my_sum = partial_sum[row_idx * num_splits + tid]
+
+        var global_max = block.max[block_size=BLOCK_SIZE](my_max)
+        if my_max > NEG_INF:
+            my_sum *= exp((my_max - global_max) * inv_temp)
+        var global_sum = block.sum[block_size=BLOCK_SIZE](my_sum)
+        var recip = Scalar[accum_type](1) / global_sum
+
+        var col_lo = split * tiles_per_split * BLOCK_SPAN
+        var col_hi = min(col_lo + tiles_per_split * BLOCK_SPAN, row_size)
+
+        for tile_base in range(col_lo, col_hi, BLOCK_SPAN):
+            var lane_base = tile_base + tid * simd_width
+            if lane_base < row_size:
+                var lane_count = min(row_size - lane_base, simd_width)
+
+                @always_inline
+                def normalize[
+                    width: Int
+                ](offset: Int) {row_coords, lane_base, output, mut}:
+                    var coords = row_coords
+                    coords[axis] = Int(lane_base) + offset
+                    var logit = input_fn[dtype, width, rank](coords).cast[
+                        accum_type
+                    ]()
+                    var diff = (
+                        logit - SIMD[accum_type, width](global_max)
+                    ) * SIMD[accum_type, width](inv_temp)
+                    var val = exp(diff) * SIMD[accum_type, width](recip)
+                    output.store_linear[width=width](coords, val.cast[dtype]())
+
+                vectorize[simd_width](lane_count, normalize)
 
 
 def softmax_with_temperature[

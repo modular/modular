@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import isclose
+from std.math import isclose, isnan
+from std.utils.numerics import min_or_neg_inf
 from std.random import rand, random_float64, seed
 from std.sys import has_amd_gpu_accelerator, simd_width_of
 
@@ -455,6 +456,125 @@ def test_gpu_softmax_large_vocab[test_type: DType](ctx: DeviceContext) raises:
         assert_almost_equal(ref_val, test_val, atol=1e-2)
 
 
+def test_gpu_softmax_masked_split[test_type: DType](ctx: DeviceContext) raises:
+    """Drives a `-inf`-masked large-vocab input through the split-K path of
+    `_softmax_gpu` and checks it against `_softmax_cpu`.
+
+    Few rows over a long inner axis force `num_splits > 1`, so this covers the
+    split-K combine's masked-chunk handling: a split whose whole chunk is
+    `-inf` must contribute `exp_sum = 0` (not NaN), and a fully-masked row must
+    reproduce the single-block kernel's NaN behavior. There is no other test
+    that pushes `-inf` through this kernel.
+    """
+    print("== test_gpu_softmax_masked_split", test_type)
+    seed(42)
+
+    comptime ref_type = DType.float32
+    comptime rank = 2
+    # Few rows over a long axis so `num_splits > 1` (fp32 and bf16) and the
+    # split path is exercised.
+    var shape = IndexList[rank](4, 32768)
+    comptime row_size = 32768
+    var length = shape.flattened_length()
+    var num_rows = length // row_size
+
+    comptime layout_dyn = Layout.row_major[rank]()
+
+    var neg_inf = min_or_neg_inf[test_type]()
+    var in_host_ptr = alloc[Scalar[test_type]](length)
+    var in_device_ptr = ctx.enqueue_create_buffer[test_type](length)
+    var in_host = LayoutTensor[test_type, layout_dyn](
+        in_host_ptr, RuntimeLayout[layout_dyn].row_major(shape)
+    )
+    var in_device = LayoutTensor[test_type, layout_dyn](
+        in_device_ptr.unsafe_ptr(), RuntimeLayout[layout_dyn].row_major(shape)
+    )
+
+    for i in range(length):
+        in_host_ptr[i] = (
+            random_float64(-3, 3).cast[ref_type]().cast[test_type]()
+        )
+
+    # Row 0 fully masked (expects NaN); row 1's `-inf` prefix fully masks a
+    # leading split chunk (the "contributes 0, not NaN" landmine); row 2 masked
+    # tail; row 3 unmasked.
+    for j in range(row_size):
+        in_host_ptr[0 * row_size + j] = neg_inf
+    for j in range(8192):
+        in_host_ptr[1 * row_size + j] = neg_inf
+    for j in range(24576, row_size):
+        in_host_ptr[2 * row_size + j] = neg_inf
+
+    ctx.enqueue_copy(in_device_ptr, in_host_ptr)
+
+    var out_host_ptr = alloc[Scalar[test_type]](length)
+    var out_device_ptr = ctx.enqueue_create_buffer[test_type](length)
+    var out_ref_ptr = alloc[Scalar[ref_type]](length)
+
+    @parameter
+    @__copy_capture(in_device)
+    def input_fn_device[
+        _simd_width: Int
+    ](coords: Coord) -> SIMD[test_type, _simd_width]:
+        return in_device.load[width=_simd_width](coord_to_index_list(coords))
+
+    @parameter
+    @__copy_capture(in_host)
+    def input_fn_host[
+        _simd_width: Int
+    ](coords: Coord) -> SIMD[ref_type, _simd_width]:
+        return in_host.load[width=_simd_width](
+            coord_to_index_list(coords)
+        ).cast[ref_type]()
+
+    _softmax_gpu[
+        test_type,
+        simd_width_of[test_type, target=get_gpu_target()](),
+        rank,
+        input_fn_device,
+    ](
+        Coord(shape),
+        TileTensor(out_device_ptr, row_major(Coord(shape))),
+        rank - 1,
+        ctx,
+    )
+
+    _softmax_cpu[ref_type, 1, rank, origin_of()._mlir_origin, input_fn_host](
+        Coord(shape),
+        TileTensor(out_ref_ptr, row_major(Coord(shape))),
+        rank - 1,
+    )
+
+    ctx.synchronize()
+    ctx.enqueue_copy(out_host_ptr, out_device_ptr)
+    ctx.synchronize()
+
+    # Match the reference where finite; NaN where the reference is NaN.
+    for i in range(length):
+        var ref_val = out_ref_ptr[i]
+        var got = out_host_ptr[i].cast[ref_type]()
+        if isnan(ref_val):
+            assert_true(isnan(got))
+        else:
+            assert_almost_equal(got, ref_val, atol=1e-4, rtol=1e-5)
+
+    # Finite (partially/un-masked) rows still sum to ~1.
+    for r in range(num_rows):
+        if isnan(out_ref_ptr[r * row_size]):
+            continue
+        var s = Scalar[ref_type](0)
+        for j in range(row_size):
+            s += out_host_ptr[r * row_size + j].cast[ref_type]()
+        assert_almost_equal(s, Scalar[ref_type](1), atol=1e-2)
+
+    in_host_ptr.free()
+    out_host_ptr.free()
+    out_ref_ptr.free()
+    _ = in_device_ptr
+    _ = out_device_ptr
+    _ = in_device
+
+
 def test_gpu_online_softmax[
     WM: Int, WN: Int, transpose_fragments: Bool
 ](ctx: DeviceContext) raises:
@@ -773,6 +893,8 @@ def main() raises:
         test_gpu_softmax_verify_shapes[DType.float32](ctx)
         test_gpu_softmax_large_vocab[DType.bfloat16](ctx)
         test_gpu_softmax_large_vocab[DType.float32](ctx)
+        test_gpu_softmax_masked_split[DType.float32](ctx)
+        test_gpu_softmax_masked_split[DType.bfloat16](ctx)
         test_gpu_logsoftmax(ctx)
         test_gpu_softmax_temperature[per_row=False](ctx)
         test_gpu_softmax_temperature[per_row=True](ctx)
