@@ -407,9 +407,12 @@ public:
 
   /// Resolve the absolute path for a given module name within the provided
   /// directory. Returns nullopt if the module cannot be found.
-  std::optional<SharedState::ModuleSpec> resolveModulePath(StringRef moduleName,
-                                                           StringRef includeDir,
-                                                           bool ignorePrebuilt);
+  ///
+  /// \p isInsideSourcePackage is true for submodule search inside a source
+  /// package. In that mode, any `.mojoc` candidate is ignored.
+  std::optional<SharedState::ModuleSpec>
+  resolveModulePath(StringRef moduleName, StringRef includeDir,
+                    bool ignorePrebuilt, bool isInsideSourcePackage);
 
   //===--------------------------------------------------------------------===//
   // Debug Info

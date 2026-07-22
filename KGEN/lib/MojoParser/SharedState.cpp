@@ -1059,7 +1059,8 @@ SharedState::ModuleSpec::classify(const std::filesystem::path &path) {
 /// directory. Returns nullopt if the module cannot be found.
 std::optional<SharedState::ModuleSpec>
 SharedState::resolveModulePath(StringRef moduleName, StringRef includeDir,
-                               bool ignorePrebuilt) {
+                               bool ignorePrebuilt,
+                               bool isInsideSourcePackage) {
   // Find a path in `includeDir` that is an importable mojo construct matching
   // `moduleName`
   std::error_code ec;
@@ -1076,7 +1077,13 @@ SharedState::resolveModulePath(StringRef moduleName, StringRef includeDir,
       continue;
 
     if (auto moduleSpec = ModuleSpec::classify(entry.path())) {
-      if (ignorePrebuilt && moduleSpec->isPrecompiled())
+      // A package can't legitimately nest a precompiled copy of itself or its
+      // own submodules, so this ignores every `.mojoc` candidate when
+      // resolving from within a package's own directory, unlike the
+      // top-level `-I` search where `.mojoc`-before-`.mojo` precedence still
+      // applies to genuine collisions.
+      if (moduleSpec->isPrecompiled() &&
+          (ignorePrebuilt || isInsideSourcePackage))
         continue;
       if (!bestMatch || moduleSpec->takesImportPrecedence(*bestMatch))
         bestMatch = moduleSpec;
@@ -1101,7 +1108,8 @@ SharedState::resolveModulePath(StringRef moduleName, SMLoc includeLoc) {
       // package.
       return WalkResult::advance();
     }
-    if ((result = resolveModulePath(moduleName, dir, disablePrebuiltPackages)))
+    if ((result = resolveModulePath(moduleName, dir, disablePrebuiltPackages,
+                                    /*isInsideSourcePackage=*/false)))
       return WalkResult::interrupt();
     return WalkResult::advance();
   });
@@ -1319,7 +1327,8 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
     if (!parentState->sourcePath)
       return notFound("unable to locate module '" + name + "'");
     modulePath = resolveModulePath(name, *parentState->sourcePath,
-                                   disablePrebuiltPackages);
+                                   disablePrebuiltPackages,
+                                   /*isInsideSourcePackage=*/true);
   } else {
     // Otherwise, go through the normal import path.
     modulePath = resolveModulePath(name, loc);

@@ -167,39 +167,21 @@ _KERNEL_PACKAGES = [
 ]
 
 # Same escape hatch as _NO_RUN_LIST, but paths are relative to max/kernels/src.
-# Two categories (revised 2026-07-09: the apple_accelerate.mojo
-# bytecode-reader crash previously documented here as its own category was
-# root-caused and fixed in SharedState::finalizeImportedBytecodeModules --
-# see that function's comment. 13 of the 17 files that used to crash are now
-# clean and removed from this list entirely; the other 4 turned out to
-# independently belong in one of the two categories below once the crash
-# stopped masking them):
-#
-# 1. //Kernels/lib/... OSS-layering gap: these files import `matmul_rs`/`msa`,
-#    packages that live in the closed-source `Kernels/` tree rather than the
-#    open-sourced max/kernels/src (see _KERNEL_MOJOPKGS's comment below).
-#    Known issue, not specific to this test. "unable to locate module" is
-#    the only error; no crash, no other diagnostic.
-# 2. layout/__init__.mojo crashes standalone-resolving `LayoutTensor`'s
-#    default parameter `element_layout: Layout = Layout(1, 1)`
-#    (layout_tensor.mojo:263) via `CallParamInf::inferForCall`
-#    (KGEN/lib/MojoParser/ParamInf.cpp) -- a real KGEN assertion failure
-#    (DeclResolver.cpp:1491, "Unknown decl symbol!"), confirmed via a direct
-#    `kgen -lsp` run; not a bad edit (that default-param line is unchanged
-#    since March 2024). See MOCO-2845 for the tracking issue.
+# //Kernels/lib/... OSS-layering gap: these files import `matmul_rs`/`msa`,
+# packages that live in the closed-source `Kernels/` tree rather than the
+# open-sourced max/kernels/src (see _KERNEL_MOJOPKGS's comment below). Known
+# issue, not specific to this test. "unable to locate module" is the only
+# error; no crash, no other diagnostic.
 _KERNELS_NO_RUN_LIST = [
-    # 1. //Kernels/lib/... visibility gap (see comment above).
     "graph_compiler/builtin_kernels/distributed.mojo",
     "graph_compiler/builtin_kernels/msa.mojo",
-    # 2. LayoutTensor default-parameter resolution crash (see comment above).
-    "layout/__init__.mojo",
 ]
 
 # ALL_MOJOPKGS minus the internal //Kernels/... packages (msa, matmul_rs,
 # mega_ffn): these live in the closed-source `Kernels/` tree rather than the
 # open-sourced max/kernels/src, and are unreachable from here. Known
 # OSS-layering issue, not specific to this test (see _KERNELS_NO_RUN_LIST's
-# category 1 above: msa.mojo, distributed.mojo).
+# comment above: msa.mojo, distributed.mojo).
 #
 # The graph_compiler sub-package targets (extensibility, builtin_kernels,
 # builtin_primitives) were excluded here too until 2026-07-09, on the theory
