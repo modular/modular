@@ -428,9 +428,12 @@ struct Span[
         self._len = 0
 
     def __init__(
-        out self, *, ptr: UnsafePointer[Self.T, Self.origin], length: Int
+        out self,
+        *,
+        unsafe_ptr: UnsafePointer[Self.T, Self.origin],
+        length: Int,
     ):
-        self._data = ptr
+        self._data = unsafe_ptr
         self._len = length
 
     @always_inline
@@ -1089,7 +1092,7 @@ struct VariadicList[
             )
         ).bitcast[Self._EltPointerType]()
         var size_tmp = size  # FIXME: Weird MLIR syntax error?
-        self.value = Span(ptr=elt_ptr, length=Int(mlir_value=size_tmp))
+        self.value = Span(unsafe_ptr=elt_ptr, length=Int(mlir_value=size_tmp))
 
     def __getitem__[
         self_origin: Origin[mut=False]
