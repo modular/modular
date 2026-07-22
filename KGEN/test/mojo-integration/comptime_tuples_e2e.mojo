@@ -19,7 +19,9 @@ from std.memory import ThinAllocation, alloc, dealloc
 #   -> MTuple's fields include List[Variant[T, MTuple[T]]]... (cycle)
 # UnsafePointer avoids this because it doesn't constrain its element type,
 # and Copyable checks in method bodies resolve after the struct is defined.
-struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
+struct MTuple[T: ImplicitlyCopyable & ImplicitlyDeletable](
+    ImplicitlyCopyable, Writable
+):
     comptime Element = Variant[Self.T, Self]
     var _data: UnsafePointer[Self.Element, MutUntrackedOrigin]
     var _len: Int
