@@ -400,6 +400,27 @@ This version is still a work in progress.
   `MODULAR_DEBUG=stack-trace-on-error` to enable stack trace collection,
   rather than printing only the error message.
 
+- `Variant` now accepts element types that are not `Movable`. Its type list is
+  bounded by `AnyType`, and `Variant` conditionally conforms to `Movable`,
+  `Copyable`, and related traits only when all of its element types do. A
+  value whose type is not `Movable` can be stored in place with the new
+  closure-based constructor and `set()` overload, which construct the value
+  directly into the variant's storage (placement-new) rather than moving it:
+
+  ```mojo
+  from std.utils import Variant
+
+  @fieldwise_init
+  struct Pinned(Movable where False):
+      var value: Int
+
+  def make() -> Pinned:
+      return Pinned(7)
+
+  var v = Variant[Pinned, Int](call=make)  # construct in place
+  v.set(call=make)                         # replace in place
+  ```
+
 - Various datatypes have adopted interior origins for increased memory safety,
   including `List`, `Deque`, `Variant`, `String`, `Dict`, `LinkedList`,
   `OwnedPointer`, and `HostBuffer`. A reference or view into one of these

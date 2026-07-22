@@ -424,6 +424,7 @@ struct _Bare(Movable):
     var n: Int
 
 
+@fieldwise_init
 struct _Pinned(Movable where False):
     """A non-`Movable` (pinned) type; still implicitly deletable by default."""
 
@@ -478,12 +479,79 @@ def test_variant_conditional_conformances() raises:
 
 
 def test_variant_admits_non_movable_type() raises:
-    # The `AnyType` floor admits a non-`Movable` type in the type list; the
-    # movable arm stays usable (the non-`Movable` arm can't be populated).
+    # The `AnyType` floor admits a non-`Movable` type in the type list. The
+    # value constructor still requires `Movable`, so it stores the movable
+    # type; the non-`Movable` type is populated via `call=` (see
+    # `test_variant_closure_construction`).
     var v = Variant[_Pinned, Int](42)
     assert_true(v.isa[Int]())
     assert_false(v.isa[_Pinned]())
     assert_equal(v[Int], 42)
+
+
+def test_variant_closure_construction() raises:
+    # Populate a non-`Movable` (pinned) type in place via a closure.
+    def make_pinned() -> _Pinned:
+        return _Pinned(7)
+
+    var v = Variant[_Pinned, Int](call=make_pinned)
+    assert_true(v.isa[_Pinned]())
+    assert_false(v.isa[Int]())
+    assert_equal(v[_Pinned].value, 7)
+
+    # The closure's return type selects the type; here a `Movable` one.
+    def make_int() -> Int:
+        return 42
+
+    var v2 = Variant[_Pinned, Int](call=make_int)
+    assert_true(v2.isa[Int]())
+    assert_equal(v2[Int], 42)
+
+
+def test_variant_closure_replacement() raises:
+    # Replace the movable value with a closure-constructed non-`Movable` value.
+    def make_pinned() -> _Pinned:
+        return _Pinned(9)
+
+    var v = Variant[_Pinned, Int](0)
+    assert_true(v.isa[Int]())
+    v.set(call=make_pinned)
+    assert_true(v.isa[_Pinned]())
+    assert_equal(v[_Pinned].value, 9)
+
+
+def test_variant_closure_called_once() raises:
+    # The initializer closure is invoked exactly once per construction/set.
+    var calls = 0
+
+    def make() {mut calls} -> Int:
+        calls += 1
+        return 5
+
+    var v = Variant[Int, String](call=make)
+    assert_equal(calls, 1)
+    assert_equal(v[Int], 5)
+
+    v.set(call=make)
+    assert_equal(calls, 2)
+    assert_equal(v[Int], 5)
+
+
+def test_variant_closure_set_calls_deleter() raises:
+    # Closure-based `set` destroys the outgoing value before emplacing the new
+    # one.
+    comptime TestDeleterVariant = Variant[ObservableDel[], Int]
+    var deleted = False
+    var v = TestDeleterVariant(ObservableDel(Pointer(to=deleted)))
+    assert_false(deleted)
+
+    def make() -> Int:
+        return 5
+
+    v.set(call=make)
+    assert_true(deleted)
+    assert_true(v.isa[Int]())
+    assert_equal(v[Int], 5)
 
 
 def main() raises:

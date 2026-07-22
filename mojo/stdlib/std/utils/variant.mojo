@@ -65,6 +65,23 @@ trait _VariantStorage(Copyable, ImplicitlyDeletable):
         """Initialize storage with a value of type `U`."""
         ...
 
+    def __init__(out self, *, unsafe_uninitialized: ()):
+        """Create storage whose active-type slot is left uninitialized.
+
+        The caller must mark the active type with `unsafe_set_active` and then
+        write a valid value into `unsafe_ptr` before the storage is read or
+        destroyed."""
+        ...
+
+    def unsafe_set_active[U: AnyType](mut self):
+        """Mark `U` as the active type without writing its value.
+
+        Used together with `unsafe_uninitialized` and `unsafe_ptr` to populate
+        storage in place. The caller must emplace a valid `U` (or, for the
+        empty type of a niche-optimized variant, leave the encoded niche
+        untouched) immediately afterwards."""
+        ...
+
     def take[U: Movable](deinit self) -> U:
         """Consume this storage and return the held value as type `U`."""
         return self.unsafe_ptr[U]().unsafe_take_pointee()
@@ -195,6 +212,19 @@ struct _NichedOptionalStorage[
             self = Self()
 
     @always_inline
+    def __init__(out self, *, unsafe_uninitialized: ()):
+        self._memory = {}
+
+    @always_inline
+    def unsafe_set_active[U: AnyType](mut self):
+        Self._check[U]()
+        comptime if U != Self.T:
+            # The empty ("none") type is encoded by the niche; the nicheable
+            # type becomes active simply by writing a valid value into it, so
+            # only the empty case needs to stamp the niche here.
+            Self.T.write_niche[index=0](self._memory.as_uninit[Self.T]())
+
+    @always_inline
     def __init__(out self, *, deinit move: Self):
         comptime assert conforms_to(Self.T, Movable)
         if move.isa[Self.T]():
@@ -271,6 +301,10 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         self.unsafe_ptr[T]().unsafe_write(value^)
 
     @always_inline
+    def unsafe_set_active[T: AnyType](mut self):
+        self.get_discriminant() = UInt8(_get_type_index[T, *Self.Ts]())
+
+    @always_inline
     def __init__(out self, *, copy: Self):
         self = Self(unsafe_uninitialized=())
         self.get_discriminant() = copy.get_discriminant()
@@ -339,7 +373,7 @@ comptime _IsEmptyType[T: AnyType]: Bool = reflect[
     T
 ].field_count() == 0 and conforms_to(T, TrivialRegisterPassable)
 """True if `T` is a zero-sized, trivially passable type (i.e. carries no state,
-like `NoneType`). Used to identify the "empty" arm of a niche-optimized variant."""
+like `NoneType`). Used to identify the "empty" type of a niche-optimized variant."""
 
 comptime _IsNicheablePair[T: AnyType, U: AnyType]: Bool = conforms_to(
     T, UnsafeNicheable
@@ -529,6 +563,51 @@ struct Variant[*Ts: AnyType](
         """
         Self._check[T]()
         self._storage = Self._Storage(value^)
+
+    def __init__[T: AnyType, //, F: def() -> T](out self, *, call: F):
+        """Create a variant holding a `T` produced in place by a closure.
+
+        The value returned by `call` is constructed directly into the
+        variant's storage without being moved, so this is the only way to
+        store a value whose type is not `Movable`.
+
+        The `call` keyword is required to disambiguate from the value
+        constructor: a closure is itself a storable value, so a positional
+        `Variant(f)` stores `f`, whereas `Variant(call=f)` calls `f` and
+        stores its result.
+
+        Parameters:
+            T: The type to initialize the variant to. Must be one of the
+                variant's type arguments.
+            F: The type of the initializer closure.
+
+        Args:
+            call: A closure returning the value to store. Called exactly once.
+
+        Examples:
+
+        ```mojo
+        from std.utils import Variant
+
+        @fieldwise_init
+        struct Pinned(Movable where False):
+            var value: Int
+
+        def make() -> Pinned:
+            return Pinned(7)
+
+        var v = Variant[Pinned, Int](call=make)
+        print(v[Pinned].value)  # => 7
+        ```
+        """
+        Self._check[T]()
+        self._storage = Self._Storage(unsafe_uninitialized=())
+        self._storage.unsafe_set_active[T]()
+        # Placement-new: construct `call()`'s result directly into the
+        # storage slot without moving, so `T` need not be `Movable`.
+        __get_address_as_uninit_lvalue(
+            self._storage.unsafe_ptr[T]()._mlir_value
+        ) = call()
 
     def __del__(deinit self):
         """Destroy the variant, running the destructor of the currently held value.
@@ -791,6 +870,64 @@ struct Variant[*Ts: AnyType](
             value: The new value to set the variant to.
         """
         self = Self(value^)
+
+    def set[T: AnyType, //, F: def() -> T](mut self, *, call: F):
+        """Replace the variant's value with a `T` produced in place by a closure.
+
+        Destroys the currently held value, then constructs the closure's return
+        value directly into the variant's storage without moving it. This is the
+        only way to replace the contents with a value whose type is not
+        `Movable`.
+
+        The `call` keyword is required to disambiguate from the value-taking
+        `set`: a closure is itself a storable value, so a positional
+        `set(f)` stores `f`, whereas `set(call=f)` calls `f` and stores its
+        result.
+
+        Parameters:
+            T: The new variant type. Must be one of the variant's type
+                arguments.
+            F: The type of the initializer closure.
+
+        Args:
+            call: A closure returning the replacement value. Called exactly
+                once.
+
+        Constraints:
+            All types in `Ts` must conform to `ImplicitlyDeletable`, since the
+            outgoing value is destroyed in place.
+
+        Examples:
+
+        ```mojo
+        from std.utils import Variant
+
+        @fieldwise_init
+        struct Pinned(Movable where False):
+            var value: Int
+
+        def make() -> Pinned:
+            return Pinned(7)
+
+        var v = Variant[Pinned, Int](0)
+        v.set(call=make)
+        print(v[Pinned].value)  # => 7
+        ```
+        """
+        comptime assert Self.Ts.all_conforms_to[
+            ImplicitlyDeletable
+        ](), "Cannot replace in place when a type is not `ImplicitlyDeletable`"
+        Self._check[T]()
+        # Destroy-then-emplace is exception-safe only because `call` cannot
+        # raise (closure types are not `raises`); a throw here would leave the
+        # discriminant set with no value written for `__del__` to destroy.
+        self._storage^.__del__()
+        self._storage = Self._Storage(unsafe_uninitialized=())
+        self._storage.unsafe_set_active[T]()
+        # Placement-new the replacement value directly into the storage slot.
+        __get_address_as_uninit_lvalue(
+            self._storage.unsafe_ptr[T]()._mlir_value
+        ) = call()
 
     def isa[T: AnyType](self) -> Bool:
         """Check if the variant contains the required type.
