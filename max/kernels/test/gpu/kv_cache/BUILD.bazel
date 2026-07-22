@@ -117,7 +117,7 @@ _EXTRA_CONSTRAINTS = {
         ["**/*.mojo"],
         exclude = [
             "kv_cache_test_utils.mojo",  # Imported source, not a test
-            "test_kv_cache_ragged_matmul.mojo",  # Split by dtype below (KERN-3152 compile time)
+            "test_kv_cache_ragged_matmul.mojo",  # Split by dtype x kernel below (KERN-3152 compile time)
             "test_mha_inflight_batching_gemma3_hang.mojo",  # KERN-2734: manual repro test, split by page_size below
             "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",  # Split by page_size below
             "test_mha_gemma4_shapes.mojo",  # Split by (page_size, mask_kind) below
@@ -130,7 +130,10 @@ _EXTRA_CONSTRAINTS = {
 
 [
     mojo_test(
-        name = "test_kv_cache_ragged_matmul_{}.mojo.test".format(suffix),
+        name = "test_kv_cache_ragged_matmul_{}_{}.mojo.test".format(
+            dtype_suffix,
+            test_kernel,
+        ),
         size = "large",
         srcs = [
             "kv_cache_test_utils.mojo",
@@ -139,6 +142,8 @@ _EXTRA_CONSTRAINTS = {
         copts = [
             "-D",
             "test_dtype={}".format(test_dtype),
+            "-D",
+            "test_kernel={}".format(test_kernel),
         ],
         enable_assertions = select({
             "//:b200_gpu": True,
@@ -159,9 +164,15 @@ _EXTRA_CONSTRAINTS = {
             "@mojo//:std",
         ],
     )
-    for suffix, test_dtype in (
+    for dtype_suffix, test_dtype in (
         ("bf16", "bfloat16"),
         ("fp32", "float32"),
+    )
+    for test_kernel in (
+        "fused_cont",
+        "fused_paged",
+        "kv_cont",
+        "k_paged",
     )
 ]
 
