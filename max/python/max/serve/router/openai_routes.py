@@ -91,7 +91,10 @@ from max.serve.parser.tool_call_normalization import (
     _normalize_tools_parameters,
     normalize_response_format_schema,
 )
-from max.serve.parser.tool_call_validation import check_tool_call_conformance
+from max.serve.parser.tool_call_validation import (
+    check_response_format_conformance,
+    check_tool_call_conformance,
+)
 from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
@@ -414,6 +417,7 @@ class OpenAIChatResponseGenerator(
         tools: list[TextGenerationRequestTool] | None = None,
         fold_reasoning_into_content: bool = False,
         emit_reasoning_content: bool = False,
+        response_format_json_schema: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
@@ -450,6 +454,13 @@ class OpenAIChatResponseGenerator(
         # Per-call streaming accumulators for end-of-stream conformance check.
         self._stream_tool_names: dict[int, str] = {}
         self._stream_tool_args: dict[int, list[str]] = {}
+        # Schema behind response_format json_schema/json_object, used only for
+        # observability-only conformance logging of the final content (the
+        # response_format counterpart of _tool_schemas). Captured before any
+        # combined tools+response_format grammar rewrite discards it.
+        self._response_format_json_schema = response_format_json_schema
+        # Pre-<think>-fold content accumulator for the end-of-stream check.
+        self._stream_response_content: list[str] = []
 
     def _log_tool_call_conformance(
         self,
@@ -467,13 +478,47 @@ class OpenAIChatResponseGenerator(
             # JSON paths stay in the log line to keep label cardinality bounded.
             METRICS.tool_call_conformance_error(result.outcome)
             logger.warning(
-                "tool_call_conformance req=%s stream=%s fn=%s outcome=%s errors=%s",
+                "tool_call_conformance req=%s stream=%s fn=%s outcome=%s "
+                "errors=%s additional=%d",
                 request_id,
                 is_streaming,
                 result.function,
                 result.outcome,
                 ",".join(result.errors) if result.errors else "-",
+                result.additional_error_count,
             )
+
+    def _log_response_format_conformance(
+        self,
+        content: str,
+        request_id: str,
+        is_streaming: bool,
+        finish_reason: str | None,
+    ) -> None:
+        """Checks final content against the response_format schema.
+
+        Observability-only: never mutates the response and never raises into
+        the request path. Only the failing validator keywords and JSON paths
+        are logged, never content values."""
+        assert self._response_format_json_schema is not None
+        result = check_response_format_conformance(
+            content, self._response_format_json_schema
+        )
+        if result.outcome == "valid":
+            return
+        # Count by the bounded outcome only; the failing JSON paths and
+        # finish_reason stay in the log line to keep label cardinality bounded.
+        METRICS.response_format_conformance_error(result.outcome)
+        logger.warning(
+            "response_format_conformance req=%s stream=%s outcome=%s "
+            "finish_reason=%s errors=%s additional=%d",
+            request_id,
+            is_streaming,
+            result.outcome,
+            finish_reason,
+            ",".join(result.errors) if result.errors else "-",
+            result.additional_error_count,
+        )
 
     def _fold_reasoning_delta(
         self, reasoning_text: str | None, content_text: str | None
@@ -532,6 +577,8 @@ class OpenAIChatResponseGenerator(
         n_cached_prompt_tokens = 0
         status_code = 200
         has_emitted_tool_calls = False
+        final_finish_reason: str | None = None
+        self._stream_response_content.clear()
 
         # Reset parser state for new streaming session
         if self.parse_tool_calls:
@@ -654,6 +701,13 @@ class OpenAIChatResponseGenerator(
                     elif tool_call_chunks:
                         content = None
 
+                    # Accumulate pre-fold content for the end-of-stream
+                    # response_format conformance check, matching the
+                    # non-streaming path, which validates the message before
+                    # any <think> fold.
+                    if content and self._response_format_json_schema:
+                        self._stream_response_content.append(content)
+
                     # MiniMax ``reasoning_split=False``: fold reasoning into the
                     # content stream wrapped in ``<think>...</think>`` and drop
                     # the dedicated reasoning field. Tool-call deltas are left
@@ -671,6 +725,8 @@ class OpenAIChatResponseGenerator(
                         allow_none=True,
                         has_tool_calls=has_emitted_tool_calls,
                     )
+                    if finish_reason is not None:
+                        final_finish_reason = finish_reason
                     # While tokens are captured and hidden during tool-call
                     # generation, the resolved delta can be empty: the parser
                     # consumed the chunk (merged_stream_content is not None) but
@@ -715,6 +771,7 @@ class OpenAIChatResponseGenerator(
                         allow_none=False,
                         has_tool_calls=has_emitted_tool_calls,
                     )
+                    final_finish_reason = finish_reason
 
                     choices = [
                         ChatCompletionStreamResponseChoice(
@@ -767,6 +824,18 @@ class OpenAIChatResponseGenerator(
                 request,
                 n_reasoning_tokens + n_tokens,
             )
+
+            # End-of-stream response_format conformance check. Skipped when
+            # the model emitted tool calls: a combined tools+response_format
+            # grammar is single-shot (one tool section OR one schema JSON), so
+            # tool-call output owes nothing to the response_format schema.
+            if self._response_format_json_schema and not has_emitted_tool_calls:
+                self._log_response_format_conformance(
+                    "".join(self._stream_response_content),
+                    request_id=str(request.request_id),
+                    is_streaming=True,
+                    finish_reason=final_finish_reason,
+                )
 
             # If `include_usage=True`, send a final chunk with usage statistics
             if self.stream_options and self.stream_options.get("include_usage"):
@@ -966,6 +1035,17 @@ class OpenAIChatResponseGenerator(
                     )
 
             if not response_choices:
+                # Text (non-tool-call) response: check final content against
+                # the response_format schema. Tool-call responses owe nothing
+                # to the schema -- a combined tools+response_format grammar is
+                # single-shot (one tool section OR one schema JSON).
+                if self._response_format_json_schema:
+                    self._log_response_format_conformance(
+                        response_message,
+                        request_id=str(request.request_id),
+                        is_streaming=False,
+                        finish_reason=finish_reason,
+                    )
                 self._handle_text_response(
                     response_message,
                     response_choices,
@@ -1836,6 +1916,15 @@ async def openai_create_chat_completion(
             enable_response_format_schema=pipeline_config.sampling.enable_structured_output,
             grammar_validator=request.app.state.grammar_validator,
         )
+        # Keep the user's schema for the observability-only conformance check
+        # of the final content: a combined tools+response_format request
+        # replaces ``response_format`` below with a type="grammar" one whose
+        # json_schema is empty.
+        response_format_json_schema = (
+            response_format.json_schema
+            if response_format is not None and response_format.json_schema
+            else None
+        )
 
         # For architectures with a grammar-based tool parser (e.g., Kimi),
         # generate constrained decoding grammars for tool calls and/or
@@ -1947,6 +2036,7 @@ async def openai_create_chat_completion(
             tools=tools,
             fold_reasoning_into_content=fold_reasoning_into_content,
             emit_reasoning_content=pipeline_config.runtime.emit_reasoning_content,
+            response_format_json_schema=response_format_json_schema,
         )
         # Use request-level sampling params if provided, else server defaults.
         temp = (

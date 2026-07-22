@@ -10,9 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Observability-only schema-conformance check for generated tool calls.
+"""Observability-only schema-conformance checks for generated output.
 
-Runs JSON Schema validation on parsed tool-call arguments purely to emit
+Runs JSON Schema validation on parsed tool-call arguments and on
+``response_format`` (json_schema / json_object) final content purely to emit
 structured, PII-free signals to the serve log. It never mutates the response,
 never repairs arguments, and never raises into the request path. The goal is to
 turn the coarse production "Schema Mismatch" rate into a per-keyword/per-path
@@ -49,7 +50,11 @@ _MAX_ERRORS_PER_CALL = 5
 # locked, so concurrent builds are safe.
 _VALIDATOR_CACHE_SIZE = 1024
 
-Outcome = Literal["valid", "invalid_json", "unknown_tool", "schema_mismatch"]
+ToolCallOutcome = Literal[
+    "valid", "invalid_json", "unknown_tool", "schema_mismatch"
+]
+
+ResponseFormatOutcome = Literal["valid", "invalid_json", "schema_mismatch"]
 
 
 @dataclass
@@ -57,9 +62,22 @@ class ToolCallConformance:
     """Result of validating one tool call's arguments against its schema."""
 
     function: str
-    outcome: Outcome
+    outcome: ToolCallOutcome
     # "keyword@json_path" pairs; schema-defined names only, no instance values.
     errors: list[str] = field(default_factory=list)
+    # Count of errors beyond _MAX_ERRORS_PER_CALL that were not recorded.
+    additional_error_count: int = 0
+
+
+@dataclass
+class ResponseFormatConformance:
+    """Result of validating final content against a response_format schema."""
+
+    outcome: ResponseFormatOutcome
+    # "keyword@json_path" pairs; schema-defined names only, no instance values.
+    errors: list[str] = field(default_factory=list)
+    # Count of errors beyond _MAX_ERRORS_PER_CALL that were not recorded.
+    additional_error_count: int = 0
 
 
 @lru_cache(maxsize=_VALIDATOR_CACHE_SIZE)
@@ -113,7 +131,9 @@ def check_tool_call_conformance(
         if schema is None:
             # A declared-but-schemaless tool has nothing to validate against;
             # only a name that was never declared is a genuine unknown tool.
-            outcome: Outcome = "valid" if name in declared else "unknown_tool"
+            outcome: ToolCallOutcome = (
+                "valid" if name in declared else "unknown_tool"
+            )
             results.append(ToolCallConformance(name, outcome))
             continue
 
@@ -141,21 +161,70 @@ def check_tool_call_conformance(
             continue
 
         errors: list[str] = []
+        additional_error_count = 0
         # iter_errors can raise on a schema that check_schema accepts but cannot
         # execute (e.g. an unresolvable ``$ref``). This path is observability
         # only and must never raise into the request, so treat any such failure
         # as ``valid`` rather than inventing a mismatch it cannot substantiate.
         try:
             for err in validator.iter_errors(parsed):
-                errors.append(f"{err.validator}@{err.json_path}")
-                if len(errors) >= _MAX_ERRORS_PER_CALL:
-                    break
+                if len(errors) < _MAX_ERRORS_PER_CALL:
+                    errors.append(f"{err.validator}@{err.json_path}")
+                else:
+                    additional_error_count += 1
         except Exception:
             results.append(ToolCallConformance(name, "valid"))
             continue
         results.append(
             ToolCallConformance(
-                name, "schema_mismatch" if errors else "valid", errors
+                name,
+                "schema_mismatch" if errors else "valid",
+                errors,
+                additional_error_count,
             )
         )
     return results
+
+
+def check_response_format_conformance(
+    content: str,
+    schema: Mapping[str, Any],
+) -> ResponseFormatConformance:
+    """Validates final message content against a ``response_format`` schema.
+
+    Pure and side-effect free; never raises. *content* is the assembled
+    assistant message content of a request that asked for
+    ``response_format`` json_schema/json_object. Unlike tool-call arguments,
+    empty content is not a valid no-op: the client asked for a JSON document
+    and got none, so it classifies as ``invalid_json``. A schema that cannot
+    be compiled yields ``valid`` -- this check never invents a failure it
+    cannot substantiate.
+    """
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        return ResponseFormatConformance("invalid_json")
+
+    try:
+        schema_key = json.dumps(schema, sort_keys=True, separators=(",", ":"))
+        validator = _build_validator(schema_key)
+    except (TypeError, ValueError):
+        validator = None
+    if validator is None:
+        return ResponseFormatConformance("valid")
+
+    errors: list[str] = []
+    additional_error_count = 0
+    # Mirrors check_tool_call_conformance: iter_errors can raise on a schema
+    # check_schema accepts but cannot execute; observability must not raise.
+    try:
+        for err in validator.iter_errors(parsed):
+            if len(errors) < _MAX_ERRORS_PER_CALL:
+                errors.append(f"{err.validator}@{err.json_path}")
+            else:
+                additional_error_count += 1
+    except Exception:
+        return ResponseFormatConformance("valid")
+    return ResponseFormatConformance(
+        "schema_mismatch" if errors else "valid", errors, additional_error_count
+    )

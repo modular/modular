@@ -469,6 +469,17 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "the schema, split by the 'kind' tag (tool_grammar, json_schema)."
         ),
     ),  # type: ignore
+    "maxserve.response_format.conformance_errors": _meter.create_counter(
+        "maxserve.response_format.conformance_errors",
+        description=(
+            "Count of response_format (json_schema/json_object) responses "
+            "whose final content failed the observability-only "
+            "schema-conformance check, split by the 'outcome' tag "
+            "(invalid_json, schema_mismatch). Mirrors the "
+            "'response_format_conformance' warning log; the failing JSON "
+            "paths stay in the log to keep label cardinality bounded."
+        ),
+    ),  # type: ignore
 }
 
 
@@ -1208,6 +1219,15 @@ class _AsyncMetrics:
                 "maxserve.structured_output.grammar_rejections",
                 1,
                 {**self.extra_attributes, "kind": kind},
+            ),
+        )
+
+    def response_format_conformance_error(self, outcome: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.response_format.conformance_errors",
+                1,
+                {**self.extra_attributes, "outcome": outcome},
             ),
         )
 

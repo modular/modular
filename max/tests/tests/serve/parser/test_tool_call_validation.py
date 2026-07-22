@@ -19,6 +19,7 @@ from typing import Any
 from max.serve.parser.tool_call_validation import (
     _VALIDATOR_CACHE_SIZE,
     _build_validator,
+    check_response_format_conformance,
     check_tool_call_conformance,
 )
 
@@ -184,6 +185,70 @@ def test_known_tools_defaults_to_schema_keys() -> None:
     name absent from the schemas is still ``unknown_tool`` (prior behavior)."""
     [r] = check_tool_call_conformance([("no_params", "{}")], {})
     assert r.outcome == "unknown_tool"
+
+
+def test_response_format_conforming_content_is_valid() -> None:
+    r = check_response_format_conformance(
+        '{"location": "NYC", "count": 3}', _WEATHER_SCHEMA
+    )
+    assert r.outcome == "valid"
+    assert r.errors == []
+
+
+def test_response_format_empty_content_is_invalid_json() -> None:
+    """Unlike a no-arg tool call, empty content is not a valid no-op: the
+    client asked for a JSON document and got none."""
+    assert check_response_format_conformance("", _WEATHER_SCHEMA).outcome == (
+        "invalid_json"
+    )
+    assert check_response_format_conformance(
+        "   ", _WEATHER_SCHEMA
+    ).outcome == ("invalid_json")
+
+
+def test_response_format_truncated_json_is_invalid_json() -> None:
+    r = check_response_format_conformance('{"location": "NYC"', _WEATHER_SCHEMA)
+    assert r.outcome == "invalid_json"
+    assert r.errors == []
+
+
+def test_response_format_mismatch_reports_keyword_and_path() -> None:
+    r = check_response_format_conformance(
+        '{"location": "NYC", "count": "five"}', _WEATHER_SCHEMA
+    )
+    assert r.outcome == "schema_mismatch"
+    assert "type@$.count" in r.errors
+
+
+def test_response_format_errors_never_contain_content_values() -> None:
+    secret = "hunter2-super-secret"
+    r = check_response_format_conformance(
+        f'{{"location": "{secret}", "count": "{secret}"}}', _WEATHER_SCHEMA
+    )
+    assert r.outcome == "schema_mismatch"
+    assert all(secret not in e for e in r.errors)
+
+
+def test_response_format_json_object_mode_schema() -> None:
+    """json_object mode normalizes to ``{"type": "object"}``: any JSON object
+    conforms, a bare scalar or array does not."""
+    schema: dict[str, Any] = {"type": "object"}
+    assert (
+        check_response_format_conformance('{"a": 1}', schema).outcome == "valid"
+    )
+    assert (
+        check_response_format_conformance("[1, 2]", schema).outcome
+        == "schema_mismatch"
+    )
+
+
+def test_response_format_uncompilable_schema_is_valid() -> None:
+    """A schema the validator cannot compile yields ``valid`` -- the check
+    never invents a failure it cannot substantiate."""
+    r = check_response_format_conformance(
+        '{"a": 1}', {"type": "not-a-real-type"}
+    )
+    assert r.outcome == "valid"
 
 
 def test_validator_cache_is_bounded() -> None:
