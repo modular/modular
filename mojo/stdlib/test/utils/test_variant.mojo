@@ -424,6 +424,12 @@ struct _Bare(Movable):
     var n: Int
 
 
+struct _Pinned(Movable where False):
+    """A non-`Movable` (pinned) type; still implicitly deletable by default."""
+
+    var value: Int
+
+
 def test_variant_conditional_conformances() raises:
     assert_true(conforms_to(Variant[Int, String], Equatable))
     assert_true(conforms_to(Variant[Int], Equatable))
@@ -460,6 +466,24 @@ def test_variant_conditional_conformances() raises:
     # RegisterPassable: mixture of RP and non-RP
     assert_false(conforms_to(Variant[Int, String], RegisterPassable))
     assert_false(conforms_to(Variant[Bool, List[Int], Int], RegisterPassable))
+
+    # Movable: all types Movable
+    assert_true(conforms_to(Variant[Int, String], Movable))
+
+    # Movable: non-Movable (pinned) alternative
+    assert_false(conforms_to(Variant[_Pinned, Int], Movable))
+
+    # Movable: linear alternative (Movable, not ImplicitlyDeletable)
+    assert_true(conforms_to(Variant[ExplicitDelOnly, Int], Movable))
+
+
+def test_variant_admits_non_movable_type() raises:
+    # The `AnyType` floor admits a non-`Movable` type in the type list; the
+    # movable arm stays usable (the non-`Movable` arm can't be populated).
+    var v = Variant[_Pinned, Int](42)
+    assert_true(v.isa[Int]())
+    assert_false(v.isa[_Pinned]())
+    assert_equal(v[Int], 42)
 
 
 def main() raises:

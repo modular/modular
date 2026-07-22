@@ -374,13 +374,13 @@ when eligible, falling back to the general discriminant-tagged storage."""
 # ===----------------------------------------------------------------------=== #
 
 
-struct Variant[*Ts: Movable](
+struct Variant[*Ts: AnyType](
     Copyable where Ts.all_conforms_to[Copyable](),
     Equatable where Ts.all_conforms_to[Equatable](),
     Hashable where Ts.all_conforms_to[Hashable](),
     ImplicitlyCopyable where Ts.all_conforms_to[ImplicitlyCopyable](),
     ImplicitlyDeletable,
-    Movable,
+    Movable where Ts.all_conforms_to[Movable](),
     RegisterPassable where Ts.all_conforms_to[RegisterPassable](),
     Writable where Ts.all_conforms_to[Writable](),
 ):
