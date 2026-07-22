@@ -17,6 +17,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/diffusion_gemma",
     "//max/python/max/pipelines/architectures/eagle3_deepseekV3",
     "//max/python/max/pipelines/architectures/eagle_llama3",
+    "//max/python/max/pipelines/architectures/ernie4_5",
     "//max/python/max/pipelines/architectures/exaone",
     "//max/python/max/pipelines/architectures/exaone_modulev3",
     "//max/python/max/pipelines/architectures/flux2",
