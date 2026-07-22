@@ -35,6 +35,7 @@ from .managed_tensor_slice import (
     _FusedInputTensor,
     _FusedInputVariadicTensors,
     _FusedOutputTensor,
+    _FusedOutputTileTensor,
     _FusedOutputVariadicTensors,
     _MutableInputTensor,
     _MutableInputVariadicTensors,

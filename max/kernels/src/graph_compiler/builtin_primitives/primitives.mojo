@@ -27,6 +27,7 @@ from extensibility import (
     ElementwiseFusionTile,
     InputFusion,
     OutputFusion,
+    OutputFusionTile,
     get_kernel_tile_shape,
 )
 from std.collections import InlineArray
@@ -1983,9 +1984,17 @@ struct _ElementwiseFusionAdapter[
     OutFusion: OutputFusion,
     ComputeFusion: ComputeOutputFusion,
     ComputeFusionTile: ComputeOutputFusionTile,
+    OutFusionTile: OutputFusionTile,
     io_spec: IOSpec[True, _],
     static_spec: StaticTensorSpec[
-        dtype, rank, _, InFusion, OutFusion, ComputeFusion, ComputeFusionTile
+        dtype,
+        rank,
+        _,
+        InFusion,
+        OutFusion,
+        ComputeFusion,
+        ComputeFusionTile,
+        OutFusionTile,
     ],
     //,
     E: ElementwiseFusion,
@@ -2011,6 +2020,7 @@ struct _ElementwiseFusionAdapter[
         OutFusion: The tensor's output-fusion type.
         ComputeFusion: The tensor's compute-output-fusion type.
         ComputeFusionTile: The tensor's compute-output-fusion-tile type.
+        OutFusionTile: The tensor's output-fusion-tile (store) type.
         io_spec: The tensor's IO spec.
         static_spec: The tensor's static spec.
         E: The elementwise fusion struct type.
@@ -2087,9 +2097,17 @@ struct _ElementwiseFusionTileAdapter[
     OutFusion: OutputFusion,
     ComputeFusion: ComputeOutputFusion,
     ComputeFusionTile: ComputeOutputFusionTile,
+    OutFusionTile: OutputFusionTile,
     io_spec: IOSpec[True, _],
     static_spec: StaticTensorSpec[
-        dtype, rank, _, InFusion, OutFusion, ComputeFusion, ComputeFusionTile
+        dtype,
+        rank,
+        _,
+        InFusion,
+        OutFusion,
+        ComputeFusion,
+        ComputeFusionTile,
+        OutFusionTile,
     ],
     //,
     E: ElementwiseFusionTile,
@@ -2112,6 +2130,7 @@ struct _ElementwiseFusionTileAdapter[
         OutFusion: The tensor's output-fusion type.
         ComputeFusion: The tensor's compute-output-fusion type.
         ComputeFusionTile: The tensor's compute-output-fusion-tile type.
+        OutFusionTile: The tensor's output-fusion-tile (store) type.
         io_spec: The tensor's IO spec.
         static_spec: The tensor's static spec.
         E: The tile elementwise fusion struct type.
