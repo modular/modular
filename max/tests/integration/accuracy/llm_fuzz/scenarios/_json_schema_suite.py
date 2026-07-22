@@ -201,8 +201,8 @@ _BREAK_INSTRUCTIONS = (
 def _prompt(schema: Any, *, via_tool: bool) -> str:
     schema_json = json.dumps(schema, indent=2)
     sink = (
-        "Call the `emit` function, passing your schema-violating value as its "
-        "arguments."
+        "Call the `emit` function EXACTLY TWICE, each call passing a distinct "
+        "schema-violating value as its arguments."
         if via_tool
         else "Output only the JSON value, nothing else."
     )
@@ -396,9 +396,10 @@ def _evaluate(
     # so every call must be `emit` (a value split across non-emit calls fails).
     if mode != "response_format":
         msg = (data.get("choices") or [{}])[0].get("message") or {}
+        tool_calls = msg.get("tool_calls") or []
         bad = [
             name
-            for c in (msg.get("tool_calls") or [])
+            for c in tool_calls
             if (name := (c.get("function") or {}).get("name")) != "emit"
         ]
         if bad:
@@ -426,6 +427,16 @@ def _evaluate(
     verdict, detail = max(checks, key=lambda c: _SEVERITY[c[0]])
     if len(outputs) > 1:
         detail = f"{len(outputs)} tool calls; worst: {detail}"
+
+    # A named tool is grammar-constrained to only one occurrence.
+    if mode != "response_format" and verdict == Verdict.PASS and not truncated:
+        expected = 1 if mode == "tools_named" else 2
+        if len(outputs) != expected:
+            return (
+                Verdict.INTERESTING,
+                f"expected {expected} tool call(s), got {len(outputs)}",
+            )
+
     return verdict, detail
 
 
