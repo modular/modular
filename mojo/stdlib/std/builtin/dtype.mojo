@@ -390,6 +390,9 @@ struct DType(
             writer: The object to write to.
         """
 
+        # This per-`dtype` chain must stay in sync with
+        # `_scalar_repr_alias` in `simd.mojo`, which maps the same set of
+        # `dtype`s to their `Scalar` alias names for scalar `repr()`.
         if self == DType.bool:
             return writer.write("bool")
         elif self == DType.int:

@@ -58,7 +58,7 @@ from max.driver import load_devices
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.memory_estimation import MemoryEstimator, _MemoryPlan
-from max.pipelines.modeling.config_enums import RopeType, SupportedEncoding
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 from .embeddings_pipeline import EmbeddingsPipeline
@@ -159,7 +159,6 @@ class SupportedArchitecture:
                 context_type=TextContext,
                 config=MyModelConfig,  # Architecture-specific config class
                 default_weights_format=WeightsFormat.safetensors,
-                rope_type="none",
                 weight_adapters={
                     WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
                     # Add other weight formats if needed
@@ -215,9 +214,6 @@ class SupportedArchitecture:
     :obj:`PipelineConfig`. For models with KV cache, this should be a class
     implementing :obj:`ArchConfigWithKVCache` to enable KV cache memory estimation.
     """
-
-    rope_type: RopeType = "none"
-    """The type of RoPE (Rotary Position Embedding) used by the model."""
 
     weight_adapters: dict[WeightsFormat, WeightsAdapter] = field(
         default_factory=dict
@@ -364,6 +360,22 @@ class SupportedArchitecture:
 
     ``None`` means the architecture manages its own memory estimation (e.g.
     diffusion pipelines that skip KV cache estimation entirely).
+    """
+
+    cascade_pipeline_factory: Callable[[PipelineConfig], object] | None = None
+    """Optional cascade pipeline factory for this architecture.
+
+    A ``CascadePipeline`` subclass (from ``max.experimental.cascade``) that
+    accepts a :class:`PipelineConfig` in its constructor. The experimental
+    cascade server resolves the architecture and constructs
+    ``cascade_pipeline_factory(config)``, so cascade pipeline selection is
+    driven entirely by the architecture rather than by :class:`PipelineTask`.
+
+    The return is annotated ``object`` rather than ``CascadePipeline`` because
+    the cascade layer sits *above* :mod:`max.pipelines`; importing the base
+    class here to tighten the annotation would invert that dependency (the
+    cascade server narrows the constructed value back to ``CascadePipeline``).
+    ``None`` means the architecture has no cascade pipeline yet.
     """
 
     pipeline_cls: type | None = None

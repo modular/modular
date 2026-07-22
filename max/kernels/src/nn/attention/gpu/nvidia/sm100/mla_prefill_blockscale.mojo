@@ -678,7 +678,7 @@ __extension SM100MLA:
             )
 
         # ---- Mode-shared sub-tile constants ----
-        # The K_rope sub-tile shape is identical in fused-KV and split-KV
+        # The K_rope sub-tile shape is identical in shared-KV and non-shared-KV
         # mode (`rope_depth * rope_sub_BN` FP8 elements). Hoist the
         # constants and the SmemTensor type so the unified `_produce_k_rope`
         # closure below works for both modes — the only mode-specific
@@ -713,8 +713,8 @@ __extension SM100MLA:
             signaling completion on the CVT producer mbar.
 
             `smem_base_ptr` is the FP8 base of this tile's K_rope smem
-            region, the caller pre-bitcasts (fused-KV) or pre-rebounds
-            (split-KV) so this closure can advance by `_p *
+            region, the caller pre-bitcasts (shared-KV) or pre-rebounds
+            (non-shared-KV) so this closure can advance by `_p *
             k_rope_sub_elems` in FP8-element units. Folds in
             `expect_bytes_pred` for the CVT producer mbar so the byte
             count and the `_p`-loop stay in sync. `partial=True` early-
@@ -807,13 +807,13 @@ __extension SM100MLA:
             0
         ] == TileMaskStatus.UNKNOWN_MASK
 
-        comptime if Self.config.fa4_config.use_fused_kv:
-            # ---- Fused KV mode ----
+        comptime if Self.config.fa4_config.use_shared_kv:
+            # ---- Shared KV mode ----
             # K_nope/V alternate in the same circular buffer; a stage fits the
-            # wider of the two (fused_kv_cols). K_rope (FP8) goes into the
+            # wider of the two (shared_kv_cols). K_rope (FP8) goes into the
             # separate rope smem buffer via tma_to_cvt_pipeline.
             comptime kv_stage_elems = (
-                Self.config.fa4_config.fused_kv_cols() * Self.config.BN
+                Self.config.fa4_config.shared_kv_cols() * Self.config.BN
             )
             comptime rope_stage_elems = (
                 Self.config.rope_depth * Self.config.BN
@@ -1037,7 +1037,7 @@ __extension SM100MLA:
                         kv_pipeline.state.step()
 
         else:
-            # ---- Split KV mode (original) ----
+            # ---- Non-shared mode (original) ----
 
             # Separate K and V pipelines
             comptime VPipeType = VProducerPipeline[
@@ -1051,7 +1051,7 @@ __extension SM100MLA:
 
             # K stage may contain mixed dtypes (e.g. FP8 nope + BF16 rope).
             # Compute byte size then convert to qkv_dtype element count. The
-            # K_nope part is `padded_nope_depth` wide (split-KV: V has its own
+            # K_nope part is `padded_nope_depth` wide (non-shared-KV: V has its own
             # `pipeline_v`), so this is K-only.
             comptime k_stage_bytes = (
                 Self.config.fa4_config.padded_nope_depth
@@ -1084,7 +1084,7 @@ __extension SM100MLA:
                 shared `_produce_k_rope` closure.
 
                 Includes the `split_smem` decomposition into K_nope and
-                K_rope smem regions. Note: unlike generic split-KV,
+                K_rope smem regions. Note: unlike generic non-shared-KV,
                 blockscale's K_rope bytes are NOT on the K barrier, so
                 the K-barrier expect only carries Q + K_nope.
                 """
@@ -1143,7 +1143,7 @@ __extension SM100MLA:
             def _split_v_smem_ptr(
                 pair: type_of(pipeline_v.get_tile[qk_stage=0]()),
             ) -> SharedMemPointer[Scalar[Self.KVLUTType.dtype]]:
-                """V destination smem ptr for split-KV's V pipeline pair.
+                """V destination smem ptr for non-shared-KV's V pipeline pair.
 
                 Note we switched from `pipeline_v.get_v(e)` (which auto-
                 emits a fixed-size `expect_bytes`) to
@@ -1307,8 +1307,8 @@ __extension SM100MLA:
             Self.KVLUTType.dtype, TensorMapSwizzle.SWIZZLE_128B
         ]()
 
-        # In split mode, k_rope sits after k_nope within each K stage.
-        # In fused mode, k_rope is in a separate rope smem buffer.
+        # In non-shared mode, k_rope sits after k_nope within each K stage.
+        # In shared mode, k_rope is in a separate rope smem buffer.
         comptime k_stage_stride = Self.config.padded_qk_depth * Self.config.BN
         comptime k_rope_offset = Self.config.BN * Self.nope_depth
         comptime rope_stage_elems = Self.config.rope_depth * Self.config.BN
@@ -1316,10 +1316,10 @@ __extension SM100MLA:
         while True:
             tma_to_cvt_pipeline.consumer_wait()
 
-            # In fused mode, k_rope is in a separate rope smem buffer.
-            # In split mode, k_rope sits after k_nope within each K stage.
+            # In shared mode, k_rope is in a separate rope smem buffer.
+            # In non-shared mode, k_rope sits after k_nope within each K stage.
             var k_rope_smem_ptr: SharedMemPointer[Scalar[Self.KVLUTType.dtype]]
-            comptime if Self.config.fa4_config.use_fused_kv:
+            comptime if Self.config.fa4_config.use_shared_kv:
                 k_rope_smem_ptr = (
                     rope_smem_base
                     + tma_to_cvt_pipeline.state.index()
@@ -1417,15 +1417,15 @@ __extension SM100MLA:
         q0 = Self.descriptor_q(q_smem)
         q1 = q0 + q0_bytes
 
-        comptime if Self.config.fa4_config.use_fused_kv:
-            # ---- Fused KV mode ----
+        comptime if Self.config.fa4_config.use_shared_kv:
+            # ---- Shared KV mode ----
             # K_nope/V alternate in the same buffer; a stage fits the wider of
-            # the two (fused_kv_cols). K_rope (BF16 after CVT) is in a separate
+            # the two (shared_kv_cols). K_rope (BF16 after CVT) is in a separate
             # rope buffer.
             # Q@K' = Q_nope@K_nope (c_scale=0) + Q_rope@K_rope (c_scale=1).
 
             comptime kv_stage_bytes = (
-                Self.config.fa4_config.fused_kv_cols()
+                Self.config.fa4_config.shared_kv_cols()
                 * Self.config.BN
                 * size_of[Self.KVLUTType.dtype]()
             )
@@ -1596,7 +1596,7 @@ __extension SM100MLA:
             kv_pipeline.consumer_release_at(v_prev_idx, e)  # release V_last
 
         else:
-            # ---- Split KV mode (original) ----
+            # ---- Non-shared mode (original) ----
 
             # Separate K and V consumer pipelines
             comptime KConType = KConsumerPipeline[

@@ -22,12 +22,13 @@ from __future__ import annotations
 from collections import OrderedDict, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Generic
+from typing import Generic, Protocol, TypeVar, runtime_checkable
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer
+from max.driver import Buffer, Device
 from max.pipelines.context import (
+    ImageMetadata,
     TextAndVisionContext,
     VLMContextType,
 )
@@ -78,6 +79,146 @@ def concat_device_buffers(bufs: list[Buffer]) -> Buffer:
         out[offset : offset + n, :].inplace_copy_from(b)
         offset += n
     return out
+
+
+def _owned_row_slice(src: Buffer, start: int, count: int) -> Buffer:
+    """Copy ``src[start:start + count, :]`` into a freshly allocated Buffer.
+
+    An owned copy (not a view) so a cache entry does not pin the variable-size
+    vision-encoder output buffer, avoiding GPU allocator fragmentation.
+    """
+    slot = Buffer.zeros(
+        shape=[count, int(src.shape[1])],
+        dtype=src.dtype,
+        device=src.device,
+    )
+    slot.inplace_copy_from(src[start : start + count, :])
+    return slot
+
+
+@dataclass
+class VisionEncodeResult:
+    """A model's vision-encoder output for the uncached images of a batch."""
+
+    embeddings: list[Buffer]
+    """Per-device encoder output, each ``[total_tokens, hidden]``.
+
+    Rows are ordered context-major, image-minor.
+    """
+
+    per_image_token_counts: list[int] | None = None
+    """Explicit per-image token counts, in row order.
+
+    ``None`` lets the driver derive them from placeholder spans. A model whose
+    span differs from its emitted row count must set this.
+    """
+
+
+PackedVisionInputsT = TypeVar("PackedVisionInputsT")
+
+
+@runtime_checkable
+class SupportsVisionEncoding(Protocol[PackedVisionInputsT]):
+    """A pipeline model that encodes images in two declared steps.
+
+    Caching is the driver's job: the model packs and encodes, the cache
+    stores and assembles. ``PackedVisionInputsT`` is the model's packed-input
+    type, carried from prep to encode.
+    """
+
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+    ) -> PackedVisionInputsT | None:
+        """Pack the batch's selected cache-miss pixels to device, during prep.
+
+        Optional: returning ``None`` defers packing to :meth:`vision_execute`.
+        Runs in the prep phase so the host-to-device copy overlaps the prior
+        batch. ``selection`` is the ``(context, miss-images)`` pairs from
+        :meth:`VisionEncoderCache.select`.
+        """
+        ...
+
+    def vision_execute(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+        packed: PackedVisionInputsT | None,
+    ) -> VisionEncodeResult:
+        """Run the vision encoder over the batch's selected cache-miss images.
+
+        Uses ``packed`` when :meth:`pack_vision_inputs` packed, otherwise packs
+        from ``selection`` inline. Returns per-device embeddings, context-major
+        then image-minor; caching is the cache's job.
+        """
+        ...
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Per-device zero-row embedding buffers for text-only/cached batches.
+
+        The cache assembles from these when no image is encoded this step;
+        the model owns the hidden size and dtype.
+        """
+        ...
+
+
+def derive_counts_from_spans(
+    selection: Sequence[tuple[VLMContextType, Sequence[ImageMetadata]]],
+) -> list[int]:
+    """Per-image token counts from the cache's selection, in row order.
+
+    Walks the ``(context, miss-images)`` pairs from
+    :meth:`VisionEncoderCache.select` — so the counts equal the encoder's
+    emitted rows by construction, in every mode (including a disabled cache
+    under chunked prefill, where ``ctx.images`` would include already-processed
+    images the encoder did not emit rows for).
+
+    Args:
+        selection: The ``(context, miss-images)`` pairs to encode this step.
+
+    Returns:
+        One token count per encoded image, in row order.
+    """
+    return [
+        img.end_idx - img.start_idx
+        for _ctx, miss_images in selection
+        for img in miss_images
+    ]
+
+
+def validate_vision_encode_counts(
+    per_image_token_counts: Sequence[int],
+    embeddings: Sequence[Buffer],
+) -> None:
+    """Raise if the per-image counts don't sum to the encoder's row count.
+
+    Guards the per-image cache split against a model whose placeholder span
+    doesn't match its emitted rows.
+
+    Args:
+        per_image_token_counts: Per-image token counts, in row order.
+        embeddings: Per-device encoder output; row count is from device 0.
+
+    Raises:
+        ValueError: On a count/row mismatch.
+    """
+    if not embeddings:
+        return
+    total_rows = int(embeddings[0].shape[0])
+    total_counts = int(sum(per_image_token_counts))
+    if total_counts != total_rows:
+        raise ValueError(
+            f"Vision encoder emitted {total_rows} row(s) but per-image token "
+            f"counts sum to {total_counts}. The encoder must emit exactly one "
+            "row per placeholder token; a model whose placeholder span "
+            "includes non-scatter-target tokens must return explicit "
+            "per_image_token_counts."
+        )
 
 
 @dataclass
@@ -149,9 +290,10 @@ class VisionEncoderCache(Generic[VLMContextType]):
         )
     """
 
-    def __init__(self, max_entries: int = 256) -> None:
+    def __init__(self, max_entries: int = 256, n_devices: int = 1) -> None:
         self._cache: OrderedDict[int, VisionEncoderCacheEntry] = OrderedDict()
         self._max_entries = max_entries
+        self._n_devices = n_devices
         self._request_refs: defaultdict[RequestID, set[int]] = defaultdict(set)
 
         # Per-batch vision encoder metrics, populated during batch
@@ -363,10 +505,6 @@ class VisionEncoderCache(Generic[VLMContextType]):
         ):
             start = offset
             offset += count
-            # 0 is the no-content-hash sentinel (build_video_inputs appends it
-            # for a range with no hash). lookup() treats a falsy hash as a
-            # miss, so an entry cached under 0 is never retrievable -- it would
-            # just waste memory and hold a slot + ref. Skip alloc/insert/
             # acquire for it, but still advance past its tokens in the encoder
             # output (this method only populates the cache for future reuse;
             # the current forward uses the encoder output directly, so skipping
@@ -377,15 +515,10 @@ class VisionEncoderCache(Generic[VLMContextType]):
             # not pin the (variable-size) vision-encoder output buffer.  This
             # prevents GPU allocator fragmentation caused by mismatched holes
             # left behind when the output buffer is freed.
-            per_device = []
-            for dev_tensor in vision_outputs:
-                slot = Buffer.zeros(
-                    shape=[count, int(dev_tensor.shape[1])],
-                    dtype=dev_tensor.dtype,
-                    device=dev_tensor.device,
-                )
-                slot.inplace_copy_from(dev_tensor[start : start + count, :])
-                per_device.append(slot)
+            per_device = [
+                _owned_row_slice(dev_tensor, start, count)
+                for dev_tensor in vision_outputs
+            ]
             self.insert(img_hash, per_device, count)
             self.acquire(req_id, img_hash)
 
@@ -394,6 +527,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
         self,
         context_batch: Sequence[VLMContextType],
         uncached_contexts: Sequence[VLMContextType],
+        uncached_images: Sequence[Sequence[ImageMetadata]],
         vision_embeds: list[Buffer],
         per_image_token_counts: list[int],
         n_devices: int,
@@ -408,6 +542,9 @@ class VisionEncoderCache(Generic[VLMContextType]):
         Args:
             context_batch: Full batch of contexts (cached + uncached).
             uncached_contexts: Subset from ``get_uncached_contexts``.
+            uncached_images: The cache-miss images per ``uncached_contexts``
+                entry (the single source of the encode selection), aligned with
+                the concatenation order of *vision_embeds*.
             vision_embeds: Per-device encoder output for uncached images.
             per_image_token_counts: Tokens per uncached image, matching
                 the concatenation order of *vision_embeds*.
@@ -443,14 +580,15 @@ class VisionEncoderCache(Generic[VLMContextType]):
         hashes: list[int] = []
         req_ids: list[RequestID] = []
         all_uncached = True
-        for ctx in uncached_contexts:
-            for img in ctx.images:
+        for ctx, miss_images in zip(
+            uncached_contexts, uncached_images, strict=True
+        ):
+            for img in miss_images:
                 assert img.image_hash is not None
-                if self.lookup(img.image_hash) is None:
-                    hashes.append(img.image_hash)
-                    req_ids.append(ctx.request_id)
-                else:
-                    all_uncached = False
+                hashes.append(img.image_hash)
+                req_ids.append(ctx.request_id)
+            if len(miss_images) != len(ctx.images):
+                all_uncached = False  # a partial hit in this context
 
         self._cache_and_split(
             vision_embeds, per_image_token_counts, hashes, req_ids
@@ -513,3 +651,70 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
         # allocate on device and copy slices in.
         return [concat_device_buffers(dl) for dl in all_device_bufs]
+
+    @traced
+    def select(
+        self, context_batch: Sequence[VLMContextType]
+    ) -> list[tuple[VLMContextType, list[ImageMetadata]]]:
+        """Select contexts to encode, each paired with its cache-miss images.
+
+        Computes the cache-miss set once (over ``ctx.next_images``), acquires
+        refs for already-cached images immediately (so a hit can't be evicted
+        between selection and assembly), and returns each selected context
+        paired with its miss images. Every downstream consumer reads that same
+        returned selection: the model's pack/encode steps, the counts
+        (:func:`derive_counts_from_spans`), and the store/split
+        (``prepare_vision_outputs``).
+
+        ``get_uncached_contexts`` scans ``ctx.images`` (all images) rather than
+        ``next_images`` to decide which contexts to return. That is consistent
+        because a fully-processed image (in ``ctx.images`` but not
+        ``next_images``) is always cache-resident: a request holds a ref on
+        every image it has encoded, so the entry can't be evicted while the
+        request is live, and the ``ctx.images`` scan sees it as a hit.
+        """
+        uncached = self.get_uncached_contexts(context_batch)
+        return [
+            (
+                ctx,
+                [
+                    img
+                    for img in ctx.next_images
+                    if img.image_hash is None
+                    or self.lookup(img.image_hash) is None
+                ],
+            )
+            for ctx in uncached
+        ]
+
+    @traced
+    def cache_vision_embeddings(
+        self,
+        context_batch: Sequence[VLMContextType],
+        selection: Sequence[tuple[VLMContextType, Sequence[ImageMetadata]]],
+        encode_result: VisionEncodeResult,
+        empty_embeddings: list[Buffer],
+    ) -> tuple[list[Buffer], npt.NDArray[np.int32]]:
+        """Resolve/validate token counts, then store and assemble embeddings.
+
+        Uses ``encode_result.per_image_token_counts`` when set, else derives
+        them from placeholder spans (skipping images already resident).
+
+        Returns:
+            ``(embeddings, scatter_indices)`` — per-device buffers and a 1-D
+            int32 scatter-index array.
+        """
+        counts = encode_result.per_image_token_counts
+        if counts is None:
+            counts = derive_counts_from_spans(selection)
+        validate_vision_encode_counts(counts, encode_result.embeddings)
+        result = self.prepare_vision_outputs(
+            context_batch=context_batch,
+            uncached_contexts=[ctx for ctx, _ in selection],
+            uncached_images=[list(miss) for _, miss in selection],
+            vision_embeds=encode_result.embeddings,
+            per_image_token_counts=counts,
+            n_devices=self._n_devices,
+            empty_embeddings=empty_embeddings,
+        )
+        return result

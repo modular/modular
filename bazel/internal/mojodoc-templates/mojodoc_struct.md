@@ -41,16 +41,7 @@ description: {% if decl.summary
 {# Spaces between the double-backticks and content need to be balanced, #}
 {# so we either add them manually (as here) or use pad_backticks filter. #}
 {% if decl.signature %}
-{% set _sig = decl.signature | format_signature %}
-{% if "\n" in _sig %}
-
-```mojo
-{% if decl.isStatic %}static {% endif %}{{ _sig }}
-```
-
-{% else %}
-`` {% if decl.isStatic %}static {% endif %}{{ _sig }} ``
-{% endif %}
+`` {% if decl.isStatic %}static {% endif %}{{ decl.signature }} ``
 {% endif %}
 {# for function overloads, show stability marker. #}
 {% if overload %}
@@ -91,7 +82,7 @@ description: {% if decl.summary
         {%- else -%}
             ``{{ param.type | pad_backticks }}``
         {%- endif -%}
-    {%- endif %}){{ (": " + param.description) if param.description else "" }}
+    {%- endif %}): {{ param.description }}
 {% endfor %}
 {% endif %}
 {% if decl.args %}
@@ -101,7 +92,7 @@ description: {% if decl.summary
 {% for arg in decl.args -%}
 *   ​<b>{{ arg.name }}</b> ({% if arg.path
         %}[``{{ arg.type | pad_backticks }}``]({{ api_href(arg.path) }}){% else
-        %}``{{ arg.type | pad_backticks }}``{% endif %}){{ (": " + arg.description) if arg.description else "" }}
+        %}``{{ arg.type | pad_backticks }}``{% endif %}): {{ arg.description }}
 {% endfor %}
 {% endif %}
 {% if (decl.returns and decl.returns.type != 'Self') or (decl.returns and decl.returns.doc) %}
@@ -172,7 +163,7 @@ description: {% if decl.summary
         {%- else -%}
             ``{{param.type | pad_backticks }}``
         {%- endif -%}
-    {%- endif %}){{ (": " + param.description) if param.description else "" }}
+    {%- endif %}): {{ param.description }}
 {% endfor %}
 {% endif %}
 {% if decl.fields %}
@@ -180,18 +171,7 @@ description: {% if decl.summary
 ## Fields
 
 {% for field in decl.fields %}
-{% set _ftype = field.type | pad_backticks %}
-{% if _ftype | length > 80 %}
-* ​<b>{{ field.name }}</b>:
-
-  ```mojo
-  {{ field.type }}
-  ```
-
-  {{ field.summary }}
-{% else %}
-* ​<b>{{ field.name }}</b> (``{{ _ftype }}``): {{ field.summary }}
-{% endif %}
+* ​<b>{{ field.name }}</b> (``{{field.type | pad_backticks }}``): {{ field.summary }}
 {% if field.description %}
 {{field.description | indent(2, True, False)}}
 {% endif %}
@@ -228,14 +208,7 @@ description: {% if decl.summary
 
 {# don't show value for trait aliases (no value) or if name == value #}
 {% if alias.value and alias.name != alias.value %}
-{% set _alias_full = alias.signature + " = " + alias.value %}
-{% if _alias_full | length > 80 %}
-```mojo
-{{ alias.signature }}
-```
-{% else %}
-`` {{ _alias_full }} ``
-{% endif %}
+`` {{ alias.signature }} = {{ alias.value }} ``
 {% else %}
 `{{ alias.signature }}`
 {% endif %}
@@ -273,7 +246,7 @@ description: {% if decl.summary
         {%- else -%}
             ``{{ param.type | pad_backticks }}``
         {%- endif -%}
-    {%- endif %}){{ (": " + param.description) if param.description else "" }}
+    {%- endif %}): {{ param.description }}
 {% endfor %}
 {% endif %}
 </div>

@@ -35,7 +35,6 @@ from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
-from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 from test_common.context_utils import create_text_context
 
 
@@ -475,7 +474,6 @@ def test_cross_replica_host_prefix_cache_hit() -> None:
     bm.compute_hashes_for_request(ctx)
     hashes = cast("list[bytes]", list(bm.req_to_hashes[ctx.request_id]))
     assert len(hashes) == 2
-    hash_bytes = [to_block_hash_bytes(h) for h in hashes]
 
     buf0 = manager.get_device_buffer(0).all_buffers[0]
     buf1 = manager.get_device_buffer(1).all_buffers[0]
@@ -490,7 +488,7 @@ def test_cross_replica_host_prefix_cache_hit() -> None:
         block = bm.allocate_device_block(0)
         src_blocks.append(block)
         expected.append(_write_block_pattern(buf0, block.bid, seed=200 + i))
-    connector.offload([b.bid for b in src_blocks], hash_bytes, replica_idx=0)
+    connector.offload([b.bid for b in src_blocks], hashes, replica_idx=0)
     connector.wait_for_offloads()
     for block in src_blocks:
         pool0.free_block(block)

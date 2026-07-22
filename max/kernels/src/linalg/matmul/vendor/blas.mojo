@@ -786,6 +786,17 @@ def _cublas_matmul[
     )
 
     if c_row_major:
+        # Forward each operand's row stride as the leading dimension; a
+        # non-unit inner stride can't be expressed, so fall back to naive.
+        if (
+            a.dynamic_stride(1) != 1
+            or b.dynamic_stride(1) != 1
+            or c.layout.stride[1]().value() != 1
+        ):
+            raise Error("vendor BLAS matmul requires a unit inner stride")
+        var a_lead = Int32(a.dynamic_stride(0))
+        var b_lead = Int32(b.dynamic_stride(0))
+        var c_lead = Int32(c.layout.stride[0]().value())
         check_cublas_error(
             cublasGemmEx(
                 handle,
@@ -800,17 +811,17 @@ def _cublas_matmul[
                 .as_unsafe_any_origin(),
                 _ffi_void_ptr(b.ptr),
                 _convert_to_cublas_datatype[b_type](),
-                Int32(K) if transpose_b else Int32(N),
+                b_lead,
                 _ffi_void_ptr(a.ptr),
                 _convert_to_cublas_datatype[a_type](),
-                Int32(M) if transpose_a else Int32(K),
+                a_lead,
                 UnsafePointer(to=beta)
                 .bitcast[NoneType]()
                 .as_immutable()
                 .as_unsafe_any_origin(),
                 _ffi_void_ptr(c.ptr),
                 _convert_to_cublas_datatype[c_type](),
-                Int32(N),
+                c_lead,
                 compute_type,
                 Algorithm.DEFAULT,
             ),
@@ -932,6 +943,17 @@ def _rocblas_matmul[
         return _rocblas.Operation.NONE
 
     if c_row_major:
+        # Forward each operand's row stride as the leading dimension; a
+        # non-unit inner stride can't be expressed, so fall back to naive.
+        if (
+            a.dynamic_stride(1) != 1
+            or b.dynamic_stride(1) != 1
+            or c.layout.stride[1]().value() != 1
+        ):
+            raise Error("vendor BLAS matmul requires a unit inner stride")
+        var a_lead = Int32(a.dynamic_stride(0))
+        var b_lead = Int32(b.dynamic_stride(0))
+        var c_lead = Int32(c.layout.stride[0]().value())
         return _rocblas.check_error(
             rocblas_gemm_ex(
                 handle,
@@ -943,17 +965,17 @@ def _rocblas_matmul[
                 UnsafePointer(to=alpha).bitcast[NoneType](),
                 _ffi_void_ptr(b.ptr),
                 _rocblas.DataType(b_type),
-                Int32(K) if transpose_b else Int32(N),
+                b_lead,
                 _ffi_void_ptr(a.ptr),
                 _rocblas.DataType(a_type),
-                Int32(K),
+                a_lead,
                 UnsafePointer(to=beta).bitcast[NoneType](),
                 _ffi_void_ptr(c.ptr),
                 _rocblas.DataType(c_type),
-                Int32(N),
+                c_lead,
                 _ffi_void_ptr(c.ptr),
                 _rocblas.DataType(c_type),
-                Int32(N),
+                c_lead,
                 compute_type,
                 _rocblas.Algorithm.STANDARD,
                 0,

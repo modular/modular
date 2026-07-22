@@ -45,10 +45,15 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     imports = ["."],
-    # Each sparse test compiles its own graph (~120-220s under CI contention);
-    # shard so those compiles run in parallel instead of serially timing out.
+    # Graph-compile-heavy MLA test files spread across shards so the
+    # compiles run in parallel on CI workers (unsharded they exceed the
+    # 900s "large" timeout).
     per_test_shard_count = {
-        "test_mla_sparse_decode_graph_gpu.py": 4,
+        # Each sparse decode test compiles its own graph (~120-220s under CI
+        # contention); shard so those compiles run in parallel.
+        "test_mla_sparse_decode_graph_gpu.py": 3,
+        # 4 tests, 9 parametrized graph compiles.
+        "test_mla_sparse_prefill_graph_gpu.py": 5,
     },
     tags = [
         "gpu",

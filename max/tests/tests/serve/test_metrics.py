@@ -214,6 +214,18 @@ def test_tool_call_conformance_error_counter() -> None:
         metrics.METRICS.tool_call_conformance_error(outcome)  # Should not raise
 
 
+def test_response_format_conformance_error_counter() -> None:
+    """The response_format conformance counter records with a bounded 'outcome' tag."""
+    common.configure_metrics(Settings())
+    assert (
+        "maxserve.response_format.conformance_errors" in metrics.SERVE_METRICS
+    )
+    for outcome in ("invalid_json", "schema_mismatch"):
+        metrics.METRICS.response_format_conformance_error(
+            outcome
+        )  # Should not raise
+
+
 def test_structured_output_grammar_rejection_counter() -> None:
     """The 400-rejection counter records with a bounded 'kind' tag."""
     common.configure_metrics(Settings())

@@ -37,7 +37,7 @@ from max.pipelines.context import (
     TextContext,
     TokenHashOverride,
 )
-from max.pipelines.kv_cache.kv_connector import KVConnector, to_block_hash_bytes
+from max.pipelines.kv_cache.kv_connector import KVConnector
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
@@ -68,7 +68,11 @@ def _compute_seq_len(
     #   2 * num_draft_tokens          : drafts to verify *next* batch
     #                                   + drafts written *during* that batch
     #   1                             : one regular decode step
-    #   -1                            : the last generated token has no KV entry
+    #   -max(1, pending_future_count) : the trailing tokens with no KV entry:
+    #                                   the pending future-token placeholders
+    #                                   (each is a not-yet-run forward's input),
+    #                                   or, with none pending, the last
+    #                                   generated token
     #
     # Block-draft correction (DFlash): the draft model's ``forward_block``
     # writes ``num_draft_tokens_per_step + 1`` positions in a single batched
@@ -88,7 +92,7 @@ def _compute_seq_len(
         + 2 * num_draft_tokens
         + 1
         + block_draft_extra
-        - 1
+        - max(1, ctx.pending_future_count)
     )
     return seq_len
 
@@ -355,7 +359,12 @@ class BlockManager:
         # We do not compute the hash for the last token because it is ineligible
         # for prefix caching. This is because 100% prefix cache hit is illegal
         # and will result in a 0 input tokens for the request. Hence the minus 1.
-        num_hashable_tokens = len(ctx.tokens) - 1
+        # When the request carries pending future-token placeholders, all of
+        # them are excluded instead: a placeholder value must never be hashed
+        # into a block key, or the committed block's content would desync from
+        # its key. (With one placeholder pending, this coincides with the
+        # classic minus 1.)
+        num_hashable_tokens = len(ctx.tokens) - max(1, ctx.pending_future_count)
         num_unhashed_tokens = num_hashable_tokens - num_hashed_tokens
         if num_unhashed_tokens < self.block_size:
             return []
@@ -658,7 +667,7 @@ class BlockManager:
         block_ids = [b.bid for b in blocks]
         num_loaded = connector.load(
             block_ids,
-            [to_block_hash_bytes(h) for h in desired_hashes],
+            desired_hashes,
             replica_idx=replica_idx,
         )
 
@@ -745,7 +754,7 @@ class BlockManager:
         num_disk_hits = 0
         if len(remaining) > 0 and self.connector.num_host_blocks > 0:
             num_host_hits, num_disk_hits = self.connector.count_cached_prefix(
-                [to_block_hash_bytes(h) for h in remaining]
+                remaining
             )
 
         return PrefixCacheHits(
@@ -818,7 +827,7 @@ class BlockManager:
                 : num_committed_blocks + len(device_blocks) + len(host_blocks)
             ]
             self.connector.touch(
-                [to_block_hash_bytes(h) for h in cached_hashes],
+                cached_hashes,
                 replica_idx=replica_idx,
             )
 
@@ -846,8 +855,16 @@ class BlockManager:
         )
 
         # Count the number of tokens for which we know the values of and align
-        # to the block size.
-        num_computed_blocks = ctx.tokens.processed_length // self.block_size
+        # to the block size. Trailing future-token placeholders count as
+        # processed positions once a later forward is enqueued behind them,
+        # but their host token values are unrealized (-999), so they are not
+        # committable: committing one would poison a prefix block (and there
+        # is no hash for it — compute_hashes_for_request excludes them).
+        num_realized_tokens = len(ctx.tokens) - ctx.pending_future_count
+        num_computed_blocks = (
+            min(ctx.tokens.processed_length, num_realized_tokens)
+            // self.block_size
+        )
 
         # Commit blocks into the prefix cache.
         for block_idx in range(num_committed_blocks, num_computed_blocks):
@@ -906,10 +923,8 @@ class BlockManager:
             if block_hashes:
                 connector.offload(
                     block_ids,
-                    [to_block_hash_bytes(h) for h in block_hashes],
-                    None
-                    if parent_seq_hash is None
-                    else to_block_hash_bytes(parent_seq_hash),
+                    block_hashes,
+                    parent_seq_hash,
                     replica_idx=replica_idx,
                 )
         self._pending_offloads[replica_idx].clear()

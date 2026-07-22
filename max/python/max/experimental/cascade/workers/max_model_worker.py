@@ -44,7 +44,6 @@ from max.pipelines.context import (
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.modeling.types import RequestID
 from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.worker_interface import ModelWorkerProxy
 from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
@@ -156,6 +155,12 @@ class MAXModelWorker(Worker):
             pipeline_task,
             context_type=context_type,
         )
+
+        # Deferred to break an import cycle: architectures that declare a
+        # cascade_pipeline_factory import this module, and register_all_models()
+        # can reach those architectures while max.serve.pipelines.model_worker
+        # is still initializing.
+        from max.serve.pipelines.model_worker import start_model_worker
 
         async with contextlib.AsyncExitStack() as exit_stack:
             metric_client = await exit_stack.enter_async_context(

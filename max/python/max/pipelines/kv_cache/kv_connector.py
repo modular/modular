@@ -22,31 +22,6 @@ from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 
 
-def to_block_hash_bytes(h: bytes) -> bytes:
-    """Validates a block hash is in the canonical bytes form for connector calls.
-
-    Block hashes flow through the prefix-caching layer as ``bytes`` in their
-    canonical encoding: 8 big-endian signed bytes for ahash64-family algos
-    (including ``sha256_64``), 32 bytes for full SHA-256 digests. This shim is
-    a defensive validator at the ``KVConnector`` boundary and lives next to the
-    Protocol it serves.
-
-    Args:
-        h: A block hash in canonical 8- or 32-byte form.
-
-    Returns:
-        The validated block hash, returned unchanged.
-
-    Raises:
-        ValueError: If ``h`` has a length other than 8 or 32.
-    """
-    if len(h) not in (8, 32):
-        raise ValueError(
-            f"block hash bytes must be length 8 or 32, got {len(h)}"
-        )
-    return h
-
-
 @runtime_checkable
 class KVConnector(Protocol):
     """Protocol for KV cache connectors managing external (non-device) tiers.
@@ -59,9 +34,10 @@ class KVConnector(Protocol):
     8 big-endian bytes for ahash64-family algos (including ``sha256_64``),
     32 bytes for full SHA-256 digests. ``parent_seq_hash`` is ``None`` to
     denote the root of the chain; otherwise it is in the same bytes form
-    as each element of ``block_hashes``. Hashes are already ``bytes`` at
-    production; ``to_block_hash_bytes`` validates the canonical form at this
-    boundary.
+    as each element of ``block_hashes``. The block hasher produces this
+    canonical form directly, so callers pass the hashes through unchanged;
+    a connector that needs a narrower wire encoding (e.g. dKV's 64-bit key)
+    validates and converts at its own boundary.
 
     Required call ordering per inference step:
       1. connector.load()            # post loads on the main stream
@@ -187,7 +163,7 @@ class KVConnector(Protocol):
 
         Args:
             block_hashes: Block hashes in prefix order, in canonical bytes
-                form (see ``to_block_hash_bytes``).
+                form (see the class docstring).
 
         Returns:
             ``(num_host_blocks, num_disk_blocks)`` counted along the

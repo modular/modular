@@ -309,6 +309,15 @@ class PipelineArgs(ConfigFileModel):
         ),
     )
 
+    chunked_prefill_min_chunk_size: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Floor, in tokens, on any chunk created by chunked prefill "
+            "(neither a chunk nor its remainder may be smaller). 0 disables."
+        ),
+    )
+
     enable_in_flight_batching: bool = Field(
         default=False,
         description=(
@@ -382,6 +391,23 @@ class PipelineArgs(ConfigFileModel):
         default=None,
         description=(
             "Enable device graph capture and replay for graph execution."
+        ),
+    )
+
+    fold_sampler_into_graph: bool = Field(
+        default=True,
+        description=(
+            "Fold greedy token selection (argmax) into the captured forward "
+            "graph so a single device-graph replay materializes the sampled "
+            "token."
+        ),
+    )
+
+    max_pending_futures: int = Field(
+        default=1,
+        description=(
+            "Maximum number of unrealized future-token placeholders a "
+            "request may hold at once; 2 enables schedule-ahead decoding."
         ),
     )
 
@@ -715,7 +741,7 @@ class PipelineArgs(ConfigFileModel):
         etc.) instead of duplicating it. It is not a general round-trip:
         ``pipeline_config`` is expected to be freshly constructed and not
         yet resolved. Resolution-derived state (e.g. an applied dtype cast
-        recorded by ``MAXModelConfig.resolve()``) is *not* preserved --
+        recorded during architecture-level resolution) is *not* preserved --
         :class:`PipelineArgs` is deliberately isolated from resolution
         mutations (see #90128), so passing an already-resolved
         ``pipeline_config`` here will silently drop that state.
@@ -779,6 +805,7 @@ class PipelineArgs(ConfigFileModel):
             ce_delay_ms=runtime.ce_delay_ms,
             enable_prioritize_first_decode=runtime.enable_prioritize_first_decode,
             enable_chunked_prefill=runtime.enable_chunked_prefill,
+            chunked_prefill_min_chunk_size=runtime.chunked_prefill_min_chunk_size,
             enable_in_flight_batching=runtime.enable_in_flight_batching,
             eplb_replicas_per_gpu=runtime.eplb_replicas_per_gpu,
             max_num_steps=runtime.max_num_steps,
@@ -790,6 +817,8 @@ class PipelineArgs(ConfigFileModel):
             execute_empty_batches=runtime.execute_empty_batches,
             max_batch_total_tokens=runtime.max_batch_total_tokens,
             device_graph_capture=runtime.device_graph_capture,
+            fold_sampler_into_graph=runtime.fold_sampler_into_graph,
+            max_pending_futures=runtime.max_pending_futures,
             force=runtime.force,
             kvcache_ce_watermark=runtime.kvcache_ce_watermark,
             decode_stall_timeout_s=runtime.decode_stall_timeout_s,

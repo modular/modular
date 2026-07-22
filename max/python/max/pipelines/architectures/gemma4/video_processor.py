@@ -24,9 +24,9 @@ import io
 from dataclasses import dataclass, field
 from fractions import Fraction
 
-import av
 import numpy as np
 import numpy.typing as npt
+from max.pipelines.context import open_video_container
 from PIL import Image
 
 from .processing_utils import (
@@ -137,8 +137,7 @@ class Gemma4VideoProcessor:
             A tuple of (sampled_frames, metadata) where metadata contains
             the source fps and per-frame timestamps in seconds.
         """
-        container = av.open(io.BytesIO(video_bytes))
-        assert isinstance(container, av.container.InputContainer)
+        container = open_video_container(io.BytesIO(video_bytes))
 
         stream = container.streams.video[0]
         avg_rate: Fraction | None = stream.average_rate

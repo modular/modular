@@ -1211,10 +1211,8 @@ def fused_qk_rms_norm_ragged_paged[
 # ===-----------------------------------------------------------------------===#
 
 
-@__name(
-    t"fused_qk_rms_norm_rope_ragged_paged_gpu_{dtype}_{multiply_before_cast}_{interleaved}"
-)
-def _fused_qk_rms_norm_rope_ragged_paged_gpu[
+@always_inline
+def _fused_qk_rms_norm_rope_process_row[
     cache_t: KVCacheT,
     q_out_layout: TensorLayout,
     q_out_origin: Origin[mut=True],
@@ -1244,6 +1242,9 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     has_nope_prefix: Bool,
     rope_dim: Int,
 ](
+    is_k: Bool,
+    global_token_idx: Int,
+    head_idx: Int,
     q_output: TileTensor[
         dtype, q_out_layout, q_out_origin, Storage=q_out_storage
     ],
@@ -1259,21 +1260,21 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     ],
     epsilon: Float32,
     weight_offset: Scalar[dtype],
-    total_seq_len: UInt32,
     input_row_offsets: TileTensor[
         DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
     ],
-    q_num_heads: Int,
     num_cols: Int,
 ):
-    comptime assert q_output.flat_rank == 3, "q_output must have rank 3"
-    comptime assert q_gamma.flat_rank == 1, "q_gamma must have rank 1"
-    comptime assert k_gamma.flat_rank == 1, "k_gamma must have rank 1"
-    comptime assert freqs_cis.flat_rank == 2, "freqs_cis must have rank 2"
-    comptime assert (
-        input_row_offsets.flat_rank == 1
-    ), "input_row_offsets must be rank 1"
+    """Applies RMSNorm+RoPE to one (token, head) row, reading Q via `q_input_fn`
+    (`is_k=False`) or the paged K cache (`is_k=True`) and writing Q to
+    `q_output` or K back in place.
 
+    Shared by the single-QK launcher and the dual (main + indexer) launcher so
+    both paths run byte-identical arithmetic. Allocates its own per-row shared
+    scratch, so callers that dispatch it across grid bands must keep the
+    branch selecting a band block-uniform (all threads in a block take the same
+    band) for the `barrier()` below to be well formed.
+    """
     comptime accum_type = get_accum_type[dtype]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
@@ -1281,21 +1282,6 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     comptime assert head_dim != -1, "Need static shape for q_gamma"
 
     var tid = thread_idx.x
-    var combined_row = Int(block_idx.x)
-    var q_rows = Int(total_seq_len) * q_num_heads
-    var is_k = combined_row >= q_rows
-
-    var global_token_idx: Int
-    var head_idx: Int
-    if is_k:
-        comptime k_num_heads = cache_t.kv_params.num_heads
-        var k_row = combined_row - q_rows
-        global_token_idx = k_row // k_num_heads
-        head_idx = k_row % k_num_heads
-    else:
-        global_token_idx = combined_row // q_num_heads
-        head_idx = combined_row % q_num_heads
-
     var idx = tid * simd_width
     var vec_data = SIMD[accum_type, simd_width](0)
     var gamma_val = SIMD[dtype, simd_width](0)
@@ -1324,7 +1310,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     var norm_val = _rms_norm_warp_tiling_subkernel[
         warps_per_block, multiply_before_cast
     ](
-        combined_row,
+        global_token_idx,
         idx,
         vec_data,
         gamma_val,
@@ -1442,6 +1428,106 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
             q_output.store(
                 Coord(Index(global_token_idx, head_idx, h_im)), output_im
             )
+
+
+@__name(
+    t"fused_qk_rms_norm_rope_ragged_paged_gpu_{dtype}_{multiply_before_cast}_{interleaved}"
+)
+def _fused_qk_rms_norm_rope_ragged_paged_gpu[
+    cache_t: KVCacheT,
+    q_out_layout: TensorLayout,
+    q_out_origin: Origin[mut=True],
+    q_out_storage: TensorStorage,
+    q_gamma_layout: TensorLayout,
+    q_gamma_origin: Origin[mut=False],
+    q_gamma_storage: TensorStorage,
+    k_gamma_layout: TensorLayout,
+    k_gamma_origin: Origin[mut=False],
+    k_gamma_storage: TensorStorage,
+    freqs_layout: TensorLayout,
+    freqs_origin: Origin[mut=False],
+    freqs_storage: TensorStorage,
+    offsets_layout: TensorLayout,
+    offsets_origin: Origin[mut=False],
+    offsets_storage: TensorStorage,
+    dtype: DType,
+    freq_dtype: DType,
+    //,
+    q_input_fn: def[width: Int, alignment: Int](
+        token: Int, head: Int, col: Int
+    ) capturing -> SIMD[dtype, width],
+    simd_width: Int,
+    warps_per_block: Int,
+    multiply_before_cast: Bool,
+    interleaved: Bool,
+    has_nope_prefix: Bool,
+    rope_dim: Int,
+](
+    q_output: TileTensor[
+        dtype, q_out_layout, q_out_origin, Storage=q_out_storage
+    ],
+    k_cache: cache_t,
+    q_gamma: TileTensor[
+        dtype, q_gamma_layout, q_gamma_origin, Storage=q_gamma_storage
+    ],
+    k_gamma: TileTensor[
+        dtype, k_gamma_layout, k_gamma_origin, Storage=k_gamma_storage
+    ],
+    freqs_cis: TileTensor[
+        freq_dtype, freqs_layout, freqs_origin, Storage=freqs_storage
+    ],
+    epsilon: Float32,
+    weight_offset: Scalar[dtype],
+    total_seq_len: UInt32,
+    input_row_offsets: TileTensor[
+        DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
+    ],
+    q_num_heads: Int,
+    num_cols: Int,
+):
+    comptime assert q_output.flat_rank == 3, "q_output must have rank 3"
+    comptime assert q_gamma.flat_rank == 1, "q_gamma must have rank 1"
+    comptime assert k_gamma.flat_rank == 1, "k_gamma must have rank 1"
+    comptime assert freqs_cis.flat_rank == 2, "freqs_cis must have rank 2"
+    comptime assert (
+        input_row_offsets.flat_rank == 1
+    ), "input_row_offsets must be rank 1"
+
+    var combined_row = Int(block_idx.x)
+    var q_rows = Int(total_seq_len) * q_num_heads
+    var is_k = combined_row >= q_rows
+
+    var global_token_idx: Int
+    var head_idx: Int
+    if is_k:
+        comptime k_num_heads = cache_t.kv_params.num_heads
+        var k_row = combined_row - q_rows
+        global_token_idx, head_idx = divmod(k_row, k_num_heads)
+    else:
+        global_token_idx, head_idx = divmod(combined_row, q_num_heads)
+
+    _fused_qk_rms_norm_rope_process_row[
+        q_input_fn,
+        simd_width,
+        warps_per_block,
+        multiply_before_cast,
+        interleaved,
+        has_nope_prefix,
+        rope_dim,
+    ](
+        is_k,
+        global_token_idx,
+        head_idx,
+        q_output,
+        k_cache,
+        q_gamma,
+        k_gamma,
+        freqs_cis,
+        epsilon,
+        weight_offset,
+        input_row_offsets,
+        num_cols,
+    )
 
 
 @always_inline
@@ -1626,6 +1712,438 @@ def fused_qk_rms_norm_rope_ragged_paged[
             total_seq_len,
             input_row_offsets,
             q_num_heads,
+            cols,
+            grid_dim=rows,
+            block_dim=block_dim_value,
+        )
+
+
+@__name(
+    t"fused_dual_qk_rms_norm_rope_ragged_paged_gpu_{dtype}_{multiply_before_cast}_{interleaved}"
+)
+def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
+    main_cache_t: KVCacheT,
+    index_cache_t: KVCacheT,
+    q_main_out_layout: TensorLayout,
+    q_main_out_origin: Origin[mut=True],
+    q_main_out_storage: TensorStorage,
+    q_index_out_layout: TensorLayout,
+    q_index_out_origin: Origin[mut=True],
+    q_index_out_storage: TensorStorage,
+    q_main_gamma_layout: TensorLayout,
+    q_main_gamma_origin: Origin[mut=False],
+    q_main_gamma_storage: TensorStorage,
+    k_main_gamma_layout: TensorLayout,
+    k_main_gamma_origin: Origin[mut=False],
+    k_main_gamma_storage: TensorStorage,
+    q_index_gamma_layout: TensorLayout,
+    q_index_gamma_origin: Origin[mut=False],
+    q_index_gamma_storage: TensorStorage,
+    k_index_gamma_layout: TensorLayout,
+    k_index_gamma_origin: Origin[mut=False],
+    k_index_gamma_storage: TensorStorage,
+    freqs_layout: TensorLayout,
+    freqs_origin: Origin[mut=False],
+    freqs_storage: TensorStorage,
+    offsets_layout: TensorLayout,
+    offsets_origin: Origin[mut=False],
+    offsets_storage: TensorStorage,
+    dtype: DType,
+    freq_dtype: DType,
+    //,
+    main_q_input_fn: def[width: Int, alignment: Int](
+        token: Int, head: Int, col: Int
+    ) capturing -> SIMD[dtype, width],
+    index_q_input_fn: def[width: Int, alignment: Int](
+        token: Int, head: Int, col: Int
+    ) capturing -> SIMD[dtype, width],
+    simd_width: Int,
+    warps_per_block: Int,
+    multiply_before_cast: Bool,
+    interleaved: Bool,
+    has_nope_prefix: Bool,
+    rope_dim: Int,
+](
+    q_main_output: TileTensor[
+        dtype, q_main_out_layout, q_main_out_origin, Storage=q_main_out_storage
+    ],
+    q_index_output: TileTensor[
+        dtype,
+        q_index_out_layout,
+        q_index_out_origin,
+        Storage=q_index_out_storage,
+    ],
+    main_k_cache: main_cache_t,
+    index_k_cache: index_cache_t,
+    q_main_gamma: TileTensor[
+        dtype,
+        q_main_gamma_layout,
+        q_main_gamma_origin,
+        Storage=q_main_gamma_storage,
+    ],
+    k_main_gamma: TileTensor[
+        dtype,
+        k_main_gamma_layout,
+        k_main_gamma_origin,
+        Storage=k_main_gamma_storage,
+    ],
+    q_index_gamma: TileTensor[
+        dtype,
+        q_index_gamma_layout,
+        q_index_gamma_origin,
+        Storage=q_index_gamma_storage,
+    ],
+    k_index_gamma: TileTensor[
+        dtype,
+        k_index_gamma_layout,
+        k_index_gamma_origin,
+        Storage=k_index_gamma_storage,
+    ],
+    freqs_cis: TileTensor[
+        freq_dtype, freqs_layout, freqs_origin, Storage=freqs_storage
+    ],
+    main_epsilon: Float32,
+    index_epsilon: Float32,
+    weight_offset: Scalar[dtype],
+    total_seq_len: UInt32,
+    input_row_offsets: TileTensor[
+        DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
+    ],
+    q_main_num_heads: Int,
+    q_index_num_heads: Int,
+    num_cols: Int,
+):
+    # Four-band grid: [ q_main | k_main | q_index | k_index ], each band
+    # tsl * heads rows. The band is a function of block_idx only, so it is
+    # uniform across the block; the barrier inside the shared per-row helper is
+    # therefore well formed even though only one band's helper runs per block.
+    var combined_row = Int(block_idx.x)
+    var tsl = Int(total_seq_len)
+    comptime k_main_heads = main_cache_t.kv_params.num_heads
+    comptime k_index_heads = index_cache_t.kv_params.num_heads
+
+    var q_main_rows = tsl * q_main_num_heads
+    var k_main_rows = tsl * k_main_heads
+    var main_end = q_main_rows + k_main_rows
+
+    if combined_row < main_end:
+        var is_k = combined_row >= q_main_rows
+        var global_token_idx: Int
+        var head_idx: Int
+        if is_k:
+            var k_row = combined_row - q_main_rows
+            global_token_idx, head_idx = divmod(k_row, k_main_heads)
+        else:
+            global_token_idx, head_idx = divmod(combined_row, q_main_num_heads)
+
+        _fused_qk_rms_norm_rope_process_row[
+            main_q_input_fn,
+            simd_width,
+            warps_per_block,
+            multiply_before_cast,
+            interleaved,
+            has_nope_prefix,
+            rope_dim,
+        ](
+            is_k,
+            global_token_idx,
+            head_idx,
+            q_main_output,
+            main_k_cache,
+            q_main_gamma,
+            k_main_gamma,
+            freqs_cis,
+            main_epsilon,
+            weight_offset,
+            input_row_offsets,
+            num_cols,
+        )
+    else:
+        var idx_row = combined_row - main_end
+        var q_index_rows = tsl * q_index_num_heads
+        var is_k = idx_row >= q_index_rows
+        var global_token_idx: Int
+        var head_idx: Int
+        if is_k:
+            var k_row = idx_row - q_index_rows
+            global_token_idx, head_idx = divmod(k_row, k_index_heads)
+        else:
+            global_token_idx, head_idx = divmod(idx_row, q_index_num_heads)
+
+        _fused_qk_rms_norm_rope_process_row[
+            index_q_input_fn,
+            simd_width,
+            warps_per_block,
+            multiply_before_cast,
+            interleaved,
+            has_nope_prefix,
+            rope_dim,
+        ](
+            is_k,
+            global_token_idx,
+            head_idx,
+            q_index_output,
+            index_k_cache,
+            q_index_gamma,
+            k_index_gamma,
+            freqs_cis,
+            index_epsilon,
+            weight_offset,
+            input_row_offsets,
+            num_cols,
+        )
+
+
+@always_inline
+def fused_dual_qk_rms_norm_rope_ragged_paged[
+    dtype: DType,
+    freq_dtype: DType,
+    main_params: KVCacheStaticParams,
+    main_page_size: Int,
+    main_cache_dtype: DType,
+    index_params: KVCacheStaticParams,
+    index_page_size: Int,
+    index_cache_dtype: DType,
+    //,
+    target: StaticString,
+    multiply_before_cast: Bool,
+    interleaved: Bool,
+    main_q_input_fn: def[width: Int, alignment: Int](
+        token: Int, head: Int, col: Int
+    ) capturing -> SIMD[dtype, width],
+    index_q_input_fn: def[width: Int, alignment: Int](
+        token: Int, head: Int, col: Int
+    ) capturing -> SIMD[dtype, width],
+](
+    main_kv_collection: PagedKVCacheCollection[
+        main_cache_dtype,
+        main_params,
+        main_page_size,
+        ...,
+    ],
+    index_kv_collection: PagedKVCacheCollection[
+        index_cache_dtype,
+        index_params,
+        index_page_size,
+        ...,
+    ],
+    q_main_gamma: TileTensor[mut=False, dtype, ...],
+    k_main_gamma: TileTensor[mut=False, dtype, ...],
+    q_index_gamma: TileTensor[mut=False, dtype, ...],
+    k_index_gamma: TileTensor[mut=False, dtype, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
+    main_epsilon: Float32,
+    index_epsilon: Float32,
+    weight_offset: Scalar[dtype],
+    layer_idx: UInt32,
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    q_main_output: TileTensor[mut=True, dtype, ...],
+    q_index_output: TileTensor[mut=True, dtype, ...],
+    context: DeviceContext,
+) raises:
+    """Fuses two `fused_qk_rms_norm_rope_ragged_paged` launches into one.
+
+    MiniMax-M3 sparse layers fire the fused per-head RMSNorm+RoPE op twice
+    back to back: once for the main GQA Q / K cache and once for the lightning
+    indexer's IndexQ / index-K cache. Both read (disjoint) slices of the same
+    combined QKV+IndexQ matmul output, share one `input_row_offsets`, and share
+    one `freqs_cis` table, so they can run in a single launch. The grid is a
+    four-band concatenation `[ q_main | k_main | q_index | k_index ]`; each row
+    selects its band's cache, gamma, DPS output, Q read lambda, and epsilon at
+    runtime. `main_q_input_fn` / `index_q_input_fn` read each band's Q; the
+    respective key caches are updated in place.
+
+    Because the two paged caches can be different types (the main GQA cache and
+    the indexer's single-head K-only cache differ in KV-heads-per-device under
+    tensor parallelism), the kernel is parameterized on two independent
+    `cache_t` types. All *compile-time* RoPE geometry (`dtype`, `rope_dim` via
+    `freqs_cis.static_shape[1]`, `interleaved`, `head_size`) must be identical
+    across both bands; a divergence (e.g. a future main full-128 rope while the
+    indexer stays partial-64) trips a compile-time assert rather than silently
+    mis-roping a band.
+    """
+    comptime assert is_gpu[
+        target
+    ](), "fused_dual_qk_rms_norm_rope_ragged_paged is GPU-only"
+    comptime assert q_main_output.flat_rank == 3, "q_main_output must be rank 3"
+    comptime assert (
+        q_index_output.flat_rank == 3
+    ), "q_index_output must be rank 3"
+    comptime assert q_main_gamma.flat_rank == 1, "q_main_gamma must be rank 1"
+    comptime assert k_main_gamma.flat_rank == 1, "k_main_gamma must be rank 1"
+    comptime assert q_index_gamma.flat_rank == 1, "q_index_gamma must be rank 1"
+    comptime assert k_index_gamma.flat_rank == 1, "k_index_gamma must be rank 1"
+    comptime assert freqs_cis.flat_rank == 2, "freqs_cis must be rank 2"
+    comptime assert (
+        input_row_offsets.flat_rank == 1
+    ), "input_row_offsets must be rank 1"
+    comptime assert main_cache_dtype == dtype and index_cache_dtype == dtype, (
+        "fused_dual_qk_rms_norm_rope_ragged_paged requires Q and both K caches"
+        " to share the Q dtype"
+    )
+
+    # Both bands must share the per-head RoPE geometry for a single kernel
+    # instantiation (one freqs table, one comptime `rope_dim`) to be valid.
+    comptime assert main_params.head_size == index_params.head_size, (
+        "dual QK RMSNorm+RoPE requires both bands to share head_size; a"
+        " divergent geometry (e.g. main full-128 rope, indexer partial-64)"
+        " must use two separate launches"
+    )
+
+    comptime main_rms_cols = q_main_gamma.static_shape[0]
+    comptime k_main_rms_cols = k_main_gamma.static_shape[0]
+    comptime index_rms_cols = q_index_gamma.static_shape[0]
+    comptime k_index_rms_cols = k_index_gamma.static_shape[0]
+    comptime assert (
+        main_rms_cols != -1 and index_rms_cols != -1
+    ), "Need static shape for gamma"
+    comptime assert (
+        main_rms_cols == k_main_rms_cols
+    ), "main q_gamma and k_gamma must have the same static size"
+    comptime assert (
+        index_rms_cols == k_index_rms_cols
+    ), "index q_gamma and k_gamma must have the same static size"
+    comptime assert (
+        main_rms_cols == index_rms_cols
+    ), "main and index gamma must have the same static size"
+    comptime assert (
+        main_rms_cols == main_params.head_size
+    ), "dual QK RMSNorm requires full per-head normalization"
+
+    var main_k_cache = main_kv_collection.get_key_cache(Int(layer_idx))
+    var index_k_cache = index_kv_collection.get_key_cache(Int(layer_idx))
+    # Derived from the DPS outputs (identical shape to each Q) so the per-band
+    # head counts stay compile-time constants via static-shape propagation.
+    var q_main_num_heads = Int(q_main_output.dim[1]())
+    var q_index_num_heads = Int(q_index_output.dim[1]())
+    var total_seq_len = UInt32(q_main_output.dim[0]())
+
+    comptime rope_dim = Int(freqs_cis.static_shape[1])
+    comptime assert rope_dim != -1, "Need static shape for freqs_cis"
+    comptime unroped_dim = main_rms_cols - rope_dim
+    comptime has_nope = unroped_dim > 0
+    comptime assert rope_dim <= main_rms_cols, "rope_dim must be <= head_size"
+    comptime has_nope_prefix = has_nope and not interleaved
+    comptime if has_nope and not interleaved:
+        comptime assert (
+            rope_dim % 2 == 0
+        ), "prefix partial RoPE rope_dim must be even for split layout"
+
+    if total_seq_len == 0:
+        return
+
+    var q_main_rows = Int(total_seq_len) * q_main_num_heads
+    var k_main_rows = Int(total_seq_len) * main_params.num_heads
+    var q_index_rows = Int(total_seq_len) * q_index_num_heads
+    var k_index_rows = Int(total_seq_len) * index_params.num_heads
+    var rows = q_main_rows + k_main_rows + q_index_rows + k_index_rows
+
+    @always_inline
+    @parameter
+    def description_fn() -> String:
+        return (
+            trace_arg(
+                "q_main_output",
+                coord_to_index_list(q_main_output.layout.shape_coord()),
+            )
+            + ";layer_idx="
+            + String(layer_idx)
+            + ";main_num_heads="
+            + String(main_params.num_heads)
+            + ";index_num_heads="
+            + String(index_params.num_heads)
+            + ";head_size="
+            + String(main_params.head_size)
+            + ";rope_dim="
+            + String(rope_dim)
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "fused_dual_qk_rms_norm_rope_ragged_paged_nhead_"
+        + String(main_params.num_heads)
+        + ".hdim_"
+        + String(main_params.head_size)
+        + ".rope_"
+        + String(rope_dim),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(context),
+    ):
+        comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+        comptime assert (
+            main_rms_cols % simd_width == 0
+        ), "rms_norm_cols must be divisible by simd_width"
+        comptime assert (
+            rope_dim % simd_width == 0
+        ), "rope_dim must be divisible by simd_width"
+        comptime assert (
+            simd_width % 2 == 0
+        ), "simd_width must be even for the split RoPE layout"
+        comptime max_warps_per_block = (
+            context.default_device_info.max_thread_block_size // WARP_SIZE
+        )
+        comptime warps_per_block = ceildiv(
+            main_rms_cols // simd_width, WARP_SIZE
+        )
+        comptime assert (
+            warps_per_block <= max_warps_per_block
+        ), "fused QK RMSNorm+RoPE block size exceeds device max warps per block"
+        var cols = Int(main_rms_cols)
+        comptime block_dim_value = WARP_SIZE * warps_per_block
+        comptime kernel = _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
+            main_cache_t=type_of(main_k_cache),
+            index_cache_t=type_of(index_k_cache),
+            q_main_out_layout=q_main_output.LayoutType,
+            q_main_out_origin=q_main_output.origin,
+            q_main_out_storage=q_main_output.Storage,
+            q_index_out_layout=q_index_output.LayoutType,
+            q_index_out_origin=q_index_output.origin,
+            q_index_out_storage=q_index_output.Storage,
+            q_main_gamma_layout=q_main_gamma.LayoutType,
+            q_main_gamma_origin=q_main_gamma.origin,
+            q_main_gamma_storage=q_main_gamma.Storage,
+            k_main_gamma_layout=k_main_gamma.LayoutType,
+            k_main_gamma_origin=k_main_gamma.origin,
+            k_main_gamma_storage=k_main_gamma.Storage,
+            q_index_gamma_layout=q_index_gamma.LayoutType,
+            q_index_gamma_origin=q_index_gamma.origin,
+            q_index_gamma_storage=q_index_gamma.Storage,
+            k_index_gamma_layout=k_index_gamma.LayoutType,
+            k_index_gamma_origin=k_index_gamma.origin,
+            k_index_gamma_storage=k_index_gamma.Storage,
+            freqs_layout=freqs_cis.LayoutType,
+            freqs_origin=freqs_cis.origin,
+            freqs_storage=freqs_cis.Storage,
+            offsets_layout=input_row_offsets.LayoutType,
+            offsets_origin=input_row_offsets.origin,
+            offsets_storage=input_row_offsets.Storage,
+            dtype=dtype,
+            freq_dtype=freq_dtype,
+            main_q_input_fn,
+            index_q_input_fn,
+            simd_width,
+            warps_per_block,
+            multiply_before_cast,
+            interleaved,
+            has_nope_prefix,
+            rope_dim,
+        ]
+        context.enqueue_function[kernel](
+            q_main_output,
+            q_index_output,
+            main_k_cache,
+            index_k_cache,
+            q_main_gamma,
+            k_main_gamma,
+            q_index_gamma,
+            k_index_gamma,
+            freqs_cis,
+            main_epsilon,
+            index_epsilon,
+            weight_offset,
+            total_seq_len,
+            input_row_offsets,
+            q_main_num_heads,
+            q_index_num_heads,
             cols,
             grid_dim=rows,
             block_dim=block_dim_value,

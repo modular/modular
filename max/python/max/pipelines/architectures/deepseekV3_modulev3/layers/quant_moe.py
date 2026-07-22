@@ -213,8 +213,9 @@ class QuantizedMoE(Module[[Tensor], Tensor]):
     ) -> Tensor:
         """Restores token order and weight-combines the per-token expert outputs."""
         seq_len = router_weight.shape[0]
-        down_projs = F.gather(down_projs, restore_token_order, axis=0).reshape(
-            [seq_len, self.num_experts_per_token, -1]
+        gathered = F.gather(down_projs, restore_token_order, axis=0)
+        down_projs = gathered.reshape(
+            [seq_len, self.num_experts_per_token, gathered.shape[-1]]
         )
         if not self.apply_router_weight_first:
             out = F.unsqueeze(router_weight, axis=1) @ down_projs

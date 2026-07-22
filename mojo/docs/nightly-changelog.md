@@ -379,9 +379,12 @@ This version is still a work in progress.
   - `def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):`
   - `def reserve(mut self, capacity: Int):`
   - `def resize(mut self, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):`
-  - `def __getitem__[origin: Origin, //](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:`
+  - `def __getitem__[origin: Origin, //](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin_of(self)._get_owned_interior["element"]]:`
   - `def __init__(out self, *, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable):`
   - `def __iadd__(mut self, var other: Self, /) where conforms_to(Self.T, Copyable):`
+  - `def extend(mut self, var other: Self):`
+  - `def __contains__[dtype: DType, //](self: Span[Scalar[dtype], _]. value: Scalar[dtype]) -> Bool`
+  - `def __contains__(self, value: Self.T) -> Bool where conforms_to(Self.T, Equatable)`
 
 - Bool
 - Span
@@ -393,16 +396,29 @@ This version is still a work in progress.
 ## Library changes
 
 - Various datatypes have adopted interior origins for increased memory safety,
-  including `List`, `Deque`, `Variant` and `String`. `String`'s view-returning
-  accessors (`as_bytes()`, `s[byte=...]`, `s[codepoint=...]`, and similar) now
-  return `StringSlice`/`Span` views bound to an interior origin of the string,
-  so such a view is invalidated when the string is mutated:
+  including `List`, `Deque`, `Variant`, `String`, `Dict`, `LinkedList`,
+  `OwnedPointer`, and `HostBuffer`. A reference or view into one of these
+  containers now carries an interior origin, so one held across a mutation is
+  rejected by the lifetime checker instead of silently dangling after a
+  reallocation. For example, indexing a `List` (`list[i]`) returns a reference
+  bound to the list:
 
   ```mojo
-  var s = String("hello world")
-  var view = s[byte=0:5]
-  s += "!"      # may reallocate, invalidating `view`
-  print(view)   # error: use of invalidated interior reference
+  var list = [1, 2, 3]
+  ref elem = list[0]
+  list.append(4)  # may reallocate, invalidating `elem`
+  print(elem)     # error: use of invalidated interior reference
+  ```
+
+  `HostBuffer.as_span()` now returns a `Span` bound to an interior origin of the
+  buffer instead of the whole-buffer origin, so a span held across a mutation of
+  the buffer is rejected by the lifetime checker:
+
+  ```mojo
+  var buf = ctx.enqueue_create_host_buffer[DType.float32](4)
+  var s = buf.as_span()
+  buf[0] = 1.0    # mutates the buffer, invalidating `s`
+  print(s[0])     # error: use of invalidated interior reference
   ```
 
 - Added `Tuple.consume_elements`, which moves each element out of a tuple into a
@@ -426,6 +442,9 @@ This version is still a work in progress.
   update any explicit `InlineArray[T, size=N]` to `InlineArray[T, length=N]`,
   and `.size` reads to `.length`.
 
+- `InlineArray`'s first parameter is renamed from `ElementType` to `T`.
+  Any explicit usages must be updated.
+
 - `List.capacity` is now a `capacity()` method instead of a public field. This
   keeps the allocated capacity out of the stable public field surface, since it
   should only change indirectly through operations like `append()`. Replace
@@ -435,6 +454,27 @@ This version is still a work in progress.
   `Imm`-prefixed spelling used for the other immutable origins. The old name
   is still available as a deprecated alias and will be removed in a future
   release.
+
+- Floating-point `range()` iteration is now drift-free and reversible.
+  Element `i` is computed as `fma(i, step, start)`. Forward and reverse
+  iteration produce identical sequences across repeated calls
+  and across any IEEE-754 platform at the same floating-point width.
+  Previously a step that was not exactly representable, such as `0.1`, could
+  drift and yield an extra forward element that `reversed()` then dropped.
+
+- `range()` now rejects non-numeric element types (`Bool` and the narrow MX
+  float formats) at construction. The one- and two-argument float ranges
+  (`range(Float64(4.5))` and `range(Float64(0.5), Float64(3.0))`) are compile
+  errors instead of infinite loops; use the three-argument stepped form.
+
+- `repr()` of a scalar `SIMD` value (`size == 1`) now prints using its type
+  alias instead of the verbose `SIMD[DType.<dtype>, 1](...)` form when the
+  dtype has one. For example, `repr(UInt32(4))` is now `UInt32(4)` (previously
+  `SIMD[DType.uint32, 1](4)`), and `repr(List[UInt](1, 2))` is now
+  `List[SIMD[DType.uint, 1]]([UInt(1), UInt(2)])`. `size > 1` values, and
+  scalar dtypes without an alias (such as `DType.bool`), keep the
+  `SIMD[...]` form. This only affects `repr()`; `String(...)` / `print(...)`
+  output is unchanged.
 
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
@@ -664,6 +704,25 @@ This version is still a work in progress.
       is transparent. Generic code that stores a `Tuple[*Ts]` with an unbounded
       pack may need `& ImplicitlyDeletable` on the pack bound to keep dropping
       the tuple implicitly.
+  - `Set[ElementType, HasherType]`
+    - The element bound loosened from `KeyElement & ImplicitlyDeletable` to just
+      `KeyElement`, so a `Set` can now hold a non-`ImplicitlyDeletable` element
+      type.
+    - Like `Dict`, element-mutating operations (`add`, `remove`, `discard`,
+      `clear`) still require `ElementType` to be `ImplicitlyDeletable`, so such
+      a `Set` can currently be constructed and torn down with `deinit_with()`
+      but not populated. For deletable element types (the common case) this is
+      transparent.
+    - Consuming iteration (`for x in set^`) is likewise conditional, requiring
+      `ElementType` to be `ImplicitlyDeletable`.
+
+- `InlineArray`'s element type bound loosened from `Movable` to `AnyType`, so an
+  `InlineArray` can now hold a non-`Movable` element type. The `Movable`
+  conformance is now conditional on the element: move construction (including
+  list-literal construction such as `[a, b, c]`) requires a `Movable` element,
+  while indexing, by-reference iteration, and destruction do not. Code that
+  uses `Movable` element types is unaffected, since a `Movable` element still
+  yields a movable array.
 
 - Is is now possible to iterate over owned elements in
   `List`, `Dict`, `InlineArray`, `LinkedList`, and `Set`
@@ -758,6 +817,22 @@ This version is still a work in progress.
   Mojo `Error` into a Python exception via `PyErr_SetString` and returns a null
   `PyObjectPtr`.
 
+- The `PyCFunctionFast` calling convention used by
+  `PythonModuleBuilder.def_py_c_function()` for `METH_FASTCALL` callbacks now
+  declares its argument array as a safe
+  `Pointer[PyObjectPtr, MutUntrackedOrigin]` instead of an `UnsafePointer`.
+  The two types share the same layout, so the C ABI is unchanged; hand-written
+  fastcall callbacks only need to update the parameter's spelling in their
+  signature and read the borrowed arguments with `args[unsafe_offset=i]`.
+
+- Typed-self methods registered through `PythonTypeBuilder.def_method()` now
+  declare their self parameter as a safe `Pointer[Self]` instead of an
+  `UnsafePointer[Self]`, and the extension argument helpers
+  `check_and_get_arg()` and `check_and_get_or_convert_arg()` return a safe
+  `Pointer`. The two pointer types share the same layout, so behavior is
+  unchanged; update method signatures to spell `Pointer` (for example,
+  `self_ptr: Pointer[mut=True, Self]`).
+
 - Iterating over a `String`, `StringSlice`, or `StringLiteral` now yields
   grapheme clusters by default. Their `__iter__()` and `__reversed__()` methods
   return a `GraphemeSliceIter`, so `for c in my_string:` produces what a user
@@ -802,6 +877,20 @@ This version is still a work in progress.
   remain gated behind an unsafe pointer type; prefer the `unsafe_`-prefixed
   names going forward. Each method's docstring documents the exact `Safety:`
   requirements the caller must uphold.
+
+- `UnsafePointer.init_pointee_move_from()` is now deprecated in favor of the new
+  `unsafe_write_move_from()` method, which moves the value out of a source
+  pointer into the uninitialized memory `self` points to (leaving the source
+  uninitialized):
+
+  ```mojo
+  dst.unsafe_write_move_from(src)
+  ```
+
+  Like `unsafe_write()` and `unsafe_take_pointee()`, this method works on any
+  `Pointer` — the old `init_pointee_move_from()` was gated behind an unsafe
+  pointer type, so callers no longer need to wrap safe pointers in
+  `MutUnsafePointer` to move a value between them.
 
 - `OwnedDLHandle.get_function` now returns a callable that keeps the owning
   handle alive while it runs, fixing a crash where the library could be
@@ -880,6 +969,14 @@ This version is still a work in progress.
   GPU generations (M1-M5). It accepts `Float16`, `BFloat16`, and `Float32`
   inputs with a `Float32` accumulator.
 
+- `Atomic.compare_exchange()` now accepts a `weak` parameter, and requires
+  `weak=True` to compile on Apple GPU targets: AIR exposes no strong
+  compare-exchange primitive, so Metal only lowers the `weak` form. This is
+  safe for the common case of a CAS-retry loop, since a spurious failure just
+  costs one extra iteration. Previously any use of `compare_exchange()`,
+  including helpers built on it like atomic scatter-reduce, failed to
+  compile on Metal.
+
 - Apple M5 `simdgroup_matrix` MMA now accepts FP8 (`float8_e4m3fn`,
   `float8_e5m2`) inputs with an F32 accumulator, alongside the existing
   F16/BF16/F32 and 8-bit integer types.
@@ -928,6 +1025,19 @@ This version is still a work in progress.
       )
   ```
 
+- `DeviceGraphBuilder.add_function` now covers every live
+  `DeviceContext.enqueue_function` form, so any kernel launchable on a device
+  context can also be recorded as a graph node:
+
+  - Added an overload accepting a `DeviceExternalFunction` loaded from
+    PTX/SASS via `DeviceContext.load_function()`.
+  - Added an overload taking a capturing kernel as a compile-time parameter
+    with runtime arguments, mirroring the capturing parameter-based
+    `DeviceContext.enqueue_function`.
+  - All `add_function` overloads now accept a `location` argument so wrappers
+    can attribute launch errors to their callers, and the closure overload now
+    accepts (and honors) a `func_attribute` argument.
+
 - `AddressSpace` is now target-extensible rather than a fixed, portable enum.
   The built-in GPU spaces (`GENERIC`, `GLOBAL`, `SHARED`, `CONSTANT`, `LOCAL`,
   `SHARED_CLUSTER`, `BUFFER_RESOURCE`) are unchanged, but accessing any other
@@ -962,6 +1072,11 @@ This version is still a work in progress.
   `DType._from_str()` now returns an `Optional[DType]` (`None` when the string
   does not name a dtype) rather than `DType.invalid`.
 
+- Removed positional indexing on `StringLiteral` (`literal[i]`). It allowed
+  out-of-bounds reads and was inconsistent with the `[byte=]`, `[codepoint=]`,
+  and `[grapheme=]` indexing scheme used by `String` and `StringSlice`. Use
+  those keyword accessors instead (for example, on a `StaticString`).
+
 ## Fixed
 
 - [#6784](https://github.com/modular/modular/issues/6784),
@@ -970,6 +1085,13 @@ This version is still a work in progress.
   hardware sqrt (`sqrt.rn.f64`) instead of being rejected at compile time.
   NVIDIA has no approximate f64 sqrt, so the `Float32` fast path continues to
   use `sqrt.approx.ftz.f32`.
+
+- [#4473](https://github.com/modular/modular/issues/4473) - The `offset`
+  parameter of `FileHandle.seek()` (and `NamedTemporaryFile.seek()`) is now a
+  signed `Int` instead of `UInt64`, so negative offsets relative to
+  `os.SEEK_CUR` or `os.SEEK_END` work as the docstrings already showed.
+  Previously a negative offset only compiled as a literal (via unsigned
+  wrap-around) and could not be passed from a signed variable.
 
 - [#6755](https://github.com/modular/modular/issues/6755) - Volatile loads are
   no longer removed when their results are unused.
@@ -1069,3 +1191,13 @@ This version is still a work in progress.
   struct Two(Movable where False):
       var y: One
   ```
+
+- A failed import no longer poisons its name for the rest of the compilation.
+  Previously, after something like `import pkg.util` failed to resolve, a
+  later `import util` would silently bind the cached failure even when a real
+  `util.mojo` exists on the search path, making the module unimportable with
+  no diagnostic.
+
+- [#6485](https://github.com/modular/modular/issues/6485) - `Optional[T]` and
+  `Variant[...]` no longer corrupt data for payload types that include a
+  `Bool` field. The fix changes how unions are lowered to LLVM.

@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TypeGuard
 
+from max.driver import Device
 from max.dtype import DType
 from max.experimental.nn import Module
 from max.experimental.sharding import (
@@ -136,6 +137,13 @@ class FP8BlockTensor(QTensor):
     def _mapping(self, mapping: DeviceMapping) -> None:
         self.data._mapping = mapping
         self.weight_scale_inv._mapping = mapping
+
+    def to(self, target: Device | DeviceMesh | DeviceMapping) -> FP8BlockTensor:
+        return FP8BlockTensor(
+            data=self.data.to(target),
+            weight_scale_inv=self.weight_scale_inv.to(target),
+            block_size=self.block_size,
+        )
 
 
 def all_fp8_block(

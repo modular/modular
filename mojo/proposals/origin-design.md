@@ -325,6 +325,55 @@ references rooted under that field, not sibling fields. Like field selection,
 interior selection distributes through `#lit.origin.union` and
 `#lit.origin.mutcast` during canonicalization.
 
+### Origin subtree views
+
+**`#lit.origin.subtree<origin>`** — a view over an origin and all origins
+derived from it. A subtree origin does not identify one specific storage
+location; instead, it represents the entire subtree rooted at the given origin.
+
+A reference whose origin is `#lit.origin.subtree<x>` may refer to storage
+governed by `x` itself or by any origin formed by applying field or interior
+origin projections beneath `x`. This allows APIs to abstract over the precise
+interior region being referenced while still preserving ownership and
+invalidation semantics.
+
+For example, given the origin:
+
+```text
+foo.bar["elements"].zed
+```
+
+it can be implicitly converted to any of:
+
+```text
+~foo.bar["elements"].zed
+~foo.bar["elements"]
+~foo.bar
+~foo
+```
+
+You can see this as a superset relationship, erasing progressively more details:
+`foo.bar["elements"] <: ~foo.bar <: ~foo`.
+
+Subtree origins are particularly useful when an API wishes to express "some
+reference rooted within this owner" without exposing or depending on the exact
+interior path. For example:
+
+```mojo
+def borrow(ref self) -> ref [origin_of(self).subtree] T:
+    ...
+```
+
+This indicates that the returned reference is rooted somewhere within `self`,
+but does not specify which interior region. Because subtree origins may
+reference an interior origin, they are invalidated (like an interior origin)
+whenever the base is mutated.
+
+Subtree origins compose naturally with field origins, interior origins,
+mutability casts, and unions. Canonicalization treats the wrapped origin as the
+root of the subtree; unions and mutability casts distribute as they do for
+other origin combinators.
+
 ### Combinators
 
 **`#lit.origin.union<op1, op2, …>`** — the union of two or more origins. A
@@ -385,8 +434,9 @@ following canonical form:
 
 1) Unions (if present) on the outside.
 2) MutCast within that.
-3) Field references and interior origins within that.
-4) Singletons and declaration references within that.
+3) Subtree within that.
+4) Field references and interior origins within that.
+5) Singletons and declaration references within that.
 
 ### Unions on the outside
 
@@ -471,7 +521,7 @@ reallocation, and nothing in the type system stops you from using it. Bugs like
 this—iterator invalidation, use-after-reallocation, stale pointers into
 `std::vector`—are a major source of security and reliability problems.
 
-Rust largely prevents this class of bug with its borrow checker: while a
+Rust prevents this class of bug in safe code with its borrow checker: while a
 mutable borrow of a container is live, you cannot hold other references that
 might alias the same storage. That model is sound, but it can feel restrictive.
 Operations that reborrow or split borrows across fields often require careful
@@ -505,7 +555,7 @@ can reallocate the buffer invalidate element references taken earlier.
 var list: List = [1, 2, 3]
 ref first_ref = list[0]
 first_ref = 10         # OK while the list has not invalidated `first_ref`.
-list.append(4)         # Invalidates `first_ref` if reallocation occurs.
+list.append(4)         # Invalidates `first_ref` because it might reallocate.
 ```
 
 **`Variant`:** Typed access with `variant[T]` returns a reference to the active
@@ -525,7 +575,7 @@ lifetime to mutations on that owner.
 
 Library authors who vend interior references define functions whose return type
 includes an interior origin (either directly in a `ref` result, or indirectly
-in a type containing it, like `Pointer` or `Span`. Application code typically
+in a type containing it, like `Pointer` or `Span`). Application code typically
 just uses the
 container API; the compiler attaches the interior origin automatically.
 The specific decorator names are under discussion and expected to change, which
@@ -552,9 +602,12 @@ the base value with a compile-time tag (for example `"element"`) that names a
 logical slot inside it. The compiler treats that interior origin as **live**
 for calls to functions that return them: Mojo knows that the body of the
 function needed to prove the interior origin live within the body, so it can
-know that the result of the call is also live. These interior origins are
-**invalidated** when something mutates the base origin the interior hangs off
-of.
+know that the result of the call is also live.
+
+Mutation **invalidates** the current generation of references derived from an
+interior origin. A later operation may produce a new valid reference with the
+same symbolic interior origin; this does not revalidate references produced
+before the mutation.
 
 Here is a simplified `List` sketch showing how a container wires this up:
 
@@ -780,7 +833,7 @@ distinct, but without richer method annotations a `mut self` helper can still
 force broader invalidation than the implementation requires.
 
 The planned direction is **selective invalidation**: e.g. a decorator
-that declare which origins or fields a method may mutate,
+that declares which origins or fields a method may mutate,
 so the checker invalidates only the interior references that could actually be
 affected. The string tag on `#lit.interior.origin` (`"element"`, `"value"`,
 and so on) is reserved partly for this purpose—future APIs may group interior
@@ -804,6 +857,7 @@ The model applies cleanly when all of the following hold:
   into. Shared or reference-counted handles (`Arc`-style types, interior
   pointers into aliased buffers) need a different story; blindly applying
   today's rules would either be unsound or reject too much valid code.
+  Treating `arc1["value"]` and `arc2["value"]` as unrelated would be unsound.
 - **Mutation of the owning value** (or the field path that owns the storage) is
   a reliable signal that existing interior references may be stale. Containers
   with in-place updates that preserve pointer stability may eventually need

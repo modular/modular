@@ -21,9 +21,9 @@
 #
 # In ONE block-scaled GEMM `hidden @ [Wq|Wk|Wv|Wiq|Wik]^T` it routes the output
 # bands:
-#   - Q       -> combined output columns [0, q_dim)
+#   - Q       -> first output `q_output` [M, q_dim]
 #   - K / V   -> scattered in place into the MAIN paged cache (MHA, K/V axis)
-#   - IndexQ  -> combined output columns [q_dim, q_dim + iq_dim)
+#   - IndexQ  -> second output `iq_output` [M, iq_dim]
 #   - IndexK  -> scattered into the INDEX paged cache (MLA: single latent head,
 #               head 0, K only)
 # The fusion is bit-exact to separate matmuls only because every band boundary
@@ -53,7 +53,7 @@
 # Oracles: memory-safety (memcheck/redzone) is the DEFAULT -- the K/V + IndexK
 # scatter into two paged caches at ragged-driven slots is the OOB-write risk.
 # `ref` (--check 1) is a host fp32-accum naive-dequant GEMM (E8M0 block dequant),
-# split into Q + IndexQ (vs the combined output) and K/V/IndexK (vs the two
+# split into Q + IndexQ (vs the two separate outputs) and K/V/IndexK (vs the two
 # caches read back through their page tables). B200/SM100 only.
 
 from std.math import align_up, ceildiv, exp2, max, min
@@ -114,7 +114,6 @@ comptime KV_DIM = num_kv_heads * HEAD_DIM
 comptime IQ_DIM = num_index_heads * IDX_HEAD_DIM
 comptime IK_DIM = IDX_HEAD_DIM  # single index K head
 comptime N_TOTAL = Q_DIM + 2 * KV_DIM + IQ_DIM + IK_DIM
-comptime COMBINED_OUT = Q_DIM + IQ_DIM  # combined output width (Q then IndexQ)
 
 # Output band offsets in the N_TOTAL matmul result.
 comptime K_OFF = Q_DIM
@@ -464,8 +463,11 @@ def run_one_case(
         index_block_elems
     )
     ctx.enqueue_copy(index_blocks_device, index_blocks_host)
-    var output_device = ctx.enqueue_create_buffer[out_dtype](
-        max(1, M * COMBINED_OUT)
+    var q_output_device = ctx.enqueue_create_buffer[out_dtype](
+        max(1, M * Q_DIM)
+    )
+    var iq_output_device = ctx.enqueue_create_buffer[out_dtype](
+        max(1, M * IQ_DIM)
     )
     var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
         max(1, batch_size)
@@ -498,10 +500,15 @@ def run_one_case(
             IndexList[5](n_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
         ),
     )
-    comptime out_layout = Layout.row_major(UNKNOWN_VALUE, COMBINED_OUT)
-    var output_dev_lt = LayoutTensor[out_dtype, out_layout](
-        output_device.unsafe_ptr(),
-        RuntimeLayout[out_layout].row_major(IndexList[2](M, COMBINED_OUT)),
+    comptime q_out_layout = Layout.row_major(UNKNOWN_VALUE, Q_DIM)
+    var q_output_dev_lt = LayoutTensor[out_dtype, q_out_layout](
+        q_output_device.unsafe_ptr(),
+        RuntimeLayout[q_out_layout].row_major(IndexList[2](M, Q_DIM)),
+    )
+    comptime iq_out_layout = Layout.row_major(UNKNOWN_VALUE, IQ_DIM)
+    var iq_output_dev_lt = LayoutTensor[out_dtype, iq_out_layout](
+        iq_output_device.unsafe_ptr(),
+        RuntimeLayout[iq_out_layout].row_major(IndexList[2](M, IQ_DIM)),
     )
     comptime ro_layout = Layout(UNKNOWN_VALUE)
     var row_offsets_lt = LayoutTensor[DType.uint32, ro_layout](
@@ -597,7 +604,8 @@ def run_one_case(
         index_kv,
         UInt32(0),  # layer_idx
         IQ_DIM,
-        output_dev_lt,
+        q_output_dev_lt,
+        iq_output_dev_lt,
         ctx,
     )
     ctx.synchronize()
@@ -613,7 +621,8 @@ def run_one_case(
             input_scale_host,
             weight_scale_host,
             m_sf,
-            output_device,
+            q_output_device,
+            iq_output_device,
             main_blocks_device,
             main_block_elems,
             index_blocks_device,
@@ -627,7 +636,8 @@ def run_one_case(
     _ = weight_scale_device
     _ = main_blocks_device
     _ = index_blocks_device
-    _ = output_device
+    _ = q_output_device
+    _ = iq_output_device
     _ = cache_lengths_device
     _ = lookup_table_device
     _ = row_offsets_device
@@ -648,15 +658,17 @@ def _verify_ref(
     input_scale_host: HostBuffer[scale_dtype],
     weight_scale_host: HostBuffer[scale_dtype],
     m_sf: Int,
-    output_device: DeviceBuffer[out_dtype],
+    q_output_device: DeviceBuffer[out_dtype],
+    iq_output_device: DeviceBuffer[out_dtype],
     main_blocks_device: DeviceBuffer[kv_dtype],
     main_block_elems: Int,
     index_blocks_device: DeviceBuffer[kv_dtype],
     index_block_elems: Int,
     M: Int,
 ) raises:
-    """fp32-accum dequant GEMM, split into Q + IndexQ (vs combined output) and
-    K / V / IndexK (vs the two caches read back through their page tables).
+    """fp32-accum dequant GEMM, split into Q + IndexQ (vs the two separate
+    outputs) and K / V / IndexK (vs the two caches read back through their page
+    tables).
 
     For row m, output column n: sum over K of dequant(hs[m,k]) *
     dequant(w[n,k]); dequant(x) = float32(x_fp8) * float32(scale_e8m0[block])
@@ -704,40 +716,36 @@ def _verify_ref(
                 acc += (a * sa) * (b * sb)
             full[m * N_TOTAL + n] = acc
 
-    # --- (1) combined output: Q [0,Q_DIM) + IndexQ [Q_DIM, Q_DIM+IQ_DIM) -----
-    var out_host = ctx.enqueue_create_host_buffer[out_dtype](
-        max(1, M * COMBINED_OUT)
+    # --- (1) outputs: Q [M, Q_DIM] (matmul cols [0, Q_DIM)) + IndexQ [M, IQ_DIM]
+    # (matmul cols [IQ_OFF, IQ_OFF+IQ_DIM)) ----------------------------------
+    var q_out_host = ctx.enqueue_create_host_buffer[out_dtype](
+        max(1, M * Q_DIM)
     )
-    ctx.enqueue_copy(out_host, output_device)
+    ctx.enqueue_copy(q_out_host, q_output_device)
+    var iq_out_host = ctx.enqueue_create_host_buffer[out_dtype](
+        max(1, M * IQ_DIM)
+    )
+    ctx.enqueue_copy(iq_out_host, iq_output_device)
     ctx.synchronize()
 
-    var o_actual = ctx.enqueue_create_host_buffer[out_dtype](
-        max(1, M * COMBINED_OUT)
-    )
-    var o_ref = ctx.enqueue_create_host_buffer[out_dtype](
-        max(1, M * COMBINED_OUT)
-    )
+    var q_ref = ctx.enqueue_create_host_buffer[out_dtype](max(1, M * Q_DIM))
+    var iq_ref = ctx.enqueue_create_host_buffer[out_dtype](max(1, M * IQ_DIM))
     for m in range(M):
-        # Q band.
         for c in range(Q_DIM):
-            o_actual[m * COMBINED_OUT + c] = out_host[m * COMBINED_OUT + c]
-            o_ref[m * COMBINED_OUT + c] = full[m * N_TOTAL + c].cast[
+            q_ref[m * Q_DIM + c] = full[m * N_TOTAL + c].cast[out_dtype]()
+        for c in range(IQ_DIM):
+            iq_ref[m * IQ_DIM + c] = full[m * N_TOTAL + IQ_OFF + c].cast[
                 out_dtype
             ]()
-        # IndexQ band (output cols [Q_DIM, COMBINED_OUT) == matmul cols
-        # [IQ_OFF, IQ_OFF+IQ_DIM)).
-        for c in range(IQ_DIM):
-            o_actual[m * COMBINED_OUT + Q_DIM + c] = out_host[
-                m * COMBINED_OUT + Q_DIM + c
-            ]
-            o_ref[m * COMBINED_OUT + Q_DIM + c] = full[
-                m * N_TOTAL + IQ_OFF + c
-            ].cast[out_dtype]()
 
     if not numeric_check(
-        o_actual.as_span(), o_ref.as_span(), atol=2e-1, rtol=5e-2
+        q_out_host.as_span(), q_ref.as_span(), atol=2e-1, rtol=5e-2
     ):
-        raise Error("fused_qkv_index_matmul_mxfp8 Q/IndexQ output mismatch")
+        raise Error("fused_qkv_index_matmul_mxfp8 Q output mismatch")
+    if not numeric_check(
+        iq_out_host.as_span(), iq_ref.as_span(), atol=2e-1, rtol=5e-2
+    ):
+        raise Error("fused_qkv_index_matmul_mxfp8 IndexQ output mismatch")
 
     # Per-token batch + post + global index.
     var tok_batch = List[Int]()

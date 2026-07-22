@@ -15,10 +15,11 @@
 from std.collections.string.string_slice import get_static_string
 from std.math import align_down, ceildiv, iota
 from std.sys import align_of, simd_width_of, size_of
-from std.sys.info import CompilationTarget, _current_target
+from std.sys.info import CompilationTarget, _current_target, is_apple_gpu
 
 from std.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
 from std.algorithm.functional import tile
+from std.atomic import Atomic
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
 from layout import (
@@ -815,6 +816,39 @@ struct ScatterOobIndexStrategy(Equatable, ImplicitlyCopyable, Writable):
 
 
 @always_inline
+def _atomic_reduce[
+    dtype: DType,
+    //,
+    reduction_fn: def[dtype: DType, width: SIMDSize](
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) thin -> SIMD[dtype, width],
+](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], update: Scalar[dtype]):
+    """Applies `ptr[] = reduction_fn(ptr[], update)` atomically.
+
+    Scatter reductions may receive duplicate index vectors, in which case
+    several concurrently-running updates target the same output element; a
+    plain read-modify-write drops updates. The compare-exchange loop applies
+    each update exactly once regardless of interleaving. `compare_exchange`
+    compares floats bitwise (via their integral representation), so NaN
+    payloads cannot livelock the loop.
+    """
+    comptime if is_apple_gpu():
+        # Metal has no atomic ops; fall back to a plain read-modify-write. This
+        # cannot fold duplicate-index updates atomically, matching the kernel's
+        # prior behavior on Apple GPU, but it is the only path Metal can lower.
+        ptr[] = reduction_fn[dtype, 1](ptr[], update)
+        return
+
+    var expected = ptr[]
+    while True:
+        var desired = reduction_fn[dtype, 1](expected, update)
+        if desired.to_bits() == expected.to_bits():
+            return
+        if Atomic.compare_exchange(ptr, expected, desired):
+            return
+
+
+@always_inline
 def scatter_nd_generator[
     output_type: DType,
     indices_type: DType,
@@ -852,7 +886,11 @@ def scatter_nd_generator[
         oob_index_strategy: Strategy to handle out of bounds indices.
         target: Target cpu or cuda.
         reduce_fn: Reduction function to apply: none (default), add, mul, max,
-                   min.
+                   min. When set, every update is folded in atomically, in
+                   unspecified order — the atomic runs on all updates, not
+                   only detected duplicates, since duplicate index vectors
+                   can only be known at runtime. Without a reduce_fn,
+                   duplicates leave an unspecified winner instead.
         _trace_description: A description of the function, used for profiling and tracing.
 
     Args:
@@ -892,6 +930,14 @@ def scatter_nd_generator[
             output.ptr, row_major(output.num_elements())
         )
         var data_flat = TileTensor(data.ptr, row_major(data.num_elements()))
+
+        var output_strides = IndexList[data.rank]()
+        for i in range(data.rank):
+            output_strides[i] = Int(output.dynamic_stride(i))
+
+        var updates_strides = IndexList[updates.rank]()
+        for i in range(updates.rank):
+            updates_strides[i] = Int(updates.dynamic_stride(i))
 
         # Always copy input to output first.
         comptime if is_gpu[target]():
@@ -938,6 +984,7 @@ def scatter_nd_generator[
         #   sheet (r_minus_m = 2),
         #   cuboid (r_minus_m = 3), etc.
         var r_minus_m = data.rank - last_shape_of_indices
+        comptime updates_rank = updates.rank
 
         @always_inline
         def update_func[
@@ -949,10 +996,10 @@ def scatter_nd_generator[
             var data_shape,
             var last_shape_of_indices,
             var output_flat,
+            var output_strides,
             var updates_flat,
+            var updates_strides,
             var indices,
-            var updates,
-            var output,
         }:
             # Calculate how many elements to copy (this is from the innermost
             # dimensions, and is continuous memory locations).
@@ -967,7 +1014,7 @@ def scatter_nd_generator[
 
             # Stores the full index on updates, where to copy from.
             # Zeroing here to avoid doing it selectively within the nested loop below.
-            var updates_index_tensor = IndexList[updates.rank](0)
+            var updates_index_tensor = IndexList[updates_rank](0)
 
             # Construct the full index on updates tensor, i.e., where to copy from.
             for dim in range(_indices_coords.rank):
@@ -1005,10 +1052,10 @@ def scatter_nd_generator[
             # Calculate the updates_offset from where to copy the updates.
             var updates_offset = 0
 
-            for i in range(updates.rank):
+            for i in range(updates_rank):
                 updates_offset = (
                     updates_offset
-                    + Int(updates.dynamic_stride(i)) * updates_index_tensor[i]
+                    + updates_strides[i] * updates_index_tensor[i]
                 )
 
             # Calculate the output_offset to where to copy the updates.
@@ -1016,20 +1063,13 @@ def scatter_nd_generator[
 
             for i in range(data.rank):
                 output_offset = (
-                    output_offset
-                    + Int(output.dynamic_stride(i)) * output_index_tensor[i]
+                    output_offset + output_strides[i] * output_index_tensor[i]
                 )
 
-            # Perform the actual copy of element/slice/sheet/cuboid/etc.
-            # Also handling any reduction operation reduce_fn.
             comptime if reduce_fn:
-                comptime reduction_fn = reduce_fn.value()
-
                 for i in range(count_copy):
-                    output_flat[output_offset + i] = reduction_fn[
-                        output_type, 1
-                    ](
-                        output_flat.load[width=1](Coord(output_offset + i)),
+                    _atomic_reduce[reduce_fn.value()](
+                        output_flat.ptr + (output_offset + i),
                         updates_flat.load[width=1](Coord(updates_offset + i)),
                     )
 
@@ -1047,10 +1087,10 @@ def scatter_nd_generator[
             var data_shape,
             var last_shape_of_indices,
             var output_flat,
+            var output_strides,
             var updates_flat,
+            var updates_strides,
             var indices,
-            var updates,
-            var output,
         }:
             # One update element per invocation: the leading coordinates
             # select the index row, the last coordinate selects the element
@@ -1082,9 +1122,9 @@ def scatter_nd_generator[
                     ) or idx_on_axis >= Scalar[indices_type](input_ax_dim):
                         return
 
-                output_base = output_base + Int(
-                    output.dynamic_stride(dim)
-                ) * Int(_unsafe_normalize_neg_index(idx_on_axis, input_ax_dim))
+                output_base = output_base + output_strides[dim] * Int(
+                    _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
+                )
 
             # Base offset on updates for this row; the copied slice occupies
             # the trailing dimensions contiguously. Both `updates_base + elem`
@@ -1095,9 +1135,7 @@ def scatter_nd_generator[
             # produce wrong results.
             var updates_base = 0
             for i in range(indices.rank - 1):
-                updates_base = (
-                    updates_base + Int(updates.dynamic_stride(i)) * coords[i]
-                )
+                updates_base = updates_base + updates_strides[i] * coords[i]
 
             # The launch below only selects simd_width > 1 when slice_elems,
             # the row strides, and the base pointers are all multiples of the
@@ -1110,17 +1148,15 @@ def scatter_nd_generator[
             ](Coord(updates_base + elem))
 
             comptime if reduce_fn:
-                comptime reduction_fn = reduce_fn.value()
-                update_vec = reduction_fn[output_type, simd_width](
-                    output_flat.load[
-                        width=simd_width, alignment=access_alignment
-                    ](Coord(output_base + elem)),
-                    update_vec,
+                comptime for lane in range(simd_width):
+                    _atomic_reduce[reduce_fn.value()](
+                        output_flat.ptr + (output_base + elem + lane),
+                        update_vec[lane],
+                    )
+            else:
+                output_flat.store[alignment=access_alignment](
+                    Coord(output_base + elem), update_vec
                 )
-
-            output_flat.store[alignment=access_alignment](
-                Coord(output_base + elem), update_vec
-            )
 
         comptime trace_description_str = get_static_string[
             "elementwise_impl_" + _trace_description
@@ -1367,11 +1403,11 @@ def scatter_elements[
     input_type: DType,
     indices_type: DType,
     *,
-    ReduceFn: ImplicitlyCopyable
-    & RegisterPassable
-    & def[dtype: DType, width: SIMDSize](
-        SIMD[dtype, width], SIMD[dtype, width]
-    ) -> SIMD[dtype, width],
+    reduce_fn: OptionalReg[
+        def[
+            dtype: DType, width: SIMDSize
+        ](SIMD[dtype, width], SIMD[dtype, width]) thin -> SIMD[dtype, width]
+    ] = None,
 ](
     input: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
     indices: ManagedTensorSlice[dtype=indices_type, rank=rank, ...],
@@ -1379,7 +1415,6 @@ def scatter_elements[
     _axis: Int,
     output: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
     ctx: DeviceContext,
-    reduce_fn: ReduceFn,
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
@@ -1388,8 +1423,10 @@ def scatter_elements[
         rank: Rank of the `input`, `indices`, `updates`, and `output` tensors.
         input_type: Element type of `input`, `updates`, and `output`.
         indices_type: Element type of `indices` (must be `int32` or `int64`).
-        ReduceFn: Binary reduction function type combining existing output
-            values with updates.
+        reduce_fn: Reduction function to apply: none (default, overwrite),
+            add, mul, max, min. Updates for duplicate indices are reduced
+            atomically, in unspecified order (without a reduce_fn,
+            duplicates leave an unspecified winner instead).
 
     Args:
         input: Source tensor copied into `output` before scattering.
@@ -1401,8 +1438,6 @@ def scatter_elements[
         output: Output tensor, same shape as `input`, receiving scattered
             updates.
         ctx: Device context for execution.
-        reduce_fn: Reduction function combining existing output values with
-            updates.
     """
     comptime assert (
         indices_type == DType.int32 or indices_type == DType.int64
@@ -1440,10 +1475,20 @@ def scatter_elements[
         output_coords[axis] = Int(
             _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
         )
-        var curr = output.to_tile_tensor()[Coord(output_coords)]
-        output.to_tile_tensor()[Coord(output_coords)] = reduce_fn[
-            dtype=input_type, width=1
-        ](curr, updates.to_tile_tensor()[indices_coords])
+        var update_val = updates.to_tile_tensor()[indices_coords]
+
+        comptime if reduce_fn:
+            var output_tt = output.to_tile_tensor()
+            var output_offset = 0
+            for i in range(rank):
+                output_offset += (
+                    Int(output_tt.dynamic_stride(i)) * output_coords[i]
+                )
+            _atomic_reduce[reduce_fn.value()](
+                output.unsafe_ptr() + output_offset, update_val
+            )
+        else:
+            output.to_tile_tensor()[Coord(output_coords)] = update_val
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
     elementwise[1](update_func, indices.shape_coord(), ctx)

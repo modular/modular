@@ -767,6 +767,39 @@ struct RawDriver(Movable):
                 ),
             )
 
+    def set_memory_sync(
+        self,
+        context: ContextHandle,
+        dst: M_driver_memory_view,
+        value: UInt8,
+    ) raises HALError:
+        var status = self._raw.set_memory_sync.f(
+            context, ImmPointer(to=dst), value
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to set memory (sync): {err.message}"),
+            )
+
+    def fill_sync(
+        self,
+        context: ContextHandle,
+        dst: M_driver_memory_view,
+        value: UInt64,
+        value_size: UInt64,
+    ) raises HALError:
+        var status = self._raw.fill_sync.f(
+            context, ImmPointer(to=dst), value, value_size
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to fill memory (sync): {err.message}"),
+            )
+
     def set_memory(
         self,
         queue: QueueHandle,
@@ -1418,6 +1451,27 @@ struct RawPlugin(Movable):
             src_context: ContextHandle,
         ) thin -> PluginResultCode,
     ]
+    var set_memory_sync: HALFunction[
+        "M_driver_set_memory_sync",
+        def[
+            dst_origin: ImmOrigin
+        ](
+            context: ContextHandle,
+            dst: MemoryViewHandle[dst_origin],
+            value: UInt8,
+        ) thin -> PluginResultCode,
+    ]
+    var fill_sync: HALFunction[
+        "M_driver_fill_sync",
+        def[
+            dst_origin: ImmOrigin
+        ](
+            context: ContextHandle,
+            dst: MemoryViewHandle[dst_origin],
+            value: UInt64,
+            value_size: UInt64,
+        ) thin -> PluginResultCode,
+    ]
     var queue_set_memory: HALFunction[
         "M_driver_queue_set_memory",
         def[
@@ -1734,6 +1788,8 @@ struct RawPlugin(Movable):
         self.copy_inter_device_sync = type_of(self.copy_inter_device_sync)(
             handle, so_path
         )
+        self.set_memory_sync = type_of(self.set_memory_sync)(handle, so_path)
+        self.fill_sync = type_of(self.fill_sync)(handle, so_path)
         self.queue_set_memory = type_of(self.queue_set_memory)(handle, so_path)
         self.queue_fill = type_of(self.queue_fill)(handle, so_path)
         self.event_create = type_of(self.event_create)(handle, so_path)

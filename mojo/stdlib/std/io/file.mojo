@@ -424,11 +424,12 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         return result^
 
-    def seek(self, offset: UInt64, whence: UInt8 = SEEK_SET) raises -> UInt64:
+    def seek(self, offset: Int, whence: UInt8 = SEEK_SET) raises -> UInt64:
         """Seeks to the given offset in the file.
 
         Args:
-            offset: The byte offset to seek to.
+            offset: The byte offset to seek to, relative to `whence`. May be
+                negative when `whence` is `os.SEEK_CUR` or `os.SEEK_END`.
             whence: The reference point for the offset:
                 os.SEEK_SET = 0: start of file (Default).
                 os.SEEK_CUR = 1: current position.

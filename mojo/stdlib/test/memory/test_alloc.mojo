@@ -81,13 +81,13 @@ def test_alloc_and_free_round_trip_reads_and_writes_values() raises:
     var a = alloc(layout)
     var ptr = a.unsafe_ptr()
     for i in range(5):
-        (ptr + i).unsafe_write(i)
+        ptr.unsafe_offset(i).unsafe_write(i)
     # `assert_equal` can raise, and an `Allocation` must be consumed on
     # every path (including the raising one). So accumulate into a plain `Bool`,
     # `dealloc` the handle, and only then assert.
     var all_match = True
     for i in range(5):
-        all_match = all_match and (ptr[i] == i)
+        all_match = all_match and (ptr[unsafe_offset=i] == i)
     dealloc(a^)
     assert_true(all_match)
 
@@ -146,8 +146,8 @@ def test_allocation_unsafe_leak_then_reconstruct() raises:
     var layout = Layout[Int](count=2)
     var ptr = alloc(layout).unsafe_leak()
     ptr.unsafe_write(5)
-    (ptr + 1).unsafe_write(6)
-    var total = ptr[0] + ptr[1]
+    ptr.unsafe_offset(1).unsafe_write(6)
+    var total = ptr[unsafe_offset=0] + ptr[unsafe_offset=1]
     dealloc(
         ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
     )
@@ -202,7 +202,7 @@ def test_deletable_allocation_auto_deallocs_at_last_use() raises:
 
 def test_deletable_allocation_del_does_not_run_pointee_destructors() raises:
     var deleted = False
-    var obs = ObservableDel(UnsafePointer(to=deleted).as_unsafe_any_origin())
+    var obs = ObservableDel(Pointer(to=deleted).as_unsafe_any_origin())
     var deletable = alloc(Layout[type_of(obs)](count=1)).into_deletable()
     deletable.unsafe_ptr().unsafe_write(obs^)
     _ = deletable^
@@ -211,7 +211,7 @@ def test_deletable_allocation_del_does_not_run_pointee_destructors() raises:
 
 def test_dealloc_does_not_run_pointee_destructors() raises:
     var deleted = False
-    var obs = ObservableDel(UnsafePointer(to=deleted).as_unsafe_any_origin())
+    var obs = ObservableDel(Pointer(to=deleted).as_unsafe_any_origin())
     var a = alloc(Layout[type_of(obs)](count=1))
     a.unsafe_ptr().unsafe_write(obs^)
     dealloc(a^)
@@ -220,7 +220,7 @@ def test_dealloc_does_not_run_pointee_destructors() raises:
 
 def test_destroy_n_runs_pointee_destructors_before_dealloc() raises:
     var deleted = False
-    var obs = ObservableDel(UnsafePointer(to=deleted).as_unsafe_any_origin())
+    var obs = ObservableDel(Pointer(to=deleted).as_unsafe_any_origin())
     var a = alloc(Layout[type_of(obs)](count=1))
     a.unsafe_ptr().unsafe_write(obs^)
     destroy_n(a.unsafe_ptr(), 1)
@@ -239,7 +239,7 @@ def test_alloc_free_single_zst() raises:
     var ptr = alloc(layout).unsafe_leak()
 
     assert_equal(
-        ptr.bitcast[Int]().as_unsafe_any_origin(),
+        ptr.unsafe_bitcast[Int]().as_unsafe_any_origin(),
         ptr[].unsafe_ptr().as_unsafe_any_origin(),
     )
 
@@ -277,7 +277,7 @@ def test_alloc_free_many_zst() raises:
     )  # It's a ZST, it doesn't take memory
     var ptr = alloc(layout).unsafe_leak()
 
-    assert_equal(ptr.bitcast[Int](), ptr[].unsafe_ptr())
+    assert_equal(ptr.unsafe_bitcast[Int](), ptr[].unsafe_ptr())
 
     dealloc(
         ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
@@ -293,12 +293,14 @@ def test_many_zst_lifecycle() raises:
     var layout = Layout[ZST](count=Int.MAX)
     var ptr = alloc(layout).unsafe_leak()
 
-    ptr.bitcast[InlineArray[ZST, Int.MAX]]().unsafe_write({fill = ZST(fill=0)})
+    ptr.unsafe_bitcast[InlineArray[ZST, Int.MAX]]().unsafe_write(
+        {fill = ZST(fill=0)}
+    )
 
     assert_equal(0, len(ptr[]))
-    assert_equal(0, len(ptr[Int.MAX]))
+    assert_equal(0, len(ptr[unsafe_offset=Int.MAX]))
 
-    ptr.bitcast[InlineArray[ZST, Int.MAX]]().unsafe_deinit_pointee()
+    ptr.unsafe_bitcast[InlineArray[ZST, Int.MAX]]().unsafe_deinit_pointee()
 
     dealloc(
         ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)

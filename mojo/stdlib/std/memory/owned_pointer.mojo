@@ -151,7 +151,7 @@ struct OwnedPointer[T: AnyType](
         After using this constructor, the `UnsafePointer` is assumed to be owned by this `OwnedPointer`.
         In particular, the destructor method will call `T.__del__` and `UnsafePointer.free`.
         """
-        var ptr = unsafe_from_opaque_pointer.bitcast[Self.T]()
+        var ptr = unsafe_from_opaque_pointer.unsafe_bitcast[Self.T]()
         self = Self(
             unsafe_from_raw_pointer=ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         )
@@ -173,20 +173,20 @@ struct OwnedPointer[T: AnyType](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
+    @__unsafe_nested_origins_read_only
     def __getitem__(
         ref[AddressSpace.GENERIC] self,
-    ) -> ref[self._inner, AddressSpace.GENERIC] Self.T:
+    ) -> ref[
+        origin_of(self)._get_owned_interior["value"], AddressSpace.GENERIC
+    ] Self.T:
         """Returns a reference to the pointers's underlying data with parametric mutability.
 
         Returns:
             A reference to the data underlying the `OwnedPointer`.
         """
-        # This should have a widening conversion here that allows
-        # the mutable ref that is always (potentially unsafely)
-        # returned from UnsafePointer to be guarded behind the
-        # aliasing guarantees of the origin system here.
-        # All of the magic happens above in the function signature
-        return self._inner.unsafe_ptr()[]
+        return self._inner.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
+            "value", origin_of(self)
+        ]()
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -225,7 +225,7 @@ struct OwnedPointer[T: AnyType](
         Returns:
             The data that is (was) backing the `OwnedPointer`.
         """
-        var r = self._inner.unsafe_ptr().take_pointee()
+        var r = self._inner.unsafe_ptr().unsafe_take_pointee()
         dealloc(self._inner^.unsafe_with_layout(Layout[_T].single()))
         return r^
 

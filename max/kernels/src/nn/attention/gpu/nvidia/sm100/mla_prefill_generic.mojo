@@ -717,9 +717,9 @@ __extension SM100MLA:
 
         # If two-qo, we produce qkv in a pattern of
         # q0 & k0, q1, v0, k1, v1, k2, v2...
-        # In 1Q fused-KV mode the pattern is instead
+        # In 1Q shared-KV mode the pattern is instead
         # q & k0, k1, v0, v1, k2, k3, v2, v3, ... (matching the mma's
-        # even/odd consumption). Split-KV needs no producer reorder: K
+        # even/odd consumption). Non-shared-KV needs no producer reorder: K
         # and V live in independent pipelines, so only the Q1 issue is
         # gated on num_q == 2.
         comptime SMemTensorLT[elems: Int] = TileTensor[
@@ -835,7 +835,7 @@ __extension SM100MLA:
 
         # ---- Mode-shared sub-tile constants & closures ----
         # The K_rope sub-tile shape and V tile shape are identical in
-        # fused-KV and split-KV modes (only the smem base pointer and
+        # shared-KV and non-shared-KV modes (only the smem base pointer and
         # pipeline machinery differ). Hoist the constants and the unified
         # `_produce_k_rope` / `_produce_v` closures so both modes share
         # them — mirrors `mla_prefill_blockscale.mojo`'s pattern.
@@ -957,14 +957,14 @@ __extension SM100MLA:
                 num_valid_pages=v_nvp,
             )
 
-        comptime if Self.config.fa4_config.use_fused_kv:
-            # ---- Fused KV mode ----
+        comptime if Self.config.fa4_config.use_shared_kv:
+            # ---- Shared KV mode ----
             # Single StagedPipeline with alternating K_nope and V stages.
             # K_rope stored separately in rope_smem, protected by K barriers.
             # Stages: K_nope0, V0, K_nope1, V1, ...
-            # Stage fits the wider of K_nope/V (fused_kv_cols).
+            # Stage fits the wider of K_nope/V (shared_kv_cols).
             comptime kv_stage_elems = (
-                Self.config.fa4_config.fused_kv_cols() * Self.config.BN
+                Self.config.fa4_config.shared_kv_cols() * Self.config.BN
             )
             comptime rope_stage_elems = (
                 Self.config.rope_depth * Self.config.BN
@@ -977,8 +977,8 @@ __extension SM100MLA:
             kv_pipeline.state._phase = 1  # producer starts at phase 1
 
             # Rope buffer index: cycles through ceildiv(num_kv_stages, 2)
-            # independently from the fused KV pipeline, since only K stages
-            # (every other fused stage) need rope.
+            # independently from the shared KV pipeline, since only K stages
+            # (every other shared stage) need rope.
             var rope_idx: UInt32 = 0
             comptime num_rope_bufs = UInt32(
                 Self.config.fa4_config.num_rope_buffers()
@@ -1069,10 +1069,10 @@ __extension SM100MLA:
                 )
 
             comptime if num_q == 1:
-                # ---- 1Q fused-KV producer ----
+                # ---- 1Q shared-KV producer ----
                 # MMA consumes K_e, K_o, V_e, V_o per logical iter;
                 # produce in matching slot order (mirrors
-                # load_warp.mojo's 1Q fused producer). No FULL_MASK
+                # load_warp.mojo's 1Q shared producer). No FULL_MASK
                 # skipping here (see the `check_mask` assert at the top
                 # of `load`).
 
@@ -1126,9 +1126,9 @@ __extension SM100MLA:
                 var k_nvp_0 = _k_num_valid_pages(kv_row)
                 var rope_nvp_0 = _rope_num_valid_pages(kv_row)
 
-                # NOTE: single-O (1Q wide-V) never reaches the fused-KV
-                # producer — `FA4Config` forces `use_fused_kv=False` for
-                # single-O, so its per-tile production lives on split-KV.
+                # NOTE: single-O (1Q wide-V) never reaches the shared-KV
+                # producer — `FA4Config` forces `use_shared_kv=False` for
+                # single-O, so its per-tile production lives on non-shared-KV.
 
                 # T == 1 fast path: produce K_e[0] (with Q) + V_e[0]
                 # only. mma's matching fast path consumes those two
@@ -1289,7 +1289,7 @@ __extension SM100MLA:
                         _emit_v_1q[partial=True](paged_rows, k_nvp_pe)
                         _emit_v_1q[partial=True](paged_rows_o, k_nvp_po)
             else:
-                # ---- 2Q fused-KV producer (original) ----
+                # ---- 2Q shared-KV producer (original) ----
 
                 # ---- Peeled: K0 + Q0 on same barrier ----
                 var k0_mbar = kv_pipeline.producer_mbar()
@@ -1430,7 +1430,7 @@ __extension SM100MLA:
                             kv_pipeline.state.step()
 
         else:
-            # ---- Split KV mode (original) ----
+            # ---- Non-shared mode (original) ----
 
             # Separate K and V pipelines
             comptime VPipeType = VProducerPipeline[
@@ -1444,7 +1444,7 @@ __extension SM100MLA:
 
             # K stage may contain mixed dtypes (e.g. FP8 nope + BF16 rope).
             # Compute byte size then convert to qkv_dtype element count. The
-            # K_nope part is `padded_nope_depth` wide (split-KV mode: V has its
+            # K_nope part is `padded_nope_depth` wide (non-shared-KV mode: V has its
             # own `pipeline_v`), so this is K-only.
             comptime k_stage_bytes = (
                 Self.config.fa4_config.padded_nope_depth
@@ -1464,7 +1464,7 @@ __extension SM100MLA:
             def _split_v_smem_ptr(
                 pair: type_of(pipeline_v.get_tile[qk_stage=0]()),
             ) -> SharedMemPointer[Scalar[Self.KVLUTType.dtype]]:
-                """V destination smem ptr for split-KV's V pipeline pair.
+                """V destination smem ptr for non-shared-KV's V pipeline pair.
 
                 Mirrors blockscale's `_split_v_smem_ptr` so the unified
                 `_produce_v` closure can emit a partial-aware
@@ -1488,7 +1488,7 @@ __extension SM100MLA:
                 k_nvp: UInt32 = UInt32(num_kv_pages),
                 rope_nvp: UInt32 = UInt32(num_rope_pages),
             ):
-                """Q (if `with_q`) + K_nope + K_rope onto `mbar` (split-KV).
+                """Q (if `with_q`) + K_nope + K_rope onto `mbar` (non-shared-KV).
 
                 Includes the `split_smem` decomposition into K_nope and
                 K_rope smem regions so the call sites only need to set
@@ -1720,16 +1720,16 @@ __extension SM100MLA:
         q0 = Self.descriptor_q(q_smem)
         q1 = q0 + q0_bytes
 
-        comptime if Self.config.fa4_config.use_fused_kv:
-            # ---- Fused KV mode ----
+        comptime if Self.config.fa4_config.use_shared_kv:
+            # ---- Shared KV mode ----
             # Single StagedPipeline alternating K_nope and V.
             # K_rope is in a separate smem region, protected by the same
             # K barrier (load warp puts both on the same mbarrier).
             # Q@K' = Q_nope@K_nope (c_scale=0) + Q_rope@K_rope (c_scale=1).
 
-            # Fused buffer stage fits the wider of K_nope/V (fused_kv_cols).
+            # Shared buffer stage fits the wider of K_nope/V (shared_kv_cols).
             comptime kv_stage_bytes = (
-                Self.config.fa4_config.fused_kv_cols()
+                Self.config.fa4_config.shared_kv_cols()
                 * Self.config.BN
                 * size_of[Self.KVLUTType.dtype]()
             )
@@ -1782,7 +1782,7 @@ __extension SM100MLA:
             # different dtypes AND swizzles (FP8 64B nope, BF16 128B rope),
             # so `q0 + offset` would read the BF16 rope with the FP8
             # descriptor's swizzle — garbage. Build a dedicated rope
-            # descriptor at the rope sub-tile, mirroring the split
+            # descriptor at the rope sub-tile, mirroring the non-shared
             # mixed-dtype path (`descriptor_q_rope`).
             comptime q_rope_off = UInt32(Self.q_rope_byte_offset)
             comptime if Self.qkv_dtype == Self.rope_mma_dtype:
@@ -1790,7 +1790,7 @@ __extension SM100MLA:
                 q1_rope = q1 + q_rope_off
             else:
                 # Mixed-dtype is single-CTA num_q=1 only (per-token-scale
-                # 2Q is split-KV, never fused), so q1_rope is dead here;
+                # 2Q is non-shared-KV, never shared), so q1_rope is dead here;
                 # define it from the same base for type consistency.
                 q0_rope = Self.descriptor_q_rope(
                     (
@@ -1838,9 +1838,9 @@ __extension SM100MLA:
                 kv_pipeline.consumer_wait()
                 return kv_pipeline.state.index()
 
-            # NOTE: single-O (1Q wide-V) never reaches the fused-KV branch —
-            # `FA4Config` forces `use_fused_kv=False` for single-O so the
-            # single-O serial P@V path lives solely on split-KV (below).
+            # NOTE: single-O (1Q wide-V) never reaches the shared-KV branch —
+            # `FA4Config` forces `use_shared_kv=False` for single-O so the
+            # single-O serial P@V path lives solely on non-shared-KV (below).
 
             # ---- Peeled iteration ----
             # Stage 0 = K0 (K_nope0 + K_rope0)
@@ -2032,7 +2032,7 @@ __extension SM100MLA:
             kv_pipeline.consumer_release_at(v_prev_idx, e)  # release V_last
 
         else:
-            # ---- Split KV mode (original) ----
+            # ---- Non-shared mode (original) ----
 
             # Separate K and V consumer pipelines
             comptime KConType = KConsumerPipeline[
@@ -2081,18 +2081,18 @@ __extension SM100MLA:
                 c_scale = 1
                 s_phase ^= 1
 
-            # ---- single-O serial path (1Q wide-V), split-KV, same-dtype ----
+            # ---- single-O serial path (1Q wide-V), non-shared-KV, same-dtype ----
             # Wide V (e.g. v_head_dim=256) cannot hold the two per-WG O
             # partials in the 512-col TMEM (`2*BN + 2*padded_ov > 512`), so
             # single-O aliases O1 onto O0 and CANNOT run the two-WG even/odd
             # LSE-combine that the standard 1Q path uses (the softmax peer O
             # read would overrun TMEM). Instead ONE warp group folds EVERY
             # K/V tile serially into the single O0 (WG1 no-op; the softmax and
-            # correction warps take matching single-O paths). Split-KV has
+            # correction warps take matching single-O paths). Non-shared-KV has
             # separate K and V consumer pipelines; per tile do Q@K_i -> s0,
             # then P_i @ V_i -> O0 (init on tile 0, accumulate onto the
             # correction-rescaled O0 after). `consumer_s0` completion gates
-            # both "P ready" and "O0 rescaled". `FA4Config` forces split-KV
+            # both "P ready" and "O0 rescaled". `FA4Config` forces non-shared-KV
             # for single-O, so this (and the mixed-dtype variant below) are
             # the ONLY single-O MMA paths.
             comptime if Self.config.fa4_config.single_o and Self.fused_umma0:
@@ -2216,7 +2216,7 @@ __extension SM100MLA:
                     comptime if num_q == 1:
                         if iter_count == 0:
                             # Tail iter (T odd). Same alias-swap pattern
-                            # as fused-KV: rebind o1-side aliases to
+                            # as shared-KV: rebind o1-side aliases to
                             # o0-side resources and fall through to the
                             # epilogue.
                             vlatest = pipeline_v.get_v()  # V_e[k]
@@ -2272,7 +2272,7 @@ __extension SM100MLA:
                     )
                 pipeline_o1.commit_mma(e)
             else:
-                # ---- Split KV mode with separate nope/rope UMMAs ----
+                # ---- Non-shared mode with separate nope/rope UMMAs ----
                 # K_nope and K_rope have different dtypes (e.g. FP8 + BF16),
                 # so Q@K' = Q_nope@K_nope (c_scale=0) + Q_rope@K_rope (c_scale=1).
 
@@ -2331,10 +2331,10 @@ __extension SM100MLA:
                     ).bitcast[Scalar[Self.rope_mma_dtype]]()
                 )
 
-                # ---- single-O serial path (1Q wide-V), split-KV, mixed ----
+                # ---- single-O serial path (1Q wide-V), non-shared-KV, mixed ----
                 # Mixed-dtype (e.g. FP8 nope + BF16 rope) wide V forces
                 # single-O (aliased O0): ONE warp group folds EVERY K/V tile
-                # serially into O0 (WG1 no-op). Split-KV has separate K and V
+                # serially into O0 (WG1 no-op). Non-shared-KV has separate K and V
                 # consumer pipelines and a two-part Q@K' (Q_nope@K_nope +
                 # Q_rope@K_rope). Per tile: Q@K_i -> s0, then P_i @ V_i -> O0
                 # (init on tile 0, accumulate onto the correction-rescaled O0

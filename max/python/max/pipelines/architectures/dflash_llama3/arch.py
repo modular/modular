@@ -46,7 +46,6 @@ dflash_llama_arch = SupportedArchitecture(
     batching=Llama3BatchProcessor,
     context_type=TextContext,
     tokenizer=TextTokenizer,
-    rope_type="normal",
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     weight_adapters={

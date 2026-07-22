@@ -1107,6 +1107,19 @@ def test_list_write_repr_to() raises:
     check_write_to(
         List[Int](), expected="List[SIMD[DType.int, 1]]([])", is_repr=True
     )
+    # Non-`Int` scalar elements also print using their type alias.
+    var uints: List[UInt] = [1, 2]
+    check_write_to(
+        uints,
+        expected="List[SIMD[DType.uint, 1]]([UInt(1), UInt(2)])",
+        is_repr=True,
+    )
+    var floats: List[Float32] = [1.0, 2.0]
+    check_write_to(
+        floats,
+        expected="List[SIMD[DType.float32, 1]]([Float32(1.0), Float32(2.0)])",
+        is_repr=True,
+    )
 
 
 def test_list_fill_constructor() raises:

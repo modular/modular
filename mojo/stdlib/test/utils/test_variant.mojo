@@ -46,7 +46,7 @@ def _initialize_poison() -> Bool:
     return False
 
 
-def _poison_ptr() -> UnsafePointer[Bool, MutUntrackedOrigin]:
+def _poison_ptr() -> Pointer[Bool, MutUntrackedOrigin]:
     try:
         return TEST_VARIANT_POISON.get_or_create_ptr()
     except:
@@ -54,7 +54,7 @@ def _poison_ptr() -> UnsafePointer[Bool, MutUntrackedOrigin]:
 
 
 def assert_no_poison() raises:
-    assert_false(_poison_ptr().take_pointee())
+    assert_false(_poison_ptr().unsafe_take_pointee())
 
 
 struct Poison(ImplicitlyCopyable):
@@ -135,7 +135,7 @@ def test_move() raises:
 def test_del() raises:
     comptime TestDeleterVariant = Variant[ObservableDel[], Poison]
     var deleted: Bool = False
-    var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
+    var v1 = TestDeleterVariant(ObservableDel(Pointer(to=deleted)))
     _ = v1^  # call __del__
     assert_true(deleted)
     # test that we didn't call the other deleter too!
@@ -146,8 +146,8 @@ def test_set_calls_deleter() raises:
     comptime TestDeleterVariant = Variant[ObservableDel[], Poison]
     var deleted: Bool = False
     var deleted2: Bool = False
-    var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
-    v1.set(ObservableDel(UnsafePointer(to=deleted2)))
+    var v1 = TestDeleterVariant(ObservableDel(Pointer(to=deleted)))
+    v1.set(ObservableDel(Pointer(to=deleted2)))
     assert_true(deleted)
     assert_false(deleted2)
     _ = v1^
@@ -166,7 +166,7 @@ def test_replace() raises:
 def test_take_doesnt_call_deleter() raises:
     comptime TestDeleterVariant = Variant[ObservableDel[], Poison]
     var deleted: Bool = False
-    var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
+    var v1 = TestDeleterVariant(ObservableDel(Pointer(to=deleted)))
     assert_false(deleted)
     var v2 = v1^.unsafe_take[ObservableDel[]]()
     assert_false(deleted)

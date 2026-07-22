@@ -332,6 +332,23 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+comptime OptionalPointer[
+    mut: Bool,
+    //,
+    T: AnyType,
+    origin: Origin[mut=mut],
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+] = Optional[Pointer[T, origin, address_space=address_space, _safe=True]]
+"""An optional (nullable) safe `Pointer`.
+
+Parameters:
+    mut: The mutability of the pointer.
+    T: The type of the pointee.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
+
 
 struct Pointer[
     mut: Bool,
@@ -387,7 +404,7 @@ struct Pointer[
     - `unsafe_deinit_pointee()` / `take_pointee()`:
       Explicitly end the lifetime of the current pointee, or move it out, taking
       ownership.
-    - `unsafe_write()` / `init_pointee_move_from()`:
+    - `unsafe_write()` / `unsafe_write_move_from()`:
       Initialize a pointee that is currently uninitialized, by moving an
       existing value into it (pass the argument as `copy=` to copy instead),
       or by moving from another pointee.
@@ -776,7 +793,7 @@ struct Pointer[
         self,
     ) -> ref[
         base_origin._get_owned_interior[name], Self.address_space
-    ] Self.T where Self._is_unsafe:
+    ] Self.T:
         """Returns a reference to the pointee with an interior origin.
 
         The returned reference uses an interior sub-origin derived from
@@ -807,7 +824,7 @@ struct Pointer[
         name: StringLiteral,
     ](self, ref base: Some[AnyType]) -> ref[
         origin_of(base)._get_owned_interior[name], Self.address_space
-    ] Self.T where Self._is_unsafe:
+    ] Self.T:
         """Returns a reference to the pointee with an interior origin.
 
         The returned reference uses an interior sub-origin derived from
@@ -1329,9 +1346,7 @@ struct Pointer[
             if self == other:
                 return
             var tmp = self.unsafe_take_pointee()
-            MutUnsafePointer(self).init_pointee_move_from(
-                MutUnsafePointer(other)
-            )
+            self.unsafe_write_move_from(other)
             other.unsafe_write(tmp^)
 
     @always_inline("nodebug")
@@ -2596,13 +2611,12 @@ struct Pointer[
     ](self: Pointer[U, _, _safe=_], value: U) where type_of(self).mut:
         __get_address_as_uninit_lvalue(self._mlir_value) = value.copy()
 
-    @doc_hidden
     @always_inline
-    def init_pointee_move_from[
+    def unsafe_write_move_from[
         U: Movable,
         //,
     ](self: Pointer[U, _, _safe=_], src: Pointer[U, _, _safe=_]) where (
-        type_of(self).mut and type_of(src).mut and type_of(self)._is_unsafe
+        type_of(self).mut and type_of(src).mut
     ):
         """Moves the value `src` points to into the memory location pointed to
         by `self`.
@@ -2628,13 +2642,13 @@ struct Pointer[
 
         ```mojo
         var a_ptr = alloc[String](1)
-        var b_ptr = alloc[String](2)
+        var b_ptr = alloc[String](1)
 
         # Initialize A pointee
         a_ptr.unsafe_write("foo")
 
         # Perform the move
-        b_ptr.init_pointee_move_from(a_ptr)
+        b_ptr.unsafe_write_move_from(a_ptr)
 
         # Clean up
         b_ptr.unsafe_deinit_pointee()
@@ -2659,6 +2673,17 @@ struct Pointer[
         __get_address_as_uninit_lvalue(
             self._mlir_value
         ) = __get_address_as_owned_value(src._mlir_value)
+
+    @doc_hidden
+    @always_inline
+    @deprecated(use=unsafe_write_move_from)
+    def init_pointee_move_from[
+        U: Movable,
+        //,
+    ](self: Pointer[U, _, _safe=_], src: Pointer[U, _, _safe=_]) where (
+        type_of(self).mut and type_of(src).mut and type_of(self)._is_unsafe
+    ):
+        self.unsafe_write_move_from(src)
 
 
 comptime UnsafePointer[

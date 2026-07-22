@@ -44,10 +44,10 @@ from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import (
+from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLASparseConfig,
-    mla_prefill_sparse,
 )
+from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import mla_prefill_sparse
 from nn.attention.mha_mask import CausalMask
 
 from std.utils.index import Index, IndexList

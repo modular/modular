@@ -882,7 +882,7 @@ struct List[T: Movable, /](
         self._len += 1
 
     @always_inline
-    def insert(mut self, i: Int, var value: Self.T):
+    def insert(mut self, i: Int, var value: Self.T, /):
         """Inserts a value to the list at the given index.
         `a.insert(len(a), value)` is equivalent to `a.append(value)`.
 
@@ -914,15 +914,13 @@ struct List[T: Movable, /](
             var later_ptr = self._data.unsafe_offset(later_idx)
 
             var tmp = earlier_ptr.unsafe_take_pointee()
-            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_ method
-            MutUnsafePointer(earlier_ptr).init_pointee_move_from(
-                MutUnsafePointer(later_ptr)
-            )
+            earlier_ptr.unsafe_write_move_from(later_ptr)
             later_ptr.unsafe_write(tmp^)
 
             earlier_idx -= 1
             later_idx -= 1
 
+    @stable(since="1.0")
     def extend(mut self, var other: Self):
         """Extends this list by consuming the elements of `other`.
 
@@ -1253,10 +1251,7 @@ struct List[T: Movable, /](
             var later_ptr = self._data.unsafe_offset(later_idx)
 
             var tmp = earlier_ptr.unsafe_take_pointee()
-            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_ method
-            MutUnsafePointer(earlier_ptr).init_pointee_move_from(
-                MutUnsafePointer(later_ptr)
-            )
+            earlier_ptr.unsafe_write_move_from(later_ptr)
             later_ptr.unsafe_write(tmp^)
 
             earlier_idx += 1
@@ -1381,10 +1376,13 @@ struct List[T: Movable, /](
 
         return res^
 
+    @__unsafe_nested_origins_read_only
     @stable(since="1.0")
     def __getitem__[
         origin: Origin, //
-    ](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:
+    ](ref[origin] self, slice: ContiguousSlice) -> Span[
+        Self.T, origin_of(self)._get_owned_interior["element"]
+    ]:
         """Gets the sequence of elements at the specified positions.
 
         Parameters:
@@ -1394,11 +1392,20 @@ struct List[T: Movable, /](
             slice: A slice the specifies the positions of the new list.
 
         Returns:
-            A span over the specified slice.
+            A span over the specified slice. The span carries an interior origin
+            derived from `self`, so any subsequent mutation of the list
+            (`append`, `pop`, and similar) invalidates it at compile time.
         """
         var start, end = slice.indices(len(self))
-        return Span[Self.T, origin](
-            ptr=self.unsafe_ptr().unsafe_offset(start), length=end - start
+        return Span[Self.T, origin_of(self)._get_owned_interior["element"]](
+            ptr=UnsafePointer(
+                to=self.unsafe_ptr()
+                .unsafe_offset(start)
+                ._get_ref_with_unsafe_interior_origin[
+                    "element", origin_of(self)
+                ]()
+            ),
+            length=end - start,
         )
 
     @__unsafe_nested_origins_read_only
@@ -1426,6 +1433,10 @@ struct List[T: Movable, /](
         ref self, idx: Some[Indexer]
     ) -> ref[self.unsafe_get(index(idx))] Self.T:
         """Gets the list element at the given index.
+
+        Unlike when subscripting using slices negative indices are
+        considered out of bounds. They will be checked in the same situations
+        as "off the end" indexing.
 
         Args:
             idx: The index of the element.

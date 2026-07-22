@@ -21,4 +21,4 @@ runtime:
   ep_size: 1
   max_batch_input_tokens: 1024
   prefer_module_v3: true
-  device_graph_capture: false
+  device_graph_capture: true

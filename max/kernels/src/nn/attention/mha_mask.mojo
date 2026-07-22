@@ -2200,7 +2200,7 @@ def _child_nomask_cols[
     if first_nm < 0:
         return {start_col, start_col}
     var ends = m.masked_set_ends[BM, BN, page_size](seq_id, row, num_cols)
-    var lo_rel: UInt32 = UInt32(0) if first_nm == 0 else ends[first_nm - 1]
+    var lo_rel: UInt32 = 0 if first_nm == 0 else UInt32(ends[first_nm - 1])
     var hi_rel: UInt32 = ends[last_nm]
     return {
         start_col + lo_rel * UInt32(BN),

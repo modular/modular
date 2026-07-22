@@ -101,6 +101,7 @@ dependencies = [
   "typing-extensions",
   "uvloop>=0.21.0",
   "uvicorn",
+  "weasyprint>=62.0",
   "wheel",
   "zstandard",
 

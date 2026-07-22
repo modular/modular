@@ -905,6 +905,15 @@ class PipelineConfig(ConfigFileModel):
             else:
                 setattr(self, config_name, config_class(**matched_kwargs))
 
+    def _validate_repo_access(self) -> None:
+        """Validates that every model's repo was provided and is accessible.
+
+        Called at the end of the construction factories so a bad repo fails
+        fast. See :meth:`MAXModelConfig.validate_repo_access`.
+        """
+        for model in self.models.values():
+            model.validate_repo_access()
+
     @classmethod
     def from_flat_kwargs(cls, **kwargs: Any) -> Self:
         """Construct a :class:`PipelineConfig` from a flat CLI kwargs namespace.
@@ -972,6 +981,7 @@ class PipelineConfig(ConfigFileModel):
         if unmatched_kwargs:
             raise ValueError(f"Unmatched kwargs: {unmatched_kwargs}")
 
+        instance._validate_repo_access()
         return instance
 
     def _validate_required_arguments_against_architecture(
@@ -1500,10 +1510,6 @@ class PipelineConfig(ConfigFileModel):
         # This means that a KV cache dtype can be determined, assuming an override wasn't provided.
         model_config.set_cache_dtype_given_quantization_encoding()
 
-        model_config.validate_and_resolve_rope_type(
-            arch_rope_type=arch.rope_type
-        )
-
         # by this point, the quantization_encoding must be provided. verify it is supported.
         if model_config.quantization_encoding not in arch.supported_encodings:
             raise ValueError(
@@ -1603,7 +1609,7 @@ class PipelineConfig(ConfigFileModel):
                 models_dict["draft"] = args.draft_model.model_copy(deep=True)
             manifest = ModelManifest(models_dict)
 
-        return cls(
+        config = cls(
             models=manifest,
             model_override=list(args.model_override),
             sampling=SamplingConfig(
@@ -1627,6 +1633,7 @@ class PipelineConfig(ConfigFileModel):
                 ce_delay_ms=args.ce_delay_ms,
                 enable_prioritize_first_decode=args.enable_prioritize_first_decode,
                 enable_chunked_prefill=args.enable_chunked_prefill,
+                chunked_prefill_min_chunk_size=args.chunked_prefill_min_chunk_size,
                 enable_in_flight_batching=args.enable_in_flight_batching,
                 eplb_replicas_per_gpu=args.eplb_replicas_per_gpu,
                 max_num_steps=args.max_num_steps,
@@ -1638,6 +1645,8 @@ class PipelineConfig(ConfigFileModel):
                 execute_empty_batches=args.execute_empty_batches,
                 max_batch_total_tokens=args.max_batch_total_tokens,
                 device_graph_capture=args.device_graph_capture,
+                fold_sampler_into_graph=args.fold_sampler_into_graph,
+                max_pending_futures=args.max_pending_futures,
                 force=args.force,
                 kvcache_ce_watermark=args.kvcache_ce_watermark,
                 decode_stall_timeout_s=args.decode_stall_timeout_s,
@@ -1672,6 +1681,8 @@ class PipelineConfig(ConfigFileModel):
             task=args.task,
             debug_verify_replay=args.debug_verify_replay,
         )
+        config._validate_repo_access()
+        return config
 
 
 def _parse_flag_bool(value: str, flag_name: str) -> bool:

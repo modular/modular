@@ -43,7 +43,6 @@ gpt_oss_modulev3_arch = SupportedArchitecture(
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
-    rope_type="yarn",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },

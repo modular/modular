@@ -29,10 +29,9 @@ from max._core.driver import Buffer
 # (compiled below), unlike the Mojo op bindings above.
 from . import (  # type: ignore[attr-defined]
     argnonzero_ops,
-    avg_pool_ops,
     band_part_ops,
     bottomk_ops,
-    conv_ops,
+    conv_gc,
     data_movement_ops,
     elementwise_binary_gc,
     elementwise_cast_ops,
@@ -43,9 +42,9 @@ from . import (  # type: ignore[attr-defined]
     matmul_gc,
     misc_ops,
     nms_ops,
-    pooling_ops,
+    pooling_gc,
     reduce_axis_gc,
-    resize_ops,
+    resize_gc,
     rms_norm_ops,
     roi_align_ops,
     select_ops,

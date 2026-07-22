@@ -17,35 +17,41 @@ functions (kernel, softmax, correction, load, mma) so that each consumer
 derives pointers from a single source of truth instead of duplicating the
 arithmetic.
 
-Split-mode memory layout (low to high address):
+Non-shared-mode memory layout (low to high address):
     [Q: q_nope_bytes + q_rope_bytes]
     [K: num_kv_stages * (padded_ov_depth*BN*qkv_dt + rope_depth*BN*rope_dt)]
     [V: num_kv_stages * padded_ov_depth * BN elements of qkv_dtype]
-    [correction: 2 * WARPGROUP_SIZE Float32 entries (= BM in 2Q; doubled
-                  to 2*BM in 1Q so each softmax thread tid in [0, 255]
-                  has a dedicated slot)]
-    [q_scale: BM * scale_dtype (0 when scale_dtype is unset)]
-    [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when unset)]
+    [correction: 2 * WARPGROUP_SIZE Float32 entries, one per softmax thread
+                  tid in [0, 255] (fixed by thread count, NOT by BM)]
+    [q_scale: BM * scale_dtype (0 when scale_dtype is invalid)]
+    [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when invalid)]
     [mbars: FA4MiscMBars.size SharedMemBarriers]
     [tmem_addr: 1 UInt32]
 
 All K stages are contiguous, followed by all V stages contiguous.
 
-Fused-mode memory layout (low to high address):
+Shared-KV-mode memory layout (low to high address):
     [Q: BM * padded_qk_depth elements of qkv_dtype]
-    [KV_fused: num_kv_stages * padded_ov_depth * BN elements of qkv_dtype]
+    [KV_shared: num_kv_stages * padded_ov_depth * BN elements of qkv_dtype]
     [Rope: ceil(num_kv_stages/2) * BN * rope_depth elements of qkv_dtype]
-    [correction: 2 * WARPGROUP_SIZE Float32 entries (= BM in 2Q; doubled
-                  to 2*BM in 1Q so each softmax thread tid in [0, 255]
-                  has a dedicated slot)]
-    [q_scale: BM * scale_dtype (0 when scale_dtype is unset)]
-    [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when unset)]
+    [correction: 2 * WARPGROUP_SIZE Float32 entries, one per softmax thread
+                  tid in [0, 255] (fixed by thread count, NOT by BM)]
+    [q_scale: BM * scale_dtype (0 when scale_dtype is invalid)]
+    [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when invalid)]
     [mbars: FA4MiscMBars.size SharedMemBarriers]
     [tmem_addr: 1 UInt32]
 
-In fused mode, K_nope and V alternate in the same buffer (padded_ov_depth
-wide), and rope data is stored separately at half the staging rate.
-k_smem_base() and v_smem_base() return the same pointer.
+In shared mode, K_nope and V alternate in the same buffer, and rope data is
+stored separately at half the staging rate. k_smem_base() and v_smem_base()
+return the same pointer.
+
+Non-WS shared: one ring slot = one full-depth K or V tile (k_stage_bytes =
+max(nope_cols, v_cols) * BN). WS (packed-TMEM MMA_M=32): one ring slot = one
+256x64 sub-tile (k_stage_bytes = (shared_kv_cols // num_qk_stages) * BN); a K
+tile spans num_qk_stages depth-half slots and a V tile spans num_d_tiles
+depth-tile slots, so `num_kv_stages` counts sub-tile slots, not full tiles.
+Both the launch reservation (config.smem_used) and the producer/consumer
+per-slot stride derive from k_stage_bytes, so they reconcile by construction.
 
 In `num_q == 1` mode the cross-WG LSE exchange runs through the (now-dead)
 s TMEM slot rather than smem, so no additional smem region is needed. Both
@@ -55,6 +61,7 @@ in TMEM throughout the combine.
 """
 
 from std.sys import size_of
+from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.memory import AddressSpace, external_memory
 from layout.tma_async import SharedMemBarrier
 from nn.attention.gpu.nvidia.sm100.attention import (
@@ -121,25 +128,40 @@ struct SM100AttentionSMem[
     comptime q_bytes: Int = Self.q_nope_bytes + Self.q_rope_bytes
 
     # KV region.
-    # Split mode: [K_stage0]...[K_stageN][V_stage0]...[V_stageN]
-    # Fused mode: [KV_fused_stage0]...[KV_fused_stageN][Rope0]...[RopeM]
+    # Non-shared mode: [K_stage0]...[K_stageN][V_stage0]...[V_stageN]
+    # Shared mode: [KV_shared_stage0]...[KV_shared_stageN][Rope0]...[RopeM]
     comptime kv_byte_offset: Int = Self.q_bytes
 
     # Per-stage sizes in bytes (pair-CTA halves each per-CTA col count).
-    # Fused mode: K_nope and V share one buffer, so the stage fits the wider of
-    # the two (equal for DeepSeek). Split mode: the K stage holds K_nope +
+    # Shared mode: K_nope and V share one buffer, so the stage fits the wider of
+    # the two (equal for DeepSeek). Non-shared mode: the K stage holds K_nope +
     # K_rope; V has its own `v_stage_bytes`.
-    # NB: use the pair-halved `*_cols_per_cta()` here, NOT `fused_kv_cols()`
+    # NB: use the pair-halved `*_cols_per_cta()` here, NOT `shared_kv_cols()`
     # (the un-halved width) — pair-CTA mode stores only half the cols per CTA.
-    comptime k_stage_bytes: Int = (
+    #
+    # WS (packed-TMEM MMA_M=32) depth-splits BOTH K and V into uniform
+    # `BN x (shared_kv_cols // num_qk_stages)` sub-tiles ("Convention B"): one KV
+    # ring slot holds ONE such sub-tile, not a full-depth K/V tile. This matches
+    # the launch reservation `config.smem_used` (attention.mojo `__init__` WS
+    # branch: `bytes_per_subtile = BN * sub_depth * qkv_dt`), so the struct total
+    # reconciles with it — the reservation must EQUAL this struct or the mbar /
+    # tmem_addr regions laid out after KV spill past it (OOB __shared__). rope and
+    # scale are 0 on the WS MHA path (enforced by `supported()`), so a sub-tile is
+    # pure K/V data. `use_ws == False` folds to the byte-identical non-WS path.
+    comptime ws_subtile_bytes: Int = (
+        Self.config.BN
+        * (Self.config.shared_kv_cols() // Self.config.num_qk_stages)
+        * Self._qkv_dt_size
+    )
+    comptime k_stage_bytes: Int = Self.ws_subtile_bytes if Self.config.use_ws else (
         max(Self.config.nope_cols_per_cta(), Self.config.v_cols_per_cta())
         * Self.config.BN
-        * Self._qkv_dt_size if Self.config.use_fused_kv else (
+        * Self._qkv_dt_size if Self.config.use_shared_kv else (
             Self.config.nope_cols_per_cta() * Self.config.BN * Self._qkv_dt_size
             + Self.rope_depth * Self.config.k_rows_per_cta() * Self.rope_dt_size
         )
     )
-    comptime v_stage_bytes: Int = (
+    comptime v_stage_bytes: Int = Self.ws_subtile_bytes if Self.config.use_ws else (
         Self.config.v_cols_per_cta() * Self.config.BN * Self._qkv_dt_size
     )
 
@@ -149,14 +171,14 @@ struct SM100AttentionSMem[
     )
 
     # V region starts after all K stages.
-    # In fused mode, V shares the same buffer as K (same offset).
+    # In shared mode, V shares the same buffer as K (same offset).
     comptime v_byte_offset: Int = (
-        Self.kv_byte_offset if Self.config.use_fused_kv else Self.kv_byte_offset
+        Self.kv_byte_offset if Self.config.use_shared_kv else Self.kv_byte_offset
         + Self.k_total_bytes
     )
 
-    # Rope region (fused mode only): ceildiv(num_kv_stages, 2) buffers
-    # of BN * rope_depth elements, placed after the fused KV stages.
+    # Rope region (shared mode only): ceildiv(num_kv_stages, 2) buffers
+    # of BN * rope_depth elements, placed after the shared KV stages.
     comptime rope_depth: Int = Self.config.rope_depth()
     comptime rope_stage_elems: Int = Self.config.BN * Self.rope_depth
     comptime num_rope_bufs: Int = Self.config.num_rope_buffers()
@@ -165,30 +187,32 @@ struct SM100AttentionSMem[
         Self.num_rope_bufs * Self.rope_stage_elems * Self.rope_dt_size
     )
 
-    # Total KV bytes (including rope in fused mode).
-    # Split: num_kv_stages * (k_stage_bytes + v_stage_bytes)
-    # Fused: num_kv_stages * padded_ov_depth * BN * qkv_dt + rope_bytes
+    # Total KV bytes (including rope in shared mode).
+    # Non-shared: num_kv_stages * (k_stage_bytes + v_stage_bytes)
+    # Shared: num_kv_stages * padded_ov_depth * BN * qkv_dt + rope_bytes
     comptime kv_stages_bytes: Int = (
         Self.config.num_kv_stages * (Self.k_stage_bytes + Self.v_stage_bytes)
     )
     comptime kv_bytes: Int = (
         Self.k_total_bytes
-        + Self.rope_bytes if Self.config.use_fused_kv else Self.kv_stages_bytes
+        + Self.rope_bytes if Self.config.use_shared_kv else Self.kv_stages_bytes
     )
 
     # Correction region: 2 * WARPGROUP_SIZE Float32 entries (one slot per
     # softmax-warp thread). Each softmax thread (CTA-wide `tid`, 0..255 for
-    # two softmax warpgroups) writes its correction value at offset `tid`.
+    # two softmax warpgroups) writes its correction value at offset `tid`
+    # (softmax_warp.mojo `correction_smem = smem.correction_smem() + tid`).
     # The correction warp reads WG0's slots at [0, WARPGROUP_SIZE) and WG1's
-    # at [WARPGROUP_SIZE, 2*WARPGROUP_SIZE). Doubling in 1Q (BM=128) gives
-    # the same 1 KiB the 2Q (BM=256) layout used to get from `BM`. Keep the
-    # expression `BM` for 2Q and `2*BM` for 1Q so the BM-derived intuition
-    # stays visible.
+    # at [WARPGROUP_SIZE, 2*WARPGROUP_SIZE). The count is fixed by the number
+    # of softmax threads (2*WARPGROUP_SIZE = 256, i.e. 1 KiB), NOT by `BM`:
+    # the write is indexed by `tid`, so a `BM`-derived size (e.g. `2*BM` for
+    # 1Q, `BM` for 2Q) only happens to be correct when BM==128/256. For the
+    # warp-specialized MMA_M=32 path (BM=32) a BM-derived size would allocate
+    # only 64 slots while `tid` reaches 255 -> OOB __shared__ writes that
+    # corrupt the trailing mbar/tmem regions and spill past the allocation.
     comptime correction_byte_offset: Int = Self.kv_byte_offset + Self.kv_bytes
     comptime correction_bytes: Int = (
-        (2 if Self.config.num_q == 1 else 1)
-        * Self.config.BM
-        * size_of[DType.float32]()
+        2 * WARPGROUP_SIZE * size_of[DType.float32]()
     )
 
     # Scale regions (per-token scale only; zero-sized when scale_dtype is invalid).
@@ -219,11 +243,12 @@ struct SM100AttentionSMem[
         num_pv_stages=Self.config.num_pv_stages,
         num_kv_stages=Self.config.num_kv_stages,
         use_order_barriers=Self.use_order_barriers,
-        use_fused_kv=Self.config.use_fused_kv,
+        use_shared_kv=Self.config.use_shared_kv,
         pair_cta=Self.config.pair_cta,
         num_q=Self.config.num_q,
         splitk_partitions=Self.config.splitk_partitions,
         BM=Self.config.BM,
+        use_ws=Self.config.use_ws,
     ]
 
     comptime mbar_bytes: Int = Int(Self.MiscMBarsType.num_mbars()) * size_of[
@@ -316,9 +341,9 @@ struct SM100AttentionSMem[
     def v_smem_base(self) -> SharedMemPointer[Scalar[Self.qkv_dtype]]:
         """Base of the V region (stage 0).
 
-        Split mode: V stage 0 starts after all K stages at
+        Non-shared mode: V stage 0 starts after all K stages at
         kv_byte_offset + num_kv_stages * padded_qk_depth * BN * sizeof.
-        Fused mode: Returns the same pointer as k_smem_base() since
+        Shared mode: Returns the same pointer as k_smem_base() since
         K_nope and V share the same buffer.
         """
         return (self.base + Self.v_byte_offset).bitcast[
@@ -327,7 +352,7 @@ struct SM100AttentionSMem[
 
     @always_inline
     def rope_smem_base(self) -> SharedMemPointer[Scalar[Self.rope_dtype]]:
-        """Base of the rope region (fused mode only)."""
+        """Base of the rope region (shared mode only)."""
         return (self.base + Self.rope_byte_offset).bitcast[
             Scalar[Self.rope_dtype]
         ]()

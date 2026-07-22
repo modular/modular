@@ -141,7 +141,11 @@ def execute_combine_test[
     # each combined tile is exactly one cache page.
     comptime BN = 128
 
-    var valid_length = 2
+    # valid_length > 32 keeps this in the 1Q / split-K regime: the SM100 dispatch
+    # routes max_prompt_len <= 32 (depth-128, non-sink) to the WS BM=32 datapath,
+    # which would otherwise steal these depth-128 split-K cases. Still << a 2Q
+    # tile (BM=256), so the auto-P heuristic replicated below is unchanged.
+    var valid_length = 64
     # Shape-driven split-K: the dispatch auto-selects P (no compile-time P knob);
     # we steer it via cache length + kv-head count (the GPC-aware scan below
     # mirrors the dispatch to recover the realized P).

@@ -617,14 +617,6 @@ struct Scatter:
     ) raises:
         check_axis_in_range[output.rank](axis)
 
-        @always_inline
-        def reduce_func[
-            dtype: DType, width: SIMDSize
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) {} -> SIMD[
-            dtype, width
-        ]:
-            return rhs  # always return the latest update element
-
         scatter_elements(
             input,
             indices,
@@ -632,7 +624,6 @@ struct Scatter:
             normalize_neg_index(axis, output.rank),
             output,
             ctx,
-            reduce_fn=reduce_func,
         )
 
 
@@ -675,19 +666,18 @@ struct ScatterAdd:
         @always_inline
         def reduce_func[
             dtype: DType, width: SIMDSize
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) {} -> SIMD[
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
             return lhs + rhs
 
-        scatter_elements(
+        scatter_elements[reduce_fn=reduce_func](
             input,
             indices,
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
             ctx,
-            reduce_fn=reduce_func,
         )
 
 
@@ -729,19 +719,18 @@ struct ScatterMax:
         @always_inline
         def reduce_func[
             dtype: DType, width: SIMDSize
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) {} -> SIMD[
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
             return max(lhs, rhs)
 
-        scatter_elements(
+        scatter_elements[reduce_fn=reduce_func](
             input,
             indices,
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
             ctx,
-            reduce_fn=reduce_func,
         )
 
 
@@ -783,19 +772,18 @@ struct ScatterMin:
         @always_inline
         def reduce_func[
             dtype: DType, width: SIMDSize
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) {} -> SIMD[
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
             return min(lhs, rhs)
 
-        scatter_elements(
+        scatter_elements[reduce_fn=reduce_func](
             input,
             indices,
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
             ctx,
-            reduce_fn=reduce_func,
         )
 
 
@@ -837,19 +825,18 @@ struct ScatterMul:
         @always_inline
         def reduce_func[
             dtype: DType, width: SIMDSize
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) {} -> SIMD[
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
             return lhs * rhs
 
-        scatter_elements(
+        scatter_elements[reduce_fn=reduce_func](
             input,
             indices,
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
             ctx,
-            reduce_fn=reduce_func,
         )
 
 

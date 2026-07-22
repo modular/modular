@@ -28,10 +28,11 @@ import extensibility
 from std.gpu.host import DeviceContext
 from layout.tile_tensor import row_major
 from std.gpu.host.info import is_cpu, is_gpu
+from internal_utils.fp8_utils import fp8_quantize
+from builtin_primitives.primitives import foreach
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, row_major
 from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
-    quantize_static_scaled_fp8,
     quantize_tensor_dynamic_scaled_fp8,
 )
 from linalg.fp4_quantization import (
@@ -1144,22 +1145,40 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
         target: StaticString,
     ](
         output: OutputTensor[dtype=output_type, rank=2, ...],
-        input: InputTensor[dtype=input_type, rank=2, ...],
+        input: FusedInputTensor[dtype=input_type, rank=2, ...],
         scale: Scalar[scale_type],
         ctx: DeviceContext,
-    ) raises:
+    ) capturing raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
         comptime assert output_type in (
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
         ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
-        var scale_loaded = scale.cast[DType.float32]()
-        quantize_static_scaled_fp8[scale_is_inverted=Self.scale_is_inverted](
-            output.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
-            scale_loaded,
-            ctx,
-        )
+
+        # A single-use elementwise producer feeding this quantize (MLP relu2,
+        # the gated-group-norm final cast, residual casts) fuses INTO this
+        # load lambda, saving one kernel launch + one full-width HBM
+        # materialization per FP8 Linear activation. Math is bit-identical to
+        # the standalone `quantize_static_scaled_fp8` path: cast to f32, then
+        # `fp8_quantize(v, 1.0/scale)`. The original kernel ignored the
+        # `scale_is_inverted` param and always used `1.0/scale`; preserved here.
+        var inversed_scale = 1.0 / scale.cast[DType.float32]()
+
+        @always_inline
+        def quant_fn[
+            width: Int, element_alignment: Int
+        ](idx: IndexList[2]) {var input, var inversed_scale} -> SIMD[
+            output_type, width
+        ]:
+            var v = input._fused_load[
+                width, element_alignment=element_alignment
+            ](idx).cast[DType.float32]()
+            return fp8_quantize[output_type, use_clamp=True](v, inversed_scale)
+
+        foreach[
+            target=target,
+            _trace_name="scaled_fp8_quant",
+        ](quant_fn, output, ctx)
 
 
 @extensibility.register("mo.quantize_tensor_dynamic_scaled_float8")

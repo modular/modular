@@ -84,7 +84,7 @@ def test_compile_store() raises:
         mut atm: Atomic[DType.int32, scope="agent"], v: Int32
     ):
         Atomic[DType.int32, scope="agent"].store[ordering=Ordering.RELEASE](
-            UnsafePointer(to=atm.value), v
+            Pointer(to=atm.value), v
         )
 
     var asm = compile_info[my_store_function, emission_kind="llvm"]()
@@ -96,7 +96,7 @@ def test_compile_store() raises:
 def test_compile_store_default_scope() raises:
     def my_store_function(mut atm: Atomic[DType.int64], v: Int64):
         Atomic[DType.int64].store[ordering=Ordering.RELEASE](
-            UnsafePointer(to=atm.value), v
+            Pointer(to=atm.value), v
         )
 
     var asm = compile_info[my_store_function, emission_kind="llvm"]()
@@ -112,7 +112,7 @@ def test_compile_xchg() raises:
     ) -> Int32:
         return Atomic[DType.int32, scope="agent"]._xchg[
             ordering=Ordering.SEQUENTIAL
-        ](UnsafePointer(to=atm.value), v)
+        ](Pointer(to=atm.value), v)
 
     var asm = compile_info[my_xchg_function, emission_kind="llvm"]()
 
@@ -123,7 +123,7 @@ def test_compile_xchg() raises:
 
 def test_compile_store_nvptx_default_scope() raises:
     # Default (empty) scope maps to NVPTX's system syncscope.
-    def my_store(ptr: UnsafePointer[Int32, MutAnyOrigin], v: Int32):
+    def my_store(ptr: Pointer[Int32, MutAnyOrigin], v: Int32):
         Atomic[DType.int32].store[ordering=Ordering.RELEASE](ptr, v)
 
     var ptx = String(compile_info[my_store, target=A100.target()]())
@@ -135,7 +135,7 @@ def test_compile_store_nvptx_default_scope() raises:
 
 
 def test_compile_store_nvptx_device_scope() raises:
-    def my_store(ptr: UnsafePointer[Int32, MutAnyOrigin], v: Int32):
+    def my_store(ptr: Pointer[Int32, MutAnyOrigin], v: Int32):
         Atomic[DType.int32, scope="device"].store[ordering=Ordering.RELEASE](
             ptr, v
         )
@@ -148,8 +148,8 @@ def test_compile_store_nvptx_device_scope() raises:
 
 def test_compile_load_nvptx_default_scope() raises:
     def my_load(
-        dst: UnsafePointer[Int32, MutAnyOrigin],
-        ptr: UnsafePointer[Int32, MutAnyOrigin],
+        dst: Pointer[Int32, MutAnyOrigin],
+        ptr: Pointer[Int32, MutAnyOrigin],
     ):
         dst[] = Atomic[DType.int32].load[ordering=Ordering.ACQUIRE](ptr)
 
@@ -160,8 +160,8 @@ def test_compile_load_nvptx_default_scope() raises:
 
 def test_compile_load_nvptx_device_scope() raises:
     def my_load(
-        dst: UnsafePointer[Int32, MutAnyOrigin],
-        ptr: UnsafePointer[Int32, MutAnyOrigin],
+        dst: Pointer[Int32, MutAnyOrigin],
+        ptr: Pointer[Int32, MutAnyOrigin],
     ):
         dst[] = Atomic[DType.int32, scope="device"].load[
             ordering=Ordering.ACQUIRE
@@ -176,7 +176,7 @@ def test_compile_store_amdgpu_default_scope() raises:
     # AMDGPU release at system scope: write-back fence before the store and
     # SC0/SC1 bypass-cache flags on the `global_store` itself. Memory model:
     # https://llvm.org/docs/AMDGPUUsage.html#memory-model-gfx942.
-    def my_store(ptr: UnsafePointer[Int32, MutAnyOrigin], v: Int32):
+    def my_store(ptr: Pointer[Int32, MutAnyOrigin], v: Int32):
         Atomic[DType.int32].store[ordering=Ordering.RELEASE](ptr, v)
 
     var asm = String(compile_info[my_store, target=_MI300X_TARGET]())
@@ -190,8 +190,8 @@ def test_compile_load_amdgpu_default_scope() raises:
     # AMDGPU acquire at system scope: `global_load` with SC0/SC1, then a
     # `buffer_inv` to invalidate stale cache lines.
     def my_load(
-        dst: UnsafePointer[Int32, MutAnyOrigin],
-        ptr: UnsafePointer[Int32, MutAnyOrigin],
+        dst: Pointer[Int32, MutAnyOrigin],
+        ptr: Pointer[Int32, MutAnyOrigin],
     ):
         dst[] = Atomic[DType.int32].load[ordering=Ordering.ACQUIRE](ptr)
 
@@ -207,7 +207,7 @@ def test_compile_store_amdgpu_agent_scope() raises:
     # system-wide L2 write-back (`buffer_wbl2 sc0 sc1`) emitted at system
     # scope is no longer required. Absence of that sequence is the
     # concrete witness that scope narrowing reaches AMDGPU codegen.
-    def my_store(ptr: UnsafePointer[Int32, MutAnyOrigin], v: Int32):
+    def my_store(ptr: Pointer[Int32, MutAnyOrigin], v: Int32):
         Atomic[DType.int32, scope="agent"].store[ordering=Ordering.RELEASE](
             ptr, v
         )
@@ -220,8 +220,8 @@ def test_compile_store_amdgpu_agent_scope() raises:
 
 def test_compile_store_load_amdgpu_llvm_ir() raises:
     def my_kernel(
-        dst: UnsafePointer[Int32, MutAnyOrigin],
-        ptr: UnsafePointer[Int32, MutAnyOrigin],
+        dst: Pointer[Int32, MutAnyOrigin],
+        ptr: Pointer[Int32, MutAnyOrigin],
         v: Int32,
     ):
         Atomic[DType.int32].store[ordering=Ordering.RELEASE](ptr, v)

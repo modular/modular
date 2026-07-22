@@ -343,6 +343,29 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "processed tokens (fresh prefill batches are skipped)."
         ),
     ),  # type: ignore
+    "maxserve.dp_active_tokens": _meter.create_counter(
+        "maxserve.dp_active_tokens",
+        unit="tokens",
+        description=(
+            "Cumulative active tokens scheduled across all DP replicas, "
+            "excluding padding dummies. Divided by "
+            "maxserve.dp_step_capacity_tokens over the same window, this "
+            "gives the token-weighted DP occupancy (each batch weighted by "
+            "its step cost rather than counted once). Recorded only when "
+            "data_parallel_degree > 1."
+        ),
+    ),  # type: ignore
+    "maxserve.dp_step_capacity_tokens": _meter.create_counter(
+        "maxserve.dp_step_capacity_tokens",
+        unit="tokens",
+        description=(
+            "Cumulative synchronized step capacity in tokens: for each "
+            "batch, DP-degree times the heaviest rank's active tokens "
+            "(ranks step together, so the heaviest rank sets the step "
+            "cost). Denominator for token-weighted DP occupancy. Recorded "
+            "only when data_parallel_degree > 1."
+        ),
+    ),  # type: ignore
     "maxserve.batch_terminated_reqs": _meter.create_histogram(
         "maxserve.batch_terminated_reqs",
         unit="reqs",
@@ -444,6 +467,17 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "Count of structured-output requests rejected at admission "
             "(HTTP 400) because the active grammar backend could not compile "
             "the schema, split by the 'kind' tag (tool_grammar, json_schema)."
+        ),
+    ),  # type: ignore
+    "maxserve.response_format.conformance_errors": _meter.create_counter(
+        "maxserve.response_format.conformance_errors",
+        description=(
+            "Count of response_format (json_schema/json_object) responses "
+            "whose final content failed the observability-only "
+            "schema-conformance check, split by the 'outcome' tag "
+            "(invalid_json, schema_mismatch). Mirrors the "
+            "'response_format_conformance' warning log; the failing JSON "
+            "paths stay in the log to keep label cardinality bounded."
         ),
     ),  # type: ignore
 }
@@ -1046,6 +1080,24 @@ class _AsyncMetrics:
             ),
         )
 
+    def dp_active_tokens(self, value: int, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dp_active_tokens",
+                value,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+        )
+
+    def dp_step_capacity_tokens(self, value: int, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dp_step_capacity_tokens",
+                value,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+        )
+
     def batch_terminated_reqs(self, value: int, batch_type: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
@@ -1167,6 +1219,15 @@ class _AsyncMetrics:
                 "maxserve.structured_output.grammar_rejections",
                 1,
                 {**self.extra_attributes, "kind": kind},
+            ),
+        )
+
+    def response_format_conformance_error(self, outcome: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.response_format.conformance_errors",
+                1,
+                {**self.extra_attributes, "outcome": outcome},
             ),
         )
 

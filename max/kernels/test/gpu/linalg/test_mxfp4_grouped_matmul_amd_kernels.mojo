@@ -165,11 +165,14 @@ def _run_preb[
     mfma_cluster: Int = 4,
     waves_per_eu: Int = 0,
     wg_per_cu: Int = 2,  # struct param — sizes the persistent grid
+    static_grid_z: Bool = False,  # comptime grid.z = n_local_experts (direct)
 ](
     name: String,
     num_tokens_by_expert: List[Int],
     expert_ids_list: List[Int],
     ctx: DeviceContext,
+    grid_m_cap: Int = -1,  # direct grid.y cap (-1 => full stride)
+    ascale_stride_toks: Int = -1,  # A-scale slot stride source (-1 => max)
 ) raises:
     comptime assert K % 128 == 0, "K must be a multiple of 128"
     comptime packed_K = K // 2
@@ -230,9 +233,12 @@ def _run_preb[
     _fill_random_e8m0(b_sc_h, num_experts * N * scale_K)
     _build_routing(a_off_h, eid_h, num_tokens_by_expert, expert_ids_list)
 
-    # Per-expert preshuffled-A-scale slot stride: align_up(max, 32).
-    # Caller-supplied bound; in production this is a model-config constant.
-    var max_padded_M = align_up(max_tokens, 32)
+    # Per-expert preshuffled-A-scale slot stride: align_up(stride, 32).
+    # ascale_stride_toks > max_tokens overshoots the grid.y cap to test decoupling.
+    var ascale_toks = (
+        ascale_stride_toks if ascale_stride_toks > 0 else max_tokens
+    )
+    var max_padded_M = align_up(ascale_toks, 32)
 
     # Device buffers + upload.
     var a_d = ctx.enqueue_create_buffer[DType.uint8](total_tokens * packed_K)
@@ -302,7 +308,7 @@ def _run_preb[
         a_sc_pre_tt,
         a_off_tt_for_pre,
         num_active,
-        max_tokens,
+        ascale_toks,
         ctx.default_device_info.sm_count * 2,
         ctx,
     )
@@ -368,6 +374,7 @@ def _run_preb[
         cluster_drain_sched=cluster_drain_sched,
         mfma_cluster=mfma_cluster,
         waves_per_eu=waves_per_eu,
+        static_grid_z=static_grid_z,
     ](
         c_tt,
         a_tt,
@@ -376,9 +383,10 @@ def _run_preb[
         b_sc_tt,
         a_off_tt,
         eid_tt,
-        max_tokens,
+        ascale_toks,  # max_num_tokens_per_expert = A-scale slot stride
         num_active,
         ctx,
+        grid_m_cap,
     )
     ctx.synchronize()
 
@@ -474,15 +482,22 @@ def test_direct[
     mfma_cluster: Int = 4,
     waves_per_eu: Int = 0,
     wg_per_cu: Int = 2,
+    static_grid_z: Bool = False,
 ](
     name: String,
     num_tokens_by_expert: List[Int],
     expert_ids_list: List[Int],
     ctx: DeviceContext,
+    grid_m_cap: Int = -1,
+    ascale_stride_toks: Int = -1,
 ) raises:
     """`PreShuffledBGroupedGEMM.launch[persistent=False]` — 3D workload-sized
     grid: one WG per (n_tile, m_tile, expert). `wg_per_cu` is accepted for
-    signature parity with `test_persistent`; the direct grid ignores it."""
+    signature parity with `test_persistent`; the direct grid ignores it.
+
+    `grid_m_cap` sizes grid.y to a decode cap; `ascale_stride_toks` overrides
+    the A-scale slot stride; `static_grid_z` uses the comptime local-expert
+    count for grid.z (requires routing arrays sized to `num_experts`)."""
     _run_preb[
         num_experts,
         N,
@@ -498,7 +513,15 @@ def test_direct[
         mfma_cluster=mfma_cluster,
         waves_per_eu=waves_per_eu,
         wg_per_cu=wg_per_cu,
-    ](name, num_tokens_by_expert, expert_ids_list, ctx)
+        static_grid_z=static_grid_z,
+    ](
+        name,
+        num_tokens_by_expert,
+        expert_ids_list,
+        ctx,
+        grid_m_cap,
+        ascale_stride_toks,
+    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1367,6 +1390,185 @@ def main() raises:
     # down: else BM128/BN128 persistent
     test_persistent[4, 6144, 3072, BM=128, BN=128, BK_ELEMS=512, WN=64](
         "M3 down else BM128/BN128", [256, 128, 256, 128], [0, 1, 2, 3], ctx
+    )
+    # down decode band: direct capped grid.y + static grid.z vs ref, across
+    # balanced / skew / BM32 / static-z empties / A-scale decoupling.
+    test_direct[
+        4,
+        6144,
+        3072,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 down decode direct+cap bal",
+        [8, 8, 8, 8],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+    )
+    test_direct[
+        4,
+        6144,
+        3072,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 down decode direct+cap skew",
+        [32, 4, 4, 4],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+    )
+    test_direct[
+        4,
+        6144,
+        3072,
+        BM=32,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 down decode direct+cap BM32",
+        [8, 8, 8, 8],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+    )
+    # static grid.z over-launch: 8 slots, 2 active; 6 M==0 slots early-return.
+    test_direct[
+        8,
+        6144,
+        3072,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 down decode direct+cap static-z empties",
+        [32, 0, 8, 0, 0, 0, 0, 0],
+        [0, 1, 2, 3, 4, 5, 6, 7],
+        ctx,
+        grid_m_cap=32,
+    )
+    # Decoupling: A-scale stride (512) >> grid.y cap (32).
+    test_direct[
+        4,
+        6144,
+        3072,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 down decode direct decouple stride=512",
+        [32, 4, 4, 4],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+        ascale_stride_toks=512,
+    )
+    # gate_up decode band (deep K=6144): same coverage as the down cases.
+    test_direct[
+        4,
+        6144,
+        6144,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 gate_up decode direct+cap bal",
+        [8, 8, 8, 8],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+    )
+    test_direct[
+        4,
+        6144,
+        6144,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 gate_up decode direct+cap skew",
+        [32, 4, 4, 4],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+    )
+    test_direct[
+        4,
+        6144,
+        6144,
+        BM=32,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 gate_up decode direct+cap BM32",
+        [8, 8, 8, 8],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+    )
+    # static grid.z over-launch: 8 slots, 2 active; 6 M==0 slots early-return.
+    test_direct[
+        8,
+        6144,
+        6144,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 gate_up decode direct+cap static-z empties",
+        [32, 0, 8, 0, 0, 0, 0, 0],
+        [0, 1, 2, 3, 4, 5, 6, 7],
+        ctx,
+        grid_m_cap=32,
+    )
+    # Decoupling under deep K: A-scale stride (512) >> grid.y cap (32).
+    test_direct[
+        4,
+        6144,
+        6144,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 gate_up decode direct decouple stride=512",
+        [32, 4, 4, 4],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+        ascale_stride_toks=512,
     )
     # up/gate (unfused, N=3072, K=6144): etm<=4096 BM64/BN128 persistent
     test_persistent[4, 3072, 6144, BM=64, BN=128, BK_ELEMS=512, WN=64](

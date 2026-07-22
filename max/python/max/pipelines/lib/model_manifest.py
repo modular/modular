@@ -295,12 +295,13 @@ class ModelManifest(dict[str, MAXModelConfig]):
     # ------------------------------------------------------------------
 
     def resolve(self) -> None:
-        """Validates and resolves every config in the manifest.
+        """Freezes the manifest against further mutation.
 
-        Delegates to ``MAXModelConfig.resolve()`` for each component.
+        Per-component weight-path identity is resolved in
+        ``MAXModelConfig.__init__`` and repo access is validated at
+        ``PipelineConfig`` construction, so this only flips the freeze flag
+        (use ``with_override()`` to change the manifest afterward).
         """
-        for config in self.values():
-            config.resolve()
         self._resolved = True
 
     # ------------------------------------------------------------------

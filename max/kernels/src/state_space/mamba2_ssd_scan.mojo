@@ -50,13 +50,19 @@ boundary -- no cross-sequence bleed. `final_states (batch, nheads, head_dim,
 dstate)` is written at each sequence end.
 """
 
-from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    block_dim,
+    block_idx,
+    thread_idx,
+)
 from std.gpu.host import DeviceContext
 from std.gpu.primitives.warp import lane_group_sum
 from std.algorithm import sync_parallelize
 from std.math import exp2
 from std.sys.info import align_of
 from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 from layout import PointerStorage, TensorLayout, TensorStorage, TileTensor
 from state_space.selective_scan import softplus
 
@@ -532,6 +538,36 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
         ssm_pool.raw_store(off, state[n])
 
 
+# NVIDIA B200 (sm_100) launch-bounds occupancy floor. This kernel is only ever
+# launched with a 128-thread block (production kernels.mojo and the unit test
+# both use `block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1)` with
+# DSTATE_SPLIT*CH_PER_BLOCK == 128), so `.maxntid 128` is exact.
+#
+# At the c32 (batch-32) decode regime this is the #1 decode GPU kernel and is
+# REGISTER-capped, not launch-bound. For the production tile L == DSTATE //
+# DSTATE_SPLIT == 128 // 8 == 16, the kernel allocates 149 registers uncapped
+# (3 CTAs/SM, ~16% occupancy) yet fits a 128-register budget with ZERO spill
+# (the 149->128 is dead slack; measured via `_ptxas_info_verbose`). Setting
+# `.minnctapersm 4` forces that 128-reg budget: 4 CTAs * 128 threads * 128 regs
+# == the 65536-register SM file, i.e. 4 CTAs/SM (~25% occupancy). Because the
+# kernel is Long-Scoreboard / latency-bound (DRAM ~15% SoL, not bandwidth-
+# bound), the extra resident CTAs hide global-load latency -- occupancy is the
+# lever, and the zero-spill 128-reg point is the one that pays off.
+#
+# The floor is GATED on `L <= 16`: for larger tiles (e.g. DSTATE==256, split 8
+# -> L==32) the hot fp32 state/B/C SIMD vectors of width L do NOT fit 128
+# registers (they spill even uncapped at 255), so a 128-reg floor would only
+# add spill traffic. Those tiles keep `.minnctapersm 1` (a no-op floor) and
+# ptxas's natural register budget. This is a codegen (regalloc) hint only --
+# output is bit-identical to the un-annotated kernel; the correctness gate is
+# `test_mamba2_ssd_inplace_dstate_split_vs_functional`.
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(128))
+)
+@__llvm_metadata(
+    `nvvm.minctasm`=SIMDSize(4) if (DSTATE // DSTATE_SPLIT)
+    <= 16 else SIMDSize(1)
+)
 def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     kernel_dtype: DType,
     DSTATE: Int,
