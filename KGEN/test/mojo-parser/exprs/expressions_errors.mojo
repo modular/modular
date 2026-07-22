@@ -1065,17 +1065,17 @@ def sugar_test():
     var a = get_data()  # Ok
     var b : SIMD[DType.int32, 4]
 
-    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, SIMDSize(4)]'}}
+    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, SIMDLength(4)]'}}
     # expected-note @below {{'IdealSIMD' is aka 'SIMD[DType.int32, Int((mul some_complex_calculation(), 4))]'}}
     b = get_data()
 
     var c = a.join(a) # c has twice the width.
 
-    # expected-error @below {{cannot implicitly convert 'SIMD[DType.int32, (SIMDSize(Int((mul some_complex_calculation(), 4))) * SIMDSize(2))]' value to 'SIMD[DType.int32, SIMDSize(4)]'}}
-    # expected-note @below {{.size of the first value is '(SIMDSize(Int((mul some_complex_calculation(), 4))) * SIMDSize(2))' but the second value is 'SIMDSize(4)'}}
+    # expected-error @below {{cannot implicitly convert 'SIMD[DType.int32, (SIMDLength(Int((mul some_complex_calculation(), 4))) * SIMDLength(2))]' value to 'SIMD[DType.int32, SIMDLength(4)]'}}
+    # expected-note @below {{.size of the first value is '(SIMDLength(Int((mul some_complex_calculation(), 4))) * SIMDLength(2))' but the second value is 'SIMDLength(4)'}}
     b = c
 
-    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, SIMDSize(4)]'}}
+    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, SIMDLength(4)]'}}
     # expected-note @below {{'IdealSIMD' is aka 'SIMD[DType.int32, Int((mul some_complex_calculation(), 4))]'}}
     b = a+a
 

@@ -71,7 +71,7 @@ struct MemoryOnlyPair(ImplicitlyCopyable):
     _ = self.y+arg.x
 
 def inferred_function_with_memory_result[
-  width: SIMDSize](x: SIMD[DType.float32, width]) -> MemoryOnlyInt: pass
+  width: SIMDLength](x: SIMD[DType.float32, width]) -> MemoryOnlyInt: pass
 
 # CHECK-LABEL: lit.fn @"memoryOnlyOps
 def memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
@@ -626,7 +626,7 @@ def test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !alias_Int1 = <#alias_i>
   return i
 
-# CHECK-LABEL: lit.fn @"callable_mv[def(::SIMD[::DType(int), ::SIMDSize(1)]) thin -> ::SIMD[::DType(int), ::SIMDSize(1)]](::SIMD[::DType(int), ::SIMDSize(1)])"
+# CHECK-LABEL: lit.fn @"callable_mv[def(::SIMD[::DType(int), ::SIMDLength(1)]) thin -> ::SIMD[::DType(int), ::SIMDLength(1)]](::SIMD[::DType(int), ::SIMDLength(1)])"
 # CHECK-SAME: <callable: !lit.generator<(!Int, |) -> !alias_Int1>>(%a: !Int) -> !alias_Int1
 def callable_mv[callable: def (Int) thin -> Int](a: Int) -> Int:
   # CHECK-NEXT: lit.call tail[!lit.generator<(!Int, |) -> !alias_Int1>: callable](%a)
@@ -652,7 +652,7 @@ def returnIndex2() -> Int:
   # CHECK-NEXT: return %0
   return takeIndexParam[returnIndex()]()
 
-# CHECK-LABEL: lit.fn @"callInParam[def[::SIMD[::DType(int), ::SIMDSize(1)]](::SIMD[::DType(int), ::SIMDSize(1)]) thin -> ::SIMD[::DType(int), ::SIMDSize(1)]]()"
+# CHECK-LABEL: lit.fn @"callInParam[def[::SIMD[::DType(int), ::SIMDLength(1)]](::SIMD[::DType(int), ::SIMDLength(1)]) thin -> ::SIMD[::DType(int), ::SIMDLength(1)]]()"
 # CHECK-SAME: <callable: !lit.generator<<"x": !Int>(!Int, |) -> !alias_Int1>>() -> !alias_Int1
 def callInParam[callable: def[x: Int](Int) thin -> Int]() -> Int:
   # CHECK-NEXT: %0 = lit.call {{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_params({{.*}}callable, :!Int {:scalar<index> 1}), {:scalar<index> 1})>()
@@ -706,7 +706,7 @@ def patterns():
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
-# CHECK-LABEL: lit.fn @"byval_byref_function(::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)]&)"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> mut) -> !kgen.none
+# CHECK-LABEL: lit.fn @"byval_byref_function(::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)]&)"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> mut) -> !kgen.none
 def byval_byref_function(a: Int, mut b: Int):
   # CHECK-NEXT: lit.ref.store %a, %b
   b = a

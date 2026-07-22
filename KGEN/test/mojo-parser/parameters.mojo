@@ -31,8 +31,8 @@ def take_3index(a: Int, b: Int, c: Int) -> Int:
     return a
 
 # CHECK-LABEL: lit.fn @"fancy_signature{{.*}}"<dt: !DType, size: !Int>
-# CHECK-SAME: (%x: {{.*}}#SIMD <:!DType dt, :!SIMDSize {{.*}}>{{.*}}>,
-# CHECK-SAME: %exp: {{.*}}#SIMD <:!DType dt, :!SIMDSize {{.*}}>{{.*}}>) -> !alias_Int1
+# CHECK-SAME: (%x: {{.*}}#SIMD <:!DType dt, :!SIMDLength {{.*}}>{{.*}}>,
+# CHECK-SAME: %exp: {{.*}}#SIMD <:!DType dt, :!SIMDLength {{.*}}>{{.*}}>) -> !alias_Int1
 def fancy_signature[dt: DType, size: Int](
     x: SIMD[dt, size],
     exp: (SIMD)[dt, size]
@@ -60,7 +60,7 @@ def call_generic[dt: DType]():
   generic_fn[dt, 42, DType](57)
 
   # CHECK: %[[C57_2:.*]] = {{.*}}constant{{.*}}57
-  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {:scalar<index> 13}, :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable {{.*}}SIMD<:!DType dt, :!SIMDSize {4}>>(%[[C57_2]])
+  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {:scalar<index> 13}, :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable {{.*}}SIMD<:!DType dt, :!SIMDLength {4}>>(%[[C57_2]])
   generic_fn[dt, 13, SIMD[dt, 4]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
@@ -115,17 +115,17 @@ def testSIMD(a: SIMD[DType.float32, 1],
   var field2 = reff._mlir_value
 
   # Test calls to methods and operators on parameterized type.
-  # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}<:!DType {{.*}}f32{{.*}}, :!SIMDSize {1}>(%a, %a)
+  # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}<:!DType {{.*}}f32{{.*}}, :!SIMDLength {1}>(%a, %a)
   var x = a+a
-  # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}<:!DType {{.*}}si32{{.*}}, :!SIMDSize {1}>(%b, %b)
+  # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}<:!DType {{.*}}si32{{.*}}, :!SIMDLength {1}>(%b, %b)
   var y = b+b
 
 # Show that forward references of parameter names can be correctly resolved.
 #
 # CHECK-LABEL: lit.fn @"paramResolution[
-# CHECK-SAME: ::SIMD[::DType(int), ::SIMDSize(1)],
+# CHECK-SAME: ::SIMD[::DType(int), ::SIMDLength(1)],
 # CHECK-SAME: parameters::StructWithIntParam[$0],
-# CHECK-SAME: ::SIMD[::DType(int), ::SIMDSize(1)],
+# CHECK-SAME: ::SIMD[::DType(int), ::SIMDLength(1)],
 # CHECK-SAME: parameters::StructWithIntParam[$2]
 # CHECK-SAME: ]()"<
 # CHECK-SAME: size1: !Int, a: !lit.struct<#StructWithIntParam <:!Int size1>>,
@@ -142,7 +142,7 @@ def implConversion[a: StructWithIntParam[42]]():
 
 # CHECK-LABEL: lit.struct.decl @Pair<dt: !DType>
 struct Pair[dt: DType](RegisterPassable):
- # CHECK: lit.struct.field a : {{.*}}#SIMD <:!DType dt, :!SIMDSize {42}>{{.*}}>
+ # CHECK: lit.struct.field a : {{.*}}#SIMD <:!DType dt, :!SIMDLength {42}>{{.*}}>
  # CHECK: lit.struct.field b : !alias_Int1
   var a : SIMD[Self.dt, 42]
   var b : Int
@@ -446,7 +446,7 @@ def callMemoryValueParam():
     # CHECK: lit.call {{.*}}passMemoryValue{{.*}}([[IMMREF]], %{{.*}})
     _ = passMemoryValue(copy)
 
-    # CHECK: lit.call {{.*}}MemoryType::@"__init__(::SIMD[::DType(int), ::SIMDSize(1)])"), {:scalar<index> 22})>
+    # CHECK: lit.call {{.*}}MemoryType::@"__init__(::SIMD[::DType(int), ::SIMDLength(1)])"), {:scalar<index> 22})>
     memoryParam[MemoryType(22)]()
 
     # CHECK: dontFoldMemoryCall{{.*}}{:scalar<index> 42})))
@@ -628,7 +628,7 @@ def bind_overloaded_fn[f: def[f: def () thin -> None] () thin -> None]():
     # CHECK-NEXT: bind_params(:{{.*}} f, {{.*}}@"overloaded_function()")
     comptime h = f[f=overloaded_function]
 
-    # CHECK-NEXT: bind_twice{{.*}}<:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()", :!lit.generator<(!Int, |) -> !kgen.none> {{.*}}overloaded_function(::SIMD[::DType(int), ::SIMDSize(1)])")>
+    # CHECK-NEXT: bind_twice{{.*}}<:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()", :!lit.generator<(!Int, |) -> !kgen.none> {{.*}}overloaded_function(::SIMD[::DType(int), ::SIMDLength(1)])")>
     comptime bound = bind_twice[overloaded_function, overloaded_function]
 
     # CHECK-NEXT: variadic_func_param{{.*}}<:param_list<{{.*}}> [{{.*}}@"overloaded_function()", {{.*}}@"overloaded_function()"]>
@@ -955,7 +955,7 @@ def infer_with_default_arg[T: TrivialRegisterPassable](a: T, b: Int = 7):
 
 # CHECK-LABEL: lit.fn @"test_infer_with_default_arg()"
 def test_infer_with_default_arg():
-    # lit.call {{.*}}::@"infer_with_default_arg[TrivialRegisterPassable]($0,::SIMD[::DType(int), ::SIMDSize(1)])"<:non_struct_type !Int>
+    # lit.call {{.*}}::@"infer_with_default_arg[TrivialRegisterPassable]($0,::SIMD[::DType(int), ::SIMDLength(1)])"<:non_struct_type !Int>
     infer_with_default_arg(128)
 
 
@@ -971,7 +971,7 @@ struct InferredDefaultType[dtype: DType = DType.uint32]:
 
 # CHECK-LABEL: lit.fn @"test_dependent_default_param_inference()"() -> !kgen.none
 def test_dependent_default_param_inference():
-    # CHECK: lit.call {{.*}}@InferredDefaultType::@"__init__[::DType](::SIMD[$1, ::SIMDSize(1)])"{{.*}}<:!DType {:dtype index}, :!DType {:dtype index}>
+    # CHECK: lit.call {{.*}}@InferredDefaultType::@"__init__[::DType](::SIMD[$1, ::SIMDLength(1)])"{{.*}}<:!DType {:dtype index}, :!DType {:dtype index}>
     _ = InferredDefaultType(3)
 
 # CHECK-LABEL: lit.fn @"indirect_call_infer_params
@@ -1025,7 +1025,7 @@ def infer_conversion_arg_type(callable: CallableArg[NoneType]):
     # CHECK: lit.call {{.*}}CallableArg::@"__call__{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !NoneType>
     callable(None)
 
-def take_two[a_type: DType, c_type: DType, width: SIMDSize](
+def take_two[a_type: DType, c_type: DType, width: SIMDLength](
     c: SIMD[c_type, width], a: SIMD[a_type, width + 1],
 ) -> SIMD[c_type, width]: pass
 
@@ -1043,7 +1043,7 @@ def signature_inference[dt: DType, rank: Int]():
 
     # CHECK: call {{.*}}implicit_signature{{.*}}<:!DType dt, :!Int rank,
     # CHECK-SAME: :!lit.generator<<"width": !Int>(!lit.struct<#Abstraction <:!Int rank>
-    # CHECK-SAME: -> !lit.struct<#SIMD <:!DType dt, :!SIMDSize sugar_builtin(apply(:!lit.generator<("value": !Int, |) -> !SIMDSize> @std::@builtin::@stubs::@SIMDSize::@"__init__(::SIMD[::DType(int), ::SIMDSize(1)])", *(0,0)), {_mlir_value = to_builtin(:scalar<index> #lit.struct.extract<:!Int *(0,0), "_mlir_value">)})>>
+    # CHECK-SAME: -> !lit.struct<#SIMD <:!DType dt, :!SIMDLength sugar_builtin(apply(:!lit.generator<("value": !Int, |) -> !SIMDLength> @std::@builtin::@stubs::@SIMDLength::@"__init__(::SIMD[::DType(int), ::SIMDLength(1)])", *(0,0)), {_mlir_value = to_builtin(:scalar<index> #lit.struct.extract<:!Int *(0,0), "_mlir_value">)})>>
     implicit_signature[func]()
 
 
@@ -1227,15 +1227,15 @@ def default_params[a: Int, b: Int = 7, c: String = "woof"]():
 
 # CHECK-LABEL: lit.fn @"test_default_params()"
 def test_default_params():
-    # CHECK: lit.call {{.*}}@"default_params[::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)],::String]()"
+    # CHECK: lit.call {{.*}}@"default_params[::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)],::String]()"
     # CHECK-SAME: <:!Int {:scalar<index> 1}, :!Int {:scalar<index> 7}, {{.*}}#StringLiteral <:string "woof">
     default_params[1]()
 
-    # CHECK: lit.call {{.*}}@"default_params[::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)],::String]()"
+    # CHECK: lit.call {{.*}}@"default_params[::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)],::String]()"
     # CHECK-SAME: <:!Int {:scalar<index> 2}, :!Int {:scalar<index> 8}, {{.*}}#StringLiteral <:string "woof">
     default_params[2, 8]()
 
-    # CHECK: lit.call {{.*}}@"default_params[::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)],::String]()"
+    # CHECK: lit.call {{.*}}@"default_params[::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)],::String]()"
     # CHECK-SAME: <:!Int {:scalar<index> 4}, :!Int {:scalar<index> 9}, {{.*}}#StringLiteral <:string "meow">
     default_params[4, 9, "meow"]()
 
@@ -1285,13 +1285,13 @@ def test_contextual_default_fn_ref():
 
 # COM: check that inferred parameter values take precedence over defaults
 # CHECK-LABEL: lit.fn @"inferred_default_param
-def inferred_default_param[dt: DType, w: SIMDSize = 8](a: SIMD[dt, w]):
+def inferred_default_param[dt: DType, w: SIMDLength = 8](a: SIMD[dt, w]):
     pass
 
 
 # CHECK: lit.fn @"test_inferred_default_param{{.*}}"<x: !Int>
-# CHECK: lit.call {{.*}}@"inferred_default_param{{.*}}"<:!DType {{.*}}f32{{.*}}, :!SIMDSize {4}>
-# CHECK: lit.call {{.*}}@"inferred_default_param{{.*}}"<:!DType {{.*}}f32{{.*}}, :!SIMDSize sugar_builtin(apply(:!lit.generator<("value": !Int, |) -> !SIMDSize> @std::@builtin::@stubs::@SIMDSize::@"__init__(::SIMD[::DType(int), ::SIMDSize(1)])", x), {_mlir_value = to_builtin(:scalar<index> #lit.struct.extract<:!Int x, "_mlir_value">)})>
+# CHECK: lit.call {{.*}}@"inferred_default_param{{.*}}"<:!DType {{.*}}f32{{.*}}, :!SIMDLength {4}>
+# CHECK: lit.call {{.*}}@"inferred_default_param{{.*}}"<:!DType {{.*}}f32{{.*}}, :!SIMDLength sugar_builtin(apply(:!lit.generator<("value": !Int, |) -> !SIMDLength> @std::@builtin::@stubs::@SIMDLength::@"__init__(::SIMD[::DType(int), ::SIMDLength(1)])", x), {_mlir_value = to_builtin(:scalar<index> #lit.struct.extract<:!Int x, "_mlir_value">)})>
 def test_inferred_default_param[
     x: Int
 ](concrete: SIMD[DType.float32, 4], p: SIMD[DType.float32, x]):
@@ -1549,7 +1549,7 @@ comptime Scalar = SIMD[_, 1]
 
 # CHECK-LABEL: lit.fn @"scalar_type{{.*}}"<dt: !DType>
 def scalar_type[dt: DType]():
-    # CHECK: alias.decl [[T:.*]]: meta<{{.*}}SIMD<:!DType dt, :!SIMDSize {1}>>
+    # CHECK: alias.decl [[T:.*]]: meta<{{.*}}SIMD<:!DType dt, :!SIMDLength {1}>>
     comptime T = Scalar[dt]
 
     #FIXME(29495): reenable.

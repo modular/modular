@@ -18,7 +18,7 @@
 # COM: requires recursive matching through both composite attr types.
 # S0-LABEL: lit.fn @"repro_struct_attr()"
 # S0: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}} <:trait<@"def() -> Container[Pair(Int(2), Int(0))]"
-# S0: lit.call @unified_closure_traits::@"struct_callee[::SIMD[::DType(int), ::SIMDSize(1)],def[tag: Int, //]() -> Container[Pair(tag, Int(0))]{1} & ::AnyType & ::ImplicitlyDeletable & ::Movable]($1){(eq $1.tag, $0)}"
+# S0: lit.call @unified_closure_traits::@"struct_callee[::SIMD[::DType(int), ::SIMDLength(1)],def[tag: Int, //]() -> Container[Pair(tag, Int(0))]{1} & ::AnyType & ::ImplicitlyDeletable & ::Movable]($1){(eq $1.tag, $0)}"
 # S0-SAME: <:!Int {:scalar<index> 2}
 
 
@@ -53,7 +53,7 @@ def repro_struct_attr():
 # COM: parameterized by a function reference (exercises symbol recursion).
 # S1-LABEL: lit.fn @"repro_symbol_attr()"
 # S1-DAG: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}} <:trait<@"def() -> Dispatch[identity]"
-# S1-DAG: lit.call @unified_closure_traits::@"symbol_callee[::SIMD[::DType(int), ::SIMDSize(1)],def() -> Dispatch[identity] & ::AnyType & ::ImplicitlyDeletable & ::Movable]($1)"{{.*}}<:!Int {:scalar<index> 1}
+# S1-DAG: lit.call @unified_closure_traits::@"symbol_callee[::SIMD[::DType(int), ::SIMDLength(1)],def() -> Dispatch[identity] & ::AnyType & ::ImplicitlyDeletable & ::Movable]($1)"{{.*}}<:!Int {:scalar<index> 1}
 
 
 
@@ -85,7 +85,7 @@ def repro_symbol_attr():
 
 # COM: Ensure non-ref closure call operands are transformed/rebound in wrapper
 # COM: __call__ before dispatching to impl witness call.
-# S2-LABEL: lit.fn @"__call__[::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)]](unified_closure_traits::def[tag: Int, //, w: Int](val: Vec[tag, w]) -> Bool{1}_{{.*}}"
+# S2-LABEL: lit.fn @"__call__[::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)]](unified_closure_traits::def[tag: Int, //, w: Int](val: Vec[tag, w]) -> Bool{1}_{{.*}}"
 # S2: [[S2_REBIND:%.*]] = kgen.rebind %val : !lit.struct<#Vec <:!Int _tag
 # S2-SAME: to !lit.struct<#Vec <:!Int #kgen.get_witness<:{{.*}} impl, "def[tag: Int, //, w: Int](val: Vec[tag, w]) -> Bool{1}", "tag">
 # S2: lit.call[{{.*}}"val": !lit.struct<#Vec <:!Int #kgen.get_witness<:{{.*}} impl, "def[tag: Int, //, w: Int](val: Vec[tag, w]) -> Bool{1}", "tag">
