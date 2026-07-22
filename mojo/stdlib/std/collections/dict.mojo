@@ -980,7 +980,6 @@ struct Dict[
     def __contains__(self, key: Self.K) -> Bool:
         """Check if a given key is in the dictionary or not.
 
-
         Args:
             key: The key to check.
 
