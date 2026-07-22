@@ -395,6 +395,11 @@ This version is still a work in progress.
 
 ## Library changes
 
+- When an unhandled error propagates out of `main` and no stack trace was
+  collected, Mojo now prints a hint to set
+  `MODULAR_DEBUG=stack-trace-on-error` to enable stack trace collection,
+  rather than printing only the error message.
+
 - Various datatypes have adopted interior origins for increased memory safety,
   including `List`, `Deque`, `Variant`, `String`, `Dict`, `LinkedList`,
   `OwnedPointer`, and `HostBuffer`. A reference or view into one of these

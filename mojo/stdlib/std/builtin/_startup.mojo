@@ -106,6 +106,12 @@ def __wrap_and_execute_raising_main[
         var stack_trace = e.get_stack_trace()
         if stack_trace:
             print(stack_trace.value())
+        else:
+            print(
+                "stack trace was not collected. Enable stack trace collection"
+                " with environment variable"
+                " `MODULAR_DEBUG=stack-trace-on-error`"
+            )
         print("Unhandled exception caught during execution:", e)
         return 1
 
