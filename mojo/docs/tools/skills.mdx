@@ -105,6 +105,74 @@ At runtime:
 
 This isn't prompting. It's controlled code generation.
 
+## Connect to the docs MCP server
+
+Connect the docs
+[Model Context Protocol](https://modelcontextprotocol.io) (MCP) server to give
+your AI assistant live access to Mojo's documentation. Your assistant can
+search Mojo's manual, API references, and code examples while it plans, writes,
+and debugs your code, so its answers stay grounded in the current
+documentation instead of its training data.
+
+Your assistant can usually set up the MCP server itself with a prompt like
+this:
+
+```text
+Add the Mojo docs MCP server at https://mojo-mcp.modular.com/mcp/ and verify it
+by searching the docs.
+```
+
+Or configure it manually in your tool's settings.
+
+With Claude Code, add the server from the command line:
+
+```sh
+claude mcp add --transport http mojo-docs https://mojo-mcp.modular.com/mcp/
+```
+
+With Cursor, add the server to `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "mojo-docs": {
+      "url": "https://mojo-mcp.modular.com/mcp/"
+    }
+  }
+}
+```
+
+Any other client that supports MCP's streamable HTTP transport connects with
+the same URL. The server indexes both the stable and nightly documentation.
+
+### Use the docs MCP server
+
+Once connected, ask your assistant a Mojo question and it searches the docs
+before answering, so the response reflects the current documentation. For
+example, if you ask how to write a GPU kernel, it grounds its answer in the
+current Mojo APIs instead of guessing from its training data.
+
+For example, you might ask:
+
+```text
+How do I write a GPU kernel in Mojo?
+```
+
+The assistant searches the docs and responds with grounded guidance:
+
+```text
+In Mojo, you write a GPU kernel as a function and launch it through a
+DeviceContext. The kernel runs once per thread, and you use the thread and
+block indices to select the element each thread handles:
+
+1. Define the kernel function that operates on device buffers.
+2. Get a DeviceContext for the target GPU.
+3. Enqueue the kernel with the grid and block dimensions.
+4. Synchronize, then copy the results back to the host.
+
+# ... (truncated for brevity)
+```
+
 ## FAQ
 
 **Are the skills always up to date with the latest Mojo?**
