@@ -244,7 +244,7 @@ struct Optional[T: Movable](
     ) where conforms_to(Self.T, TrivialRegisterPassable):
         """Implicitly cast an `OptionalReg[T]` to an `Optional[T]`."""
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        UnsafePointer(to=self).bitcast[OptionalReg[Self.T]]()[] = optional_reg
+        Pointer(to=self).unsafe_bitcast[OptionalReg[Self.T]]()[] = optional_reg
 
     # -------
     # Special temporary constructors while Pointer unification is happening
@@ -265,7 +265,7 @@ struct Optional[T: Movable](
             UnsafePointer[U, origin, address_space=address_space]
         ],
     ):
-        self = UnsafePointer(to=other).bitcast[type_of(self)]()[]
+        self = Pointer(to=other).unsafe_bitcast[type_of(self)]()[]
 
     # TODO(MSTDL-2846): Remove this constructor when `_safe` is no longer needed for UnsafePointer.
     # Allows implicitly converting from Optional[UnsafePointer] -> Optional[Pointer]
@@ -280,7 +280,7 @@ struct Optional[T: Movable](
         other: Optional[UnsafePointer[U, origin, address_space=address_space]],
         out self: Optional[Pointer[U, origin, address_space=address_space]],
     ):
-        self = UnsafePointer(to=other).bitcast[type_of(self)]()[]
+        self = Pointer(to=other).unsafe_bitcast[type_of(self)]()[]
 
     # TODO(MSTDL-2846): Remove this constructor when `_safe` is no longer needed for UnsafePointer.
     # Allows `Pointer` -> `Optional[UnsafePointer]`
@@ -825,7 +825,7 @@ struct Optional[T: Movable](
         self: Optional[UnsafePointer[U, origin, address_space=address_space]],
         out result: type_of(self).T,
     ):
-        result = UnsafePointer(to=self).bitcast[type_of(result)]()[]
+        result = Pointer(to=self).unsafe_bitcast[type_of(result)]()[]
 
     def map[
         To: Movable,
@@ -994,7 +994,7 @@ struct _NicheableOptionalRegStorage[
     @always_inline
     def __init__(out self):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        var ptr = UnsafePointer(to=self.storage).bitcast[
+        var ptr = Pointer(to=self.storage).unsafe_bitcast[
             UnsafeMaybeUninit[Self.T]
         ]()
         Self.T.write_niche[index=0](ptr)
@@ -1003,17 +1003,17 @@ struct _NicheableOptionalRegStorage[
     def __init__[U: TrivialRegisterPassable](out self, value: U):
         comptime assert U == Self.T
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        var ptr = UnsafePointer(to=self.storage).bitcast[Self.T]()
+        var ptr = Pointer(to=self.storage).unsafe_bitcast[Self.T]()
         ptr.unsafe_write(rebind[Self.T](value))
 
     @always_inline
     def value[U: TrivialRegisterPassable](self) -> U:
         comptime assert U == Self.T
-        return UnsafePointer(to=self.storage).bitcast[U]()[]
+        return Pointer(to=self.storage).unsafe_bitcast[U]()[]
 
     @always_inline
     def __bool__(self) -> Bool:
-        var ptr = UnsafePointer(to=self.storage).bitcast[
+        var ptr = Pointer(to=self.storage).unsafe_bitcast[
             UnsafeMaybeUninit[Self.T]
         ]()
         return Self.T.classify_niche(ptr) == NicheIndex.NotANiche
@@ -1207,7 +1207,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
         ],
         out result: type_of(self).T,
     ):
-        result = UnsafePointer(to=self).bitcast[type_of(result)]()[]
+        result = Pointer(to=self).unsafe_bitcast[type_of(result)]()[]
 
     @deprecated(
         "Cannot directly dereference an `OptionalReg[UnsafePointer]`."
