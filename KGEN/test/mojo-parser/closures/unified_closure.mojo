@@ -30,7 +30,7 @@
 # S0-DAG: [[S0_IMPL_PARENT:!Int_AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
 # S0-DAG: [[S0_INT:!.*]] = !lit.struct<#SIMD <{{.*}}>>
 # S0-DAG: lit.trait.decl @"def(y: Int) -> Int"<?, *"_Self`{{.*}}": [[S0_PARENT]]>([[S0_PARENT]])
-# S0-DAG: lit.fn @"__call__($0,::SIMD[::DType(int), ::SIMDSize(1)])"[mut *"self`"](%{{.*}}: !lit.ref<:{{.*}}, mut *"self`"> read_mem, |, %y: {{.*}}) capturing -> {{.*}} attributes {sourceName = "__call__", specialFnKind = 0 : i8, synthetic} {
+# S0-DAG: lit.fn @"__call__($0,::SIMD[::DType(int), ::SIMDLength(1)])"[mut *"self`"](%{{.*}}: !lit.ref<:{{.*}}, mut *"self`"> read_mem, |, %y: {{.*}}) capturing -> {{.*}} attributes {sourceName = "__call__", specialFnKind = 0 : i8, synthetic} {
 # S0: lit.struct.decl @"def(y: Int) -> Int_{{[^"]*}}"<impl: [[S0_IMPL_PARENT]], origin_set: origin.set, |>([[S0_IMPL_PARENT]]) attributes {definesClosure,{{.*}}synthetic}
 # S0-NEXT: move :
 # S0-NEXT: copy :
@@ -223,7 +223,7 @@ def s7_take_closure[f: def(y: Int) -> Int](myFunc: f, x: Int):
 # S8-DAG: [[S8_TRAIT:!Int_AnyType_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
 # S8-DAG: [[S8_INT:!Int.*]] = !lit.struct<#SIMD <{{.*}}>>
 # S8-DAG: lit.trait.decl @"def(y: Int) -> Int"
-# S8-DAG: lit.fn *"nested[def(y: Int) -> Int & ::AnyType & ::ImplicitlyDeletable & ::Movable]($0,::SIMD[::DType(int), ::SIMDSize(1)])"<closure2: [[S8_TRAIT]]>
+# S8-DAG: lit.fn *"nested[def(y: Int) -> Int & ::AnyType & ::ImplicitlyDeletable & ::Movable]($0,::SIMD[::DType(int), ::SIMDLength(1)])"<closure2: [[S8_TRAIT]]>
 
 
 
@@ -257,7 +257,7 @@ def take_closures[
 # COM: Unified Closure Parameters compose
 # S10-DAG: [[S10_INNER:!Int_AnyType_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(z: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
 # S10-DAG: lit.fn @"__call__[def(z: Int) -> Int{{.*}}"<y: [[S10_INNER]]>
-# S10-DAG: lit.fn @"nested[def[y: def(z: Int) -> Int](impl: y, u: Int) -> Int & ::AnyType & ::ImplicitlyDeletable & ::Movable]($0,::SIMD[::DType(int), ::SIMDSize(1)])"
+# S10-DAG: lit.fn @"nested[def[y: def(z: Int) -> Int](impl: y, u: Int) -> Int & ::AnyType & ::ImplicitlyDeletable & ::Movable]($0,::SIMD[::DType(int), ::SIMDLength(1)])"
 # S10-DAG: %impl: !lit.ref<:!Int_AnyType_ImplicitlyDeletable_Movable{{.*}} x, imm *{{.*}} read_mem
 # S10-DAG: %do_not_dce_int: !Int1) capturing -> !kgen.none attributes {{.*}}sourceName = "nested"
 
@@ -273,7 +273,7 @@ def nested[
 
 # COM: Check that the closure storage struct is generated correctly.
 # S11-DAG: [[S11_TRAIT:!Int_AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(z: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
-# S11-DAG: lit.struct.decl @"s11_bindIt(::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)],::String)::myclosure::__storage"
+# S11-DAG: lit.struct.decl @"s11_bindIt(::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)],::String)::myclosure::__storage"
 # S11-DAG: kgen.conformance @"{{.*}}::AnyType" {
 # S11-DAG: kgen.conformance @"{{.*}}::ImplicitlyDeletable" {
 # S11-DAG: kgen.witness "__del__{{.*}}"
@@ -327,7 +327,7 @@ def nonemptyOriginSet(mut byRefMut: String):
 
 # COM: Verify that closures can be rebound to compatible traits
 # S14-DAG: lit.struct.decl @"s14_bindIt{{.*}}::myclosure::__storage"
-# S14-DAG: kgen.witness "__call__($0,::SIMD[::DType(int), ::SIMDSize(1)])"
+# S14-DAG: kgen.witness "__call__($0,::SIMD[::DType(int), ::SIMDLength(1)])"
 # S14-DAG: read_mem, !Int1, |) capturing -> !Int1> = rebind(:!lit.generator<[1]({{.*}}read_mem, |, "x": !Int1) capturing -> !Int1>
 # S14-DAG: @{{.*}}::@"def(x: Int) -> Int_3"::@"__call__(unified_closure::def(x: Int) -> Int_3
 
@@ -349,7 +349,7 @@ def s14_bindIt(z: Int, mem: String):
 
 # COM: Verify that closures can be rebound even when traits are combined
 # S15-DAG: lit.struct.decl @"s15_bindIt{{.*}}::myclosure::__storage"
-# S15-DAG: kgen.witness "__call__($0,::SIMD[::DType(int), ::SIMDSize(1)])"
+# S15-DAG: kgen.witness "__call__($0,::SIMD[::DType(int), ::SIMDLength(1)])"
 # S15-DAG: read_mem, |, "y": !Int1) capturing -> !Int1> = rebind(:!lit.generator<[1]({{.*}}read_mem, |, "x": !Int1) capturing -> !Int1>
 # S15-DAG: @{{.*}}::@"def(x: Int) -> Int_3"::@"__call__(unified_closure::def(x: Int) -> Int_3
 
@@ -377,9 +377,9 @@ def s15_bindIt(z: Int, mem: String):
 # S16-DAG: read_mem, !Bool, |) capturing -> !Int1> = rebind(:!lit.generator<[1]("self": !lit.ref<!MultipleClosure, imm *[0,0]> read_mem, "x": !Bool) capturing -> !alias_Int1>
 # S16-DAG: @{{.*}}::@MultipleClosure::@"__call__(unified_closure::MultipleClosure,::Bool)"
 # S16-DAG: kgen.conformance @"def(Int) -> Int"
-# S16-DAG: kgen.witness "__call__($0,::SIMD[::DType(int), ::SIMDSize(1)])"
+# S16-DAG: kgen.witness "__call__($0,::SIMD[::DType(int), ::SIMDLength(1)])"
 # S16-DAG: read_mem, !Int1, |) capturing -> !Int1> = rebind(:!lit.generator<[1]("self": !lit.ref<!MultipleClosure, imm *[0,0]> read_mem, "x": !Int1) capturing -> !alias_Int1>
-# S16-DAG: @{{.*}}::@MultipleClosure::@"__call__(unified_closure::MultipleClosure,::SIMD[::DType(int), ::SIMDSize(1)])"
+# S16-DAG: @{{.*}}::@MultipleClosure::@"__call__(unified_closure::MultipleClosure,::SIMD[::DType(int), ::SIMDLength(1)])"
 
 
 
@@ -414,9 +414,9 @@ def s16_bindIt(z: Int):
 # COM: Verify that closures can be rebound with differing parameter names
 # S17-DAG: lit.struct.decl @"s17_bindIt{{.*}}::myclosure::__storage"
 # S17-DAG: kgen.conformance @"def[x: Int](y: Int) -> Int"
-# S17-DAG: kgen.witness "__call__[::SIMD[::DType(int), ::SIMDSize(1)]]($0,::SIMD[::DType(int), ::SIMDSize(1)])"
+# S17-DAG: kgen.witness "__call__[::SIMD[::DType(int), ::SIMDLength(1)]]($0,::SIMD[::DType(int), ::SIMDLength(1)])"
 # S17-DAG: read_mem, |, "y": !Int1) capturing -> !Int1> = rebind(:!lit.generator<<"a": !Int1>[1]({{.*}}read_mem, |, "b": !Int1) capturing -> !Int1>
-# S17-DAG: @{{.*}}::@"def[a: Int](b: Int) -> Int_3"::@"__call__[::SIMD[::DType(int), ::SIMDSize(1)]](unified_closure::def[a: Int](b: Int) -> Int_3
+# S17-DAG: @{{.*}}::@"def[a: Int](b: Int) -> Int_3"::@"__call__[::SIMD[::DType(int), ::SIMDLength(1)]](unified_closure::def[a: Int](b: Int) -> Int_3
 
 
 

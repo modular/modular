@@ -6,7 +6,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-# CHECK-LABEL: lit.fn @"test0(::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)])"
+# CHECK-LABEL: lit.fn @"test0(::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)])"
 def test0(a: Int, b: Int) raises -> Bool:
     comptime pred_attr = __mlir_attr.`#index<cmp_predicate sle>`
 
@@ -15,7 +15,7 @@ def test0(a: Int, b: Int) raises -> Bool:
     return res
 
 
-# CHECK-LABEL: lit.fn @"test1[::Bool](::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)])"
+# CHECK-LABEL: lit.fn @"test1[::Bool](::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)])"
 def test1[cmp: Bool](a: Int, b: Int) raises -> Bool:
     def select_pred[cmp: Bool]() -> __mlir_type.`!kgen.deferred`:
         comptime if cmp:

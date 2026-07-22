@@ -1153,13 +1153,13 @@ struct VariadicPack[
 struct AddressSpace(TrivialRegisterPassable):
     """Address space of the pointer."""
 
-    # Stored as `SIMDSize` (a raw `index` wrapper) so it folds to a constant
+    # Stored as `SIMDLength` (a raw `index` wrapper) so it folds to a constant
     # `index` when spliced into pointer/ref MLIR types.
-    var _value: SIMDSize
+    var _value: SIMDLength
 
     @always_inline("builtin")
     @implicit
-    def __init__(out self, value: SIMDSize):
+    def __init__(out self, value: SIMDLength):
         self._value = value
 
     # CPU address space
@@ -1646,15 +1646,15 @@ struct DType(TrivialRegisterPassable):
 
 
 # ===----------------------------------------------------------------------=== #
-#  SIMDSize
+#  SIMDLength
 # ===----------------------------------------------------------------------=== #
 
 
-# `SIMDSize` wraps the MLIR `index` type and is used as the `size` parameter of
+# `SIMDLength` wraps the MLIR `index` type and is used as the `size` parameter of
 # `SIMD`. It exists to break the circular dependency between `SIMD` and `Int`
 # (which is now an alias for `SIMD[DType.int, 1]`).
 @stable
-struct SIMDSize(TrivialRegisterPassable):
+struct SIMDLength(TrivialRegisterPassable):
     var _mlir_value: __mlir_type.index
 
     @always_inline("builtin")
@@ -1707,7 +1707,7 @@ comptime UInt32 = SIMD[DType.uint32, 1]
 
 
 @stable
-struct SIMD[dtype: DType, size: SIMDSize](
+struct SIMD[dtype: DType, size: SIMDLength](
     Intable, Stringable, TrivialRegisterPassable
 ):
     comptime _mlir_type = __mlir_type[
@@ -1768,7 +1768,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
         return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.index](
             __mlir_op.`pop.cast`[
                 _type=SIMD[DType.int, 1]._mlir_type, fast=__mlir_attr.unit
-            ](rebind[SIMD[Self.dtype, SIMDSize(1)]](self)._mlir_value)
+            ](rebind[SIMD[Self.dtype, SIMDLength(1)]](self)._mlir_value)
         )
 
     @always_inline("builtin")
@@ -1974,7 +1974,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
 
 @stable
 comptime Scalar = SIMD[
-    _, size=__mlir_attr[`#lit.struct<{_mlir_value = 1}> : `, SIMDSize]
+    _, size=__mlir_attr[`#lit.struct<{_mlir_value = 1}> : `, SIMDLength]
 ]
 """Represents a scalar dtype."""
 

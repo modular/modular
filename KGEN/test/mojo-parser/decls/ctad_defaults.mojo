@@ -38,7 +38,7 @@ def unsafe_ptr(s: __mlir_type.`!kgen.string`):
     # CHECK:      lit.call {{.*}}::@MyUnsafePointer::@"__init__{{.*}}"[mut *"{{.*}}"]
     # CHECK-SAME: :!AnyType #type_value,
     # CHECK-SAME: :!Int {:scalar<index> 3},
-    # CHECK-SAME: :!AddressSpace {_value: !SIMDSize = {0}},
+    # CHECK-SAME: :!AddressSpace {_value: !SIMDLength = {0}},
     # CHECK-SAME: :!Bool {:scalar<bool> false},
     # CHECK-SAME: :!Int {:scalar<index> 1}>>
     var ptr = MyUnsafePointer[origin=AnyOrigin[mut=True]](

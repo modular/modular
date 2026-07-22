@@ -48,7 +48,7 @@ def main():
     # COM: Create a parametric expression that cannot fold because of dependency on
     #      unconcretized function in a parameter bind operation.
     comptime b = TypeList.of[Trait=HasMember, EntryA, EntryB].__getitem_param__[
-        SIMDSize(mlir_value=_deferred_index())
+        SIMDLength(mlir_value=_deferred_index())
     ].m[0].__bool__()
     # CHECK: False
     print(b)

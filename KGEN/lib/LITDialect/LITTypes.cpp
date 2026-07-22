@@ -501,7 +501,7 @@ LIT::StructType::canElideSugarFor(TypedAttr attr) const {
   /// Int(42), but print it if it is something weird like IntLiteral(42)
   if (auto elt = getSingleEltStructAttr(attr)) {
     auto typeName = getTypeName();
-    if (typeName == "Int" || typeName == "UInt" || typeName == "SIMDSize")
+    if (typeName == "Int" || typeName == "UInt" || typeName == "SIMDLength")
       if (isa<IntegerAttr>(elt))
         return SugarKind::AlwaysInlineBuiltin;
 
