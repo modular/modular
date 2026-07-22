@@ -36,6 +36,7 @@ from max.experimental.cascade.pipelines.dummy_imgen import (
 from max.experimental.cascade.pipelines.dummy_textgen import (
     build_dummy_textgen_pipeline,
 )
+from max.experimental.cascade.pipelines.echo_textgen import EchoTextGenPipeline
 from max.pipelines.architectures import register_all_models
 from max.pipelines.lib import PIPELINE_REGISTRY
 from max.pipelines.lib.config import PipelineConfig
@@ -47,6 +48,12 @@ _DUMMY_BUILDERS: dict[str, Callable[[], Awaitable[CascadePipeline]]] = {
     "dummy_textgen": build_dummy_textgen_pipeline,
     "dummy_imgen": build_dummy_imgen_pipeline,
 }
+
+# An ``echo:<repo-id>`` model path selects the echo text-gen pipeline: the real
+# tokenizer for ``<repo-id>`` paired with a token-echoing worker in place of the
+# model. Like the dummy sentinels, selection lives entirely in the model path,
+# so no separate flag threads through the serve CLI and dispatcher.
+_ECHO_PREFIX = "echo:"
 
 
 def count_unique_device_specs(config: PipelineConfig) -> int:
@@ -105,8 +112,13 @@ async def build_pipeline(
 ) -> CascadePipeline:
     """Build the cascade pipeline described by *config*.
 
-    Dummy fixtures (``dummy_textgen`` / ``dummy_imgen``) are matched by exact
-    model path and need no resolution. Every other model is resolved against
+    Selection is driven entirely by the model path. Dummy fixtures
+    (``dummy_textgen`` / ``dummy_imgen``) are matched by exact model path and
+    need no resolution. An ``echo:<repo-id>`` path builds an
+    :class:`EchoTextGenPipeline` for ``<repo-id>``'s real tokenizer with the
+    model worker replaced by a token-echoing worker -- the config is never
+    resolved and no weights are downloaded, so it measures cascade framework
+    overhead without a model forward pass. Every other model is resolved against
     the MAX architectures registry, and its
     :attr:`~max.pipelines.lib.registry.SupportedArchitecture.cascade_pipeline_factory`
     class is constructed from *config*.
@@ -137,6 +149,9 @@ async def build_pipeline(
     model_path = config.model.model_path
     if dummy_builder := _DUMMY_BUILDERS.get(model_path):
         return await dummy_builder()
+
+    if model_path.startswith(_ECHO_PREFIX):
+        return EchoTextGenPipeline(model_path.removeprefix(_ECHO_PREFIX))
 
     arch = _resolve_architecture(config)
     factory = arch.cascade_pipeline_factory

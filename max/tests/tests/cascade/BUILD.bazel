@@ -40,6 +40,19 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_echo_textgen",
+    size = "small",
+    srcs = ["test_echo_textgen.py"],
+    deps = [
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/core",
+        "//max/python/max/experimental/cascade/pipelines",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
     name = "test_chat_completions",
     size = "small",
     srcs = ["test_chat_completions.py"],

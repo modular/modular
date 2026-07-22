@@ -33,6 +33,7 @@ from max.experimental.cascade.pipelines.dummy_imgen import DummyImageGenPipeline
 from max.experimental.cascade.pipelines.dummy_textgen import (
     DummyTextGenPipeline,
 )
+from max.experimental.cascade.pipelines.echo_textgen import EchoTextGenPipeline
 from max.pipelines.architectures import register_all_models
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.lib.config.model_config import MAXModelConfig
@@ -56,6 +57,17 @@ async def test_build_pipeline_dummy_textgen() -> None:
 async def test_build_pipeline_dummy_imgen() -> None:
     pipeline = await all_pipelines.build_pipeline(_config("dummy_imgen"))
     assert isinstance(pipeline, DummyImageGenPipeline)
+
+
+@pytest.mark.asyncio
+async def test_build_pipeline_echo() -> None:
+    # An ``echo:`` model-path prefix skips architecture resolution entirely (no
+    # network), building an echo pipeline for the remaining tokenizer path.
+    pipeline = await all_pipelines.build_pipeline(
+        _config("echo:some-org/some-llm")
+    )
+    assert isinstance(pipeline, EchoTextGenPipeline)
+    assert pipeline.tokenizer.model_path == "some-org/some-llm"
 
 
 @pytest.mark.asyncio
