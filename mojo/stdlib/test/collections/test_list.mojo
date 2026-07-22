@@ -372,15 +372,15 @@ def test_list_insert() raises:
     assert_equal(v1[2], 3)
 
     #
-    # Test the list [1, 2, 3, 4, 5] created with negative and positive index
+    # Test the list [1, 2, 3, 4, 5] created with interior and boundary indices
     #
 
     v2 = List[Int]()
-    v2.insert(-1729, 2)
+    v2.insert(0, 2)
     v2.insert(len(v2), 3)
     v2.insert(len(v2), 5)
-    v2.insert(-1, 4)
-    v2.insert(-len(v2), 1)
+    v2.insert(2, 4)
+    v2.insert(0, 1)
 
     assert_equal(len(v2), 5)
     assert_equal(v2[0], 1)
@@ -390,14 +390,14 @@ def test_list_insert() raises:
     assert_equal(v2[4], 5)
 
     #
-    # Test the list [1, 2, 3, 4] created with negative index
+    # Test the list [1, 2, 3, 4] created by inserting at the front
     #
 
     v3 = List[Int]()
-    v3.insert(-11, 4)
-    v3.insert(-13, 3)
-    v3.insert(-17, 2)
-    v3.insert(-19, 1)
+    v3.insert(0, 4)
+    v3.insert(0, 3)
+    v3.insert(0, 2)
+    v3.insert(0, 1)
 
     assert_equal(len(v3), 4)
     assert_equal(v3[0], 1)
