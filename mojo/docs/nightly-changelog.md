@@ -803,7 +803,7 @@ This version is still a work in progress.
    var my_coord = coord[1, 2, 3]
    ```
 
-   to create a `Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]]`
+  to create a `Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]]`
 
 - Removed `trait_downcast_var()`. Improvements to type refinement based on
   `where conforms_to(..)` and `comptime assert conforms_to(..)` make explicit
@@ -1058,6 +1058,8 @@ This version is still a work in progress.
   error.
 
 - Added support for the Steam Deck's RDNA2 Van Gogh APU.
+
+- The `layout` package is now bundled with MAX instead of Mojo.
 
 ## Removed
 

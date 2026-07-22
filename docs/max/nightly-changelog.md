@@ -667,6 +667,7 @@ This version is still a work in progress.
   negative-zero sentinel, so its communication region is now initialized when
   pipeline signal buffers are allocated; without that the region read as
   already-written and produced non-deterministic results.
+- The `layout` package is now bundled with MAX instead of Mojo.
 
 ## Breaking changes
 
