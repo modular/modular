@@ -1142,3 +1142,7 @@ This version is still a work in progress.
   later `import util` would silently bind the cached failure even when a real
   `util.mojo` exists on the search path, making the module unimportable with
   no diagnostic.
+
+- [#6485](https://github.com/modular/modular/issues/6485) - `Optional[T]` and
+  `Variant[...]` no longer corrupt data for payload types that include a
+  `Bool` field. The fix changes how unions are lowered to LLVM.
