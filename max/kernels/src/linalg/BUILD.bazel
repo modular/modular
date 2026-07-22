@@ -2,6 +2,16 @@ load("//bazel:api.bzl", "mojo_library")
 
 package(default_visibility = ["//max:consumers"])
 
+exports_files(
+    [
+        "matmul/gpu/sm100_structured/default/tuning_configs.mojo",
+        "matmul/gpu/sm100_structured/default/tuning_fp8.mojo.snippet",
+        "matmul/gpu/sm100_structured/default/tuning_fp8_ranged.mojo.snippet",
+        "matmul/gpu/sm100_structured/default/tuning_table_sm100_fp8.yaml",
+    ],
+    visibility = ["//max/kernels/benchmarks/autotune:__pkg__"],
+)
+
 # Raw sources for the LSP parse-smoke test.
 filegroup(
     name = "srcs",

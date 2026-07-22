@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "pkg_files", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "modular_run_binary_test", "pkg_files", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -28,6 +28,33 @@ modular_py_test(
     deps = [
         ":tuning_codegen_lib",
     ],
+)
+
+filegroup(
+    name = "tuning_codegen_table_data",
+    testonly = True,
+    srcs = [
+        "//max/kernels/src/linalg:matmul/gpu/sm100_structured/default/tuning_configs.mojo",
+        "//max/kernels/src/linalg:matmul/gpu/sm100_structured/default/tuning_fp8.mojo.snippet",
+        "//max/kernels/src/linalg:matmul/gpu/sm100_structured/default/tuning_fp8_ranged.mojo.snippet",
+        "//max/kernels/src/linalg:matmul/gpu/sm100_structured/default/tuning_table_sm100_fp8.yaml",
+    ],
+)
+
+modular_run_binary_test(
+    name = "sm100_fp8_tuning_codegen_test",
+    args = [
+        "--check",
+        "--manifest=max/kernels/src/linalg/matmul/gpu/sm100_structured/default/tuning_table_sm100_fp8.yaml",
+        "--snippet=max/kernels/src/linalg/matmul/gpu/sm100_structured/default/tuning_fp8.mojo.snippet",
+        "--snippet-variant=ranged=max/kernels/src/linalg/matmul/gpu/sm100_structured/default/tuning_fp8_ranged.mojo.snippet",
+        "--target=max/kernels/src/linalg/matmul/gpu/sm100_structured/default/tuning_configs.mojo",
+        "--begin-marker=BEGIN-TUNING-LIST-SM100-FP8",
+        "--end-marker=END-TUNING-LIST-SM100-FP8",
+        "--source-label=tuning_table_sm100_fp8.yaml",
+    ],
+    binary = ":tuning_codegen",
+    data = [":tuning_codegen_table_data"],
 )
 
 # Python-only library form of kbench so out-of-tree consumers can build

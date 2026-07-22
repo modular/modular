@@ -657,8 +657,8 @@ def _get_tuning_list_sm100_fp32() -> List[TuningConfigSM100]:
 def _get_tuning_list_sm100_fp8[
     mma_k: Int, bk: Int
 ]() -> List[TuningConfigSM100]:
-    # ----------------BEGIN-TUNING-LIST-SM100-FP8----------------
     comptime config_list = [
+        # ----------------BEGIN-TUNING-LIST-SM100-FP8----------------
         # Automatically generated from [tuning_table_sm100_fp8.yaml]
         # index: [0]
         TuningConfigSM100(
@@ -1811,6 +1811,8 @@ def _get_tuning_list_sm100_fp8[
             block_swizzle_size=8,
             rasterize_order=RasterOrder(1),
         ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [96]
         TuningConfigSM100(
             M=7000,
             M_end=7000 + 32,
@@ -1822,6 +1824,8 @@ def _get_tuning_list_sm100_fp8[
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
         ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [97]
         TuningConfigSM100(
             M=256,
             M_end=256 + 32,
@@ -1833,8 +1837,8 @@ def _get_tuning_list_sm100_fp8[
             block_swizzle_size=1,
             rasterize_order=RasterOrder(1),
         ),
+        # ----------------END-TUNING-LIST-SM100-FP8----------------
     ]
-    # ----------------END-TUNING-LIST-SM100-FP8----------------
 
     return materialize[config_list]()
 
