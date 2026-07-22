@@ -24,7 +24,7 @@ from huggingface_hub import constants as hf_hub_constants
 from max.config import ConfigFileModel
 from max.driver import DeviceSpec
 from max.dtype import DType
-from max.graph.quantization import QuantizationConfig, QuantizationEncoding
+from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import (
     WeightsFormat,
     load_weights,
@@ -349,43 +349,6 @@ def _resolve_component_encoding_and_weights(
     return encoding, weight_path
 
 
-def _finalize_gptq_quant_config(
-    config: MAXModelConfig,
-) -> QuantizationConfig | None:
-    """Builds the GPTQ ``QuantizationConfig`` when applicable.
-
-    Requires ``quantization_encoding`` to be set.
-
-    Returns:
-        The ``QuantizationConfig`` for a ``"gptq"`` encoding, or ``None``
-        for any other encoding.
-    """
-    assert config.quantization_encoding
-
-    if config.quantization_encoding != "gptq":
-        return None
-
-    hf_quant_config = config.huggingface_config.quantization_config
-
-    # This is a bit hacky, but seems like we need it for now.
-    # This warning is for the MAX pipeline to alert users about a GPTQ format we don't support yet.
-    # Instead of running our GPTQ pipeline on this unsupported format and outputting gibberish, we exit early with a clear error message.
-    if str(config.huggingface_config.torch_dtype) not in [
-        "float16",
-        "torch.float16",
-    ]:
-        raise ValueError(
-            f"{config.huggingface_config.torch_dtype} scales are not supported for GPTQ-quantized models."
-        )
-    return QuantizationConfig(
-        quant_method=hf_quant_config["quant_method"],
-        bits=hf_quant_config["bits"],
-        group_size=hf_quant_config["group_size"],
-        desc_act=hf_quant_config["desc_act"],
-        sym=hf_quant_config["sym"],
-    )
-
-
 class MAXModelConfigBase(ConfigFileModel):
     """Abstract base class for MAX model configuration.
 
@@ -611,11 +574,6 @@ class MAXModelConfig(MAXModelConfigBase):
     _weights_repo_id: str | None = PrivateAttr(default=None)
     """Hugging Face repo id to load weights from only. This should only be set by internal code."""
 
-    # TODO(zheng): Refactor QuantizationConfig to be a MAXConfig subclass that
-    # also autopopulates default values.
-    _quant: QuantizationConfig | None = PrivateAttr(default=None)
-    """Optional config for specifying quantization parameters. This should only be set by internal code."""
-
     _cached_weight_repo: HuggingFaceRepo | None = PrivateAttr(default=None)
     """Cached HuggingFaceRepo for weight files. Avoids recreating instances
     (and redundant HF API calls) on every property access."""
@@ -704,7 +662,6 @@ class MAXModelConfig(MAXModelConfigBase):
         private_state.setdefault("_weights_repo_id", None)
         private_state.setdefault("_applied_dtype_cast_from", None)
         private_state.setdefault("_applied_dtype_cast_to", None)
-        private_state.setdefault("_quant", None)
         private_state.setdefault("_cached_weight_repo", None)
         private_state.setdefault("_cached_model_repo", None)
         private_state.setdefault("_config_file_section_name", "model_config")
@@ -1073,8 +1030,6 @@ class MAXModelConfig(MAXModelConfigBase):
     ) -> None:
         """Validates model path and weight path against resolved quantization encoding.
 
-        Also finalizes the encoding config.
-
         Args:
             supported_encodings: A dictionary of supported encodings and their corresponding KV cache strategies.
             default_weights_format: The default weights format to use if no weights format is provided.
@@ -1086,7 +1041,6 @@ class MAXModelConfig(MAXModelConfigBase):
         self._validate_quantization_encoding_device_compatibility(
             supported_encodings_list=list(supported_encodings)
         )
-        self._finalize_encoding_config()
         self._resolve_weight_path(default_weights_format=default_weights_format)
         self._validate_final_architecture_model_path_weight_path()
 
@@ -1116,16 +1070,6 @@ class MAXModelConfig(MAXModelConfigBase):
         self._applied_dtype_cast_from = cast_from
         self._applied_dtype_cast_to = cast_to
         self.quantization_encoding = cast_to
-
-    def _finalize_encoding_config(self) -> None:
-        """Finalizes the encoding config.
-
-        This method should only be called after the quantization encoding has
-        been set.
-        """
-        quant = _finalize_gptq_quant_config(self)
-        if quant is not None:
-            self._quant = quant
 
     def _validate_and_resolve_with_given_quantization_encoding(
         self, weights_format: WeightsFormat | None

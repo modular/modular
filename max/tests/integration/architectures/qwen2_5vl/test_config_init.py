@@ -54,7 +54,6 @@ def _mock_pipeline_config(
     model.device_specs = [DeviceSpec.cpu()]
     model.max_length = None
     model.graph_quantization_encoding = None
-    model._quant = None
     model.use_subgraphs = True
     model.data_parallel_degree = 1
     model.huggingface_config = hf_config

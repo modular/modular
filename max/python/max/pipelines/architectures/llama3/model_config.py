@@ -45,6 +45,7 @@ from max.pipelines.lib.interfaces.arch_config import (
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.weights import gptq_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -320,7 +321,10 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             vocab_size=huggingface_config.vocab_size,
             dtype=dtype,
             model_quantization_encoding=pipeline_config.model.graph_quantization_encoding,
-            quantization_config=pipeline_config.model._quant,
+            quantization_config=gptq_quant_config(
+                pipeline_config.model.quantization_encoding,
+                pipeline_config.model.huggingface_config,
+            ),
             max_seq_len=Llama3Config.calculate_max_seq_len(
                 pipeline_config,
                 huggingface_config=huggingface_config,
