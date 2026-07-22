@@ -300,14 +300,6 @@ This version is still a work in progress.
   `reasoning_content` instead of `reasoning` (the two are never emitted
   together). This restores the `reasoning_content` field for clients that
   require it; it remains off by default, so responses emit `reasoning` only.
-- Requests whose text contains an unpaired UTF-16 surrogate (valid JSON but not
-  valid UTF-8, for example an emoji split by client-side truncation) are now
-  handled gracefully. By default the surrogate is normalized to the Unicode
-  replacement character (U+FFFD) and the request proceeds, instead of failing
-  with a 500 or a misleading "Invalid JSON." 400. A new opt-in
-  `MAX_SERVE_REJECT_INVALID_UTF8` server config instead rejects such requests
-  with an accurate 400 that names the offending position, identically across the
-  streaming and non-streaming chat paths and `/v1/completions`.
 - Improved time-to-first-token for multimodal requests by making the image and
   video preprocessor reject and decode media more efficiently. Oversized media
   is now rejected before its bytes are fully materialized: an `http(s)` download
