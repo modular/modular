@@ -221,7 +221,7 @@ struct String(
     # form when '_capacity_or_data.is_inline()' is true. The inline form
     # clobbers these fields (except the top byte of the capacity field) with
     # the string data.
-    var _ptr_or_data: UnsafePointer[UInt8, MutUntrackedOrigin]
+    var _ptr_or_data: Pointer[UInt8, MutUntrackedOrigin]
     """The underlying storage for the string data."""
     var _len_or_data: Int
     """The number of bytes in the string data."""
@@ -354,9 +354,9 @@ struct String(
         self._len_or_data = Int(
             SIMDLength(mlir_value=__mlir_op.`pop.string.size`(data.value))
         )
-        self._ptr_or_data = UnsafePointer[_, MutUntrackedOrigin](
+        self._ptr_or_data = Pointer[_, MutUntrackedOrigin](
             _mlir_value=__mlir_op.`pop.string.address`(data.value)
-        ).bitcast[Byte]()
+        ).unsafe_bitcast[Byte]()
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary unsafe_memcpy.
         self._capacity_or_data = Self.FLAG_HAS_NUL_TERMINATOR
@@ -614,7 +614,7 @@ struct String(
         self = String(
             StringSlice(
                 unsafe_from_utf8=CStringSlice(
-                    unsafe_from_ptr=unsafe_from_utf8_ptr.bitcast[Int8]()
+                    unsafe_from_ptr=unsafe_from_utf8_ptr.unsafe_bitcast[Int8]()
                 )
             )
         )
@@ -635,7 +635,7 @@ struct String(
         self = String(
             StringSlice(
                 unsafe_from_utf8=CStringSlice(
-                    unsafe_from_ptr=unsafe_from_utf8_ptr.bitcast[Int8]()
+                    unsafe_from_ptr=unsafe_from_utf8_ptr.unsafe_bitcast[Int8]()
                 )
             )
         )
@@ -718,9 +718,9 @@ struct String(
     @always_inline("nodebug")
     def _refcount(self) -> ref[self._ptr_or_data.origin] Atomic[DType.int]:
         # The header is stored before the string data.
-        return (self._ptr_or_data - Self.REF_COUNT_SIZE).bitcast[
-            Atomic[DType.int]
-        ]()[]
+        return self._ptr_or_data.unsafe_offset(
+            -Self.REF_COUNT_SIZE
+        ).unsafe_bitcast[Atomic[DType.int]]()[]
 
     @always_inline("nodebug")
     def _is_unique(mut self) -> Bool:
@@ -744,8 +744,8 @@ struct String(
         hits zero."""
         # If indirect or inline we don't need to do anything.
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
-            var ptr = self._ptr_or_data - Self.REF_COUNT_SIZE
-            var refcount = ptr.bitcast[Atomic[DType.int]]()
+            var ptr = self._ptr_or_data.unsafe_offset(-Self.REF_COUNT_SIZE)
+            var refcount = ptr.unsafe_bitcast[Atomic[DType.int]]()
             if refcount[].fetch_sub(1) == 1:
                 fence[Ordering.ACQUIRE]()
                 dealloc(
@@ -759,7 +759,7 @@ struct String(
                 )
 
     @staticmethod
-    def _alloc(capacity: Int) -> UnsafePointer[Byte, MutUntrackedOrigin]:
+    def _alloc(capacity: Int) -> Pointer[Byte, MutUntrackedOrigin]:
         """Allocate space for a new out-of-line string buffer."""
         var ptr = alloc(
             Layout[Byte](count=capacity + Self.REF_COUNT_SIZE)
@@ -767,12 +767,12 @@ struct String(
 
         # Initialize the Atomic refcount into the header.
         __get_address_as_uninit_lvalue(
-            ptr.bitcast[Atomic[DType.int]]()._get_kgen_pointer()
+            ptr.unsafe_bitcast[Atomic[DType.int]]()._get_kgen_pointer()
         ) = Atomic[DType.int](1)
 
         # Return a pointer to right after the header, which is where the string
         # data will be stored.
-        return ptr + Self.REF_COUNT_SIZE
+        return ptr.unsafe_offset(Self.REF_COUNT_SIZE)
 
     # ===------------------------------------------------------------------=== #
     # Factory dunders
@@ -1417,8 +1417,8 @@ struct String(
         if self._is_inline():
             # The string itself holds the data.
             return (
-                UnsafePointer(to=self)
-                .bitcast[Byte]()
+                Pointer(to=self)
+                .unsafe_bitcast[Byte]()
                 .as_immutable()
                 .unsafe_origin_cast[origin_of(self)]()
             )
@@ -1463,11 +1463,13 @@ struct String(
         if not self._has_nul_terminator():
             var ptr = self.unsafe_ptr_mut(capacity=self.byte_length() + 1)
             var len = self.byte_length()
-            ptr[len] = 0
+            ptr[unsafe_offset=len] = 0
             self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
 
         # Safety: we ensure the string is null-terminated above.
-        return CStringSlice(unsafe_from_ptr=self.unsafe_ptr().bitcast[c_char]())
+        return CStringSlice(
+            unsafe_from_ptr=self.unsafe_ptr().unsafe_bitcast[c_char]()
+        )
 
     @__unsafe_nested_origins_read_only
     def as_bytes(
@@ -2287,10 +2289,10 @@ struct String(
         var length = self.byte_length()
         var new_string = Self()
         new_string.set_byte_length(length)
-        var dst = UnsafePointer(to=new_string).bitcast[Byte]()
+        var dst = Pointer(to=new_string).unsafe_bitcast[Byte]()
         var src = self.unsafe_ptr()
         for i in range(length):
-            dst[i] = src[i]
+            dst[unsafe_offset=i] = src[unsafe_offset=i]
         self = new_string^
 
     # This is the out-of-line implementation of reserve called when we need
