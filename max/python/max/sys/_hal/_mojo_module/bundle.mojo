@@ -54,7 +54,7 @@ struct Bundle(Movable, Writable):
 
     @staticmethod
     def get_function_name(
-        self_ptr: UnsafePointer[Self, MutAnyOrigin],
+        self_ptr: Pointer[Self, MutAnyOrigin],
     ) raises -> PythonObject:
         return PythonObject(self_ptr[]._function_name)
 

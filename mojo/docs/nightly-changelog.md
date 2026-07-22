@@ -825,6 +825,14 @@ This version is still a work in progress.
   fastcall callbacks only need to update the parameter's spelling in their
   signature and read the borrowed arguments with `args[unsafe_offset=i]`.
 
+- Typed-self methods registered through `PythonTypeBuilder.def_method()` now
+  declare their self parameter as a safe `Pointer[Self]` instead of an
+  `UnsafePointer[Self]`, and the extension argument helpers
+  `check_and_get_arg()` and `check_and_get_or_convert_arg()` return a safe
+  `Pointer`. The two pointer types share the same layout, so behavior is
+  unchanged; update method signatures to spell `Pointer` (for example,
+  `self_ptr: Pointer[mut=True, Self]`).
+
 - Iterating over a `String`, `StringSlice`, or `StringLiteral` now yields
   grapheme clusters by default. Their `__iter__()` and `__reversed__()` methods
   return a `GraphemeSliceIter`, so `for c in my_string:` produces what a user

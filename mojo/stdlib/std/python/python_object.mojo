@@ -1480,6 +1480,8 @@ struct PythonObject(
                 )
             )
 
+    # TODO(MSTDL-2875): returns UnsafePointer to match the public
+    # downcast_value_ptr boundary; migrate together.
     def _try_downcast_value[
         T: ImplicitlyDeletable
     ](var self) raises -> Optional[UnsafePointer[T, MutAnyOrigin]]:

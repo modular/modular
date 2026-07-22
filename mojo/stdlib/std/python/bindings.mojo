@@ -1544,9 +1544,9 @@ def check_arguments_arity(
 
 def check_and_get_arg[
     T: ImplicitlyDeletable
-](
-    func_name: StaticString, py_args: PythonObject, index: Int
-) raises -> UnsafePointer[T, MutAnyOrigin]:
+](func_name: StaticString, py_args: PythonObject, index: Int) raises -> Pointer[
+    T, MutAnyOrigin
+]:
     """Get the argument at the given index and downcast it to a given Mojo type.
 
     Parameters:
@@ -1621,9 +1621,9 @@ def _try_convert_arg[
 @always_inline
 def check_and_get_or_convert_arg[
     T: ConvertibleFromPython
-](
-    func_name: StaticString, py_args: PythonObject, index: Int
-) raises -> UnsafePointer[T, MutAnyOrigin]:
+](func_name: StaticString, py_args: PythonObject, index: Int) raises -> Pointer[
+    T, MutAnyOrigin
+]:
     """Get the argument at the given index and convert it to a given Mojo type.
 
     If the argument cannot be directly downcast to the given type, it will be
@@ -1666,9 +1666,9 @@ def check_and_get_or_convert_arg[
 @always_inline
 def check_and_get_or_convert_arg[
     T: type_of(Int)
-](
-    func_name: StaticString, py_args: PythonObject, index: Int
-) raises -> UnsafePointer[Int, MutAnyOrigin]:
+](func_name: StaticString, py_args: PythonObject, index: Int) raises -> Pointer[
+    Int, MutAnyOrigin
+]:
     """Get the argument at the given index and convert it to a given Mojo type.
 
     If the argument cannot be directly downcast to the given type, it will be
