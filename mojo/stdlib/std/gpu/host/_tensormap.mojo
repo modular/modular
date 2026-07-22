@@ -283,7 +283,7 @@ def create_tensormap[
     # TensorMap is @align(64) so stack allocation is automatically 64-byte aligned.
     # https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__TENSOR__MEMORY.html
     var tensormap = TensorMap()
-    var tensormap_ptr = UnsafePointer(to=tensormap).bitcast[NoneType]()
+    var tensormap_ptr = Pointer(to=tensormap).unsafe_bitcast[NoneType]()
 
     var global_dim_arg = InlineArray[Int64, rank](uninitialized=True)
     var global_strides_arg = InlineArray[Int64, rank](uninitialized=True)
@@ -316,7 +316,7 @@ def create_tensormap[
         Int32(rank),
         global_dim_arg.unsafe_ptr(),
         # global_strides_arg[0] is implicitly size_of[dtype]()
-        global_strides_arg.unsafe_ptr() + 1,
+        global_strides_arg.unsafe_ptr().unsafe_offset(1),
         box_dim_arg.unsafe_ptr(),
         element_stride_arg.unsafe_ptr(),
         InterleaveMode.NONE._value,
@@ -386,7 +386,7 @@ def create_tensormap_im2col[
     ), "spatial_rank must equal rank - 2 (excluding batch and channel)"
 
     var tensormap = TensorMap()
-    var tensormap_ptr = UnsafePointer(to=tensormap).bitcast[NoneType]()
+    var tensormap_ptr = Pointer(to=tensormap).unsafe_bitcast[NoneType]()
 
     # Convert from row-major NHWC to column-major CWHDN for TMA API
     # Row-major NHWC: N is dim 0, H is dim 1, W is dim 2, C is dim 3
@@ -415,7 +415,7 @@ def create_tensormap_im2col[
         Int32(rank),
         global_dim_arg.unsafe_ptr(),
         # global_strides_arg[0] is implicitly size_of[dtype]()
-        global_strides_arg.unsafe_ptr() + 1,
+        global_strides_arg.unsafe_ptr().unsafe_offset(1),
         lower_corner_arg.unsafe_ptr(),
         upper_corner_arg.unsafe_ptr(),
         Int32(channels_per_pixel),

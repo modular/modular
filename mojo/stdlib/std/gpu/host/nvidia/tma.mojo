@@ -371,7 +371,7 @@ def create_tma_descriptor[
     """
     # TMADescriptor is @align(64) so stack allocation is automatically 64-byte aligned.
     var tma_descriptor = TMADescriptor()
-    var tensor_map_ptr = UnsafePointer(to=tma_descriptor).bitcast[NoneType]()
+    var tensor_map_ptr = Pointer(to=tma_descriptor).unsafe_bitcast[NoneType]()
 
     # NOTE: These are initialized in the comptime loop below.
     var global_dim_arg = InlineArray[Int64, rank](uninitialized=True)
@@ -400,7 +400,7 @@ def create_tma_descriptor[
         Int32(rank),
         global_dim_arg.unsafe_ptr(),
         # global_strides_arg[0] is implicitly size_of[dtype]()
-        global_strides_arg.unsafe_ptr() + 1,
+        global_strides_arg.unsafe_ptr().unsafe_offset(1),
         box_dim_arg.unsafe_ptr(),
         element_stride_arg.unsafe_ptr(),
         TensorMapInterleave.INTERLEAVE_NONE._value,

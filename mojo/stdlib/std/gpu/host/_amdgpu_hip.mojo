@@ -49,7 +49,7 @@ def HIP(ctx: DeviceContext) raises -> hipDevice_t:
     # const char *AsyncRT_DeviceContext_hip_device(hipDevice_t *result, const DeviceContext *ctx)
     _checked(
         external_call["AsyncRT_DeviceContext_hip_device", _CString[]](
-            UnsafePointer(to=result),
+            Pointer(to=result),
             ctx._handle,
         )
     )
@@ -67,7 +67,7 @@ def HIP(stream: DeviceStream) raises -> hipStream_t:
             "AsyncRT_DeviceStream_hip_stream",
             _CString[],
         ](
-            UnsafePointer(to=result),
+            Pointer(to=result),
             stream._handle,
         )
     )
@@ -84,7 +84,7 @@ def HIP_MODULE(func: DeviceFunction) raises -> hipModule_t:
             "AsyncRT_DeviceFunction_hip_module",
             _CString[],
         ](
-            UnsafePointer(to=result),
+            Pointer(to=result),
             func._handle,
         )
     )
