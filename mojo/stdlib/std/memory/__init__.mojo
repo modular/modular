@@ -31,7 +31,10 @@ from .memory import (
     memcmp,
     memcpy,
     unsafe_memcpy,
+    # TODO(MSTDL-2918): Remove this export once the `memmove` deprecation is
+    # dropped; callers should use `unsafe_memmove`.
     memmove,
+    unsafe_memmove,
     memset,
     memset_zero,
     destroy_n,

@@ -481,6 +481,9 @@ This version is still a work in progress.
   `SIMD[...]` form. This only affects `repr()`; `String(...)` / `print(...)`
   output is unchanged.
 
+- Renamed `memmove` to `unsafe_memmove` to make its unsafety explicit. The old
+  `memmove` name is deprecated and will be removed in a future release.
+
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
   `destroy_func`, so it can clear a `Dict` whose key or value type is not

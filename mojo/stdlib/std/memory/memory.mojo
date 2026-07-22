@@ -318,12 +318,12 @@ def memcpy[
 
 
 @always_inline
-def memmove[
+def unsafe_memmove[
     T: AnyType
 ](*, dest: Pointer[mut=True, T, _], src: Pointer[mut=False, T, _], count: Int,):
     """Copy `count * size_of[T]()` bytes from src to dest.
 
-    Unlike `memcpy`, the memory regions are allowed to overlap.
+    Unlike `unsafe_memcpy`, the memory regions are allowed to overlap.
 
     Parameters:
         T: The element type.
@@ -347,6 +347,31 @@ def memmove[
             n,
             False,
         )
+
+
+@always_inline
+@deprecated(use=unsafe_memmove)
+def memmove[
+    T: AnyType
+](
+    *,
+    dest: UnsafePointer[mut=True, T, _],
+    src: UnsafePointer[mut=False, T, _],
+    count: Int,
+):
+    """Copy `count * size_of[T]()` bytes from src to dest.
+
+    Unlike `memcpy`, the memory regions are allowed to overlap.
+
+    Parameters:
+        T: The element type.
+
+    Args:
+        dest: The destination pointer.
+        src: The source pointer.
+        count: The number of elements to copy.
+    """
+    unsafe_memmove(dest=dest, src=src, count=count)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -564,8 +589,8 @@ def uninit_move_n[
     initialized.
 
     For types with trivial move constructors, this is optimized to a single
-    `unsafe_memcpy` (or `memmove` when `overlapping=True`) operation. Otherwise,
-    it manually moves each element.
+    `unsafe_memcpy` (or `unsafe_memmove` when `overlapping=True`) operation.
+    Otherwise, it manually moves each element.
 
     The destination memory is treated as a raw span of bits to write to. Any
     existing values at `dest` are silently overwritten without being destroyed.
@@ -578,8 +603,8 @@ def uninit_move_n[
         T: The type of values to move, which must be `Movable`.
         overlapping: If False, the function assumes `src` and `dest` do not
             overlap and uses `unsafe_memcpy`. If True, the function assumes
-            `src` and `dest` may overlap and uses `memmove` to handle this
-            safely.
+            `src` and `dest` may overlap and uses `unsafe_memmove` to handle
+            this safely.
 
     Args:
         dest: Pointer to the destination memory region.
@@ -600,7 +625,7 @@ def uninit_move_n[
 
     comptime if is_trivially_movable[T]():
         comptime if overlapping:
-            memmove(dest=dest, src=src, count=count)
+            unsafe_memmove(dest=dest, src=src, count=count)
         else:
             unsafe_memcpy(dest=dest, src=src, count=count)
     else:
@@ -622,8 +647,8 @@ def uninit_copy_n[
     valid and initialized.
 
     For types with trivial copy constructors, this is optimized to a single
-    `unsafe_memcpy` (or `memmove` when `overlapping=True`) operation. Otherwise,
-    it calls `unsafe_write()` on each element.
+    `unsafe_memcpy` (or `unsafe_memmove` when `overlapping=True`) operation.
+    Otherwise, it calls `unsafe_write()` on each element.
 
     The destination memory is treated as a raw span of bits to write to. Any
     existing values at `dest` are silently overwritten without being destroyed.
@@ -636,8 +661,8 @@ def uninit_copy_n[
         T: The type of values to copy, which must be `Copyable`.
         overlapping: If False, the function assumes `src` and `dest` do not
             overlap and uses `unsafe_memcpy`. If True, the function assumes
-            `src` and `dest` may overlap and uses `memmove` to handle this
-            safely.
+            `src` and `dest` may overlap and uses `unsafe_memmove` to handle
+            this safely.
 
     Args:
         dest: Pointer to the destination memory region.
@@ -658,7 +683,7 @@ def uninit_copy_n[
 
     comptime if is_trivially_copyable[T]():
         comptime if overlapping:
-            memmove(dest=dest, src=src, count=count)
+            unsafe_memmove(dest=dest, src=src, count=count)
         else:
             unsafe_memcpy(dest=dest, src=src, count=count)
     else:

@@ -18,7 +18,7 @@ from std.memory import (
     destroy_n,
     memcmp,
     unsafe_memcpy,
-    memmove,
+    unsafe_memmove,
     memset,
     memset_zero,
     uninit_copy_n,
@@ -791,7 +791,7 @@ def test_indexing() raises:
 def test_memmove_overlapping_regions() raises:
     var list = [1, 2, 3, 4, 5, 6, 7]
     # shift all values down by 1
-    memmove(
+    unsafe_memmove(
         # NOTE: need `as_unsafe_any_origin` to avoid exclusivity violations
         dest=list.unsafe_ptr().as_unsafe_any_origin(),
         src=list.unsafe_ptr().as_unsafe_any_origin() + 1,
@@ -804,7 +804,9 @@ def test_memmove_non_overlapping_regions() raises:
     var list1 = [1, 2, 3]
     var list2 = [4, 5, 6]
     # shift all values down by 1
-    memmove(dest=list1.unsafe_ptr(), src=list2.unsafe_ptr(), count=len(list1))
+    unsafe_memmove(
+        dest=list1.unsafe_ptr(), src=list2.unsafe_ptr(), count=len(list1)
+    )
     assert_equal(list1, [4, 5, 6])
     assert_equal(list2, [4, 5, 6])
 
