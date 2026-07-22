@@ -62,7 +62,7 @@ comptime BAND_MS = [25, 27, 29, 31, 8, 16, 64, 128]
 @parameter
 @always_inline
 def scaled_compute_fn[
-    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
     # Mirror MatmulStaticScaledFloat8's SM100 compute lambda: accumulate in
     # fp32, apply the scalar scale, cast back to output dtype (bf16).

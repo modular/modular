@@ -172,7 +172,7 @@ def rms_norm_op[
                 @parameter
                 @__copy_capture(out_ptr, feature_dim)
                 def output_fn[
-                    width: SIMDSize, rank: Int, alignment: Int
+                    width: SIMDLength, rank: Int, alignment: Int
                 ](coords: IndexList[rank], val: SIMD[dtype, width]):
                     var c = rebind[IndexList[2]](coords)
                     var flat_idx = c[0] * feature_dim + c[1]

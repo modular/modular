@@ -677,7 +677,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
     @__copy_capture(c_normal_tensor)
     def epilogue_fn_normal[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -690,7 +690,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
     @__copy_capture(c_swapAB_tensor)
     def epilogue_fn_swapAB[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:

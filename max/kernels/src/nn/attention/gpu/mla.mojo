@@ -3612,7 +3612,7 @@ def flare_mla_prefill_dispatch[
         )
 
 
-@__llvm_metadata(`rocdl.waves_per_eu`=SIMDSize(2))
+@__llvm_metadata(`rocdl.waves_per_eu`=SIMDLength(2))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(config.num_threads())

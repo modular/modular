@@ -13,7 +13,7 @@
 
 
 def slice[
-    dtype: DType, size: SIMDSize, //
+    dtype: DType, size: SIMDLength, //
 ](x: SIMD[dtype, size], offset: Int) -> SIMD[dtype, size // 2]:
     comptime new_size = size // 2
     var result = SIMD[dtype, new_size]()

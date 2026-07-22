@@ -199,7 +199,7 @@ trait TensorStorage:
     def load[
         dtype: DType,
         //,
-        width: SIMDSize,
+        width: SIMDLength,
         alignment: Int,
         invariant: Bool = False,
         non_temporal: Bool = False,
@@ -227,7 +227,7 @@ trait TensorStorage:
     def load[
         dtype: DType,
         //,
-        width: SIMDSize,
+        width: SIMDLength,
         alignment: Int,
         invariant: Bool = False,
         non_temporal: Bool = False,
@@ -1241,7 +1241,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
     def load[
         dtype: DType,
         //,
-        width: SIMDSize,
+        width: SIMDLength,
         alignment: Int,
         invariant: Bool = False,
         non_temporal: Bool = False,
@@ -1275,7 +1275,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
     def load[
         dtype: DType,
         //,
-        width: SIMDSize,
+        width: SIMDLength,
         alignment: Int,
         invariant: Bool = False,
         non_temporal: Bool = False,
@@ -2270,7 +2270,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
     def load[
         dtype: DType,
         //,
-        width: SIMDSize,
+        width: SIMDLength,
         alignment: Int,
         invariant: Bool = False,
         non_temporal: Bool = False,
@@ -2307,7 +2307,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
     def load[
         dtype: DType,
         //,
-        width: SIMDSize,
+        width: SIMDLength,
         alignment: Int,
         invariant: Bool = False,
         non_temporal: Bool = False,
@@ -3248,7 +3248,7 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
     def load[
         dtype: DType,
         //,
-        width: SIMDSize,
+        width: SIMDLength,
         alignment: Int,
         invariant: Bool = False,
         non_temporal: Bool = False,
@@ -3282,7 +3282,7 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
     def load[
         dtype: DType,
         //,
-        width: SIMDSize,
+        width: SIMDLength,
         alignment: Int,
         invariant: Bool = False,
         non_temporal: Bool = False,

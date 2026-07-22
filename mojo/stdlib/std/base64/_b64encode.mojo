@@ -55,7 +55,7 @@ def _base64_simd_mask[
 # |                                                                   |
 # |--- ascii(d) ---|--- ascii(c) ---|--- ascii(b) ---|--- ascii(a) ---|
 # |. . d₅d₄d₃d₂d₁d₀|. . c₅c₄c₃c₂c₁c₀|. . b₅b₄b₃b₂b₁b₀|. . a₅a₄a₃a₂a₁a₀|
-def _6bit_to_byte[width: SIMDSize](input: Bytes[width]) -> Bytes[width]:
+def _6bit_to_byte[width: SIMDLength](input: Bytes[width]) -> Bytes[width]:
     comptime assert width in [
         4,
         8,
@@ -117,7 +117,7 @@ comptime END_SECOND_RANGE = 51
 # fmt: on
 
 
-def _to_b64_ascii[width: SIMDSize, //](input: Bytes[width]) -> Bytes[width]:
+def _to_b64_ascii[width: SIMDLength, //](input: Bytes[width]) -> Bytes[width]:
     var abcd = _6bit_to_byte(input)
     var target_indices = _sub_with_saturation(abcd, END_SECOND_RANGE)
     var offset_indices = abcd.gt(END_FIRST_RANGE).select(target_indices, 13)
@@ -292,7 +292,7 @@ def _rshift_bits_in_u16[shift: Int](input: Bytes) -> type_of(input):
 
 @always_inline
 def _sub_with_saturation[
-    width: SIMDSize, //
+    width: SIMDLength, //
 ](a: SIMD[DType.uint8, width], b: SIMD[DType.uint8, width]) -> SIMD[
     DType.uint8, width
 ]:

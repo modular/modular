@@ -364,7 +364,7 @@ struct MLA_SM100_Decode_Sparse[
             Int32(Self.config.num_threads)
         )
     )
-    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDLength(1))
     def kernel(
         q_tma: QOTMATile[
             dtype=Self.q_type,

@@ -112,7 +112,7 @@ trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDeletable):
 def elementwise_epilogue_c_tile[
     simd_width: Int,
     c_type: DType,
-    func: def[dtype: DType, width: SIMDSize, *, alignment: Int = 1](
+    func: def[dtype: DType, width: SIMDLength, *, alignment: Int = 1](
         IndexList[2], SIMD[dtype, width]
     ) capturing -> None,
 ](
@@ -721,7 +721,7 @@ def matmul[
         @parameter
         @always_inline
         def cast_epilogue[
-            dtype: DType, width: SIMDSize, *, alignment: Int = 1
+            dtype: DType, width: SIMDLength, *, alignment: Int = 1
         ](coord: IndexList[2], val: SIMD[dtype, width]):
             var cast_val = val.cast[c.dtype]()
             comptime if elementwise_lambda_fn:

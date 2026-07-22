@@ -135,7 +135,7 @@ def _elementwise_impl_cpu_nd[
     var total_size = shape.product()
 
     var num_workers = _get_num_workers(total_size, ctx=ctx)
-    var parallelism_size = total_size // SIMDSize(shape[rank - 1].value())
+    var parallelism_size = total_size // SIMDLength(shape[rank - 1].value())
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
     @always_inline
@@ -165,7 +165,7 @@ def _elementwise_impl_cpu_nd[
 
             # We vectorize over the innermost dimension.
             vectorize[simd_width, unroll_factor=unroll_factor](
-                SIMDSize(shape[rank - 1].value()), func_wrapper_nd
+                SIMDLength(shape[rank - 1].value()), func_wrapper_nd
             )
 
     sync_parallelize(task_func, num_workers, ctx)

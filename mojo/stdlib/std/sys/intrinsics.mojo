@@ -85,7 +85,7 @@ def llvm_intrinsic[
 @always_inline("nodebug")
 def gather[
     dtype: DType,
-    size: SIMDSize,
+    size: SIMDLength,
     //,
     *,
     invariant: Bool = False,
@@ -183,7 +183,7 @@ def gather[
 @always_inline("nodebug")
 def scatter[
     dtype: DType,
-    size: SIMDSize,
+    size: SIMDLength,
     //,
     alignment: Int = 0,
 ](
@@ -524,7 +524,7 @@ def prefetch[
 def masked_load[
     dtype: DType,
     //,
-    size: SIMDSize,
+    size: SIMDLength,
     alignment: Int = 1,
 ](
     addr: UnsafePointer[mut=False, Scalar[dtype], ...],
@@ -571,7 +571,7 @@ def masked_load[
 
 @always_inline("nodebug")
 def masked_store[
-    size: SIMDSize,
+    size: SIMDLength,
     alignment: Int = 1,
 ](
     value: SIMD,
@@ -611,7 +611,7 @@ def masked_store[
 
 @always_inline("nodebug")
 def compressed_store[
-    dtype: DType, size: SIMDSize
+    dtype: DType, size: SIMDLength
 ](
     value: SIMD[dtype, size],
     addr: UnsafePointer[mut=True, Scalar[dtype], ...],
@@ -649,7 +649,7 @@ def compressed_store[
 
 @always_inline("nodebug")
 def strided_load[
-    dtype: DType, //, simd_width: SIMDSize, *, invariant: Bool = False
+    dtype: DType, //, simd_width: SIMDLength, *, invariant: Bool = False
 ](
     addr: UnsafePointer[mut=False, Scalar[dtype], ...],
     stride: Int,
@@ -702,7 +702,7 @@ def strided_load[
 
 @always_inline("nodebug")
 def strided_store[
-    dtype: DType, //, simd_width: SIMDSize
+    dtype: DType, //, simd_width: SIMDLength
 ](
     value: SIMD[dtype, simd_width],
     addr: UnsafePointer[mut=True, Scalar[dtype], ...],

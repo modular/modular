@@ -363,7 +363,7 @@ def _verify_add_results[
         @parameter
         def add_epilogue_v[
             _dtype: DType,
-            _width: SIMDSize,
+            _width: SIMDLength,
             *,
             _alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, size=_width]) -> None:
@@ -942,7 +942,7 @@ def bench_allreduce_rmsnorm_fp8[
                 @parameter
                 def add_epilogue[
                     _dtype: DType,
-                    _width: SIMDSize,
+                    _width: SIMDLength,
                     *,
                     _alignment: Int,
                 ](coords: Coord, val: SIMD[_dtype, size=_width]) -> None:

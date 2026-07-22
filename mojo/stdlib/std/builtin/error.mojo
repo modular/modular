@@ -106,7 +106,7 @@ struct StackTrace(Copyable, Movable, Writable):
 
         var buffer = Optional[Pointer[UInt8, MutUntrackedOrigin]]()
         var num_bytes = external_call[
-            "KGEN_CompilerRT_GetStackTrace", SIMDSize
+            "KGEN_CompilerRT_GetStackTrace", SIMDLength
         ](Pointer(to=buffer), depth)
         # When num_bytes is zero, the stack trace was not collected.
         if num_bytes == 0:

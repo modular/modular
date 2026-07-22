@@ -87,7 +87,7 @@ from std.itertools import product
 
 
 comptime elementwise_epilogue_type = def[
-    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](IndexList[2], SIMD[dtype, width]) capturing -> None
 """Type alias for a fused elementwise epilogue lambda.
 

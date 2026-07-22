@@ -59,7 +59,7 @@ from .sync import (
 comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
 
 comptime elementwise_epilogue_type = def[
-    dtype: DType, width: SIMDSize, *, alignment: Int
+    dtype: DType, width: SIMDLength, *, alignment: Int
 ](Coord, SIMD[dtype, size=width]) capturing -> None
 
 
@@ -657,7 +657,7 @@ def reducescatter[
     @__copy_capture(output_buffer)
     def default_output_lambda[
         _dtype: DType,
-        _width: SIMDSize,
+        _width: SIMDLength,
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None:

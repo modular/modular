@@ -88,7 +88,7 @@ from std.utils.numerics import get_accum_type
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 comptime elementwise_epilogue_type = def[
-    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](IndexList[2], SIMD[dtype, width]) capturing -> None
 
 comptime router_weights_wrapper_type = def[width: Int](
@@ -4076,7 +4076,7 @@ def combine_kernel[
                 @always_inline
                 @parameter
                 def add_shared_expert_output[
-                    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+                    dtype: DType, width: SIMDLength, *, alignment: Int = 1
                 ](
                     idx: IndexList[2], combined_val: SIMD[dtype, width]
                 ) capturing:
@@ -4763,7 +4763,7 @@ def fused_silu_nvfp4_interleaved_kernel[
 @always_inline
 def _sigmoid[
     dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     accum: DType = get_accum_type[dtype](),
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     # Local copy: shmem can't import nn (nn -> shmem import cycle).

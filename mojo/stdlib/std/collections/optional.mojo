@@ -956,27 +956,27 @@ struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
     @always_inline
     def __init__(out self):
         self._value = __mlir_op.`kgen.variant.create`[
-            _type=Self._mlir_type, index=SIMDSize(1)._mlir_value
+            _type=Self._mlir_type, index=SIMDLength(1)._mlir_value
         ](__mlir_attr.false)
 
     @always_inline
     def __init__[U: TrivialRegisterPassable](out self, value: U):
         comptime assert U == Self.T
         self._value = __mlir_op.`kgen.variant.create`[
-            _type=Self._mlir_type, index=SIMDSize(0)._mlir_value
+            _type=Self._mlir_type, index=SIMDLength(0)._mlir_value
         ](rebind[Self.T](value))
 
     @always_inline
     def value[U: TrivialRegisterPassable](self) -> U:
         comptime assert U == Self.T
-        var value = __mlir_op.`kgen.variant.get`[index=SIMDSize(0)._mlir_value](
-            self._value
-        )
+        var value = __mlir_op.`kgen.variant.get`[
+            index=SIMDLength(0)._mlir_value
+        ](self._value)
         return rebind[U](value)
 
     @always_inline
     def __bool__(self) -> Bool:
-        return __mlir_op.`kgen.variant.is`[index=SIMDSize(0)._mlir_value](
+        return __mlir_op.`kgen.variant.is`[index=SIMDLength(0)._mlir_value](
             self._value
         )
 

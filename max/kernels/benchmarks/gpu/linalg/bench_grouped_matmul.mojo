@@ -91,7 +91,7 @@ def _get_run_name[
 
 
 comptime epilogue_func_type = def[
-    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
@@ -106,7 +106,7 @@ def test_epilogue[
 @parameter
 def add_two[
     dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     *,
     alignment: Int = 1,
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -275,7 +275,7 @@ def bench_grouped_matmul[
     @__copy_capture(c_dev)
     @parameter
     def epilogue_fn[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
 

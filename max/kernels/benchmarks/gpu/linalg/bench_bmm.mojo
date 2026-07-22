@@ -82,7 +82,7 @@ def _get_run_name[
 
 
 comptime epilogue_func_type = def[
-    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
@@ -90,7 +90,7 @@ comptime epilogue_func_type = def[
 @parameter
 def elementwise_epilogue_fn[
     dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     *,
     alignment: Int = 1,
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -162,7 +162,7 @@ def bench_bmm[
     @__copy_capture(c_device)
     def epilogue_fn[
         dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         rank: Int,
         *,
         alignment: Int = 1,

@@ -553,11 +553,11 @@ This version is still a work in progress.
   to this `Scalar` type. Because of this some conversions have become more
   strict.
 
-  A new `SIMDSize` type has been added for the width of `SIMD` itself and must
+  A new `SIMDLength` type has been added for the width of `SIMD` itself and must
   be used when inferring a parameter based on a SIMD argument like so:
 
   ```mojo
-  def frob[w: SIMDSize](v: SIMD[DType.int, w]): ...
+  def frob[w: SIMDLength](v: SIMD[DType.int, w]): ...
   ```
 
   Alternatively the width can be unbound if you simply want to be parametric
@@ -568,6 +568,9 @@ This version is still a work in progress.
   ```
 
   The new `Int` should still be used in all other situations.
+
+  This type was briefly named `SIMDSize` earlier in this nightly cycle;
+  `SIMDSize` remains as a deprecated alias for `SIMDLength`.
 
 - `chdir` has been added to the `std.os` module and an `fchdir` method has been
   added to `io.FileDescriptor`. These are wrappers for the corresponding POSIX

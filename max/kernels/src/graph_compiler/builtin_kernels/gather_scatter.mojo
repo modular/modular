@@ -361,7 +361,7 @@ struct ScatterNDAdd:
     ) raises:
         @always_inline
         def reduce_fn[
-            dtype: DType, width: SIMDSize
+            dtype: DType, width: SIMDLength
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -412,7 +412,7 @@ struct ScatterNDMul:
     ) raises:
         @always_inline
         def reduce_fn[
-            dtype: DType, width: SIMDSize
+            dtype: DType, width: SIMDLength
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -463,7 +463,7 @@ struct ScatterNDMin:
     ) raises:
         @always_inline
         def reduce_fn[
-            dtype: DType, width: SIMDSize
+            dtype: DType, width: SIMDLength
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -514,7 +514,7 @@ struct ScatterNDMax:
     ) raises:
         @always_inline
         def reduce_fn[
-            dtype: DType, width: SIMDSize
+            dtype: DType, width: SIMDLength
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -665,7 +665,7 @@ struct ScatterAdd:
 
         @always_inline
         def reduce_func[
-            dtype: DType, width: SIMDSize
+            dtype: DType, width: SIMDLength
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -718,7 +718,7 @@ struct ScatterMax:
 
         @always_inline
         def reduce_func[
-            dtype: DType, width: SIMDSize
+            dtype: DType, width: SIMDLength
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -771,7 +771,7 @@ struct ScatterMin:
 
         @always_inline
         def reduce_func[
-            dtype: DType, width: SIMDSize
+            dtype: DType, width: SIMDLength
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -824,7 +824,7 @@ struct ScatterMul:
 
         @always_inline
         def reduce_func[
-            dtype: DType, width: SIMDSize
+            dtype: DType, width: SIMDLength
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1431,7 +1431,7 @@ struct MutableStore(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
     ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return val
 
@@ -1546,7 +1546,7 @@ struct Gather:
 
         @always_inline
         def output_fn[
-            width: SIMDSize, _rank: Int, element_alignment: Int
+            width: SIMDLength, _rank: Int, element_alignment: Int
         ](coords: IndexList[_rank], val: SIMD[output.dtype, width]) {
             var output
         }:
@@ -1602,7 +1602,7 @@ struct GatherSum:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
         def add[
-            dtype: DType, simd_width: SIMDSize
+            dtype: DType, simd_width: SIMDLength
         ](x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
             dtype, simd_width
         ]:
@@ -1717,7 +1717,7 @@ struct Concat:
         @parameter
         @__copy_capture(output)
         def epilogue_wrapper[
-            _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
+            _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](indices),
@@ -1801,7 +1801,7 @@ struct FusedConcatSlice:
         @parameter
         @__copy_capture(concat_output, slice_output)
         def epilogue_wrapper[
-            _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
+            _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
             var concat_indices = rebind[IndexList[rank]](indices)
 
@@ -1942,7 +1942,7 @@ struct DualFusedConcatSlice:
         @parameter
         @__copy_capture(concat_output_0, slice_output_0)
         def epilogue_0[
-            _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
+            _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
             var concat_indices = rebind[IndexList[rank]](indices)
 
@@ -1996,7 +1996,7 @@ struct DualFusedConcatSlice:
         @parameter
         @__copy_capture(concat_output_1, slice_output_1)
         def epilogue_1[
-            _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
+            _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
             var concat_indices = rebind[IndexList[rank]](indices)
 

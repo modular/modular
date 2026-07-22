@@ -103,7 +103,7 @@ def bench_layer_norm_gpu[
     @__copy_capture(data_buf)
     @parameter
     def output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
         var idx = data_buf.layout(coords)
 
@@ -187,7 +187,7 @@ def bench_rms_norm_gpu[
     @__copy_capture(data_buf)
     @parameter
     def identity_output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
         var idx = data_buf.layout(coords)
         data_buf.raw_store[width=width, alignment=alignment](idx, val)

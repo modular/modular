@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements `SIMDSize`, which is a wrapper around the MLIR `index` type."""
+"""Implements `SIMDLength`, which is a wrapper around the MLIR `index` type."""
 
 from std.utils._select import _select_register_value as select
 
 
-struct SIMDSize(
+struct SIMDLength(
     Comparable, Equatable, ImplicitlyCopyable, Indexer, TrivialRegisterPassable
 ):
     """Represents a type appropriate for the size of a simd vector.
@@ -36,7 +36,7 @@ struct SIMDSize(
     @doc_hidden
     @always_inline("builtin")
     def __init__(out self, *, mlir_value: __mlir_type.index):
-        """Construct SIMDSize from the given index value.
+        """Construct SIMDLength from the given index value.
 
         Args:
             mlir_value: The init value.
@@ -46,7 +46,7 @@ struct SIMDSize(
     @implicit
     @always_inline("builtin")
     def __init__(out self, value: IntLiteral, /):
-        """Construct SIMDSize from the given IntLiteral value.
+        """Construct SIMDLength from the given IntLiteral value.
 
         Args:
             value: The init value.
@@ -55,7 +55,7 @@ struct SIMDSize(
 
     @always_inline("nodebug")
     def __init__[T: Indexer](out self, value: T):
-        """Construct a SIMDSize from the given Indexer.
+        """Construct a SIMDLength from the given Indexer.
 
         Parameters:
             T: The type of the init value.
@@ -68,7 +68,7 @@ struct SIMDSize(
     @implicit
     @always_inline("builtin")
     def __init__(out self, value: Scalar[DType.int], /):
-        """Construct a SIMDSize from the given Int.
+        """Construct a SIMDLength from the given Int.
 
         Args:
             value: The init value.
@@ -79,13 +79,13 @@ struct SIMDSize(
 
     @always_inline("builtin")
     def __eq__(self, rhs: Self) -> Bool:
-        """Compare this SIMDSize to the RHS using EQ comparison.
+        """Compare this SIMDLength to the RHS using EQ comparison.
 
         Args:
-            rhs: The other SIMDSize to compare against.
+            rhs: The other SIMDLength to compare against.
 
         Returns:
-            True if this SIMDSize is equal to the RHS SIMDSize and False otherwise.
+            True if this SIMDLength is equal to the RHS SIMDLength and False otherwise.
         """
         return Bool(
             value=__mlir_op.`index.cmp`[
@@ -137,13 +137,13 @@ struct SIMDSize(
 
     @always_inline("builtin")
     def __le__(self, rhs: Self) -> Bool:
-        """Compare this SIMDSize to the RHS using LE comparison.
+        """Compare this SIMDLength to the RHS using LE comparison.
 
         Args:
-            rhs: The other SIMDSize to compare against.
+            rhs: The other SIMDLength to compare against.
 
         Returns:
-            True if this SIMDSize is less-or-equal than the RHS SIMDSize and False
+            True if this SIMDLength is less-or-equal than the RHS SIMDLength and False
             otherwise.
         """
         return Bool(
@@ -154,13 +154,13 @@ struct SIMDSize(
 
     @always_inline("builtin")
     def __gt__(self, rhs: Self) -> Bool:
-        """Compare this SIMDSize to the RHS using GT comparison.
+        """Compare this SIMDLength to the RHS using GT comparison.
 
         Args:
-            rhs: The other SIMDSize to compare against.
+            rhs: The other SIMDLength to compare against.
 
         Returns:
-            True if this SIMDSize is greater than the RHS SIMDSize and False otherwise.
+            True if this SIMDLength is greater than the RHS SIMDLength and False otherwise.
         """
         return __mlir_op.`index.cmp`[
             pred=__mlir_attr.`#index<cmp_predicate sgt>`
@@ -168,13 +168,13 @@ struct SIMDSize(
 
     @always_inline("builtin")
     def __lt__(self, rhs: Self) -> Bool:
-        """Compare this SIMDSize to the RHS using LT comparison.
+        """Compare this SIMDLength to the RHS using LT comparison.
 
         Args:
-            rhs: The other SIMDSize to compare against.
+            rhs: The other SIMDLength to compare against.
 
         Returns:
-            True if this SIMDSize is less-than the RHS SIMDSize and False otherwise.
+            True if this SIMDLength is less-than the RHS SIMDLength and False otherwise.
         """
         return __mlir_op.`index.cmp`[
             pred=__mlir_attr.`#index<cmp_predicate slt>`
@@ -182,13 +182,13 @@ struct SIMDSize(
 
     @always_inline("builtin")
     def __ge__(self, rhs: Self) -> Bool:
-        """Compare this SIMDSIze to the RHS using GE comparison.
+        """Compare this SIMDLength to the RHS using GE comparison.
 
         Args:
-            rhs: The other SIMDSize to compare against.
+            rhs: The other SIMDLength to compare against.
 
         Returns:
-            True if this SIMDSize is greater-or-equal than the RHS SIMDSize and False
+            True if this SIMDLength is greater-or-equal than the RHS SIMDLength and False
             otherwise.
         """
         return __mlir_op.`index.cmp`[
@@ -320,3 +320,8 @@ struct SIMDSize(
             True if the integer is a power of two, False otherwise.
         """
         return (self & (self - 1) == 0) & (self > 0)
+
+
+@deprecated("`SIMDSize` is deprecated, use `SIMDLength`.")
+comptime SIMDSize = SIMDLength
+"""The type of the `size` parameter of `SIMD`. Deprecated alias for `SIMDLength`."""

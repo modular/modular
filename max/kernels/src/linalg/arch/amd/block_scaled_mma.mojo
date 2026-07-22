@@ -42,7 +42,7 @@ struct CDNA4F8F6F4MatrixFormat(Equatable, TrivialRegisterPassable):
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    def simd_width(self) -> SIMDSize:
+    def simd_width(self) -> SIMDLength:
         if self == CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3:
             return 32
         if self == CDNA4F8F6F4MatrixFormat.FLOAT8_E5M2:

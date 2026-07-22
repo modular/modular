@@ -219,7 +219,7 @@ def run_matvec_with_epilogue_fn(
     @always_inline
     @__copy_capture(c_device_nd, const_val)
     def epilogue_fn[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         c_device_nd.store[width=width](
             Coord(idx),
@@ -414,7 +414,7 @@ def run_split_k_gemm[
         @always_inline
         @__copy_capture(c_nd)
         def epilogue_fn[
-            dtype: DType, width: SIMDSize, *, alignment: Int = 1
+            dtype: DType, width: SIMDLength, *, alignment: Int = 1
         ](idx: IndexList[2], val: SIMD[dtype, width]):
             c_nd.store[width=width](
                 Coord(idx),

@@ -106,7 +106,7 @@ struct RMSNormFusedResidual:
             @parameter
             @always_inline
             def output_fn[
-                width: SIMDSize, _rank: Int, alignment: Int
+                width: SIMDLength, _rank: Int, alignment: Int
             ](coords: IndexList[_rank], val: SIMD[dtype, width]):
                 output._fused_store[width=width, element_alignment=alignment](
                     rebind[IndexList[output.rank]](coords),
@@ -116,7 +116,7 @@ struct RMSNormFusedResidual:
             @parameter
             @always_inline
             def residual_output_fn[
-                width: SIMDSize, _rank: Int, alignment: Int
+                width: SIMDLength, _rank: Int, alignment: Int
             ](coords: IndexList[_rank], val: SIMD[dtype, width]):
                 residual_output._fused_store[
                     width=width, element_alignment=alignment
@@ -165,7 +165,7 @@ struct RMSNormFusedResidual:
 
             @always_inline
             def output_fn_cpu[
-                width: SIMDSize, alignment: Int
+                width: SIMDLength, alignment: Int
             ](coords: IndexList[rank], val: SIMD[dtype, width]) {
                 var output
             } -> None:
@@ -176,7 +176,7 @@ struct RMSNormFusedResidual:
 
             @always_inline
             def residual_output_fn_cpu[
-                width: SIMDSize, alignment: Int
+                width: SIMDLength, alignment: Int
             ](coords: IndexList[rank], val: SIMD[dtype, width]) {
                 var residual_output
             } -> None:

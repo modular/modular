@@ -113,13 +113,13 @@ def run_rms_norm_fused_residual_cpu[
     # Define output functions
     @always_inline
     def output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) {output_tensor} -> None:
         output_tensor.store[width=width](coords, val)
 
     @always_inline
     def residual_output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) {
         residual_output_tensor
     } -> None:

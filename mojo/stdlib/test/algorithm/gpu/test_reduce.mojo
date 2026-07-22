@@ -21,7 +21,7 @@ comptime num_reductions = 2
 
 
 def fused_reduce_inner_test[
-    reduce_fn: def[ty: DType, width: SIMDSize, reduction_idx: Int](
+    reduce_fn: def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     rank: Int,
@@ -91,7 +91,7 @@ def fused_reduce_inner_test[
     @__copy_capture(output_buf_device0, output_buf_device1, out_shape)
     @parameter
     def output_fn[
-        _dtype: DType, width: SIMDSize, _rank: Int
+        _dtype: DType, width: SIMDLength, _rank: Int
     ](
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
@@ -140,7 +140,7 @@ def fused_reduce_inner_test[
 
 
 def reduce_inner_test[
-    reduce_fn: def[dtype: DType, width: SIMDSize](
+    reduce_fn: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
     rank: Int,
@@ -183,7 +183,7 @@ def reduce_inner_test[
     @always_inline
     @parameter
     def reduce_wrapper[
-        dtype: DType, width: SIMDSize, reduction_idx: Int
+        dtype: DType, width: SIMDLength, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert reduction_idx < num_reductions, "invalid reduction idx"
 
@@ -210,7 +210,7 @@ def reduce_inner_test[
     @__copy_capture(output_buf_device, out_shape)
     @parameter
     def output_fn[
-        _dtype: DType, width: SIMDSize, _rank: Int
+        _dtype: DType, width: SIMDLength, _rank: Int
     ](
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
@@ -249,21 +249,21 @@ def test_reduce() raises:
     @parameter
     def reduce_add[
         dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
     @parameter
     def reduce_max[
         dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(x, y)
 
     @parameter
     def fused_reduce_add_max[
         dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         reduction_idx: Int,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert reduction_idx < 2, "reduction idx OOB"
@@ -439,14 +439,14 @@ def test_multiblock_reduce() raises:
     @parameter
     def reduce_add[
         dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
     @parameter
     def reduce_max[
         dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(x, y)
 
@@ -512,7 +512,7 @@ def test_thread_saturated_contiguous_reduce() raises:
     @parameter
     def reduce_add[
         dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 

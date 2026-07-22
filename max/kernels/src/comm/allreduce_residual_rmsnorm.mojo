@@ -138,7 +138,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     simd_width: Int,
     threads_per_block: Int,
     has_residual: Bool,
-    output_fn: def[width: SIMDSize](
+    output_fn: def[width: SIMDLength](
         row: Int, col: Int, val: SIMD[out_dtype, width]
     ) capturing -> None,
 ](
@@ -326,7 +326,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     simd_width: Int,
     threads_per_block: Int,
     has_residual: Bool,
-    output_fn: def[width: SIMDSize](
+    output_fn: def[width: SIMDLength](
         row: Int, col: Int, val: SIMD[out_dtype, width]
     ) capturing -> None,
 ](
@@ -721,7 +721,7 @@ def _allreduce_rmsnorm_fp8_launch[
     @parameter
     @__copy_capture(output)
     def output_fn[
-        width: SIMDSize
+        width: SIMDLength
     ](row: Int, col: Int, val: SIMD[out_dtype, width]):
         output.store[width=width](Coord(row, col), val)
 
@@ -882,7 +882,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     @parameter
     @__copy_capture(output)
     def output_fn[
-        width: SIMDSize
+        width: SIMDLength
     ](row: Int, col: Int, val: SIMD[out_dtype, width]):
         output.store[width=width](Coord(row, col), val)
 
@@ -1003,7 +1003,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
     @parameter
     def add_epilogue[
         _dtype: DType,
-        _width: SIMDSize,
+        _width: SIMDLength,
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, size=_width]) -> None:

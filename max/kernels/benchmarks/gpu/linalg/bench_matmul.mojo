@@ -424,7 +424,7 @@ def bench_matmul[
         @__copy_capture(tensor_c)
         def test_lambda_add_coords_prod[
             _dtype: DType,
-            width: SIMDSize,
+            width: SIMDLength,
             *,
             alignment: Int = align_of[SIMD[_dtype, width]](),
         ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -451,7 +451,7 @@ def bench_matmul[
         @parameter
         @__copy_capture(tensor_c)
         def normal_elementwise_epilogue[
-            dtype: DType, width: SIMDSize, *, alignment: Int = 1
+            dtype: DType, width: SIMDLength, *, alignment: Int = 1
         ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
             tensor_c.store[width=width]((idx[0], idx[1]), val.cast[c_type]())
 

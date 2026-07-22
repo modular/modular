@@ -208,7 +208,7 @@ def lamport_allreduce_test[
         def lamport_epilogue[
             input_index: Int,
             _dtype: DType,
-            _width: SIMDSize,
+            _width: SIMDLength,
             *,
             _alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -350,7 +350,7 @@ def lamport_mixed_size_test[
     def mixed_epilogue[
         input_index: Int,
         _dtype: DType,
-        _width: SIMDSize,
+        _width: SIMDLength,
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -573,7 +573,7 @@ def lamport_coexist_test[
     def coexist_epilogue[
         input_index: Int,
         _dtype: DType,
-        _width: SIMDSize,
+        _width: SIMDLength,
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -771,7 +771,7 @@ def lamport_unsynced_skew_test[
         def skew_epilogue[
             input_index: Int,
             _dtype: DType,
-            _width: SIMDSize,
+            _width: SIMDLength,
             *,
             _alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, _width]) -> None:

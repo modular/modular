@@ -133,7 +133,7 @@ struct MatmulTileWriter[
         linear_idx_type=Self.linear_idx_type,
     ]
     comptime lambda_type = def[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](IndexList[2], mut SIMD[dtype, width]) -> None
 
     # Instance fields
@@ -432,7 +432,7 @@ struct MatmulTileWriter[
                 comptime compute_fn = Self.elementwise_compute_lambda_fn.value()
 
                 def _compute[
-                    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+                    dtype: DType, width: SIMDLength, *, alignment: Int = 1
                 ](index: IndexList[2], mut val: SIMD[dtype, width]) {}:
                     val = compute_fn[alignment=alignment](index, val)
 
@@ -443,7 +443,7 @@ struct MatmulTileWriter[
                 comptime epilogue_fn = Self.elementwise_lambda_fn.value()
 
                 def _epilogue[
-                    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+                    dtype: DType, width: SIMDLength, *, alignment: Int = 1
                 ](index: IndexList[2], mut val: SIMD[dtype, width]) {}:
                     _ = epilogue_fn[alignment=alignment](index, val)
 

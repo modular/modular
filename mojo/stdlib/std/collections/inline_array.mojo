@@ -410,7 +410,7 @@ struct InlineArray[T: AnyType, length: Int](
 
     @always_inline
     def __init__[
-        batch_size: SIMDSize = 64
+        batch_size: SIMDLength = 64
     ](out self, *, fill: Self.T) where conforms_to(Self.T, Copyable):
         """Constructs an array where each element is initialized to the supplied
         value.

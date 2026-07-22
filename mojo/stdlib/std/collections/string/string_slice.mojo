@@ -190,7 +190,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         # FIXME(MSTDL-160): !kgen.string's are not guaranteed to be UTF-8
         # encoded, they can be arbitrary binary data.
         var length: Int = Int(
-            SIMDSize(mlir_value=__mlir_op.`pop.string.size`(_kgen))
+            SIMDLength(mlir_value=__mlir_op.`pop.string.size`(_kgen))
         )
         var ptr = UnsafePointer[mut=False, _, ImmStaticOrigin](
             _mlir_value=__mlir_op.`pop.string.address`(_kgen)

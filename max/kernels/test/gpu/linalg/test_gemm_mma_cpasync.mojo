@@ -216,7 +216,7 @@ def run_gemm_mma_cpasync_residual[
     @always_inline
     @__copy_capture(c_lt, residual_lt)
     def residual_epilogue[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         var res = residual_lt.load[width=width](idx).cast[dtype]()
         c_lt.store[width=width](idx, (val + res).cast[c_type]())

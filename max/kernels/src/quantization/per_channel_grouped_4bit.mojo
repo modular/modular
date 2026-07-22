@@ -22,7 +22,7 @@ from std.utils import IndexList, StaticTuple, product
 
 @always_inline
 def _to_StaticTuple[
-    dtype: DType, size: SIMDSize
+    dtype: DType, size: SIMDLength
 ](data: SIMD[dtype, size]) -> StaticTuple[Scalar[dtype], size]:
     """Convert SIMD to StaticTuple."""
 
@@ -47,7 +47,7 @@ def _to_SIMD[
 
 @always_inline
 def calculate_symmetric_vector[
-    input_dtype: DType, simd_width: SIMDSize, output_bits: Int
+    input_dtype: DType, simd_width: SIMDLength, output_bits: Int
 ](data: SIMD[input_dtype, simd_width]) -> Tuple[
     SIMD[DType.uint8, simd_width],
     Scalar[input_dtype],
@@ -132,7 +132,7 @@ struct Q4sym[
     var scale: StaticTuple[UInt8, 2]
     """The FP16 scale of the group, stored as individual bytes."""
 
-    var bits: StaticTuple[UInt8, SIMDSize(Self.group_size) // 2]
+    var bits: StaticTuple[UInt8, SIMDLength(Self.group_size) // 2]
     """The bits of the encoded uint4 numbers."""
 
     @staticmethod
@@ -155,7 +155,7 @@ struct Q4sym[
     def __init__(out self):
         """Construct a default initialized Q4sym."""
         self.scale = StaticTuple[UInt8, 2]()
-        self.bits = StaticTuple[UInt8, SIMDSize(Self.group_size) // 2]()
+        self.bits = StaticTuple[UInt8, SIMDLength(Self.group_size) // 2]()
         self._check_constraints()
 
     @always_inline
@@ -182,14 +182,14 @@ struct Q4sym[
     @always_inline
     def _encode_bits(
         qdata: SIMD[DType.uint8, Self.group_size]
-    ) -> SIMD[DType.uint8, SIMDSize(Self.group_size) // 2]:
+    ) -> SIMD[DType.uint8, SIMDLength(Self.group_size) // 2]:
         var lo_hi = qdata.split()
         return lo_hi[0] | (lo_hi[1] << 4)
 
     @always_inline
     def _decode_bits(mut self) -> SIMD[DType.uint8, Self.group_size]:
         # Extract the lower 4 bits of all bits in the `l_bits` format
-        var bits_simd = _to_SIMD[DType.uint8, SIMDSize(Self.group_size) // 2](
+        var bits_simd = _to_SIMD[DType.uint8, SIMDLength(Self.group_size) // 2](
             self.bits
         )
         var bits_upper = (bits_simd & 0xF0) >> 4

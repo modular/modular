@@ -327,13 +327,13 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             res[i] = self.get[i]()
         return res
 
-    def as_index_tuple(self) -> StaticTuple[SIMDSize, Self.size]:
+    def as_index_tuple(self) -> StaticTuple[SIMDLength, Self.size]:
         """Converts this IndexList to a static tuple of mlir indexes.
 
         Returns:
             The corresponding StaticTuple object.
         """
-        var res = StaticTuple[SIMDSize, Self.size]()
+        var res = StaticTuple[SIMDLength, Self.size]()
 
         comptime for i in range(Self.size):
             res[i] = self.get[i]()

@@ -109,7 +109,7 @@ def _utf8_char_width(b: Byte) -> Int:
 
 @always_inline
 def _extract_vector[
-    width: SIMDSize, //, offset: Int
+    width: SIMDLength, //, offset: Int
 ](a: SIMD[DType.uint8, width], b: SIMD[DType.uint8, width]) -> SIMD[
     DType.uint8, width
 ]:
@@ -270,7 +270,7 @@ def _is_valid_utf8(span: Span[mut=False, Byte, _]) -> Bool:
 @parameter
 @always_inline
 def _is_utf8_continuation_byte[
-    w: SIMDSize
+    w: SIMDLength
 ](vec: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
     return vec.cast[DType.int8]().lt(-(0b1000_0000 >> 1))
 

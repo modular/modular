@@ -742,7 +742,7 @@ def _check_divisibility_and_divide_by_pow10[
 
 @always_inline
 def _truncate[
-    dtype: DType, S: SIMDSize, //, TruncateType: DType
+    dtype: DType, S: SIMDLength, //, TruncateType: DType
 ](u: SIMD[dtype, S]) -> SIMD[dtype, S]:
     """Cast to DType to truncate to the width of that type, then cast back to
     original DType.

@@ -79,7 +79,7 @@ from std.bit import bit_width, byte_swap, pop_count
 from std.builtin._format_float import _write_float
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.format_int import _write_int
-from std.builtin.simd_size import SIMDSize
+from std.builtin.simd_length import SIMDLength
 from std.builtin.int import _FromInt
 from std.math import DivModable, Powable
 from std.memory import bitcast, unsafe_memcpy, pack_bits
@@ -113,7 +113,7 @@ from .dtype import (
 # Type Aliases
 # ===----------------------------------------------------------------------=== #
 comptime Scalar = SIMD[
-    _, size=__mlir_attr[`#lit.struct<{_mlir_value = 1}> : `, SIMDSize]
+    _, size=__mlir_attr[`#lit.struct<{_mlir_value = 1}> : `, SIMDLength]
 ]
 """Represents a scalar dtype."""
 
@@ -246,7 +246,7 @@ comptime UInt = Scalar[DType.uint]
 
 
 @always_inline("builtin")
-def _simd_construction_checks[dtype: DType, size: SIMDSize]():
+def _simd_construction_checks[dtype: DType, size: SIMDLength]():
     """Checks if the SIMD size is valid.
 
     The SIMD size is valid if it is a power of two and is positive.
@@ -416,7 +416,7 @@ struct FastMathFlag(Equatable, ImplicitlyCopyable, RegisterPassable):
 
 
 @lldb_formatter_wrapping_type
-struct SIMD[dtype: DType, size: SIMDSize](
+struct SIMD[dtype: DType, size: SIMDLength](
     Absable,
     Boolable,
     CeilDivable,
@@ -707,7 +707,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
 
     @always_inline("builtin")
     @implicit
-    def __init__(out self, value: SIMDSize, /):
+    def __init__(out self, value: SIMDLength, /):
         """Initializes the SIMD vector with a signed integer.
 
         The signed integer value is splatted across all the elements of the SIMD
@@ -1950,14 +1950,14 @@ struct SIMD[dtype: DType, size: SIMDSize](
         comptime assert (
             Self.dtype.is_integral()
         ), "cannot index using a floating point type"
-        comptime assert Self.size == SIMDSize(
+        comptime assert Self.size == SIMDLength(
             1
         ), "cannot index using a non-scalar SIMD"
 
         return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.index](
             __mlir_op.`pop.cast`[
                 _type=SIMD[DType.int, 1]._mlir_type, fast=__mlir_attr.unit
-            ](rebind[SIMD[Self.dtype, SIMDSize(1)]](self)._mlir_value)
+            ](rebind[SIMD[Self.dtype, SIMDLength(1)]](self)._mlir_value)
         )
 
     @always_inline("nodebug")
@@ -2116,7 +2116,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
 
     @always_inline("nodebug")
     def _refine[
-        new_dtype: DType = Self.dtype, new_size: SIMDSize = Self.size
+        new_dtype: DType = Self.dtype, new_size: SIMDLength = Self.size
     ](self) -> SIMD[new_dtype, new_size]:
         """Manually refines the SIMD vector to a specific element type and size.
 
@@ -2484,7 +2484,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
 
     @always_inline("nodebug")
     def _shuffle_variadic[
-        *mask: SIMDSize, output_size: Int = Self.size
+        *mask: SIMDLength, output_size: Int = Self.size
     ](self, other: Self) -> SIMD[Self.dtype, output_size]:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
@@ -2507,12 +2507,12 @@ struct SIMD[dtype: DType, size: SIMDSize](
         ), "size of the mask must match the output SIMD size"
 
         # FIXME: Support parameters on initializers better, removing __init__.
-        comptime tup = StaticTuple[SIMDSize, output_size].__init__[*mask]()
+        comptime tup = StaticTuple[SIMDLength, output_size].__init__[*mask]()
         return self._shuffle_list[output_size, tup](other)
 
     @always_inline("nodebug")
     def _shuffle_list[
-        output_size: SIMDSize, mask: StaticTuple[SIMDSize, output_size]
+        output_size: SIMDLength, mask: StaticTuple[SIMDLength, output_size]
     ](self, other: Self) -> SIMD[Self.dtype, output_size]:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
@@ -2542,7 +2542,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
         return SIMD[Self.dtype, output_size](mlir_value=res)
 
     @always_inline("nodebug")
-    def shuffle[*mask: SIMDSize](self) -> Self:
+    def shuffle[*mask: SIMDLength](self) -> Self:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
         values must be within `2 * len(self)`.
@@ -2557,7 +2557,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
         return self._shuffle_variadic[*mask](self)
 
     @always_inline("nodebug")
-    def shuffle[*mask: SIMDSize](self, other: Self) -> Self:
+    def shuffle[*mask: SIMDLength](self, other: Self) -> Self:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
         values must be within `2 * len(self)`.
@@ -2612,7 +2612,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
     # TODO: move to the utils directory - see https://github.com/modular/modular/issues/3477
     @always_inline
     def _dynamic_shuffle[
-        mask_size: SIMDSize
+        mask_size: SIMDLength
     ](self, mask: SIMD[DType.uint8, mask_size]) -> SIMD[Self.dtype, mask_size]:
         """Shuffles (also called blend) the values of the current vector.
 
@@ -2776,8 +2776,8 @@ struct SIMD[dtype: DType, size: SIMDSize](
             A new vector `self_0, self_1, ..., self_n, other_0, ..., other_n`.
         """
 
-        def indices() -> StaticTuple[SIMDSize, 2 * Int(Self.size)]:
-            var res = StaticTuple[SIMDSize, 2 * Int(Self.size)](0)
+        def indices() -> StaticTuple[SIMDLength, 2 * Int(Self.size)]:
+            var res = StaticTuple[SIMDLength, 2 * Int(Self.size)](0)
             for i in range(len(res)):
                 res[i] = i
             return res
@@ -2882,7 +2882,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
         @always_inline
         @parameter
         def body[
-            width: SIMDSize
+            width: SIMDLength
         ](lhs: Self._T[width], rhs: Self._T[width]) -> Self._T[width]:
             return func[width](lhs, rhs)
 
@@ -2891,7 +2891,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
     # TODO: remove when non-capturing can be converted to capturing.
     @always_inline
     def reduce[
-        func: def[width: SIMDSize](
+        func: def[width: SIMDLength](
             Self._T[width], Self._T[width]
         ) thin -> Self._T[width],
         size_out: Int = 1,
@@ -2939,7 +2939,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
         @always_inline
         @parameter
         def body[
-            width: SIMDSize
+            width: SIMDLength
         ](lhs: Self._T[width], rhs: Self._T[width]) -> Self._T[width]:
             return func[width=width](lhs, rhs)
 
@@ -2947,7 +2947,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
 
     @always_inline
     def reduce[
-        func: def[width: SIMDSize](
+        func: def[width: SIMDLength](
             Self._T[width], Self._T[width]
         ) capturing -> Self._T[width],
         size_out: Int = 1,
@@ -3503,7 +3503,7 @@ def _tbl1(lookup_table: U8x16, indices: U8x16) -> U8x16:
 
 @always_inline
 def _pow[
-    width: SIMDSize
+    width: SIMDLength
 ](base: SIMD[_, width], exp: SIMD[_, width], out result: type_of(base)):
     """Computes the power of the elements of a SIMD vector raised to the
     corresponding elements of another SIMD vector.
@@ -3566,7 +3566,7 @@ def _powf_scalar(
 
 @always_inline
 def _powf[
-    width: SIMDSize
+    width: SIMDLength
 ](base: SIMD[_, width], exp: SIMD[_, width], out result: type_of(base)):
     comptime assert (
         exp.dtype.is_floating_point()
@@ -3677,7 +3677,7 @@ def _convert_float8_to_f32_scalar[
 @always_inline
 def _convert_float8_to_f32[
     dtype: DType,
-    size: SIMDSize,
+    size: SIMDLength,
 ](val: SIMD[dtype, size]) -> SIMD[DType.float32, size]:
     comptime if _is_sm_9x_or_newer() and not _is_sm_120x_or_newer() and dtype in (
         DType.float8_e4m3fn,
@@ -3720,7 +3720,7 @@ def _convert_float8_to_f32[
 @always_inline
 def _convert_float8_to_f16[
     dtype: DType,
-    size: SIMDSize,
+    size: SIMDLength,
 ](val: SIMD[dtype, size]) -> SIMD[DType.float16, size]:
     comptime if _is_sm_9x_or_newer() and not _is_sm_120x_or_newer() and dtype in (
         DType.float8_e4m3fn,
@@ -3738,7 +3738,7 @@ def _convert_float8_to_f16[
 @always_inline
 def _convert_f32_to_float8[
     dtype: DType,
-    size: SIMDSize,
+    size: SIMDLength,
     //,
     target: DType,
 ](val: SIMD[dtype, size]) -> SIMD[target, size]:
@@ -3922,7 +3922,7 @@ def _convert_f32_to_float8_ue8m0_scalar[
 @always_inline
 def _convert_f32_to_float8_ue8m0[
     dtype: DType,
-    size: SIMDSize,
+    size: SIMDLength,
     //,
     target: DType,
     *,
@@ -3982,7 +3982,7 @@ def _convert_f32_to_float8_ue8m0[
 @always_inline
 def _convert_float8_ue8m0_to_f32[
     dtype: DType,
-    size: SIMDSize,
+    size: SIMDLength,
     //,
     target: DType,
 ](val: SIMD[dtype, size]) -> SIMD[target, size]:
@@ -4072,7 +4072,7 @@ def _bfloat16_to_f32_scalar(
 
 @always_inline
 def _bfloat16_to_f32[
-    size: SIMDSize
+    size: SIMDLength
 ](val: SIMD[DType.bfloat16, size]) -> SIMD[DType.float32, size]:
     @always_inline
     @parameter
@@ -4094,7 +4094,7 @@ def _bfloat16_to_f32[
 @always_inline
 def _simd_apply[
     input_dtype: DType,
-    simd_width: SIMDSize,
+    simd_width: SIMDLength,
     //,
     func: def[input_dtype: DType, result_dtype: DType](
         Scalar[input_dtype]
@@ -4127,7 +4127,7 @@ def _simd_apply[
 
 @always_inline
 def _simd_apply[
-    simd_width: SIMDSize,
+    simd_width: SIMDLength,
     //,
     func: def[lhs_dtype: DType, rhs_dtype: DType, result_dtype: DType](
         Scalar[lhs_dtype], Scalar[rhs_dtype]

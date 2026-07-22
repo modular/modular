@@ -302,7 +302,7 @@ def test_matmul[
     @always_inline
     @__copy_capture(c)
     def epilogue_fn[
-        _type: DType, width: SIMDSize, *, alignment: Int = 1
+        _type: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_type, width]) -> None:
         c.store(Coord(idx), rebind[SIMD[c_type, width]](val + some_constant))
 
@@ -519,7 +519,7 @@ def test_batched_matmul[
     @__copy_capture(c)
     def epilogue_fn[
         _type: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         rank: Int,
         *,
         alignment: Int = 1,

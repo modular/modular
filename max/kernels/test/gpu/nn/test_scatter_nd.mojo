@@ -466,7 +466,7 @@ def test_reduce_add[
 
     @always_inline
     def reduce_fn[
-        dtype: DType, width: SIMDSize
+        dtype: DType, width: SIMDLength
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs + rhs
 
@@ -554,28 +554,28 @@ def test_unaligned_slice(ctx: DeviceContext) raises:
 
 @always_inline
 def _add[
-    ty: DType, width: SIMDSize
+    ty: DType, width: SIMDLength
 ](lhs: SIMD[ty, width], rhs: SIMD[ty, width]) -> SIMD[ty, width]:
     return lhs + rhs
 
 
 @always_inline
 def _mul[
-    ty: DType, width: SIMDSize
+    ty: DType, width: SIMDLength
 ](lhs: SIMD[ty, width], rhs: SIMD[ty, width]) -> SIMD[ty, width]:
     return lhs * rhs
 
 
 @always_inline
 def _max[
-    ty: DType, width: SIMDSize
+    ty: DType, width: SIMDLength
 ](lhs: SIMD[ty, width], rhs: SIMD[ty, width]) -> SIMD[ty, width]:
     return max(lhs, rhs)
 
 
 @always_inline
 def _min[
-    ty: DType, width: SIMDSize
+    ty: DType, width: SIMDLength
 ](lhs: SIMD[ty, width], rhs: SIMD[ty, width]) -> SIMD[ty, width]:
     return min(lhs, rhs)
 
@@ -597,7 +597,7 @@ def _upd_modular[dt: DType, mod: Int](k: Int) -> Scalar[dt]:
 
 def test_reduce_duplicate_indices[
     dt: DType,
-    reduce_op: def[dtype: DType, width: SIMDSize](
+    reduce_op: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
     n_idx: Int,

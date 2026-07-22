@@ -158,7 +158,7 @@ from .device_query import (
 from internal_utils import Table
 
 comptime elementwise_epilogue_type = def[
-    dtype: DType, width: SIMDSize, *, alignment: Int
+    dtype: DType, width: SIMDLength, *, alignment: Int
 ](Coord, SIMD[dtype, size=width]) capturing -> None
 
 # Tuning table to get num_blocks for allreduce.
@@ -777,7 +777,7 @@ def _allreduce_2stage_kernel[
         @__copy_capture(tmp_buff)
         def rs_output_lambda[
             _dtype: DType,
-            _width: SIMDSize,
+            _width: SIMDLength,
             *,
             _alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -1625,7 +1625,7 @@ def allreduce[
     @__copy_capture(output_tensor)
     def default_output_lambda[
         _dtype: DType,
-        _width: SIMDSize,
+        _width: SIMDLength,
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None:

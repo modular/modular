@@ -451,7 +451,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             The value as an integer of platform-specific width.
         """
-        return Int(SIMDSize(mlir_value=self.__mlir_index__()))
+        return Int(SIMDLength(mlir_value=self.__mlir_index__()))
 
     @always_inline("builtin")
     def __ceil__(self) -> Self:

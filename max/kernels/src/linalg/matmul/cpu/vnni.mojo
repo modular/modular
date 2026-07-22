@@ -177,8 +177,10 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                     var a_val2 = SIMD[c_type, simd_size](a_val)
                     c_val = _neon_dotprod(
                         c_val,
-                        bitcast[a.dtype, SIMDSize(simd_size) * 4](a_val2),
-                        bitcast[b_packed.dtype, SIMDSize(simd_size) * 4](b_val),
+                        bitcast[a.dtype, SIMDLength(simd_size) * 4](a_val2),
+                        bitcast[b_packed.dtype, SIMDLength(simd_size) * 4](
+                            b_val
+                        ),
                     )
                 elif Self.saturated_vnni:
                     c_val = dot_i8_to_i32_saturated_x86[simd_size](

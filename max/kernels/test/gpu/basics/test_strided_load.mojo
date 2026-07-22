@@ -18,7 +18,7 @@ from std.testing import assert_true
 
 
 def strided_load_kernel[
-    *, dtype: DType = DType.uint32, width: SIMDSize = 1
+    *, dtype: DType = DType.uint32, width: SIMDLength = 1
 ](
     output: UnsafePointer[SIMD[dtype, width], MutAnyOrigin],
     ptr: UnsafePointer[

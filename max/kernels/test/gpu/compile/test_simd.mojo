@@ -23,7 +23,7 @@ from std.testing import assert_true
 def test_operation[
     dtype: DType,
     target_arch: StaticString,
-    op_fn: def[width: SIMDSize](
+    op_fn: def[width: SIMDLength](
         x: SIMD[dtype, width], y: type_of(x)
     ) thin raises -> type_of(x),
     op_name: StaticString,
@@ -63,7 +63,7 @@ def test_operation[
 
 def test_add[dtype: DType, target_arch: StaticString]() raises:
     def add[
-        width: SIMDSize
+        width: SIMDLength
     ](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x):
         return x + y
 
@@ -72,7 +72,7 @@ def test_add[dtype: DType, target_arch: StaticString]() raises:
 
 def test_sub[dtype: DType, target_arch: StaticString]() raises:
     def sub[
-        width: SIMDSize
+        width: SIMDLength
     ](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x):
         return x - y
 
@@ -81,7 +81,7 @@ def test_sub[dtype: DType, target_arch: StaticString]() raises:
 
 def test_mul[dtype: DType, target_arch: StaticString]() raises:
     def mul[
-        width: SIMDSize
+        width: SIMDLength
     ](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x):
         return x * y
 
@@ -104,12 +104,12 @@ def test_half_float_instruction_selection() raises:
 
 def test_fma[dtype: DType]() raises:
     def fma[
-        width: SIMDSize
+        width: SIMDLength
     ](x: SIMD[dtype, width], y: type_of(x), z: type_of(x)) -> type_of(x):
         return x * y + z
 
     def fma_manual[
-        width: SIMDSize
+        width: SIMDLength
     ](x: SIMD[dtype, width], y: type_of(x), z: type_of(x)) -> type_of(x):
         return x.fma(y, z)
 
@@ -129,7 +129,7 @@ def test_fma[dtype: DType]() raises:
 
 def test_cast() raises:
     def cast[
-        src_type: DType, dst_type: DType, width: SIMDSize
+        src_type: DType, dst_type: DType, width: SIMDLength
     ](src: SIMD[src_type, width]) -> SIMD[dst_type, width]:
         return src.cast[dst_type]()
 

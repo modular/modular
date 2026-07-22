@@ -811,7 +811,7 @@ struct RandomNormal:
     ) capturing raises:
         @always_inline
         def output_fn[
-            _width: SIMDSize,
+            _width: SIMDLength,
             _rank: Int,
         ](coords: IndexList[_rank], val: SIMD[dtype, _width]) {imm output}:
             output._lambda_store[width=_width](
@@ -882,7 +882,7 @@ struct RandomUniform:
     ) capturing raises:
         @always_inline
         def output_fn[
-            _width: SIMDSize,
+            _width: SIMDLength,
             _rank: Int,
         ](coords: IndexList[_rank], val: SIMD[dtype, _width]) {imm output}:
             output._lambda_store[width=_width](
@@ -1685,7 +1685,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
 
         @always_inline
         def output_fn[
-            width: SIMDSize, alignment: Int
+            width: SIMDLength, alignment: Int
         ](idx: IndexList[3], val: SIMD[dtype, width]) {var output} -> None:
             output._lambda_store[width=width, element_alignment=alignment](
                 idx,
@@ -1762,7 +1762,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
 
         @always_inline
         def output_fn[
-            width: SIMDSize, alignment: Int
+            width: SIMDLength, alignment: Int
         ](idx: IndexList[3], val: SIMD[dtype, width]) {var output} -> None:
             output._lambda_store[width=width, element_alignment=alignment](
                 idx,
@@ -2725,7 +2725,7 @@ struct BundledAllReduceSum:
         @parameter
         def output_lambda[
             _dtype: DType,
-            _width: SIMDSize,
+            _width: SIMDLength,
             *,
             _alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, _width]) -> None:

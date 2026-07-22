@@ -155,7 +155,7 @@ comptime _S_TMEM_STAGES = 2
         Int32(_PREFILL_NTHREADS)
     )
 )
-@__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
+@__llvm_metadata(`nvvm.minctasm`=SIMDLength(1))
 def _fp8_index_score_prefill_kernel_sm100[
     dtype: DType,
     KOperand: MHAOperand,

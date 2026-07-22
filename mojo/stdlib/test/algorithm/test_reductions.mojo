@@ -87,7 +87,7 @@ def test_fused_reductions_inner() raises:
     @always_inline
     @parameter
     def output_fn[
-        dtype: DType, width: SIMDSize, rank: Int
+        dtype: DType, width: SIMDLength, rank: Int
     ](
         indices: IndexList[rank],
         val: StaticTuple[SIMD[dtype, width], num_reductions],
@@ -102,7 +102,7 @@ def test_fused_reductions_inner() raises:
     @parameter
     def reduce_fn[
         ty: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         reduction_idx: Int,
     ](left: SIMD[ty, width], right: SIMD[ty, width],) -> SIMD[ty, width]:
         comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
@@ -170,7 +170,7 @@ def test_fused_reductions_outer() raises:
     @parameter
     def reduce_fn[
         ty: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         reduction_idx: Int,
     ](left: SIMD[ty, width], right: SIMD[ty, width],) -> SIMD[ty, width]:
         comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
@@ -192,7 +192,7 @@ def test_fused_reductions_outer() raises:
     @always_inline
     @parameter
     def output_fn[
-        dtype: DType, width: SIMDSize, rank: Int
+        dtype: DType, width: SIMDLength, rank: Int
     ](
         indices: IndexList[rank],
         val: StaticTuple[SIMD[dtype, width], num_reductions],

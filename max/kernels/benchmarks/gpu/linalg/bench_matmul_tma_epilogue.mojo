@@ -282,7 +282,7 @@ def bench_matmul_tma_epilogue[
             @__copy_capture(tensor_c, tensor_epilogue)
             def epilogue_lambda[
                 _dtype: DType,
-                width: SIMDSize,
+                width: SIMDLength,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -402,7 +402,7 @@ def bench_matmul_tma_epilogue[
             @__copy_capture(epilogue_ver_nd)
             def ver_epilogue_lambda[
                 _dtype: DType,
-                width: SIMDSize,
+                width: SIMDLength,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[

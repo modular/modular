@@ -17,7 +17,7 @@ from ._overlay import PLUGINS
 
 
 # Number of plugins, as a raw kgen `index`. Avoids `TypeList.size`'s `Int`
-# wrapper so the selector never touches `Int`/`SIMDSize` comparison machinery.
+# wrapper so the selector never touches `Int`/`SIMDLength` comparison machinery.
 comptime _PLUGIN_COUNT = __mlir_attr[
     `#kgen.param_list.size<:`,
     PLUGINS._mlir_type,
@@ -28,7 +28,7 @@ comptime _PLUGIN_COUNT = __mlir_attr[
 
 
 def _index_lt[lhs: __mlir_type.index, rhs: __mlir_type.index]() -> Bool:
-    """`lhs < rhs` on raw `index`, via `index.cmp` (no `Int`/`SIMDSize`)."""
+    """`lhs < rhs` on raw `index`, via `index.cmp` (no `Int`/`SIMDLength`)."""
     return __mlir_op.`index.cmp`[pred=__mlir_attr.`#index<cmp_predicate ult>`](
         lhs, rhs
     )
@@ -59,7 +59,7 @@ def _find_plugin[
 
     Operates entirely on raw `index` (compare/increment via `index.*` ops) and
     uses parameter recursion rather than `comptime for`, so resolving the
-    selector never instantiates `paramfor_has_next` or the `Int`/`SIMDSize`
+    selector never instantiates `paramfor_has_next` or the `Int`/`SIMDLength`
     comparison machinery during stdlib bootstrap.
     """
     comptime if not _index_lt[idx, _PLUGIN_COUNT]():

@@ -61,7 +61,7 @@ comptime E2M1_TO_FLOAT32 = SIMD[DType.float32, 16](
 
 @always_inline
 def decode_e2m1_to_bf16[
-    width: SIMDSize, //
+    width: SIMDLength, //
 ](nibble: SIMD[DType.uint16, width]) -> SIMD[DType.bfloat16, width]:
     """Decodes E2M1 nibbles to bfloat16 with branch-free bit arithmetic.
 
@@ -108,7 +108,7 @@ def decode_e2m1_to_bf16[
 
 @always_inline
 def decode_e2m1_to_f16[
-    width: SIMDSize, //
+    width: SIMDLength, //
 ](nibble: SIMD[DType.uint16, width]) -> SIMD[DType.float16, width]:
     """Decodes E2M1 nibbles to float16 by exponent injection (Preston's trick).
 
@@ -155,7 +155,7 @@ def decode_e2m1_to_f16[
 
 @always_inline
 def decode_e2m1_to_f32[
-    width: SIMDSize, //
+    width: SIMDLength, //
 ](nibble: SIMD[DType.uint16, width]) -> SIMD[DType.float32, width]:
     """Decodes E2M1 nibbles to float32 with branch-free bit arithmetic.
 
@@ -202,7 +202,7 @@ def decode_e2m1_to_f32[
 
 @always_inline
 def decode_e2m1_to_f32_inject[
-    width: SIMDSize, //
+    width: SIMDLength, //
 ](nibble: SIMD[DType.uint16, width]) -> SIMD[DType.float32, width]:
     """Decodes E2M1 nibbles to float32 by exponent injection (Preston's trick).
 
@@ -301,7 +301,7 @@ def compute_mxfp4_even_scale(max_val: Float32) -> Scalar[DType.float8_e8m0fnu]:
 
 def cast_uint_to_fp4e2m1[
     in_dtype: DType,
-    in_width: SIMDSize,
+    in_width: SIMDLength,
     //,
     *,
     out_dtype: DType,
@@ -356,7 +356,7 @@ def cast_uint_to_fp4e2m1[
 
 def cast_fp_to_fp4e2m1[
     dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Rounds each floating-point element to the nearest FP4 E2M1 representable value.
@@ -415,7 +415,7 @@ def cast_fp_to_fp4e2m1[
 
 
 def cast_fp32_to_fp4e2m1[
-    width: SIMDSize,
+    width: SIMDLength,
     //,
 ](x: SIMD[DType.float32, width]) -> UInt32:
     """Converts eight float32 values to a packed FP4 E2M1 word using SM100 PTX instructions.
@@ -492,7 +492,7 @@ cvt.rn.f16x2.e2m1x2 $0, byte0;
 
 @always_inline
 def cast_float_to_fp4e2m1_amd[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](input: SIMD[dtype, width], scale: Float32) -> UInt32:
     """Converts up to eight floating-point values to packed FP4 E2M1 using AMD CDNA4 intrinsics.
 
@@ -544,7 +544,7 @@ def set_scale_factor[
     scales_layout: Layout,
     //,
     SF_VECTOR_SIZE: Int,
-    width: SIMDSize,
+    width: SIMDLength,
 ](
     scales_tensor: LayoutTensor[mut=True, scales_dtype, scales_layout, ...],
     row_idx: Int,
@@ -591,7 +591,7 @@ def set_scale_factor[
 
 def set_scale_factor[
     scales_dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
     SF_VECTOR_SIZE: Int,
 ](

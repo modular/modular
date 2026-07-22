@@ -110,7 +110,7 @@ def run_one_case(
     @__copy_capture(data_buf)
     @parameter
     def identity_output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[rn_type, width]) -> None:
         var idx = data_buf.layout(coords)
         data_buf.raw_store[width=width, alignment=alignment](idx, val)

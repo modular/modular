@@ -276,7 +276,7 @@ def assert_not_equal[
 
 @always_inline
 def assert_almost_equal[
-    dtype: DType, size: SIMDSize
+    dtype: DType, size: SIMDLength
 ](
     lhs: SIMD[dtype, size],
     rhs: SIMD[dtype, size],

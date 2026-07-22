@@ -25,7 +25,7 @@ from std.utils.coord import Coord
 
 def run_elementwise[
     dtype: DType,
-    kernel_fn: def[dtype: DType, width: SIMDSize](
+    kernel_fn: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width]
     ) thin raises -> SIMD[dtype, width],
 ](ctx: DeviceContext) raises where dtype.is_floating_point():

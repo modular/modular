@@ -312,7 +312,7 @@ def max_pool_cpu[
 
     @always_inline
     def max_pool_compute[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -322,7 +322,7 @@ def max_pool_cpu[
 
     @always_inline
     def max_pool_compute_finalize[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -500,7 +500,7 @@ def max_pool_gpu[
 
     @always_inline
     def max_pool_compute[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -510,7 +510,7 @@ def max_pool_gpu[
 
     @always_inline
     def max_pool_compute_finalize[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -687,7 +687,7 @@ def avg_pool_cpu[
 
     @always_inline
     def avg_pool_compute[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -708,7 +708,7 @@ def avg_pool_cpu[
 
     @always_inline
     def avg_pool_compute_finalize_exclude_boundary[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -742,7 +742,7 @@ def avg_pool_cpu[
 
     @always_inline
     def avg_pool_compute_finalize[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -978,7 +978,7 @@ def avg_pool_gpu[
 
     @always_inline
     def avg_pool_compute[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -999,7 +999,7 @@ def avg_pool_gpu[
 
     @always_inline
     def avg_pool_compute_finalize_exclude_boundary[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -1031,7 +1031,7 @@ def avg_pool_gpu[
 
     @always_inline
     def avg_pool_compute_finalize[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],

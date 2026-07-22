@@ -565,8 +565,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(128))
 )
 @__llvm_metadata(
-    `nvvm.minctasm`=SIMDSize(4) if (DSTATE // DSTATE_SPLIT)
-    <= 16 else SIMDSize(1)
+    `nvvm.minctasm`=SIMDLength(4) if (DSTATE // DSTATE_SPLIT)
+    <= 16 else SIMDLength(1)
 )
 def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     kernel_dtype: DType,

@@ -145,7 +145,7 @@ struct DistributedAllReduceSum:
         def output_lambda[
             output_index: Int,
             _dtype: DType,
-            _width: SIMDSize,
+            _width: SIMDLength,
             *,
             _alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -354,7 +354,7 @@ struct DistributedReduceScatterSum:
             def output_lambda[
                 output_index: Int,
                 _dtype: DType,
-                _width: SIMDSize,
+                _width: SIMDLength,
                 *,
                 _alignment: Int,
             ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -933,7 +933,7 @@ struct DistributedMatmulReduceScatterSum:
         @always_inline
         @__copy_capture(residual)
         def residual_add_fn[
-            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+            _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_dtype, _width]) capturing -> SIMD[
             _dtype, _width
         ]:

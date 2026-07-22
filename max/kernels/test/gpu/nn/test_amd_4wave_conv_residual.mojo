@@ -46,7 +46,7 @@ from nn.conv.gpu.nvidia.sm100.conv_config import Conv2dProblemShape
 @always_inline
 def _bias_compute_lambda[
     _dtype: DType,
-    _width: SIMDSize,
+    _width: SIMDLength,
     *,
     alignment: Int = 1,
 ](coords: IndexList[2], val: SIMD[_dtype, _width]) capturing -> SIMD[

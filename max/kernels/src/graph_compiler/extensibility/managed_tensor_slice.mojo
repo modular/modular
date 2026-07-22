@@ -74,7 +74,7 @@ struct IO(TrivialRegisterPassable):
     wires into a custom kernel's fusion lambdas.
     """
 
-    var value: SIMDSize
+    var value: SIMDLength
 
     # TODO: either rename or get rid of this
     comptime Unknown = IO(-1)
@@ -281,7 +281,7 @@ trait OutputFusion(TrivialRegisterPassable):
     def store[
         dtype: DType,
         rank: Int,
-        simd_width: SIMDSize,
+        simd_width: SIMDLength,
         element_alignment: Int = 1,
     ](self, idx: IndexList[rank], val: SIMD[dtype, simd_width]):
         ...
@@ -294,7 +294,7 @@ trait ComputeOutputFusion(TrivialRegisterPassable):
     def compute[
         dtype: DType,
         rank: Int,
-        simd_width: SIMDSize,
+        simd_width: SIMDLength,
         element_alignment: Int = 1,
     ](self, idx: IndexList[rank], val: SIMD[dtype, simd_width]) -> SIMD[
         dtype, simd_width
@@ -339,7 +339,7 @@ struct _NoFusionOut(OutputFusion):
     def store[
         dtype: DType,
         rank: Int,
-        simd_width: SIMDSize,
+        simd_width: SIMDLength,
         element_alignment: Int = 1,
     ](self, idx: IndexList[rank], val: SIMD[dtype, simd_width]):
         comptime assert False, "store() not implemented for this OutputFusion"
@@ -354,7 +354,7 @@ struct _NoComputeFusion(ComputeOutputFusion):
     def compute[
         dtype: DType,
         rank: Int,
-        simd_width: SIMDSize,
+        simd_width: SIMDLength,
         element_alignment: Int = 1,
     ](self, idx: IndexList[rank], val: SIMD[dtype, simd_width]) -> SIMD[
         dtype, simd_width
@@ -762,7 +762,7 @@ def _gcd_pow2[a: Int, b: Int]() -> Int:
 def simd_store_into_managed_tensor_slice[
     dtype: DType,
     rank: Int,
-    simd_width: SIMDSize,
+    simd_width: SIMDLength,
     //,
     static_spec: StaticTensorSpec[dtype, rank, ...],
     element_alignment: Int = 1,
@@ -836,7 +836,7 @@ def simd_store_into_tensor_pointer[
     rank: Int,
     //,
     static_spec: StaticTensorSpec[dtype, rank, ...],
-    simd_width: SIMDSize,
+    simd_width: SIMDLength,
     element_alignment: Int = 1,
 ](
     ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -1699,7 +1699,7 @@ struct ManagedTensorSlice[
 
     @always_inline
     def store[
-        width: SIMDSize,
+        width: SIMDLength,
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
@@ -1729,7 +1729,7 @@ struct ManagedTensorSlice[
 
     @always_inline
     def store[
-        width: SIMDSize,
+        width: SIMDLength,
         element_alignment: Int = 1,
     ](
         self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],
@@ -1753,7 +1753,7 @@ struct ManagedTensorSlice[
 
     @always_inline
     def _fused_store[
-        width: SIMDSize,
+        width: SIMDLength,
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
@@ -1777,7 +1777,7 @@ struct ManagedTensorSlice[
 
     @always_inline
     def _fused_store[
-        width: SIMDSize,
+        width: SIMDLength,
         element_alignment: Int = 1,
     ](
         self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],
@@ -1791,7 +1791,7 @@ struct ManagedTensorSlice[
 
     @always_inline("nodebug")
     def _lambda_store[
-        width: SIMDSize,
+        width: SIMDLength,
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
@@ -1815,7 +1815,7 @@ struct ManagedTensorSlice[
 
     @always_inline
     def _lambda_store[
-        width: SIMDSize,
+        width: SIMDLength,
         element_alignment: Int = 1,
     ](
         self: ManagedTensorSlice[
@@ -1832,7 +1832,7 @@ struct ManagedTensorSlice[
 
     @always_inline
     def _fused_compute_output_lambda[
-        width: SIMDSize,
+        width: SIMDLength,
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
@@ -1853,7 +1853,7 @@ struct ManagedTensorSlice[
 
     @always_inline
     def _fused_compute_output_lambda[
-        width: SIMDSize,
+        width: SIMDLength,
         element_alignment: Int = 1,
     ](
         self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],

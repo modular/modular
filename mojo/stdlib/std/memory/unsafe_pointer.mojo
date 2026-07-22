@@ -1669,7 +1669,7 @@ struct Pointer[
         I: Indexer,
         dtype: DType,
         //,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
@@ -1758,7 +1758,7 @@ struct Pointer[
     def unsafe_store[
         dtype: DType,
         //,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
@@ -1812,7 +1812,7 @@ struct Pointer[
         I: Indexer,
         dtype: DType,
         //,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
@@ -1857,7 +1857,7 @@ struct Pointer[
     def store[
         dtype: DType,
         //,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
@@ -1875,7 +1875,7 @@ struct Pointer[
     @always_inline("nodebug")
     def _store[
         dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
@@ -1947,7 +1947,7 @@ struct Pointer[
         dtype: DType,
         S: Intable,
         //,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
     ](
         self: Pointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
@@ -1981,7 +1981,7 @@ struct Pointer[
         dtype: DType,
         S: Intable,
         //,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
     ](
         self: Pointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
@@ -1994,7 +1994,7 @@ struct Pointer[
         dtype: DType,
         //,
         *,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         alignment: Int = align_of[dtype](),
     ](
         self: Pointer[Scalar[dtype], ...],
@@ -2074,7 +2074,7 @@ struct Pointer[
         dtype: DType,
         //,
         *,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         alignment: Int = align_of[dtype](),
     ](
         self: Pointer[Scalar[dtype], ...],
@@ -2089,7 +2089,7 @@ struct Pointer[
         dtype: DType,
         //,
         *,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         alignment: Int = align_of[dtype](),
     ](
         self: Pointer[mut=True, Scalar[dtype], ...],
@@ -2166,7 +2166,7 @@ struct Pointer[
         dtype: DType,
         //,
         *,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         alignment: Int = align_of[dtype](),
     ](
         self: Pointer[mut=True, Scalar[dtype], ...],

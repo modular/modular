@@ -358,7 +358,7 @@ def dispatch_im2col_matmul_conv2d[
             @__copy_capture(HW_out, W_out, m_offset)
             def _gemm_epilogue[
                 _dtype: DType,
-                _width: SIMDSize,
+                _width: SIMDLength,
                 *,
                 alignment: Int = 1,
             ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):
@@ -581,7 +581,7 @@ def dispatch_fused_im2col_conv2d_apple[
         @__copy_capture(HW_out, W_out)
         def _gemm_epilogue[
             _dtype: DType,
-            _width: SIMDSize,
+            _width: SIMDLength,
             *,
             alignment: Int = 1,
         ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):

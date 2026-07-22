@@ -146,7 +146,7 @@ def fp8_quantize[
 @always_inline
 def cast_saturating[
     in_dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
     out_dtype: DType,
 ](values: SIMD[in_dtype, width]) -> SIMD[out_dtype, width]:

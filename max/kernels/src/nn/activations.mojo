@@ -24,7 +24,7 @@ from std.utils.numerics import get_accum_type
 
 @always_inline("nodebug")
 def _is_neg[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](val: SIMD[dtype, simd_width]) -> SIMD[DType.bool, simd_width]:
     """Returns True if the input value is negative.
 
@@ -50,7 +50,7 @@ def _is_neg[
 
 @always_inline
 def sign[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the sign (0, 1) of the input value.
 
@@ -76,7 +76,7 @@ def sign[
 
 @always_inline
 def elu[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the Elu Op using the equation $z if z >= 0 else alpha*(e^z -1)$.
 
@@ -101,7 +101,7 @@ def elu[
 
 @always_inline
 def relu[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the Relu Op using the equation $max(x, 0)$.
 
@@ -125,7 +125,7 @@ def relu[
 
 @always_inline
 def relu_n1[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the Relu N1 Op using the equation $max(min(x,1),-1)$.
 
@@ -149,7 +149,7 @@ def relu_n1[
 
 @always_inline
 def leaky_relu[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width], negative_slope: Scalar[dtype]) -> SIMD[
     dtype, simd_width
 ]:
@@ -184,7 +184,7 @@ def leaky_relu[
 @always_inline
 def sigmoid[
     dtype: DType,
-    simd_width: SIMDSize,
+    simd_width: SIMDLength,
     accum: DType = get_accum_type[dtype](),
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the sigmoid activation using the equation $1 / (1 + e^{-x})$.
@@ -222,7 +222,7 @@ def sigmoid[
 @always_inline
 def silu[
     dtype: DType,
-    simd_width: SIMDSize,
+    simd_width: SIMDLength,
     accum: DType = get_accum_type[dtype](),
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the SiLU (Swish) activation using the equation
@@ -257,7 +257,7 @@ def silu[
 @always_inline
 def gelu[
     dtype: DType,
-    simd_width: SIMDSize,
+    simd_width: SIMDLength,
     accum: DType = get_accum_type[dtype](),
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the exact GELU activation using the equation
@@ -289,7 +289,7 @@ def gelu[
 @always_inline
 def gelu_tanh[
     dtype: DType,
-    simd_width: SIMDSize,
+    simd_width: SIMDLength,
     accum: DType = get_accum_type[dtype](),
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the tanh approximation of the GELU activation:
@@ -329,7 +329,7 @@ def gelu_tanh[
 @always_inline
 def gelu_quick[
     dtype: DType,
-    simd_width: SIMDSize,
+    simd_width: SIMDLength,
     accum: DType = get_accum_type[dtype](),
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the quick (sigmoid) approximation of the GELU activation:

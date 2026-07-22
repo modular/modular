@@ -43,7 +43,7 @@ import std.itertools
 @always_inline
 def _cast_f32_to_fp8_raw[
     src_dtype: DType,
-    size: SIMDSize,
+    size: SIMDLength,
     //,
     dtype: DType,
 ](src: SIMD[src_dtype, size]) -> SIMD[dtype, size]:

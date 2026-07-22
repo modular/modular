@@ -352,7 +352,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             @parameter
             @always_inline
             def do_reduce[
-                _simd_width: SIMDSize
+                _simd_width: SIMDLength
             ](
                 start: Int,
                 end: Int,
@@ -368,7 +368,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             @parameter
             @always_inline
             def do_reduce_accum[
-                target_width: Int, _simd_width: SIMDSize
+                target_width: Int, _simd_width: SIMDLength
             ](
                 accum: InlineArray[SIMD[Self.dtype, _simd_width], tile_n]
             ) -> InlineArray[SIMD[Self.dtype, target_width], tile_n]:
@@ -557,7 +557,7 @@ struct _FlashAttention[
     input_v_fn: def[simd_width: Int, rank: Int](
         idx: IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
-    mask_fn: def[simd_width: SIMDSize, mask_rank: Int](
+    mask_fn: def[simd_width: SIMDLength, mask_rank: Int](
         idx: IndexList[mask_rank],
         score_vec: SIMD[dtype, simd_width],
         kv_cache_length: Int,
@@ -581,7 +581,7 @@ struct _FlashAttention[
 
     @staticmethod
     def _online_softmax[
-        _mask_fn: def[simd_width: SIMDSize](
+        _mask_fn: def[simd_width: SIMDLength](
             m: Int, n: Int, score_vec: SIMD[Self.dtype, simd_width]
         ) capturing -> SIMD[Self.dtype, simd_width],
     ](
@@ -626,7 +626,7 @@ struct _FlashAttention[
             @always_inline
             @parameter
             def output_fn[
-                _dtype: DType, width: SIMDSize, rank: Int
+                _dtype: DType, width: SIMDLength, rank: Int
             ](idx: Int, val: SIMD[_dtype, width]):
                 qk_row.store(
                     IndexList[1](idx), rebind[SIMD[Self.dtype, width]](val)
@@ -871,7 +871,7 @@ struct _FlashAttention[
                     @parameter
                     @always_inline
                     def mask_2d_fn[
-                        _simd_width: SIMDSize
+                        _simd_width: SIMDLength
                     ](
                         _m: Int,
                         _n: Int,
@@ -1016,7 +1016,7 @@ def _flash_attention[
     @always_inline
     @parameter
     def mask_fn[
-        simd_width: SIMDSize, rank: Int
+        simd_width: SIMDLength, rank: Int
     ](
         idx: IndexList[rank],
         score_vec: SIMD[dtype, simd_width],
@@ -1327,7 +1327,7 @@ def _flash_attention_kv_cache[
     q_origin: Origin[mut=False],
     output_origin: Origin[mut=True],
     //,
-    mask_fn: def[simd_width: SIMDSize, mask_rank: Int](
+    mask_fn: def[simd_width: SIMDLength, mask_rank: Int](
         idx: IndexList[mask_rank],
         score_vec: SIMD[dtype, simd_width],
         kv_cache_length: Int,
@@ -1406,7 +1406,7 @@ def _flash_attention_kv_cache[
     ],
     q_length_fn: def(batch: Int) capturing -> Int,
     kv_length_fn: def(batch: Int) capturing -> Int,
-    mask_fn: def[simd_width: SIMDSize, mask_rank: Int](
+    mask_fn: def[simd_width: SIMDLength, mask_rank: Int](
         idx: IndexList[mask_rank],
         score_vec: SIMD[dtype, simd_width],
         kv_cache_length: Int,
@@ -1521,7 +1521,7 @@ def flash_attention_kv_cache[
     @always_inline
     @parameter
     def mask_fn[
-        simd_width: SIMDSize, rank: Int
+        simd_width: SIMDLength, rank: Int
     ](
         idx: IndexList[rank],
         score_vec: SIMD[dtype, simd_width],
@@ -1575,7 +1575,7 @@ def flash_attention_kv_cache[
     @always_inline
     @parameter
     def mask_fn[
-        simd_width: SIMDSize,
+        simd_width: SIMDLength,
         rank: Int,
     ](
         idx: IndexList[rank],
@@ -1655,7 +1655,7 @@ def flash_attention_kv_cache[
     @always_inline
     @parameter
     def mask_fn[
-        simd_width: SIMDSize,
+        simd_width: SIMDLength,
         rank: Int,
     ](
         idx: IndexList[rank],

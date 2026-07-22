@@ -47,7 +47,7 @@ def _unsafe_normalize_neg_index(idx: Int, dim_size: Int) -> Int:
 
 @always_inline
 def _unsafe_normalize_neg_index[
-    dtype: DType, width: SIMDSize, out_type: DType = DType.int
+    dtype: DType, width: SIMDLength, out_type: DType = DType.int
 ](idx: SIMD[dtype, width], dim_size: Int) -> SIMD[out_type, width]:
     return idx.lt(0).select(
         idx.cast[out_type]() + Scalar[out_type](dim_size),
@@ -73,7 +73,7 @@ def normalize_neg_index(idx: Int, dim_size: Int) raises -> Int:
 
 @always_inline
 def normalize_neg_index[
-    dtype: DType, width: SIMDSize, out_type: DType = DType.int
+    dtype: DType, width: SIMDLength, out_type: DType = DType.int
 ](idx: SIMD[dtype, width], dim_size: Int) raises -> SIMD[out_type, width]:
     """Indices passed to gather and scatter ops may be negative. This performs
     a normalization so that they can be used to index into a buffer.
@@ -141,7 +141,7 @@ def gather_reduce[
     gather_axis: Int,
     reduce_axis: Int,
     simd_width: Int,
-    reduce_fn: def[dtype: DType, width: SIMDSize](
+    reduce_fn: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
 ](
@@ -427,7 +427,7 @@ def gather[
 
     @always_inline
     def output_fn[
-        width: SIMDSize, _rank: Int, element_alignment: Int
+        width: SIMDLength, _rank: Int, element_alignment: Int
     ](index: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
         var coords = Coord(index)
         comptime assert output.flat_rank >= coords.flat_rank
@@ -510,7 +510,7 @@ def gather_elementwise_fn_wrapper[
     & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[indices_type, width],
     OutputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: SIMDSize, rank: Int, element_alignment: Int](
+    & def[width: SIMDLength, rank: Int, element_alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) -> None,
     *,
@@ -650,7 +650,7 @@ def gather[
     & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[indices_type, width],
     OutputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: SIMDSize, rank: Int, element_alignment: Int](
+    & def[width: SIMDLength, rank: Int, element_alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) -> None,
     *,
@@ -819,7 +819,7 @@ struct ScatterOobIndexStrategy(Equatable, ImplicitlyCopyable, Writable):
 def _atomic_reduce[
     dtype: DType,
     //,
-    reduction_fn: def[dtype: DType, width: SIMDSize](
+    reduction_fn: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], update: Scalar[dtype]):
@@ -857,7 +857,7 @@ def scatter_nd_generator[
     target: StaticString = "cpu",
     reduce_fn: OptionalReg[
         def[
-            dtype: DType, width: SIMDSize
+            dtype: DType, width: SIMDLength
         ](SIMD[dtype, width], SIMD[dtype, width]) thin -> SIMD[dtype, width]
     ] = None,
     *,
@@ -1405,7 +1405,7 @@ def scatter_elements[
     *,
     reduce_fn: OptionalReg[
         def[
-            dtype: DType, width: SIMDSize
+            dtype: DType, width: SIMDLength
         ](SIMD[dtype, width], SIMD[dtype, width]) thin -> SIMD[dtype, width]
     ] = None,
 ](

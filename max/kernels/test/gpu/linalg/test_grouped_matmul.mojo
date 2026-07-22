@@ -202,7 +202,7 @@ def test[
     @__copy_capture(c_dev_tile)
     @parameter
     def epilogue_fn[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
 
@@ -217,7 +217,7 @@ def test[
     @__copy_capture(c_dev_tile, total_num_tokens)
     @parameter
     def perm_dim_fn[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
         var i = idx[0]

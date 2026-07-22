@@ -432,7 +432,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
 
 @always_inline
 def _kernel_mask[
-    dtype: DType, width: SIMDSize
+    dtype: DType, width: SIMDLength
 ](
     coord: IndexList[2, ...], bound: IndexList[2, ...], vec: SIMD[dtype, width]
 ) -> SIMD[dtype, width]:

@@ -604,7 +604,7 @@ def _gemv_partial_norm_unfused_with_scratch[
     @__copy_capture(normed_output)
     @parameter
     def output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) -> None:
         var idx = normed_output.layout(coords)
         normed_output.ptr.store[width=width, alignment=alignment](idx, val)

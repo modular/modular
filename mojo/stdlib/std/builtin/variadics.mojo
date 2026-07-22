@@ -98,7 +98,7 @@ struct TypeList[
     )
     """The number of types in the list."""
 
-    comptime __getitem_param__[idx: SIMDSize] = __mlir_attr[
+    comptime __getitem_param__[idx: SIMDLength] = __mlir_attr[
         `#kgen.param_list.get<:`,
         Self._mlir_type,
         ` `,
@@ -127,8 +127,8 @@ struct TypeList[
     """Gets a type at the given raw `index`.
 
     Unlike `__getitem_param__`, this accepts a raw `!kgen.index` so callers can
-    index without constructing a `SIMDSize` (and thus without pulling in
-    `SIMDSize` comparison machinery). Used by the stdlib plugin router during
+    index without constructing a `SIMDLength` (and thus without pulling in
+    `SIMDLength` comparison machinery). Used by the stdlib plugin router during
     bootstrap.
 
     Parameters:
@@ -812,7 +812,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         """
         return self.get_span()[idx]
 
-    comptime __getitem_param__[idx: SIMDSize]: Self.type = __mlir_attr[
+    comptime __getitem_param__[idx: SIMDLength]: Self.type = __mlir_attr[
         `#kgen.param_list.get<:`,
         Self._mlir_type,
         ` `,
@@ -942,7 +942,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         PrevV: FromAndTo,
         VA: Self._mlir_type,
         idx: __mlir_type.index,
-    ] = ToWrap[PrevV, Self.__getitem_param__[SIMDSize(mlir_value=idx)]]
+    ] = ToWrap[PrevV, Self.__getitem_param__[SIMDLength(mlir_value=idx)]]
     """Takes an index because kgen.variadic.reduce passes it but we don't want it"""
 
     # TODO: This isn't returning a ParamList, so it should really be a 'def' so

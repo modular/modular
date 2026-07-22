@@ -79,8 +79,8 @@ from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 
 def reduce_add_simd[
-    simd_width: SIMDSize,
-    step_simd_width: SIMDSize,
+    simd_width: SIMDLength,
+    step_simd_width: SIMDLength,
     dtype: DType,
 ](
     mut scalar: Scalar[dtype],
@@ -375,10 +375,10 @@ def _softmax_3_pass_step_2[
     input_fn_1d: def[_simd_width: Int](Int) capturing[_] -> SIMD[
         dtype, _simd_width
     ],
-    pre_update_func: def[dtype: DType, width: SIMDSize](
+    pre_update_func: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
-    post_update_func: def[dtype: DType, width: SIMDSize](
+    post_update_func: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
 ](
@@ -423,10 +423,10 @@ def _softmax_3_pass_step_3[
     simd_width: Int,
     unroll_factor: Int,
     dtype: DType,
-    accum_proc_func: def[dtype: DType, width: SIMDSize](
+    accum_proc_func: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
-    accum_apply_func: def[dtype: DType, width: SIMDSize](
+    accum_apply_func: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
 ](output: TileTensor[mut=True, dtype, ...], accum: Scalar[dtype],):
@@ -460,16 +460,16 @@ def _softmax_3_pass_base[
     input_fn_1d: def[_simd_width: Int](Int) capturing[_] -> SIMD[
         dtype, _simd_width
     ],
-    step2_pre_update_func: def[dtype: DType, width: SIMDSize](
+    step2_pre_update_func: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
-    step2_post_update_func: def[dtype: DType, width: SIMDSize](
+    step2_post_update_func: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
-    step3_accum_proc_func: def[dtype: DType, width: SIMDSize](
+    step3_accum_proc_func: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
-    step3_accum_apply_func: def[dtype: DType, width: SIMDSize](
+    step3_accum_apply_func: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
 ](output: TileTensor[mut=True, dtype, ...]) raises:
@@ -498,7 +498,7 @@ def _softmax_3_pass_base[
     @always_inline
     @parameter
     def reduce_impl[
-        ty: DType, width: SIMDSize
+        ty: DType, width: SIMDLength
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return max(v1, v2)
 
@@ -517,7 +517,7 @@ def _softmax_3_pass_base[
     @parameter
     @always_inline
     def output_fn[
-        _dtype: DType, _width: SIMDSize, _rank: Int
+        _dtype: DType, _width: SIMDLength, _rank: Int
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         comptime assert _rank == 1
         max_buff[0] = val.reduce_max().cast[dtype]()
@@ -890,14 +890,14 @@ def softmax_kernel[
     @parameter
     @always_inline
     def _max[
-        dtype: DType, width: SIMDSize
+        dtype: DType, width: SIMDLength
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(x, y)
 
     @parameter
     @always_inline
     def _sum[
-        dtype: DType, width: SIMDSize
+        dtype: DType, width: SIMDLength
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 

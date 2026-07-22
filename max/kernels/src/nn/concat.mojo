@@ -51,7 +51,7 @@ from .gather_scatter import normalize_neg_index
 from .shapes import _get_start_indices_of_nth_subvolume_static
 
 comptime elementwise_epilogue_type = def[
-    c_type: DType, rank: Int, width: SIMDSize = 1, *, alignment: Int = 1
+    c_type: DType, rank: Int, width: SIMDLength = 1, *, alignment: Int = 1
 ](IndexList[rank], SIMD[c_type, width]) capturing -> None
 
 

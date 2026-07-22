@@ -28,7 +28,7 @@ def random_uniform[
     target: StaticString,
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: SIMDSize, _rank: Int](
+    & def[width: SIMDLength, _rank: Int](
         idx: IndexList[_rank], val: SIMD[dtype, width]
     ),
 ](

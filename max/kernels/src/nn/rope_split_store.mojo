@@ -202,7 +202,7 @@ def _rope_split_store_ragged_impl[
                     )
                 else:
                     # Non-interleaved: gather re/im halves, rope, scatter.
-                    comptime width_2 = SIMDSize(simd_width) / 2
+                    comptime width_2 = SIMDLength(simd_width) / 2
                     comptime align_qkv_2 = align_of[
                         SIMD[dtype, width_2]
                     ]() if is_gpu[target]() else align_of[SIMD[dtype, 1]]()
@@ -276,7 +276,7 @@ def _rope_split_store_ragged_impl[
                 else:
                     # Non-interleaved K: gather re/im, rope, deinterleave,
                     # store.
-                    comptime width_2 = SIMDSize(simd_width) / 2
+                    comptime width_2 = SIMDLength(simd_width) / 2
                     comptime align_qkv_2 = align_of[
                         SIMD[dtype, width_2]
                     ]() if is_gpu[target]() else align_of[SIMD[dtype, 1]]()

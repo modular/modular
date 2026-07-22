@@ -16,7 +16,7 @@ def take_simd8(x: SIMD[DType.float32, 8]):
     pass
 
 
-def generic_simd[nelts: SIMDSize](x: SIMD[DType.float32, nelts]):
+def generic_simd[nelts: SIMDLength](x: SIMD[DType.float32, nelts]):
     comptime if nelts == 8:
         take_simd8(rebind[SIMD[DType.float32, 8]](x))
 
