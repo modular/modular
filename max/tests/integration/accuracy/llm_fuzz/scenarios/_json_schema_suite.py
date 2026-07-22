@@ -229,14 +229,29 @@ def _wrap_root(schema: Any) -> dict[str, Any]:
     }
 
 
+def _apply_reasoning(body: dict[str, Any], enable: bool) -> None:
+    # Models differ on the key name, so set both.
+    body["chat_template_kwargs"] = {
+        "enable_thinking": enable,
+        "thinking": enable,
+    }
+
+
 def _payload(
-    model: str, schema: Any, mode: str, max_tokens: int
+    model: str,
+    schema: Any,
+    mode: str,
+    max_tokens: int,
+    *,
+    reasoning: bool | None,
 ) -> dict[str, Any]:
     # No sampling overrides -- use the model's trained generation defaults.
     base: dict[str, Any] = {
         "model": model,
         "max_tokens": max_tokens,
     }
+    if reasoning is not None:
+        _apply_reasoning(base, reasoning)
     if mode == "response_format":
         base["messages"] = [
             {"role": "user", "content": _prompt(schema, via_tool=False)}
@@ -362,6 +377,11 @@ def _check_one(
     return Verdict.PASS, "output conforms to schema"
 
 
+def _extract_reasoning(data: dict[str, Any]) -> str:
+    msg = (data.get("choices") or [{}])[0].get("message") or {}
+    return msg.get("reasoning_content") or msg.get("reasoning") or ""
+
+
 def _evaluate(
     mode: str,
     schema: Any,
@@ -370,6 +390,7 @@ def _evaluate(
     error: str | None,
     *,
     reject_400_is_pass: bool,
+    reasoning: bool | None,
 ) -> tuple[Verdict, str]:
     if error:
         return Verdict.FAIL, f"transport error: {error}"
@@ -428,6 +449,19 @@ def _evaluate(
     if len(outputs) > 1:
         detail = f"{len(outputs)} tool calls; worst: {detail}"
 
+    if reasoning is not None and verdict == Verdict.PASS and not truncated:
+        span = _extract_reasoning(data)
+        if reasoning and not span:
+            return (
+                Verdict.FAIL,
+                "reasoning requested but response reasoning empty",
+            )
+        if not reasoning and span:
+            return (
+                Verdict.INTERESTING,
+                "reasoning disabled but response reasoned",
+            )
+
     # A named tool is grammar-constrained to only one occurrence.
     if mode != "response_format" and verdict == Verdict.PASS and not truncated:
         expected = 1 if mode == "tools_named" else 2
@@ -438,6 +472,26 @@ def _evaluate(
             )
 
     return verdict, detail
+
+
+async def _probe_reasoning(
+    client: FuzzClient, model: str, *, enable: bool
+) -> bool | None:
+    """Return whether reasoning is returned for the given flag value."""
+    probe: dict[str, Any] = {
+        "model": model,
+        "max_tokens": 256,
+        "messages": [{"role": "user", "content": "What is 2 + 2?"}],
+    }
+    _apply_reasoning(probe, enable)
+    resp = await client.post_json(probe)
+    if resp.status != 200:
+        return None
+    try:
+        data = json.loads(resp.body)
+    except Exception:
+        return None
+    return bool(_extract_reasoning(data))
 
 
 class JsonSchemaSuiteScenario(BaseScenario):
@@ -454,19 +508,25 @@ class JsonSchemaSuiteScenario(BaseScenario):
     reject_400_is_pass: bool = False
 
     def _build_jobs(
-        self, schemas: list[tuple[str, Any]]
-    ) -> list[tuple[str, Any, str]]:
-        jobs: list[tuple[str, Any, str]] = []
+        self,
+        schemas: list[tuple[str, Any]],
+        reasoning_variants: list[bool | None],
+    ) -> list[tuple[str, Any, str, bool | None]]:
+        jobs: list[tuple[str, Any, str, bool | None]] = []
         for label, schema in schemas:
             for mode in _MODES:
-                jobs.append((f"{label}::{mode}", schema, mode))
+                variants = [(f"{label}::{mode}", schema)]
                 if self.wrap_tool_modes and mode != "response_format":
                     # Issue the tool-calling request a second time with the
                     # schema wrapped in a root object, so non-object / array-root
                     # schemas are still exercised through the tool-calling path.
-                    jobs.append(
-                        (f"{label}::{mode}::wrapped", _wrap_root(schema), mode)
+                    variants.append(
+                        (f"{label}::{mode}::wrapped", _wrap_root(schema))
                     )
+                for test_id, sch in variants:
+                    for r in reasoning_variants:
+                        vid = f"{test_id}::think" if r else test_id
+                        jobs.append((vid, sch, mode, r))
         return jobs
 
     async def run(
@@ -477,14 +537,20 @@ class JsonSchemaSuiteScenario(BaseScenario):
         max_tokens = config.model_config.decode_heavy_max_tokens
         schemas = _load_schemas()
 
-        jobs = self._build_jobs(schemas)
+        on = await _probe_reasoning(client, model, enable=True)
+        off = await _probe_reasoning(client, model, enable=False)
+        reasoning_variants: list[bool | None] = (
+            [False, True] if (on and off is False) else [None]
+        )
+
+        jobs = self._build_jobs(schemas, reasoning_variants)
         payloads = [
-            _payload(model, schema, mode, max_tokens)
-            for _, schema, mode in jobs
+            _payload(model, schema, mode, max_tokens, reasoning=r)
+            for _, schema, mode, r in jobs
         ]
         responses = await client.concurrent_requests(payloads)
 
-        for (test_id, schema, mode), payload, resp in zip(
+        for (test_id, schema, mode, r), payload, resp in zip(
             jobs, payloads, responses, strict=True
         ):
             verdict, detail = _evaluate(
@@ -494,6 +560,7 @@ class JsonSchemaSuiteScenario(BaseScenario):
                 resp.status,
                 resp.error,
                 reject_400_is_pass=self.reject_400_is_pass,
+                reasoning=r,
             )
             results.append(
                 self.make_result(
