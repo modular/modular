@@ -38,6 +38,7 @@ def main() raises:
 # RUN: %t > %t.log || true
 # RUN: cat %t.log | FileCheck --check-prefix=O3-FULL-NO-STACK %s
 
+# O3-FULL-NO-STACK: stack trace was not collected. Enable stack trace collection with environment variable `MODULAR_DEBUG=stack-trace-on-error`
 # O3-FULL-NO-STACK: Unhandled exception caught during execution: nested gotcha!
 
 # O3-FULL:      #{{.*}} KGEN_CompilerRT_GetStackTrace
