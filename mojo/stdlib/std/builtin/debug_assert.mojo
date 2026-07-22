@@ -515,7 +515,8 @@ def _debug_assert_msg(
             _ = printf_append_string_n(
                 fd,
                 Span(
-                    ptr=fmt_str.unsafe_ptr(), length=fmt_str.byte_length() + 1
+                    unsafe_ptr=fmt_str.unsafe_ptr(),
+                    length=fmt_str.byte_length() + 1,
                 ),
                 False,
             )
@@ -527,7 +528,7 @@ def _debug_assert_msg(
             _ = printf_append_string_n(
                 fd,
                 Span(
-                    ptr=file_name.unsafe_ptr(),
+                    unsafe_ptr=file_name.unsafe_ptr(),
                     length=file_name.byte_length() + 1,
                 ),
                 False,

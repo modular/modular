@@ -976,7 +976,7 @@ struct DistributedReduceScatterRMSNorm:
                 @parameter
                 @always_inline
                 def norm_output_fn[
-                    width: SIMDSize, alignment: Int
+                    width: SIMDLength, alignment: Int
                 ](coords: Coord, val: SIMD[dtype, width]) -> None:
                     normed_buf.raw_store[width=width, alignment=alignment](
                         normed_buf.layout(coords), val

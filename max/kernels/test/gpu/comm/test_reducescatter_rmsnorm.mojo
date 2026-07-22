@@ -500,7 +500,7 @@ def _rms_norm_shard[
     @__copy_capture(dst_view)
     @parameter
     def output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
         dst_view.raw_store[width=width, alignment=alignment](
             dst_view.layout(coords), val

@@ -97,7 +97,7 @@ def _launch_norm[
     @__copy_capture(out_buf)
     @parameter
     def output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
         out_buf.raw_store[width=width, alignment=alignment](
             out_buf.layout(coords), val
