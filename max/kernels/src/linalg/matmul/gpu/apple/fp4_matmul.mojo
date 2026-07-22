@@ -49,6 +49,7 @@ from std.collections import Optional
 from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
+from std.math import ceildiv
 from std.memory import stack_allocation
 from std.sys import align_of
 from std.utils import IndexList
@@ -64,6 +65,8 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
 )
 from linalg.matmul.gpu.apple.fp4_dequant import enqueue_fp4_materialize
+from linalg.matmul.gpu.apple.fp4_gemv import enqueue_apple_fp4_gemv
+from linalg.matmul.gpu.apple.matmul_8x8 import gemm_kernel_apple_8x8
 from linalg.matmul.gpu.apple.matmul2d_fp4 import enqueue_matmul2d_fp4_smem
 from linalg.matmul.gpu.apple.matmul_kernel import (
     AppleM5MatMul,
@@ -139,7 +142,7 @@ struct AppleM5Fp4MatMul[
     comptime NUM_SG_M = Self.BM // Self.SG_M
     comptime NUM_SG_N = Self.BN // Self.SG_N
     comptime NUM_SG = Self.NUM_SG_M * Self.NUM_SG_N
-    comptime THREADS_PER_BLOCK = Self.NUM_SG * Int(WARP_SIZE)
+    comptime THREADS_PER_BLOCK = Self.NUM_SG * WARP_SIZE
 
     comptime Mma = MmaOpApple[
         DType.float32,
@@ -180,6 +183,28 @@ struct AppleM5Fp4MatMul[
         log2_grid_n: UInt32,
     ):
         """W4A16 GEMM kernel entry; `M`/`N`/`K` derive from C, A, and packed.
+
+        Parameters:
+            c_layout: Compile-time `TensorLayout` of the output tile `c`.
+            a_layout: Compile-time `TensorLayout` of the activation tile `a`.
+            packed_layout: Compile-time `TensorLayout` of the packed FP4
+                weight `packed`.
+            scale_layout: Compile-time `TensorLayout` of the FP8 block
+                scales `scales`.
+
+        Args:
+            c: Output tile `(M, N)` of dtype `c_type`, row-major; receives
+                the matmul result.
+            a: Activation tile `(M, K)` of `bfloat16`, row-major; the A
+                operand of `out = a @ W^T`.
+            packed: Packed FP4 weight `(N, K//2)` of `uint8`, lo-nibble
+                first; the transposed B operand.
+            scales: FP8-E4M3 block scales `(N, ceil(K/16))`; one scale per
+                16 K columns.
+            log2_grid_m: Base-2 log of the power-of-two M-side grid length
+                for the rectangular Morton scheduler.
+            log2_grid_n: Base-2 log of the power-of-two N-side grid length
+                for the rectangular Morton scheduler.
 
         C is `(M, N)` row-major, A is `(M, K)` row-major (bf16 activation),
         `packed` is the FP4 weight `(N, K//2)`, `scales` `(N, ceil(K/16))`. Grid
@@ -760,12 +785,41 @@ def _enqueue_apple_fp4_materialize_dense[
 
     enqueue_fp4_materialize[DType.bfloat16](wdense_tt, packed, scales, ctx)
 
-    enqueue_apple_matmul[
-        in_type=DType.bfloat16,
-        c_type=c_type,
-        transpose_b=True,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ](c, a, wdense_tt.as_immut(), ctx)
+    if ctx.compute_capability() == 5:
+        enqueue_apple_matmul[
+            in_type=DType.bfloat16,
+            c_type=c_type,
+            transpose_b=True,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](c, a, wdense_tt.as_immut(), ctx)
+    else:
+        comptime apple_kernel = gemm_kernel_apple_8x8[
+            c_type,
+            DType.bfloat16,
+            DType.bfloat16,
+            type_of(c).LayoutType,
+            type_of(a).LayoutType,
+            type_of(wdense_tt).LayoutType,
+            type_of(c).Storage,
+            type_of(a).Storage,
+            type_of(wdense_tt).Storage,
+            transpose_b=True,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            BLOCK_M=64,
+            BLOCK_N=64,
+            BLOCK_K=16,
+            NUM_SIMDGROUPS=4,
+        ]
+        ctx.enqueue_function[apple_kernel](
+            c,
+            a,
+            wdense_tt.as_immut(),
+            m,
+            n,
+            k,
+            grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
+            block_dim=(4 * WARP_SIZE,),
+        )
 
     # Keep the transient weight alive through the async materialize + GEMM
     # enqueue (see the buffer-lifetime note in the docstring).
@@ -874,10 +928,23 @@ def enqueue_apple_fp4_matmul[
             below, which routes to `matmul2d` BY DEFAULT (`use_matmul2d=False`)
             where it actually wins. See the `_M2D_*` threshold comments.
 
-    The default strategy (`use_matmul2d=False`) is chosen by (K, M) -- all paths
-    produce bit-identical results (the dequant arithmetic + the bf16 MMA are the
-    same on every path):
+    Args:
+        c: Output tile `(M, N)` of dtype `c_type`; receives the matmul
+            result.
+        a: Activation tile `(M, K)` of `bfloat16`; the A operand.
+        packed: Packed FP4 weight `(N, K//2)` of `uint8`, lo-nibble first;
+            the transposed B operand.
+        scales: FP8-E4M3 block scales `(N, ceil(K/16))`; one scale per 16 K
+            columns.
+        ctx: Device context used to enqueue the kernel(s).
 
+    The default strategy (`use_matmul2d=False`) is chosen by (K, M) -- all paths
+    produce bit-identical dequant (the E2M1 * |scale| arithmetic is the same on
+    every path; the GEMV differs only by its fp32 reduction order vs the MMA):
+
+    - Batch-1 decode (`M == 1`): the register-resident W4A16 GEMV
+      (`enqueue_apple_fp4_gemv`), no MMA to feed. See `fp4_gemv.mojo` for the
+      rationale (bandwidth win, ~1.53x at the Llama-8B down-proj shape).
     - Deep-K niche (`K >= 18432` AND `M >= 1024`, aligned interior): the
       `matmul2d` W4A16 kernel (`enqueue_matmul2d_fp4_smem`). At deep K the
       MAT->DENSE path below must read a large (>=226 MB) materialized bf16 weight
@@ -904,18 +971,12 @@ def enqueue_apple_fp4_matmul[
     dequantized to bf16 in threadgroup memory once per K-strip, then the dense
     bf16 MMA reads B from SMEM; weights stay packed in DRAM the whole time.
 
-    Raises:
-        If the attached GPU is not Apple M5 (`compute_capability == 5`).
+    On pre-M5 Apple silicon GPUs the M5-only fused /
+    matmul2d paths are skipped: the call routes unconditionally to
+    materialize->dense (FP4 decode to a transient bf16 buffer, then the pre-M5
+    dense bf16 `gemm_kernel_apple_8x8`).
     """
     var cc = ctx.compute_capability()
-    if cc != 5:
-        raise Error(
-            (
-                "enqueue_apple_fp4_matmul requires Apple M5"
-                " (compute_capability == 5); got compute_capability="
-            ),
-            cc,
-        )
 
     comptime assert (
         c_type == DType.float16
@@ -935,6 +996,26 @@ def enqueue_apple_fp4_matmul[
     debug_assert(
         k <= 65535, "Apple FP4 matmul: K must fit in UInt16; got K=", k
     )
+
+    # Pre-M5 (M1-M4): route unconditionally to materialize->dense, which
+    # decodes the FP4 weight to a transient bf16 buffer (hardware-neutral) and
+    # runs the pre-M5 dense bf16 `gemm_kernel_apple_8x8`.
+    if cc != 5:
+        # NVFP4's block size is 16, so K is always a multiple of 16 (hence 8)
+        # for well-formed weights, however to be safe we assert on a malformed
+        # K instead of producing silently bad results.
+        debug_assert(
+            k % 16 == 0,
+            (
+                "Apple pre-M5 FP4 matmul: K must be a multiple of 16 (NVFP4"
+                " block size); the 8x8 GEMM truncates ragged K. Got K="
+            ),
+            k,
+        )
+        _enqueue_apple_fp4_materialize_dense[c_type, elementwise_lambda_fn](
+            c, a, packed, scales, m, n, k, ctx
+        )
+        return
 
     # `matmul2d` W4A16 path (`enqueue_matmul2d_fp4_smem`). Its interior kernel is
     # tile-aligned (N % TG_N == 0, K % smem_bk == 0), so every route to it is
@@ -969,6 +1050,14 @@ def enqueue_apple_fp4_matmul[
         if m2d_aligned:
             enqueue_matmul2d_fp4_smem[c_type=c_type](c, a, packed, scales, ctx)
             return
+
+    # (3) BATCH-1 DECODE: M == 1 -> register-resident W4A16 GEMV, no MMA; see
+    # fp4_gemv.mojo for the full rationale.
+    if m == 1:
+        enqueue_apple_fp4_gemv[c_type, elementwise_lambda_fn](
+            c, a, packed, scales, n, k, ctx
+        )
+        return
 
     # Three-way M-adaptive dispatch (two independent crossovers, both measured):
     if m >= _FP4_MATERIALIZE_M_THRESHOLD:

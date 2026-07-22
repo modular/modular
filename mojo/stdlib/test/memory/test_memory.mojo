@@ -17,7 +17,7 @@ from std.os import abort
 from std.memory import (
     destroy_n,
     memcmp,
-    memcpy,
+    unsafe_memcpy,
     memmove,
     memset,
     memset_zero,
@@ -56,13 +56,13 @@ def test_memcpy() raises:
     var pair1 = Pair(1, 2)
     var pair2 = Pair(0, 0)
 
-    var src = UnsafePointer(to=pair1)
-    var dest = UnsafePointer(to=pair2)
+    var src = Pointer(to=pair1)
+    var dest = Pointer(to=pair2)
 
     # UnsafePointer test
     pair2.lo = 0
     pair2.hi = 0
-    memcpy(dest=dest, src=src, count=1)
+    unsafe_memcpy(dest=dest, src=src, count=1)
 
     assert_equal(pair2.lo, 1)
     assert_equal(pair2.hi, 2)
@@ -77,7 +77,7 @@ def test_memcpy() raises:
             buf[i] = src[i] = 2
             dst[i] = 0
 
-        memcpy(dest=dst, src=src, count=size)
+        unsafe_memcpy(dest=dst, src=src, count=size)
         var err = memcmp(dst, buf, size)
 
         assert_equal(err, 0)
@@ -109,7 +109,7 @@ def test_memcpy_dtype() raises:
     assert_equal(b[2], -1)
     assert_equal(b[3], -1)
 
-    memcpy(dest=b, src=a, count=4)
+    unsafe_memcpy(dest=b, src=a, count=4)
 
     assert_equal(b[0], 0)
     assert_equal(b[1], 1)
@@ -124,8 +124,8 @@ def test_memcmp() raises:
     var pair1 = Pair(1, 2)
     var pair2 = Pair(1, 2)
 
-    var ptr1 = UnsafePointer(to=pair1)
-    var ptr2 = UnsafePointer(to=pair2)
+    var ptr1 = Pointer(to=pair1)
+    var ptr2 = Pointer(to=pair2)
 
     var errors = memcmp(ptr1, ptr2, 1)
 
@@ -147,8 +147,8 @@ def test_memcmp_non_multiple_of_int32() raises:
 
     comptime assert size_of[SixByteStruct]() == 6
 
-    var ptr1 = UnsafePointer(to=triple1)
-    var ptr2 = UnsafePointer(to=triple2)
+    var ptr1 = Pointer(to=triple1)
+    var ptr2 = Pointer(to=triple2)
     var errors = memcmp(ptr1, ptr2, 1)
     assert_equal(errors, -1)
 
@@ -568,7 +568,7 @@ def test_memcmp_simd_zero_bytes() raises:
 def test_memset() raises:
     var pair = Pair(1, 2)
 
-    var ptr = UnsafePointer(to=pair)
+    var ptr = Pointer(to=pair)
     memset_zero(ptr, 1)
 
     assert_equal(pair.lo, 0)
@@ -659,12 +659,12 @@ def test_address_space_str() raises:
 
 def test_dtypepointer_gather() raises:
     var ptr = alloc[Float32](4)
-    ptr.store(0, SIMD[ptr.type.dtype, 4](0.0, 1.0, 2.0, 3.0))
+    ptr.store(0, SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 3.0))
 
     @parameter
     def _test_gather[
         width: SIMDSize
-    ](offset: SIMD[_, width], desired: SIMD[ptr.type.dtype, width]) raises:
+    ](offset: SIMD[_, width], desired: SIMD[ptr.T.dtype, width]) raises:
         var actual = ptr.gather(offset)
         assert_almost_equal(
             actual, desired, msg="_test_gather", atol=0.0, rtol=0.0
@@ -676,8 +676,8 @@ def test_dtypepointer_gather() raises:
     ](
         offset: SIMD[_, width],
         mask: SIMD[DType.bool, width],
-        default: SIMD[ptr.type.dtype, width],
-        desired: SIMD[ptr.type.dtype, width],
+        default: SIMD[ptr.T.dtype, width],
+        desired: SIMD[ptr.T.dtype, width],
     ) raises:
         var actual = ptr.gather(offset, mask, default)
         assert_almost_equal(
@@ -685,17 +685,15 @@ def test_dtypepointer_gather() raises:
         )
 
     var offset = SIMD[DType.int64, 8](3, 0, 2, 1, 2, 0, 3, 1)
-    var desired = SIMD[ptr.type.dtype, 8](
-        3.0, 0.0, 2.0, 1.0, 2.0, 0.0, 3.0, 1.0
-    )
+    var desired = SIMD[ptr.T.dtype, 8](3.0, 0.0, 2.0, 1.0, 2.0, 0.0, 3.0, 1.0)
 
     _test_gather[1](UInt16(2), 2.0)
     _test_gather(offset.cast[DType.uint32]().slice[2](), desired.slice[2]())
     _test_gather(offset.cast[DType.uint64]().slice[4](), desired.slice[4]())
 
     var mask = offset.ge(0) & offset.lt(3)
-    var default = SIMD[ptr.type.dtype, 8](-1.0)
-    desired = SIMD[ptr.type.dtype, 8](-1.0, 0.0, 2.0, 1.0, 2.0, 0.0, -1.0, 1.0)
+    var default = SIMD[ptr.T.dtype, 8](-1.0)
+    desired = SIMD[ptr.T.dtype, 8](-1.0, 0.0, 2.0, 1.0, 2.0, 0.0, -1.0, 1.0)
 
     _test_masked_gather[1](Int16(2), Scalar[DType.bool](False), -1.0, -1.0)
     _test_masked_gather[1](Int32(2), Scalar[DType.bool](True), -1.0, 2.0)
@@ -706,15 +704,15 @@ def test_dtypepointer_gather() raises:
 
 def test_dtypepointer_scatter() raises:
     var ptr = alloc[Float32](4)
-    ptr.store(0, SIMD[ptr.type.dtype, 4](0.0))
+    ptr.store(0, SIMD[ptr.T.dtype, 4](0.0))
 
     @parameter
     def _test_scatter[
         width: SIMDSize
     ](
         offset: SIMD[_, width],
-        val: SIMD[ptr.type.dtype, width],
-        desired: SIMD[ptr.type.dtype, 4],
+        val: SIMD[ptr.T.dtype, width],
+        desired: SIMD[ptr.T.dtype, 4],
     ) raises:
         ptr.scatter(offset, val)
         var actual = ptr.load[width=4](0)
@@ -727,9 +725,9 @@ def test_dtypepointer_scatter() raises:
         width: SIMDSize
     ](
         offset: SIMD[_, width],
-        val: SIMD[ptr.type.dtype, width],
+        val: SIMD[ptr.T.dtype, width],
         mask: SIMD[DType.bool, width],
-        desired: SIMD[ptr.type.dtype, 4],
+        desired: SIMD[ptr.T.dtype, 4],
     ) raises:
         ptr.scatter(offset, val, mask)
         var actual = ptr.load[width=4](0)
@@ -737,45 +735,43 @@ def test_dtypepointer_scatter() raises:
             actual, desired, msg="_test_masked_scatter", atol=0.0, rtol=0.0
         )
 
-    _test_scatter[1](
-        UInt16(2), 2.0, SIMD[ptr.type.dtype, 4](0.0, 0.0, 2.0, 0.0)
-    )
+    _test_scatter[1](UInt16(2), 2.0, SIMD[ptr.T.dtype, 4](0.0, 0.0, 2.0, 0.0))
     _test_scatter(  # Test with repeated offsets
         SIMD[DType.uint32, 4](1, 1, 1, 1),
-        SIMD[ptr.type.dtype, 4](-1.0, 2.0, -2.0, 1.0),
-        SIMD[ptr.type.dtype, 4](0.0, 1.0, 2.0, 0.0),
+        SIMD[ptr.T.dtype, 4](-1.0, 2.0, -2.0, 1.0),
+        SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 0.0),
     )
     _test_scatter(
         SIMD[DType.uint64, 4](3, 2, 1, 0),
-        SIMD[ptr.type.dtype, 4](0.0, 1.0, 2.0, 3.0),
-        SIMD[ptr.type.dtype, 4](3.0, 2.0, 1.0, 0.0),
+        SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 3.0),
+        SIMD[ptr.T.dtype, 4](3.0, 2.0, 1.0, 0.0),
     )
 
-    ptr.store(0, SIMD[ptr.type.dtype, 4](0.0))
+    ptr.store(0, SIMD[ptr.T.dtype, 4](0.0))
 
     _test_masked_scatter[1](
         Int16(2),
         2.0,
         Scalar[DType.bool](False),
-        SIMD[ptr.type.dtype, 4](0.0, 0.0, 0.0, 0.0),
+        SIMD[ptr.T.dtype, 4](0.0, 0.0, 0.0, 0.0),
     )
     _test_masked_scatter[1](
         Int32(2),
         2.0,
         Scalar[DType.bool](True),
-        SIMD[ptr.type.dtype, 4](0.0, 0.0, 2.0, 0.0),
+        SIMD[ptr.T.dtype, 4](0.0, 0.0, 2.0, 0.0),
     )
     _test_masked_scatter(  # Test with repeated offsets
         SIMD[DType.int64, 4](1, 1, 1, 1),
-        SIMD[ptr.type.dtype, 4](-1.0, 2.0, -2.0, 1.0),
+        SIMD[ptr.T.dtype, 4](-1.0, 2.0, -2.0, 1.0),
         SIMD[DType.bool, 4](True, True, True, False),
-        SIMD[ptr.type.dtype, 4](0.0, -2.0, 2.0, 0.0),
+        SIMD[ptr.T.dtype, 4](0.0, -2.0, 2.0, 0.0),
     )
     _test_masked_scatter(
         SIMD[DType.int, 4](3, 2, 1, 0),
-        SIMD[ptr.type.dtype, 4](0.0, 1.0, 2.0, 3.0),
+        SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 3.0),
         SIMD[DType.bool, 4](True, False, True, True),
-        SIMD[ptr.type.dtype, 4](3.0, 2.0, 2.0, 0.0),
+        SIMD[ptr.T.dtype, 4](3.0, 2.0, 2.0, 0.0),
     )
 
     ptr.free()
@@ -814,12 +810,13 @@ def test_memmove_non_overlapping_regions() raises:
 
 
 def test_uninit_move_n_trivial() raises:
-    # Test with trivial move type - should use memcpy, not call move constructor
+    # Test with trivial move type - should use unsafe_memcpy, not call move
+    # constructor
     comptime Counter = MoveCounter[Int, trivial_move=True]
     var src = alloc[Counter](3)
-    (src + 0).init_pointee_move(Counter(10))
-    (src + 1).init_pointee_move(Counter(20))
-    (src + 2).init_pointee_move(Counter(30))
+    (src + 0).unsafe_write(Counter(10))
+    (src + 1).unsafe_write(Counter(20))
+    (src + 2).unsafe_write(Counter(30))
 
     var dest = alloc[Counter](3)
 
@@ -844,9 +841,9 @@ def test_uninit_move_n_trivial() raises:
 def test_uninit_move_n_nontrivial() raises:
     # Test with non-trivial type that tracks moves
     var src = alloc[MoveCounter[String]](3)
-    (src + 0).init_pointee_move(MoveCounter("foo"))
-    (src + 1).init_pointee_move(MoveCounter("bar"))
-    (src + 2).init_pointee_move(MoveCounter("baz"))
+    (src + 0).unsafe_write(MoveCounter("foo"))
+    (src + 1).unsafe_write(MoveCounter("bar"))
+    (src + 2).unsafe_write(MoveCounter("baz"))
 
     var dest = alloc[MoveCounter[String]](3)
 
@@ -871,12 +868,12 @@ def test_uninit_move_n_nontrivial() raises:
 
 
 def test_uninit_copy_n_trivial() raises:
-    # Test with trivial copy type - should use memcpy, not call copy ctor
+    # Test with trivial copy type - should use unsafe_memcpy, not call copy ctor
     comptime Counter = CopyCounter[Int, trivial_copy=True]
     var src = alloc[Counter](3)
-    src.init_pointee_move(Counter(0))
-    (src + 1).init_pointee_move(Counter(1))
-    (src + 2).init_pointee_move(Counter(2))
+    src.unsafe_write(Counter(0))
+    (src + 1).unsafe_write(Counter(1))
+    (src + 2).unsafe_write(Counter(2))
 
     var dest = alloc[Counter](3)
 
@@ -890,7 +887,7 @@ def test_uninit_copy_n_trivial() raises:
     assert_equal(dest[1].value, 1)
     assert_equal(dest[2].value, 2)
 
-    # Verify copy constructor was NOT called (trivial copy uses memcpy)
+    # Verify copy constructor was NOT called (trivial copy uses unsafe_memcpy)
     assert_equal(dest[0].copy_count, 0)
     assert_equal(dest[1].copy_count, 0)
     assert_equal(dest[2].copy_count, 0)
@@ -902,9 +899,9 @@ def test_uninit_copy_n_trivial() raises:
 def test_uninit_copy_n_nontrivial() raises:
     # Test with non-trivial type that tracks copies
     var src = alloc[CopyCounter[String]](3)
-    src.init_pointee_move(CopyCounter("alpha"))
-    (src + 1).init_pointee_move(CopyCounter("beta"))
-    (src + 2).init_pointee_move(CopyCounter("gamma"))
+    src.unsafe_write(CopyCounter("alpha"))
+    (src + 1).unsafe_write(CopyCounter("beta"))
+    (src + 2).unsafe_write(CopyCounter("gamma"))
 
     var dest = alloc[CopyCounter[String]](3)
 
@@ -937,13 +934,13 @@ def test_uninit_copy_n_nontrivial() raises:
 def test_destroy_n_trivial() raises:
     # Test with trivial destructor - should be no-op, not call __del__
     var del_count = 0
-    var counter_ptr = UnsafePointer(to=del_count)
+    var counter_ptr = Pointer(to=del_count)
     comptime Counter = DelCounter[origin_of(del_count), trivial_del=True]
 
     var ptr = alloc[Counter](3)
-    (ptr + 0).init_pointee_move(Counter(counter_ptr))
-    (ptr + 1).init_pointee_move(Counter(counter_ptr))
-    (ptr + 2).init_pointee_move(Counter(counter_ptr))
+    (ptr + 0).unsafe_write(Counter(counter_ptr))
+    (ptr + 1).unsafe_write(Counter(counter_ptr))
+    (ptr + 2).unsafe_write(Counter(counter_ptr))
 
     # This should compile to nothing for trivial destructors
     destroy_n(ptr, count=3)
@@ -956,13 +953,13 @@ def test_destroy_n_trivial() raises:
 def test_destroy_n_nontrivial() raises:
     # Test with non-trivial type that tracks destructor calls
     var del_count = 0
-    var counter_ptr = UnsafePointer(to=del_count)
+    var counter_ptr = Pointer(to=del_count)
     comptime Counter = DelCounter[origin_of(del_count)]
 
     var ptr = alloc[Counter](3)
-    (ptr + 0).init_pointee_move(Counter(counter_ptr))
-    (ptr + 1).init_pointee_move(Counter(counter_ptr))
-    (ptr + 2).init_pointee_move(Counter(counter_ptr))
+    (ptr + 0).unsafe_write(Counter(counter_ptr))
+    (ptr + 1).unsafe_write(Counter(counter_ptr))
+    (ptr + 2).unsafe_write(Counter(counter_ptr))
 
     destroy_n(ptr, count=3)
     # Verify destructor was called for all 3 elements
@@ -974,9 +971,9 @@ def test_destroy_n_nontrivial() raises:
 def test_uninit_move_n_zero_count() raises:
     # Test with zero count - should be no-op
     var src = alloc[MoveCounter[String]](1)
-    # Use memcpy to initialize without calling move constructor
+    # Use unsafe_memcpy to initialize without calling move constructor
     var tmp = MoveCounter("test")
-    memcpy(dest=src, src=UnsafePointer(to=tmp), count=1)
+    unsafe_memcpy(dest=src, src=Pointer(to=tmp), count=1)
 
     var dest = alloc[MoveCounter[String]](1)
 
@@ -994,7 +991,7 @@ def test_uninit_move_n_zero_count() raises:
 def test_uninit_copy_n_zero_count() raises:
     # Test with zero count - should be no-op
     var src = alloc[CopyCounter[String]](1)
-    src.init_pointee_move(CopyCounter("test"))
+    src.unsafe_write(CopyCounter("test"))
 
     var dest = alloc[CopyCounter[String]](1)
 
@@ -1012,11 +1009,11 @@ def test_uninit_copy_n_zero_count() raises:
 def test_destroy_n_zero_count() raises:
     # Test with zero count - should be no-op
     var del_count = 0
-    var counter_ptr = UnsafePointer(to=del_count)
+    var counter_ptr = Pointer(to=del_count)
     comptime Counter = DelCounter[origin_of(del_count), trivial_del=True]
 
     var ptr = alloc[Counter](1)
-    ptr.init_pointee_move(Counter(counter_ptr))
+    ptr.unsafe_write(Counter(counter_ptr))
 
     destroy_n(ptr, count=0)
     # Destructor should NOT have been called - del_count should still be 0

@@ -24,7 +24,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.ops import conv2d
-from modular_graph_test import modular_graph_test
+from test_common.modular_graph_test import modular_graph_test
 
 # Avoid using TF32 for F32 accuracy tests
 torch.backends.cudnn.allow_tf32 = False

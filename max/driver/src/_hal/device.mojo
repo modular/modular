@@ -17,6 +17,7 @@ from .plugin import (
     RawDriver,
     OutParam,
     DeviceHandle,
+    M_driver_dlpack_device,
 )
 from .status import STATUS_SUCCESS, STATUS_INVALID_ARG, HALError
 
@@ -28,7 +29,7 @@ from std.memory.arc_pointer import WeakPointer
 
 from std.gpu.host.compile import get_gpu_target
 from std.gpu.host.info import GPUInfo
-from machine import MachineDefinition, DeviceRef, DeviceSpec
+from ._machine import MachineDefinition, DeviceRef, DeviceSpec
 
 
 def get_machine_definition() -> MachineDefinition:
@@ -128,3 +129,19 @@ struct Device[spec: DeviceSpec](ImplicitlyDeletable, Movable):
         self,
     ) raises HALError -> ArcPointer[Context[Self.spec]]:
         return Context[Self.spec]._create(self)
+
+    def get_attribute(self, attribute: Int32) raises HALError -> Int32:
+        """Queries a numeric device attribute by its CUDA-style ID."""
+        return self._raw[].get_device_attribute(self._handle, attribute)
+
+    def get_dlpack_device(
+        self, pinned: Bool
+    ) raises HALError -> M_driver_dlpack_device:
+        """Returns the DLPack `(device_type, device_id)` for this device."""
+        if pinned:
+            return self._raw[].get_device_property[
+                "dlpack_device_pinned", M_driver_dlpack_device
+            ](self._handle)
+        return self._raw[].get_device_property[
+            "dlpack_device", M_driver_dlpack_device
+        ](self._handle)

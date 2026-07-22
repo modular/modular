@@ -69,7 +69,6 @@ modular_py_binary(
         "//max:_cublas",
         "//max:_cudnn",
         "//max:_cufft",
-        "//max:_curand",
         "//max:_rocblas",
         "//max:comm",
         "//max:extensibility",

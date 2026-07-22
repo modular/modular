@@ -30,6 +30,7 @@ from .arc_pointer import ArcPointer
 from .memory import (
     memcmp,
     memcpy,
+    unsafe_memcpy,
     memmove,
     memset,
     memset_zero,
@@ -45,18 +46,21 @@ from .stack_allocation import stack_allocation
 from .owned_pointer import OwnedPointer
 from .pointer import (
     AddressSpace,
+    ImmPointer,
     ImmutPointer,
     MutPointer,
     Pointer,
 )
-from .span import ImmutSpan, MutSpan, Span
 from .unsafe import bitcast, pack_bits
 from .unsafe_pointer import (
     alloc,
+    ImmOpaquePointer,
     ImmutOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
+    OptionalPointer,
     OptionalUnsafePointer,
+    ImmUnsafePointer,
     ImmutUnsafePointer,
     MutUnsafePointer,
     UnsafePointer,

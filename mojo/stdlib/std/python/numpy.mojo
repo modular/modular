@@ -16,7 +16,7 @@ These functions move flat numeric data between Mojo `Span` and NumPy
 arrays when a Mojo program drives CPython (via `Python.import_module`), without
 hand-written `ctypes` plumbing:
 
-- `to_numpy_array` builds a NumPy array from a Mojo `Span` by copying
+- `copy_to_numpy_array` builds a NumPy array from a Mojo `Span` by copying
   the data into a new, independent array.
 - `from_numpy_array` borrows a NumPy array's buffer as a Mojo `Span`
   (zero-copy).
@@ -27,7 +27,8 @@ supported. This targets the common case of handing computed numeric data to a
 library such as `matplotlib`.
 """
 
-from std.memory import Span, memcpy
+from std.memory import unsafe_memcpy
+from std.collections import Span
 
 from .python import Python
 from .python_object import PythonObject
@@ -67,22 +68,25 @@ def _is_numpy_dtype[dtype: DType]() -> Bool:
 
 
 # ===----------------------------------------------------------------------=== #
-# to_numpy_array
+# copy_to_numpy_array
 # ===----------------------------------------------------------------------=== #
 
 
-def to_numpy_array[
+def copy_to_numpy_array[
     dtype: DType, origin: Origin
 ](data: Span[Scalar[dtype], origin]) raises -> PythonObject:
     """Builds a 1-D NumPy array from a Mojo `Span` of scalars.
 
     The data is copied into a new, independent NumPy array, so the result
-    remains valid after `data` is later mutated or freed.
+    remains valid after `data` is later mutated or freed. Unlike
+    `from_numpy_array`, which returns a zero-copy view, this function does not
+    alias `data`: mutating `data` after this call is not reflected in the
+    returned array, and writes to the array are not reflected in `data`.
 
     Example:
 
     ```mojo
-    from std.python.numpy import to_numpy_array
+    from std.python.numpy import copy_to_numpy_array
     from std.math import sin
 
     var values = List[Float64](capacity=1024)
@@ -90,7 +94,7 @@ def to_numpy_array[
         var x = Float64(i) * 0.01
         values.append(sin(x) * sin(x))
 
-    var arr = to_numpy_array(values)  # an independent NumPy float64 array
+    var arr = copy_to_numpy_array(values)  # an independent NumPy float64 array
     ```
 
     Parameters:
@@ -112,9 +116,14 @@ def to_numpy_array[
         If NumPy is unavailable, or if the underlying NumPy calls fail.
     """
     comptime is_supported = _is_numpy_dtype[dtype]()
-    comptime assert (
-        is_supported
-    ), "to_numpy_array: unsupported dtype; expected a fixed-width numeric dtype"
+    comptime assert is_supported, String(
+        "copy_to_numpy_array: unsupported dtype '",
+        dtype,
+        "'; expected a fixed-width numeric dtype (int8-int64, uint8-uint64,",
+        " float16, float32, or float64). Note: `Int` is a machine-word integer",
+        " and is not supported here — use a fixed-width scalar such as",
+        " `Int64` (for example, `[Int64(i) for i in range(n)]`).",
+    )
 
     var np = Python.import_module("numpy")
     var n = len(data)
@@ -125,7 +134,7 @@ def to_numpy_array[
 
     var arr = np.empty(n, dtype=dtype_str)
     var dst = arr.ctypes.data.unsafe_get_as_pointer[dtype]()
-    memcpy(dest=dst, src=data.unsafe_ptr(), count=n)
+    unsafe_memcpy(dest=dst, src=data.unsafe_ptr(), count=n)
     return arr
 
 
@@ -189,9 +198,11 @@ def from_numpy_array[
         match `dtype`, or is not writable when borrowed mutably.
     """
     comptime is_supported = _is_numpy_dtype[dtype]()
-    comptime assert is_supported, (
-        "from_numpy_array: unsupported dtype; expected a fixed-width numeric"
-        " dtype"
+    comptime assert is_supported, String(
+        "from_numpy_array: unsupported dtype '",
+        dtype,
+        "'; expected a fixed-width numeric dtype (int8-int64, uint8-uint64,",
+        " float16, float32, or float64).",
     )
 
     var ndim = Int(py=array.ndim)

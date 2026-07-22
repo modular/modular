@@ -19,5 +19,6 @@ from .device import Device
 from .driver import Driver, load_driver
 from .event import Event
 from .function import Function
+from .memory import copy, fill, set_memory
 from .queue import Queue
 from .stream import Stream

@@ -14,7 +14,7 @@
 
 There are a few main tools in this module:
 
-- `Hashable` trait for types implementing `__hash__(self) -> UInt`
+- `Hashable` trait for types implementing `__hash__(self, mut hasher)`
 - `hash[T: Hashable](hashable: T) -> Int` built-in function.
 - A `hash()` implementation for arbitrary byte strings,
   `hash(data: UnsafePointer[mut=False, UInt8], n: Int) -> Int`,
@@ -26,7 +26,7 @@ There are a few main tools in this module:
 """
 
 from std.builtin.constrained import _field_conforms_to_error
-from std.memory import Span
+from std.collections import Span
 from std.reflection import reflect
 
 from .hasher import Hasher, default_hasher
@@ -88,7 +88,7 @@ trait Hashable:
         comptime names = r.field_names()
         comptime types = r.field_types()
 
-        comptime for i in range(names.size):
+        comptime for i in range(names.length):
             comptime T = types[i]
             comptime assert conforms_to(T, Hashable), _field_conforms_to_error[
                 Parent=Self,

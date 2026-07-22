@@ -17,12 +17,11 @@ from std.sys import argv
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from std.sys import has_amd_gpu_accelerator
+from std.sys import Vendor, has_amd_gpu_accelerator
 from std.gpu.host.info import (
     A100,
     H100,
     GPUInfo,
-    Vendor,
     _is_sm10x_gpu,
 )
 from layout import (
@@ -574,7 +573,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     )
 
     @always_inline
-    def launch(ctx: DeviceContext) raises {read}:
+    def launch(ctx: DeviceContext) raises {imm}:
         flash_attention[sink=True](
             out_device,
             q_device,

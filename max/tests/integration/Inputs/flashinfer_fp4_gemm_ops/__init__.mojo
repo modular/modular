@@ -12,11 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """FlashInfer FP4 GEMM custom op for loading TVM FFI modules."""
 
-import extensibility as compiler
+import extensibility
 import std.format
 from std.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUstream
-from std.memory import Span, stack_allocation
+from std.memory import stack_allocation
+from std.collections import Span
 from std.os import abort
 
 from std.ffi import OwnedDLHandle
@@ -42,7 +43,13 @@ struct Module:
         workspace: DLTensor[dtype=DType.int8, rank=1],
         tactic: Int = 0,  # auto
     ) raises -> None:
-        safe_call = self.lib.get_function[SafeFunction]("__tvm_ffi_fp4_gemm")
+        # `borrow()` hands back the underlying handle so we call
+        # `get_function` directly. That's safe here because `self.lib`
+        # is a long-lived member that outlives the call, so the looked-up
+        # symbol can't be `dlclose`d out from under us.
+        safe_call = self.lib.borrow().get_function[SafeFunction](
+            "__tvm_ffi_fp4_gemm"
+        )
 
         # `def` params are already mutable local copies, and
         # `DLTensor.__copyinit__` (used at the call site) already fixed
@@ -75,7 +82,7 @@ struct Module:
             raise Error("FlashInfer fp4_gemm failed: {}".format(error))
 
 
-@compiler.register("flashinfer_fp4_gemm")
+@extensibility.register("flashinfer_fp4_gemm")
 struct FlashInferFP4Gemm[lib_path: StaticString]:
     """Custom op that calls FlashInfer FP4 GEMM via TVM FFI.
 

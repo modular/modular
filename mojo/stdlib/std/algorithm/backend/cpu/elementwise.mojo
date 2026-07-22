@@ -82,7 +82,7 @@ def _elementwise_impl_cpu_1d[
     var chunk_size = ceildiv(problem_size, num_workers)
 
     @always_inline
-    def task_func(i: Int) {read}:
+    def task_func(i: Int) {imm}:
         var start_offset = i * chunk_size
         var end_offset = min((i + 1) * chunk_size, problem_size)
         var len = end_offset - start_offset
@@ -90,7 +90,7 @@ def _elementwise_impl_cpu_1d[
         @always_inline
         def func_wrapper[
             simd_width: Int
-        ](idx: Int) {read start_offset, read func,}:
+        ](idx: Int) {imm start_offset, imm func,}:
             var offset = start_offset + idx
             func[simd_width](Coord(offset))
 
@@ -139,7 +139,7 @@ def _elementwise_impl_cpu_nd[
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
     @always_inline
-    def task_func(i: Int) {read}:
+    def task_func(i: Int) {imm}:
         var start_parallel_offset = i * chunk_size
         var end_parallel_offset = min((i + 1) * chunk_size, parallelism_size)
 
@@ -152,7 +152,7 @@ def _elementwise_impl_cpu_nd[
         @always_inline
         def func_wrapper_nd[
             simd_width: Int
-        ](idx: Int) {mut indices, read func, read}:
+        ](idx: Int) {mut indices, imm func, imm}:
             indices[rank - 1] = idx
             func[simd_width](Coord(indices.canonicalize()))
 

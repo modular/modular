@@ -48,10 +48,18 @@ def run_bmm_and_check_result[
     lambda_fn: Optional[epilogue_func_type] = None,
     check_against_naive_kernel: Bool = False,
 ](
-    a_host: TileTensor[mut=True, dtype, ...],
-    b_host: TileTensor[mut=True, dtype, ...],
-    c_host: TileTensor[mut=True, dtype, ...],
-    c_host_ref: TileTensor[mut=True, dtype, ...],
+    a_host: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_host: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    c_host: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    c_host_ref: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
     rtol: Float64 = 1e-3 if dtype == DType.float32 else 1e-2,
 ) raises:

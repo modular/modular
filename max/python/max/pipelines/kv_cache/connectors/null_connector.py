@@ -49,6 +49,18 @@ class NullConnector:
     ) -> None:
         pass
 
+    def touch(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> None:
+        pass
+
+    def count_cached_prefix(
+        self, block_hashes: Sequence[bytes]
+    ) -> tuple[int, int]:
+        return (0, 0)
+
     def wait_for_loads(self) -> None:
         pass
 

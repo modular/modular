@@ -423,27 +423,27 @@ def run_one_case(
     )
 
     var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_type, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
-        ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        ).as_unsafe_any_origin(),
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
-        ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        ).as_unsafe_any_origin(),
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
                 lookup_table_lt.runtime_layout.stride.value,
             ),
-        ),
+        ).as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
@@ -643,12 +643,24 @@ def _verify_ref(
         raise Error("MLA decode vs naive mismatch")
 
 
-def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
-    """Schedule amplification: force split-K (num_partitions=2) on a decode case
-    and re-run `repeats` times on the same input, flagging any non-bit-exact
+def run_schedule_case(
+    ctx: DeviceContext,
+    spec: CaseSpec,
+    repeats: Int,
+    pin_partitions: Bool = True,
+) raises:
+    """Rerun bit-stability on a long-cache decode case (serves two oracles).
+
+    Re-runs `repeats` times on the same input and flags any non-bit-exact
     output. A difference means the inter-block split-K reduction over the paged
     cache is order-dependent (a race / nondeterminism) -- which racecheck
     (intra-block only) cannot see.
+
+    - `pin_partitions=True` (`schedule` oracle): forces num_partitions=2 to
+      exercise a specific split-K decomposition.
+    - `pin_partitions=False` (`determinism` oracle): leaves num_partitions
+      UNSET so the launch uses whatever `mla_decode_dispatch` picks for this
+      shape (mla_decode_dispatch.mojo), catching races in the default decode.
     """
     # A single decode token with a long cache is the split-K path.
     var sched_spec = CaseSpec(
@@ -746,27 +758,27 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
         ),
     )
     var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_type, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
-        ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        ).as_unsafe_any_origin(),
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
-        ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        ).as_unsafe_any_origin(),
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
                 lookup_table_lt.runtime_layout.stride.value,
             ),
-        ),
+        ).as_unsafe_any_origin(),
         UInt32(1),
         UInt32(max_cache_len),
     )
@@ -783,7 +795,9 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
         batch_size, max_cache_len, 1, ctx
     )
     var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
-    var np = Optional[Int](2)  # force split-K
+    # Pin split-K for the `schedule` oracle; leave it to the decode heuristic
+    # for the `determinism` oracle.
+    var np = Optional[Int](2) if pin_partitions else Optional[Int]()
 
     generic_flare_mla_decode_kv_cache_ragged[target="gpu", mask_str=MASK](
         q_tt,
@@ -843,6 +857,7 @@ def main() raises:
     var the_budget = flag_int(args, "--budget", budget)
     var check = flag_int(args, "--check", 0) == 1
     var schedule_repeats = flag_int(args, "--schedule", 0)
+    var rerun = flag_int(args, "--rerun", 0)
     seed(the_seed)
 
     if mode == "list-specs":
@@ -885,7 +900,9 @@ def main() raises:
         # The tuned ragged MLA-decode dispatch + MLADispatchScalarArgs are SM100
         # (B200) machinery; the BUILD target is b200-constrained accordingly.
         with DeviceContext() as ctx:
-            if schedule_repeats > 0:
+            if rerun > 0:
+                run_schedule_case(ctx, spec, rerun, pin_partitions=False)
+            elif schedule_repeats > 0:
                 run_schedule_case(ctx, spec, schedule_repeats)
             else:
                 run_one_case(ctx, spec, check)
@@ -908,7 +925,9 @@ def main() raises:
     with DeviceContext() as ctx:
         for i in range(len(specs)):
             print("case", i, ":", specs[i])
-            if schedule_repeats > 0:
+            if rerun > 0:
+                run_schedule_case(ctx, specs[i], rerun, pin_partitions=False)
+            elif schedule_repeats > 0:
                 run_schedule_case(ctx, specs[i], schedule_repeats)
             else:
                 run_one_case(ctx, specs[i], check)

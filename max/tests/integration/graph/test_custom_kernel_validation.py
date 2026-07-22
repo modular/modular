@@ -469,7 +469,7 @@ class TestCustomOperationExecution:
 
 
 class TestKernelRegistrationOverride:
-    """Empirical verification that user @compiler.register shadows built-in
+    """Empirical verification that user @extensibility.register shadows built-in
     MOGG kernels when the same op-name is registered in a custom mojopkg
     supplied via Graph(..., custom_extensions=[...]).
     """

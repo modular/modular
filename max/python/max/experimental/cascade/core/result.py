@@ -26,6 +26,8 @@ from collections.abc import AsyncIterator, Generator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
+from pydantic import TypeAdapter
+
 if TYPE_CHECKING:
     from max.experimental.cascade.core.interfaces import Runtime
 
@@ -38,15 +40,27 @@ class Result(Generic[T]):
 
     result_id: str
     runtime: Runtime
+    # Expected type of the resolved value; local only, never sent on the wire.
+    type_hint: object | None = None
+
+    def _decode(self, value: object) -> T:
+        # We can either get a fully formed value (i.e. from LocalRuntime),
+        # a primitive type, or a CascadeValue, which is a Python view of
+        # a partially decoded JSON string. For a CascadeValue, we want to
+        # resolve it into the final type via `type_hint`.
+
+        # Here, we handle primitive types.
+        if self.type_hint is None or not isinstance(value, (dict, list)):
+            return cast(T, value)
+        # TypeAdapter should handle lists, dicts, and custom types, whether
+        # fully resolved or partially resolved as a CascadeValue.
+        return cast(T, TypeAdapter(self.type_hint).validate_python(value))
 
     def __await__(self) -> Generator[Any, None, T]:
-        # ``Runtime.get_result`` is typed ``Awaitable[object]`` because
-        # the runtime can't statically know the worker method's return
-        # type; ``T`` is carried by the static :py:class:`Proxy` binding.
-        return cast(
-            "Generator[Any, None, T]",
-            self.runtime.get_result(self.result_id).__await__(),
-        )
+        return self._resolve().__await__()
+
+    async def _resolve(self) -> T:
+        return self._decode(await self.runtime.get_result(self.result_id))
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,9 +72,18 @@ class ResultIter(Generic[T]):
 
     result_id: str
     runtime: Runtime
+    # Expected element type; local only, never sent on the wire.
+    type_hint: object | None = None
+
+    def _decode(self, item: object) -> T:
+        # See :py:meth:`Result._decode`: only raw JSON composites get rebuilt.
+        if self.type_hint is None or not isinstance(item, (dict, list)):
+            return cast(T, item)
+        return cast(T, TypeAdapter(self.type_hint).validate_python(item))
 
     def __aiter__(self) -> AsyncIterator[T]:
-        return cast(
-            "AsyncIterator[T]",
-            self.runtime.stream_result(self.result_id),
-        )
+        return self._resolve()
+
+    async def _resolve(self) -> AsyncIterator[T]:
+        async for item in self.runtime.stream_result(self.result_id):
+            yield self._decode(item)

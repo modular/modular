@@ -42,7 +42,7 @@ def legalize_topk_ids[
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
-        def is_duplicate() {read} -> Int:
+        def is_duplicate() {imm} -> Int:
             for i in range(top_k):
                 for j in range(i + 1, top_k):
                     if topk_ids_for_token[i] == topk_ids_for_token[j]:
@@ -238,7 +238,7 @@ def test_skip_a2a[
     var topk_ids_immut_ptr = (
         device_topk_buf.unsafe_ptr()
         .as_immutable()
-        .unsafe_origin_cast[ImmutUntrackedOrigin]()
+        .unsafe_origin_cast[ImmUntrackedOrigin]()
     )
 
     ep_fused_combine_kernel_api[

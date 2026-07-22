@@ -99,7 +99,7 @@ def test_stencil_avg_pool() raises:
     def load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) {
-        read input_stack,
+        imm input_stack,
         var input_shape,
     } -> SIMD[
         dtype, simd_width
@@ -223,7 +223,7 @@ def test_stencil_avg_pool_padded() raises:
     def load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) {
-        read input_stack,
+        imm input_stack,
         var input_shape,
     } -> SIMD[
         dtype, simd_width
@@ -345,7 +345,7 @@ def test_stencil_avg_pool_stride_2() raises:
     def load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) {
-        read input_stack,
+        imm input_stack,
         var input_shape,
     } -> SIMD[
         dtype, simd_width
@@ -469,7 +469,7 @@ def test_stencil_max_pool_dilation_2() raises:
     def load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) {
-        read input_stack,
+        imm input_stack,
         var input_shape,
     } -> SIMD[
         dtype, simd_width

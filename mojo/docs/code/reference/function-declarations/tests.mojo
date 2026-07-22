@@ -271,9 +271,7 @@ def test_out() raises:
 # --- ref convention ---
 
 
-def get_first[
-    T: Copyable
-](ref data: List[T],) -> ref[origin_of(data)] T:
+def get_first[T: Copyable](ref data: List[T]) -> ref[data[0]] T:
     return data[0]
 
 
@@ -363,7 +361,7 @@ def test_square() raises:
 
 
 def outer(x: Int) -> Int:
-    def inner() {read} -> Int:
+    def inner() {imm} -> Int:
         return x + 1
 
     return inner()

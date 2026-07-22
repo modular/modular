@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import compiler
+import extensibility
 
 from std.gpu.host import DeviceContext
 from std.math import ceildiv
@@ -107,7 +107,7 @@ def _histogram_gpu(
     )
 
 
-@compiler.register("histogram")
+@extensibility.register("histogram")
 struct Histogram:
     @staticmethod
     def execute[

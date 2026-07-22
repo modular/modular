@@ -15,17 +15,17 @@ MFMA dispatch used by `MhaPrefillV2`.
 
 Supports two MFMA flavors on gfx950, comptime-selected on `T`:
 
-- BF16 (`v_mfma_f32_32x32x16_bf16`) — `MMA_K=16`, 8 BF16 elts/lane/base.
+- BF16 (`v_mfma_f32_32x32x16_bf16`): `MMA_K=16`, 8 BF16 elts/lane/base.
   K side uses the two-XOR worker-index swizzle and `ds_read_b128`;
   V side uses the identity swizzle and the `ds_read_tr16_b64_warp`
   transpose-load.
-- FP8 e4m3 (`v_mfma_scale_f32_32x32x64_f8f6f4`) — `MMA_K=64`, 32 FP8
+- FP8 e4m3 (`v_mfma_scale_f32_32x32x64_f8f6f4`): `MMA_K=64`, 32 FP8
   elts/lane/base. K loader reuses the BF16 byte-level two-XOR
-  swizzle — the byte-positional swizzle works for both sizes
+  swizzle, the byte-positional swizzle works for both sizes
   because the sub-block is 64 B-wide either way. FP8 V loader uses
   `ds_read_tr8_b64` paired-lane transpose-loads, mirroring
   `TiledMmaLoader.load_v_fp8_strip`. `mma_QK` / `mma_PV` are
-  dtype-generic — `gpu_mma` dispatches on SIMD operand sizes.
+  dtype-generic; `gpu_mma` dispatches on SIMD operand sizes.
 """
 
 from std.gpu import lane_id
@@ -91,7 +91,7 @@ struct MhaConfigV2(ImplicitlyCopyable, Movable):
     var rescale_threshold: Float32
     """Lazy-rescale threshold in log2 units of the running max. Above
     this, `o_reg` / `norm_vec` are rescaled by
-    `exp2(max_prev - max_new)`; below this the rescale is deferred —
+    `exp2(max_prev - max_new)`; below this the rescale is deferred:
     the residual contribution from `att_block` is bounded by
     `exp2(-rescale_threshold)` of the new max."""
 
@@ -115,8 +115,8 @@ struct MhaConfigV2(ImplicitlyCopyable, Movable):
     (MMA_M=MMA_N=32, MMA_K=64).
 
     The 16×16×128 shape issues every 16 cycles vs 32 cycles for
-    32×32×64 — mirrors the FP8 ping-pong / 4-wave matmul choice
-    (see `amd_ping_pong_matmul.mojo:716-737`). BF16 is unaffected —
+    32×32×64; mirrors the FP8 ping-pong / 4-wave matmul choice
+    (see `amd_ping_pong_matmul.mojo:716-737`). BF16 is unaffected;
     it always uses 32×32×16. Defaults to False (today's 32×32×64
     path)."""
 
@@ -156,7 +156,7 @@ struct MlaConfigV2(ImplicitlyCopyable, Movable):
     `k_rope` at `[:, rope_cache_offset:rope_cache_offset + d_rope]`
     (the gap between the two segments is padded / reserved but counted
     in the cache stride). V is `v_nope` only, so V and O stay at
-    `d_pv = depth`, identical to the MHA path — DeepSeek-V3 MLA does
+    `d_pv = depth`, identical to the MHA path; DeepSeek-V3 MLA does
     not RoPE V.
 
     The MFMA-shape / SMEM-sub-block / K-loader / V-loader / PV-path
@@ -212,7 +212,7 @@ struct MlaConfigV2(ImplicitlyCopyable, Movable):
     var fp8_mma_k_128: Bool
     """Mirror of `MhaConfigV2.fp8_mma_k_128`. Architecturally blocked
     for this attention path by the QK-output / PV-B-input lane geometry
-    mismatch — kept for symmetry so MLA inherits the same comptime hook
+    mismatch, kept for symmetry so MLA inherits the same comptime hook
     if a cross-lane shuffle becomes available."""
 
     # MLA-specific fields.
@@ -223,7 +223,7 @@ struct MlaConfigV2(ImplicitlyCopyable, Movable):
     """RoPE-applied segment depth on Q and K. For DeepSeek-V3 MLA: 64."""
 
     var cache_depth: Int
-    """Latent K cache row width. For DeepSeek-V3 MLA: 576 — the gap
+    """Latent K cache row width. For DeepSeek-V3 MLA: 576. The gap
     between `d_nope` (128) and `rope_cache_offset` (512) is reserved
     / unused but present in the cache stride. Must match the
     production latent cache layout; see `mla_prefill.mojo:54`."""
@@ -283,7 +283,7 @@ struct MlaConfigV2(ImplicitlyCopyable, Movable):
         the `MhaMmaOp[T, ...]` machinery.
 
         The MFMA shape, SMEM sub-block geometry, K loader, V loader,
-        and PV path all live on `MhaMmaOp` — MLA's divergence is
+        and PV path all live on `MhaMmaOp`; MLA's divergence is
         purely in `MlaPrefillV2Core` (Q load at `d_qk`, K_rope DMA,
         two-segment QK). The derived `MhaConfigV2` carries `depth =
         d_pv = d_nope`; the MLA-specific `d_qk` / `d_rope` /
@@ -317,7 +317,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
       overload resolution; only the per-lane fragment size differs.
 
     `load_K` / `load_V` both comptime-branch on `T.is_float8()`:
-    - BF16 path: byte-identical to the original reference kernel — K
+    - BF16 path: byte-identical to the original reference kernel: K
       via two-XOR swizzle + `ds_read_b128`, V via
       `ds_read_tr16_b64_warp`.
     - FP8 path: K reuses the same byte-level two-XOR swizzle (the
@@ -362,8 +362,8 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
     comptime K_SUB_ROWS = 32
     """K SMEM sub-block rows. Same for BF16 and FP8 (32×32×64 path);
     the FP8 16×16×128 path keeps the same parent SMEM geometry so
-    the cooperative DMA producer (`SubTileLoaderLDS`) doesn't change
-    — the difference is purely on the consumer-side lane partition
+    the cooperative DMA producer (`SubTileLoaderLDS`) doesn't change;
+    the difference is purely on the consumer-side lane partition
     that `load_K` performs.
 
     BF16: 32×32 BF16 elts = 32×64 B. FP8 (any shape): 32×64 FP8 elts
@@ -372,7 +372,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
 
     comptime K_SUB_COLS = 64 if Self.T.is_float8() else 32
     """K SMEM sub-block cols. 32 BF16 elts = 64 B/row; 64 FP8 elts =
-    64 B/row. Byte-equivalent — same SMEM geometry for both FP8 MMA
+    64 B/row. Byte-equivalent, same SMEM geometry for both FP8 MMA
     shapes (32×32×64 and 16×16×128) because the parent allocation in
     `mha_prefill_v2.mojo` is unchanged; only the consumer-side lane
     partition differs.
@@ -389,7 +389,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
     comptime V_SUB_ROWS = 8
     """V SMEM sub-block rows. Matches the BF16 reference `st_8x32_s`
     row count; FP8 V uses paired-lane `ds_read_tr8_b64` (32×32×64 path) or
-    a per-lane scalar gather (16×16×128 path) — both treat the V
+    a per-lane scalar gather (16×16×128 path); both treat the V
     SMEM slab as a contiguous BN×depth block. The sub-block dims
     still drive the parent SMEM layout in `mha_prefill_v2.mojo`;
     keep `V_SUB_ROWS=8` so the cooperative DMA producer geometry
@@ -397,7 +397,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
 
     comptime V_SUB_COLS = 64 if Self.T.is_float8() else 32
     """V SMEM sub-block cols. 32 BF16 elts = 64 B/row; 64 FP8 elts =
-    64 B/row. Byte-equivalent — same SMEM geometry for both FP8 MMA
+    64 B/row. Byte-equivalent, same SMEM geometry for both FP8 MMA
     shapes."""
 
     # `ROWL_HALF_LANES` and `ROWL_STRIDE` describe the per-lane
@@ -427,7 +427,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
     """Input elements per lane per MFMA base tile.
 
     8 for BF16 (32×32×16). 32 for FP8 32×32×64. 32 for FP8 16×16×128
-    (the smaller M-dim is offset by the larger K-dim — total
+    (the smaller M-dim is offset by the larger K-dim, total
     M×K÷64 is identical)."""
 
     # Dimensional constraints (enforced in `load_K` / `load_V` /
@@ -472,7 +472,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
     """Per-lane PV-A fragment width = MMA_K * MMA_N / 64.
 
     8 for BF16 (16*32/64). 32 for FP8 32×32×64 (64*32/64).
-    32 for FP8 16×16×128 (128*16/64) — same as 32×32×64.
+    32 for FP8 16×16×128 (128*16/64), same as 32×32×64.
 
     Folds to a literal Int at type-check time because MMA_K and
     MMA_N are both comptime constants."""
@@ -530,14 +530,14 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
         of the byte offset (the upper 2 row bits at K_SUB_COLS=64 B)
         into bits 4..5, both at distance 4. The producer side composes
         the equivalent transformation from two vec-scope swizzles
-        (`Swizzle(1, 0, 4)` + `Swizzle(1, 1, 4)`) — see `k_swizzle` /
+        (`Swizzle(1, 0, 4)` + `Swizzle(1, 1, 4)`): see `k_swizzle` /
         `k_swizzle2` in `MhaPrefillV2`.
 
         Derived to be bank-conflict-free on the reference
         32-lanes-per-row access pattern: in each 16-lane LDS access
         cycle, the permutation of bank-quadrants is `{0, 16, 32, 48, 4,
-        20, 36, 52, 8, 24, 40, 56, 12, 28, 44, 60}` — a complete
-        bijection of `{0, 4, 8, ..., 60}` — for both `col_offset=0`
+        20, 36, 52, 8, 24, 40, 56, 12, 28, 44, 60}`: a complete
+        bijection of `{0, 4, 8, ..., 60}`, for both `col_offset=0`
         (lanes 0..31) and `col_offset=32` (lanes 32..63). The original
         two-distance `bit5^=bit9; bit4^=bit10` (distances 4 + 6) variant
         left a residual LDS bank conflict that this same-distance
@@ -577,6 +577,19 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
         FP8 path: each 32×64 sub-block holds exactly one 32×64 base
             tile (the col-parity loop collapses). 32 FP8 elts/lane =
             32 B = two 16-B `_load_from_lds` reads, joined.
+
+        Parameters:
+            layout_dst: Register-tile layout of `dst`. Its third
+                static-shape dim must equal `FRAG_ELTS`.
+            layout_src: SMEM tile layout of `src`. Caller declares
+                K SMEM as `row_major[KV_BLOCK * (DEPTH / K_SUB_COLS),
+                K_SUB_COLS]`.
+
+        Args:
+            dst: Destination register tile for K, shape
+                `(KV_BLOCK, DEPTH)` decomposed into `MMA_M × MMA_K`
+                base tiles. Written unswizzled.
+            src: Source SMEM tile holding the swizzled K block.
         """
         comptime assert (
             Self.T == DType.bfloat16 or Self.T.is_float8()
@@ -774,12 +787,12 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
             (top + bot) joined into an 8-elt fragment. V_LAYOUT =
             `row_major[KV_BLOCK/16, DEPTH/32, 8]`.
 
-        FP8 path: paired-lane `ds_read_tr8_b64` — 4 reads per (i, j)
+        FP8 path: paired-lane `ds_read_tr8_b64`: 4 reads per (i, j)
             joined into a 32-elt fragment. V_LAYOUT =
             `row_major[KV_BLOCK/64, DEPTH/32, 32]`. Per-lane
             addressing mirrors `TiledMmaLoader.load_v_fp8_strip`, but
             the SMEM linearization uses the sub-tile-major layout
-            the `st_8x32` DMA writes — not a contiguous BN×depth
+            the `st_8x32` DMA writes, not a contiguous BN×depth
             slab. See the sub-tile linearization comment below.
 
         Caller must declare V SMEM with shape
@@ -792,9 +805,22 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
         MMA_N=32 depth cols) spans 8 sub-tile rows (V_SUB_ROWS=8)
         in K and half a sub-tile col in N (V_SUB_COLS=64 vs
         MMA_N=32). Loader must compute the correct sub-tile id
-        from the per-lane `key` — assuming contiguous depth-blocks
+        from the per-lane `key`; assuming contiguous depth-blocks
         catastrophically corrupts the second (and later) depth
         block at d >= V_SUB_COLS.
+
+        Parameters:
+            layout_dst: Register-tile layout of `dst`. Its third
+                static-shape dim must equal `FRAG_ELTS`.
+            layout_src: SMEM tile layout of `src`. Caller declares V
+                SMEM as `row_major[KV_BLOCK * (DEPTH / V_SUB_COLS),
+                V_SUB_COLS]`.
+
+        Args:
+            dst: Destination register tile for V, col_l layout.
+                Written unswizzled.
+            src: Source SMEM tile holding the V block written by
+                `SubTileLoaderLDS_st_8x32` in sub-tile-major order.
         """
         comptime assert (
             Self.T == DType.bfloat16 or Self.T.is_float8()
@@ -1038,6 +1064,23 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
 
         For each output base tile `(n, m)`:
         `att[n, m] += sum_k k[n, k] * q[m, k]`.
+
+        Parameters:
+            T_att: Element data type of the attention accumulator `att`.
+                FP32 for the production path.
+            layout_att: Register-tile layout of `att`. Its height and
+                width index output base tiles `(n, m)`.
+            layout_k: Register-tile layout of `k`. Its height (M-dim)
+                must equal `layout_att`'s height; its width (K-dim) must
+                equal `layout_q`'s width.
+            layout_q: Register-tile layout of `q`. Its height (N-dim)
+                must equal `layout_att`'s width.
+
+        Args:
+            att: Output attention accumulator register tile, updated as
+                `att += k @ q^T`.
+            k: K register tile, the A-operand of the MFMA (M-outer).
+            q: Q register tile, the B-operand of the MFMA (N-outer).
         """
         comptime assert (
             Self.T == DType.bfloat16 or Self.T == DType.float8_e4m3fn
@@ -1088,6 +1131,24 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
 
         For each output base tile `(n, m)`:
         `o[n, m] += sum_k v[k, n] * p[k, m]`.
+
+        Parameters:
+            T_o: Element data type of the output accumulator `o`.
+                FP32 for the production path.
+            layout_o: Register-tile layout of `o`. Its height and
+                width index output base tiles `(n, m)`.
+            layout_v: Register-tile layout of `v`. Its height (K-dim)
+                must equal `layout_p`'s height; its width (M-dim) must
+                equal `layout_o`'s height.
+            layout_p: Register-tile layout of `p`. Its width (N-dim)
+                must equal `layout_o`'s width.
+
+        Args:
+            o: Output accumulator register tile, updated as
+                `o += v^T @ p`.
+            v: V register tile, the A-operand of the MFMA (K-outer).
+            p: P register tile, the B-operand of the MFMA (K-outer,
+                JIT-cast to `Self.T` from `att_block`).
         """
         comptime assert (
             Self.T == DType.bfloat16 or Self.T == DType.float8_e4m3fn
@@ -1138,7 +1199,26 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
         attention path's BF16 softmax. `math_exp2` works with either;
         for BF16 it lowers to `v_cvt_f32_bf16` +
         `v_exp_f32` + `v_cvt_pkrtz_bf16_f32` (no packed transcendental
-        on gfx950 — `v_exp_f32` is scalar regardless of input dtype)."""
+        on gfx950, `v_exp_f32` is scalar regardless of input dtype).
+
+        Parameters:
+            T_att: Element data type of the attention tile. FP32 in the
+                BF16 attention path; BF16 in the FP8 attention path's BF16
+                softmax.
+            layout: Register-tile layout of `tile`. Its third static-shape
+                dim is the per-lane fragment width that `start` and `end`
+                must align to.
+            start: Starting per-lane element index of the slice,
+                inclusive. Must be a multiple of the fragment width and lie
+                in `[0, total)`.
+            end: Ending per-lane element index of the slice, exclusive.
+                Must be a multiple of the fragment width and lie in
+                `[start, total)`.
+
+        Args:
+            tile: Attention register tile exponentiated in place over the
+                `[start, end)` per-lane slice.
+        """
         comptime assert (
             T_att.is_floating_point()
         ), "exp2_inplace_range: T_att must be floating-point"
@@ -1168,9 +1248,9 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
 
     Extends `MhaMmaOp` (re-exporting its shape constants / register-tile
     layouts and delegating `_swizzle_K_sub` / `mma_QK` / `mma_PV` /
-    `exp2_inplace_range`) with the MLA FP8 32x32x64 fragment loaders —
-    `load_K_frag`, `precompute_v_lane_base`, `load_V_from_lane_base`,
-    `load_V_frag` — that stream K/V through a rotating in-register band
+    `exp2_inplace_range`) with the MLA FP8 32x32x64 fragment loaders
+    (`load_K_frag`, `precompute_v_lane_base`, `load_V_from_lane_base`,
+    `load_V_frag`) that stream K/V through a rotating in-register band
     (the reference never materializes the whole V tile).
 
     The split isolates these FP8 extensions from MHA: the
@@ -1223,7 +1303,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
     @staticmethod
     @always_inline
     def _swizzle_K_sub(r: Int, c: Int) -> Int:
-        """K sub-block byte swizzle — delegates to `MhaMmaOp`."""
+        """K sub-block byte swizzle: delegates to `MhaMmaOp`."""
         return Self._Shared._swizzle_K_sub(r, c)
 
     @staticmethod
@@ -1239,7 +1319,25 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         mut k: RegTile[Self.T, layout_k, MutUntrackedOrigin],
         mut q: RegTile[Self.T, layout_q, MutUntrackedOrigin],
     ):
-        """QK MFMA — delegates to `MhaMmaOp.mma_QK` (body identical)."""
+        """QK MFMA: delegates to `MhaMmaOp.mma_QK` (body identical).
+
+        Parameters:
+            T_att: Element data type of the attention accumulator `att`.
+                FP32 for the production path.
+            layout_att: Register-tile layout of `att`. Its height and
+                width index output base tiles `(n, m)`.
+            layout_k: Register-tile layout of `k`. Its height (M-dim)
+                must equal `layout_att`'s height; its width (K-dim) must
+                equal `layout_q`'s width.
+            layout_q: Register-tile layout of `q`. Its height (N-dim)
+                must equal `layout_att`'s width.
+
+        Args:
+            att: Output attention accumulator register tile, updated as
+                `att += k @ q^T`.
+            k: K register tile, the A-operand of the MFMA (M-outer).
+            q: Q register tile, the B-operand of the MFMA (N-outer).
+        """
         Self._Shared.mma_QK(att, k, q)
 
     @staticmethod
@@ -1255,7 +1353,26 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         mut v: RegTile[Self.T, layout_v, MutUntrackedOrigin],
         mut p: RegTile[Self.T, layout_p, MutUntrackedOrigin],
     ):
-        """PV MFMA — delegates to `MhaMmaOp.mma_PV` (body identical)."""
+        """PV MFMA: delegates to `MhaMmaOp.mma_PV` (body identical).
+
+        Parameters:
+            T_o: Element data type of the output accumulator `o`. FP32
+                for the production path.
+            layout_o: Register-tile layout of `o`. Its height and width
+                index output base tiles `(n, m)`.
+            layout_v: Register-tile layout of `v`. Its height (K-dim)
+                must equal `layout_p`'s height; its width (M-dim) must
+                equal `layout_o`'s height.
+            layout_p: Register-tile layout of `p`. Its width (N-dim)
+                must equal `layout_o`'s width.
+
+        Args:
+            o: Output accumulator register tile, updated as
+                `o += v^T @ p`.
+            v: V register tile, the A-operand of the MFMA (K-outer).
+            p: P register tile, the B-operand of the MFMA (K-outer,
+                JIT-cast to `Self.T` from `att_block`).
+        """
         Self._Shared.mma_PV(o, v, p)
 
     @staticmethod
@@ -1267,7 +1384,26 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         start: Int,
         end: Int,
     ](mut tile: RegTile[T_att, layout, MutUntrackedOrigin],):
-        """`exp2` over a slice — delegates to `MhaMmaOp.exp2_inplace_range`."""
+        """`exp2` over a slice: delegates to `MhaMmaOp.exp2_inplace_range`.
+
+        Parameters:
+            T_att: Element data type of the attention tile. FP32 in the
+                BF16 attention path; BF16 in the FP8 attention path's BF16
+                softmax.
+            layout: Register-tile layout of `tile`. Its third static-shape
+                dim is the per-lane fragment width that `start` and `end`
+                must align to.
+            start: Starting per-lane element index of the slice,
+                inclusive. Must be a multiple of the fragment width and lie
+                in `[0, total)`.
+            end: Ending per-lane element index of the slice, exclusive.
+                Must be a multiple of the fragment width and lie in
+                `[start, total)`.
+
+        Args:
+            tile: Attention register tile exponentiated in place over the
+                `[start, end)` per-lane slice.
+        """
         Self._Shared.exp2_inplace_range[start, end](tile)
 
     # --- FP8 32x32x64 fragment loaders (MLA-only). ---
@@ -1278,12 +1414,12 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         sub_id: Int,
     ](src: SMemTile[Self.T, _, MutAnyOrigin],) -> SIMD[Self.T, Self.FRAG_ELTS]:
         """Loads ONE K MFMA fragment (`sub_id`) from the K SMEM sub-view
-        `src` and returns it as a SIMD value — the single-fragment
+        `src` and returns it as a SIMD value: the single-fragment
         factoring of the FP8 32x32x64 K-load inner loop.
 
         Returning a SIMD value (rather than writing a register tile)
         lets the caller stream fragments through a rotating in-register
-        band where each slot is a plain SSA value — sidestepping the
+        band where each slot is a plain SSA value, sidestepping the
         strided-register-sub-view write that lands on the wrong VGPRs
         when a sub-tile of a larger `reg_alloc` is the destination at a
         non-zero offset. The fragment feeds `gpu_mma` directly (the QK
@@ -1297,6 +1433,14 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
 
         Constraints:
             FP8 32x32x64 path only (`MMA_K == 64`).
+
+        Parameters:
+            sub_id: K SMEM sub-block index, entering only as a comptime
+                `ds_read offset:` immediate.
+
+        Args:
+            src: K SMEM sub-view holding the swizzled K block, read at
+                the per-lane swizzled offset for `sub_id`.
         """
         comptime assert (
             Self.T.is_float8() and not Self.FP8_MMA_K_128
@@ -1345,19 +1489,22 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         path ONCE per V SMEM slot (caller passes `v_smem_<stage>.ptr`).
         Hoisting this base out of the per-fragment readout collapses the
         per-call lane offset across all invocations from the same slot
-        into ONE shared materialization — mirroring the reference's
+        into ONE shared materialization, mirroring the reference's
         `v227` base carried across the entire main loop. Caller threads
         the returned pointer into `load_V_frag`. Origin is propagated
         from the input slot so the returned pointer carries the slot's
         lifetime/mutability annotation.
 
         Parameters:
+            origin: Pointer origin (lifetime / mutability provenance) of the
+                V SMEM slot, propagated to the returned pointer so it carries
+                the slot's annotation (inferred).
             v_full_v227: Reference `v227` V adapter per-lane READ base
                 (Bool). Default False → byte-identical. When True, replaces
                 the per-lane base ENTIRELY with the reference's exact
                 `v227` formula (the WHOLE read map), a per-tr8-cycle
                 bank-quadrant bijection that eliminates the V-transpose
-                LDS bank conflict. This is HALF of the adapter `R` — the
+                LDS bank conflict. This is HALF of the adapter `R`: the
                 caller MUST also pass `v_full_v227=True` to `load_V_frag`
                 (the faithful readout cell) AND run the matching producer
                 (`SubTileLoaderLDS_st_8x32[v_full_v227=True]` /
@@ -1369,8 +1516,8 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
             v227_layout: Spell the `v_full_v227` per-lane READ base via CuTe
                 Layout Algebra (`crd2idx` over a per-bit `Coord`) instead of
                 the hand-rolled runtime bit arithmetic (Bool, only consulted
-                when `v_full_v227` is True). SAME mapping, different spelling
-                — the `v227` base is bit-LINEAR over the bit-decomposed lane,
+                when `v_full_v227` is True). SAME mapping, different spelling,
+                the `v227` base is bit-LINEAR over the bit-decomposed lane,
                 so it is `crd2idx(lane, Coord(2,2,2,2,2,2), Coord(8, 0x80,
                 0x820, 0x1040, 16, 0x410))` (the 2-bit field `((v0>>2)&3)*
                 0x820` splits to bit2*0x820 + bit3*0x1040). Mirrors the WRITE
@@ -1378,6 +1525,11 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
                 the no-underscore parameter form of the WRITE side's struct
                 field `_v227_layout`, both driven by `-D v227_layout`.
                 Numerically equivalent. `-D v227_layout`.
+
+        Args:
+            v_slot_ptr: Base pointer of the V SMEM slot for a given stage
+                (caller passes `v_smem_<stage>.ptr`). The per-lane read base
+                is computed as an offset from this pointer.
         """
         comptime assert (
             Self.T.is_float8() and not Self.FP8_MMA_K_128
@@ -1478,7 +1630,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
     ):
         """FP8 32x32x64 V load consuming a pre-computed per-lane base
         pointer (hoisted by the caller). Each call site adds ONLY
-        comptime per-cell offsets to `v_lane_base` — no per-call
+        comptime per-cell offsets to `v_lane_base`: no per-call
         per-lane base recomputation, no `src.ptr` indirection.
 
         Collapses the 27 distinct V ds_read base VGPRs at KV=128 (one
@@ -1488,6 +1640,18 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         on the K=128 fast path (the AMDGPU backend recovers the same
         `ds_read offset:imm`) but makes the kernel-level hoist explicit at
         the source level.
+
+        Parameters:
+            layout_dst: Register-tile layout of `dst`. Its third
+                static-shape dim must equal `FRAG_ELTS`.
+
+        Args:
+            dst: Destination register tile for V, col_l layout. Written
+                unswizzled.
+            v_lane_base: Pre-computed per-lane V LDS base pointer (from
+                `precompute_v_lane_base`), carrying the V SMEM slot's
+                origin. Each call adds only comptime per-cell offsets to
+                this base.
         """
         comptime assert (
             Self.T.is_float8() and not Self.FP8_MMA_K_128
@@ -1549,13 +1713,13 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         ],
     ) -> SIMD[Self.T, Self.FRAG_ELTS]:
         """Loads ONE V MFMA fragment `(i_strip, j_depth)` from the
-        pre-computed per-lane V LDS base and returns it as a SIMD value —
+        pre-computed per-lane V LDS base and returns it as a SIMD value:
         the single-fragment factoring of `load_V_from_lane_base`'s FP8
         32x32x64 inner `(i, j)` cell (the 4 paired-lane `ds_read_tr8_b64`
         joined into one `SIMD[FP8, 32]`).
 
         Returning a SIMD value (rather than writing a register tile) is
-        the V counterpart of `load_K_frag` — it lets the caller stream V
+        the V counterpart of `load_K_frag`; it lets the caller stream V
         fragments through the SAME rotating in-register band K streamed
         through (K and V have disjoint lifetimes: K is consumed in the QK
         MFMAs before softmax, V in the PV MFMAs after, so the band's
@@ -1563,8 +1727,8 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         SSA value, sidestepping the strided-register-sub-view write that
         lands on the wrong VGPRs at a non-zero offset, and avoids
         materializing the whole 64-VGPR `V_LAYOUT` tile held live across
-        the softmax/exp/FP8 clusters (the reference never materializes V
-        — it transpose-reads V fragment-at-a-time through its reused
+        the softmax/exp/FP8 clusters (the reference never materializes V;
+        it transpose-reads V fragment-at-a-time through its reused
         `v[28:59]` band). The fragment feeds `mma_PV` / `gpu_mma`
         directly (the PV A-operand).
 
@@ -1574,7 +1738,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         comptime `ds_read_tr8_b64 offset:` immediates, so across a
         caller's unrolled per-fragment stream LLVM CSEs `v_lane_base` to
         a single base-register set (the reference's `v227` single-base V
-        pattern) — the same hoist `load_V_from_lane_base` already relies
+        pattern), the same hoist `load_V_from_lane_base` already relies
         on.
 
         Constraints:
@@ -1593,8 +1757,14 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
                 (`SubTileLoaderLDS_st_8x32[v_full_v227=True]` /
                 `MlaPrefillV2Core._dma_v[v_full_v227=True]`) MUST set
                 `v_full_v227=True` too, or V scrambles. The two compose to
-                the standard PV fragment, bank-conflict-free (`v227`'s
+                the standard PV fragment,                 bank-conflict-free (`v227`'s
                 per-tr8-cycle bank-quadrant bijection). FP8 32x32x64 only.
+
+        Args:
+            v_lane_base: Pre-computed per-lane V LDS base pointer (from
+                `precompute_v_lane_base`), carrying the V SMEM slot's
+                origin. Each call adds only comptime per-cell offsets to
+                this base.
         """
         comptime assert (
             Self.T.is_float8() and not Self.FP8_MMA_K_128

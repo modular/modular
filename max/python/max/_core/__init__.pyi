@@ -25,6 +25,9 @@ from . import (
     dialects as dialects,
 )
 from . import (
+    dlpack as dlpack,
+)
+from . import (
     driver as driver,
 )
 from . import (
@@ -35,6 +38,9 @@ from . import (
 )
 from . import (
     graph as graph,
+)
+from . import (
+    metrics as metrics,
 )
 from . import (
     mlrt as mlrt,
@@ -69,7 +75,7 @@ class Attribute:
 class NamedAttribute(tuple[str, Attribute]):
     def __init__(self, arg0: str, arg1: Attribute, /) -> None: ...
     @property
-    def name(self): ...
+    def name(self) -> str: ...
     @property
     def value(self) -> Attribute: ...
     def __eq__(self, arg: object, /) -> bool: ...
@@ -112,7 +118,7 @@ class OpOperand:
     @property
     def value(self) -> Value[Type]: ...
     @value.setter
-    def value(self, value: Value[Type], /): ...
+    def value(self, value: Value[Type], /) -> None: ...
 
 class InsertPoint:
     pass

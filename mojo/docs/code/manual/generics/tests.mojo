@@ -63,7 +63,7 @@ def all_equal_int(ref lhs: List[Int], ref rhs: List[Int]) -> Bool:
 
 
 def all_equal[
-    T: Equatable & Copyable
+    T: Equatable & Copyable & ImplicitlyDeletable
 ](ref lhs: List[T], ref rhs: List[T]) -> Bool:
     if len(lhs) != len(rhs):
         return False

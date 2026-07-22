@@ -2,6 +2,13 @@ load("//bazel:api.bzl", "mojo_library")
 
 package(default_visibility = ["//max:consumers"])
 
+# Raw sources for the LSP parse-smoke test.
+filegroup(
+    name = "srcs",
+    srcs = glob(["*.mojo"]),
+    visibility = ["//KGEN/test/mojo-lsp-server/parse-tree:__pkg__"],
+)
+
 # Mojo-importable `Range` context manager (MXTOOLS-190). Consumers do
 # `from profiling_range import Range, is_enabled` after taking a dep on
 # `//max:profiling_range`. Bridges to KGEN_CompilerRT_Range* in

@@ -51,7 +51,7 @@ var ptr = allocation.unsafe_ptr()
 
 # initialize the memory
 for i in range(allocation.layout().count()):
-    (ptr + i).init_pointee_move("🔥")
+    (ptr + i).unsafe_write("🔥")
 
 # print the values
 for string in allocation.unsafe_span():
@@ -288,7 +288,7 @@ struct Allocation[T: AnyType](
         from std.memory.alloc import alloc, Layout
 
         var deletable = alloc(Layout[String](count=4)).into_deletable()
-        deletable.unsafe_ptr().init_pointee_move("hello")
+        deletable.unsafe_ptr().unsafe_write("hello")
 
         # Even though the allocation is automatically cleaned up, destructors
         # must still be manually run!
@@ -355,7 +355,7 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
     var deletable = alloc(Layout[Int32](count=4)).into_deletable()
     var ptr = deletable.unsafe_ptr()
     for i in range(4):
-        (ptr + i).init_pointee_move(i)
+        (ptr + i).unsafe_write(i)
     # `deletable` frees its storage when it is destroyed (after its last use).
     ```
     """
@@ -480,7 +480,7 @@ struct ThinAllocation[T: AnyType](
         T: The type of the elements stored in the allocation.
     """
 
-    var _ptr: UnsafePointer[Self.T, MutUntrackedOrigin]
+    var _ptr: Pointer[Self.T, MutUntrackedOrigin]
     """The owning pointer to the allocated storage."""
 
     def __init__(
@@ -570,7 +570,7 @@ struct ThinAllocation[T: AnyType](
         return (
             self._ptr.unsafe_mut_cast[origin.mut]()
             .unsafe_origin_cast[origin]()
-            .address_space_cast[address_space]()
+            .unsafe_address_space_cast[address_space]()
         )
 
     def write_to(self, mut writer: Some[Writer]):
@@ -601,7 +601,7 @@ def _alloc_bytes(
     return pointer.unsafe_value()
 
 
-def alloc[T: AnyType, //](layout: Layout[T], /) -> Allocation[T]:
+def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
     """Allocates owned storage for `layout.count()` elements of `T`.
 
     Returns an `Allocation`, an explicitly destroyed handle that bundles the
@@ -633,7 +633,7 @@ def alloc[T: AnyType, //](layout: Layout[T], /) -> Allocation[T]:
     var allocation = alloc(Layout[Int32](count=4))
     var ptr = allocation.unsafe_ptr()
     for i in range(4):
-        (ptr + i).init_pointee_move(i)
+        (ptr + i).unsafe_write(i)
     dealloc(allocation^)
     ```
     """
@@ -644,7 +644,7 @@ def alloc[T: AnyType, //](layout: Layout[T], /) -> Allocation[T]:
 
     comptime if size_of_t == 0:
         return ThinAllocation(
-            unsafe_assume_ownership=UnsafePointer[
+            unsafe_assume_ownership=Pointer[
                 T, MutUntrackedOrigin
             ].unsafe_dangling()
         ).unsafe_with_layout(layout)
@@ -652,7 +652,7 @@ def alloc[T: AnyType, //](layout: Layout[T], /) -> Allocation[T]:
         return ThinAllocation(
             unsafe_assume_ownership=_alloc_bytes(
                 layout.as_byte_layout()
-            ).bitcast[T]()
+            ).unsafe_bitcast[T]()
         ).unsafe_with_layout(layout)
 
 
@@ -790,7 +790,7 @@ struct Layout[T: AnyType](TrivialRegisterPassable, Writable):
 
         var layout = Layout[Int64].single()
         var allocation = alloc(layout)
-        allocation.unsafe_ptr().init_pointee_move(0)
+        allocation.unsafe_ptr().unsafe_write(0)
         dealloc(allocation^)
         ```
         """

@@ -44,6 +44,5 @@ def main() raises:
     dependent_type[Float64(2.2)]()
     # end-dependent-type-infer-only-call
     s = String("Robinson Crusoe surfed the interwebs.")
-    span = s.unsafe_as_bytes_mut()
-    mutate_span(span)
+    mutate_span(s.unsafe_as_bytes_mut())
     print(s)

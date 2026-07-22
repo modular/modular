@@ -109,7 +109,7 @@ def add_two[
     width: SIMDSize,
     *,
     alignment: Int = 1,
-](val: SIMD[dtype, width],) -> SIMD[dtype, width]:
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return val + 2
 
 

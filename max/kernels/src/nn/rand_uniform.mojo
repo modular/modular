@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Generates tensors filled with values drawn from a uniform distribution for CPU and GPU."""
 
 from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext
@@ -24,16 +25,19 @@ def random_uniform[
     dtype: DType,
     rank: Int,
     //,
-    output_fn: def[width: SIMDSize, _rank: Int](
-        idx: IndexList[_rank], val: SIMD[dtype, width]
-    ) capturing[_],
     target: StaticString,
+    OutputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: SIMDSize, _rank: Int](
+        idx: IndexList[_rank], val: SIMD[dtype, width]
+    ),
 ](
     shape: IndexList[rank],
     lower_bound: Scalar[dtype],
     upper_bound: Scalar[dtype],
     seed_ptr: UnsafePointer[Scalar[DType.uint64], ImmutAnyOrigin],
     ctx: DeviceContext,
+    output_fn: OutputFn,
 ) raises:
     """Call `output_fn` with values generated from a uniform distribution on
     [lower_bound, upper_bound] for floating-point types or
@@ -42,8 +46,8 @@ def random_uniform[
     Parameters:
         dtype: The data type to generate.
         rank: The rank of the underlying buffer.
-        output_fn: The function which stores the generated values.
         target: The target to run on.
+        OutputFn: The type of the function which stores the generated values.
 
     Args:
         shape: The shape of the output being stored into by output_fn.
@@ -52,6 +56,7 @@ def random_uniform[
         seed_ptr: Pointer to a single uint64 in device memory containing
             the Philox seed.
         ctx: The device context.
+        output_fn: The function which stores the generated values.
     """
 
     if lower_bound > upper_bound:

@@ -117,7 +117,7 @@ client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
 # Create embeddings
 response = client.embeddings.create(
     model="sentence-transformers/all-mpnet-base-v2",
-    input="Run an embedding model with MAX Serve!",
+    input="Run an embedding model with MAX!",
 )
 
 print(f"{response.data[0].embedding[:5]}")
@@ -141,7 +141,7 @@ The following `curl` command sends an embeddings request to the model:
 curl http://localhost:8000/v1/embeddings \
 -H "Content-Type: application/json" \
 -d '{
-    "input": "Run an embedding model with MAX Serve!",
+    "input": "Run an embedding model with MAX!",
     "model": "sentence-transformers/all-mpnet-base-v2"
 }'
 ```

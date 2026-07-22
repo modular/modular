@@ -23,7 +23,7 @@ from std.collections.list import _ListIter
 from std.collections.inline_array import _InlineArrayIter
 from std.hashlib import Hasher
 
-from std.memory.span import Span, _SpanIter
+from std.collections.span import Span, _SpanIter
 
 # ===----------------------------------------------------------------------=== #
 #  Reversible
@@ -143,8 +143,8 @@ def reversed[
 
 
 def reversed[
-    K: KeyElement & Copyable & ImplicitlyDeletable,
-    V: Copyable & ImplicitlyDeletable,
+    K: KeyElement & Copyable,
+    V: Copyable,
     H: Hasher,
 ](ref value: Dict[K, V, H],) -> _DictKeyIter[K, V, H, origin_of(value), False]:
     """Get a reversed iterator of the input dict.
@@ -168,8 +168,8 @@ def reversed[
 def reversed[
     dict_mutability: Bool,
     //,
-    K: KeyElement & Copyable & ImplicitlyDeletable,
-    V: Copyable & ImplicitlyDeletable,
+    K: KeyElement & Copyable,
+    V: Copyable,
     H: Hasher,
     dict_origin: Origin[mut=dict_mutability],
 ](ref value: _DictValueIter[K, V, H, dict_origin]) -> _DictValueIter[
@@ -198,8 +198,8 @@ def reversed[
 def reversed[
     dict_mutability: Bool,
     //,
-    K: KeyElement & Copyable & ImplicitlyDeletable,
-    V: Copyable & ImplicitlyDeletable,
+    K: KeyElement & Copyable,
+    V: Copyable,
     H: Hasher,
     dict_origin: Origin[mut=dict_mutability],
 ](ref value: _DictEntryIter[K, V, H, dict_origin]) -> _DictEntryIter[

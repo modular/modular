@@ -1,26 +1,10 @@
-load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
-
-# Shared dummy pipelines used only by tests in this directory.
-modular_py_library(
-    name = "test_helpers",
-    testonly = True,
-    srcs = [
-        "dummy_imgen.py",
-        "dummy_textgen.py",
-    ],
-    deps = [
-        "//max/python/max/experimental/cascade",
-        requirement("numpy"),
-        requirement("pillow"),
-        requirement("scipy"),
-    ],
-)
 
 modular_py_test(
     name = "test_local_runtime",
@@ -49,8 +33,8 @@ modular_py_test(
     size = "small",
     srcs = ["test_dummy_textgen.py"],
     deps = [
-        ":test_helpers",
         "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/pipelines",
         requirement("pytest-asyncio"),
     ],
 )
@@ -60,8 +44,8 @@ modular_py_test(
     size = "small",
     srcs = ["test_chat_completions.py"],
     deps = [
-        ":test_helpers",
         "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/pipelines",
         "//max/python/max/experimental/cascade/serve",
         requirement("fastapi"),
         requirement("httpx"),
@@ -74,8 +58,8 @@ modular_py_test(
     size = "small",
     srcs = ["test_open_responses.py"],
     deps = [
-        ":test_helpers",
         "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/pipelines",
         "//max/python/max/experimental/cascade/serve",
         requirement("fastapi"),
         requirement("httpx"),
@@ -89,12 +73,127 @@ modular_py_test(
     size = "small",
     srcs = ["test_runtimes.py"],
     deps = [
-        ":test_helpers",
         "//max/python/max/experimental/cascade",
         "//max/python/max/experimental/cascade/core",
         "//max/python/max/experimental/cascade/grpc_runtime",
         "//max/python/max/experimental/cascade/http_runtime",
+        "//max/python/max/experimental/cascade/pipelines",
         "//max/python/max/serve:process_control",
+        requirement("pydantic"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_context_config",
+    size = "small",
+    srcs = ["test_context_config.py"],
+    deps = [
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/deployment:context_config",
+        "//max/python/max/experimental/cascade/deployment:routing",
+        "//max/python/max/experimental/cascade/grpc_runtime",
+        "//max/python/max/experimental/cascade/http_runtime",
+        "//max/python/max/experimental/cascade/pipelines",
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_routing",
+    size = "small",
+    srcs = ["test_routing.py"],
+    deps = [
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/core",
+        "//max/python/max/experimental/cascade/deployment:routing",
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_max_tokenizer",
+    size = "medium",
+    srcs = ["test_max_tokenizer.py"],
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/core",
+        "//max/python/max/experimental/cascade/workers",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_all_pipelines",
+    size = "medium",
+    srcs = ["test_all_pipelines.py"],
+    # TODO(SERVSYS-1284): importing max.pipelines.lib alone blows the 300s
+    # budget on the shared BuildBuddy macOS workers (times out in pytest
+    # collection).
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        # all_pipelines brings every architecture (llama3 resolves SmolLM at
+        # runtime); pipelines provides the CommonTextGenPipeline class.
+        "//max/python/max/experimental/cascade/pipelines",
+        "//max/python/max/experimental/cascade/pipelines:all_pipelines",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_max_model_worker",
+    size = "small",
+    srcs = ["test_max_model_worker.py"],
+    # TODO(SERVSYS-1284): importing max.pipelines.lib alone blows the 300s
+    # budget on the shared BuildBuddy macOS workers (times out in pytest
+    # collection).
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/experimental/cascade/interfaces",
+        "//max/python/max/experimental/cascade/workers",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_max_model_worker_integration",
+    size = "large",
+    srcs = ["test_max_model_worker_integration.py"],
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/core",
+        # all_pipelines brings every architecture (llama3 resolves SmolLM at
+        # runtime); pipelines provides the CommonTextGenPipeline class.
+        "//max/python/max/experimental/cascade/pipelines",
+        "//max/python/max/experimental/cascade/pipelines:all_pipelines",
+        "//max/python/max/experimental/cascade/workers",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("numpy"),
         requirement("pytest-asyncio"),
     ],
 )
@@ -104,8 +203,8 @@ modular_py_test(
     size = "small",
     srcs = ["test_dummy_imgen.py"],
     deps = [
-        ":test_helpers",
         "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/pipelines",
         requirement("numpy"),
         requirement("pillow"),
         requirement("pytest-asyncio"),

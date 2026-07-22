@@ -36,3 +36,4 @@ Modules
    nn
    pipelines
    profiler
+   support.image

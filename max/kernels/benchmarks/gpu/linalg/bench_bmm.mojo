@@ -93,7 +93,7 @@ def elementwise_epilogue_fn[
     width: SIMDSize,
     *,
     alignment: Int = 1,
-](val: SIMD[dtype, width],) -> SIMD[dtype, width]:
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return val + 2
 
 
@@ -166,7 +166,7 @@ def bench_bmm[
         rank: Int,
         *,
         alignment: Int = 1,
-    ](idx: IndexList[rank], val: SIMD[dtype, width],) capturing -> None:
+    ](idx: IndexList[rank], val: SIMD[dtype, width]) capturing -> None:
         comptime func = lambda_fn.value()
         var update_val = func(val)
         c_device.store_linear(idx, update_val.cast[c_device.dtype]())

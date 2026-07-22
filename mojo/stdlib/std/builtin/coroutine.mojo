@@ -102,7 +102,7 @@ struct Coroutine[type: ImplicitlyDeletable, origins: OriginSet](
     @always_inline
     def _get_ctx[
         ctx_type: AnyType
-    ](self) -> UnsafePointer[ctx_type, MutUntrackedOrigin]:
+    ](self) -> Pointer[ctx_type, MutUntrackedOrigin]:
         """Returns the pointer to the coroutine context.
 
         Parameters:
@@ -114,12 +114,14 @@ struct Coroutine[type: ImplicitlyDeletable, origins: OriginSet](
         comptime assert (
             size_of[_CoroutineContext]() == size_of[ctx_type]()
         ), "context size must be 16 bytes"
-        return __mlir_op.`co.get_callback_ptr`[
-            _type=__mlir_type[`!kgen.pointer<`, ctx_type, `>`]
-        ](self._handle)
+        return {
+            _mlir_value = __mlir_op.`co.get_callback_ptr`[
+                _type=__mlir_type[`!kgen.pointer<`, ctx_type, `>`]
+            ](self._handle)
+        }
 
     @always_inline
-    def _set_result_slot(self, slot: UnsafePointer[mut=True, Self.type, ...]):
+    def _set_result_slot(self, slot: Pointer[mut=True, Self.type, ...]):
         __mlir_op.`co.set_byref_error_result`(
             self._handle, slot._get_kgen_pointer()
         )
@@ -201,7 +203,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](
     @always_inline
     def _get_ctx[
         ctx_type: AnyType
-    ](self) -> UnsafePointer[ctx_type, MutUntrackedOrigin]:
+    ](self) -> Pointer[ctx_type, MutUntrackedOrigin]:
         """Returns the pointer to the coroutine context.
 
         Parameters:
@@ -213,15 +215,17 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](
         comptime assert (
             size_of[_CoroutineContext]() == size_of[ctx_type]()
         ), "context size must be 16 bytes"
-        return __mlir_op.`co.get_callback_ptr`[
-            _type=__mlir_type[`!kgen.pointer<`, ctx_type, `>`]
-        ](self._handle)
+        return {
+            _mlir_value = __mlir_op.`co.get_callback_ptr`[
+                _type=__mlir_type[`!kgen.pointer<`, ctx_type, `>`]
+            ](self._handle)
+        }
 
     @always_inline
     def _set_result_slot(
         self,
-        slot: UnsafePointer[mut=True, Self.type, ...],
-        err: UnsafePointer[mut=False, Error, ...],
+        slot: Pointer[mut=True, Self.type, ...],
+        err: Pointer[mut=False, Error, ...],
     ):
         __mlir_op.`co.set_byref_error_result`(
             self._handle, slot._get_kgen_pointer(), err._get_kgen_pointer()

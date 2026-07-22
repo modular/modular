@@ -42,6 +42,32 @@ def matrix_band_part[
     output: TileTensor[mut=True, dtype=dtype, ...],
     ctx: DeviceContext,
 ) raises:
+    """Copies a band of `input_0_fn` into `output`, zeroing elements outside the band defined by `num_lower` and `num_upper`.
+
+    Reads the lower and upper diagonal counts and the `exclude` flag from the
+    supplied tensors, then dispatches to the implementation with the exclude
+    flag specialized at compile time via `unswitch`.
+
+    Parameters:
+        dtype: Element `DType` of the input and output tensors.
+        int_type: `DType` of the `num_lower` and `num_upper` count tensors.
+        cond_type: `DType` of the `exclude` flag tensor.
+        rank: Number of dimensions in the input tensor (must be at least 2).
+        simd_width: SIMD width for the elementwise kernel launch.
+        InputFnType: Callable type returning the input element at a given
+            index as a `SIMD` vector.
+        target: Target device for the elementwise kernel (defaults to
+            `"cpu"`).
+
+    Args:
+        input_0_fn: Function returning the input element at a given index.
+        input_shape: Shape of the input tensor.
+        num_lower: Scalar tensor giving the number of lower subdiagonals to keep.
+        num_upper: Scalar tensor giving the number of upper superdiagonals to keep.
+        exclude: Scalar tensor flag that, when nonzero, inverts the band mask.
+        output: Mutable output tensor receiving the band-part result.
+        ctx: Device context used to launch the elementwise kernel.
+    """
     var lower_diagonal_index = Int(num_lower.load_linear[1](IndexList[1](0)))
     var upper_diagonal_index = Int(num_upper.load_linear[1](IndexList[1](0)))
 
@@ -94,6 +120,20 @@ def _matrix_band_part_impl[
     output: TileTensor[mut=True, dtype=dtype, ...],
     ctx: DeviceContext,
 ) raises:
+    """Implements the elementwise band-part copy with the `exclude` flag specialized at compile time.
+
+    For each element, keeps it when its diagonal offset lies within
+    `[lower_diagonal_index, upper_diagonal_index]` (inclusive), otherwise stores
+    zero; when `exclude` is set, the mask is inverted.
+
+    Args:
+        input_0_fn: Function returning the input element at a given index.
+        input_shape: Shape of the input tensor.
+        lower_diagonal_index: Number of lower subdiagonals to keep (negative keeps all below).
+        upper_diagonal_index: Number of upper superdiagonals to keep (negative keeps all above).
+        output: Mutable output tensor receiving the band-part result.
+        ctx: Device context used to launch the elementwise kernel.
+    """
     comptime assert rank >= 2, "Matrix band only supports rank >=2"
 
     @always_inline

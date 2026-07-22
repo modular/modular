@@ -11,6 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Defines tuning configurations for SM100 structured matmul kernels.
+
+Holds the `TuningConfigSM100` and `TuningConfigSmallMNGemms` structs that
+bundle kernel launch parameters for specific MxNxK matmul shapes, along with
+the curated tuning lists used by the SM100 structured dispatch tables.
+"""
+
 from ...tile_scheduler import RasterOrder
 from linalg.gemv import GEMVAlgorithm
 from internal_utils import TuningConfig
@@ -18,6 +25,14 @@ from std.utils.index import Index, IndexList
 
 
 struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
+    """Holds SM100 matmul kernel launch parameters for a range of MxNxK shapes.
+
+    Stores the MMA shape, block tile shape, cluster shape, swizzle and
+    rasterization settings, pipeline stage counts, and split-K factor that
+    select an optimized kernel configuration for matmuls whose M dimension
+    falls in the half-open interval `[M, M_end)`.
+    """
+
     # The kernel parameters are optimal for shape in [M:M_end]xNxK.
     var M: Int
     var M_end: Int
@@ -143,6 +158,13 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
 
 
 struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
+    """Holds launch parameters for small-M, small-N GEMM/GEMV kernels.
+
+    Stores the tile dimensions, thread count, unroll factor, K-tile size,
+    and GEMV algorithm kind that select an optimized kernel configuration for
+    matmuls whose M dimension falls in the half-open interval `[M, M_end)`.
+    """
+
     var M: Int
     var M_end: Int
     var N: Int
@@ -351,7 +373,7 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             K=1536,
             mma_shape=Index(64, 8, 16),
             cta_group=1,
-            cluster_shape=Index(4, 2, 1),
+            cluster_shape=Index(2, 4, 1),
             block_swizzle_size=0,
             swapAB=True,
             rasterize_order=RasterOrder(0),
@@ -2181,22 +2203,5 @@ def _get_tuning_list_small_MN_gemms_bf16() -> List[TuningConfigSmallMNGemms]:
             num_threads=256,
             kernel_kind=GEMVAlgorithm.GEMM_MMA_CPASYNC,
             tile_k=256,
-        ),
-        # Kimi-style decode: small-M `act @ weight^T` with the weight as the
-        # large free-streaming operand. swapAB feeds the weight to the A slot
-        # and transposes the store, so the N=2112 weight load streams under any
-        # PDL-attached producer (e.g. Lamport AR+RMSNorm) while the output
-        # stays row-major [M, N]. Covers the M in [1, 17) range used by decode.
-        TuningConfigSmallMNGemms(
-            M=1,
-            M_end=17,
-            N=2112,
-            K=7168,
-            tile_m=16,
-            tile_n=8,
-            num_threads=128,
-            kernel_kind=GEMVAlgorithm.GEMM_MMA_CPASYNC,
-            tile_k=128,
-            swapAB=True,
         ),
     ]

@@ -63,9 +63,11 @@ modular_py_library(
         "//max/python/max/serve:config",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
         # These all point to the symlinked version of the benchmark directory.
         "//max/python/max/benchmark:benchmark_serving_lib",
         requirement("click"),
+        requirement("exceptiongroup"),  # only for python < 3.11
         requirement("typing-extensions"),
     ],
 )
@@ -83,10 +85,11 @@ modular_py_binary(
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
     # ALL_ARCHITECTURES: users can select arbitrary arches on the CLI.
-    # _interpreter_ops: in the runfiles for warm-interpreter-cache's dynamic
-    # import, but optional (Mojo-backed) so not a static import.
+    # _interpreter_ops: Mojo-backed optional dep imported dynamically (see
+    # warm-interpreter-cache), so it's in the runfiles but not a static import.
     ignore_extra_deps = ALL_ARCHITECTURES + [
         "//max/python/max/_interpreter_ops",
+        requirement("exceptiongroup"),  # only for python < 3.11
     ],
     mojo_deps = PROD_MOJOPKGS,
     deps = ALL_ARCHITECTURES + [
@@ -96,10 +99,12 @@ modular_py_binary(
         "//max/python/max/benchmark:benchmark_serving_lib",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/profiler",
         "//max/python/max/serve:config",
         "//max/python/max/serve/telemetry",
         requirement("click"),
+        requirement("exceptiongroup"),  # only for python < 3.11
         requirement("typing-extensions"),
     ],
 )

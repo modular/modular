@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for `std.utils.coord` (`Coord`, `idx2crd`, `crd2idx`, etc.)."""
 
+from std.builtin.device_passable import DevicePassable
 from std.sys import size_of
 from std.testing import TestSuite, assert_equal, assert_true
 from std.utils.coord import (
@@ -544,6 +545,13 @@ def test_cast_preserves_static_dims() raises:
     assert_true(type_of(casted[1]) == UInt32)
     assert_true(type_of(casted[2]) == ComptimeInt[3])
     assert_true(type_of(casted[3]) == UInt32)
+
+
+def test_device_passable_conformance() raises:
+    # Encoder-driven bit-copy behavior is covered in `test_device_passable.mojo`.
+    comptime assert conforms_to(Coord[ComptimeInt[2], Int], DevicePassable)
+    comptime assert conforms_to(Coord[Int32, Int32], DevicePassable)
+    comptime assert Coord[Int, Int].device_type == Coord[Int, Int]
 
 
 def main() raises:

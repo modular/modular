@@ -24,6 +24,7 @@ from typing import Any
 
 import huggingface_hub
 from max.dtype import DType
+from max.graph.quantization import QuantizationConfig
 from max.graph.weights import WeightData
 from max.nn.float8_scale_stacking import can_use_fused_mlp
 from max.nn.quant_config import (
@@ -34,7 +35,51 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
+
+
+def gptq_quant_config(
+    quantization_encoding: SupportedEncoding | None,
+    huggingface_config: AutoConfig,
+) -> QuantizationConfig | None:
+    """Builds the GPTQ ``QuantizationConfig`` for a ``"gptq"`` encoding.
+
+    Computed on demand from the resolved ``quantization_encoding`` and the
+    checkpoint's Hugging Face ``quantization_config``; returns ``None`` for any
+    non-GPTQ encoding.
+
+    Args:
+        quantization_encoding: The resolved weight encoding.
+        huggingface_config: The checkpoint's Hugging Face config.
+
+    Returns:
+        The GPTQ ``QuantizationConfig``, or ``None`` when the encoding is not
+        GPTQ.
+
+    Raises:
+        ValueError: If the GPTQ scales are not float16.
+    """
+    if quantization_encoding != "gptq":
+        return None
+
+    hf_quant_config = huggingface_config.quantization_config
+    # Alert users to a GPTQ scale format we don't support yet, rather than
+    # running the GPTQ pipeline on it and emitting gibberish.
+    if str(huggingface_config.torch_dtype) not in [
+        "float16",
+        "torch.float16",
+    ]:
+        raise ValueError(
+            f"{huggingface_config.torch_dtype} scales are not supported for GPTQ-quantized models."
+        )
+    return QuantizationConfig(
+        quant_method=hf_quant_config["quant_method"],
+        bits=hf_quant_config["bits"],
+        group_size=hf_quant_config["group_size"],
+        desc_act=hf_quant_config["desc_act"],
+        sym=hf_quant_config["sym"],
+    )
 
 
 def _get_num_hidden_layers(huggingface_config: AutoConfig) -> int:

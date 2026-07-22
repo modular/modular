@@ -18,7 +18,7 @@ normally from a pre-transposed [N, K] layout.
 
 For common VAE decoder shapes (C_in=128/256/512), C_in is always a multiple of
 BLOCK_K, so consecutive K positions within a tile share the same (r,s) filter
-position. This enables vectorized 8-wide loads from the NHWC input — the same
+position. This enables vectorized 8-wide loads from the NHWC input: the same
 load width as the standard matmul kernel's A-tile loader.
 """
 
@@ -240,6 +240,45 @@ def conv2d_kernel_rdna[
     Constraints (enforced by the dispatch layer):
     - stride = (1, 1) and dilation = (1, 1)
     - K % BLOCK_K == 0 and C_in % BLOCK_K == 0
+
+    Parameters:
+        out_type: `DType` of the output tensor.
+        in_type: `DType` of the input activation tensor.
+        filter_type: `DType` of the filter tensor.
+        out_layout: `TensorLayout` of the output `TileTensor`.
+        filter_nk_layout: `TensorLayout` of the pre-transposed [N, K] filter
+            `TileTensor`.
+        elementwise_lambda_fn: Optional fused epilogue lambda applied per
+            output element (defaults to `None`).
+        s_type: `DType` used for the accumulator (defaults to the accumulator
+            type for `out_type`).
+        BLOCK_K: Tile size along the K reduction dimension (defaults to 32).
+        BLOCK_M: Tile size along the M output-row dimension (defaults to 128).
+        BLOCK_N: Tile size along the N output-column dimension (defaults to
+            128).
+        WARPS_M: Number of warps tiling the M dimension (defaults to 8).
+        WARPS_N: Number of warps tiling the N dimension (defaults to 2).
+        WARP_TILE_M: MMA tiles per warp along M (defaults to 1).
+        WARP_TILE_N: MMA tiles per warp along N (defaults to 4).
+
+    Args:
+        output: Output `TileTensor` of shape [M, N] in row-major, mapping to
+            NHWC output.
+        input_ptr: Pointer to the NHWC input activation tensor of `in_type`.
+        filter_nk: Filter `TileTensor` pre-transposed to [N, K] = [C_out,
+            R*S*C_in] layout.
+        M: Number of output rows; equals batch * H_out * W_out.
+        N: Number of output columns; equals C_out.
+        K: Reduction dimension length; equals R * S * C_in.
+        HW_out: Product of output spatial dimensions H_out * W_out.
+        W_out: Output spatial width.
+        H_in: Input spatial height.
+        W_in: Input spatial width.
+        C_in: Number of input channels.
+        R: Filter height.
+        S: Filter width.
+        pad_h: Zero padding applied to the input height.
+        pad_w: Zero padding applied to the input width.
     """
     comptime assert output.flat_rank == 2, "output must have flat_rank == 2"
     comptime assert filter_nk.flat_rank == 2, "filter must have flat_rank == 2"

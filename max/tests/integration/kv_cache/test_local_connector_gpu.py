@@ -19,14 +19,13 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheBuffer, KVConnectorType, MHAKVCacheParams
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
-from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 
 
 # Test-fixture helper for the bytes-only connector boundary: tests pre-date
-# Option A and used int hashes directly; ``_hs`` wraps a variadic sequence of
-# ints into the canonical 8-byte signed-BE encoding.
+# the bytes-only migration and used int hashes directly; ``_hs`` wraps a
+# variadic sequence of ints into the canonical 8-byte signed-BE encoding.
 def _hs(*ns: int) -> list[bytes]:
-    return [to_block_hash_bytes(n) for n in ns]
+    return [n.to_bytes(8, "big", signed=True) for n in ns]
 
 
 def create_local_connector(

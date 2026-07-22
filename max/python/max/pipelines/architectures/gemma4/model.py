@@ -30,12 +30,11 @@ from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
+    MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
-    PipelineModelWithKVCache,
 )
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.pipelines.modeling.types import RequestID
@@ -57,6 +56,8 @@ from .vision_model.vision_model import Gemma4VisionModel
 from .weight_adapters import (
     convert_safetensor_language_state_dict,
     convert_safetensor_vision_state_dict,
+    fuse_gemma4_projection_weights,
+    gemma4_uses_fused_projections,
 )
 
 logger = logging.getLogger("max.pipelines")
@@ -109,7 +110,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
 
 class Gemma3_MultiModalModel(
     AlwaysSignalBuffersMixin,
-    PipelineModelWithKVCache[Gemma4Context],
+    MultiGraphPipelineModelWithKVCache[Gemma4Context],
 ):
     """Gemma 3 multimodal pipeline model for text generation.
 
@@ -207,67 +208,45 @@ class Gemma3_MultiModalModel(
         """Release vision encoder cache for a completed request."""
         self._ve_cache.release_request(request_id)
 
-    def load_model(
-        self, session: InferenceSession
-    ) -> tuple[Model | None, Model]:
-        """Loads the compiled Gemma3 MultiModal models into the MAX Engine session.
-
-        Returns:
-            A tuple of (vision_model, language_model).
-        """
+    def _load_state_dict(self) -> dict[str, Any]:
         assert self._max_batch_size, "Expected max_batch_size to be set"
 
         # Get processed state dict for language and vision models
         weights_dict = dict(self.weights.items())
-        language_weights_dict = convert_safetensor_language_state_dict(
+        self._language_weights_dict = convert_safetensor_language_state_dict(
             weights_dict
         )
+        self._vision_weights_dict = convert_safetensor_vision_state_dict(
+            weights_dict
+        )
+        return {k: v.data() for k, v in weights_dict.items()}
 
-        vision_weights_dict = convert_safetensor_vision_state_dict(weights_dict)
-
-        raw_state_dict = {k: v.data() for k, v in weights_dict.items()}
+    def _create_model_config(
+        self, state_dict: dict[str, Any]
+    ) -> Gemma4ForConditionalGenerationConfig:
         model_config = Gemma4ForConditionalGenerationConfig.initialize(
             self.pipeline_config
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
-            state_dict=raw_state_dict,
+            state_dict=state_dict,
             return_logits=self.return_logits,
         )
-
         self.config = model_config
 
-        # Build and compile vision + language model together.
-        with CompilationTimer("vision + language model") as timer:
-            module = Module()
-
-            vision_graph = None
-            vision_model_state_dict: dict[str, DLPackArray] = {}
-            if model_config.vision_config is not None:
-                vision_graph, vision_model_state_dict = (
-                    self._build_vision_graph(
-                        model_config, vision_weights_dict, module=module
-                    )
-                )
-
-            language_graph, language_model_state_dict = (
-                self._build_language_graph(
-                    model_config, language_weights_dict, module=module
-                )
+        # DISTINF-194: pre-fuse gate/up and qkv/qk projections when configured,
+        # matching the FusedMLP / stacked qkv layers the graph builds.
+        if gemma4_uses_fused_projections(model_config):
+            self._language_weights_dict = fuse_gemma4_projection_weights(
+                self._language_weights_dict
             )
-            timer.mark_build_complete()
 
-            combined_weights = {
-                **vision_model_state_dict,
-                **language_model_state_dict,
-            }
-            models = session.load_all(module, weights_registry=combined_weights)
-            vision_model = (
-                models[vision_graph.name] if vision_graph is not None else None
-            )
-            language_model = models[language_graph.name]
+        return model_config
 
-        return vision_model, language_model
+    def _include_vision_graph(
+        self, model_config: Gemma4ForConditionalGenerationConfig
+    ) -> bool:
+        return model_config.vision_config is not None
 
     def _language_model_input_types(
         self, config: Gemma4ForConditionalGenerationConfig
@@ -473,11 +452,13 @@ class Gemma3_MultiModalModel(
 
             assert img.cache_context_batch is not None
             assert img.cache_uncached_contexts is not None
+            assert img.cache_uncached_images is not None
             assert img.cache_per_image_token_counts is not None
             image_embeddings, scatter_np = (
                 self._ve_cache.prepare_vision_outputs(
                     context_batch=img.cache_context_batch,
                     uncached_contexts=img.cache_uncached_contexts,
+                    uncached_images=img.cache_uncached_images,
                     vision_embeds=raw_embeds,
                     per_image_token_counts=img.cache_per_image_token_counts,
                     n_devices=len(self.devices),

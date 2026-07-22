@@ -114,7 +114,8 @@ def resolve_attention_head_dim(huggingface_config: AutoConfig) -> int:
 def parse_hybrid_pattern(pattern: str) -> list[str]:
     """Map a Nemotron-H ``hybrid_override_pattern`` to per-layer kinds.
 
-    ``M`` -> ``"mamba"``, ``*`` -> ``"attention"``, ``-`` -> ``"mlp"``.
+    ``M`` -> ``"mamba"``, ``*`` -> ``"attention"``, ``-`` -> ``"mlp"``,
+    ``E`` -> ``"moe"`` (the Nemotron-3 MoE hybrids, e.g. 30B-A3B).
     """
     kinds: list[str] = []
     for ch in pattern:
@@ -124,10 +125,12 @@ def parse_hybrid_pattern(pattern: str) -> list[str]:
             kinds.append("attention")
         elif ch == "-":
             kinds.append("mlp")
+        elif ch == "E":
+            kinds.append("moe")
         else:
             raise ValueError(
                 f"invalid hybrid_override_pattern character {ch!r}; "
-                "expected 'M', '*', or '-'"
+                "expected 'M', '*', '-', or 'E'"
             )
     return kinds
 
@@ -169,6 +172,18 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     mlp_hidden_act: str = "relu2"
     mlp_bias: bool = False
 
+    # MoE (Nemotron-3 hybrids with ``E`` layers, e.g. 30B-A3B). These defaults
+    # leave the dense 4B/8B variants (no ``moe`` layers) unaffected.
+    num_experts: int = 0
+    # Mirrors the HF config key name; feeds the MAX-side
+    # ``num_experts_per_token`` MoE param. The ``_tok``/``_token`` split is
+    # deliberate.
+    num_experts_per_tok: int = 0
+    moe_intermediate_size: int = 0
+    moe_shared_expert_intermediate_size: int = 0
+    routed_scaling_factor: float = 1.0
+    norm_topk_prob: bool = True
+
     # Mamba-2 mixer
     mamba_num_heads: int
     mamba_head_dim: int
@@ -186,8 +201,13 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     # FP8: set of (kind, layer_idx) modules quantized to FP8 per-tensor static.
     # ``fp8_mamba_layers``: mamba layers whose in/out_proj are FP8.
     # ``fp8_mlp_layers``: MLP layers whose up/down_proj are FP8.
+    # ``fp8_moe_layers``: MoE layers whose routed + shared expert up/down_proj
+    # are FP8 (the 30B-A3B hybrid). The routed-expert grouped matmul consumes
+    # the FP8 weight stack directly (weight-only W8A16); the shared expert runs
+    # the dense FP8 Linear path.
     fp8_mamba_layers: set[int] = field(default_factory=set)
     fp8_mlp_layers: set[int] = field(default_factory=set)
+    fp8_moe_layers: set[int] = field(default_factory=set)
     is_fp8: bool = False
 
     @property
@@ -234,6 +254,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         """
         fp8_mamba: set[int] = set()
         fp8_mlp: set[int] = set()
+        fp8_moe: set[int] = set()
         for name in state_dict:
             if not name.endswith("weight_scale"):
                 continue
@@ -247,12 +268,18 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                     fp8_mamba.add(li)
                 elif proj in ("up_proj", "down_proj"):
                     fp8_mlp.add(li)
+                # MoE routed/shared experts nest one level deeper:
+                # blocks.{i}.mixer.experts.{j}.{up,down}_proj.weight_scale and
+                # blocks.{i}.mixer.shared_experts.{up,down}_proj.weight_scale.
+                elif proj in ("experts", "shared_experts"):
+                    fp8_moe.add(li)
         self.fp8_mamba_layers = fp8_mamba
         self.fp8_mlp_layers = fp8_mlp
-        self.is_fp8 = bool(fp8_mamba or fp8_mlp)
+        self.fp8_moe_layers = fp8_moe
+        self.is_fp8 = bool(fp8_mamba or fp8_mlp or fp8_moe)
         logger.info(
             f"Nemotron-H FP8: {len(fp8_mamba)} mamba layers,"
-            f" {len(fp8_mlp)} MLP layers quantized"
+            f" {len(fp8_mlp)} MLP layers, {len(fp8_moe)} MoE layers quantized"
         )
 
     @staticmethod
@@ -284,7 +311,16 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
         The forward pass maps each attention layer to a sequential KV cache
         index (0, 1, 2, ...), independent of the absolute layer index.
+
+        The reference configuration uses an FP8 KV cache for this checkpoint.
+        Select the same default while preserving explicit cache-format
+        overrides and non-FP8 model behavior.
         """
+        if (
+            pipeline_config.model.quantization_encoding == "float8_e4m3fn"
+            and kv_cache_config.kv_cache_format is None
+        ):
+            cache_dtype = DType.float8_e4m3fn
         kinds = parse_hybrid_pattern(huggingface_config.hybrid_override_pattern)
         num_attention_layers = sum(1 for k in kinds if k == "attention")
         return kv_cache_config.to_params(
@@ -380,6 +416,22 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 huggingface_config, "mlp_hidden_act", "relu2"
             ),
             mlp_bias=getattr(huggingface_config, "mlp_bias", False),
+            # MoE fields (guarded: dense 4B/8B configs lack them and keep the
+            # dataclass defaults, so their code paths are unaffected).
+            num_experts=getattr(huggingface_config, "n_routed_experts", 0),
+            num_experts_per_tok=getattr(
+                huggingface_config, "num_experts_per_tok", 0
+            ),
+            moe_intermediate_size=getattr(
+                huggingface_config, "moe_intermediate_size", 0
+            ),
+            moe_shared_expert_intermediate_size=getattr(
+                huggingface_config, "moe_shared_expert_intermediate_size", 0
+            ),
+            routed_scaling_factor=getattr(
+                huggingface_config, "routed_scaling_factor", 1.0
+            ),
+            norm_topk_prob=getattr(huggingface_config, "norm_topk_prob", True),
             mamba_num_heads=huggingface_config.mamba_num_heads,
             mamba_head_dim=huggingface_config.mamba_head_dim,
             n_groups=huggingface_config.n_groups,

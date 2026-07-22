@@ -125,7 +125,6 @@ def create_connector(
             disk_cache_dir=cfg.disk_offload_dir,
             max_disk_size_gb=cfg.disk_offload_max_gb,
             kv_hash_algo=kv_hash_algo,
-            use_direct_io=cfg.disk_offload_direct_io,
         )
 
     if connector == KVConnectorType.local:

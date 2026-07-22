@@ -54,6 +54,50 @@ struct ExplicitDestroy(ImplicitlyDeletable where False, Movable):
 
 
 # ===----------------------------------------------------------------------=== #
+# ExplicitDestroyKey
+# ===----------------------------------------------------------------------=== #
+
+
+@explicit_destroy("Use .destroy() to consume `ExplicitDestroyKey`")
+@fieldwise_init
+struct ExplicitDestroyKey(
+    Equatable, Hashable, ImplicitlyDeletable where False, Movable
+):
+    """Linear key type for testing linear-keyed containers: `Movable`,
+    `Hashable`, and `Equatable`, but explicitly-destroyed (not
+    `ImplicitlyDeletable`)."""
+
+    var value: Int
+    """Int data."""
+
+    def __eq__(self, other: Self) -> Bool:
+        """Compare two keys on their payload.
+
+        Args:
+            other: The other key to compare against.
+
+        Returns:
+            `True` if the payloads are equal, `False` otherwise.
+        """
+        return self.value == other.value
+
+    def __hash__[H: Hasher](self, mut hasher: H):
+        """Hash the payload using the given hasher.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        self.value.__hash__(hasher)
+
+    def destroy(deinit self):
+        """Destroys self."""
+        pass
+
+
+# ===----------------------------------------------------------------------=== #
 # MoveOnly
 # ===----------------------------------------------------------------------=== #
 
@@ -122,14 +166,14 @@ struct MoveOnly[T: Movable & ImplicitlyDeletable](
 # ===----------------------------------------------------------------------=== #
 
 
-struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
+struct ObservableMoveOnly[actions_origin: ImmOrigin](Movable):
     """Type for observing move and destruction operations during testing.
 
     Parameters:
         actions_origin: Origin of the actions list for tracking operations.
     """
 
-    comptime _U = UnsafePointer[List[String], Self.actions_origin]
+    comptime _U = Pointer[List[String], Self.actions_origin]
     var actions: Self._U
     """Pointer to list tracking lifecycle operations."""
     var value: Int
@@ -144,7 +188,7 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
         """
         self.actions = actions
         self.value = value
-        self.actions.unsafe_mut_cast[True]()[0].append("__init__")
+        self.actions.unsafe_mut_cast[True]()[].append("__init__")
 
     def __init__(out self, *, deinit move: Self):
         """Moves from an existing instance and records the operation.
@@ -154,11 +198,11 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
         """
         self.actions = move.actions
         self.value = move.value
-        self.actions.unsafe_mut_cast[True]()[0].append("move ctor")
+        self.actions.unsafe_mut_cast[True]()[].append("move ctor")
 
     def __del__(deinit self):
         """Destroys the instance and records the operation."""
-        self.actions.unsafe_mut_cast[True]()[0].append("__del__")
+        self.actions.unsafe_mut_cast[True]()[].append("__del__")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -413,7 +457,7 @@ struct TriviallyCopyableMoveCounter(Copyable):
 
 
 @fieldwise_init
-struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable):
+struct DelRecorder[recorder_origin: ImmOrigin](ImplicitlyCopyable):
     """Records destructor calls for testing.
 
     Parameters:
@@ -422,7 +466,7 @@ struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable):
 
     var value: Int
     """Value to record when destroyed."""
-    var destructor_recorder: UnsafePointer[List[Int], Self.recorder_origin]
+    var destructor_recorder: Pointer[List[Int], Self.recorder_origin]
     """Pointer to list for recording destructor calls."""
 
     def __del__(deinit self):
@@ -443,12 +487,12 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
         origin: Origin of the target pointer.
     """
 
-    var target: UnsafePointer[Bool, Self.origin]
+    var target: Pointer[Bool, Self.origin]
     """Pointer to boolean flag set on destruction."""
 
     def __del__(deinit self):
         """Sets the target flag to True when destroyed."""
-        self.target.init_pointee_move(True)
+        self.target.unsafe_write(True)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -475,7 +519,7 @@ struct ExplicitDelOnly(ImplicitlyDeletable where False, Movable):
 
 
 @fieldwise_init
-struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
+struct DelCounter[counter_origin: ImmOrigin, *, trivial_del: Bool = False](
     ImplicitlyCopyable, Writable
 ):
     """Counts the number of times instances are destroyed.
@@ -487,7 +531,7 @@ struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
 
     comptime __del__is_trivial = Self.trivial_del
 
-    var counter: UnsafePointer[Int, Self.counter_origin]
+    var counter: Pointer[Int, Self.counter_origin]
     """Pointer to counter incremented on destruction."""
 
     def __del__(deinit self):

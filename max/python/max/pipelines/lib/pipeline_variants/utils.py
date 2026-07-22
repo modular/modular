@@ -135,9 +135,21 @@ def build_response(
             upper_bound=max_seq_len, default=context.max_length
         )
 
-        # Mark as done if the next step would exceed the max length.
+        # Mark as done once the per-request cap is actually reached. Unlike
+        # the hard model/KV limit below, no growth slack is reserved here:
+        # the per-token accept loop above already truncates the final
+        # accepted chunk to land exactly on this cap, so reserving a full
+        # worst-case spec chunk of slack against it would stop the request
+        # up to `max_growth_per_step` tokens early (CENG-827).
         current_length = context.tokens.processed_length + 1
-        if current_length + max_growth_per_step > context_max_length:
+        if current_length >= context_max_length:
+            context.status = GenerationStatus.MAXIMUM_LENGTH
+        # Mark as done if the next step's worst-case growth (all drafts
+        # accepted + bonus token) would exceed the hard model/KV capacity.
+        # The KV pool reserves `max_seq_len + spec_slack` up front (see
+        # overlap_text_generation.py), so running one more speculative step
+        # here can never overflow it.
+        elif current_length + max_growth_per_step > max_seq_len:
             context.status = GenerationStatus.MAXIMUM_LENGTH
 
         output = context.to_generation_output()
@@ -385,7 +397,7 @@ class StructuredOutputHelper:
     """Whether user-provided json_schema is allowed."""
     vocab_size: int | None = None
     """Vocabulary size from the tokenizer, or None if disabled."""
-    backend: GrammarBackend | None = field(default=None, repr=False)
+    backend: GrammarBackend[Any] | None = field(default=None, repr=False)
     """Pluggable grammar backend (llguidance by default)."""
     tool_call_region_delimiters: StructuredOutputRegionDelimiters | None = None
     """Token sequences for tool call boundaries (conditional enforcement)."""
@@ -897,7 +909,11 @@ class StructuredOutputHelper:
             # what keeps the batch-level ``skip_fsm_advance`` contract intact
             # for the producing batch's later sync.
             for ctx_idx, ctx in enumerate(context_batch):
-                if ctx.matcher is None or ctx.is_initial_prompt:
+                if (
+                    ctx.matcher is None
+                    or ctx.is_initial_prompt
+                    or ctx._is_padding_ctx
+                ):
                     continue
 
                 # Advance the enforcement state machine through committed
@@ -995,6 +1011,8 @@ class StructuredOutputHelper:
                 # raising -- a raise propagates to the callback's except and
                 # blanket-resets the *whole* rectangle to -1, unconstraining
                 # every other (correctly continuing) request in the batch.
+                if ctx._is_padding_ctx:
+                    continue
                 src = rid_to_src.get(ctx.request_id)
                 if src is None:
                     logger.error(

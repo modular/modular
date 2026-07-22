@@ -13,6 +13,7 @@
 """MLA FP8 index kernel for computing attention scores with paged KV cache."""
 
 from std.sys import size_of
+from std.sys.info import _has_blackwell_tcgen05
 from std.math import ceildiv
 
 from layout import (
@@ -28,12 +29,16 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from kv_cache.types import KVCollectionT
 
 from nn.index_fp8 import fp8_index_kernel, IndexSmemStorage
+from nn.attention.gpu.sparse_index_fp8_sm100 import (
+    _BM_KEY,
+    fp8_index_score_sm100,
+)
 from nn.attention.mha_mask import MHAMask, MaskName
 from nn.attention.mha_operand import KVCacheMHAOperand, KVCacheScalesMHAOperand
 from nn.attention.mha_utils import dispatch_mask
 from nn.topk_bitonic import (
     PERSISTENT_TOPK_MAX_N,
-    persistent_topk_block,
+    persistent_topk_block_split,
 )
 from nn.topk import topk_gpu
 
@@ -51,7 +56,7 @@ def apply_mask_kernel[
     ScoresLayoutType: TensorLayout,
     scores_origin: MutOrigin,
     VLLayoutType: TensorLayout,
-    vl_origin: ImmutOrigin,
+    vl_origin: ImmOrigin,
     CLLayoutType: TensorLayout,
 ](
     output: TileTensor[DType.float32, ScoresLayoutType, scores_origin],
@@ -60,7 +65,26 @@ def apply_mask_kernel[
     mask: mask_t,
     max_num_keys: Int,
 ):
-    """Apply causal mask to the output scores."""
+    """Apply causal mask to the output scores.
+
+    Parameters:
+        mask_t: The `MHAMask` type applied to each score coordinate.
+        ScoresLayoutType: Layout of the `output` scores tensor.
+        scores_origin: Origin of the `output` scores tensor.
+        VLLayoutType: Layout of the `valid_length` tensor.
+        vl_origin: Origin of the `valid_length` tensor.
+        CLLayoutType: Layout of the `cache_lengths` tensor.
+
+    Args:
+        output: Score matrix with row stride `max_num_keys`, indexed as
+            `[global_seq_idx, key_idx]`.
+        valid_length: Row offsets into `output` per batch, length
+            `batch_size + 1`.
+        cache_lengths: Per-batch cached-prefix length used to map a local
+            query index to an absolute position.
+        mask: The mask instance applied to each score coordinate.
+        max_num_keys: Row stride of `output` and maximum keys per token.
+    """
     var batch_idx = block_idx.x
     var seq_idx = block_idx.y * 16 + thread_idx.x
     var key_idx = block_idx.z * 16 + thread_idx.y
@@ -90,7 +114,7 @@ def apply_mask_kernel[
 @__name(t"mla_fill_invalid_topk_{use_causal_mask}")
 def fill_invalid_topk_kernel[
     IROLayoutType: TensorLayout,
-    iro_origin: ImmutOrigin,
+    iro_origin: ImmOrigin,
     cache_lengths_layout: TensorLayout,
     use_causal_mask: Bool,
 ](
@@ -121,6 +145,28 @@ def fill_invalid_topk_kernel[
         num_keys = cache_len + local_seq_idx + 1
     Without causal masking, each token can see all keys in the batch:
         num_keys = cache_len + seq_len
+
+    Parameters:
+        IROLayoutType: Layout of the `input_row_offsets` tensor.
+        iro_origin: Origin of the `input_row_offsets` tensor.
+        cache_lengths_layout: Layout of the `cache_lengths` tensor.
+        use_causal_mask: Whether each token is restricted to keys up to
+            its own position.
+
+    Args:
+        output_indices: Output buffer of shape `[total_seq_len, top_k]`
+            with invalid positions set to -1.
+        topk_indices: Compact top-k index buffer of shape
+            `[total_seq_len, effective_k]` produced by `topk_gpu`.
+        input_row_offsets: Ragged row offsets per batch, length
+            `batch_size + 1`.
+        cache_lengths: Per-batch cached-prefix length used to compute the
+            number of keys each token may attend to.
+        total_seq_len: Number of token rows in `output_indices`.
+        top_k: Row stride of `output_indices` and the requested number of
+            selections per token.
+        effective_k: Row stride of `topk_indices` and the actual number of
+            computed selections, `min(top_k, max_num_keys)`.
     """
     comptime assert cache_lengths.flat_rank == 1
 
@@ -215,6 +261,17 @@ def mla_indexer_ragged_float8_paged[
     2. Applies the specified mask (causal, etc.)
     3. Computes top-k indices per token (scores are summed across all heads)
 
+    Parameters:
+        dtype: Element type of the `q` query tensor, an FP8 dtype.
+        KCollectionT: Type of the KV collection holding cached K values and
+            K scales.
+        num_heads: Number of attention heads per token.
+        depth: Per-head key dimension (head size) in elements.
+        top_k: Requested number of top-scoring key indices to select per
+            token.
+        mask_str: Name of the mask to apply, either `MaskName.NULL` or
+            `MaskName.CAUSAL`.
+
     Args:
         output_indices: Dense output tensor for top-k indices [total_seq_len, top_k].
             Invalid positions (where there are fewer than top_k valid keys due to
@@ -234,9 +291,6 @@ def mla_indexer_ragged_float8_paged[
     comptime assert (
         CacheType.quantization_enabled
     ), "k_collection must have quantization/scales enabled for MLA k_s values"
-    comptime assert (
-        CacheType.scale_dtype != DType.invalid
-    ), "k_collection must have valid scale_dtype for MLA k_s values"
     comptime assert CacheType.quantization_granularity >= depth, (
         "k_collection.quantization_granularity must be >= depth (head_dim) for"
         " MLA (requires one scale per token per head, i.e. head_dim_granularity"
@@ -276,53 +330,91 @@ def mla_indexer_ragged_float8_paged[
     var k_operand = KVCacheMHAOperand(k_cache)
     var ks_operand = KVCacheScalesMHAOperand(k_cache)
 
-    comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
-    comptime BM = block_tile_shape[0]
-    comptime BN = block_tile_shape[1]
-    comptime smem_use = size_of[IndexSmemStorage[dtype, num_heads, depth, BN]]()
-    comptime smem_available = ctx.default_device_info.shared_memory_per_multiprocessor - 1024
-
-    # fp8_index_kernel computes scores aggregated across heads.
-    # Output is [total_seq_len, max_num_keys] with one score per (token, key) pair.
-    comptime kernel = fp8_index_kernel[
-        dtype,
-        type_of(scores_tile).LayoutType,
-        type_of(q).LayoutType,
-        type_of(q_s).LayoutType,
-        type_of(k_operand),
-        type_of(ks_operand),
-        block_tile_shape,
-        type_of(input_row_offsets.as_immut()).LayoutType,
-        num_heads,
-        depth,
-    ]
-
-    ctx.enqueue_function[kernel](
-        scores_tile,
-        q.as_immut(),
-        q_s,
-        k_operand,
-        ks_operand,
-        input_row_offsets.as_immut(),
-        grid_dim=(
+    comptime use_sm100_scorer = (
+        _has_blackwell_tcgen05()
+        and num_heads in (64, 32, 8, 4)
+        and depth == 128
+        and (
+            type_of(k_operand).page_size == 0
+            or type_of(k_operand).page_size % _BM_KEY == 0
+        )
+    )
+    comptime if use_sm100_scorer:
+        fp8_index_score_sm100[
+            dtype,
+            type_of(k_operand),
+            type_of(ks_operand),
+            num_heads,
+            depth,
+            _is_cache_length_accurate=False,
+        ](
+            scores_tile,
+            q,
+            q_s.as_immut(),
+            k_operand,
+            ks_operand,
+            input_row_offsets,
             batch_size,
             max_new_tokens,
-            ceildiv(max_num_keys, BM),
-        ),
-        block_dim=(16, 8, 1),
-        shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_available)
-        ),
-    )
+            max_num_keys,
+            mask_str == MaskName.CAUSAL.name,
+            ctx,
+        )
+    else:
+        comptime assert num_heads % 16 == 0, (
+            "the scalar fp8_index_kernel tiles heads by thread_dim_y == 8 and"
+            " is unvalidated below 16 heads; num_heads in {4, 8} requires the"
+            " SM100 tensor-core path"
+        )
+        comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
+        comptime BM = block_tile_shape[0]
+        comptime BN = block_tile_shape[1]
+        comptime smem_use = size_of[
+            IndexSmemStorage[dtype, num_heads, depth, BN]
+        ]()
+        comptime smem_available = ctx.default_device_info.shared_memory_per_multiprocessor - 1024
 
-    # Per-batch KV cache lengths (cached-prefix length).  Needed both by the
+        comptime kernel = fp8_index_kernel[
+            dtype,
+            type_of(scores_tile).LayoutType,
+            type_of(q).LayoutType,
+            type_of(q_s).LayoutType,
+            type_of(k_operand),
+            type_of(ks_operand),
+            block_tile_shape,
+            type_of(input_row_offsets.as_immut()).LayoutType,
+            num_heads,
+            depth,
+        ]
+
+        ctx.enqueue_function[kernel](
+            scores_tile,
+            q.as_immut(),
+            q_s,
+            k_operand,
+            ks_operand,
+            input_row_offsets.as_immut(),
+            grid_dim=(
+                batch_size,
+                max_new_tokens,
+                ceildiv(max_num_keys, BM),
+            ),
+            block_dim=(16, 8, 1),
+            shared_mem_bytes=smem_use,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(smem_available)
+            ),
+        )
+
+    # Per-batch KV cache lengths (cached-prefix length). Needed both by the
     # causal mask below (to map local query index → absolute position) and by
     # fill_invalid_topk below.
     var cache_lengths = k_cache.cache_lengths_nd()
 
-    # Apply mask for prefill (seq_len > 1)
-    comptime if mask_str != MaskName.NULL.name:
+    # Apply mask for prefill (seq_len > 1). The SM100 scorer fuses the causal
+    # mask into its store guard (forbidden slots keep the -inf fill), so the
+    # separate full-buffer mask pass only runs for the scalar fallback.
+    comptime if mask_str != MaskName.NULL.name and not use_sm100_scorer:
         if max_new_tokens > 1:
 
             @always_inline
@@ -333,7 +425,7 @@ def mla_indexer_ragged_float8_paged[
                     scores_tile.LayoutType,
                     scores_tile.origin,
                     input_row_offsets.LayoutType,
-                    ImmutOrigin(input_row_offsets.origin),
+                    ImmOrigin(input_row_offsets.origin),
                     type_of(cache_lengths).LayoutType,
                 ]
 
@@ -376,13 +468,10 @@ def mla_indexer_ragged_float8_paged[
         row_major(total_seq_len, effective_k),
     )
 
-    # Dispatch to the fast bitonic-sort path when N fits in SMEM (N ≤ 2048).
-    # The two-stage sequential-extraction topk_gpu is O(k² / BLOCK) and takes
-    # ~2 ms at k=N=2048; the bitonic sort runs in O(N log² N) ≈ 1–2 µs.
-    # Fall back to topk_gpu for N > PERSISTENT_TOPK_MAX_N (large-context where
-    # k << N and the extraction approach is more efficient).
-    if max_num_keys <= PERSISTENT_TOPK_MAX_N:
-        persistent_topk_block(
+    # The bitonic path can only select up to the champion width
+    # (PERSISTENT_TOPK_MAX_N); topk_gpu handles the rare k above it.
+    if effective_k <= PERSISTENT_TOPK_MAX_N:
+        persistent_topk_block_split(
             ctx,
             rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
                 scores_tile.ptr
@@ -413,7 +502,7 @@ def mla_indexer_ragged_float8_paged[
 
     comptime fill_kernel = fill_invalid_topk_kernel[
         input_row_offsets.LayoutType,
-        ImmutOrigin(input_row_offsets.origin),
+        ImmOrigin(input_row_offsets.origin),
         type_of(cache_lengths).LayoutType,
         use_causal_mask,
     ]

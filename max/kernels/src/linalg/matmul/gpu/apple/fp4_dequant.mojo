@@ -86,6 +86,23 @@ def fp4_materialize_kernel[
     first), `scales` is `[N, K//16]`. Used by the Stage-1 oracle: it dequants the
     weight to bf16 so the EXISTING `AppleM5MatMul` can consume it, proving the
     dequant math against a host reference before the fused loader is written.
+
+    Parameters:
+        out_type: Output element dtype (bf16 for the Apple W4A16 path).
+        w_layout: `TileTensor` layout of `packed`, a plain rank-2 `[N, K//2]`
+            `uint8` buffer.
+        s_layout: `TileTensor` layout of `scales`, a plain rank-2
+            `[N, K//16]` `float8_e4m3fn` buffer.
+        out_layout: `TileTensor` layout of `out_w`, a plain rank-2 `[N, K]`
+            buffer of `out_type`.
+
+    Args:
+        out_w: Output weight buffer of shape `[N, K]` and dtype `out_type`,
+            written one element per thread.
+        packed: Input packed FP4 weights as `uint8` of shape `[N, K//2]`, two
+            E2M1 nibbles per byte with the low nibble first.
+        scales: Per-block FP8-E4M3 scales of shape `[N, K//16]`, applied as
+            `abs(scale)` over each 16-element K block.
     """
     comptime assert out_w.flat_rank == 2, "out_w must be 2D [N, K]"
     comptime assert packed.flat_rank == 2, "packed must be 2D [N, K//2]"
@@ -123,6 +140,18 @@ def enqueue_fp4_materialize[
     `out_w` is `[N, K]`, `packed` is `[N, K//2]`, `scales` is `[N, K//16]`. The
     grid is `(ceil(K/16), ceil(N/16))` threadgroups of 16x16 threads; bounds are
     checked per thread so ragged K/N are fine.
+
+    Parameters:
+        out_type: Output element dtype (bf16 for the Apple W4A16 path).
+
+    Args:
+        out_w: Output weight buffer of shape `[N, K]` and dtype `out_type`,
+            written by the enqueued kernel.
+        packed: Input packed FP4 weights as `uint8` of shape `[N, K//2]`, two
+            E2M1 nibbles per byte with the low nibble first.
+        scales: Per-block FP8-E4M3 scales of shape `[N, K//16]`, applied as
+            `abs(scale)` over each 16-element K block.
+        ctx: Device context used to enqueue the kernel onto the GPU.
     """
     var N = Int(out_w.dim[0]())
     var K = Int(out_w.dim[1]())

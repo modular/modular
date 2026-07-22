@@ -22,9 +22,9 @@ sets it automatically.
 
 from std.ffi import external_call
 from std.memory import (
-    memcpy,
+    unsafe_memcpy,
     memset,
-    UnsafePointer,
+    Pointer,
     MutUntrackedOrigin,
     stack_allocation,
 )
@@ -35,7 +35,7 @@ comptime _CHUNK_SIZE = 64
 
 
 @always_inline
-def _metal_os_log_chunk(data: UnsafePointer[UInt8, MutUntrackedOrigin]):
+def _metal_os_log_chunk(data: Pointer[UInt8, MutUntrackedOrigin]):
     """Emit a single 64-byte chunk via the os_log sentinel.
 
     The compiler's InstructionRewrite pass replaces this sentinel call
@@ -72,7 +72,7 @@ def _metal_print_write(text: StringSlice[_]):
         # Copy up to 64 bytes from the source.
         var remaining = length - offset
         var copy_len = remaining if remaining < _CHUNK_SIZE else _CHUNK_SIZE
-        memcpy(dest=chunk, src=data_ptr + offset, count=copy_len)
+        unsafe_memcpy(dest=chunk, src=data_ptr + offset, count=copy_len)
 
         # Emit the chunk.
         _metal_os_log_chunk(chunk)

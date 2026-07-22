@@ -132,7 +132,14 @@ class DeviceInfoAttr(max._core.Attribute):
     ```
     """
 
-    def __init__(self, label: str, api: str, arch: str, model: str) -> None: ...
+    def __init__(
+        self,
+        label: str,
+        api: str,
+        arch: str,
+        model: str,
+        tile_based_fusion: bool,
+    ) -> None: ...
     @property
     def label(self) -> str: ...
     @property
@@ -141,6 +148,8 @@ class DeviceInfoAttr(max._core.Attribute):
     def arch(self) -> str: ...
     @property
     def model(self) -> str: ...
+    @property
+    def tile_based_fusion(self) -> bool: ...
 
 class DeviceRefAttr(max._core.Attribute):
     """

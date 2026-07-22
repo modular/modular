@@ -45,11 +45,17 @@ divergence from naive.
 `is_token_generation = (max_prompt_len == 1) and not empty_cache()`
 (`mha.mojo` ~L424). A true decode (`valid_length == 1` with a non-empty cache)
 routes to the SM100 *decode* kernel (`mha_1q.mojo`), NOT to `fa4_softmax`. To
-exercise the FA4 1Q path we therefore use a SHORT prefill:
+exercise the FA4 1Q path we therefore use a prefill with `max_prompt_len` in
+`(32, 128]`:
 
-  * `valid_length` in `[2, 128]`  -> `is_token_generation == False` (prefill),
+  * lower bound `> 32`: `max_prompt_len <= 32` now routes to the WS BM=32
+    packed-TMEM datapath (`fa4_config_ws` -- also `fa4_softmax`, but the 8-way
+    split + two-level combine, NOT the 1Q BM=128 peer-WG combine this cell
+    guards). The `not sink` gate that used to keep sink shapes off WS was lifted
+    in Phase B, so a short-prompt sink shape would otherwise land on WS.
+  * `valid_length` in `(32, 128]` -> `is_token_generation == False` (prefill),
     and `max_prompt_len <= 128` so the FA4 dispatch heuristic
-    (`sm100/dispatch.mojo` ~L334) selects `fa4_config_1q` (BM = 128).
+    (`sm100/dispatch.mojo`) selects `fa4_config_1q` (BM = 128).
   * a long cache (`cache_length` >> `2*BN`) so the per-WG K-tile count
     `T = ceil(num_keys / (2*BN)) >= 2`, i.e. both WGs are active and the
     LSE-combine actually runs. For depth=64/page_size=128, BN=128, so a cache
@@ -58,9 +64,12 @@ exercise the FA4 1Q path we therefore use a SHORT prefill:
   * `valid_length >= 256` -> `max_prompt_len > 128` selects `fa4_config_2q`
     (BM = 256), the disjoint-rows path that is correct with or without the fix.
 
-If a future change reroutes these shapes away from `fa4_softmax`, the sink-on +
-1Q cell stops being a regression test for this bug; the docstring above is the
-contract.
+If a future change reroutes these shapes to a different config -- the WS BM=32
+route (`max_prompt_len <= 32`), the decode kernel (`max_prompt_len == 1`), or
+`fa4_config_2q` (`max_prompt_len > 128`) -- the sink-on + 1Q cell stops being a
+regression test for the 1Q BM=128 peer-WG combine; the bounds above are the
+contract. (Phase C widens the WS route past 32 under a grid rule; C3 must
+re-audit that this cell still lands on 1Q.)
 """
 
 from std.collections import Set
@@ -461,9 +470,11 @@ def main() raises:
         # cache), 2Q (long prefill)}. The sink-on + 1Q cell is the one that
         # regressed; the other three must pass with or without the fix.
         #
-        # 1Q: valid in [2,128] (prefill, max_prompt_len<=128 -> fa4_config_1q),
-        #     long cache (512 >> 2*BN=256) so T>=2 and both WGs are active.
-        var valid_1q = [2]
+        # 1Q: valid in (32,128] (prefill, 32 < max_prompt_len <= 128 ->
+        #     fa4_config_1q, BM=128; the `> 32` keeps it OFF the WS BM=32 route
+        #     that now accepts sink after Phase B), long cache (512 >> 2*BN=256)
+        #     so T>=2 and both WGs run the peer-WG LSE combine this cell guards.
+        var valid_1q = [96]
         var cache_1q = [512]
         # 2Q: valid >= 256 (max_prompt_len>128 -> fa4_config_2q, BM=256).
         var valid_2q = [320]

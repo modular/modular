@@ -21,7 +21,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import numpy as np
-from max.driver import Buffer, Device, DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Device,
+    DevicePinnedBuffer,
+    copy_pinned_to_destinations,
+)
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
@@ -47,7 +52,7 @@ from max.profiler import traced
 from max.support.math import ceildiv
 
 from ..connectors import create_connector
-from .block_manager import BlockManager, _compute_seq_len
+from .block_manager import BlockManager, PrefixCacheHits, _compute_seq_len
 
 logger = logging.getLogger("max.pipelines")
 
@@ -191,10 +196,6 @@ class _ReplicaMetadata:
     claimed_requests: set[RequestID] = field(default_factory=set)
     """Set of request IDs claimed on this replica."""
 
-    # Store last host buffers to ensure lifetimes outlive async copies.
-    last_lut_table_host: Buffer | None = None
-    last_cache_lengths_host: Buffer | None = None
-
 
 class PagedKVCacheManager:
     """Paged KVCache manager with data and tensor parallelism support.
@@ -322,6 +323,9 @@ class PagedKVCacheManager:
             kv_hash_algo=params.kv_hash_algo,
             kv_hash_seed=params.kv_hash_seed,
             replica_kv_memory=cross_replica_kv_memory,
+            enable_dp_cross_replica_prefix_copy=(
+                params.enable_dp_cross_replica_prefix_copy
+            ),
         )
 
         self._replica: list[_ReplicaMetadata] = [
@@ -364,6 +368,37 @@ class PagedKVCacheManager:
             1.0,
             num_needed_blocks / self._total_num_pages,
         )
+
+    def get_prefix_cache_hit_counts(
+        self, ctx: TextContext
+    ) -> list[PrefixCacheHits]:
+        """Counts each replica's contiguous cached prefix for a request.
+
+        Computes the request's block hashes once and queries every replica's
+        block manager read-only, without claiming the request or mutating any
+        per-request state. Intended for prefix-aware data-parallel routing:
+        callers can compare replicas' hit depths (across the device, host,
+        and disk tiers) before deciding which replica should serve the
+        request.
+
+        Args:
+            ctx: The request context to count cached prefix blocks for.
+
+        Returns:
+            One :class:`PrefixCacheHits` per replica, indexed by replica.
+        """
+        if not self.params.enable_prefix_caching:
+            return [PrefixCacheHits() for _ in self._replica]
+
+        # The hash chain is identical across replicas (same algo, seed, and
+        # block size), so hash once and only vary the lookups.
+        block_hashes = self._replica[0].block_manager.compute_block_hashes(
+            ctx, []
+        )
+        return [
+            replica.block_manager.count_cached_prefix_blocks(block_hashes)
+            for replica in self._replica
+        ]
 
     def alloc(
         self,
@@ -621,15 +656,13 @@ class PagedKVCacheManager:
             )
         )
         # Copy shared LUT and cache_lengths to each TP shard's device buffer.
-        num_tp_shards = len(replica.devices)
-        for tp_shard in range(num_tp_shards):
-            cache_lengths_by_device[tp_shard].inplace_copy_from(
-                cache_lengths_host
-            )
-            lut_table_by_device[tp_shard].inplace_copy_from(lut_table_host)
-
-        replica.last_lut_table_host = lut_table_host
-        replica.last_cache_lengths_host = cache_lengths_host
+        # The pinned host staging is dropped when this method returns; the
+        # memory manager defers its free until the owning device's stream
+        # completes, and ``copy_pinned_to_destinations`` makes the owning
+        # device wait for the other TP shards so the staging is not recycled
+        # while their copies are still reading it.
+        copy_pinned_to_destinations(cache_lengths_host, cache_lengths_by_device)
+        copy_pinned_to_destinations(lut_table_host, lut_table_by_device)
 
         return KVCacheAssignments(
             cache_lengths_by_device=cache_lengths_by_device,

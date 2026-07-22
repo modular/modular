@@ -309,6 +309,33 @@ async def run_with_default_executor(
     return await loop.run_in_executor(None, fn, *args, **kwargs)
 
 
+def replace_unpaired_surrogates(prompt: str) -> str:
+    """Returns ``prompt`` with each unpaired UTF-16 surrogate replaced by U+FFFD.
+
+    A JSON request may legally carry lone surrogate escapes -- for example an
+    emoji whose surrogate pair was split by client-side truncation. The parsed
+    value is a valid Python :class:`str` but is not encodable as UTF-8, so
+    handing it to a HuggingFace fast (Rust) tokenizer raises an opaque
+    ``TypeError`` inside ``encode_batch``. Every surrogate code point
+    (U+D800--U+DFFF) is mapped to the Unicode replacement character (U+FFFD);
+    in JSON-decoded input these are exactly the unpaired surrogates, since the
+    parser reconstitutes a valid pair into a single non-surrogate code point.
+    Well-formed text is left unchanged. An ASCII fast path returns immediately;
+    otherwise the string is probed once with ``encode("utf-8")`` and the
+    per-character replacement runs only when that probe fails.
+    """
+    if prompt.isascii():
+        return prompt
+    try:
+        prompt.encode("utf-8")
+    except UnicodeEncodeError:
+        return "".join(
+            "\ufffd" if "\ud800" <= char <= "\udfff" else char
+            for char in prompt
+        )
+    return prompt
+
+
 async def build_eos_tracker_for_request(
     default_eos_token_ids: set[int],
     request: TextGenerationRequest,
@@ -499,7 +526,8 @@ class TextTokenizer(
                 prompt: str, add_special_tokens: bool
             ) -> npt.NDArray[np.integer[Any]]:
                 return self.delegate.encode(
-                    prompt, add_special_tokens=add_special_tokens
+                    replace_unpaired_surrogates(prompt),
+                    add_special_tokens=add_special_tokens,
                 )
 
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
@@ -832,7 +860,8 @@ class TextAndVisionTokenizer(
                 prompt: str, add_special_tokens: bool
             ) -> npt.NDArray[np.integer[Any]]:
                 return self.delegate.encode(
-                    prompt, add_special_tokens=add_special_tokens
+                    replace_unpaired_surrogates(prompt),
+                    add_special_tokens=add_special_tokens,
                 )
 
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
@@ -908,7 +937,11 @@ class TextAndVisionTokenizer(
 
         # InternVL returns a python list
         processed_inputs = self.processor(
-            text=prompt,
+            text=(
+                replace_unpaired_surrogates(prompt)
+                if isinstance(prompt, str)
+                else prompt
+            ),
             images=images,
             add_special_tokens=add_special_tokens,
             return_tensors="np",

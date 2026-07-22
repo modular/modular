@@ -17,12 +17,17 @@ import abc
 import functools
 import logging
 import time
-from collections.abc import AsyncGenerator, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from collections.abc import AsyncGenerator, Callable, Iterator
+from contextlib import (
+    AbstractAsyncContextManager,
+    AbstractContextManager,
+    asynccontextmanager,
+    contextmanager,
+)
 from dataclasses import dataclass, field
 from typing import get_args
 
-from max.serve.config import MetricLevel, Settings
+from max.serve.config import Settings
 from opentelemetry import context
 from opentelemetry.metrics import get_meter_provider
 from opentelemetry.metrics._internal import instrument as api_instrument
@@ -315,6 +320,52 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="tokens/s",
         description="Per-batch generation-side throughput in tokens/second.",
     ),  # type: ignore
+    "maxserve.dp_active_token_occupancy": _meter.create_histogram(
+        "maxserve.dp_active_token_occupancy",
+        unit="%",
+        description=(
+            "Per-batch data-parallel balance: mean/max of per-rank "
+            "active-token load as a percentage. 100 = perfectly balanced "
+            "ranks; the floor is 100/DP-degree (all load on one rank). "
+            "Excludes DP padding dummies. Recorded only when "
+            "data_parallel_degree > 1."
+        ),
+    ),  # type: ignore
+    "maxserve.dp_context_token_occupancy": _meter.create_histogram(
+        "maxserve.dp_context_token_occupancy",
+        unit="%",
+        description=(
+            "Per-batch data-parallel balance: mean/max of per-rank "
+            "context-token (KV / attention) load as a percentage. 100 = "
+            "perfectly balanced ranks; the floor is 100/DP-degree (all "
+            "load on one rank). Excludes DP padding dummies. Recorded only "
+            "when data_parallel_degree > 1 and at least one rank has "
+            "processed tokens (fresh prefill batches are skipped)."
+        ),
+    ),  # type: ignore
+    "maxserve.dp_active_tokens": _meter.create_counter(
+        "maxserve.dp_active_tokens",
+        unit="tokens",
+        description=(
+            "Cumulative active tokens scheduled across all DP replicas, "
+            "excluding padding dummies. Divided by "
+            "maxserve.dp_step_capacity_tokens over the same window, this "
+            "gives the token-weighted DP occupancy (each batch weighted by "
+            "its step cost rather than counted once). Recorded only when "
+            "data_parallel_degree > 1."
+        ),
+    ),  # type: ignore
+    "maxserve.dp_step_capacity_tokens": _meter.create_counter(
+        "maxserve.dp_step_capacity_tokens",
+        unit="tokens",
+        description=(
+            "Cumulative synchronized step capacity in tokens: for each "
+            "batch, DP-degree times the heaviest rank's active tokens "
+            "(ranks step together, so the heaviest rank sets the step "
+            "cost). Denominator for token-weighted DP occupancy. Recorded "
+            "only when data_parallel_degree > 1."
+        ),
+    ),  # type: ignore
     "maxserve.batch_terminated_reqs": _meter.create_histogram(
         "maxserve.batch_terminated_reqs",
         unit="reqs",
@@ -374,6 +425,60 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.cache.used_disk_kv_pct",
         unit="percent",
         description="Percentage of disk KV cache blocks in use (0-100%), sampled once per scheduler batch when disk paging is enabled.",
+    ),  # type: ignore
+    "maxserve.vision.images_encoded": _meter.create_counter(
+        "maxserve.vision.images_encoded",
+        unit="images",
+        description="Cumulative images run through the vision encoder (cache misses).",
+    ),  # type: ignore
+    "maxserve.vision.images_cached": _meter.create_counter(
+        "maxserve.vision.images_cached",
+        unit="images",
+        description="Cumulative images served from the vision encoder cache (cache hits).",
+    ),  # type: ignore
+    "maxserve.vision.patches_encoded": _meter.create_counter(
+        "maxserve.vision.patches_encoded",
+        unit="patches",
+        description="Cumulative image patches fed to the vision encoder.",
+    ),  # type: ignore
+    "maxserve.vision.tokens_encoded": _meter.create_counter(
+        "maxserve.vision.tokens_encoded",
+        unit="tokens",
+        description="Cumulative merged vision tokens produced by the vision encoder.",
+    ),  # type: ignore
+    "maxserve.vision.cache_hit_rate": _meter.create_histogram(
+        "maxserve.vision.cache_hit_rate",
+        unit="percent",
+        description="Per-batch vision encoder cache hit rate (0-100%).",
+    ),  # type: ignore
+    "maxserve.tool_call.conformance_errors": _meter.create_counter(
+        "maxserve.tool_call.conformance_errors",
+        description=(
+            "Count of generated tool calls that failed the observability-only "
+            "schema-conformance check, split by the 'outcome' tag "
+            "(invalid_json, unknown_tool, schema_mismatch). Mirrors the "
+            "'tool_call_conformance' warning log; the function name and failing "
+            "JSON paths stay in the log to keep label cardinality bounded."
+        ),
+    ),  # type: ignore
+    "maxserve.structured_output.grammar_rejections": _meter.create_counter(
+        "maxserve.structured_output.grammar_rejections",
+        description=(
+            "Count of structured-output requests rejected at admission "
+            "(HTTP 400) because the active grammar backend could not compile "
+            "the schema, split by the 'kind' tag (tool_grammar, json_schema)."
+        ),
+    ),  # type: ignore
+    "maxserve.response_format.conformance_errors": _meter.create_counter(
+        "maxserve.response_format.conformance_errors",
+        description=(
+            "Count of response_format (json_schema/json_object) responses "
+            "whose final content failed the observability-only "
+            "schema-conformance check, split by the 'outcome' tag "
+            "(invalid_json, schema_mismatch). Mirrors the "
+            "'response_format_conformance' warning log; the failing JSON "
+            "paths stay in the log to keep label cardinality bounded."
+        ),
     ),  # type: ignore
 }
 
@@ -437,9 +542,22 @@ TelemetryFn = Callable[[MaxMeasurement], None]
 
 class MetricClient(abc.ABC):
     @abc.abstractmethod
-    def send_measurement(
-        self, metric: MaxMeasurement, level: MetricLevel
-    ) -> None: ...
+    def send_measurement(self, metric: MaxMeasurement) -> None: ...
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """Group a burst of measurements into a single flush.
+
+        A caller that knows it is about to emit many measurements at once
+        (e.g. the per-iteration scheduler metrics) can wrap them in a
+        transaction so a client that crosses a process boundary batches them
+        into one packet instead of one send per measurement. Measurements
+        emitted outside a transaction are sent immediately.
+
+        Clients that record in-process ignore this and always emit
+        immediately; the default implementation is a no-op.
+        """
+        yield
 
     @abc.abstractmethod
     def cross_process_factory(
@@ -467,7 +585,7 @@ async def _trivially_picklable_xprocess_factory(
 
 
 class NoopClient(MetricClient):
-    def send_measurement(self, m: MaxMeasurement, level: MetricLevel) -> None:
+    def send_measurement(self, m: MaxMeasurement) -> None:
         pass
 
     def cross_process_factory(
@@ -478,12 +596,7 @@ class NoopClient(MetricClient):
 
 
 class SyncClient(MetricClient):
-    def __init__(self, settings: Settings) -> None:
-        self.level = settings.metric_level
-
-    def send_measurement(self, m: MaxMeasurement, level: MetricLevel) -> None:
-        if level > self.level:
-            return
+    def send_measurement(self, m: MaxMeasurement) -> None:
         m.commit()
 
     def cross_process_factory(
@@ -511,6 +624,23 @@ class _AsyncMetrics:
         self.client = client
         self.extra_attributes = extra_attributes or {}
 
+    def transaction(self) -> AbstractContextManager[None]:
+        """Group the measurements emitted in the ``with`` block into one flush.
+
+        See :meth:`MetricClient.transaction`. Use this to wrap a burst of
+        measurements that are always produced together so a client that
+        crosses the telemetry process boundary sends them as a single packet::
+
+            with METRICS.transaction():
+                METRICS.batch_size(...)
+                METRICS.batch_execution_time(...)
+                ...
+
+        Only cross-process clients batch; in-process clients treat this as a
+        no-op and emit each measurement immediately.
+        """
+        return self.client.transaction()
+
     def request_count(self, responseCode: int, urlPath: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
@@ -522,7 +652,6 @@ class _AsyncMetrics:
                     "path": urlPath,
                 },
             ),
-            MetricLevel.BASIC,
         )
 
     def request_time(self, value: float, urlPath: str) -> None:
@@ -532,7 +661,6 @@ class _AsyncMetrics:
                 value,
                 {**self.extra_attributes, "path": urlPath},
             ),
-            MetricLevel.BASIC,
         )
 
     def input_time(self, value: float) -> None:
@@ -540,7 +668,6 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.input_processing_time", value, self.extra_attributes
             ),
-            MetricLevel.BASIC,
         )
 
     def output_time(self, value: float) -> None:
@@ -548,7 +675,6 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.output_processing_time", value, self.extra_attributes
             ),
-            MetricLevel.BASIC,
         )
 
     def ttft(self, value: float) -> None:
@@ -556,7 +682,6 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.time_to_first_token", value, self.extra_attributes
             ),
-            MetricLevel.BASIC,
         )
 
     def input_tokens(self, value: int) -> None:
@@ -564,7 +689,6 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.num_input_tokens", value, self.extra_attributes
             ),
-            MetricLevel.BASIC,
         )
 
     def input_characters(self, value: int) -> None:
@@ -572,7 +696,6 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.num_input_characters", value, self.extra_attributes
             ),
-            MetricLevel.BASIC,
         )
 
     def output_tokens(self, value: int) -> None:
@@ -580,7 +703,6 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.num_output_tokens", value, self.extra_attributes
             ),
-            MetricLevel.BASIC,
         )
 
     def reqs_queued(self, value: int) -> None:
@@ -596,7 +718,6 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.num_requests_queued", value, self.extra_attributes
             ),
-            MetricLevel.BASIC,
         )
 
     def reqs_running(self, value: int) -> None:
@@ -604,7 +725,6 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.num_requests_running", value, self.extra_attributes
             ),
-            MetricLevel.BASIC,
         )
 
     def reqs_awaiting_admission(self, value: int) -> None:
@@ -622,7 +742,6 @@ class _AsyncMetrics:
                 value,
                 self.extra_attributes,
             ),
-            MetricLevel.BASIC,
         )
 
     def requests_awaiting_admission_dist(self, value: int) -> None:
@@ -639,7 +758,6 @@ class _AsyncMetrics:
                 value,
                 self.extra_attributes,
             ),
-            MetricLevel.BASIC,
         )
 
     def responses_buffered(self, value: int) -> None:
@@ -656,7 +774,6 @@ class _AsyncMetrics:
                 value,
                 self.extra_attributes,
             ),
-            MetricLevel.BASIC,
         )
 
     def responses_buffered_dist(self, value: int) -> None:
@@ -671,7 +788,6 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.responses_buffered", value, self.extra_attributes
             ),
-            MetricLevel.BASIC,
         )
 
     def response_queue_time(self, ms: float) -> None:
@@ -680,7 +796,6 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.response_queue_time", ms, self.extra_attributes
             ),
-            MetricLevel.BASIC,
         )
 
     def model_load_time(self, ms: float, component: str | None = None) -> None:
@@ -699,13 +814,11 @@ class _AsyncMetrics:
             attributes = {**attributes, "component": component}
         self.client.send_measurement(
             MaxMeasurement("maxserve.model_load_time", ms, attributes),
-            MetricLevel.BASIC,
         )
 
     def itl(self, ms: float) -> None:
         self.client.send_measurement(
             MaxMeasurement("maxserve.itl", ms, self.extra_attributes),
-            MetricLevel.BASIC,
         )
 
     def time_per_output_token(self, ms: float) -> None:
@@ -713,7 +826,6 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.time_per_output_token", ms, self.extra_attributes
             ),
-            MetricLevel.BASIC,
         )
 
     def pipeline_load(self, name: str) -> None:
@@ -723,7 +835,6 @@ class _AsyncMetrics:
                 1,
                 {**self.extra_attributes, "model": name},
             ),
-            MetricLevel.BASIC,
         )
 
     def batch_size(self, size: int, batch_type: str) -> None:
@@ -733,7 +844,6 @@ class _AsyncMetrics:
                 size,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
-            MetricLevel.BASIC,
         )
 
     def batch_execution_time(
@@ -745,7 +855,6 @@ class _AsyncMetrics:
                 execution_time,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
-            MetricLevel.DETAILED,
         )
 
     def cache_num_used_blocks(self, num_used_blocks: int) -> None:
@@ -755,7 +864,6 @@ class _AsyncMetrics:
                 num_used_blocks,
                 self.extra_attributes,
             ),
-            MetricLevel.DETAILED,
         )
 
     def cache_num_total_blocks(self, total_blocks: int) -> None:
@@ -765,7 +873,6 @@ class _AsyncMetrics:
                 total_blocks,
                 self.extra_attributes,
             ),
-            MetricLevel.DETAILED,
         )
 
     def cache_hit_rate(self, hit_rate: float) -> None:
@@ -773,13 +880,11 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.cache.hit_rate", hit_rate, self.extra_attributes
             ),
-            MetricLevel.BASIC,
         )
 
     def cache_hits(self, hits: int) -> None:
         self.client.send_measurement(
             MaxMeasurement("maxserve.cache.hits", hits, self.extra_attributes),
-            MetricLevel.DETAILED,
         )
 
     def cache_misses(self, cache_misses: int) -> None:
@@ -787,7 +892,6 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.cache.misses", cache_misses, self.extra_attributes
             ),
-            MetricLevel.DETAILED,
         )
 
     def preemption(self) -> None:
@@ -795,7 +899,51 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.cache.preemption_count", 1, self.extra_attributes
             ),
-            MetricLevel.DETAILED,
+        )
+
+    def vision_images_encoded(self, images: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.images_encoded",
+                images,
+                self.extra_attributes,
+            ),
+        )
+
+    def vision_images_cached(self, images: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.images_cached",
+                images,
+                self.extra_attributes,
+            ),
+        )
+
+    def vision_patches_encoded(self, patches: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.patches_encoded",
+                patches,
+                self.extra_attributes,
+            ),
+        )
+
+    def vision_tokens_encoded(self, tokens: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.tokens_encoded",
+                tokens,
+                self.extra_attributes,
+            ),
+        )
+
+    def vision_cache_hit_rate(self, hit_rate: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.cache_hit_rate",
+                hit_rate,
+                self.extra_attributes,
+            ),
         )
 
     def input_tokens_per_request(self, value: int) -> None:
@@ -805,7 +953,6 @@ class _AsyncMetrics:
                 value,
                 self.extra_attributes,
             ),
-            MetricLevel.BASIC,
         )
 
     def output_tokens_per_request(self, value: int) -> None:
@@ -815,7 +962,6 @@ class _AsyncMetrics:
                 value,
                 self.extra_attributes,
             ),
-            MetricLevel.BASIC,
         )
 
     def dkv_nixl_read_latency(self, latency_ms: float) -> None:
@@ -825,7 +971,6 @@ class _AsyncMetrics:
                 latency_ms,
                 self.extra_attributes,
             ),
-            MetricLevel.DETAILED,
         )
 
     def dkv_nixl_write_latency(self, latency_ms: float) -> None:
@@ -835,7 +980,6 @@ class _AsyncMetrics:
                 latency_ms,
                 self.extra_attributes,
             ),
-            MetricLevel.DETAILED,
         )
 
     def dkv_rpc_acquire_latency(self, latency_ms: float) -> None:
@@ -845,7 +989,6 @@ class _AsyncMetrics:
                 latency_ms,
                 self.extra_attributes,
             ),
-            MetricLevel.DETAILED,
         )
 
     def dkv_rpc_read_latency(self, latency_ms: float) -> None:
@@ -855,7 +998,6 @@ class _AsyncMetrics:
                 latency_ms,
                 self.extra_attributes,
             ),
-            MetricLevel.DETAILED,
         )
 
     def spec_decode_acceptance_rate_per_position(
@@ -873,7 +1015,6 @@ class _AsyncMetrics:
                 acceptance_rate,
                 {**self.extra_attributes, "position": str(position)},
             ),
-            MetricLevel.DETAILED,
         )
 
     def batch_input_tokens(self, value: int, batch_type: str) -> None:
@@ -883,7 +1024,6 @@ class _AsyncMetrics:
                 value,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
-            MetricLevel.BASIC,
         )
 
     def batch_context_tokens(self, value: int, batch_type: str) -> None:
@@ -893,7 +1033,6 @@ class _AsyncMetrics:
                 value,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
-            MetricLevel.BASIC,
         )
 
     def batch_creation_time(self, ms: float, batch_type: str) -> None:
@@ -903,7 +1042,6 @@ class _AsyncMetrics:
                 ms,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
-            MetricLevel.BASIC,
         )
 
     def batch_prompt_throughput(self, tps: float, batch_type: str) -> None:
@@ -913,7 +1051,6 @@ class _AsyncMetrics:
                 tps,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
-            MetricLevel.BASIC,
         )
 
     def batch_generation_throughput(self, tps: float, batch_type: str) -> None:
@@ -923,7 +1060,42 @@ class _AsyncMetrics:
                 tps,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
-            MetricLevel.BASIC,
+        )
+
+    def dp_active_token_occupancy(self, pct: float, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dp_active_token_occupancy",
+                pct,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+        )
+
+    def dp_context_token_occupancy(self, pct: float, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dp_context_token_occupancy",
+                pct,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+        )
+
+    def dp_active_tokens(self, value: int, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dp_active_tokens",
+                value,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+        )
+
+    def dp_step_capacity_tokens(self, value: int, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dp_step_capacity_tokens",
+                value,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
         )
 
     def batch_terminated_reqs(self, value: int, batch_type: str) -> None:
@@ -933,7 +1105,6 @@ class _AsyncMetrics:
                 value,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
-            MetricLevel.DETAILED,
         )
 
     def batch_pending_reqs(self, value: int, batch_type: str) -> None:
@@ -943,7 +1114,6 @@ class _AsyncMetrics:
                 value,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
-            MetricLevel.DETAILED,
         )
 
     def cache_used_kv_pct(self, ratio: float) -> None:
@@ -951,7 +1121,6 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.cache.used_kv_pct", ratio, self.extra_attributes
             ),
-            MetricLevel.BASIC,
         )
 
     def cache_used_host_kv_pct(self, ratio: float) -> None:
@@ -961,7 +1130,6 @@ class _AsyncMetrics:
                 ratio,
                 self.extra_attributes,
             ),
-            MetricLevel.DETAILED,
         )
 
     def cache_h2d_blocks_copied(self, count: int) -> None:
@@ -971,7 +1139,6 @@ class _AsyncMetrics:
                 count,
                 self.extra_attributes,
             ),
-            MetricLevel.DETAILED,
         )
 
     def cache_d2h_blocks_copied(self, count: int) -> None:
@@ -981,7 +1148,6 @@ class _AsyncMetrics:
                 count,
                 self.extra_attributes,
             ),
-            MetricLevel.DETAILED,
         )
 
     def cache_disk_blocks_read(self, count: int) -> None:
@@ -991,7 +1157,6 @@ class _AsyncMetrics:
                 count,
                 self.extra_attributes,
             ),
-            MetricLevel.DETAILED,
         )
 
     def cache_disk_blocks_written(self, count: int) -> None:
@@ -1001,7 +1166,6 @@ class _AsyncMetrics:
                 count,
                 self.extra_attributes,
             ),
-            MetricLevel.DETAILED,
         )
 
     def cache_used_disk_kv_pct(self, ratio: float) -> None:
@@ -1011,7 +1175,6 @@ class _AsyncMetrics:
                 ratio,
                 self.extra_attributes,
             ),
-            MetricLevel.DETAILED,
         )
 
     def spec_decode_avg_acceptance_length(self, length: float) -> None:
@@ -1021,7 +1184,6 @@ class _AsyncMetrics:
                 length,
                 self.extra_attributes,
             ),
-            MetricLevel.DETAILED,
         )
 
     def dkv_nixl_read_gib_per_s(self, gib_per_s: float) -> None:
@@ -1031,7 +1193,6 @@ class _AsyncMetrics:
                 gib_per_s,
                 self.extra_attributes,
             ),
-            MetricLevel.DETAILED,
         )
 
     def dkv_nixl_write_gib_per_s(self, gib_per_s: float) -> None:
@@ -1041,7 +1202,33 @@ class _AsyncMetrics:
                 gib_per_s,
                 self.extra_attributes,
             ),
-            MetricLevel.DETAILED,
+        )
+
+    def tool_call_conformance_error(self, outcome: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.tool_call.conformance_errors",
+                1,
+                {**self.extra_attributes, "outcome": outcome},
+            ),
+        )
+
+    def structured_output_grammar_rejection(self, kind: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.structured_output.grammar_rejections",
+                1,
+                {**self.extra_attributes, "kind": kind},
+            ),
+        )
+
+    def response_format_conformance_error(self, outcome: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.response_format.conformance_errors",
+                1,
+                {**self.extra_attributes, "outcome": outcome},
+            ),
         )
 
 

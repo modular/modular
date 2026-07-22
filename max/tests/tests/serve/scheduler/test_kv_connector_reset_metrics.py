@@ -60,6 +60,17 @@ class _CountingConnector:
     ) -> None:
         pass
 
+    def count_cached_prefix(
+        self, block_hashes: Sequence[bytes]
+    ) -> tuple[int, int]:
+        return (0, 0)
+
+    def touch(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> None: ...
+
     def wait_for_loads(self) -> None: ...
     def wait_for_offloads(self) -> None: ...
     def shutdown(self) -> None: ...

@@ -18,7 +18,7 @@ from std.collections.string.string import (
 from std.collections.string.string_slice import _to_string_list
 from std.math import isinf, isnan
 
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from std.python import Python, PythonObject
 from std.testing import (
     assert_equal,
@@ -1329,58 +1329,44 @@ def test_format_conversion_flags() raises:
 
     var b = 21.1
     assert_true(
-        "21.1 SIMD[DType.float64, 1](2" in "{} {!r}".format(b, b),
+        "21.1 Float64(2" in "{} {!r}".format(b, b),
     )
     assert_true(
-        "21.1 SIMD[DType.float64, 1](2" in "{!s} {!r}".format(b, b),
+        "21.1 Float64(2" in "{!s} {!r}".format(b, b),
     )
 
     var c = 1e100
     assert_equal(
         "{} {!r}".format(c, c),
-        "1e+100 SIMD[DType.float64, 1](1e+100)",
+        "1e+100 Float64(1e+100)",
     )
     assert_equal(
         "{!s} {!r}".format(c, c),
-        "1e+100 SIMD[DType.float64, 1](1e+100)",
+        "1e+100 Float64(1e+100)",
     )
 
     var d = 42
     assert_equal("{} {!r}".format(d, d), "42 Int(42)")
     assert_equal("{!s} {!r}".format(d, d), "42 Int(42)")
 
-    assert_true(
-        "Mojo SIMD[DType.float64, 1](2" in "{} {!r} {} {!r}".format(a, b, c, d)
-    )
-    assert_true(
-        "Mojo SIMD[DType.float64, 1](2"
-        in "{!s} {!r} {!s} {!r}".format(a, b, c, d)
-    )
+    assert_true("Mojo Float64(2" in "{} {!r} {} {!r}".format(a, b, c, d))
+    assert_true("Mojo Float64(2" in "{!s} {!r} {!s} {!r}".format(a, b, c, d))
 
     var e = True
     assert_equal("{} {!r}".format(e, e), "True True")
 
-    assert_true(
-        "Mojo SIMD[DType.float64, 1](2"
-        in "{0} {1!r} {2} {3}".format(a, b, c, d)
-    )
-    assert_true(
-        "Mojo SIMD[DType.float64, 1](2"
-        in "{0!s} {1!r} {2} {3!s}".format(a, b, c, d)
-    )
+    assert_true("Mojo Float64(2" in "{0} {1!r} {2} {3}".format(a, b, c, d))
+    assert_true("Mojo Float64(2" in "{0!s} {1!r} {2} {3!s}".format(a, b, c, d))
 
     assert_equal(
         "{3} {2} {1} {0}".format(a, d, c, b),
         "21.1 1e+100 42 Mojo",
     )
 
-    assert_true(
-        "'Mojo' 42 SIMD[DType.float64, 1](2"
-        in "{0!r} {3} {1!r}".format(a, b, c, d)
-    )
+    assert_true("'Mojo' 42 Float64(2" in "{0!r} {3} {1!r}".format(a, b, c, d))
 
     assert_true(
-        "True 'Mojo' 42 SIMD[DType.float64, 1](2"
+        "True 'Mojo' 42 Float64(2"
         in "{4} {0!r} {3} {1!r}".format(a, b, c, d, True)
     )
 
@@ -1440,7 +1426,7 @@ def test_resize() raises:
 def test_uninit_ctor() raises:
     var hello_len = "hello".byte_length()
     var s = String(unsafe_uninit_length=hello_len)
-    memcpy(
+    unsafe_memcpy(
         dest=s.unsafe_ptr_mut(),
         src=StaticString("hello").unsafe_ptr(),
         count=hello_len,
@@ -1450,7 +1436,7 @@ def test_uninit_ctor() raises:
     # Resize with uninitialized memory.
     var s2 = String()
     s2.resize(unsafe_uninit_length=hello_len)
-    memcpy(
+    unsafe_memcpy(
         dest=s2.unsafe_ptr_mut(),
         src=StaticString("hello").unsafe_ptr(),
         count=hello_len,
@@ -1461,7 +1447,7 @@ def test_uninit_ctor() raises:
     var s3 = String()
     var long: StaticString = "hellohellohellohellohellohellohellohellohellohel"
     s3.resize(unsafe_uninit_length=long.byte_length())
-    memcpy(
+    unsafe_memcpy(
         dest=s3.unsafe_ptr_mut(),
         src=long.unsafe_ptr(),
         count=long.byte_length(),
@@ -1561,7 +1547,7 @@ def test_sso() raises:
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    comptime expected_capacity = UInt((String.INLINE_CAPACITY * 2 + 7) & ~7)
+    comptime expected_capacity = (String.INLINE_CAPACITY * 2 + 7) & ~7
     assert_equal(s.capacity(), Int(expected_capacity))
     assert_equal(s._is_inline(), False)
 

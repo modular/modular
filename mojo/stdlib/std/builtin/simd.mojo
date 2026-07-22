@@ -71,6 +71,7 @@ from std.sys.info import (
     _is_amd_mi300x,
     _is_sm_9x_or_newer,
     _is_sm_100x_or_newer,
+    _is_sm_120x_or_newer,
     is_32bit,
 )
 
@@ -81,7 +82,7 @@ from std.builtin.format_int import _write_int
 from std.builtin.simd_size import SIMDSize
 from std.builtin.int import _FromInt
 from std.math import DivModable, Powable
-from std.memory import bitcast, memcpy, pack_bits
+from std.memory import bitcast, unsafe_memcpy, pack_bits
 from std.python import (
     ConvertibleToPython,
     ConvertibleFromPython,
@@ -254,7 +255,6 @@ def _simd_construction_checks[dtype: DType, size: SIMDSize]():
       dtype: The data type of SIMD vector elements.
       size: The number of elements in the SIMD vector. The size must not be greater than 2**15.
     """
-    comptime assert dtype != DType.invalid, "simd type cannot be DType.invalid"
     comptime assert size.is_power_of_two(), "simd width must be power of 2"
     # MOCO-1388: Until LLVM's issue #122571 is fixed, LLVM's SelectionDAG has
     # a limit of 2^15 for the number of operands of the instruction.
@@ -2293,8 +2293,12 @@ struct SIMD[dtype: DType, size: SIMDSize](
         Args:
             writer: The value to write to.
         """
-        comptime if Self.size == 1 and Self.dtype == DType.int:
-            writer.write_string("Int(")
+        comptime scalar_alias = _scalar_repr_alias[Self.dtype]()
+        comptime if Self.size == 1 and scalar_alias:
+            # Prefer the scalar type alias (e.g. `UInt32(4)`) over the verbose
+            # `SIMD[DType.uint32, 1](4)` form for the common scalar case.
+            writer.write_string(scalar_alias.value())
+            writer.write_string("(")
         else:
             writer.write_string("SIMD[")
             Self.dtype.write_repr_to(writer)
@@ -2398,7 +2402,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
         Returns:
             The integer value.
         """
-        var ptr = bytes.unsafe_ptr().bitcast[Self]()
+        var ptr = bytes.unsafe_ptr().unsafe_bitcast[Self]()
         var value = ptr[]
 
         comptime if is_big_endian() != big_endian:
@@ -2423,11 +2427,11 @@ struct SIMD[dtype: DType, size: SIMDSize](
         comptime if is_big_endian() != big_endian:
             value = byte_swap(value)
 
-        var ptr = UnsafePointer(to=value)
+        var ptr = Pointer(to=value)
         var array = InlineArray[Byte, size_of[Self]()](uninitialized=True)
-        memcpy(
+        unsafe_memcpy(
             dest=array.unsafe_ptr(),
-            src=ptr.bitcast[Byte](),
+            src=ptr.unsafe_bitcast[Byte](),
             count=size_of[Self](),
         )
         return array^
@@ -3675,7 +3679,7 @@ def _convert_float8_to_f32[
     dtype: DType,
     size: SIMDSize,
 ](val: SIMD[dtype, size]) -> SIMD[DType.float32, size]:
-    comptime if _is_sm_9x_or_newer() and dtype in (
+    comptime if _is_sm_9x_or_newer() and not _is_sm_120x_or_newer() and dtype in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
     ):
@@ -3718,7 +3722,7 @@ def _convert_float8_to_f16[
     dtype: DType,
     size: SIMDSize,
 ](val: SIMD[dtype, size]) -> SIMD[DType.float16, size]:
-    comptime if _is_sm_9x_or_newer() and dtype in (
+    comptime if _is_sm_9x_or_newer() and not _is_sm_120x_or_newer() and dtype in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
     ):
@@ -3738,7 +3742,9 @@ def _convert_f32_to_float8[
     //,
     target: DType,
 ](val: SIMD[dtype, size]) -> SIMD[target, size]:
-    comptime if (_is_sm_9x_or_newer() or _cdna_4_or_newer()) and target in (
+    comptime if (
+        _is_sm_9x_or_newer() or _cdna_4_or_newer()
+    ) and not _is_sm_120x_or_newer() and target in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
     ):
@@ -4051,7 +4057,8 @@ def _convert_float8_ue8m0_to_f32[
 def _bfloat16_to_f32_scalar(
     val: BFloat16,
 ) -> Float32:
-    # For bfloat16, we can just do a memcpy to perform the cast to float32.
+    # For bfloat16, we can just do an unsafe_memcpy to perform the cast to
+    # float32.
     comptime if is_nvidia_gpu():
         return inlined_assembly[
             "cvt.f32.bf16 $0, $1;" if _is_sm_9x_or_newer() else "mov.b32 $0, {0, $1};",
@@ -4216,6 +4223,87 @@ def _floor(x: SIMD) -> type_of(x):
         bits,
     )
     return type_of(x)(from_bits=bits)
+
+
+def _scalar_repr_alias[dtype: DType]() -> Optional[StaticString]:
+    """Returns the scalar type alias name for a `dtype`, or `None`.
+
+    This is used by `SIMD.write_repr_to` to print scalars using their friendly
+    alias (e.g. `UInt32(4)`) instead of the verbose `SIMD[DType.uint32, 1](4)`
+    form.
+
+    The set of `dtype`s handled here must stay in sync with the `Scalar`
+    aliases defined near the top of this file (e.g. `Int32 = Scalar[...]`), and
+    parallels `DType.write_to`, the other exhaustive per-`dtype` chain that must
+    be updated when a `dtype` is added. A `dtype` with no scalar alias returns
+    `None` and keeps the verbose form: `DType.bool` is excluded because
+    `SIMD[DType.bool, 1]` is distinct from the `Bool` struct, and
+    `DType.float8_e3m4` has no `Scalar` alias. A `dtype` matching none of these
+    cases fails a `comptime` assertion, so a newly added `dtype` is caught here
+    rather than silently losing its alias.
+
+    Parameters:
+        dtype: The `DType` to look up the scalar alias name for.
+
+    Returns:
+        The scalar type alias name for `dtype`, or `None` when the `dtype` has
+        no scalar alias.
+    """
+    comptime if dtype == DType.int:
+        return StaticString("Int")
+    elif dtype == DType.uint:
+        return StaticString("UInt")
+    elif dtype == DType.int8:
+        return StaticString("Int8")
+    elif dtype == DType.uint8:
+        return StaticString("UInt8")
+    elif dtype == DType.int16:
+        return StaticString("Int16")
+    elif dtype == DType.uint16:
+        return StaticString("UInt16")
+    elif dtype == DType.int32:
+        return StaticString("Int32")
+    elif dtype == DType.uint32:
+        return StaticString("UInt32")
+    elif dtype == DType.int64:
+        return StaticString("Int64")
+    elif dtype == DType.uint64:
+        return StaticString("UInt64")
+    elif dtype == DType.int128:
+        return StaticString("Int128")
+    elif dtype == DType.uint128:
+        return StaticString("UInt128")
+    elif dtype == DType.int256:
+        return StaticString("Int256")
+    elif dtype == DType.uint256:
+        return StaticString("UInt256")
+    elif dtype == DType.float4_e2m1fn:
+        return StaticString("Float4_e2m1fn")
+    elif dtype == DType.float8_e5m2:
+        return StaticString("Float8_e5m2")
+    elif dtype == DType.float8_e5m2fnuz:
+        return StaticString("Float8_e5m2fnuz")
+    elif dtype == DType.float8_e4m3fn:
+        return StaticString("Float8_e4m3fn")
+    elif dtype == DType.float8_e4m3fnuz:
+        return StaticString("Float8_e4m3fnuz")
+    elif dtype == DType.float8_e8m0fnu:
+        return StaticString("Float8_e8m0fnu")
+    elif dtype == DType.bfloat16:
+        return StaticString("BFloat16")
+    elif dtype == DType.float16:
+        return StaticString("Float16")
+    elif dtype == DType.float32:
+        return StaticString("Float32")
+    elif dtype == DType.float64:
+        return StaticString("Float64")
+    elif dtype == DType.bool or dtype == DType.float8_e3m4:
+        return None
+    else:
+        comptime assert False, (
+            "unhandled dtype in `_scalar_repr_alias`: add a `Scalar` alias"
+            " branch or an explicit `None` case"
+        )
 
 
 def _write_scalar[

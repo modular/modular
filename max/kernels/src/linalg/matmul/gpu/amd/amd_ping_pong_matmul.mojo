@@ -311,7 +311,18 @@ struct AMDPingPongMatmul[
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
     ):
-        """Structured ping-pong GEMM kernel entry point."""
+        """Structured ping-pong GEMM kernel entry point.
+
+        Parameters:
+            a_layout: Memory layout of the `a` input tile (inferred).
+            b_layout: Memory layout of the `b` input tile (inferred).
+            c_layout: Memory layout of the `c` output tile (inferred).
+
+        Args:
+            a: LHS input matrix tile of shape `M` x `K` in `a_type`.
+            b: RHS input matrix tile of shape `N` x `K` in `b_type`.
+            c: Output matrix tile of shape `M` x `N` in `c_type`.
+        """
         Self.validate_config()
 
         comptime BM = Self.BM
@@ -667,7 +678,21 @@ def amd_ping_pong_matmul[
     c: TileTensor[mut=True, c_type, ...],
     ctx: DeviceContext,
 ) raises:
-    """Host launcher for the structured ping-pong matmul."""
+    """Host launcher for the structured ping-pong matmul.
+
+    Parameters:
+        a_type: Element type of the `a` input matrix (inferred).
+        b_type: Element type of the `b` input matrix (inferred).
+        c_type: Element type of the `c` output matrix (inferred).
+        enable_swizzle: Enable LDS bank-conflict avoidance swizzle
+            (defaults to `True`).
+
+    Args:
+        a: LHS input matrix tile of shape `M` x `K`.
+        b: RHS input matrix tile of shape `N` x `K`.
+        c: Output matrix tile of shape `M` x `N`.
+        ctx: Device context used to enqueue the kernel launch.
+    """
     comptime assert a_type == b_type, "A and B must have the same type"
     comptime assert (
         a_type == DType.bfloat16 or a_type.is_float8()

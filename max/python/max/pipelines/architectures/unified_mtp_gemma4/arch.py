@@ -26,7 +26,12 @@ from .weight_adapters import convert_safetensor_state_dict
 unified_mtp_gemma4_arch = SupportedArchitecture(
     name="UnifiedMTPGemma4ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["nvidia/Gemma-4-31B-IT-NVFP4", "google/gemma-4-31B-it"],
+    example_repo_ids=[
+        "nvidia/Gemma-4-31B-IT-NVFP4",
+        "google/gemma-4-31B-it",
+        "nvidia/Gemma-4-26B-A4B-NVFP4",
+        "google/gemma-4-26B-A4B-it",
+    ],
     default_encoding="float4_e2m1fnx2",
     supported_encodings={"bfloat16", "float4_e2m1fnx2"},
     pipeline_model=UnifiedMTPGemma4Model,

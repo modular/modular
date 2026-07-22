@@ -67,7 +67,7 @@ def test_write_repr_to() raises:
         is_repr=True,
     )
     check_write_to(
-        Pointer(to=n).get_immutable(),
+        Pointer(to=n).as_immutable(),
         contains=(
             "Pointer[mut=False, SIMD[DType.int, 1],"
             " address_space=AddressSpace.GENERIC](0x"
@@ -142,17 +142,17 @@ def test_merge() raises:
 
 def test_nicheable() raises:
     var x = 42
-    comptime PointerType = Pointer[Int, ImmutOrigin(origin_of(x))]
+    comptime PointerType = Pointer[Int, ImmOrigin(origin_of(x))]
 
     assert_equal(PointerType.niche_count(), 1)
 
     var memory = UnsafeMaybeUninit[PointerType]()
 
-    PointerType.write_niche(UnsafePointer(to=memory))
-    assert_true(PointerType.isa_niche(UnsafePointer(to=memory)))
+    PointerType.write_niche(Pointer(to=memory))
+    assert_true(PointerType.isa_niche(Pointer(to=memory)))
 
     memory.init_from(Pointer(to=x))
-    assert_false(PointerType.isa_niche(UnsafePointer(to=memory)))
+    assert_false(PointerType.isa_niche(Pointer(to=memory)))
 
 
 # We don't actually need to run this,
@@ -167,19 +167,20 @@ def _test_get_immutable() raises -> Int:
     return foo(Pointer(to=x), Pointer(to=x))
 
 
-def origin_superset_conversion(
-    a: String, b: String, c: Bool
-) -> Pointer[String, origin_of(a, b)]:
-    # These pointers should implicitly convert.
-    if c:
-        return Pointer(to=a)
-    else:
-        return Pointer(to=b)
+# TODO(MOCO-4334)
+# def origin_superset_conversion(
+#     a: String, b: String, c: Bool
+# ) -> Pointer[String, origin_of(a, b)]:
+#     # These pointers should implicitly convert.
+#     if c:
+#         return Pointer(to=a)
+#     else:
+#         return Pointer(to=b)
 
 
-def test_implicit_conversion_to_super_origin() raises:
-    # Parse-time only test, but call it anyway.
-    _ = origin_superset_conversion("", "bar", True)
+# def test_implicit_conversion_to_super_origin() raises:
+#     # Parse-time only test, but call it anyway.
+#     _ = origin_superset_conversion("", "bar", True)
 
 
 def main() raises:

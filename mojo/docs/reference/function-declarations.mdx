@@ -131,13 +131,11 @@ PEP 3102.
 compiler deduces inferred parameters from call-site arguments:
 
 ```mojo
-from std.reflection import reflect
-
 def inferred_type[T: Writable, //](value: T):
     print(t"Value is {value}. Type is {reflect[T].name()}.")
 
 def main():
-    inferred_type(5)       # Value is 5. Type is Int.
+    inferred_type(5)       # Value is 5. Type is SIMD[DType.int, 1].
     inferred_type("Hello") # Value is Hello. Type is String.
 ```
 
@@ -411,9 +409,7 @@ Passes a reference with an explicit *origin* specifier. The
 origin tracks where the reference came from:
 
 ```mojo
-def get_first[T: Copyable](
-    ref data: List[T],
-) -> ref [origin_of(data)]T:
+def get_first[T: Copyable](ref data: List[T]) -> ref[data[0]] T:
     return data[0]
 
 def main():
@@ -510,7 +506,7 @@ error type can follow `raises`:
 def parse(text: String) raises -> Int:
     # ...
 
-def parse_strict(text: String) raises ValueError -> Int:
+def parse_strict(text: String) raises SomeError -> Int:
     # ...
 ```
 
@@ -546,15 +542,14 @@ Declares that a function uses the C calling convention. Because C has no
 closure mechanism, `abi("C")` always appears together with `thin`:
 
 ```mojo
-from std.ffi import OwnedDLHandle
+# `add` is compiled with the C calling convention, so it can be called
+# from C or stored in a C-ABI function pointer.
+def add(a: Int32, b: Int32) abi("C") -> Int32:
+    return a + b
 
-def main() raises:
-    # On Linux. On macOS, use "libSystem.dylib", and so forth
-    var lib = OwnedDLHandle("libm.so")
-    var sqrt = lib.get_function[def(Float64) thin abi("C") -> Float64](
-        "sqrt"
-    )
-    print(sqrt(4.0))  # 2.0
+def main():
+    var fp: def(Int32, Int32) thin abi("C") -> Int32 = add
+    print(fp(1, 2))  # 3
 ```
 
 :::caution
@@ -659,7 +654,7 @@ functions capture values from the enclosing scope:
 
 ```mojo
 def outer(x: Int) -> Int:
-    def inner() {read} -> Int:
+    def inner() {imm} -> Int:
         return x + 1
     return inner()
 ```

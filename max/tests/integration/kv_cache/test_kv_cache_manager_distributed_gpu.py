@@ -35,8 +35,12 @@ from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
-from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 from test_common.context_utils import create_text_context
+
+
+def _int_block_hash(n: int) -> bytes:
+    """Encode an int test hash as the canonical 8-byte signed-BE block hash."""
+    return n.to_bytes(8, "big", signed=True)
 
 
 def _create_kv_manager(
@@ -199,7 +203,7 @@ def test_get_metrics_aggregated_h2d_d2h() -> None:
     # hash, so use globally-distinct hashes per replica to avoid collisions.
     def hashes_for(replica_idx: int) -> list[bytes]:
         base = 1000 * (replica_idx + 1)
-        return [to_block_hash_bytes(base + 1), to_block_hash_bytes(base + 2)]
+        return [_int_block_hash(base + 1), _int_block_hash(base + 2)]
 
     # Offload 2 blocks from each replica's device buffers → D2H copies.
     connector = manager._replica[0].connector
@@ -274,8 +278,8 @@ def test_get_metrics_aggregated_disk_ops() -> None:
         def hashes_for(replica_idx: int, base: int) -> list[bytes]:
             start = base + 1000 * (replica_idx + 1)
             return [
-                to_block_hash_bytes(start + 1),
-                to_block_hash_bytes(start + 2),
+                _int_block_hash(start + 1),
+                _int_block_hash(start + 2),
             ]
 
         # Offload 2 blocks from each replica → D2H + write-through to disk.
@@ -386,7 +390,7 @@ def test_cross_replica_gpu_prefix_cache_hit() -> None:
     num_prompt_tokens = 2 * page_size + 1
     ctx = create_text_context(np.arange(num_prompt_tokens))
     bm.compute_hashes_for_request(ctx)
-    hashes = cast("list[int | bytes]", list(bm.req_to_hashes[ctx.request_id]))
+    hashes = cast("list[bytes]", list(bm.req_to_hashes[ctx.request_id]))
     assert len(hashes) == 2
 
     # Seed replica 0's device prefix cache with the two blocks, each holding a
@@ -468,9 +472,8 @@ def test_cross_replica_host_prefix_cache_hit() -> None:
     num_prompt_tokens = 2 * page_size + 1
     ctx = create_text_context(np.arange(num_prompt_tokens))
     bm.compute_hashes_for_request(ctx)
-    hashes = cast("list[int | bytes]", list(bm.req_to_hashes[ctx.request_id]))
+    hashes = cast("list[bytes]", list(bm.req_to_hashes[ctx.request_id]))
     assert len(hashes) == 2
-    hash_bytes = [to_block_hash_bytes(h) for h in hashes]
 
     buf0 = manager.get_device_buffer(0).all_buffers[0]
     buf1 = manager.get_device_buffer(1).all_buffers[0]
@@ -485,7 +488,7 @@ def test_cross_replica_host_prefix_cache_hit() -> None:
         block = bm.allocate_device_block(0)
         src_blocks.append(block)
         expected.append(_write_block_pattern(buf0, block.bid, seed=200 + i))
-    connector.offload([b.bid for b in src_blocks], hash_bytes, replica_idx=0)
+    connector.offload([b.bid for b in src_blocks], hashes, replica_idx=0)
     connector.wait_for_offloads()
     for block in src_blocks:
         pool0.free_block(block)

@@ -51,7 +51,7 @@ trait Equatable:
     """
 
     @always_inline
-    def __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self, /) -> Bool:
         """Define whether two instances of the object are equal to each other.
 
         The default implementation uses reflection to compare all fields for
@@ -70,7 +70,7 @@ trait Equatable:
         comptime names = r.field_names()
         comptime types = r.field_types()
 
-        comptime for i in range(names.size):
+        comptime for i in range(names.length):
             comptime T = types[i]
             comptime assert conforms_to(T, Equatable), _field_conforms_to_error[
                 Parent=Self,
@@ -82,7 +82,7 @@ trait Equatable:
         return True
 
     @always_inline
-    def __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self, /) -> Bool:
         """Define whether two instances of the object are not equal to each
         other.
 

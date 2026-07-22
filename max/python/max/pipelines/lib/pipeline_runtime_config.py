@@ -123,6 +123,23 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    chunked_prefill_min_chunk_size: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Floor, in tokens, on any chunk created by chunked prefill. "
+            "When splitting a request against the CE token budget, the cut "
+            "is moved earlier so that neither the chunk nor the remainder "
+            "is smaller than this; if no legal cut point exists within the "
+            "remaining budget, the request is left unsplit for a later "
+            "step. 0 (default) disables the floor: cuts land exactly on "
+            "the budget boundary, which can produce very small chunks. "
+            "Values above ``max_batch_input_tokens / 2`` forbid most "
+            "splits; a sane range is roughly 64-1024."
+        ),
+    )
+    """Minimum tokens in any chunk created by chunked prefill (0 = off)."""
+
     enable_in_flight_batching: bool = Field(
         default=False,
         description=(
@@ -225,11 +242,39 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    fold_sampler_into_graph: bool = Field(
+        default=True,
+        description=(
+            "Fold greedy token selection (argmax) into the captured forward "
+            "graph so a single device-graph replay materializes the sampled "
+            "token, avoiding a separate sampler submission and its blocking "
+            "readback. Only takes effect for all-greedy decode batches on "
+            "architectures that emit the folded token output (Nemotron-H); "
+            "any non-greedy request falls back to the separate sampler. "
+            "Default on."
+        ),
+    )
+
     force: bool = Field(
         default=False,
         description=(
             "Skip validation of user provided flags against the architecture's "
             "required arguments."
+        ),
+    )
+
+    max_pending_futures: int = Field(
+        default=1,
+        description=(
+            "Maximum number of unrealized future-token placeholders a request "
+            "may hold at once. The default of 1 is the classic overlap-"
+            "scheduler depth: one forward in flight per request. A value of 2 "
+            "enables experimental schedule-ahead decoding in the overlap "
+            "pipeline: two forwards stay in flight and each step's outputs "
+            "are consumed one step late, for pure-greedy token-generation "
+            "batches only (other batches drain to the classic depth). Not "
+            "supported with speculative decoding; prefill-only workers pin "
+            "to 1."
         ),
     )
 
@@ -280,6 +325,32 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "``--no-enable-overlap-scheduler --force``."
         ),
     )
+
+    dp_ce_balance_timeout_ms: float = Field(
+        default=-1.0,
+        description=(
+            "Max time in milliseconds a context-encoding request's work may "
+            "be deferred, from arrival, while awaiting token-balanced "
+            "scheduling across data-parallel replicas. -1 disables the "
+            "balancer (requests bind to a replica on arrival; current "
+            "default behavior); 0 enables post-cache-weighted placement "
+            "with late binding but never defers; > 0 additionally defers "
+            "unbalanced CE work until ``dp_ce_balance_threshold`` is met, "
+            "the deadline expires, or there is nothing else to run."
+        ),
+    )
+    """Deferral deadline for DP-balanced CE scheduling (-1 = disabled)."""
+
+    dp_ce_balance_threshold: float = Field(
+        default=0.8,
+        description=(
+            "Per-step CE active-token occupancy across DP replicas "
+            "(mean/max, 0-1) at or above which CE work is scheduled without "
+            "further deferral. Only consulted when "
+            "``dp_ce_balance_timeout_ms`` > 0."
+        ),
+    )
+    """Occupancy threshold (0-1) that schedules CE work without deferral."""
 
     allow_unsupported_logprobs: bool = Field(
         default=False,

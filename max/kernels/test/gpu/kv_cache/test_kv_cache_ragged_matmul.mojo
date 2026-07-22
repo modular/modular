@@ -35,7 +35,7 @@ from layout import (
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from linalg.matmul.gpu import _matmul_gpu
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from nn.kv_cache_ragged import (
     _fused_qkv_matmul_kv_cache_ragged_impl,
     _matmul_k_cache_ragged_impl,
@@ -123,7 +123,7 @@ def _initialize_ragged_inputs[
                 hidden_state_ragged_host_ptr
                 + (ragged_start_idx + s) * hidden_size
             )
-            memcpy(dest=padded_ptr, src=ragged_ptr, count=hidden_size)
+            unsafe_memcpy(dest=padded_ptr, src=ragged_ptr, count=hidden_size)
 
     var hidden_state_padded_device = ctx.enqueue_create_buffer[dtype](
         padded_size
@@ -734,7 +734,7 @@ def generic_assert_output_equals[
 # prove that and rejects passing both as separately-writable arguments. Disable
 # the nested-origin exclusivity check as a stopgap; the proper fix is to give the
 # k/v views provably-disjoint origins instead of sharing the collection's.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def generic_execute_fused_qkv_cache_ragged[
     cache_t: KVCacheT,
     //,

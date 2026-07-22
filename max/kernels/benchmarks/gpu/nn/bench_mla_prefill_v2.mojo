@@ -481,7 +481,7 @@ def run_mla_prefill_v2[
 
             b.iter_custom[_kernel_launch](ctx)
 
-        def compute_flops() {read} -> Int:
+        def compute_flops() {imm} -> Int:
             # MLA prefill FLOPs (NullMask — full attention, NOT half for
             # causal): one two-segment QK at `d_qk = d_nope + d_rope = 192`
             # plus one PV at `d_pv = d_nope = 128`.
@@ -493,7 +493,7 @@ def run_mla_prefill_v2[
                 * (cache_seq_len * _D_QK + cache_seq_len * _D_NOPE)
             )
 
-        def compute_hbm_bytes() {read} -> Int:
+        def compute_hbm_bytes() {imm} -> Int:
             # HBM footprint per launch (NullMask, full attention):
             # - Q: B * H * N * d_qk    elts of `qkv_type`
             # - K read: B * H_kv * NK * d_qk    elts of `qkv_type`

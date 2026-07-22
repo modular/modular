@@ -145,6 +145,28 @@ class ModelGroup(click.Group):
         )
 
 
+def _handle_import_error(
+    e: ImportError, subcommand: str, suggestion: tuple[str, str]
+) -> None:
+    """Gives actionable feedback on import errors.
+
+    Args:
+        e: The raised error
+        subcommand: The subcommand that was run (i.e. "serve" for `max serve`)
+        suggestion: Which package to install, first item is when using conda, second is for wheels.
+    """
+
+    if sys.version_info < (3, 11):
+        # Backport `add_note()`
+        import exceptiongroup  # noqa: F401
+
+    suggest = suggestion[0] if os.getenv("CONDA_PREFIX") else suggestion[1]
+    e.add_note(  # type: ignore
+        f"To use the `max {subcommand}` command, install the `{suggest}` package."
+    )
+    raise e
+
+
 @click.command(cls=ModelGroup)
 @click.option(
     "--version",
@@ -173,12 +195,21 @@ def main(ctx: click.Context, log_level: str = "INFO") -> None:
 
     # Some subcommands opt out of telemetry.
     if ctx.invoked_subcommand not in _TELEMETRY_OPT_OUT_COMMANDS:
-        configure_telemetry()
+        configure_telemetry(ctx.invoked_subcommand or "")
 
 
-def configure_telemetry(color: str | None = None) -> None:
-    from max.serve.config import Settings
-    from max.serve.telemetry.common import configure_metrics
+def configure_telemetry(subcommand: str) -> None:
+    try:
+        from max.serve.config import Settings
+        from max.serve.telemetry.common import configure_metrics
+    except ImportError as e:
+        # Note: most commands import main(), and thus run this, so this catches most subcommands.
+        _handle_import_error(
+            e,
+            subcommand,
+            # All subcommands that invoke telemetry need serve deps anyways, so always suggest these.
+            ("max-pipelines", "max[serve]"),
+        )
 
     settings = Settings()
     configure_metrics(settings)
@@ -209,6 +240,31 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         help="Path to a snapshot JSON from /max_internal/eplb_stats. "
         "Triggers an EPLB rebalance at startup.",
     )
+    @click.option(
+        "--max-queue-size",
+        type=int,
+        default=None,
+        help=(
+            "Cap (N) on the request queue to the model worker. Once this many "
+            "requests are in transit to the worker, new requests are rejected "
+            "with HTTP 429 instead of being enqueued, providing "
+            "self-calibrating backpressure to keep latency within SLAs. Pair "
+            "with --max-pending-requests. Defaults to unbounded."
+        ),
+    )
+    @click.option(
+        "--max-pending-requests",
+        type=int,
+        default=None,
+        help=(
+            "Cap (M) on the scheduler's pending (prefill) queue depth. The "
+            "worker stops pulling from the request queue once it holds this "
+            "many not-yet-running requests, so the request queue backs up and "
+            "exerts backpressure (see --max-queue-size) instead of growing an "
+            "unbounded pending pool. Should be at least --max-batch-size. "
+            "Defaults to unbounded."
+        ),
+    )
     @functools.wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         return func(*args, **kwargs)
@@ -235,6 +291,8 @@ def cli_serve(
     headless: bool,
     log_prefix: str | None,
     eplb_stats: str | None,
+    max_queue_size: int | None,
+    max_pending_requests: int | None,
     task_arg: tuple[str, ...],
     pretty_print_config: bool,
     **config_kwargs: Any,
@@ -246,8 +304,9 @@ def cli_serve(
     """
     from max._entrypoints.cli.serve import serve_api_server_and_model_worker
     from max._entrypoints.workers import start_workers
-    from max.pipelines import PipelineConfig
+    from max.pipelines import PipelineArgs
     from max.pipelines.context import SamplingParams, SamplingParamsInput
+    from max.pipelines.lib import MAXModelConfig
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging
 
@@ -266,19 +325,26 @@ def cli_serve(
         os.environ["MAX_SERVE_EPLB_STATS"] = eplb_stats
         setting_kwargs["MAX_SERVE_EPLB_STATS"] = eplb_stats
 
+    if max_queue_size is not None:
+        setting_kwargs["MAX_SERVE_MAX_QUEUE_SIZE"] = max_queue_size
+
+    if max_pending_requests is not None:
+        setting_kwargs["MAX_SERVE_MAX_PENDING_REQUESTS"] = max_pending_requests
+
     settings = Settings(**setting_kwargs)
 
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
-    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
 
     # Log Pipeline and Sampling Configuration
     if pretty_print_config:
         # Log Default Sampling Configuration (only for single-model pipelines)
-        if "main" in pipeline_config.models:
+        if pipeline_args.model_path:
+            model_config = MAXModelConfig.from_pipeline_args(pipeline_args)
             sampling_params = SamplingParams.from_input_and_generation_config(
                 SamplingParamsInput(),
-                sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
+                sampling_params_defaults=model_config.sampling_params_defaults,
             )
             sampling_params.log_sampling_info()
 
@@ -291,11 +357,11 @@ def cli_serve(
     if headless:
         start_workers(
             settings=settings,
-            pipeline_config=pipeline_config,
+            pipeline_args=pipeline_args,
         )
     else:
         serve_api_server_and_model_worker(
-            settings=settings, pipeline_config=pipeline_config
+            settings=settings, pipeline_args=pipeline_args
         )
 
 
@@ -382,7 +448,6 @@ def cli_pipeline(
     accepting image inputs for multimodal models.
     """
     from max._entrypoints.cli.generate import generate_text_for_pipeline
-    from max.pipelines import PipelineConfig
     from max.pipelines.context import SamplingParams, SamplingParamsInput
     from max.profiler import maybe_reexec_under_nsys
 
@@ -412,12 +477,16 @@ def cli_pipeline(
     )
 
     # Load tokenizer & pipeline.
-    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
+    from max.pipelines import PipelineArgs
+    from max.pipelines.lib import MAXModelConfig
+
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    model_config = MAXModelConfig.from_pipeline_args(pipeline_args)
     generate_text_for_pipeline(
-        pipeline_config,
+        pipeline_args,
         sampling_params=SamplingParams.from_input_and_generation_config(
             params,
-            sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
+            sampling_params_defaults=model_config.sampling_params_defaults,
         ),
         prompt=prompt,
         image_urls=image_url,
@@ -448,11 +517,11 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
     embeddings that can be used for various downstream tasks.
     """
     from max._entrypoints.cli.encode import pipeline_encode
-    from max.pipelines import PipelineConfig
+    from max.pipelines import PipelineArgs
 
     # Load tokenizer & pipeline.
-    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
-    pipeline_encode(pipeline_config, prompt=prompt, num_warmups=num_warmups)
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    pipeline_encode(pipeline_args, prompt=prompt, num_warmups=num_warmups)
 
 
 @main.command(name="warm-cache", cls=WithLazyPipelineOptions)
@@ -468,7 +537,7 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
 )
 def cli_warm_cache(target: str | None, **config_kwargs) -> None:
     """Load and compile the model to prepare caches."""
-    from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+    from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 
     # Log what we're doing if target mode is enabled
     if target:
@@ -479,16 +548,17 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
             f"Compiling for target: {api} ({target_arch}) using virtual devices"
         )
 
-    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
-    _ = PIPELINE_REGISTRY.retrieve(pipeline_config)
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    PIPELINE_REGISTRY.retrieve(PipelineConfig.from_args(pipeline_args))
 
 
 @main.command(name="warm-interpreter-cache")
 def cli_warm_interpreter_cache() -> None:
     """Compile the eager interpreter's graph-compiler models to prepare caches.
 
-    Batch-compiles the full matmul and unary-elementwise matrix for this
-    machine's devices into the on-disk cache, then drops a stamp. A later lazy
+    Batch-compiles the full matmul, unary-elementwise, binary-elementwise,
+    reduce-axis, and shape-rearrange matrix for this machine's devices into
+    the on-disk cache, then drops a stamp. A later lazy
     eager process on the same device set adopts the warm (one batched cache
     load) instead of compiling each target on first use. Run it as a
     provisioning step on the target hardware. Pure optimization: if skipped, or
@@ -496,17 +566,15 @@ def cli_warm_interpreter_cache() -> None:
     """
     import importlib
 
-    # Dynamic import: _interpreter_ops is an optional Mojo-backed package, kept
-    # out of this target's static deps (see its BUILD).
-    matmul_gc = importlib.import_module("max._interpreter_ops.matmul_gc")
-    unary_gc = importlib.import_module(
-        "max._interpreter_ops.unary_elementwise_gc"
-    )
+    # Dynamic import: a static ``from`` import fails mypy on Linux (Mojo-backed
+    # package with no stub) and pulls the package's heavy import into every CLI
+    # command. importlib keeps it lazy and invisible to static analysis.
+    # GC_FAMILIES is shared with the import-time precompile and build-time warm.
+    interpreter_ops = importlib.import_module("max._interpreter_ops")
     gc_compile = importlib.import_module("max._interpreter_ops.gc_compile")
 
     logger.info("Warming eager interpreter graph-compiler model cache...")
-    matmul_gc.compile_matmul_sweep()
-    unary_gc.compile_unary_sweep()
+    interpreter_ops.compile_all_families()
     if gc_compile.write_warm_stamp():
         logger.info("Done. Compiled models cached for this machine's devices.")
     else:
@@ -532,10 +600,14 @@ def cli_list(json: bool) -> None:
     This command displays information about all registered pipelines and their
     configurations. Output can be formatted as human-readable text or JSON.
     """
-    from max._entrypoints.cli.list import (
-        list_pipelines_to_console,
-        list_pipelines_to_json,
-    )
+    try:
+        from max._entrypoints.cli.list import (
+            list_pipelines_to_console,
+            list_pipelines_to_json,
+        )
+    except ImportError as e:
+        # This one does not enable telemetry, and this is the first import, so we have to handle this here.
+        _handle_import_error(e, "list", ("max-pipelines", "max[serve]"))
 
     if json:
         list_pipelines_to_json()
@@ -609,8 +681,14 @@ def cli_benchmark(
     #
     # Import lazily to avoid importing benchmark modules at module load
     # time.
-    from max.benchmark.sweep_benchmark_serving import main as sweep_main
-    from max.profiler import oneshot
+    try:
+        from max.benchmark.sweep_benchmark_serving import main as sweep_main
+        from max.profiler import oneshot
+    except ImportError as e:
+        # This one does not enable telemetry, and this is the first import, so we have to handle this here.
+        _handle_import_error(
+            e, "benchmark", ("max-benchmark", "max[benchmark]")
+        )
 
     args = list(args)
     profile_path: str | None = None

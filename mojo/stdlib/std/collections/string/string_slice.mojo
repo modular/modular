@@ -15,7 +15,7 @@
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.format_int import _write_int
 from std.reflection import call_location
-from std.collections import check_bounds
+from std.collections import check_bounds, Span
 from std.collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -49,16 +49,15 @@ from std.sys.intrinsics import likely, unlikely
 from std.bit import count_trailing_zeros
 from std.bit.mask import is_negative, splat
 from std.memory import (
-    Span,
     memcmp,
-    memcpy,
+    unsafe_memcpy,
     pack_bits,
 )
 from std.python import Python, PythonObject
 from std.format._utils import _write_hex
 
 
-comptime StaticString = StringSlice[StaticConstantOrigin]
+comptime StaticString = StringSlice[ImmStaticOrigin]
 """An immutable static string slice.
 
 This is a type of
@@ -157,7 +156,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     """
 
     # Aliases
-    comptime Immutable = StringSlice[ImmutOrigin(Self.origin)]
+    comptime Immutable = StringSlice[ImmOrigin(Self.origin)]
     """The immutable version of the `StringSlice`."""
     # Fields
     var _slice: Span[Byte, Self.origin]
@@ -176,7 +175,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     @always_inline("nodebug")
     def __init__(
         other: StringSlice,
-        out self: StringSlice[ImmutOrigin(other.origin)],
+        out self: StringSlice[ImmOrigin(other.origin)],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -193,8 +192,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var length: Int = Int(
             SIMDSize(mlir_value=__mlir_op.`pop.string.size`(_kgen))
         )
-        var ptr = UnsafePointer[mut=False, _, StaticConstantOrigin](
-            __mlir_op.`pop.string.address`(_kgen)
+        var ptr = UnsafePointer[mut=False, _, ImmStaticOrigin](
+            _mlir_value=__mlir_op.`pop.string.address`(_kgen)
         ).bitcast[Byte]()
         self._slice = {ptr = ptr, length = length}
 
@@ -240,7 +239,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
     @always_inline
     def __init__[
-        cstring_origin: ImmutOrigin,
+        cstring_origin: ImmOrigin,
         //,
     ](
         out self: StringSlice[cstring_origin],
@@ -666,7 +665,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __eq__(self, rhs_same: Self) -> Bool:
         """Verify if a `StringSlice` is equal to another `StringSlice` with the
         same origin.
@@ -694,7 +693,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __eq__(self, rhs: StringSlice) -> Bool:
         """Verify if a `StringSlice` is equal to another `StringSlice`.
 
@@ -715,7 +714,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             return True
         return memcmp(s_ptr, rhs_ptr, s_len) == 0
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     def __ne__(self, rhs_same: Self) -> Bool:
         """Verify if a `StringSlice` is not equal to another `StringSlice` with
         the same origin.
@@ -729,7 +728,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return Self.__ne__(self, rhs=rhs_same)
 
-    @__unsafe_disable_nested_origin_exclusivity
+    @__unsafe_nested_origins_read_only
     @always_inline
     def __ne__(self, rhs: StringSlice) -> Bool:
         """Verify if span is not equal to another `StringSlice`.
@@ -1122,7 +1121,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     @always_inline
     def as_c_string_slice(
         self: StaticString,
-    ) -> CStringSlice[StaticConstantOrigin]:
+    ) -> CStringSlice[ImmStaticOrigin]:
         """Return a CStringSlice for this StaticString.
 
         Returns:
@@ -1576,12 +1575,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         var total = len(self._slice)
         var prefix = Self.Immutable(
-            unsafe_from_utf8=Span[Byte, ImmutOrigin(Self.origin)](
+            unsafe_from_utf8=Span[Byte, ImmOrigin(Self.origin)](
                 ptr=self._slice.unsafe_ptr(), length=split_bytes
             )
         )
         var suffix = Self.Immutable(
-            unsafe_from_utf8=Span[Byte, ImmutOrigin(Self.origin)](
+            unsafe_from_utf8=Span[Byte, ImmOrigin(Self.origin)](
                 ptr=self._slice.unsafe_ptr() + split_bytes,
                 length=total - split_bytes,
             )
@@ -1694,7 +1693,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var continuation_count = _count_utf8_continuation_bytes(self.as_bytes())
         return self.byte_length() - continuation_count
 
-    def is_codepoint_boundary(self, index: UInt) -> Bool:
+    def is_codepoint_boundary(self, index: Int) -> Bool:
         """Returns True if `index` is the position of the first byte in a UTF-8
         codepoint sequence, or is at the end of the string.
 
@@ -1781,8 +1780,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         # TODO: Example: Print the byte indices that are codepoints boundaries:
 
-        if index >= UInt(self.byte_length()):
-            return index == UInt(self.byte_length())
+        if index >= self.byte_length():
+            return index == self.byte_length()
 
         var byte = self.as_bytes()[index]
         # If this is not a continuation byte, then it must be a start byte.
@@ -2180,15 +2179,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         comptime if single_character:
             return length != 0 and _is_newline_char_utf8[include_r_n=True](
-                ptr, 0, ptr[0], UInt(length)
+                ptr, 0, ptr[0], length
             )
         else:
             var offset = 0
             for s in self.codepoint_slices():
                 var b_len = s.byte_length()
-                if not _is_newline_char_utf8(
-                    ptr, UInt(offset), ptr[offset], UInt(b_len)
-                ):
+                if not _is_newline_char_utf8(ptr, offset, ptr[offset], b_len):
                     return False
                 offset += b_len
             return length != 0
@@ -2213,29 +2210,29 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var output = List[Self.Immutable](capacity=128)  # guessing
         var ptr = self.get_immutable().unsafe_ptr()
         var length = self.byte_length()
-        var line_start = UInt(0)
+        var line_start = 0
         var prev_b0 = Byte(0)
 
         @always_inline
         @parameter
         def _splitlines[keep: Bool]():
-            while line_start < UInt(length):
+            while line_start < length:
                 var line_end = line_start
                 var is_new_line = False
                 var b0 = Byte(0)
                 var char_len = 0
 
-                while not is_new_line and line_end < UInt(length):
+                while not is_new_line and line_end < length:
                     b0 = ptr[line_end]
                     char_len = _utf8_first_byte_sequence_length(b0)
-                    assert line_end + UInt(char_len) <= UInt(
-                        length
+                    assert (
+                        line_end + char_len <= length
                     ), "corrupted sequence causing unsafe memory access"
                     # percentage-wise a newline is uncommon compared to a normal byte
                     is_new_line = unlikely(
-                        _is_newline_char_utf8(ptr, line_end, b0, UInt(char_len))
+                        _is_newline_char_utf8(ptr, line_end, b0, char_len)
                     )
-                    line_end += UInt(char_len)
+                    line_end += char_len
 
                 var str_len = line_end - line_start
 
@@ -2247,14 +2244,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 # pointer
                 comptime if keep:
                     var is_r = unlikely(b0 == `\r`)
-                    var may_be_r_n = is_r and likely(line_end < UInt(length))
-                    var is_r_n = UInt(
+                    var may_be_r_n = is_r and likely(line_end < length)
+                    var is_r_n = Int(
                         unlikely(may_be_r_n and ptr[line_end] == `\n`)
                     )
                     line_end += is_r_n
                     str_len += is_r_n
                 else:
-                    str_len -= UInt(splat(likely(is_new_line))) & UInt(char_len)
+                    str_len -= splat(likely(is_new_line)) & char_len
                     var is_r_n = unlikely(prev_b0 == `\r` and b0 == `\n`)
                     prev_b0 = b0
                     if is_r_n:  # the line was already appended
@@ -2513,7 +2510,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     def join[
         T: Copyable & Writable,
         //,
-    ](self, elems: Span[T, ...]) -> String:
+    ](self, elems: Span[T, _]) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
@@ -2604,7 +2601,7 @@ def get_static_string[
 
 
 def _to_string_list[
-    O: ImmutOrigin,
+    O: ImmOrigin,
     T: Copyable,
     //,
     len_fn: def(T) thin -> Int,
@@ -2628,7 +2625,7 @@ def _to_string_list[
 
 @always_inline
 def _to_string_list[
-    O: ImmutOrigin, //
+    O: ImmOrigin, //
 ](items: List[StringSlice[O]]) -> List[String]:
     """Create a list of Strings **copying** the existing data.
 
@@ -2655,7 +2652,7 @@ def _to_string_list[
 
 @always_inline
 def _to_string_list[
-    O: ImmutOrigin, //
+    O: ImmOrigin, //
 ](items: List[Span[Byte, O]]) -> List[String]:
     """Create a list of Strings **copying** the existing data.
 
@@ -2680,8 +2677,8 @@ def _to_string_list[
 
 @always_inline
 def _unsafe_strlen(
-    ptr: UnsafePointer[mut=False, Byte, _], max: UInt = UInt.MAX
-) -> UInt:
+    ptr: UnsafePointer[mut=False, Byte, _], max: Int = Int.MAX
+) -> Int:
     """Get the length of a null-terminated string from a pointer.
 
     Args:
@@ -2694,7 +2691,7 @@ def _unsafe_strlen(
     Notes:
         The length does NOT include the null terminator.
     """
-    var offset = UInt(0)
+    var offset = 0
     while offset < max and ptr[offset]:
         offset += 1
     return offset

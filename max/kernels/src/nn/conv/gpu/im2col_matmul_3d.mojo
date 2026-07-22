@@ -27,7 +27,14 @@ from std.math.uutils import udivmod
 from std.sys import simd_width_of, size_of
 from std.gpu import block_dim, block_idx, global_idx, thread_idx
 from std.gpu.host import DeviceContext
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import (
+    Coord,
+    Idx,
+    TensorLayout,
+    TensorStorage,
+    TileTensor,
+    row_major,
+)
 from linalg.matmul.gpu import _matmul_gpu
 from std.utils import IndexList
 from linalg.utils import elementwise_epilogue_type
@@ -47,12 +54,21 @@ def _im2col_ndhwc_kernel[
     input_layout_type: TensorLayout,
     filter_layout_type: TensorLayout,
     output_layout_type: TensorLayout,
+    input_storage: TensorStorage,
+    filter_storage: TensorStorage,
+    output_storage: TensorStorage,
     filter_is_fcrs: Bool,
 ](
     im2col_ptr: UnsafePointer[Scalar[input_dtype], MutAnyOrigin],
-    input: TileTensor[input_dtype, input_layout_type, ImmutAnyOrigin],
-    filter: TileTensor[filter_dtype, filter_layout_type, ImmutAnyOrigin],
-    output: TileTensor[output_dtype, output_layout_type, ImmutAnyOrigin],
+    input: TileTensor[
+        input_dtype, input_layout_type, ImmutAnyOrigin, Storage=input_storage
+    ],
+    filter: TileTensor[
+        filter_dtype, filter_layout_type, ImmutAnyOrigin, Storage=filter_storage
+    ],
+    output: TileTensor[
+        output_dtype, output_layout_type, ImmutAnyOrigin, Storage=output_storage
+    ],
     pad_d: Int,
     pad_h: Int,
     pad_w: Int,
@@ -153,8 +169,11 @@ def _im2col_ndhwc_kernel[
 def _transpose_qrscf_to_nk[
     dtype: DType,
     filter_layout_type: TensorLayout,
+    filter_storage: TensorStorage,
 ](
-    filter: TileTensor[dtype, filter_layout_type, ImmutAnyOrigin],
+    filter: TileTensor[
+        dtype, filter_layout_type, ImmutAnyOrigin, Storage=filter_storage
+    ],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
 ):
     """QRSCF [Q,R,S,C,F] -> [F, Q*R*S*C] row-major for matmul transpose_b."""
@@ -188,8 +207,11 @@ def _transpose_qrscf_to_nk[
 def _transpose_fcqrs_to_nk[
     dtype: DType,
     filter_layout_type: TensorLayout,
+    filter_storage: TensorStorage,
 ](
-    filter: TileTensor[dtype, filter_layout_type, ImmutAnyOrigin],
+    filter: TileTensor[
+        dtype, filter_layout_type, ImmutAnyOrigin, Storage=filter_storage
+    ],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
 ):
     """FCQRS [F,C,Q,R,S] -> [F, Q*R*S*C] row-major for matmul transpose_b."""
@@ -253,6 +275,40 @@ def dispatch_im2col_matmul_conv3d[
     Skips on: non-bf16 dtype, grouped conv, dilation != 1, kernel size
     1x1x1 (the vectorized naive kernel wins on tiny shapes), and K too
     small for the matmul fast path.
+
+    Parameters:
+        input_type: Element type of the input tensor; must be
+            `DType.bfloat16`.
+        filter_type: Element type of the filter tensor.
+        output_type: Element type of the output tensor.
+        filter_is_fcrs: True if the filter is in `FCQRS` layout, False if
+            in `QRSCF` layout (inferred, defaults to False).
+        maybe_epilogue_func: Optional elementwise epilogue applied to each
+            output element with 5-D coordinates (inferred, defaults to
+            None).
+        m_tile_byte_budget: Upper bound on bytes allocated for one M-tile
+            of the im2col matrix, controlling scratch memory usage
+            (inferred, defaults to 256 MiB).
+
+    Args:
+        input: Input tensor in `NDHWC` layout with shape
+            `[batch, D, H, W, C]`.
+        filter: Filter tensor with static shape, either `FCQRS` or
+            `QRSCF` depending on `filter_is_fcrs`.
+        output: Output tensor in `NDHWC` layout with shape
+            `[batch, D_out, H_out, W_out, F]`.
+        stride: Spatial strides for the depth, height, and width axes.
+        dilation: Spatial dilation for the depth, height, and width
+            axes; must be 1 for each.
+        symmetric_padding: Symmetric padding for the depth, height, and
+            width axes.
+        num_groups: Number of convolution groups; must be 1.
+        ctx: Device context for enqueueing GPU kernels and allocating
+            scratch buffers.
+
+    Returns:
+        True if the conv was handled, False if the caller should fall
+        back to another implementation.
     """
     comptime assert input.flat_rank == 5, "input must be rank 5 (NDHWC)"
     comptime assert filter.flat_rank == 5, "filter must be rank 5"
@@ -303,7 +359,9 @@ def dispatch_im2col_matmul_conv3d[
 
     comptime if filter_is_fcrs:
         ctx.enqueue_function[
-            _transpose_fcqrs_to_nk[filter_type, filter.LayoutType]
+            _transpose_fcqrs_to_nk[
+                filter_type, filter.LayoutType, filter.Storage
+            ]
         ](
             filter.as_immut(),
             filter_nk_buf,
@@ -312,7 +370,9 @@ def dispatch_im2col_matmul_conv3d[
         )
     else:
         ctx.enqueue_function[
-            _transpose_qrscf_to_nk[filter_type, filter.LayoutType]
+            _transpose_qrscf_to_nk[
+                filter_type, filter.LayoutType, filter.Storage
+            ]
         ](
             filter.as_immut(),
             filter_nk_buf,
@@ -356,6 +416,9 @@ def dispatch_im2col_matmul_conv3d[
             input.LayoutType,
             filter.LayoutType,
             output.LayoutType,
+            input.Storage,
+            filter.Storage,
+            output.Storage,
             filter_is_fcrs,
         ]
         ctx.enqueue_function[im2col_kernel](

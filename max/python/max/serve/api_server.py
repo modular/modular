@@ -29,6 +29,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from max.pipelines.context import BaseContext
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    make_grammar_validator,
+)
 from max.pipelines.modeling.types import (
     PipelineOutput,
     PipelinesFactory,
@@ -58,6 +61,7 @@ from max.serve.router import (
 from max.serve.schemas.openai import Error, ErrorResponse
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
+from max.serve.worker_interface import RequestQueueFull
 from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
@@ -153,6 +157,9 @@ async def lifespan(
                 override_architecture=override_architecture,
                 task=serving_settings.task,
             ),
+            # Cap the in-transit request backlog to the model worker (HTTP 429
+            # when full). ``None`` keeps the queue unbounded.
+            request_queue_size=settings.max_queue_size,
         )
         model_worker = await exit_stack.enter_async_context(
             start_model_worker(
@@ -185,6 +192,7 @@ async def lifespan(
                 lora_queue=lora_queue,
                 model_worker=model_worker,
                 reasoning_parser_name=serving_settings.reasoning_parser_name,
+                min_chunk_tokens=settings.stream_min_chunk_tokens,
             ),
             PipelineTask.EMBEDDINGS_GENERATION: lambda: TokenGeneratorPipeline(
                 model_name=serving_settings.pipeline_config.models.model_name,
@@ -206,6 +214,20 @@ async def lifespan(
         # OpenResponses API uses GeneralPipelineHandler
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
+
+        # Admission-time grammar validator (text generation only). Rejects a
+        # response_format / tool schema the active backend cannot compile with a
+        # 400 up front.
+        app.state.grammar_validator = None
+        if serving_settings.task == PipelineTask.TEXT_GENERATION and hasattr(
+            serving_settings.tokenizer, "delegate"
+        ):
+            delegate = serving_settings.tokenizer.delegate
+            app.state.grammar_validator = make_grammar_validator(
+                serving_settings.pipeline_config.sampling.structured_output_backend,
+                delegate,
+                len(delegate),
+            )
 
         # Also store as handler for OpenResponses API route compatibility
         # For pixel generation, this is the same as pipeline
@@ -294,6 +316,29 @@ async def _openai_validation_exception_handler(
 ) -> JSONResponse:
     return JSONResponse(
         status_code=422, content=_openai_error_body(422, str(exc))
+    )
+
+
+async def _request_queue_full_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """Map a full model-worker request queue to HTTP 429.
+
+    ``RequestQueueFull`` is raised at admission (the push to the worker, awaited
+    before any response status is committed) by any endpoint that submits to the
+    worker, so it is handled centrally here rather than per route. Returns the
+    OpenAI ``rate_limit_error`` envelope with a ``Retry-After`` hint; the
+    rejection rate is observable via ``maxserve.request_count{code="429"}``.
+    """
+    assert isinstance(exc, RequestQueueFull)
+    request_id = getattr(request.state, "request_id", "<unknown>")
+    logger.warning("Request queue full for request %s", request_id)
+    return JSONResponse(
+        status_code=429,
+        content=_openai_error_body(
+            429, "Server is at capacity. Please retry later."
+        ),
+        headers={"Retry-After": "1"},
     )
 
 
@@ -405,6 +450,9 @@ def fastapi_app(
     app.add_exception_handler(HTTPException, _openai_http_exception_handler)
     app.add_exception_handler(
         RequestValidationError, _openai_validation_exception_handler
+    )
+    app.add_exception_handler(
+        RequestQueueFull, _request_queue_full_exception_handler
     )
 
     return app

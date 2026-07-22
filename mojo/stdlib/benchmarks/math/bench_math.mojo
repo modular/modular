@@ -31,7 +31,7 @@ def make_inputs(
     var step = (end - begin) / (num - 1)
 
     var result = List[input_type]()
-    for i in range(num):
+    for i in range(input_type(0), num, input_type(1)):
         result.append(begin + step * i)
     return result^
 

@@ -38,7 +38,6 @@ hy_v3_arch = SupportedArchitecture(
     pipeline_model=HYV3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },

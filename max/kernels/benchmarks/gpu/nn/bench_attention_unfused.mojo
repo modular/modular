@@ -99,7 +99,7 @@ def bench_flash[
         v_ptr: UnsafePointer[mut=False, Scalar[qkv_type], _],
         o_ptr: UnsafePointer[mut=True, Scalar[qkv_type], _],
         ctx: DeviceContext,
-    ) raises {read}:
+    ) raises {imm}:
         var q = TileTensor(
             q_ptr,
             row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
@@ -151,7 +151,7 @@ def bench_flash[
 
             b.iter_custom[_kernel_launch](ctx)
 
-        def compute_flops() {read} -> Int:
+        def compute_flops() {imm} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
         m.bench_function[bench_func](
@@ -237,7 +237,7 @@ def bench_naive[
         v_ptr: UnsafePointer[mut=False, Scalar[qkv_type], _],
         o_ptr: UnsafePointer[mut=True, Scalar[qkv_type], _],
         ctx: DeviceContext,
-    ) raises {read}:
+    ) raises {imm}:
         var q = TileTensor(
             q_ptr,
             row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
@@ -303,7 +303,7 @@ def bench_naive[
 
             b.iter_custom[_kernel_launch](ctx)
 
-        def compute_flops() {read} -> Int:
+        def compute_flops() {imm} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
         m.bench_function[bench_func](
@@ -415,7 +415,7 @@ def bench_manual[
         o_base: UnsafePointer[mut=True, Scalar[qkv_type], _],
         s_base: UnsafePointer[mut=True, Scalar[qkv_type], _],
         ctx: DeviceContext,
-    ) raises {read}:
+    ) raises {imm}:
         # Step 1: Q @ K^T * scale  (per-head 2D matmul with compute
         # epilogue so we keep TMA stores on H100).
         for h in range(total_heads):
@@ -495,7 +495,7 @@ def bench_manual[
 
             b.iter_custom[_kernel_launch](ctx)
 
-        def compute_flops() {read} -> Int:
+        def compute_flops() {imm} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
         m.bench_function[bench_func](

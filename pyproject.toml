@@ -23,6 +23,7 @@ force-exclude = '''
     | max/python/max/serve/schemas
     | utils/packaging/tests
     | Faux/mojo_llm_from_scratch
+    | utils/kb/sol-execbench
   )/
 )
 '''
@@ -34,6 +35,9 @@ line-length = 80  # Must match above
 force-exclude = true
 src = ["something-that-doesnt-exist"] # Stop ruff from assuming any root directory is a python module
 extend-exclude = [
+  # Machine-authored agent state (skills, agent scripts). Already excluded from
+  # rumdl and typos; these helper scripts are not shipped product code.
+  ".claude",
   "**/lit.cfg.py", # Globals that aren't imported
   "*.ipynb",
   "*_pb2.py", # Generated protobuf stubs
@@ -48,6 +52,10 @@ extend-exclude = [
   "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
   "utils/mblack/tests",
   "Faux/mojo_llm_from_scratch/**", # Experimental from-scratch LLM project
+  # SOL-ExecBench candidate reproduction packages: frozen byte-faithful
+  # snapshots of tuned candidates (solution + custom ops + gate + verbatim
+  # oracle), committed as records and never reformatted.
+  "utils/kb/sol-execbench",
 ]
 
 [tool.ruff.lint]
@@ -121,9 +129,10 @@ convention = "google"
 "max/python/max/_core/dialects/**/*" = ["D"]
 "max/python/max/_core/internal/**/*" = ["D"]
 "max/python/max/**/_*.py" = ["D"]
-# Ignore ANN001 (function argument missing type annotation) for auto-generated
-# stubfiles
-"*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206", "D200", "D212", "D418"]
+# Disable most annotations for third-party stubfiles
+"*/_mlir/*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206", "D200", "D212", "D418"]
+# Be a little less strict with docs in first-party stubfiles
+"*/_core/*.pyi" = ["D200", "D212", "D418"]
 # Ignore type annotations for the llm-book tutorial files
 "oss/llm-book/**/*.py" = ["ANN001", "ANN201", "ANN202"]
 # Ignore type annotations, intentional math unicode (×), and common tutorial code patterns
@@ -163,6 +172,16 @@ follow_imports = "skip"
 [[tool.mypy.overrides]]
 module = "cyclopts.*"
 ignore_missing_imports = true
+
+# Private MiniMax-M3 graph hooks diverge from the shared load_model template
+# signatures; suppress only the files that inherit those hooks.
+[[tool.mypy.overrides]]
+module = "minimax_m3.model"
+disable_error_code = ["misc"]
+
+[[tool.mypy.overrides]]
+module = "minimax_m3.eagle3_model"
+disable_error_code = ["override"]
 
 [tool.pydantic-mypy]
 init_forbid_extra = true

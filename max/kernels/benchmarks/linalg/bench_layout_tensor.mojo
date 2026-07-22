@@ -106,7 +106,7 @@ def matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
 
                     def dot[
                         simd_size: Int
-                    ](n: Int) {x, mut C, mut A_val, read B, read m, mut k}:
+                    ](n: Int) {x, mut C, mut A_val, imm B, imm m, mut k}:
                         var idx = n + x
                         C.store(
                             m,
@@ -312,11 +312,10 @@ def bench[
     var C = Matrix[M, N]()
 
     @always_inline
-    @parameter
-    def test_fn():
+    def test_fn() {mut C, imm A, imm B}:
         _ = func(C, A, B)
 
-    var secs = std.benchmark.run[test_fn](max_runtime_secs=0.5).mean()
+    var secs = std.benchmark.run(test_fn, max_runtime_secs=0.5).mean()
 
     A.data.free()
     B.data.free()

@@ -20,7 +20,7 @@ from std.utils._nicheable import UnsafeNicheable, NicheIndex
 
 @always_inline
 def _validate_bytes(slice: Span[Byte, _]) raises:
-    var length = Int(_unsafe_strlen(slice.unsafe_ptr(), UInt(len(slice))))
+    var length = Int(_unsafe_strlen(slice.unsafe_ptr(), Int(len(slice))))
     if length == len(slice) - 1:
         return
     elif length == 0 or length == len(slice):
@@ -29,7 +29,7 @@ def _validate_bytes(slice: Span[Byte, _]) raises:
         raise Error("CStringSlice has interior nul byte")
 
 
-struct CStringSlice[origin: ImmutOrigin](
+struct CStringSlice[origin: ImmOrigin](
     Equatable,
     ImplicitlyCopyable,
     Sized,
@@ -46,7 +46,7 @@ struct CStringSlice[origin: ImmutOrigin](
         origin: The origin of the `CStringSlice`.
     """
 
-    comptime _PointerType = UnsafePointer[Int8, Self.origin]
+    comptime _PointerType = Pointer[Int8, Self.origin]
 
     var _data: Self._PointerType
 
@@ -73,12 +73,12 @@ struct CStringSlice[origin: ImmutOrigin](
 
         def getenv_wrapper(
             name: CStringSlice,
-        ) raises -> CStringSlice[StaticConstantOrigin]:
+        ) raises -> CStringSlice[ImmStaticOrigin]:
             # External call to 'getenv'.
             # C signature: const char *getenv(const char *name);
             var result = external_call[
                 "getenv",
-                Optional[CStringSlice[StaticConstantOrigin]],
+                Optional[CStringSlice[ImmStaticOrigin]],
             ](name)
 
             try:
@@ -187,7 +187,7 @@ struct CStringSlice[origin: ImmutOrigin](
         Returns:
             The length of the C string.
         """
-        return Int(_unsafe_strlen(self._data.bitcast[Byte]()))
+        return Int(_unsafe_strlen(self._data.unsafe_bitcast[Byte]()))
 
     def write_to(self, mut writer: Some[Writer]):
         """Write the `CStringSlice` to a `Writer`, the nul terminator is
@@ -227,8 +227,8 @@ struct CStringSlice[origin: ImmutOrigin](
         Returns:
             A span of the underlying `CStringSlice` as bytes.
         """
-        return Span(
-            ptr=self._data.bitcast[Byte](),
+        return Span[Byte, Self.origin](
+            ptr=self._data.unsafe_bitcast[Byte](),
             length=len(self),
         )
 
@@ -243,8 +243,8 @@ struct CStringSlice[origin: ImmutOrigin](
         Returns:
             A span of the underlying `CStringSlice` as bytes.
         """
-        return Span(
-            ptr=self._data.bitcast[Byte](),
+        return Span[Byte, Self.origin](
+            ptr=self._data.unsafe_bitcast[Byte](),
             length=len(self) + 1,
         )
 

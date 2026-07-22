@@ -103,7 +103,7 @@ struct UnsafeMaybeUninit[T: AnyType](
             An `UnsafeMaybeUninit` with the memory set to all 0 bytes.
         """
         var result = Self()
-        memset_zero(UnsafePointer(to=result), 1)
+        memset_zero(Pointer(to=result), 1)
         return result^
 
     def __init__(out self, *, copy: Self):
@@ -150,7 +150,7 @@ struct UnsafeMaybeUninit[T: AnyType](
         Args:
             value: The value to store in memory.
         """
-        self.unsafe_ptr().init_pointee_move(value^)
+        self.unsafe_ptr().unsafe_write(value^)
 
     @always_inline
     def unsafe_assume_init_ref(ref self) -> ref[self._array] Self.T:
@@ -179,7 +179,7 @@ struct UnsafeMaybeUninit[T: AnyType](
         Returns:
             The initialized value that was stored in this container.
         """
-        return self.unsafe_ptr().take_pointee()
+        return self.unsafe_ptr().unsafe_take_pointee()
 
     @always_inline
     def unsafe_ptr(
@@ -193,7 +193,7 @@ struct UnsafeMaybeUninit[T: AnyType](
         Returns:
             A pointer to the underlying element.
         """
-        return UnsafePointer(to=self._array).bitcast[Self.T]()
+        return Pointer(to=self._array).unsafe_bitcast[Self.T]()
 
     @always_inline
     def unsafe_assume_init_destroy[
@@ -207,7 +207,7 @@ struct UnsafeMaybeUninit[T: AnyType](
             D: An element type that is implicitly deletable.
 
         """
-        self.unsafe_ptr().destroy_pointee()
+        self.unsafe_ptr().unsafe_deinit_pointee()
 
 
 @always_inline

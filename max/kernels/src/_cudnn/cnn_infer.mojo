@@ -246,7 +246,7 @@ def cudnnCreateConvolutionDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateConvolutionDescriptor",
-        def(type_of(conv_desc),) thin -> cudnnStatus_t,
+        def(type_of(conv_desc)) thin -> cudnnStatus_t,
     ]()(conv_desc)
 
 

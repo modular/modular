@@ -23,13 +23,10 @@ from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph
-from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.comm.ep.ep_manager import EPBatchManager
-from max.pipelines.lib import CompilationTimer
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
-from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.pipelines.weights.quant import parse_quant_config
 from typing_extensions import override
@@ -156,49 +153,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         )
 
     @override
-    def load_model(self, session: InferenceSession) -> Model:
-        assert self.max_batch_size, "Expected max_batch_size to be set"
-
-        dp = self.pipeline_config.model.data_parallel_degree
-        max_batch_size = self.max_batch_size
-        if dp > 1:
-            max_batch_size *= dp
-
-        self._input_row_offsets_prealloc: Buffer | None = None
-        if not is_virtual_device_mode():
-            self._input_row_offsets_prealloc = Buffer.from_numpy(
-                np.arange(max_batch_size + 1, dtype=np.uint32)
-            ).to(self.devices[0])
-
-        self._host_input_row_offsets_prealloc: Buffer | None = None
-        if dp > 1 and not is_virtual_device_mode():
-            self._host_input_row_offsets_prealloc = Buffer.from_numpy(
-                np.arange(max_batch_size + 1, dtype=np.uint32)
-            )
-
-        with CompilationTimer("model") as timer:
-            graph = self._build_graph(self.weights, self.adapter, session)
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=self.state_dict)
-
-        if self._batch_processor is not None:
-            bind = getattr(
-                self._batch_processor, "bind_ep_comm_initializer", None
-            )
-            if bind is not None:
-                bind(self.ep_comm_initializer)
-
-        return model
-
-    def _build_graph(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-        session: InferenceSession | None = None,
-    ) -> Graph:
-        state_dict = parse_state_dict_from_weights(
-            self.pipeline_config, weights, adapter
-        )
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Qwen3Config:
         model_config = Qwen3Config.initialize_from_config(
             self.pipeline_config, self.huggingface_config
         )
@@ -209,28 +164,43 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             norm_method=self.norm_method,
             attention_bias=self.attention_bias,
         )
-
         # Set up EP config
-        ep_config = self._create_ep_config(state_dict)
-        model_config.ep_config = ep_config
+        model_config.ep_config = self._create_ep_config(state_dict)
+        return model_config
 
+    @override
+    def _init_distributed_runtime(
+        self,
+        session: InferenceSession,
+        model_config: Qwen3Config,
+    ) -> None:
+        self.ep_comm_initializer = None
+        ep_config = model_config.ep_config
+        if ep_config is None:
+            return
+        if is_virtual_device_mode():
+            return
         # Create EP infrastructure
-        ep_manager: EPBatchManager | None = None
-        self.ep_comm_initializer: EPCommInitializer | None = None
+        self.ep_comm_initializer = EPCommInitializer(ep_config)
+        self.ep_comm_initializer.ep_init(session)
+        ep_config.node_id = self.ep_comm_initializer.config.node_id
 
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Qwen3Config,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        ep_config = model_config.ep_config
+        # Create EP batch manager for graph buffer wiring (runtime init is above).
+        ep_manager: EPBatchManager | None = None
         if ep_config is not None:
             ep_manager = EPBatchManager(ep_config)
 
-            if not is_virtual_device_mode():
-                self.ep_comm_initializer = EPCommInitializer(ep_config)
-                if session is not None:
-                    self.ep_comm_initializer.ep_init(session)
-                    ep_config.node_id = self.ep_comm_initializer.config.node_id
-
         dp = model_config.data_parallel_degree
-        use_dp = dp > 1
-
-        if use_dp:
+        if dp > 1:
             logger.info(
                 "Qwen3: data_parallel_degree=%d, ep_size=%s. Using "
                 "DP-attention + EP-MoE strategy.",
@@ -239,7 +209,6 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             )
 
         nn_model = Qwen3(model_config, ep_manager=ep_manager)
-
         graph_inputs = nn_model.input_types(self.kv_params)
 
         nn_model.load_state_dict(
@@ -252,10 +221,10 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 )
             ),
         )
-
-        self.state_dict = nn_model.state_dict()
+        weights_registry = nn_model.state_dict()
 
         num_devices = len(self.devices)
+        use_dp = dp > 1
 
         with Graph("qwen3", input_types=graph_inputs) as graph:
             if use_dp:
@@ -314,4 +283,4 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 )
 
             graph.output(*outputs)
-            return graph
+            return graph, weights_registry

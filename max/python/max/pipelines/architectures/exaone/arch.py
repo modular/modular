@@ -41,7 +41,6 @@ exaone_arch = SupportedArchitecture(
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type="neox",
     default_weights_format=WeightsFormat.gguf,
     multi_gpu_supported=False,
     weight_adapters={

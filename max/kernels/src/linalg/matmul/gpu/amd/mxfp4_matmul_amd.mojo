@@ -15,10 +15,10 @@
 Computes C = (A * scale_a) @ (B * scale_b)^T where A and B are packed
 MXFP4 (E2M1) in uint8 with per-block E8M0 scaling factors. Uses the
 CDNA4 mfma.scale.f32.16x16x128.f8f6f4 instruction which natively
-consumes MXFP4 operands with E8M0 scale words — no dequantization needed.
+consumes MXFP4 operands with E8M0 scale words: no dequantization needed.
 
 Structure mirrors AMDMatmul: TileTensor throughout, RegTileLoader for
-DRAM→regs, row-major SMEM (no blocked-product or swizzle — the FP4
+DRAM→regs, row-major SMEM (no blocked-product or swizzle: the FP4
 MFMA expects a simple row-major lane-to-data mapping unlike BF16/FP8),
 schedule-driven pipeline.
 
@@ -129,10 +129,22 @@ struct BlockScaledMmaOp[
         lane_k_group = lane_id / 16  (K-group 0..3)
 
       Scale packing: 4 spatial MMA tiles' scale bytes are packed into
-      one Int32 VGPR — byte i holds the scale for m_mma=i (A) or
+      one Int32 VGPR: byte i holds the scale for m_mma=i (A) or
       n_mma=i (B). The MFMA byte-index selector (OP_SEL) picks the
       correct byte for each MMA tile, so one scale load covers all
       4 m_mma or n_mma positions with zero overhead.
+
+    Parameters:
+        mma_shape: MFMA tile shape as `(M, N, K)` in logical FP4
+            elements, `(16, 16, 128)`.
+        num_m_mmas: Number of spatial M MMA tiles per warp tile
+            (`WM // MMA_M`). Must be <= 4.
+        num_n_mmas: Number of spatial N MMA tiles per warp tile
+            (`WN // MMA_N`). Must be <= 4.
+        num_k_tiles: Number of K sub-tiles within one BK iteration
+            (`BK_BYTES // packed_k_per_mma`).
+        num_b_slots: Number of B register slots for depth-2 prefetch
+            (defaults to 1).
     """
 
     comptime MMA_M = Self.mma_shape[0]
@@ -267,6 +279,15 @@ struct BlockScaledMmaOp[
         vectorize groups 64 bytes into 4 x 16-byte elements, and
         distribute with col_major[MMA_M, 4] assigns each lane its
         16-byte fragment matching the MFMA native lane mapping.
+
+        Parameters:
+            k_tile_idx: K-tile index within the current BK iteration.
+
+        Args:
+            a_smem_warp: SMEM view of the A tile for this warp, shape
+                `[WM, BK_BYTES]` uint8.
+            b_smem_warp: SMEM view of the B tile for this warp, shape
+                `[WN, BK_BYTES]` uint8.
         """
         comptime frag_w = Self.mma_frag_width_bytes  # 16
         comptime mma_k_bytes = Self.packed_k_per_mma  # 64
@@ -304,7 +325,15 @@ struct BlockScaledMmaOp[
         ],
     ):
         """A-only variant of `load_frag_from_smem` for callers that source B
-        elsewhere (e.g. preshuffled DRAM via PreshuffledBLoader)."""
+        elsewhere (e.g. preshuffled DRAM via PreshuffledBLoader).
+
+        Parameters:
+            k_tile_idx: K-tile index within the current BK iteration.
+
+        Args:
+            a_smem_warp: SMEM view of the A tile for this warp, shape
+                `[WM, BK_BYTES]` uint8.
+        """
         comptime frag_w = Self.mma_frag_width_bytes  # 16
         comptime mma_k_bytes = Self.packed_k_per_mma  # 64
         comptime lane_layout = col_major[Self.MMA_M, WARP_SIZE // Self.MMA_M]()
@@ -332,6 +361,20 @@ struct BlockScaledMmaOp[
         per-lane MFMA mapping `(lane%16 → n-row, lane//16 → k-group)`. The
         `slot` parameter selects which b_reg half to write into when
         `num_b_slots > 1` (depth-2 prefetch).
+
+        Parameters:
+            k_tile_idx: K-tile index within the current BK iteration.
+            N: Total N dimension of the B matrix in output columns.
+            K_BYTES: Total K dimension in packed bytes (`K // 2`).
+            slot: B register slot to write into (defaults to 0).
+
+        Args:
+            b_loader: Preshuffled B DRAM loader issuing per-lane
+                `buffer_load_dwordx4` reads.
+            warp_n_off: Starting N-row offset of this warp's B tile
+                within the block.
+            k_byte_base: Base byte offset in K for the current BK
+                iteration.
         """
         comptime assert slot < Self.num_b_slots, "slot out of range"
         comptime frag_w = Self.mma_frag_width_bytes  # 16
@@ -373,8 +416,17 @@ struct BlockScaledMmaOp[
         handling means this works for any parent SMEM layout.
 
         The MFMA byte-index selector (a_scale_byte_index=m_mma,
-        b_scale_byte_index=n_mma) picks the correct byte — no shifts
+        b_scale_byte_index=n_mma) picks the correct byte: no shifts
         or masks at consumption time.
+
+        Parameters:
+            k_tile_idx: K-tile index within the current BK iteration.
+
+        Args:
+            a_scale_smem_warp: SMEM view of A scale bytes for this
+                warp, shape `[WM, scales_per_mma]` uint8.
+            b_scale_smem_warp: SMEM view of B scale bytes for this
+                warp, shape `[WN, scales_per_mma]` uint8.
         """
         var a_packed = Int32(0)
         comptime for m_mma in range(Self.num_m_mmas):
@@ -426,6 +478,11 @@ struct BlockScaledMmaOp[
         b_scale_byte_index=n selects byte n from _b_scale_packed.
 
         `slot` selects which b_reg half to read when `num_b_slots > 1`.
+
+        Parameters:
+            k_tile_idx: K-tile index within the current BK iteration.
+            slot: B register slot to read from when `num_b_slots > 1`
+                (defaults to 0).
         """
         comptime assert slot < Self.num_b_slots, "slot out of range"
         comptime for m in range(Self.num_m_mmas):
@@ -561,6 +618,29 @@ struct MXFP4MatmulAMD[
         reduce kernel sums the `num_splits` partials and casts to the
         real output dtype. `num_splits == 1` is byte-identical to the
         no-split path (`split_id == 0`, full K range, zero offset).
+
+        Parameters:
+            out_dtype: Element type of the output tensor `c`; must be
+                `float32` when `num_splits > 1`.
+            c_layout: Compile-time layout of the output tensor `c`.
+            a_layout: Compile-time layout of the A operand.
+            b_layout: Compile-time layout of the B operand.
+            sfa_layout: Compile-time layout of the A scales tensor `sfa`.
+            sfb_layout: Compile-time layout of the B scales tensor `sfb`.
+            num_splits: Number of disjoint K-bands the K dimension is
+                partitioned into (defaults to 1, no split).
+
+        Args:
+            c: Output matrix `[M, N]` of dtype `out_dtype`; in split-K
+                mode a stacked `(num_splits * M, N)` float32 workspace.
+            a: Packed A operand `[M, K//2]` uint8, two MXFP4 nibbles
+                per byte.
+            b: Packed B operand `[N, K//2]` uint8, transposed with two
+                MXFP4 nibbles per byte.
+            sfa: A block scales `[M, K//32]` as `float8_e8m0fnu`, one
+                scale per 32 MXFP4 elements.
+            sfb: B block scales `[N, K//32]` as `float8_e8m0fnu`, one
+                scale per 32 MXFP4 elements.
         """
         comptime BK_BYTES = Self.BK_BYTES
         comptime num_m_mmas = Self.num_m_mmas
@@ -1090,7 +1170,7 @@ def _pick_num_splits[
     2*BK_BYTES`): with only 1 tile per split the kernel falls back to the
     non-pipelined `simple_k_loop`, and the separate reduce launch over
     the full `[M, N]` output then dominates the (now tiny) per-split
-    matmul — which regresses small-K shapes (e.g. down-proj K=2048). The
+    matmul, which regresses small-K shapes (e.g. down-proj K=2048). The
     2-tile floor confines split-K to the regime where it actually wins.
     Returns 1 if no split qualifies (caller takes the plain single-launch
     path).
@@ -1126,7 +1206,7 @@ def mxfp4_block_scaled_matmul_amd[
 ) raises:
     """Launch native MXFP4 block-scaled matmul on AMD CDNA4.
 
-    Uses cdna4_block_scaled_mfma with FLOAT4_E2M1 directly — no
+    Uses cdna4_block_scaled_mfma with FLOAT4_E2M1 directly: no
     dequantization to FP8. Both A and B must be packed uint8 with
     E8M0 scaling factors. Accumulates in float32, casts to c.dtype
     during the store epilogue.

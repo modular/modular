@@ -204,7 +204,7 @@ def test_type_of() raises:
 # --- origin_of ---
 
 
-def first_ref[T: Copyable](ref list: List[T]) -> ref[origin_of(list)] T:
+def first_ref[T: Copyable](ref list: List[T]) -> ref[list[0]] T:
     if not list:
         abort("empty list")
     return list[0]

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements `repeat_interleave`, which repeats each tensor element a specified number of times along an axis."""
 
 from std.sys import simd_width_of
 
@@ -150,6 +151,25 @@ def repeat_interleave_shape[
     repeats: TileTensor[type_repeats, ...],
     axis: Int,
 ) raises -> IndexList[input.rank]:
+    """
+    Computes the output shape of `repeat_interleave` for the given `input`,
+    `repeats`, and `axis`.
+
+    The returned `IndexList` matches `input`'s rank with the size along
+    `axis` replaced by the summed `repeats` values, or by `input[axis]`
+    multiplied by the single repeat value when `repeats` is a size-1
+    broadcast.
+
+    Args:
+        input: The input tensor whose shape is being transformed.
+        repeats: A one-dimensional integral tensor of per-element repeat
+            counts, either size 1 or equal to `input.dim(axis)`.
+        axis: The axis along which elements are repeated.
+
+    Returns:
+        An `IndexList` matching `input.rank` with the `axis` dimension
+        updated to the total repeated size.
+    """
     comptime assert type_repeats.is_integral()
     comptime assert repeats.flat_rank == 1
 

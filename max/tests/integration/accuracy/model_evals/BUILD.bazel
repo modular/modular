@@ -1,0 +1,114 @@
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "eval_common",
+    testonly = True,
+    srcs = ["eval_common.py"],
+    imports = ["."],
+    deps = [
+        requirement("openai"),
+        requirement("tqdm"),
+    ],
+)
+
+modular_py_binary(
+    name = "aime_eval",
+    testonly = True,
+    srcs = ["aime_eval.py"],
+    imports = ["."],
+    main = "aime_eval.py",
+    deps = [
+        ":eval_common",
+        requirement("click"),
+        requirement("datasets"),
+    ],
+)
+
+modular_py_binary(
+    name = "gpqa_eval",
+    testonly = True,
+    srcs = ["gpqa_eval.py"],
+    imports = ["."],
+    main = "gpqa_eval.py",
+    deps = [
+        ":eval_common",
+        requirement("click"),
+        requirement("datasets"),
+    ],
+)
+
+modular_py_binary(
+    name = "hle_eval",
+    testonly = True,
+    srcs = ["hle_eval.py"],
+    # cais/hle carries an image column; loading it decodes via Pillow at
+    # runtime even though nothing here imports it statically.
+    ignore_extra_deps = [
+        requirement("pillow"),
+    ],
+    imports = ["."],
+    main = "hle_eval.py",
+    deps = [
+        ":eval_common",
+        requirement("click"),
+        requirement("datasets"),
+        requirement("pillow"),
+    ],
+)
+
+modular_py_binary(
+    name = "aa_lcr_eval",
+    testonly = True,
+    srcs = ["aa_lcr_eval.py"],
+    imports = ["."],
+    main = "aa_lcr_eval.py",
+    deps = [
+        ":eval_common",
+        requirement("click"),
+        requirement("datasets"),
+        # The long-context documents are downloaded as a separate zip file.
+        requirement("huggingface-hub"),
+    ],
+)
+
+modular_py_binary(
+    name = "aa_omniscience_eval",
+    testonly = True,
+    srcs = ["aa_omniscience_eval.py"],
+    # AA-Omniscience-Public carries an image column; the datasets loader decodes
+    # it via Pillow at runtime even though nothing here imports it statically.
+    ignore_extra_deps = [
+        requirement("pillow"),
+    ],
+    imports = ["."],
+    main = "aa_omniscience_eval.py",
+    deps = [
+        ":eval_common",
+        requirement("click"),
+        requirement("datasets"),
+        requirement("pillow"),
+    ],
+)
+
+# One command to run all five non-agentic text evals in sequence against a
+# running server (each writes its own default out-dir).
+sh_binary(
+    name = "text_evals_local",
+    testonly = True,
+    srcs = ["run_text_evals.sh"],
+    data = [
+        ":aa_lcr_eval",
+        ":aa_omniscience_eval",
+        ":aime_eval",
+        ":gpqa_eval",
+        ":hle_eval",
+    ],
+    tags = ["manual"],
+)

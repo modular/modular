@@ -17,6 +17,7 @@ on GPU by comparing against PyTorch reference implementations.
 """
 
 import operator
+import os
 from collections.abc import Generator, Sequence
 from typing import Any
 
@@ -24,6 +25,7 @@ import numpy as np
 import pytest
 import torch
 from max import _interpreter
+from max._interpreter_ops import GC_FAMILIES, adopted_from_manifest
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
@@ -66,6 +68,39 @@ def _interpreter_only() -> Generator[None]:
     under test.  Graphs it cannot execute raise UnsupportedGraphError."""
     with set_default_executor(InterpreterExecutor()):
         yield
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _require_warm_adoption() -> None:
+    """Fail loudly unless the build-warmed eager-GC cache actually took effect.
+
+    The numeric tests below pass whether the warm adopts or silently cold-
+    compiles, so this asserts adoption directly. ``XARCH_WARM_RLOCATION`` is set
+    only on a warmed lane; its absence with an accelerator present means a new
+    NVIDIA lane wasn't wired (checked at runtime, not in the BUILD select, since
+    the pydeps lint aspect evaluates that select on non-NVIDIA lanes too). When
+    wired, ``adopted_from_manifest`` must hold for each family, else adoption
+    fell through to a cold recompile.
+    """
+    if not os.environ.get("XARCH_WARM_RLOCATION"):
+        if accelerator_count() > 0:
+            raise RuntimeError(
+                "test_interpreter_ops_gpu ran on a GPU with no eager-GC warm"
+                " wired, add its SKU to _GPU_TARGET/_GPU_LANE_ONLY in"
+                " max/tests/integration/xarch_warm/BUILD.bazel and the selects"
+                " in max/tests/tests/BUILD.bazel."
+            )
+        return
+    # Derive from the registry, not a hand-maintained tuple, so this adoption
+    # gate can't drift from the families the warm actually covers (MXF-533).
+    unadopted = [
+        f.name for f in GC_FAMILIES if not adopted_from_manifest(f.name)
+    ]
+    if unadopted:
+        raise RuntimeError(
+            f"eager-GC warm is wired but {unadopted} did not adopt from the"
+            " manifest, a silent cold-compile fallback (arch/key drift)."
+        )
 
 
 # Mapping from MAX DType to torch dtype
@@ -648,6 +683,93 @@ class TestStaticBroadcastToGPU:
         result_torch = torch.from_dlpack(y)
         expected = torch.broadcast_to(x_torch, shape)
         torch.testing.assert_close(result_torch, expected)
+
+
+class TestShapeRearrangeGPU:
+    """Minimal GPU numeric coverage for the GPU-capable shape-rearrange ops.
+
+    ``concat``/``split``/``slice``/``pad`` (constant) are ``DeviceClass.ALL``;
+    ``tile`` and the reflect/repeat pads are CPU-only (see ``shape_rearrange_gc``),
+    so they need no GPU test. Inputs are placed on the accelerator via a CUDA
+    torch tensor; references use NumPy, matching the CPU tests.
+    """
+
+    def test_concat_gpu(self) -> None:
+        """F.concat along axis 0 on GPU."""
+        a_torch = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32, device="cuda"
+        )
+        b_torch = torch.tensor(
+            [[5.0, 6.0], [7.0, 8.0]], dtype=torch.float32, device="cuda"
+        )
+        a = Tensor.from_dlpack(a_torch)
+        b = Tensor.from_dlpack(b_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.concat([a, b], axis=0)
+        expected = np.concatenate(
+            [a_torch.cpu().numpy(), b_torch.cpu().numpy()], axis=0
+        )
+        np.testing.assert_array_equal(
+            torch.from_dlpack(result).cpu().numpy(), expected
+        )
+
+    def test_slice_gpu(self) -> None:
+        """F.slice_tensor across both dims on GPU."""
+        x_torch = torch.arange(12, dtype=torch.float32, device="cuda").reshape(
+            3, 4
+        )
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(0, 2), slice(1, 3)])
+        expected = x_torch.cpu().numpy()[0:2, 1:3]
+        np.testing.assert_array_equal(
+            torch.from_dlpack(result).cpu().numpy(), expected
+        )
+
+    def test_split_gpu(self) -> None:
+        """F.split into size-[1, 3] chunks on GPU."""
+        x_torch = torch.arange(12, dtype=torch.float32, device="cuda").reshape(
+            3, 4
+        )
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            parts = F.split(x, [1, 3], axis=1)
+        # np.split takes cut indices; sizes [1, 3] -> a single cut at index 1.
+        expected = np.split(x_torch.cpu().numpy(), [1], axis=1)
+        for got, exp in zip(parts, expected, strict=False):
+            np.testing.assert_array_equal(
+                torch.from_dlpack(got).cpu().numpy(), exp
+            )
+
+    def test_pad_constant_gpu(self) -> None:
+        """F.pad constant mode on GPU; paddings are flat [pre0, post0, ...]."""
+        x_torch = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32, device="cuda"
+        )
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [1, 1, 2, 0], value=7.0)
+        expected = np.pad(
+            x_torch.cpu().numpy(),
+            [(1, 1), (2, 0)],
+            mode="constant",
+            constant_values=7.0,
+        )
+        np.testing.assert_array_equal(
+            torch.from_dlpack(out).cpu().numpy(), expected
+        )
 
 
 class TestRangeGPU:
@@ -2794,7 +2916,9 @@ class TestConv2dGPU:
         )
 
     def test_groups(self) -> None:
-        """Test grouped convolution on GPU (groups=2)."""
+        """Grouped conv (groups > 1) is not supported after the GC migration
+        (MXF-529): it needs a pre-packed filter layout the eager
+        interpreter never has, and there's no way to pack it from Python."""
         x_torch = torch.arange(
             1 * 4 * 4 * 4, dtype=torch.float32, device="cuda"
         ).reshape(1, 4, 4, 4)
@@ -2802,75 +2926,35 @@ class TestConv2dGPU:
 
         x = Tensor.from_dlpack(x_torch)
         f = Tensor.from_dlpack(f_torch)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            y = F.conv2d(x, f, groups=2)
-
-        x_nchw = x_torch.permute(0, 3, 1, 2)
-        f_nchw = f_torch.permute(3, 2, 0, 1)
-        expected_nchw = torch.nn.functional.conv2d(x_nchw, f_nchw, groups=2)
-        expected = expected_nchw.permute(0, 2, 3, 1)
-        torch.testing.assert_close(
-            torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
-        )
+        with pytest.raises(NotImplementedError, match="groups"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.conv2d(x, f, groups=2)
+                assert y is not None
 
 
 class TestConvTranspose2dGPU:
     """Tests for GPU conv2d_transpose operations with interpreter."""
 
-    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
-    def test_basic_3x3(self, dtype: DType) -> None:
-        """Test basic 3x3 conv_transpose on GPU."""
-        torch_dtype = DTYPE_TO_TORCH[dtype]
+    def test_unsupported(self) -> None:
+        """conv_transpose has no supported kernel (KERN-3233) -- see
+        TestConvTranspose2dOp.test_unsupported for the full rationale."""
         x_torch = torch.arange(
-            1 * 3 * 3 * 1, dtype=torch_dtype, device="cuda"
+            1 * 3 * 3 * 1, dtype=torch.float32, device="cuda"
         ).reshape(1, 3, 3, 1)
-        f_torch = torch.ones(3, 3, 1, 1, dtype=torch_dtype, device="cuda")
-
-        x = Tensor.from_dlpack(x_torch)
-        f = Tensor.from_dlpack(f_torch)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            y = F.conv2d_transpose(x, f)
-
-        x_nchw = x_torch.permute(0, 3, 1, 2)
-        f_torch_nchw = f_torch.permute(3, 2, 0, 1)
-        expected_nchw = torch.nn.functional.conv_transpose2d(
-            x_nchw, f_torch_nchw
-        )
-        expected = expected_nchw.permute(0, 2, 3, 1)
-        torch.testing.assert_close(
-            torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
-        )
-
-    def test_stride_2(self) -> None:
-        """Test conv_transpose with stride 2 (upsampling) on GPU."""
-        x_torch = torch.arange(
-            1 * 2 * 2 * 1, dtype=torch.float32, device="cuda"
-        ).reshape(1, 2, 2, 1)
         f_torch = torch.ones(3, 3, 1, 1, dtype=torch.float32, device="cuda")
 
         x = Tensor.from_dlpack(x_torch)
         f = Tensor.from_dlpack(f_torch)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            y = F.conv2d_transpose(x, f, stride=(2, 2))
-
-        x_nchw = x_torch.permute(0, 3, 1, 2)
-        f_torch_nchw = f_torch.permute(3, 2, 0, 1)
-        expected_nchw = torch.nn.functional.conv_transpose2d(
-            x_nchw, f_torch_nchw, stride=2
-        )
-        expected = expected_nchw.permute(0, 2, 3, 1)
-        torch.testing.assert_close(
-            torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
-        )
+        with pytest.raises(NotImplementedError, match="conv_transpose"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.conv2d_transpose(x, f)
+                assert y is not None
 
 
 class TestMaxPool2dGPU:

@@ -11,6 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""
+Implements a naive GPU multihead cross attention kernel supporting ragged
+batched inputs and a paged KV cache.
+"""
+
 from std.math import ceildiv
 from std.math.uutils import ufloordiv, udivmod
 from std.sys import align_of, simd_width_of
@@ -263,6 +268,31 @@ def mha_cross_gpu_naive[
 
     This kernel also handles grouped attention optimization. In this case the shape of
     K and V are BShD where h = H / num_groups.
+
+    Parameters:
+        cache_t: The paged KV cache type used for `k` and `v` (inferred).
+        mask_t: The mask functor type applied to attention scores (inferred).
+        dtype: The element type of the query, key, value, and output tensors
+            (inferred).
+        rank: The number of dimensions of the input tensors. Must be 3 for
+            ragged inputs.
+
+    Args:
+        output: The output tensor receiving the cross attention result. Same
+            dtype as `q` and the KV cache, in BSHD layout.
+        q: The query tensor in BSHD layout. The static shape's last two
+            dimensions give the head count and depth.
+        q_input_row_offsets: Per-batch start and end offsets into the ragged
+            query tensor. Length is `batch_size + 1`.
+        q_max_seq_len: The maximum query sequence length across the batch.
+        k: The paged KV cache holding keys.
+        v: The paged KV cache holding values.
+        kv_input_row_offsets: Per-batch start and end offsets into the ragged
+            KV input. Length is `batch_size + 1`.
+        mask_functor: The mask instance applied to attention scores before
+            softmax.
+        scale: The scaling factor multiplied with the query-key scores.
+        ctx: The device context used to enqueue GPU kernels and buffers.
     """
     comptime assert rank == 3, "only support rank 3 inputs for ragged inputs."
     comptime assert (

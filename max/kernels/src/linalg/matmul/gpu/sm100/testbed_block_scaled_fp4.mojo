@@ -72,6 +72,11 @@ def _rand_mxfp4[
 
 
 def simple_init() -> Bool:
+    """Returns whether the `--simple-init` flag was passed on the command line.
+
+    When enabled, matmul operands are filled with deterministic values derived
+    from their indices instead of random data, which simplifies debugging.
+    """
     for arg in argv():
         if arg == "--simple-init":
             return True
@@ -110,6 +115,46 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     k: KType,
     alpha: Float32 = 1.0,
 ) raises:
+    """Runs a block-scaled FP4 matmul on SM100 and checks it against a reference.
+
+    Allocates and initializes the FP4 operands and their scale-factor tensors,
+    dispatches either the small-BN or structured 2SM kernel based on
+    `is_small_bn`, computes a reference output via `naive_block_scaled_matmul`
+    (MXFP4) or a vendor BLAS matmul (NVFP4), and asserts the kernel output
+    matches the reference within tolerance.
+
+    Parameters:
+        MType: Coord type carrying the M dimension of the matmul (inferred).
+        NType: Coord type carrying the N dimension of the matmul (inferred).
+        KType: Coord type carrying the K dimension of the matmul (inferred).
+        a_type: Element dtype of the left operand (packed FP4 pairs).
+        b_type: Element dtype of the right operand (packed FP4 pairs).
+        c_type: Element dtype of the output tensor.
+        scales_dtype: Scale-factor dtype, selecting NVFP4 or MXFP4 format.
+        block_tile_shape: Per-CTA tile shape over (M, N, K) dimensions.
+        mma_shape: Hardware MMA shape over (M, N, K) dimensions.
+        cluster_shape: Thread-block cluster shape along (X, Y, Z).
+        cta_group: Number of CTAs cooperating per output tile.
+        transpose_b: Whether the right operand is stored transposed.
+        a_swizzle: TMA swizzle pattern for the left operand.
+        b_swizzle: TMA swizzle pattern for the right operand.
+        c_swizzle: TMA swizzle pattern for the output tensor.
+        block_swizzle_size: Block-level swizzle stride, or 0 to disable.
+        benchmark: Whether the invocation is being run under a benchmark harness.
+        swapAB: Whether to swap the A and B operands before the matmul.
+        k_group_size: Number of K tiles grouped together for accumulation.
+        num_clc_pipeline_stages: Number of CLC pipeline stages to use.
+        SF_VECTOR_SIZE: Number of FP4 elements covered by one scale factor.
+        is_small_bn: Selects the small-BN (1SM/2SM cooperative) kernel variant.
+        normal_epilogue: Applies a 2x scaling epilogue to verify the lambda runs.
+
+    Args:
+        ctx: Device context used for allocation and kernel dispatch.
+        m: M dimension of the matmul.
+        n: N dimension of the matmul.
+        k: K dimension of the matmul.
+        alpha: Scalar multiplier applied to the matmul result.
+    """
     seed(42)
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type}, {scales_dtype})  problem"

@@ -35,15 +35,17 @@ from max.nn.kv_cache import (
 )
 from max.nn.kv_cache.cache_params import KVCacheQuantizationConfig
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
-from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
     PagedKVCacheManager,
 )
 
+
 # Test-fixture helpers for the bytes-only connector boundary: tests pre-date
-# Option A and used int hashes directly; ``_b`` wraps a single int and ``_hs``
-# wraps a variadic sequence into the canonical 8-byte signed-BE encoding.
-_b = to_block_hash_bytes
+# the bytes-only migration and used int hashes directly; ``_b`` wraps a single
+# int and ``_hs`` wraps a variadic sequence into the canonical 8-byte
+# signed-BE encoding.
+def _b(h: int) -> bytes:
+    return h.to_bytes(8, "big", signed=True)
 
 
 def _hs(*ns: int) -> list[bytes]:
@@ -569,6 +571,9 @@ def _write_block_pattern(buf: Buffer, block_id: int, seed: int) -> np.ndarray:
     buf.view(dtype=DType.uint8, shape=[buf.shape[0], nbytes])[
         block_id, :
     ].inplace_copy_from(host.to(buf.device))
+    # Sync the main-stream write before the connector's aux-stream D2H reads
+    # this block, else it offloads stale bytes (QUA-685 / MXSERV-227).
+    buf.device.synchronize()
     return pattern
 
 
@@ -858,7 +863,6 @@ class _DiskConnectorConfig:
 
     disk_offload_dir: str
     disk_offload_max_gb: float
-    disk_offload_direct_io: bool
     host_kvcache_swap_space_gb: float
 
 
@@ -897,7 +901,6 @@ def _build_multi_cache_manager(
     cfg = _DiskConnectorConfig(
         disk_offload_dir=disk_dir,
         disk_offload_max_gb=1.0,
-        disk_offload_direct_io=False,
         host_kvcache_swap_space_gb=999.0,
     )
     sliding = _fp8_cache_params(cfg, n_kv_heads=4, head_dim=256)  # idx0

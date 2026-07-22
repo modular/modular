@@ -13,6 +13,9 @@ lit_tests(
             # requires-network lit_tests sweep.
             "test_mxfp4_ep_wait_scale_fusion.mojo",
             "test_mxfp4_fused_silu_scale_fusion.mojo",
+            # Single-GPU device-scope ordering regression guard. Pure std, no
+            # rocshmem runtime; runs as the standalone mojo_test below.
+            "test_ep_combine_ordering.mojo",
         ],
     ),
     env = select({
@@ -79,6 +82,21 @@ mojo_test(
         "//max:layout",
         "//max:linalg",
         "//max:shmem",
+        "@mojo//:std",
+    ],
+)
+
+# Single-GPU (gfx950) regression guard for the EP-combine device-scope
+# data-ready acquire fence. Pure std (no rocshmem runtime): a NaN-poisoned,
+# oversubscribed producer/consumer handoff that reads stale ~55% of the time if
+# the fence is missing, and 0 with it.
+mojo_test(
+    name = "test_ep_combine_ordering.mojo.test",
+    size = "large",
+    srcs = ["test_ep_combine_ordering.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
         "@mojo//:std",
     ],
 )
