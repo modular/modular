@@ -43,23 +43,25 @@ best 2 results for each of them
 kprofile file*.pk --head 2
 ```
 
-## Filling in parameters in mojo files
+## Generate checked-in tuning tables
 
-You can use `kprofile` to replace the parameters from a mojo program
-by the best tuning parameters, effectively injecting the best parameters
-onto a file.
+`kprofile` analyzes benchmark results and writes selected configs to YAML. For
+a checked-in dispatch table, this YAML file is the *manifest*: the ordered list
+of configs that should appear in Mojo.
 
-```bash
-kprofile output.pkl -s path_to_snippet.mojo
-```
+`tuning_codegen` is the supported path from a manifest to checked-in Mojo. It
+renders each config through a snippet by replacing `[@NAME]` placeholders, then
+replaces the target file's contents between unique begin and end markers.
+Without `--check`, it updates the target file. With `--check`, it reports a diff
+and fails if the checked-in region is stale.
 
-The mechanism is a simple string and replace, so developers must be careful
-with accidental pattern matching.
+Each manifest has a primary snippet. An entry can set `_template` to select a
+snippet variant when one table contains configs with different Mojo constructor
+shapes. If every entry has the same shape, use only the primary snippet.
 
-To replace the values in snippet, simply encode each parameter as
-    `[@parameter_name]`. For example, for parameter `NUM_BLOCKS` in the
-    following snippet:
+The tuning-table workflow is:
 
-```mojo
-alias num_blocks = [@NUM_BLOCKS]
-```
+1. Run `kprofile` on `kbench` output to create or update the YAML manifest.
+2. Review the selected configs.
+3. Run `tuning_codegen` to update the marked Mojo region.
+4. Format the result and run the table's freshness test.
