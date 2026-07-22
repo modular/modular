@@ -3028,13 +3028,23 @@ struct CPython(Defaultable, Movable):
     def PyCapsule_New(
         self,
         pointer: OpaquePointer[MutUntrackedOrigin],
-        var name: String,
+        name: StaticString,
         destructor: PyCapsule_Destructor,
     ) -> PyObjectPtr:
         """Create a `PyCapsule` encapsulating the pointer. The pointer argument
         may not be `NULL`.
 
         Return value: New reference.
+
+        Note:
+            `PyCapsule_New` stores the `name` pointer directly in the capsule
+            rather than copying it, so the string must outlive the capsule.
+            `name` is therefore a `StaticString` (a nul-terminated string
+            literal has a `'static` lifetime); passing a temporary `String`
+            would leave the capsule holding a dangling pointer. This is
+            intentionally conservative: the C API only requires `name` to
+            outlive the capsule, but `StaticString` is the simplest lifetime
+            that satisfies that for the string-literal names used in practice.
 
         References:
         - https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_New

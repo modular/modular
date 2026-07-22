@@ -364,6 +364,11 @@ def _test_capsule_api(cpy: CPython) raises:
     def empty_dtor(capsule: PyObjectPtr) abi("C"):
         pass
 
+    # The capsule stores the `name` pointer directly (CPython does not copy it),
+    # so the name must outlive the capsule. `PyCapsule_New` takes a
+    # `StaticString` to enforce this: the string literal below has a `'static`
+    # lifetime, so the pointer remains valid for the `PyCapsule_GetPointer`
+    # lookups after `PyCapsule_New` returns.
     var capsule = cpy.PyCapsule_New(
         capsule_impl_ptr.bitcast[NoneType]().unsafe_origin_cast[
             MutUntrackedOrigin

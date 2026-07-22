@@ -1235,6 +1235,11 @@ This version is still a work in progress.
       var y: One
   ```
 
+- `CPython.PyCapsule_New` now takes its `name` argument as a `StaticString`
+  instead of an owned `String`. CPython stores the `name` pointer directly in
+  the capsule rather than copying it, so an owned `String` argument left the
+  capsule holding a dangling pointer once the temporary was destroyed.
+
 - A failed import no longer poisons its name for the rest of the compilation.
   Previously, after something like `import pkg.util` failed to resolve, a
   later `import util` would silently bind the cached failure even when a real
