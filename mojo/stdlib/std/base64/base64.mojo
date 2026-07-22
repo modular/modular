@@ -209,7 +209,7 @@ def b16encode(str: StringSlice[mut=False, _]) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-def b16decode(str: StringSlice[mut=False, _]) -> List[Byte]:
+def b16decode(str: StringSlice[mut=False, _]) raises -> List[Byte]:
     """Performs base16 decoding on the input string.
 
     Args:
@@ -217,31 +217,37 @@ def b16decode(str: StringSlice[mut=False, _]) -> List[Byte]:
 
     Returns:
         The decoded bytes.
+
+    Raises:
+        If the input length is odd or any character is outside the base16
+        alphabet `[0-9A-F]` (per RFC 4648 section 8, which is strictly
+        uppercase).
     """
 
     comptime `A` = Byte(ord("A"))
-    comptime `a` = Byte(ord("a"))
-    comptime `Z` = Byte(ord("Z"))
-    comptime `z` = Byte(ord("z"))
+    comptime `F` = Byte(ord("F"))
     comptime `0` = Byte(ord("0"))
     comptime `9` = Byte(ord("9"))
 
     # TODO: Measure perf against lookup table approach
     @parameter
     @always_inline
-    def decode(c: Byte) -> Byte:
-        if `A` <= c <= `Z`:
-            return c - `A` + Byte(10)
-        elif `a` <= c <= `z`:
-            return c - `a` + Byte(10)
-        elif `0` <= c <= `9`:
+    def decode(c: Byte) raises -> Byte:
+        if `0` <= c <= `9`:
             return c - `0`
+        elif `A` <= c <= `F`:
+            return c - `A` + Byte(10)
         else:
-            return Byte(-1)
+            raise Error(
+                "ValueError: Unexpected character '",
+                chr(Int(c)),
+                "' encountered",
+            )
 
     var data = str.as_bytes()
     var n = str.byte_length()
-    debug_assert(n % 2 == 0, "Input length '", n, "' must be divisible by 2")
+    if n % 2 != 0:
+        raise Error("ValueError: Input length '", n, "' must be divisible by 2")
 
     var result = List[Byte](capacity=n // 2)
 

@@ -1082,6 +1082,9 @@ This version is still a work in progress.
 
 ## Fixed
 
+- `base64.b16decode` now raises on invalid input instead of silently producing
+  corrupt output.
+
 - [#6784](https://github.com/modular/modular/issues/6784),
   [#6434](https://github.com/modular/modular/issues/6434) - `math.sqrt` on
   `Float64` now works on NVIDIA GPU. It lowers to the IEEE correctly-rounded
