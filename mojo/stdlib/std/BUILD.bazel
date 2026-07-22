@@ -78,14 +78,14 @@ mojo_overlay_srcs(
         "//max/driver/src/machine:device.mojo": "std/gpu/host/_hal/machine/device.mojo",
         "//max/driver/src/machine:machine.mojo": "std/gpu/host/_hal/machine/machine.mojo",
     },
-    # Selected into `std` when the switch-over change lands; unreferenced
-    # until then.
-    tags = ["maybe-unused"],
 )
 
 mojo_library(
     name = "std",
-    srcs = [":std_srcs"],
+    srcs = select({
+        "//:hal_device_context_enabled": [":std_srcs_hal"],
+        "//conditions:default": [":std_srcs"],
+    }),
     docs_hosted_on_mojolang = True,
     docs_title = "Mojo standard library",
     use_production_compiler_for_asan = True,
