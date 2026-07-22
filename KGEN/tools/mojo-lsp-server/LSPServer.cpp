@@ -149,7 +149,12 @@ void LSPServer::onInitialize(const InitializeParams &params,
            {"triggerCharacters", {"(", "[", ","}},
        }},
       {"definitionProvider", true},
-      {"foldingRangeProvider", true},
+      // Note: foldingRangeProvider is deliberately NOT advertised. The current
+      // implementation only returns docstring ranges (see
+      // MojoTextDocument::onFoldingRangeSync), and advertising it makes VSCode
+      // disable its indentation-based folding entirely — leaving users unable
+      // to fold functions, structs, and blocks. Re-add once the server returns
+      // structural folding ranges.
       {"hoverProvider", true},
       {"inlayHintProvider", true},
       {"notebookDocumentSync",
