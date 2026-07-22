@@ -92,6 +92,15 @@ kgen.generator @interior_origin_attr<orig: !lit.origin<false>>
   kgen.return
 }
 
+// CHECK-LABEL: kgen.generator @subtree_origin_attr
+kgen.generator @subtree_origin_attr<root: !lit.origin<false>>() {
+  // CHECK-NEXT: "verbose_attr"() {attr = #lit.origin.subtree<#kgen.param.decl.ref<"root"> : !lit.origin<false>> : !lit.origin<false>} : () -> ()
+  "verbose_attr"() {attr = #lit.origin.subtree<#kgen.param.decl.ref<"root"> : !lit.origin<false>> : !lit.origin<false>} : () -> ()
+  // CHECK-NEXT: "verbose_attr"() {attr = #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"root"> : !lit.origin<false>, "field0"> : !lit.origin<false>> : !lit.origin<false>} : () -> ()
+  "verbose_attr"() {attr = #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"root"> : !lit.origin<false>, "field0"> : !lit.origin<false>> : !lit.origin<false>} : () -> ()
+  kgen.return
+}
+
 
 
 

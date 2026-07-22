@@ -427,6 +427,10 @@ TypedAttr OriginFieldAttr::get(TypedAttr structOrigin, StringAttr field) {
   if (sugarIsa<AnyOriginAttr>(structOrigin))
     return structOrigin;
 
+  // Cannot form field(subtree(x)) since it erases fields.
+  assert(!sugarIsa<OriginSubtreeAttr>(structOrigin) &&
+         "field origin cannot be applied to a subtree");
+
   // We push any mutability casts outside of ourselves.
   //     mutcast(x).myfield => mutcast(x.myfield)
   if (auto mutCast = sugarDynCast<OriginMutCastAttr>(structOrigin)) {
@@ -487,6 +491,10 @@ TypedAttr InteriorOriginAttr::get(TypedAttr baseOrigin, TypedAttr userName) {
   if (sugarIsa<AnyOriginAttr>(baseOrigin))
     return baseOrigin;
 
+  // Cannot form interior(subtree(x)) since it erases interiors.
+  assert(!sugarIsa<OriginSubtreeAttr>(baseOrigin) &&
+         "interior origin cannot be applied to asubtree");
+
   // We push any mutability casts outside of ourselves.
   //     mutcast(x)[] => mutcast(x[])
   if (auto mutCast = sugarDynCast<OriginMutCastAttr>(baseOrigin)) {
@@ -535,6 +543,55 @@ bool InteriorOriginAttr::isLessThan(Attribute rhs) const {
   if (getBase() == rhsInterior.getBase())
     return ParameterAttr::compare(getUserName(), rhsInterior.getUserName());
   return ParameterAttr::compare(getBase(), rhsInterior.getBase());
+}
+
+//===----------------------------------------------------------------------===//
+// OriginSubtreeAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr OriginSubtreeAttr::get(TypedAttr origin) {
+  // If we have the global mutable origin, treat it conservatively by
+  // returning the global mutable origin.  It isn't wise to try to derive
+  // information from something where origins have been casted away.
+  if (sugarIsa<AnyOriginAttr>(origin))
+    return origin;
+
+  // We push any mutability casts outside of ourselves.
+  //     mutcast(x) as input => mutcast(subtree(x))
+  if (auto mutCast = sugarDynCast<OriginMutCastAttr>(origin)) {
+    auto inner = OriginSubtreeAttr::get(mutCast.getOperand());
+    return OriginMutCastAttr::get(inner, mutCast.getType());
+  }
+
+  // Push this inside an origin.union as well, so we get the union on the
+  // outside.
+  if (auto unionAttr = sugarDynCast<OriginUnionAttr>(origin)) {
+    SmallVector<TypedAttr> elts;
+    for (auto elt : unionAttr.getOperands())
+      elts.push_back(OriginSubtreeAttr::get(elt));
+    return OriginUnionAttr::get(elts, unionAttr.getType());
+  }
+
+  // subtree(subtree(x)) => subtree(x)
+  if (auto subtree = sugarDynCast<OriginSubtreeAttr>(origin))
+    return subtree;
+
+  auto originType = sugarCast<OriginType>(origin.getType());
+  return OriginSubtreeAttr::Base::get(origin.getContext(), origin, originType);
+}
+
+OriginSubtreeAttr OriginSubtreeAttr::getFromBytecode(TypedAttr origin,
+                                                     OriginType type) {
+  return Base::get(type.getContext(), origin, type);
+}
+
+bool OriginSubtreeAttr::isConstant() const {
+  return ParameterAttr::isSimpleConstant(getOrigin());
+}
+
+bool OriginSubtreeAttr::isLessThan(Attribute rhs) const {
+  auto rhsSubtree = ::cast<OriginSubtreeAttr>(rhs);
+  return ParameterAttr::compare(getOrigin(), rhsSubtree.getOrigin());
 }
 
 //===----------------------------------------------------------------------===//
