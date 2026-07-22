@@ -2463,7 +2463,8 @@ static Operation *getProgramPointThatDefinedInteriorOrigin(Value v) {
       auto *block = varDecl->getBlock();
       for (Block::iterator it = varDecl->getIterator(); it != block->end();
            ++it) {
-        if (llvm::any_of(it->getOperands(), [](Value v) { return v == v; }))
+        if (llvm::any_of(it->getOperands(),
+                         [&](Value operand) { return operand == v; }))
           return &*it;
       }
       // If we found no uses of the vardecl, we could return the terminator, but
