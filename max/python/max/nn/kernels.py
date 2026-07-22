@@ -1835,6 +1835,169 @@ def fused_qk_rms_norm_rope_ragged(
     )[0].tensor
 
 
+def fused_dual_qk_rms_norm_rope_ragged(
+    main_kv_params: KVCacheParams,
+    index_kv_params: KVCacheParams,
+    main_input: TensorValue,
+    index_input: TensorValue,
+    input_row_offsets: TensorValue,
+    main_kv_collection: PagedCacheValues,
+    index_kv_collection: PagedCacheValues,
+    q_main_gamma: TensorValue,
+    k_main_gamma: TensorValue,
+    q_index_gamma: TensorValue,
+    k_index_gamma: TensorValue,
+    freqs_cis: TensorValue,
+    main_epsilon: float | np.floating[Any],
+    index_epsilon: float | np.floating[Any],
+    layer_idx: TensorValue,
+    weight_offset: float | np.floating[Any],
+    interleaved: bool = True,
+    multiply_before_cast: bool = True,
+) -> tuple[TensorValue, TensorValue]:
+    """Fuses two :obj:`fused_qk_rms_norm_rope_ragged` launches into one.
+
+    MiniMax-M3 sparse layers apply the fused per-head RMSNorm+RoPE op twice back
+    to back: once for the main GQA Q / K cache and once for the lightning
+    indexer's IndexQ / index-K cache. Both bands read (disjoint) slices of the
+    same combined QKV+IndexQ matmul output, share ``input_row_offsets``, and
+    share ``freqs_cis``, so this runs them in a single GPU launch. Each band's Q
+    is returned as a separate tensor; each band's key cache is updated in place.
+
+    All per-head RoPE geometry (dtype, ``freqs_cis.shape[1]`` rope dim,
+    ``interleaved``, head dim) must be identical across the two bands; a
+    divergence trips a compile-time assert in the kernel rather than silently
+    mis-roping a band. The two caches may differ in KV-head count, so this is
+    bit-exact to two separate :obj:`fused_qk_rms_norm_rope_ragged` calls.
+
+    Args:
+        main_kv_params: KV cache parameters for the main (GQA) cache.
+        index_kv_params: KV cache parameters for the index-K cache.
+        main_input: The main Q tensor ``[total_seq_len, n_heads, head_dim]``.
+        index_input: The indexer Q tensor
+            ``[total_seq_len, num_index_heads, head_dim]``.
+        input_row_offsets: Ragged offsets shared by both bands. Dtype ``uint32``.
+        main_kv_collection: Paged cache holding the main key cache.
+        index_kv_collection: Paged cache holding the index-K cache.
+        q_main_gamma: Rank-1 main-Q RMSNorm weight (size ``head_dim``).
+        k_main_gamma: Rank-1 main-K RMSNorm weight (size ``head_dim``).
+        q_index_gamma: Rank-1 index-Q RMSNorm weight (size ``head_dim``).
+        k_index_gamma: Rank-1 index-K RMSNorm weight (size ``head_dim``).
+        freqs_cis: The shared RoPE frequency table. Its second dimension is the
+            RoPE dim. Must share the input dtype or be ``float32``.
+        main_epsilon: RMSNorm epsilon for the main band.
+        index_epsilon: RMSNorm epsilon for the indexer band.
+        layer_idx: The layer index for both caches. Dtype ``uint32``.
+        weight_offset: Constant offset added to each RMSNorm weight.
+        interleaved: Whether to use the interleaved RoPE pattern (both bands).
+        multiply_before_cast: Whether to multiply by the effective weight before
+            casting to the output dtype.
+
+    Returns:
+        A tuple ``(q_main, q_index)`` of the normalized + RoPE-applied query
+        tensors, matching the shapes/dtypes of ``main_input`` / ``index_input``.
+
+    Raises:
+        ValueError: On invalid ranks/dtypes, mismatched gamma sizes, a gamma
+            size that does not match its head dim, a head-dim mismatch between
+            the two bands, or a ``freqs_cis`` dtype that neither matches the
+            input nor is ``float32``.
+    """
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
+    _check_rank(3, main_input=main_input, index_input=index_input)
+    _check_rank(
+        1,
+        q_main_gamma=q_main_gamma,
+        k_main_gamma=k_main_gamma,
+        q_index_gamma=q_index_gamma,
+        k_index_gamma=k_index_gamma,
+    )
+    _check_rank(2, freqs_cis=freqs_cis)
+
+    for name, q_gamma, k_gamma, kv_params, input in (
+        ("main", q_main_gamma, k_main_gamma, main_kv_params, main_input),
+        ("index", q_index_gamma, k_index_gamma, index_kv_params, index_input),
+    ):
+        if q_gamma.shape[0] != k_gamma.shape[0]:
+            raise ValueError(
+                f"expected {name} q_gamma and k_gamma to have the same size,"
+                f" got {q_gamma.shape[0]} and {k_gamma.shape[0]}"
+            )
+        if q_gamma.shape[0] != kv_params.head_dim:
+            raise ValueError(
+                "fused_dual_qk_rms_norm_rope_ragged requires full per-head"
+                f" normalization; expected {name} gamma size"
+                f" {kv_params.head_dim} but got {q_gamma.shape[0]}"
+            )
+        if input.shape[2] != kv_params.head_dim:
+            raise ValueError(
+                f"expected {name} input head_dim to match kv_params.head_dim,"
+                f" got {input.shape[2]} and {kv_params.head_dim}"
+            )
+
+    if main_kv_params.head_dim != index_kv_params.head_dim:
+        raise ValueError(
+            "fused_dual_qk_rms_norm_rope_ragged requires both bands to share"
+            f" head_dim, got {main_kv_params.head_dim} (main) and"
+            f" {index_kv_params.head_dim} (index)"
+        )
+    # The kernel loads freqs_cis and upcasts to the fp32 accumulator, so an fp32
+    # table is consumed losslessly regardless of the input dtype.
+    if freqs_cis.dtype != main_input.dtype and freqs_cis.dtype != DType.float32:
+        raise ValueError(
+            "expected freqs_cis dtype to match input dtype (or be float32),"
+            f" got {freqs_cis.dtype} and {main_input.dtype}"
+        )
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "interleaved": interleaved,
+        "multiply_before_cast": multiply_before_cast,
+        "main_cache_dtype": main_kv_params.dtype,
+        "index_cache_dtype": index_kv_params.dtype,
+    }
+    assert main_kv_params.page_size is not None
+    assert index_kv_params.page_size is not None
+
+    results = ops.inplace_custom(
+        "mo.fused_qk_rms_norm_rope.ragged.paged.dual",
+        device=main_input.device,
+        values=[
+            main_input,
+            index_input,
+            input_row_offsets,
+            *main_kv_collection.flatten_without_attention_dispatch_metadata(),
+            *index_kv_collection.flatten_without_attention_dispatch_metadata(),
+            q_main_gamma,
+            k_main_gamma,
+            q_index_gamma,
+            k_index_gamma,
+            freqs_cis,
+            ops.constant(main_epsilon, DType.float32, device=DeviceRef.CPU()),
+            ops.constant(index_epsilon, DType.float32, device=DeviceRef.CPU()),
+            layer_idx,
+            ops.constant(
+                weight_offset, main_input.dtype, device=DeviceRef.CPU()
+            ),
+        ],
+        out_types=[
+            TensorType(
+                dtype=main_input.dtype,
+                shape=main_input.shape,
+                device=main_input.device,
+            ),
+            TensorType(
+                dtype=index_input.dtype,
+                shape=index_input.shape,
+                device=index_input.device,
+            ),
+        ],
+        parameters=parameters,
+    )
+    return (results[0].tensor, results[1].tensor)
+
+
 def fused_qk_padded_rope(
     kv_params: KVCacheParams,
     input: TensorValue,
