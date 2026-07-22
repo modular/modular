@@ -95,13 +95,13 @@ struct Group(Copyable, Movable):
     var ctrl: SIMD[DType.uint8, GROUP_WIDTH]
 
     @always_inline
-    def __init__(out self, ptr: UnsafePointer[UInt8, _]):
+    def __init__(out self, ptr: Pointer[UInt8, _]):
         """Load a group of control bytes from memory.
 
         Args:
             ptr: Pointer to the start of 16 consecutive control bytes.
         """
-        self.ctrl = ptr.load[width=GROUP_WIDTH]()
+        self.ctrl = ptr.unsafe_load[width=GROUP_WIDTH]()
 
     # TODO: Remove `__is_run_in_comptime_interpreter` branches once `pack_bits` is supported
     # by the compile-time interpreter. Currently `pack_bits` uses `pop.bitcast`
@@ -378,13 +378,13 @@ struct SwissTable[
         H: The hasher type.
     """
 
-    var _ctrl: UnsafePointer[UInt8, MutUntrackedOrigin]
+    var _ctrl: Pointer[UInt8, MutUntrackedOrigin]
     """Control byte array. Size is _capacity + GROUP_WIDTH.
     Each byte is EMPTY (0xFF), DELETED (0x80), or h2 fingerprint (0x00-0x7F).
     The last GROUP_WIDTH bytes mirror the first GROUP_WIDTH for SIMD wrapping.
     """
 
-    var _slots: UnsafePointer[
+    var _slots: Pointer[
         SwissTableEntry[Self.K, Self.V, Self.H], MutUntrackedOrigin
     ]
     """Flat slot array. Size is _capacity. Only occupied slots are initialized.
@@ -474,8 +474,10 @@ struct SwissTable[
             )
         ).unsafe_leak()
         for i in range(self._capacity):
-            if is_occupied(self._ctrl[i]):
-                (self._slots + i).unsafe_write(copy=(copy._slots + i)[])
+            if is_occupied(self._ctrl[unsafe_offset=i]):
+                (self._slots.unsafe_offset(i)).unsafe_write(
+                    copy=(copy._slots.unsafe_offset(i))[]
+                )
 
     def __del__(
         deinit self,
@@ -547,8 +549,8 @@ struct SwissTable[
             SwissTableEntry[Self.K, Self.V, Self.H]
         ]():
             for i in range(self._capacity):
-                if is_occupied(self._ctrl[i]):
-                    (self._slots + i).unsafe_deinit_pointee()
+                if is_occupied(self._ctrl[unsafe_offset=i]):
+                    (self._slots.unsafe_offset(i)).unsafe_deinit_pointee()
 
     @always_inline
     def _delete_occupied_entries_with(
@@ -559,8 +561,10 @@ struct SwissTable[
         The closure counterpart of `_delete_occupied_entries`.
         """
         for i in range(self._capacity):
-            if is_occupied(self._ctrl[i]):
-                (self._slots + i).take_pointee().deinit_with(destroy_func)
+            if is_occupied(self._ctrl[unsafe_offset=i]):
+                (
+                    self._slots.unsafe_offset(i)
+                ).unsafe_take_pointee().deinit_with(destroy_func)
 
     # ===-------------------------------------------------------------------===#
     # Core operations
@@ -575,9 +579,9 @@ struct SwissTable[
             value: The control byte value (h2, EMPTY, or DELETED).
         """
         assert 0 <= index < self._capacity, "ctrl index out of bounds"
-        self._ctrl[index] = value
+        self._ctrl[unsafe_offset=index] = value
         if index < GROUP_WIDTH:
-            self._ctrl[self._capacity + index] = value
+            self._ctrl[unsafe_offset=self._capacity + index] = value
 
     @always_inline
     def find_slot(self, hash: UInt64, key: Self.K) -> Tuple[Bool, Int]:
@@ -607,14 +611,16 @@ struct SwissTable[
         var pos = Int(hash) & (self._capacity - 1)
 
         while True:
-            var group = Group(self._ctrl + pos)
+            var group = Group(self._ctrl.unsafe_offset(pos))
 
             var match_mask = group.match_h2(h2_val)
             while match_mask != 0:
                 var bit = count_trailing_zeros(Int(match_mask))
                 var slot_idx = (pos + bit) & (self._capacity - 1)
-                if (self._slots + slot_idx)[]._hash == hash and likely(
-                    (self._slots + slot_idx)[].key == key
+                if (
+                    self._slots.unsafe_offset(slot_idx)
+                )[]._hash == hash and likely(
+                    (self._slots.unsafe_offset(slot_idx))[].key == key
                 ):
                     return (True, slot_idx)
                 match_mask &= match_mask - 1
@@ -660,14 +666,16 @@ struct SwissTable[
         var first_deleted = -1
 
         while True:
-            var group = Group(self._ctrl + pos)
+            var group = Group(self._ctrl.unsafe_offset(pos))
 
             var match_mask = group.match_h2(h2_val)
             while match_mask != 0:
                 var bit = count_trailing_zeros(Int(match_mask))
                 var slot_idx = (pos + bit) & (self._capacity - 1)
-                if (self._slots + slot_idx)[]._hash == hash and likely(
-                    (self._slots + slot_idx)[].key == key
+                if (
+                    self._slots.unsafe_offset(slot_idx)
+                )[]._hash == hash and likely(
+                    (self._slots.unsafe_offset(slot_idx))[].key == key
                 ):
                     return (True, slot_idx)
                 match_mask &= match_mask - 1
@@ -707,7 +715,7 @@ struct SwissTable[
         var pos = Int(hash) & (self._capacity - 1)
 
         while True:
-            var group = Group(self._ctrl + pos)
+            var group = Group(self._ctrl.unsafe_offset(pos))
             var mask = group.match_empty_or_deleted()
             if mask != 0:
                 var bit = count_trailing_zeros(Int(mask))
@@ -797,12 +805,12 @@ struct SwissTable[
         var relocations = List[Tuple[Int, Int]](capacity=self._len)
 
         for i in range(old_capacity):
-            if is_occupied(old_ctrl[i]):
-                var entry = (old_slots + i).take_pointee()
+            if is_occupied(old_ctrl[unsafe_offset=i]):
+                var entry = (old_slots.unsafe_offset(i)).unsafe_take_pointee()
                 var h2_val = h2(entry._hash)
                 var new_slot = self.find_empty_slot(entry._hash)
                 self.set_ctrl(new_slot, h2_val)
-                (self._slots + new_slot).unsafe_write(entry^)
+                (self._slots.unsafe_offset(new_slot)).unsafe_write(entry^)
                 relocations.append((i, new_slot))
 
         if old_capacity > 0:
@@ -819,7 +827,7 @@ struct SwissTable[
 
         return relocations^
 
-    def rehash_in_place(mut self) -> UnsafePointer[Int32, MutUntrackedOrigin]:
+    def rehash_in_place(mut self) -> Pointer[Int32, MutUntrackedOrigin]:
         """Rehash in place without changing capacity (Abseil's drop-deletes).
 
         Reclaims DELETED tombstones by moving all entries to their ideal
@@ -836,13 +844,13 @@ struct SwissTable[
 
         # Step 1: Rewrite ctrl bytes.
         for pos in range(0, self._capacity, GROUP_WIDTH):
-            var group = Group(self._ctrl + pos)
+            var group = Group(self._ctrl.unsafe_offset(pos))
             var converted = group.convert_special_to_empty_and_full_to_deleted()
-            (self._ctrl + pos).store(converted)
+            (self._ctrl.unsafe_offset(pos)).unsafe_store(converted)
 
         # Step 2: Refresh mirror bytes.
         unsafe_memcpy(
-            dest=self._ctrl + self._capacity,
+            dest=self._ctrl.unsafe_offset(self._capacity),
             src=self._ctrl,
             count=GROUP_WIDTH,
         )
@@ -850,31 +858,33 @@ struct SwissTable[
         # Step 3: Relocate entries.
         var slot_map = alloc(Layout[Int32](count=self._capacity)).unsafe_leak()
         for i in range(self._capacity):
-            slot_map[i] = Int32(i)
+            slot_map[unsafe_offset=i] = Int32(i)
 
         for i in range(self._capacity):
-            if self._ctrl[i] != CTRL_DELETED:
+            if self._ctrl[unsafe_offset=i] != CTRL_DELETED:
                 continue
 
-            var entry = (self._slots + i).take_pointee()
+            var entry = (self._slots.unsafe_offset(i)).unsafe_take_pointee()
             self.set_ctrl(i, CTRL_EMPTY)
 
             var source = i
             var target = self.find_empty_slot(entry._hash)
 
-            while self._ctrl[target] == CTRL_DELETED:
+            while self._ctrl[unsafe_offset=target] == CTRL_DELETED:
                 self.set_ctrl(target, h2(entry._hash))
-                var displaced = (self._slots + target).take_pointee()
-                (self._slots + target).unsafe_write(entry^)
-                slot_map[source] = Int32(target)
+                var displaced = (
+                    self._slots.unsafe_offset(target)
+                ).unsafe_take_pointee()
+                (self._slots.unsafe_offset(target)).unsafe_write(entry^)
+                slot_map[unsafe_offset=source] = Int32(target)
 
                 entry = displaced^
                 source = target
                 target = self.find_empty_slot(entry._hash)
 
             self.set_ctrl(target, h2(entry._hash))
-            (self._slots + target).unsafe_write(entry^)
-            slot_map[source] = Int32(target)
+            (self._slots.unsafe_offset(target)).unsafe_write(entry^)
+            slot_map[unsafe_offset=source] = Int32(target)
 
         # Reset growth_left (all tombstones are now EMPTY).
         self._growth_left = self._capacity * 7 // 8 - self._len

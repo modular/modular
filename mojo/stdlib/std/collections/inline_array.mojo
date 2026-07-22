@@ -507,7 +507,7 @@ struct InlineArray[T: AnyType, length: Int](
             # pointer's element view; drop the bitcast once the compiler
             # propagates `where`-clause evidence to the field type.
             ptr.unsafe_write_move_from(
-                UnsafePointer(to=elems[i]).bitcast[Self.T]()
+                Pointer(to=elems[i]).unsafe_bitcast[Self.T]()
             )
             ptr += 1
 
@@ -657,10 +657,10 @@ struct InlineArray[T: AnyType, length: Int](
     @always_inline
     def _unchecked_get(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._array)._get_kgen_pointer(),
+            Pointer(to=self._array)._get_kgen_pointer(),
             index(idx).__mlir_index__(),
         )
-        return UnsafePointer[_, origin_of(self)](_mlir_value=ptr)[]
+        return Pointer[_, origin_of(self)](_mlir_value=ptr)[]
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations
@@ -800,10 +800,10 @@ struct InlineArray[T: AnyType, length: Int](
             reference.
         """
         return (
-            UnsafePointer(to=self._array)
-            .bitcast[Self.T]()
+            Pointer(to=self._array)
+            .unsafe_bitcast[Self.T]()
             .unsafe_origin_cast[origin]()
-            .address_space_cast[address_space]()
+            .unsafe_address_space_cast[address_space]()
         )
 
     @always_inline
