@@ -10,21 +10,12 @@
 //     complete Mojo compilation pipeline for that optimization level.
 //
 //  2. Custom pass pipeline via -passes: specify an explicit pass pipeline using
-//     LLVM's pass pipeline syntax (same as `opt -passes=...`). All custom KGEN
-//     passes defined in KGEN/lib/Compiler/ObjectCompiler/LLVM/Transforms are
-//     registered and available under the following names:
-//       module passes:
-//         kgen-metal-air            - MetalAIRPass
-//         kgen-pointer-rewriter     - PointerRewriter
-//         kgen-metal-verifier       - MetalVerifierPass
-//         kgen-metal-rewrite-di     - MetalRewriteDebugInfoPass
-//         kgen-llvmir-downgrade     - LLVMIRDowngradePass
-//         kgen-set-function-attrs   - SetFunctionAttributes
-//       function passes:
-//         kgen-instruction-rewrite  - InstructionRewritePass
+//     LLVM's pass pipeline syntax (same as `opt -passes=...`). The
+//     target-agnostic KGEN pass is:
+//         kgen-llvmir-downgrade  - LLVMIRDowngradePass
+//     Additional passes are registered by the active target backends.
 //
-//     Example: kgen-llvm-opt -passes="kgen-metal-air,kgen-pointer-rewriter"
-//     in.bc
+//     Example: kgen-llvm-opt -passes="kgen-llvmir-downgrade" in.bc
 
 #include "KGEN/Compiler/LLVMOptimizationPipeline.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
@@ -130,18 +121,9 @@ private:
       cl::desc(
           "A textual description of the pass pipeline (same syntax as "
           "opt -passes=...). Mutually exclusive with -O0/-O1/-O2/-O3.\n"
-          "Available KGEN module passes:\n"
-          "  kgen-metal-air           Transform IR to Apple AIR for Metal GPU\n"
-          "  kgen-pointer-rewriter    Rewrite opaque pointers to typed "
-          "pointers\n"
-          "  kgen-metal-verifier      Reject IR with float types wider than "
-          "f32\n"
-          "  kgen-metal-rewrite-di    Rewrite DebugInfo for Metal/Instruments\n"
+          "Target-agnostic KGEN pass:\n"
           "  kgen-llvmir-downgrade    Downgrade IR for older LLVM backends\n"
-          "  kgen-set-function-attrs  Set function attributes for compilation\n"
-          "Available KGEN function passes:\n"
-          "  kgen-instruction-rewrite Rewrite unsupported "
-          "intrinsics/instructions"),
+          "Additional passes are registered by the active target backends."),
       cl::value_desc("pipeline"), cl::location(passPipeline), cl::cat(cat)};
 
   M::cl::MOpt<bool, true> noOutputOpt{
