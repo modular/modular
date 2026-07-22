@@ -1378,7 +1378,7 @@ def _py_function_fastcall_wrapper[
     @always_inline
     def fastcall(
         py_self_ptr: PyObjectPtr,
-        args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
+        args: Pointer[PyObjectPtr, MutUntrackedOrigin],
         nargs: Py_ssize_t,
     ) abi("C") -> PyObjectPtr:
         var py_self = PythonObject(from_borrowed=py_self_ptr)
@@ -1387,7 +1387,7 @@ def _py_function_fastcall_wrapper[
         # non-null for every METH_FASTCALL invocation, including the
         # `nargs == 0` case (CPython hands the callee a pointer into a
         # cached empty tuple). `_dispatch_fast` therefore accepts a plain
-        # `UnsafePointer` rather than `OptionalUnsafePointer`.
+        # `Pointer` rather than `OptionalPointer`.
         try:
             return FuncT._dispatch_fast[is_method](
                 func._func, py_self, args, Int(nargs)

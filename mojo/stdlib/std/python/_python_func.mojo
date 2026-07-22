@@ -1984,7 +1984,7 @@ struct PyObjectFunction[
     ](
         func: Self.func_type,
         py_self: PO,
-        args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
+        args: Pointer[PyObjectPtr, MutUntrackedOrigin],
         nargs: Int,
     ) raises -> PO:
         """Compile-time dispatch for METH_FASTCALL non-kwargs function/method
@@ -2013,7 +2013,7 @@ struct PyObjectFunction[
         elif Self._has_arity(1):
             comptime if not is_method:
                 check_arguments_arity(1, nargs)
-                var a0 = PO(from_borrowed=args[0])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
                 comptime if Self._has_type[Self._1er]():
                     return rebind[Self._1er](func)(a0)
                 elif Self._has_type[Self._1r]():
@@ -2053,8 +2053,8 @@ struct PyObjectFunction[
         elif Self._has_arity(2):
             comptime if not is_method:
                 check_arguments_arity(2, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
                 comptime if Self._has_type[Self._2er]():
                     return rebind[Self._2er](func)(a0, a1)
                 elif Self._has_type[Self._2r]():
@@ -2067,7 +2067,7 @@ struct PyObjectFunction[
                     return PO(None)
             else:
                 check_arguments_arity(1, nargs)
-                var a0 = PO(from_borrowed=args[0])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
                 comptime if Self._has_type[Self._2er]():
                     return rebind[Self._2er](func)(py_self, a0)
                 elif Self._has_type[Self._2r]():
@@ -2095,9 +2095,9 @@ struct PyObjectFunction[
         elif Self._has_arity(3):
             comptime if not is_method:
                 check_arguments_arity(3, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
                 comptime if Self._has_type[Self._3er]():
                     return rebind[Self._3er](func)(a0, a1, a2)
                 elif Self._has_type[Self._3r]():
@@ -2110,8 +2110,8 @@ struct PyObjectFunction[
                     return PO(None)
             else:
                 check_arguments_arity(2, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
                 comptime if Self._has_type[Self._3er]():
                     return rebind[Self._3er](func)(py_self, a0, a1)
                 elif Self._has_type[Self._3r]():
@@ -2143,10 +2143,10 @@ struct PyObjectFunction[
         elif Self._has_arity(4):
             comptime if not is_method:
                 check_arguments_arity(4, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
                 comptime if Self._has_type[Self._4er]():
                     return rebind[Self._4er](func)(a0, a1, a2, a3)
                 elif Self._has_type[Self._4r]():
@@ -2159,9 +2159,9 @@ struct PyObjectFunction[
                     return PO(None)
             else:
                 check_arguments_arity(3, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
                 comptime if Self._has_type[Self._4er]():
                     return rebind[Self._4er](func)(py_self, a0, a1, a2)
                 elif Self._has_type[Self._4r]():
@@ -2193,11 +2193,11 @@ struct PyObjectFunction[
         elif Self._has_arity(5):
             comptime if not is_method:
                 check_arguments_arity(5, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
-                var a4 = PO(from_borrowed=args[4])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
+                var a4 = PO(from_borrowed=args[unsafe_offset=4])
                 comptime if Self._has_type[Self._5er]():
                     return rebind[Self._5er](func)(a0, a1, a2, a3, a4)
                 elif Self._has_type[Self._5r]():
@@ -2210,10 +2210,10 @@ struct PyObjectFunction[
                     return PO(None)
             else:
                 check_arguments_arity(4, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
                 comptime if Self._has_type[Self._5er]():
                     return rebind[Self._5er](func)(py_self, a0, a1, a2, a3)
                 elif Self._has_type[Self._5r]():
@@ -2245,12 +2245,12 @@ struct PyObjectFunction[
         elif Self._has_arity(6):
             comptime if not is_method:
                 check_arguments_arity(6, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
-                var a4 = PO(from_borrowed=args[4])
-                var a5 = PO(from_borrowed=args[5])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
+                var a4 = PO(from_borrowed=args[unsafe_offset=4])
+                var a5 = PO(from_borrowed=args[unsafe_offset=5])
                 comptime if Self._has_type[Self._6er]():
                     return rebind[Self._6er](func)(a0, a1, a2, a3, a4, a5)
                 elif Self._has_type[Self._6r]():
@@ -2263,11 +2263,11 @@ struct PyObjectFunction[
                     return PO(None)
             else:
                 check_arguments_arity(5, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
-                var a4 = PO(from_borrowed=args[4])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
+                var a4 = PO(from_borrowed=args[unsafe_offset=4])
                 comptime if Self._has_type[Self._6er]():
                     return rebind[Self._6er](func)(py_self, a0, a1, a2, a3, a4)
                 elif Self._has_type[Self._6r]():
@@ -2299,13 +2299,13 @@ struct PyObjectFunction[
         elif Self._has_arity(7):
             comptime if not is_method:
                 check_arguments_arity(7, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
-                var a4 = PO(from_borrowed=args[4])
-                var a5 = PO(from_borrowed=args[5])
-                var a6 = PO(from_borrowed=args[6])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
+                var a4 = PO(from_borrowed=args[unsafe_offset=4])
+                var a5 = PO(from_borrowed=args[unsafe_offset=5])
+                var a6 = PO(from_borrowed=args[unsafe_offset=6])
                 comptime if Self._has_type[Self._7er]():
                     return rebind[Self._7er](func)(a0, a1, a2, a3, a4, a5, a6)
                 elif Self._has_type[Self._7r]():
@@ -2318,12 +2318,12 @@ struct PyObjectFunction[
                     return PO(None)
             else:
                 check_arguments_arity(6, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
-                var a4 = PO(from_borrowed=args[4])
-                var a5 = PO(from_borrowed=args[5])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
+                var a4 = PO(from_borrowed=args[unsafe_offset=4])
+                var a5 = PO(from_borrowed=args[unsafe_offset=5])
                 comptime if Self._has_type[Self._7er]():
                     return rebind[Self._7er](func)(
                         py_self, a0, a1, a2, a3, a4, a5
@@ -2359,14 +2359,14 @@ struct PyObjectFunction[
         elif Self._has_arity(8):
             comptime if not is_method:
                 check_arguments_arity(8, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
-                var a4 = PO(from_borrowed=args[4])
-                var a5 = PO(from_borrowed=args[5])
-                var a6 = PO(from_borrowed=args[6])
-                var a7 = PO(from_borrowed=args[7])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
+                var a4 = PO(from_borrowed=args[unsafe_offset=4])
+                var a5 = PO(from_borrowed=args[unsafe_offset=5])
+                var a6 = PO(from_borrowed=args[unsafe_offset=6])
+                var a7 = PO(from_borrowed=args[unsafe_offset=7])
                 comptime if Self._has_type[Self._8er]():
                     return rebind[Self._8er](func)(
                         a0, a1, a2, a3, a4, a5, a6, a7
@@ -2383,13 +2383,13 @@ struct PyObjectFunction[
                     return PO(None)
             else:
                 check_arguments_arity(7, nargs)
-                var a0 = PO(from_borrowed=args[0])
-                var a1 = PO(from_borrowed=args[1])
-                var a2 = PO(from_borrowed=args[2])
-                var a3 = PO(from_borrowed=args[3])
-                var a4 = PO(from_borrowed=args[4])
-                var a5 = PO(from_borrowed=args[5])
-                var a6 = PO(from_borrowed=args[6])
+                var a0 = PO(from_borrowed=args[unsafe_offset=0])
+                var a1 = PO(from_borrowed=args[unsafe_offset=1])
+                var a2 = PO(from_borrowed=args[unsafe_offset=2])
+                var a3 = PO(from_borrowed=args[unsafe_offset=3])
+                var a4 = PO(from_borrowed=args[unsafe_offset=4])
+                var a5 = PO(from_borrowed=args[unsafe_offset=5])
+                var a6 = PO(from_borrowed=args[unsafe_offset=6])
                 comptime if Self._has_type[Self._8er]():
                     return rebind[Self._8er](func)(
                         py_self, a0, a1, a2, a3, a4, a5, a6

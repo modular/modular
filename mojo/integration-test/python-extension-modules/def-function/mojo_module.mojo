@@ -235,7 +235,7 @@ def sum_pos_arg_and_kwargs(
 
 def fastcall_concat(
     py_self: PyObjectPtr,
-    args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
+    args: Pointer[PyObjectPtr, MutUntrackedOrigin],
     nargs: Py_ssize_t,
 ) abi("C") -> PyObjectPtr:
     """Hand-written METH_FASTCALL wrapper that concatenates `nargs` strings.
@@ -246,8 +246,10 @@ def fastcall_concat(
     """
     try:
         var result = PythonObject("")
+        # `args` is non-null per the vectorcall protocol (PEP 590), even when
+        # `nargs == 0`; read each argument straight out of the borrowed array.
         for i in range(Int(nargs)):
-            result = result + PythonObject(from_borrowed=args[i])
+            result = result + PythonObject(from_borrowed=args[unsafe_offset=i])
         return result.steal_data()
     except e:
         return raise_python_exception(e)

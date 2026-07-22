@@ -106,20 +106,22 @@ def add_raw(py_self: PyObjectPtr, args: PyObjectPtr) abi("C") -> PyObjectPtr:
 @export
 def noop_raw_fastcall(
     py_self: PyObjectPtr,
-    args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
+    args: Pointer[PyObjectPtr, MutUntrackedOrigin],
     nargs: Py_ssize_t,
 ) abi("C") -> PyObjectPtr:
     ref cpy = Python().cpython()
-    return cpy.Py_NewRef(args[0])
+    return cpy.Py_NewRef(args[])
 
 
 @export
 def add_raw_fastcall(
     py_self: PyObjectPtr,
-    args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
+    args: Pointer[PyObjectPtr, MutUntrackedOrigin],
     nargs: Py_ssize_t,
 ) abi("C") -> PyObjectPtr:
     ref cpy = Python().cpython()
-    var ai = cpy.PyLong_AsSsize_t(args[0])
-    var bi = cpy.PyLong_AsSsize_t(args[1])
+    # Read directly from the borrowed `PyObject *const *` array, matching the
+    # METH_FASTCALL convention CPython uses to invoke the callee.
+    var ai = cpy.PyLong_AsSsize_t(args[])
+    var bi = cpy.PyLong_AsSsize_t(args[unsafe_offset=1])
     return cpy.PyLong_FromSsize_t(ai + bi)

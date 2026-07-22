@@ -817,6 +817,14 @@ This version is still a work in progress.
   Mojo `Error` into a Python exception via `PyErr_SetString` and returns a null
   `PyObjectPtr`.
 
+- The `PyCFunctionFast` calling convention used by
+  `PythonModuleBuilder.def_py_c_function()` for `METH_FASTCALL` callbacks now
+  declares its argument array as a safe
+  `Pointer[PyObjectPtr, MutUntrackedOrigin]` instead of an `UnsafePointer`.
+  The two types share the same layout, so the C ABI is unchanged; hand-written
+  fastcall callbacks only need to update the parameter's spelling in their
+  signature and read the borrowed arguments with `args[unsafe_offset=i]`.
+
 - Iterating over a `String`, `StringSlice`, or `StringLiteral` now yields
   grapheme clusters by default. Their `__iter__()` and `__reversed__()` methods
   return a `GraphemeSliceIter`, so `for c in my_string:` produces what a user
