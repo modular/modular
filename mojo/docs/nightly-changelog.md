@@ -396,17 +396,29 @@ This version is still a work in progress.
 ## Library changes
 
 - Various datatypes have adopted interior origins for increased memory safety,
-  including `List`, `Deque`, `Variant`, `String`, `Dict`, `LinkedList`, and
-  `OwnedPointer`. A reference or view into one of these containers now carries
-  an interior origin, so one held across a mutation is rejected by the lifetime
-  checker instead of silently dangling after a reallocation. For example,
-  indexing a `List` (`list[i]`) returns a reference bound to the list:
+  including `List`, `Deque`, `Variant`, `String`, `Dict`, `LinkedList`,
+  `OwnedPointer`, and `HostBuffer`. A reference or view into one of these
+  containers now carries an interior origin, so one held across a mutation is
+  rejected by the lifetime checker instead of silently dangling after a
+  reallocation. For example, indexing a `List` (`list[i]`) returns a reference
+  bound to the list:
 
   ```mojo
   var list = [1, 2, 3]
   ref elem = list[0]
   list.append(4)  # may reallocate, invalidating `elem`
   print(elem)     # error: use of invalidated interior reference
+  ```
+
+  `HostBuffer.as_span()` now returns a `Span` bound to an interior origin of the
+  buffer instead of the whole-buffer origin, so a span held across a mutation of
+  the buffer is rejected by the lifetime checker:
+
+  ```mojo
+  var buf = ctx.enqueue_create_host_buffer[DType.float32](4)
+  var s = buf.as_span()
+  buf[0] = 1.0    # mutates the buffer, invalidating `s`
+  print(s[0])     # error: use of invalidated interior reference
   ```
 
 - Added `Tuple.consume_elements`, which moves each element out of a tuple into a

@@ -829,26 +829,32 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self._host_ptr[idx] = val
 
+    @__unsafe_nested_origins_read_only
     def as_span[
-        mut: Bool, origin: Origin[mut=mut], //
-    ](ref[origin] self) -> Span[Scalar[Self.dtype], origin]:
+        origin: Origin, //
+    ](ref[origin] self) -> Span[
+        Scalar[Self.dtype], origin_of(self)._get_owned_interior["buffer"]
+    ]:
         """Returns a `Span` pointing to the underlying memory of the `HostBuffer`.
 
         Parameters:
-            mut: Whether the span should be mutable.
             origin: The origin of the buffer reference.
 
         Returns:
-            A `Span` pointing to the underlying memory of the `HostBuffer`.
+            A `Span` over the buffer's memory. The span carries an interior
+            origin derived from `self`, so any subsequent mutation of the
+            `HostBuffer` invalidates it at compile time.
         """
-        # Safety: We are casting the pointer to the mutability and origin of
-        # self and `_host_ptr` is already mutable.
-        return {
-            ptr = self._host_ptr.unsafe_mut_cast[mut]().unsafe_origin_cast[
-                origin
-            ](),
-            length = len(self),
-        }
+        return Span[
+            Scalar[Self.dtype], origin_of(self)._get_owned_interior["buffer"]
+        ](
+            ptr=UnsafePointer(
+                to=self._host_ptr._get_ref_with_unsafe_interior_origin[
+                    "buffer", origin_of(self)
+                ]()
+            ),
+            length=len(self),
+        )
 
 
 struct DevicePointer[
