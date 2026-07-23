@@ -237,7 +237,7 @@ llvm.func @arg_not_hfa_mixed(%arg0: !llvm.struct<(f32, i32)>) {
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_hfa
 llvm.func @ret_hfa() {
-  // CHECK: llvm.call @c_f6() {{.*}} : () -> !llvm.struct<(f32, f32)>
+  // CHECK: llvm.call @c_f6() : () -> !llvm.struct<(f32, f32)>
   %r = pop.external_call @c_f6() : () -> !llvm.struct<(f32, f32)>
   llvm.return
 }

@@ -450,6 +450,10 @@ static ElaboratorCompileOffloadRetType compileOffloads(
   // cachedTransform.
   SmallVector<NamedAttribute> offloadPendingWrites;
 
+  // The host `-fp-mode`, re-applied per group before any `contract=fast|off`
+  // item from that offload's `emission_option` overrides it.
+  const FpMode hostFpMode = compilationOptions.fpMode;
+
   // Compiling offload for different targets.
   // This loop cannot be parallelized since different targets may need
   // different llvm options that are global states.
@@ -478,6 +482,19 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       StringRef targetDataLayout = target.getDataLayout().toString();
       if (!targetDataLayout.empty())
         compilationOptions.targetDataLayout = targetDataLayout;
+      // Pull any `contract=fast|off` fp-mode item out of this offload's
+      // emission options (they are not global llvm cl options) and apply it on
+      // top of the host `-fp-mode` for this kernel only.
+      compilationOptions.fpMode = hostFpMode;
+      std::string filteredEmissionOptions;
+      if (std::optional<std::string> badItem = splitFpModeEmissionOptions(
+              offloadInfo.emissionOptions, compilationOptions.fpMode,
+              filteredEmissionOptions))
+        return Error(llvm::formatv("invalid fp-mode emission option '{0}', "
+                                   "expected 'contract=fast' or 'contract=off'",
+                                   *badItem));
+      offloadInfo.emissionOptions = filteredEmissionOptions;
+
       compilationOptions.emissionOptions = offloadInfo.emissionOptions;
       compilationOptions.emissionLinkOptions = offloadInfo.emissionLinkOptions;
 

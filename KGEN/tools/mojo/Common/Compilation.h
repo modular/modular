@@ -55,6 +55,7 @@ struct CommonOptionIDs {
   // Compilation options
   llvm::opt::OptSpecifier includeDirs;
   llvm::opt::OptSpecifier optimizationLevel;
+  llvm::opt::OptSpecifier fpMode;
   llvm::opt::OptSpecifier debugLevel;
   llvm::opt::OptSpecifier sanitize;
   llvm::opt::OptSpecifier sharedLibasan;
@@ -167,7 +168,8 @@ ErrorOrSuccess parseCompilationOptions(
     llvm::opt::OptSpecifier elaborationErrorIncludePreludeId = {},
     llvm::opt::OptSpecifier elaborationErrorVerbose = {},
     llvm::opt::OptSpecifier elaborationMaxDepth = {},
-    llvm::opt::OptSpecifier ignoreIncompatiblePrecompiledFilesId = {});
+    llvm::opt::OptSpecifier ignoreIncompatiblePrecompiledFilesId = {},
+    llvm::opt::OptSpecifier fpModeId = {});
 
 /// Warn users when doing debug builds with a compiler in debug mode.
 void warnBuildingForDebugWithDebugBuiltCompiler(

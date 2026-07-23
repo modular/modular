@@ -909,7 +909,7 @@ struct ConvertKGENUnreachable : public ConvertPOPToLLVMPattern<UnreachableOp> {
         rewriter, op.getLoc(), TypeRange{voidTy},
         rewriter.getStringAttr("llvm.trap"),
         /*args=*/ValueRange(),
-        rewriter.getAttr<LLVM::FastmathFlagsAttr>(LLVM_FASTMATH_FLAGS));
+        rewriter.getAttr<LLVM::FastmathFlagsAttr>(LLVM::FastmathFlags::none));
     rewriter.replaceOpWithNewOp<LLVM::UnreachableOp>(op);
     return success();
   }

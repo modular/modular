@@ -6,7 +6,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // CHECK-LABEL: @neg_f32
 kgen.func @neg_f32(%arg0: !kgen.scalar<f32>) -> !kgen.scalar<f32> {
-  // CHECK: llvm.fneg %0 {fastmathFlags = #llvm.fastmath<contract>}
+  // CHECK: llvm.fneg %0
   %0 = pop.neg %arg0 : !kgen.scalar<f32>
   kgen.return %0 : !kgen.scalar<f32>
 }
@@ -132,7 +132,7 @@ kgen.func @max_ui32(%arg0: !kgen.scalar<ui32>, %arg1: !kgen.scalar<ui32>) -> !kg
 kgen.func @max_f32(%arg0: !kgen.scalar<f32>, %arg1: !kgen.scalar<f32>) -> !kgen.scalar<f32> {
   // CHECK-DAG: [[ARG0:%.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK-DAG: [[ARG1:%.*]] = builtin.unrealized_conversion_cast %arg1
-  // CHECK: llvm.intr.maxnum([[ARG0]], [[ARG1]]) {fastmathFlags = #llvm.fastmath<contract>}
+  // CHECK: llvm.intr.maxnum([[ARG0]], [[ARG1]])
   %0 = pop.max %arg0, %arg1 : !kgen.scalar<f32>
   kgen.return %0 : !kgen.scalar<f32>
 }
@@ -162,7 +162,7 @@ kgen.func @min_ui32(%arg0: !kgen.scalar<ui32>, %arg1: !kgen.scalar<ui32>) -> !kg
 kgen.func @min_f32(%arg0: !kgen.scalar<f32>, %arg1: !kgen.scalar<f32>) -> !kgen.scalar<f32> {
   // CHECK-DAG: [[ARG0:%.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK-DAG: [[ARG1:%.*]] = builtin.unrealized_conversion_cast %arg1
-  // CHECK: llvm.intr.minnum([[ARG0]], [[ARG1]]) {fastmathFlags = #llvm.fastmath<contract>}
+  // CHECK: llvm.intr.minnum([[ARG0]], [[ARG1]])
   %0 = pop.min %arg0, %arg1 : !kgen.scalar<f32>
   kgen.return %0 : !kgen.scalar<f32>
 }
@@ -184,7 +184,7 @@ kgen.func @div(%arg0: !kgen.scalar<si32>,
   %0 = pop.div %arg0, %arg0 : !kgen.scalar<si32>
   // CHECK: llvm.udiv
   %1 = pop.div %arg1, %arg1 : !kgen.scalar<ui32>
-  // CHECK: llvm.fdiv %{{.*}}, %{{.*}} {fastmathFlags = #llvm.fastmath<contract>}
+  // CHECK: llvm.fdiv %{{.*}}, %{{.*}}
   %2 = pop.div %arg2, %arg2 : !kgen.scalar<f32>
   kgen.return %0, %1, %2 : !kgen.scalar<si32>,!kgen.scalar<ui32>,!kgen.scalar<f32>
 }
@@ -203,7 +203,7 @@ kgen.func @rem(%arg0: !kgen.scalar<si32>,
   %1 = pop.rem %arg1, %arg1 : !kgen.scalar<ui32>
   // CHECK: llvm.srem
   %2 = pop.rem %arg2, %arg2 : !kgen.scalar<index>
-  // CHECK: llvm.frem %{{.*}}, %{{.*}} {fastmathFlags = #llvm.fastmath<contract>}
+  // CHECK: llvm.frem %{{.*}}, %{{.*}}
   %3 = pop.rem %arg3, %arg3 : !kgen.scalar<f32>
   kgen.return %0, %1, %2, %3 : !kgen.scalar<si32>,
                                !kgen.scalar<ui32>,
@@ -236,7 +236,7 @@ kgen.func @simd_select(%arg0: !kgen.simd<4, bool>, %arg1: !kgen.simd<4, f32>, %a
   // CHECK-DAG: [[ARG0:%.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK-DAG: [[ARG1:%.*]] = builtin.unrealized_conversion_cast %arg1
   // CHECK-DAG: [[ARG2:%.*]] = builtin.unrealized_conversion_cast %arg2
-  // CHECK: llvm.select [[ARG0]], [[ARG1]], [[ARG2]] {fastmathFlags = #llvm.fastmath<contract>}
+  // CHECK: llvm.select [[ARG0]], [[ARG1]], [[ARG2]]
   %0 = pop.simd.select %arg0, %arg1, %arg2 : !kgen.simd<4, f32>
   kgen.return %0 : !kgen.simd<4, f32>
 }
@@ -390,7 +390,7 @@ kgen.func @memcpy_addrspace(%dst: !kgen.pointer<scalar<f32>, 3>, %src: !kgen.poi
 
 // CHECK-LABEL: @pop_select
 kgen.func @pop_select(%arg0: !kgen.scalar<bool>, %arg1: !kgen.struct<(f32)>, %arg2: !kgen.struct<(f32)>) -> !kgen.struct<(f32)> {
-  // CHECK: llvm.select %{{.*}}, {{.*}}, {{.*}} {fastmathFlags = #llvm.fastmath<contract>} : i1, !llvm.struct<(f32)>
+  // CHECK: llvm.select %{{.*}}, {{.*}}, {{.*}} : i1, !llvm.struct<(f32)>
   %0 = pop.select %arg0, %arg1, %arg2 : !kgen.struct<(f32)>
   kgen.return %0 : !kgen.struct<(f32)>
 }
@@ -481,7 +481,7 @@ kgen.func @cmp_sint(%lhs: !kgen.scalar<si32>, %rhs: !kgen.scalar<si32>) {
 kgen.func @cmp_fp(%lhs: !kgen.scalar<f32>, %rhs: !kgen.scalar<f32>) {
   // CHECK-DAG: [[ARG0:%.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK-DAG: [[ARG1:%.*]] = builtin.unrealized_conversion_cast %arg1
-  // CHECK: llvm.fcmp "oeq" [[ARG0]], [[ARG1]] {fastmathFlags = #llvm.fastmath<contract>}
+  // CHECK: llvm.fcmp "oeq" [[ARG0]], [[ARG1]]
   %0 = pop.cmp eq(%lhs, %rhs) : !kgen.scalar<f32>
   // CHECK: llvm.fcmp "one"
   %1 = pop.cmp ne(%lhs, %rhs) : !kgen.scalar<f32>

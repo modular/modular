@@ -152,6 +152,11 @@ void KGEN::buildElaborateModulePipeline(
 
 void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
                                         const CompilationOptions &options) {
+  // Apply the `-fp-mode` fast-math policy on the freshly-elaborated POP ops,
+  // before any lowering reads their flags.
+  pm.addPass(
+      createSetFastMathFlags(SetFastMathFlagsOptions{options.fpMode.contract}));
+
   // Verify elaborated IR; target-specific checks run later in the lowering
   // pipeline.
   pm.addPass(createKGENVerifierPass(

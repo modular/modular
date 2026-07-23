@@ -215,6 +215,12 @@ def POP_AddOp : POP_ArithmeticBinaryOp<"add", [Commutative, Pure,
     %c = pop.add %a, %b : !kgen.simd<size, type>
     ```
   }];
+  // `contract` by default (like `pop.mul`) so `a + b*c` can fuse into an FMA;
+  // the `-fp-mode` pass clears it for `contract=off`.
+  let arguments = (ins UnboundOrIndexOrArithmeticSIMD:$lhs,
+                       UnboundOrIndexOrArithmeticSIMD:$rhs,
+                       DefaultValuedAttr<POP_FastmathFlagsAttr,
+                         "FastmathFlags::contract">:$fastmathFlags);
 }
 
 //===----------------------------------------------------------------------===//
@@ -236,6 +242,12 @@ def POP_SubOp : POP_ArithmeticBinaryOp<"sub", [Pure,
     %c = pop.sub %a, %b : !kgen.simd<size, type>
     ```
   }];
+  // `contract` by default (like `pop.mul`) so `a*b - c` can fuse into an FMA;
+  // the `-fp-mode` pass clears it for `contract=off`.
+  let arguments = (ins UnboundOrIndexOrArithmeticSIMD:$lhs,
+                       UnboundOrIndexOrArithmeticSIMD:$rhs,
+                       DefaultValuedAttr<POP_FastmathFlagsAttr,
+                         "FastmathFlags::contract">:$fastmathFlags);
 }
 
 //===----------------------------------------------------------------------===//
