@@ -1253,6 +1253,54 @@ struct List[T: Movable, /](
             earlier_idx += 1
             later_idx -= 1
 
+    def try_index(
+        ref self,
+        value: Self.T,
+        start: Int = 0,
+        stop: Optional[Int] = None,
+    ) -> Optional[Int] where conforms_to(Self.T, Equatable):
+        """Returns the index of the first occurrence of a value in a list
+        restricted by the range given the start and stop bounds.
+
+        Args:
+            value: The value to search for.
+            start: The starting index of the search, treated as a slice index
+                (defaults to 0).
+            stop: The ending index of the search, treated as a slice index
+                (defaults to None, which means the end of the list).
+
+        Returns:
+            The index of the first occurrence of the value in the list or `None` if the value is not found.
+
+        Examples:
+
+        ```mojo
+        var my_list = [1, 2, 3]
+        print(my_list.index(2)) # prints `1`
+        ```
+        """
+        var start_normalized = start
+
+        var stop_normalized: Int
+        if stop is None:
+            # Default end
+            stop_normalized = len(self)
+        else:
+            stop_normalized = stop.value()
+
+        if start_normalized < 0:
+            start_normalized += len(self)
+        if stop_normalized < 0:
+            stop_normalized += len(self)
+
+        start_normalized = _clip(start_normalized, 0, len(self))
+        stop_normalized = _clip(stop_normalized, 0, len(self))
+
+        for i in range(start_normalized, stop_normalized):
+            if self[i] == value:
+                return i
+        return None
+
     def index(
         ref self,
         value: Self.T,
@@ -1282,27 +1330,10 @@ struct List[T: Movable, /](
         print(my_list.index(2)) # prints `1`
         ```
         """
-        var start_normalized = start
-
-        var stop_normalized: Int
-        if stop is None:
-            # Default end
-            stop_normalized = len(self)
-        else:
-            stop_normalized = stop.value()
-
-        if start_normalized < 0:
-            start_normalized += len(self)
-        if stop_normalized < 0:
-            stop_normalized += len(self)
-
-        start_normalized = _clip(start_normalized, 0, len(self))
-        stop_normalized = _clip(stop_normalized, 0, len(self))
-
-        for i in range(start_normalized, stop_normalized):
-            if self[i] == value:
-                return i
-        raise "ValueError: Given element is not in list"
+        var result = self.try_index(value, start=start, stop=stop)
+        if result is None:
+            raise "ValueError: Given element is not in list"
+        return result.value()
 
     def clear(
         mut self,

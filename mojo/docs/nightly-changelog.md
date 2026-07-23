@@ -434,6 +434,10 @@ This version is still a work in progress.
   [Call a Mojo shared library from C or C++](/docs/tools/compilation/#call-a-mojo-shared-library-from-c-or-c)
   for details.
 
+- Add `List.try_index` to allow getting the index of a value in a list
+  (if present), without raising. This is a comptime-compatible version of
+  the functionality.
+
 - When an unhandled error propagates out of `main` and no stack trace was
   collected, Mojo now prints a hint to set
   `MODULAR_DEBUG=stack-trace-on-error` to enable stack trace collection,
