@@ -82,8 +82,9 @@ using namespace M::KGEN;
 static SimplifyCFGOptions
 adjustSimplifyCFGOptions(SimplifyCFGOptions simplifyCFGOptions,
                          const CompilationOptions &options) {
-  const TargetBackend *backend =
+  M::ErrorOr<const TargetBackend *> backendOr =
       TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
+  const TargetBackend *backend = backendOr.isError() ? nullptr : *backendOr;
   return backend ? backend->adjustSimplifyCFGOptions(simplifyCFGOptions)
                  : simplifyCFGOptions;
 }
@@ -99,8 +100,9 @@ static OptimizationLevel getOptimizationLevel(unsigned level) {
 
 static void addSanitizers(ModulePassManager &modulePassManager,
                           const CompilationOptions &options) {
-  const TargetBackend *backend =
+  M::ErrorOr<const TargetBackend *> backendOr =
       TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
+  const TargetBackend *backend = backendOr.isError() ? nullptr : *backendOr;
   if (backend) {
     backend->addSanitizers(modulePassManager, options);
   } else {
@@ -558,8 +560,9 @@ static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
 ModulePassManager
 M::KGEN::buildLLVMOptimizationPipeline(PassBuilder &passBuilder,
                                        const CompilationOptions &options) {
-  const TargetBackend *backend =
+  M::ErrorOr<const TargetBackend *> backendOr =
       TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
+  const TargetBackend *backend = backendOr.isError() ? nullptr : *backendOr;
 
   // A backend may fully own its pipeline (e.g. Metal's AIR legalization),
   // replacing the standard optimization pipeline below.

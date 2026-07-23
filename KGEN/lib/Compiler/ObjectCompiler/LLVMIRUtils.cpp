@@ -313,8 +313,9 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   // The target backend, used to recognize shared-memory globals (which aren't
   // split anchors). Null for unregistered targets, in which case nothing is
   // treated as shared memory.
-  const TargetBackend *backend =
+  ErrorOr<const TargetBackend *> backendOr =
       TargetBackendRegistry::get().lookup(mainModule->getTargetTriple());
+  const TargetBackend *backend = backendOr.isError() ? nullptr : *backendOr;
 
   // NOTE: The visitation of globals then functions has to line up with
   // `readAndMaterializeDependencies`.

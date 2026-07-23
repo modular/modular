@@ -26,10 +26,13 @@ using namespace DebugInfo;
 /// applicable.
 static std::string getKGENDTypeAsString(TargetInfoAttr targetInfo,
                                         KGENDType dtype) {
-  if (const TargetLowering *lowering =
-          TargetLoweringRegistry::get().lookup(targetInfo.getTriple()))
-    if (std::optional<std::string> name = lowering->getDTypeDebugName(dtype))
+  if (ErrorOr<const TargetLowering *> loweringOr =
+          TargetLoweringRegistry::get().lookup(targetInfo.getTriple());
+      !loweringOr.isError()) {
+    if (std::optional<std::string> name =
+            (*loweringOr)->getDTypeDebugName(dtype))
       return *name;
+  }
   return DebugInfoEncoding::getKGENDTypeAsString(dtype);
 }
 
@@ -53,11 +56,13 @@ static DIType buildDebugTypeFromDType(MLIRContext *ctx,
                                       TargetInfoAttr targetInfo, uint8_t dtype,
                                       size_t indexWidth) {
   // Check if the target implements a specialized debug type for this dtype.
-  if (const TargetLowering *lowering =
-          TargetLoweringRegistry::get().lookup(targetInfo.getTriple()))
+  if (ErrorOr<const TargetLowering *> loweringOr =
+          TargetLoweringRegistry::get().lookup(targetInfo.getTriple());
+      !loweringOr.isError()) {
     if (DIType specializedResult =
-            lowering->buildDebugTypeForDType(ctx, KGENDType(dtype)))
+            (*loweringOr)->buildDebugTypeForDType(ctx, KGENDType(dtype)))
       return specializedResult;
+  }
 
   // Process various builtin dtypes.
   switch (dtype) {

@@ -646,3 +646,28 @@ std::optional<std::filesystem::path> M::findModularFile(StringRef fileName) {
   // We did find it, return that path.
   return *found / fileName.str();
 }
+
+#if defined(__APPLE__)
+static constexpr llvm::StringLiteral kSharedLibExt = ".dylib";
+#else
+static constexpr llvm::StringLiteral kSharedLibExt = ".so";
+#endif
+
+bool M::isMaxInstalled() {
+  ErrorOr<Config> configOr = Config::open();
+  if (configOr.isError()) {
+    // probably won't happen, return false anyways
+    return false;
+  }
+
+  std::optional<StringRef> packageRoot =
+      configOr->maybeGetValue("max.package_root");
+  if (packageRoot.has_value()) {
+    return std::filesystem::exists(
+        std::filesystem::path(packageRoot.value().str()) / "lib" /
+        ("libmax" + kSharedLibExt.str()));
+  } else {
+    // No value, so probably in bazel, pretend we have MAX.
+    return true;
+  }
+}

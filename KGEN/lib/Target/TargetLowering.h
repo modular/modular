@@ -246,6 +246,15 @@ public:
   /// as specially-named struct types). The default returns a null type.
   virtual DebugInfo::DIType buildDebugTypeForDType(mlir::MLIRContext *ctx,
                                                    KGENDType dtype) const;
+
+protected:
+  /// Check if the specific Target is a base target.
+  /// This is needed to gate max only targets for now.
+  virtual bool isBaseTarget() const = 0;
+
+private:
+  // The registry reads `isBaseTarget()` to gate accelerator targets on MAX.
+  friend class TargetLoweringRegistry;
 };
 
 /// Registry of `TargetLowering`s, dispatched by triple. Lowering-stage
@@ -256,8 +265,9 @@ public:
 
   /// Registers a lowering, taking ownership.
   void add(std::unique_ptr<TargetLowering> lowering);
-  /// Returns the lowering matching `triple`, or null.
-  const TargetLowering *lookup(const llvm::Triple &triple) const;
+  /// Returns the lowering for `triple` (never null on success). Errors when
+  /// `triple` is an accelerator without MAX, or none is registered.
+  ErrorOr<const TargetLowering *> lookup(const llvm::Triple &triple) const;
   llvm::ArrayRef<std::unique_ptr<TargetLowering>> targets() const {
     return Targets;
   }

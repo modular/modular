@@ -35,6 +35,10 @@ public:
   ErrorOr<BufferRef> createArchive(llvm::MutableArrayRef<BufferRef> objects,
                                    llvm::StringRef moduleName,
                                    EmitContext &ctx) const override;
+
+protected:
+  // bast target that is always registered
+  bool isBaseTarget() const override { return true; }
 };
 
 } // namespace M::KGEN

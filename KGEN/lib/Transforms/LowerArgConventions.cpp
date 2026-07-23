@@ -80,9 +80,11 @@ static Type lowerPointerType(Type type, TargetInfoAttr target,
 
   // Don't promote a pointer whose element this target keeps in memory form.
   if (target) {
-    if (const TargetLowering *lowering =
-            TargetLoweringRegistry::get().lookup(target.getTriple());
-        lowering && lowering->lowerKernelArgToMemory(elType))
+    ErrorOr<const TargetLowering *> loweringOr =
+        TargetLoweringRegistry::get().lookup(target.getTriple());
+    const TargetLowering *lowering =
+        loweringOr.isError() ? nullptr : *loweringOr;
+    if (lowering && lowering->lowerKernelArgToMemory(elType))
       return {};
   }
 
@@ -248,10 +250,12 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
 
   Type type = transform->typeOfValueAt(operandIndex);
   ArgConvention convention = conventions[argConventionIndex];
-  const TargetLowering *lowering =
-      transform->target
-          ? TargetLoweringRegistry::get().lookup(transform->target.getTriple())
-          : nullptr;
+  const TargetLowering *lowering = nullptr;
+  if (transform->target) {
+    ErrorOr<const TargetLowering *> loweringOr =
+        TargetLoweringRegistry::get().lookup(transform->target.getTriple());
+    lowering = loweringOr.isError() ? nullptr : *loweringOr;
+  }
 
   // Apply any extra indirection this target requires for a register argument.
   if (lowering) {

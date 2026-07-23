@@ -427,7 +427,9 @@ LogicalResult LegalizePOPOperations::legalizeOperation(Operation *op) {
 void LegalizePOPOperations::runOnOperation() {
   Operation *op = getOperation();
   target = lookupTargetInfo(op);
-  lowering = TargetLoweringRegistry::get().lookup(target.getTriple());
+  ErrorOr<const TargetLowering *> loweringOr =
+      TargetLoweringRegistry::get().lookup(target.getTriple());
+  lowering = loweringOr.isError() ? nullptr : *loweringOr;
 
   initializeTargetLegalConversions();
 

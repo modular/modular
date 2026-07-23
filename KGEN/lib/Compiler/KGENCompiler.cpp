@@ -647,8 +647,9 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       // If saving offload kernel output files, request the appropriate emission
       // kind (ASM or LLVM IR) for all kernels.
       if (!compilationOptions.offloadOutputPrefix.empty()) {
-        const TargetTraits *traits =
+        ErrorOr<const TargetTraits *> traitsOr =
             TargetTraitsRegistry::get().lookup(target.getTriple());
+        const TargetTraits *traits = traitsOr.isError() ? nullptr : *traitsOr;
         // Targets that don't emit a standalone offload object skip OBJECT; the
         // emitted file is aliased under the OBJECT key below so
         // rewriteCompileOffloadOp still finds a value to embed.
@@ -720,12 +721,11 @@ static ElaboratorCompileOffloadRetType compileOffloads(
               kind == compilationOptions.offloadOutputKind) {
             mlir::StringAttr rawName = iter->second.nameForFile;
             llvm::Triple triple(target.getTripleStr());
-            const TargetTraits *traits =
+            ErrorOr<const TargetTraits *> traitsOr =
                 TargetTraitsRegistry::get().lookup(triple);
-            if (!traits)
-              return Error(Twine("no target traits registered for target '") +
-                           target.getTripleStr() +
-                           "'; this target is not supported by this build");
+            if (traitsOr.isError())
+              return Error(traitsOr.getError());
+            const TargetTraits *traits = *traitsOr;
             llvm::StringRef ext =
                 compilationOptions.offloadOutputKind == EmitAs::LLVM
                     ? traits->getLLVMExtension()
@@ -750,8 +750,9 @@ static ElaboratorCompileOffloadRetType compileOffloads(
         // OBJECT; alias the emitted file (ASM or LLVM IR) under the OBJECT key
         // so rewriteCompileOffloadOp, which always looks up contents[OBJECT],
         // still finds a value to embed in the host module.
-        const TargetTraits *traits =
+        ErrorOr<const TargetTraits *> traitsOr =
             TargetTraitsRegistry::get().lookup(target.getTriple());
+        const TargetTraits *traits = traitsOr.isError() ? nullptr : *traitsOr;
         if (!compilationOptions.offloadOutputPrefix.empty() && traits &&
             !traits->emitsOffloadObjectFile()) {
           EmitAs fileKind = compilationOptions.offloadOutputKind;

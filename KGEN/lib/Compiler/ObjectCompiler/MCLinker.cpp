@@ -302,8 +302,9 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
   bool hasOneSplit =
       symbolAndMCInfos.size() == 1 && symbolAndMCInfos[0]->mcInfos.size() == 1;
 
-  const TargetBackend *backend =
+  ErrorOr<const TargetBackend *> backendOr =
       TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
+  const TargetBackend *backend = backendOr.isError() ? nullptr : *backendOr;
 
   llvm::Module *oneSplitModule = nullptr;
 

@@ -145,6 +145,10 @@ protected:
     return std::nullopt;
   }
 
+  /// Check if the specific Target is a base target.
+  /// This is needed to gate max only targets for now.
+  virtual bool isBaseTarget() const = 0;
+
 public:
   /// Whether the linked module's functions must be restored to their original
   /// order after MCLinker reorders them (needed when codegen emits function
@@ -259,6 +263,8 @@ public:
   virtual ErrorOr<BufferRef>
   createArchive(llvm::MutableArrayRef<BufferRef> objects,
                 llvm::StringRef moduleName, EmitContext &ctx) const = 0;
+
+  friend class TargetBackendRegistry;
 };
 
 /// Registry of `TargetBackend`s, dispatched by triple.
@@ -268,8 +274,9 @@ public:
 
   /// Registers a backend, taking ownership.
   void add(std::unique_ptr<TargetBackend> backend);
-  /// Returns the backend matching `triple`, or null.
-  const TargetBackend *lookup(const llvm::Triple &triple) const;
+
+  /// Returns the backend for `triple` (never null on success).
+  ErrorOr<const TargetBackend *> lookup(const llvm::Triple &triple) const;
   llvm::ArrayRef<std::unique_ptr<TargetBackend>> backends() const {
     return Backends;
   }

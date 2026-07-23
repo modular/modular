@@ -30,11 +30,11 @@ ErrorOr<BufferRef> HostBackend::emitAssembly(llvm::Module &module,
   }
 
   if (!ctx.options.saveTempsPrefix.empty()) {
-    const TargetTraits *traits = TargetTraitsRegistry::get().lookup(
+    ErrorOr<const TargetTraits *> traitsOr = TargetTraitsRegistry::get().lookup(
         llvm::Triple(ctx.options.targetTriple));
-    if (!traits)
-      return Error(Twine("no target traits registered for target '") +
-                   ctx.options.targetTriple + "'");
+    if (traitsOr.isError())
+      return Error(traitsOr.getError());
+    const TargetTraits *traits = *traitsOr;
     StringRef toEmit(buf->getBufferStart(), buf->getBufferSize());
     if (mlir::failed(writeBytesToTempWithHash(ctx.options.saveTempsPrefix,
                                               traits->getAsmExtension().str(),

@@ -16,6 +16,8 @@
 #ifndef KGEN_TARGET_TARGETTRAITS_H
 #define KGEN_TARGET_TARGETTRAITS_H
 
+#include "Support/ErrorOr.h"
+
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -46,9 +48,9 @@ public:
 
   /// Resolves `triple` to the concrete traits that describe it, or null if
   /// these do not. The default returns `this` when `matches`; a dispatcher that
-  /// owns nested traits (e.g. one per loaded plugin) overrides this to return
-  /// one of them. The registry prefers a resolution that differs from the
-  /// traits it queried, so a nested traits object takes precedence over a
+  /// owns nested traits overrides this to return one of them.
+  /// The registry prefers a resolution that differs from
+  /// the traits it queried, so a nested traits object takes precedence over a
   /// direct match.
   virtual const TargetTraits *resolve(const llvm::Triple &triple) const {
     return matches(triple) ? this : nullptr;
@@ -108,6 +110,15 @@ public:
   virtual llvm::ArrayRef<AcceleratorArch> supportedAcceleratorArchs() const {
     return {};
   }
+
+protected:
+  /// Check if the specific Target is a base target.
+  /// This is needed to gate max only targets for now.
+  virtual bool isBaseTarget() const = 0;
+
+private:
+  // The registry reads `isBastTarget()` to gate max only targets.
+  friend class TargetTraitsRegistry;
 };
 
 /// Registry of `TargetTraits`, dispatched by triple. Mirrors
@@ -118,8 +129,9 @@ public:
 
   /// Registers a traits object, taking ownership.
   void add(std::unique_ptr<TargetTraits> traits);
-  /// Returns the traits matching `triple`, or null.
-  const TargetTraits *lookup(const llvm::Triple &triple) const;
+
+  /// Returns the traits describing `triple`.
+  ErrorOr<const TargetTraits *> lookup(const llvm::Triple &triple) const;
   llvm::ArrayRef<std::unique_ptr<TargetTraits>> targets() const {
     return Targets;
   }
@@ -130,6 +142,13 @@ private:
 
   std::vector<std::unique_ptr<TargetTraits>> Targets;
 };
+
+/// Errors if not `isBastTarget` and MAX is not installed.
+ErrorOrSuccess requireMaxForAccelerator(bool isMaxOnly);
+
+/// Same gate for a non-empty `--target-accelerator`.
+/// Aborts rather than returns an error.
+void requireMaxForAcceleratorRequest(llvm::StringRef targetAccelerator);
 
 /// Registers `TraitsT` at static-init, e.g.:
 ///   static RegisterTargetTraits<HostTraits> X;
