@@ -85,7 +85,6 @@ def make_pipeline_config(
             quantization_encoding="bfloat16",
             device_specs=device_specs,
         )
-        pipeline_config.model.kv_cache._available_cache_memory = 1024**4  # 1TB
         pipeline_config.model.kv_cache._cache_dtype = DType.bfloat16
         pipeline_config.model._huggingface_config = hf_config
         pipeline_config.model.weight_path = [Path("fake.safetensors")]

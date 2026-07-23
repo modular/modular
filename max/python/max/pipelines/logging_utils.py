@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING, Any
 from max.pipelines.lib.config.model_config import _format_config_entries
 from max.pipelines.lib.registry import PIPELINE_REGISTRY, get_pipeline_for_task
 from max.pipelines.modeling.types.task import PipelineTask
-from max.support.human_readable_formatter import to_human_readable_bytes
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config.config import PipelineConfig
@@ -164,16 +163,10 @@ def log_basic_config(pipeline_config: PipelineConfig) -> None:
     task = arch.task
     pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
-    kv_cache_tasks = {PipelineTask.TEXT_GENERATION}
-
-    memory_str = None
-    if "main" in pipeline_config.models and task in kv_cache_tasks:
-        kv_config = pipeline_config.model.kv_cache
-        if kv_config._available_cache_memory is not None:
-            memory_str = to_human_readable_bytes(
-                kv_config._available_cache_memory
-            )
-
+    # TODO(MXF-517): Redesign this logger to report all useful resolved values
+    # (max_batch_size, cache_memory, ...) together in one place. Some now log
+    # elsewhere (the memory planner logs cache_memory) because those values are
+    # no longer mutated onto the config for this logger to read.
     config_entries: list[tuple[str, Any]] = [
         ("architecture", arch.name),
         ("pipeline", pipeline_class.__name__),
@@ -191,8 +184,6 @@ def log_basic_config(pipeline_config: PipelineConfig) -> None:
             ]
         )
 
-    if memory_str:
-        config_entries.append(("cache_memory", memory_str))
     config_entries.append(
         ("device_graph_capture", pipeline_config.runtime.device_graph_capture)
     )

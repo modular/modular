@@ -58,7 +58,6 @@ from max.pipelines.weights.hf_utils import (
     validate_hf_repo_access,
 )
 from max.pipelines.weights.weight_path_parser import WeightPathParser
-from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import (
     ConfigDict,
     Field,
@@ -1636,14 +1635,6 @@ class MAXModelConfig(MAXModelConfigBase):
                 f"{kv_config.device_memory_utilization:.1%}",
             )
         )
-
-        if kv_config._available_cache_memory is not None:
-            entries.append(
-                (
-                    "available_cache_memory",
-                    to_human_readable_bytes(kv_config._available_cache_memory),
-                )
-            )
 
         for line in _format_config_entries(entries, indent="    "):
             logger.info(line)

@@ -81,13 +81,16 @@ def _max_per_layer_buffer_count(arch_config: ArchConfig) -> int:
 class _MemoryPlan:
     """Result of memory planning for a pipeline.
 
-    Note: ``estimate_memory_footprint`` also mutates ``model_config`` directly
-    (``kv_cache._available_cache_memory``, ``max_length``). Those mutations are
-    the next thing to clean up as part of removing ``resolve()``.
+    Note: ``estimate_memory_footprint`` still mutates ``model_config.max_length``
+    directly; that mutation is the next thing to clean up as part of removing
+    ``resolve()``.
     """
 
     max_batch_size: int
     footprint: int
+    available_cache_memory: int | None = None
+    """Committed KV-cache byte budget; ``None`` when not computed (virtual-device
+    early-outs and non-KV models)."""
 
 
 # Vision encoder cache and paged token KV share the same pre-KV memory pool
@@ -180,6 +183,7 @@ class MemoryEstimator:
         devices: list[Device],
         arch_config: ArchConfig,
         signal_buffer_size: int = 0,
+        available_cache_memory: int | None = None,
     ) -> int | None:
         """Computes the hard upper bound on tokens for a single request.
 
@@ -212,9 +216,8 @@ class MemoryEstimator:
         # ``available_kv_cache_memory()`` (pre-vision) can overcount blocks and clamp
         # ``max_length`` above the physical paged KV capacity, causing runtime
         # InsufficientBlocksError when ``len(tokens)`` reaches ``total_blocks * page_size + 1``.
-        allocated_kv = model_config.kv_cache._available_cache_memory
-        if allocated_kv is not None:
-            kvcache_mem = allocated_kv
+        if available_cache_memory is not None:
+            kvcache_mem = available_cache_memory
         else:
             kvcache_mem = cls.available_kv_cache_memory(
                 model_weights_size,
@@ -265,13 +268,13 @@ class MemoryEstimator:
             max_batch_size = max_batch_size or 1
             if not model_config.max_length:
                 model_config.max_length = arch_config.get_max_seq_len()
-            # Set a large available cache memory value since we're not actually
-            # allocating memory during cross-compilation. Use 1TB as a reasonable
-            # large value that should work for any model.
-            model_config.kv_cache._available_cache_memory = (
-                1024 * 1024 * 1024 * 1024  # 1TB
+            # Report a large cache budget since we're only cross-compiling, not
+            # allocating memory. 1TB works for any model.
+            return _MemoryPlan(
+                max_batch_size=max_batch_size,
+                footprint=0,
+                available_cache_memory=1024 * 1024 * 1024 * 1024,  # 1TB
             )
-            return _MemoryPlan(max_batch_size=max_batch_size, footprint=0)
 
         try:
             free_memory = cls.free_memory(devices)
@@ -357,11 +360,10 @@ class MemoryEstimator:
                 available_kv_cache_memory=available_kv_cache_memory,
             )
 
-            model_config.kv_cache._available_cache_memory = kv_cache_size
-
             return _MemoryPlan(
                 max_batch_size=max_batch_size,
                 footprint=int(total_size),
+                available_cache_memory=kv_cache_size,
             )
 
         if not user_provided_max_length:
@@ -388,7 +390,9 @@ class MemoryEstimator:
             available_kv_cache_memory=available_kv_cache_memory,
         )
 
-        model_config.kv_cache._available_cache_memory = actual_kv_cache_size
+        # Committed KV byte budget (captured before the OOM-fit search below may
+        # reassign ``actual_kv_cache_size``); threaded to consumers on the plan.
+        available_cache_memory = actual_kv_cache_size
 
         total_size += actual_kv_cache_size
         # If the model is too large to fit in memory, and the user did not
@@ -445,7 +449,9 @@ class MemoryEstimator:
                 )
 
         return _MemoryPlan(
-            max_batch_size=max_batch_size, footprint=int(total_size)
+            max_batch_size=max_batch_size,
+            footprint=int(total_size),
+            available_cache_memory=available_cache_memory,
         )
 
     @classmethod

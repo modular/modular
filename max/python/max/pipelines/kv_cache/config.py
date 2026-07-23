@@ -197,10 +197,6 @@ class KVCacheConfig(ConfigFileModel):
     )
     """Optional 32-byte hex seed for sha256/sha256_64 hashing."""
 
-    # Need to use `Optional` here to support `click` with 3.9.
-    _available_cache_memory: int | None = PrivateAttr(default=None)
-    """The amount of available cache memory in bytes. This should only be set by internal code."""
-
     _config_file_section_name: str = PrivateAttr(default="kv_cache_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
