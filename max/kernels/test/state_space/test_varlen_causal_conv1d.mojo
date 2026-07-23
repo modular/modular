@@ -134,9 +134,9 @@ def run_varlen_causal_conv1d_fwd[
     )
 
     # Initialize input data
-    rand[dtype](x_tt.ptr, dim * total_seqlen)
-    rand[dtype](weight_tt.ptr, dim * width)
-    rand[dtype](bias_tt.ptr, dim)
+    rand[dtype](x_tt._storage, dim * total_seqlen)
+    rand[dtype](weight_tt._storage, dim * width)
+    rand[dtype](bias_tt._storage, dim)
 
     var x_buf = x_tt
     var weight_buf = weight_tt
@@ -242,8 +242,8 @@ def run_varlen_causal_conv1d_fwd[
     var flattened_size = dim * total_seqlen
     for i in range(flattened_size):
         assert_almost_equal(
-            output_tt.ptr[i],
-            output_ref_tt.ptr[i],
+            output_tt._storage[i],
+            output_ref_tt._storage[i],
             rtol=rtol,
         )
 
@@ -332,14 +332,14 @@ def run_varlen_causal_conv1d_update[
     )
 
     # Initialize input data
-    rand[dtype](x_tt2.ptr, batch * dim * seqlen)
-    rand[dtype](conv_state_tt2.ptr, batch * dim * state_len)
-    rand[dtype](weight_tt2.ptr, dim * width)
-    rand[dtype](bias_tt2.ptr, dim)
+    rand[dtype](x_tt2._storage, batch * dim * seqlen)
+    rand[dtype](conv_state_tt2._storage, batch * dim * state_len)
+    rand[dtype](weight_tt2._storage, dim * width)
+    rand[dtype](bias_tt2._storage, dim)
 
     # Copy conv_state for reference
     for i in range(batch * dim * state_len):
-        conv_state_ref_tt.ptr[i] = conv_state_tt2.ptr[i]
+        conv_state_ref_tt._storage[i] = conv_state_tt2._storage[i]
 
     var x_buf = x_tt2
     var weight_buf = weight_tt2
@@ -492,8 +492,8 @@ def run_varlen_causal_conv1d_update[
     var flattened_size = batch * dim * seqlen
     for i in range(flattened_size):
         assert_almost_equal(
-            output_tt2.ptr[i],
-            output_ref_tt.ptr[i],
+            output_tt2._storage[i],
+            output_ref_tt._storage[i],
             rtol=rtol,
         )
 
@@ -501,8 +501,8 @@ def run_varlen_causal_conv1d_update[
     var conv_state_size = batch * dim * state_len
     for i in range(conv_state_size):
         assert_almost_equal(
-            conv_state_tt2.ptr[i],
-            conv_state_ref_tt.ptr[i],
+            conv_state_tt2._storage[i],
+            conv_state_ref_tt._storage[i],
             rtol=rtol,
         )
 
@@ -556,7 +556,7 @@ def run_varlen_causal_conv1d_states[
     )
 
     # Initialize input data
-    rand[dtype](x_tt3.ptr, total_tokens * dim)
+    rand[dtype](x_tt3._storage, total_tokens * dim)
 
     var x_buf = x_tt3
     var cu_seqlens_buf = cu_seqlens_tt
@@ -617,8 +617,8 @@ def run_varlen_causal_conv1d_states[
     var flattened_size = batch * dim * state_len
     for i in range(flattened_size):
         assert_almost_equal(
-            states_tt.ptr[i],
-            states_ref_tt.ptr[i],
+            states_tt._storage[i],
+            states_ref_tt._storage[i],
             rtol=rtol,
         )
 
