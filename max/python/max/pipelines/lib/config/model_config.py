@@ -1466,23 +1466,6 @@ class MAXModelConfig(MAXModelConfigBase):
         """
         return self.device_specs[0]
 
-    def create_kv_cache_config(self, **kv_cache_kwargs) -> None:
-        """Creates and sets the KV cache configuration with the given parameters.
-
-        Creates a new :class:`~max.pipelines.lib.config.KVCacheConfig` from the provided keyword arguments
-        and automatically sets the cache_dtype based on the model's quantization
-        encoding (or any explicit override in kv_cache_kwargs).
-
-        Args:
-            **kv_cache_kwargs: Keyword arguments to pass to the :class:`~max.pipelines.lib.config.KVCacheConfig` constructor.
-                Common options include:
-                - kv_cache_page_size: Number of tokens per page for paged cache
-                - enable_prefix_caching: Whether to enable prefix caching
-                - device_memory_utilization: Fraction of device memory to use
-                - cache_dtype: Override for the cache data type
-        """
-        self.kv_cache = KVCacheConfig(**kv_cache_kwargs)
-
     def log_model_info(self, role: str) -> None:
         """Logs model configuration information for this config.
 

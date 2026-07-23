@@ -635,7 +635,9 @@ class PipelineConfig(ConfigFileModel):
 
         # Apply KV cache config to main model
         if kv_cache_kwargs and "main" in self.models:
-            self.model.create_kv_cache_config(**kv_cache_kwargs)
+            self.models = self.models.with_override(
+                "main", kv_cache=KVCacheConfig(**kv_cache_kwargs)
+            )
 
         # Extract draft model kwargs and add via with_override
         draft_kwargs = PipelineConfig._extract_kwargs_for_config(
@@ -655,10 +657,10 @@ class PipelineConfig(ConfigFileModel):
             # "draft" overrides are applied after inheritance so explicit
             # user intent wins over copied target-model defaults.
             draft_kwargs.update(component_overrides.get("draft", {}))
+            if kv_cache_kwargs:
+                draft_kwargs["kv_cache"] = KVCacheConfig(**kv_cache_kwargs)
 
             draft_config = MAXModelConfig(**draft_kwargs)
-            if kv_cache_kwargs:
-                draft_config.create_kv_cache_config(**kv_cache_kwargs)
             self.models = self.models.with_override(
                 "draft", config=draft_config
             )
