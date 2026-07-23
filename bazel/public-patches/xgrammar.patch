@@ -170,7 +170,7 @@ index 5cf140d..8426c2e 100644
  }
  
 diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
-index da8b516..7baa330 100644
+index da8b516..3fb1593 100644
 --- a/cpp/json_schema_converter.cc
 +++ b/cpp/json_schema_converter.cc
 @@ -149,6 +149,7 @@ class SchemaParser {
@@ -433,7 +433,7 @@ index da8b516..7baa330 100644
    IntegerSpec spec;
  
    auto checkAndConvertIntegerBound = [](const picojson::value& value
-@@ -462,7 +649,9 @@ Result<IntegerSpec, SchemaError> SchemaParser::ParseInteger(const picojson::obje
+@@ -462,14 +649,24 @@ Result<IntegerSpec, SchemaError> SchemaParser::ParseInteger(const picojson::obje
  }
  
  Result<NumberSpec, SchemaError> SchemaParser::ParseNumber(const picojson::object& schema) {
@@ -443,8 +443,67 @@ index da8b516..7baa330 100644
 +  }
    NumberSpec spec;
  
-   auto getDouble = [](const picojson::value& value) -> Result<double, SchemaError> {
-@@ -560,7 +749,18 @@ Result<NullSpec, SchemaError> SchemaParser::ParseNull(const picojson::object&) {
+-  auto getDouble = [](const picojson::value& value) -> Result<double, SchemaError> {
++  auto getDouble = [this](const picojson::value& value) -> Result<double, SchemaError> {
+     if (!value.is<double>() && !value.is<int64_t>()) {
+       return ResultErr<SchemaError>(SchemaErrorType::kInvalidSchema, "Value must be a number");
+     }
+-    return ResultOk<double>(value.get<double>());
++    double d = value.get<double>();
++    static const double kMaxEnforceable =
++        static_cast<double>(std::numeric_limits<int64_t>::max());
++    if (config_.reject_unsupported && std::abs(d) >= kMaxEnforceable) {
++      return ResultErr<SchemaError>(
++          SchemaErrorType::kUnsatisfiableSchema, "numeric bound out of enforceable range"
++      );
++    }
++    return ResultOk<double>(d);
+   };
+ 
+   if (schema.count("minimum")) {
+@@ -521,10 +718,39 @@ Result<NumberSpec, SchemaError> SchemaParser::ParseNumber(const picojson::object
+   return ResultOk(std::move(spec));
+ }
+ 
++static bool IsSupportedStringFormat(const std::string& format) {
++  static const std::unordered_set<std::string> kSupported = {
++      "email",
++      "date",
++      "time",
++      "date-time",
++      "duration",
++      "ipv4",
++      "ipv6",
++      "hostname",
++      "uuid",
++      "uri",
++      "uri-reference",
++      "uri-template",
++      "json-pointer",
++      "relative-json-pointer",
++  };
++  return kSupported.count(format) > 0;
++}
++
+ Result<StringSpec, SchemaError> SchemaParser::ParseString(const picojson::object& schema) {
+   StringSpec spec;
+-  if (schema.count("format")) spec.format = schema.at("format").get<std::string>();
+-  if (schema.count("pattern")) spec.pattern = schema.at("pattern").get<std::string>();
++  if (schema.count("format")) {
++    spec.format = schema.at("format").get<std::string>();
++    if (config_.reject_unsupported && !IsSupportedStringFormat(*spec.format)) {
++      return ResultErr<SchemaError>(
++          SchemaErrorType::kUnsatisfiableSchema, "unsupported string format: " + *spec.format
++      );
++    }
++  }
++  if (schema.count("pattern")) {
++    spec.pattern = schema.at("pattern").get<std::string>();
++  }
+   if (schema.count("minLength")) {
+     if (!schema.at("minLength").is<int64_t>()) {
+       return ResultErr<SchemaError>(
+@@ -560,7 +786,18 @@ Result<NullSpec, SchemaError> SchemaParser::ParseNull(const picojson::object&) {
  }
  
  Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object& schema) {
@@ -464,7 +523,7 @@ index da8b516..7baa330 100644
    ArraySpec spec;
  
    if (schema.count("prefixItems")) {
-@@ -615,7 +815,12 @@ Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object&
+@@ -615,7 +852,12 @@ Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object&
        if (items_result.IsErr()) return ResultErr(std::move(items_result).UnwrapErr());
        spec.additional_items = std::move(items_result).Unwrap();
      }
@@ -478,7 +537,7 @@ index da8b516..7baa330 100644
      spec.allow_additional_items = true;
      spec.additional_items = SchemaSpec::Make(AnySpec{}, "", "any");
    } else {
-@@ -684,6 +889,15 @@ Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object&
+@@ -684,6 +926,15 @@ Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object&
  Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object& schema) {
    ObjectSpec spec;
  
@@ -494,7 +553,7 @@ index da8b516..7baa330 100644
    if (schema.count("properties")) {
      if (!schema.at("properties").is<picojson::object>()) {
        return ResultErr<SchemaError>(
-@@ -692,21 +906,24 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+@@ -692,21 +943,24 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
      }
      auto properties_obj = schema.at("properties").get<picojson::object>();
      for (const auto& key : properties_obj.ordered_keys()) {
@@ -529,7 +588,35 @@ index da8b516..7baa330 100644
    if (schema.count("patternProperties")) {
      if (!schema.at("patternProperties").is<picojson::object>()) {
        return ResultErr<SchemaError>(
-@@ -740,7 +957,8 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+@@ -714,6 +968,27 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+       );
+     }
+     auto pattern_props = schema.at("patternProperties").get<picojson::object>();
++    // A single key can match more than one pattern, requiring the intersection
++    // of all matching subschemas. xgrammar applies only one, silently dropping
++    // the others' constraints, so reject multiple patterns under
++    // reject_unsupported rather than fail open.
++    if (config_.reject_unsupported && pattern_props.ordered_keys().size() > 1) {
++      return ResultErr<SchemaError>(
++          SchemaErrorType::kUnsatisfiableSchema,
++          "unsupported: multiple simultaneous patternProperties patterns"
++      );
++    }
++    // Named `properties` coexisting with `patternProperties` needs per-key
++    // schema intersection: a declared key can also match a pattern (or the
++    // additionalProperties override), so its declared value schema must be
++    // intersected with every matching pattern's schema. xgrammar's object
++    // grammar has no intersection. Reject rather than fail open.
++    if (config_.reject_unsupported && schema.count("properties")) {
++      return ResultErr<SchemaError>(
++          SchemaErrorType::kUnsatisfiableSchema,
++          "unsupported: properties combined with patternProperties"
++      );
++    }
+     for (const auto& key : pattern_props.ordered_keys()) {
+       auto prop_result = Parse(pattern_props.at(key), "pattern_prop");
+       if (prop_result.IsErr()) return ResultErr(std::move(prop_result).UnwrapErr());
+@@ -740,7 +1015,8 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
      spec.property_names = std::move(prop_names_result).Unwrap();
    }
  
@@ -539,7 +626,7 @@ index da8b516..7baa330 100644
    if (schema.count("additionalProperties")) {
      auto add_props = schema.at("additionalProperties");
      if (add_props.is<bool>()) {
-@@ -911,13 +1129,58 @@ Result<AnyOfSpec, SchemaError> SchemaParser::ParseAnyOf(const picojson::object&
+@@ -911,13 +1187,58 @@ Result<AnyOfSpec, SchemaError> SchemaParser::ParseAnyOf(const picojson::object&
          SchemaErrorType::kInvalidSchema, std::string(anyof_key) + " must be an array"
      );
    }
@@ -599,7 +686,7 @@ index da8b516..7baa330 100644
    return ResultOk(std::move(spec));
  }
  
-@@ -928,6 +1191,13 @@ Result<AllOfSpec, SchemaError> SchemaParser::ParseAllOf(const picojson::object&
+@@ -928,6 +1249,13 @@ Result<AllOfSpec, SchemaError> SchemaParser::ParseAllOf(const picojson::object&
    }
    int idx = 0;
    for (const auto& sub_schema : schema.at("allOf").get<picojson::array>()) {
@@ -613,7 +700,36 @@ index da8b516..7baa330 100644
      auto sub_result = Parse(sub_schema, "all_" + std::to_string(idx));
      if (sub_result.IsErr()) return ResultErr(std::move(sub_result).UnwrapErr());
      spec.schemas.push_back(std::move(sub_result).Unwrap());
-@@ -3328,7 +3598,8 @@ std::string JSONSchemaToEBNF(
+@@ -1500,14 +1828,14 @@ std::string JSONSchemaConverter::GenerateString(
+     auto regex_pattern = JSONFormatToRegexPattern(format);
+ 
+     if (regex_pattern.has_value()) {
+-      std::string converted_regex = RegexToEBNF(regex_pattern.value(), false);
++      std::string converted_regex = RegexToEBNF(regex_pattern.value(), false, R"(\"\\\x00-\x1F)");
+       return "\"\\\"\" " + converted_regex + " \"\\\"\"";
+     }
+   }
+ 
+   // Check for pattern
+   if (spec.pattern.has_value()) {
+-    std::string converted_regex = RegexToEBNF(*spec.pattern, false);
++    std::string converted_regex = RegexToEBNF(*spec.pattern, false, R"(\"\\\x00-\x1F)");
+     return "\"\\\"\" " + converted_regex + " \"\\\"\"";
+   }
+ 
+@@ -2391,7 +2719,10 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
+         ")";
+     m["email"] = "^(" + dot_string + "|" + quoted_string + ")@" + domain + "$";
+ 
+-    m["date"] = "^(\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[1-2]\\d|3[01]))$";
++    m["date"] =  // NB: Feb arm accepts day 29 every year (no leap check in regex)
++        "^(\\d{4}-((0[13578]|1[02])-(0[1-9]|[12]\\d|3[01])"
++        "|(0[469]|11)-(0[1-9]|[12]\\d|30)"
++        "|02-(0[1-9]|1\\d|2[0-9])))$";
+     m["time"] =
+         "^([01]\\d|2[0-3]):[0-5]\\d:([0-5]\\d|60)(\\.\\d+)?(Z|[+-]([01]\\d|2[0-3]):[0-5]\\d)$";
+     m["date-time"] =
+@@ -3328,7 +3659,8 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
@@ -623,7 +739,7 @@ index da8b516..7baa330 100644
  ) {
    picojson::value schema_value;
    std::string err = picojson::parse(schema_value, schema);
-@@ -3342,7 +3613,8 @@ std::string JSONSchemaToEBNF(
+@@ -3342,7 +3674,8 @@ std::string JSONSchemaToEBNF(
        strict_mode,
        max_whitespace_cnt,
        json_format,
@@ -633,7 +749,7 @@ index da8b516..7baa330 100644
    );
  }
  
-@@ -3354,10 +3626,11 @@ std::string JSONSchemaToEBNF(
+@@ -3354,10 +3687,11 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
@@ -671,6 +787,322 @@ index f0175ba..f000203 100644
  );
  
  /*!
+diff --git a/cpp/regex_converter.cc b/cpp/regex_converter.cc
+index 76a0f4c..b95bbbc 100644
+--- a/cpp/regex_converter.cc
++++ b/cpp/regex_converter.cc
+@@ -4,6 +4,7 @@
+  */
+ #include "regex_converter.h"
+ 
++#include <cstdio>
+ #include <iostream>
+ #include <string>
+ #include <unordered_map>
+@@ -22,7 +23,10 @@ namespace xgrammar {
+  */
+ class RegexConverter {
+  public:
+-  explicit RegexConverter(const std::string& regex) : regex_(regex) {
++  explicit RegexConverter(const std::string& regex, const std::string& forbidden_chars = "")
++      : regex_(regex),
++        forbidden_chars_(forbidden_chars),
++        quote_is_delim_(forbidden_chars.find('"') != std::string::npos) {
+     if (!regex.empty()) {
+       regex_codepoints_ = ParseUTF8(regex_.c_str(), false);
+       if (regex_codepoints_[0] == kInvalidUTF8) {
+@@ -46,9 +50,23 @@ class RegexConverter {
+ 
+   std::string HandleCharacterClass();
+   std::string HandleRepetitionRange();
+-  std::string HandleCharEscape();
++  std::string HandleCharEscape(bool json_escape = false);
+   std::string HandleEscape();
+   std::string HandleEscapeInCharClass();
++  // Format a single codepoint as an EBNF terminal. json_escape is set for a
++  // standalone literal (class members are escaped as a unit by
++  // MakeCharClassJsonSafe). When it is set and this regex is a JSON-string body
++  // (forbidden_chars_ non-empty), `"` and control chars (0x00-0x1F) are emitted as
++  // \" / \uXXXX so the grammar matches valid JSON, not a raw invalid byte.
++  std::string FormatCharLiteral(TCodepoint codepoint, bool json_escape);
++  // Rewrite a positive character class so it is safe inside a delimited JSON
++  // string: an EBNF class matches one codepoint, but a JSON escape is several
++  // bytes, so each JSON-unsafe member (control, `\`, and `"` when it delimits)
++  // is lifted out into an alternation of escape-sequence terminals, leaving the
++  // safe members as a residual class. No-op outside a string context, for
++  // negated classes (already confined via forbidden_chars_), or when nothing is
++  // unsafe.
++  std::string MakeCharClassJsonSafe(const std::string& char_class);
+   /**
+    * \brief Handle group modifier. The general format is "(?" + modifier + content + ")". E.g.
+    * "(?:abc)" is a non-capturing group.
+@@ -56,6 +74,11 @@ class RegexConverter {
+   void HandleGroupModifier();
+ 
+   std::string regex_;
++  // EBNF char-class body of characters that `.` / negated classes must exclude
++  // (so a regex used as a delimited-string body cannot match its delimiter).
++  std::string forbidden_chars_;
++  // Precomputed: is `"` in forbidden_chars_ (a delimiter that must be escaped)?
++  bool quote_is_delim_;
+   std::vector<TCodepoint> regex_codepoints_;
+   TCodepoint* start_;
+   TCodepoint* current_;
+@@ -99,9 +122,14 @@ std::string RegexConverter::HandleCharacterClass() {
+   if (current_ == end_) {
+     RaiseError("Unclosed '['");
+   }
++  // A negated class (`[^...]`) must also exclude the forbidden characters, else
++  // it can match the delimiter/escape/control bytes of an enclosing string.
++  if (!forbidden_chars_.empty() && char_class.size() >= 2 && char_class[1] == '^') {
++    char_class += forbidden_chars_;
++  }
+   char_class += ']';
+   ++current_;
+-  return char_class;
++  return MakeCharClassJsonSafe(char_class);
+ }
+ 
+ // {x}: Match exactly x occurrences of the preceding regular expression.
+@@ -141,7 +169,118 @@ std::string RegexConverter::HandleRepetitionRange() {
+   return result;
+ }
+ 
+-std::string RegexConverter::HandleCharEscape() {
++std::string RegexConverter::FormatCharLiteral(TCodepoint codepoint, bool json_escape) {
++  if (json_escape && !forbidden_chars_.empty()) {
++    // Inside a delimited JSON-string body, a character that JSON requires to be
++    // escaped must be emitted as its escape sequence, so the grammar matches the
++    // encoded bytes (e.g. `\t`) rather than a raw byte (a literal tab) that is
++    // invalid inside a JSON string. The returned fragment is the inner content
++    // of an EBNF terminal; the caller wraps it in quotes.
++    switch (codepoint) {
++      case '\b': return R"(\\b)";
++      case '\t': return R"(\\t)";
++      case '\n': return R"(\\n)";
++      case '\f': return R"(\\f)";
++      case '\r': return R"(\\r)";
++      case '\\': return R"(\\\\)";
++    }
++    // `"` is a delimiter only in the standard-JSON context (forbidden_chars_
++    // lists it); in the Gemma token-delimited context the `"` byte is content.
++    if (codepoint == '"' && quote_is_delim_) {
++      return R"(\\\")";
++    }
++    if (codepoint <= 0x1F) {
++      char buf[8];
++      std::snprintf(buf, sizeof(buf), R"(\\u%04x)", static_cast<unsigned>(codepoint));
++      return std::string(buf);
++    }
++  }
++  return EscapeString(codepoint);
++}
++
++std::string RegexConverter::MakeCharClassJsonSafe(const std::string& char_class) {
++  // Only positive classes in a delimited JSON-string context need rewriting.
++  // Negated classes already exclude the forbidden set (appended at build time),
++  // and an empty forbidden set means this regex is not a string body.
++  if (forbidden_chars_.empty() || char_class.size() < 2 || char_class.front() != '[' ||
++      char_class.back() != ']' || char_class[1] == '^') {
++    return char_class;
++  }
++  auto is_unsafe = [&](TCodepoint c) {
++    return c <= 0x1F || c == '\\' || (c == '"' && quote_is_delim_);
++  };
++
++  static const std::unordered_map<char, TCodepoint> kClassEscapes = {{'-', '-'}, {']', ']'}};
++  const char* p = char_class.data() + 1;
++  const char* end = char_class.data() + char_class.size() - 1;
++
++  std::vector<std::string> escaped;  // escape-sequence terminals for unsafe points
++  std::string safe = "[";            // residual class of safe members
++  bool has_safe = false;
++
++  // Emit a class endpoint as a hex escape: safe members can include class-special
++  // characters (`]`, `\`, `^`, `-`, `[`) whose raw form would corrupt the EBNF
++  // class, and hex is always valid there.
++  auto endpoint = [](TCodepoint c) {
++    char buf[11];
++    std::snprintf(
++        buf, sizeof(buf), c <= 0xFFFF ? R"(\u%04x)" : R"(\U%08x)", static_cast<unsigned>(c)
++    );
++    return std::string(buf);
++  };
++  auto add_safe = [&](TCodepoint lo, TCodepoint hi) {
++    if (lo > hi) return;
++    has_safe = true;
++    safe += endpoint(lo);
++    if (hi != lo) {
++      safe += "-";
++      safe += endpoint(hi);
++    }
++  };
++  auto emit_range = [&](TCodepoint lo, TCodepoint hi) {
++    // All unsafe codepoints are <= 0x5C ('\'); only scan that window, then keep
++    // the (safe) remainder as a range.
++    TCodepoint scan_hi = hi < 0x5C ? hi : 0x5C;
++    TCodepoint seg_lo = lo;
++    for (TCodepoint c = lo; c <= scan_hi; ++c) {
++      if (is_unsafe(c)) {
++        add_safe(seg_lo, c - 1);
++        escaped.push_back("\"" + FormatCharLiteral(c, /*json_escape=*/true) + "\"");
++        seg_lo = c + 1;
++      }
++    }
++    add_safe(seg_lo, hi);
++  };
++
++  while (p < end) {
++    auto [lo, n1] = ParseNextUTF8OrEscaped(p, kClassEscapes);
++    if (n1 <= 0) return char_class;  // parse failure: leave unchanged
++    p += n1;
++    TCodepoint hi = lo;
++    if (p < end && *p == '-' && (p + 1) < end) {
++      ++p;
++      auto [hi2, n2] = ParseNextUTF8OrEscaped(p, kClassEscapes);
++      if (n2 <= 0) return char_class;
++      p += n2;
++      hi = hi2;
++    }
++    emit_range(lo, hi);
++  }
++  safe += "]";
++
++  if (escaped.empty()) return char_class;  // nothing unsafe; keep the class
++
++  std::string result = "(";
++  for (size_t i = 0; i < escaped.size(); ++i) {
++    if (i) result += " | ";
++    result += escaped[i];
++  }
++  if (has_safe) result += " | " + safe;
++  result += ")";
++  return result;
++}
++
++std::string RegexConverter::HandleCharEscape(bool json_escape) {
+   // clang-format off
+   static const std::unordered_map<char, TCodepoint> CUSTOM_ESCAPE_MAP = {
+       {'^', '^'}, {'$', '$'}, {'.', '.'}, {'*', '*'}, {'+', '+'}, {'?', '?'}, {'\\', '\\'},
+@@ -156,7 +295,7 @@ std::string RegexConverter::HandleCharEscape() {
+   auto [codepoint, len] = ParseNextEscaped(current_, CUSTOM_ESCAPE_MAP);
+   if (codepoint != CharHandlingError::kInvalidEscape) {
+     current_ += len;
+-    return EscapeString(codepoint);
++    return FormatCharLiteral(codepoint, json_escape);
+   } else if (current_[1] == 'u' && current_[2] == '{') {
+     current_ += 3;
+     int len = 0;
+@@ -169,21 +308,21 @@ std::string RegexConverter::HandleCharEscape() {
+       RaiseError("Invalid Unicode escape sequence.");
+     }
+     current_ += len + 1;
+-    return EscapeString(value);
++    return FormatCharLiteral(value, json_escape);
+   } else if (current_[1] == 'c') {
+     current_ += 2;
+     if (!std::isalpha(*current_)) {
+       RaiseError("Invalid control character escape sequence.");
+     }
+     ++current_;
+-    return EscapeString((*(current_ - 1)) % 32);
++    return FormatCharLiteral((*(current_ - 1)) % 32, json_escape);
+   } else {
+     RaiseWarning(
+         "Escape sequence '\\" + EscapeString(current_[1]) +
+         "' is not recognized. The character itself will be matched"
+     );
+     current_ += 2;
+-    return EscapeString(current_[-1]);
++    return FormatCharLiteral(current_[-1], json_escape);
+   }
+ }
+ 
+@@ -235,19 +374,19 @@ std::string RegexConverter::HandleEscape() {
+     return "[0-9]";
+   } else if (current_[1] == 'D') {
+     current_ += 2;
+-    return "[^0-9]";
++    return "[^0-9" + forbidden_chars_ + "]";
+   } else if (current_[1] == 'w') {
+     current_ += 2;
+     return "[a-zA-Z0-9_]";
+   } else if (current_[1] == 'W') {
+     current_ += 2;
+-    return "[^a-zA-Z0-9_]";
++    return "[^a-zA-Z0-9_" + forbidden_chars_ + "]";
+   } else if (current_[1] == 's') {
+     current_ += 2;
+-    return R"([\f\n\r\t\v\u0020\u00a0])";
++    return MakeCharClassJsonSafe(R"([\f\n\r\t\v\u0020\u00a0])");
+   } else if (current_[1] == 'S') {
+     current_ += 2;
+-    return R"([^[\f\n\r\t\v\u0020\u00a0])";
++    return R"([^[\f\n\r\t\v\u0020\u00a0)" + forbidden_chars_ + "]";
+   } else if ((current_[1] >= '1' && current_[1] <= '9') || current_[1] == 'k') {
+     RaiseError("Backreference is not supported yet.");
+   } else if (current_[1] == 'p' || current_[1] == 'P') {
+@@ -255,7 +394,7 @@ std::string RegexConverter::HandleEscape() {
+   } else if (current_[1] == 'b' || current_[1] == 'B') {
+     RaiseError("Word boundary is not supported yet.");
+   } else {
+-    return "\"" + HandleCharEscape() + "\"";
++    return "\"" + HandleCharEscape(/*json_escape=*/true) + "\"";
+   }
+ }
+ 
+@@ -371,12 +510,15 @@ std::string RegexConverter::Convert() {
+       AddEBNFSegment(HandleEscape());
+     } else if (*current_ == '.') {
+       is_empty = false;
+-      AddEBNFSegment(R"([\u0000-\U0010FFFF])");
++      AddEBNFSegment(
++          forbidden_chars_.empty() ? R"([\u0000-\U0010FFFF])"
++                                   : ("[^" + forbidden_chars_ + "]")
++      );
+       ++current_;
+     } else {
+       is_empty = false;
+       // Non-special characters are matched literally.
+-      AddEBNFSegment("\"" + EscapeString(*current_) + "\"");
++      AddEBNFSegment("\"" + FormatCharLiteral(*current_, /*json_escape=*/true) + "\"");
+       ++current_;
+     }
+   }
+@@ -393,8 +535,10 @@ std::string RegexConverter::Convert() {
+   return result_ebnf_;
+ }
+ 
+-std::string RegexToEBNF(const std::string& regex, bool with_rule_name) {
+-  RegexConverter converter(regex);
++std::string RegexToEBNF(
++    const std::string& regex, bool with_rule_name, const std::string& forbidden_chars
++) {
++  RegexConverter converter(regex, forbidden_chars);
+   if (with_rule_name) {
+     return "root ::= " + converter.Convert() + "\n";
+   } else {
+diff --git a/cpp/regex_converter.h b/cpp/regex_converter.h
+index fcb3442..69fed83 100644
+--- a/cpp/regex_converter.h
++++ b/cpp/regex_converter.h
+@@ -13,8 +13,15 @@ namespace xgrammar {
+ 
+ /*!
+  * \brief Convert a regex string to EBNF grammar string.
++ * \param forbidden_chars An EBNF character-class body (e.g. `\"\\\x00-\x1F`) of
++ *   characters the emitted grammar must never match. When non-empty, `.` and
++ *   negated classes (`[^...]`, `\D`, `\W`, `\S`) are confined to exclude these,
++ *   so a regex used as the body of a delimited string cannot match the closing
++ *   delimiter / escape / control bytes and over-run its boundary.
+  */
+-std::string RegexToEBNF(const std::string& regex, bool with_rule_name = true);
++std::string RegexToEBNF(
++    const std::string& regex, bool with_rule_name = true, const std::string& forbidden_chars = ""
++);
+ 
+ }  // namespace xgrammar
+ 
 diff --git a/cpp/structural_tag.cc b/cpp/structural_tag.cc
 index 592de70..f060a05 100644
 --- a/cpp/structural_tag.cc

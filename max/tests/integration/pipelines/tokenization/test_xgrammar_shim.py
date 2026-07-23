@@ -21,6 +21,7 @@ path.
 """
 
 import importlib.util
+import math
 import sys
 
 import numpy as np
@@ -30,6 +31,8 @@ from max._xgrammar.structural_tag import (
     ConstStringFormat,
     JSONSchemaFormat,
     OrFormat,
+    TagFormat,
+    TriggeredTagsFormat,
 )
 
 _VOCAB = [
@@ -180,6 +183,30 @@ def test_integer_multiple_of_rejected() -> None:
         _compiler().compile_json_schema(
             '{"type": "integer", "multipleOf": 3}', reject_unsupported=True
         )
+
+
+def test_numeric_bound_out_of_range_rejected() -> None:
+    # A numeric bound beyond the int64-representable range cannot be enforced by
+    # the generated regex, so it is rejected rather than left to fall open.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"type": "number", "minimum": 1e30}', reject_unsupported=True
+        )
+
+
+def test_numeric_bound_at_int64_ulp_boundary() -> None:
+    k_max_enforceable = float(2**63 - 1)
+    reject = int(k_max_enforceable)
+    accept = int(math.nextafter(k_max_enforceable, 0.0))
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            f'{{"type": "number", "minimum": {reject}}}',
+            reject_unsupported=True,
+        )
+    compiled = _compiler().compile_json_schema(
+        f'{{"type": "number", "minimum": {accept}}}'
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
 
 
 def test_unenforceable_top_level_keywords_rejected() -> None:
@@ -447,6 +474,206 @@ def test_anyof_base_merge_enforces_base() -> None:
     assert not _accepts(compiled, "1")  # base type:string bars a bare number
 
 
+def test_unsupported_format_idn_email_rejected() -> None:
+    # idn-email is not in the supported-format set (its regex does not compile
+    # into a faithful grammar), so it is rejected.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"type": "string", "format": "idn-email"}', reject_unsupported=True
+        )
+
+
+def test_unsupported_format_iri_rejected() -> None:
+    # iri is likewise unsupported and rejected.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"type": "string", "format": "iri"}', reject_unsupported=True
+        )
+
+
+def test_json_pointer_format_compiles() -> None:
+    # RFC 6901 json-pointer is a regular language; base ships its regex, so it
+    # must be accepted (not rejected by the format allow-list).
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "format": "json-pointer"}', reject_unsupported=True
+    )
+    assert compiled is not None
+
+
+def test_relative_json_pointer_format_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "format": "relative-json-pointer"}',
+        reject_unsupported=True,
+    )
+    assert compiled is not None
+
+
+def test_supported_format_date_compiles() -> None:
+    # date is a supported format and compiles.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "format": "date"}'
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_supported_format_ipv4_compiles() -> None:
+    # ipv4 is a supported format and compiles.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "format": "ipv4"}'
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_supported_formats_compile() -> None:
+    for fmt in (
+        "email",
+        "time",
+        "date-time",
+        "duration",
+        "ipv6",
+        "hostname",
+        "uuid",
+        "uri",
+        "uri-reference",
+        "uri-template",
+    ):
+        compiled = _compiler().compile_json_schema(
+            f'{{"type": "string", "format": "{fmt}"}}'
+        )
+        assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_format_ipv4_enforced() -> None:
+    # A supported format compiles into a grammar that binds: a well-formed value
+    # is accepted and a malformed one rejected (proves the format regex path,
+    # not just that it compiled).
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "format": "ipv4"}'
+    )
+    assert _accepts(compiled, '"1.1.1.1"')
+    assert not _accepts(compiled, '"a"')
+
+
+def test_format_ipv4_octet_range_enforced() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "format": "ipv4"}'
+    )
+    assert _accepts(compiled, '"1.1.1.1"')
+    assert not _accepts(compiled, '"256.1.1.1"')
+
+
+def test_format_date_accepts_valid() -> None:
+    # The month-aware date regex accepts real calendar dates: the 31st of a
+    # 31-day month, the 30th of a 30-day month, and the leap day.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "format": "date"}'
+    )
+    assert _accepts(compiled, '"2023-01-31"')
+    assert _accepts(compiled, '"2023-04-30"')
+    assert _accepts(compiled, '"2024-02-29"')
+
+
+def test_format_date_rejects_invalid() -> None:
+    # Month-specific day caps reject impossible dates the old any-month 01-31
+    # regex let through (Feb 31, Apr 31), plus an out-of-range month.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "format": "date"}'
+    )
+    assert not _accepts(compiled, '"2023-02-31"')
+    assert not _accepts(compiled, '"2023-04-31"')
+    assert not _accepts(compiled, '"2023-13-01"')
+
+
+def test_ecma262_backslash_t_compiles() -> None:
+    # The JSON ``"\\t"`` decodes to the two-byte regex ``\t``; the regex
+    # converter decodes it to a tab, so it compiles (no pre-filter rejection).
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "\\\\t"}', reject_unsupported=True
+    )
+    assert compiled is not None
+
+
+def test_ecma262_backslash_n_compiles() -> None:
+    # The JSON ``"\\n"`` decodes to the two-byte regex ``\n``; likewise compiles.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "\\\\n"}', reject_unsupported=True
+    )
+    assert compiled is not None
+
+
+def test_ecma262_backslash_x_compiles() -> None:
+    # The JSON ``"\\x41"`` decodes to the regex ``\x41`` (the letter A); the
+    # converter decodes the \xXX numeric escape, so it compiles.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "\\\\x41"}', reject_unsupported=True
+    )
+    assert compiled is not None
+
+
+def test_valid_pattern_compiles_and_enforced() -> None:
+    # A pattern with no unsupported escapes takes the accept path (regex ->
+    # EBNF) and the grammar actually enforces it: it accepts strings matching
+    # [ab]+ and rejects others.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "[ab]+"}'
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+    assert _accepts(compiled, '"ab"')
+    assert _accepts(compiled, '"aab"')
+    assert not _accepts(compiled, '"c"')
+
+
+def test_pattern_with_control_char_escaped() -> None:
+    # A control char with no JSON shorthand (U+0001) reaches the pattern as a
+    # raw byte via the JSON escape in the schema below -- a raw byte, not a
+    # backslash-escape, so ParseString's escape guard does not reject it.
+    # FormatCharLiteral's control path (<= 0x1F) then emits it as the \uXXXX
+    # escape: the grammar accepts the escaped form and rejects the raw byte.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "a\\u0001b"}'
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+    assert _accepts(compiled, '"a\\u0001b"')
+    assert not _accepts(compiled, '"a\x01b"')
+
+
+def test_single_pattern_properties_compiles() -> None:
+    # A single patternProperties pattern with no named `properties` is the
+    # accept path of the object handler and compiles.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "patternProperties": {"a.*": {"type": "string"}}}'
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_multiple_pattern_properties_rejected() -> None:
+    # More than one patternProperties pattern needs per-key schema intersection
+    # (a key may match several patterns); xgrammar applies only one, so reject.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"type": "object", "patternProperties": '
+            '{"a.*": {"type": "string"}, "b.*": {"type": "string"}}}',
+            reject_unsupported=True,
+        )
+
+
+def test_properties_with_pattern_properties_rejected() -> None:
+    # `properties` coexisting with `patternProperties`/`additionalProperties`
+    # needs per-key schema intersection that xgrammar's object grammar cannot
+    # express: a declared key's value schema is silently dropped in favor of the
+    # pattern/additional alternative (a `bar: array` key accepts the
+    # `additionalProperties` integer; `foo`'s `maxItems` is lost). Reject the
+    # combination under reject_unsupported rather than fail open. Rejected
+    # schemas surface as HTTP 400 at the route boundary.
+    schema = (
+        '{"properties":{"foo":{"type":"array","maxItems":3},'
+        '"bar":{"type":"array"}},"patternProperties":{"f.o":{"minItems":2}},'
+        '"additionalProperties":{"type":"integer"}}'
+    )
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
 def test_structural_tag_bridge() -> None:
     tag = xgr.StructuralTag.from_legacy_structural_tag(
         [xgr.StructuralTagItem(begin="a", schema={"type": "object"}, end="b")],
@@ -541,3 +768,303 @@ def test_required_false_property_rejected() -> None:
         _compiler().compile_json_schema(
             '{"type": "object", "properties": {"bar": false}, "required": ["bar"]}'
         )
+
+
+def test_pattern_literal_quote_escaped() -> None:
+    # A literal `"` in a pattern must be emitted as the escape `\"`; a raw
+    # quote (which would close the JSON string) must be rejected.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "a\\"b"}'
+    )
+    assert _accepts(compiled, '"a\\"b"')
+    assert not _accepts(compiled, '"a"b"')
+
+
+def test_pattern_literal_backslash_escaped() -> None:
+    # A literal backslash must be emitted as `\\`; a raw backslash rejected.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "a\\\\\\\\b"}'
+    )
+    assert _accepts(compiled, '"a\\\\b"')
+    assert not _accepts(compiled, '"a\x5cb"')
+
+
+def test_char_class_control_member_hoisted() -> None:
+    # A control member inside a positive class is hoisted out as its \uXXXX
+    # escape; the raw byte is rejected.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "[a\\u0001]"}'
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, '"\\u0001"')
+    assert not _accepts(compiled, '"\x01"')
+
+
+def test_char_class_quote_member_hoisted() -> None:
+    # A `"` inside a positive class is hoisted as `\"`; raw quote rejected.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "[a\\"]"}'
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, '"\\""')
+    assert not _accepts(compiled, '"""')
+
+
+def test_char_class_range_straddling_unsafe() -> None:
+    # A range that spans an unsafe codepoint (`"` at 0x22) keeps the safe
+    # members and hoists the unsafe one; raw quote still rejected.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "[ -$]"}'
+    )
+    for c in ('" "', '"!"', '"#"', '"$"', '"\\""'):
+        assert _accepts(compiled, c)
+    assert not _accepts(compiled, '"""')
+
+
+def test_negated_char_class_excludes_forbidden() -> None:
+    # A negated class has the forbidden set appended, so it cannot match the
+    # delimiter/escape/control bytes even though it "negates" only `a`.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "[^a]"}'
+    )
+    assert _accepts(compiled, '"b"')
+    assert not _accepts(compiled, '"a"')
+    assert not _accepts(compiled, '"\x01"')
+    assert not _accepts(compiled, '"""')
+
+
+def test_dot_excludes_forbidden() -> None:
+    # `.` is compiled to a negated class that excludes the forbidden set, so
+    # it cannot match a raw control byte or the string delimiter.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "a.b"}'
+    )
+    assert _accepts(compiled, '"axb"')
+    assert not _accepts(compiled, '"a\x01b"')
+    assert not _accepts(compiled, '"a"b"')
+
+
+def test_pattern_allowed_escape_compiles() -> None:
+    # `\d` is not in the ECMA-escape reject set, so it compiles and enforces.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "\\\\d"}'
+    )
+    assert _accepts(compiled, '"1"')
+    assert not _accepts(compiled, '"a"')
+
+
+def test_pattern_remaining_ecma_escapes_compile() -> None:
+    # The rest of the ECMA-262 escapes the regex converter decodes
+    # (\t \n \x already covered elsewhere); all compile. \u is tested in
+    # its complete \uXXXX form (a bare \u is malformed, not merely
+    # unenforceable).
+    for pat in (
+        "\\\\r",
+        "\\\\f",
+        "\\\\v",
+        "\\\\s",
+        "\\\\S",
+        "\\\\0",
+        "\\\\u0041",
+    ):
+        compiled = _compiler().compile_json_schema(
+            f'{{"type": "string", "pattern": "{pat}"}}',
+            reject_unsupported=True,
+        )
+        assert compiled is not None
+
+
+def test_pattern_unsupportable_escapes_rejected() -> None:
+    # Genuinely unenforceable regex constructs are still hard-rejected by the
+    # converter (fail-closed): a backreference, a Unicode property class, and a
+    # word boundary. These have no context-free grammar encoding.
+    for pat in ("(a)\\\\1", "\\\\p{L}", "a\\\\bc"):
+        with pytest.raises(Exception):
+            _compiler().compile_json_schema(
+                f'{{"type": "string", "pattern": "{pat}"}}',
+                reject_unsupported=True,
+            )
+
+
+def test_array_contains_rejected() -> None:
+    for schema in (
+        '{"type": "array", "contains": {"type": "string"}}',
+        '{"type": "array", "contains": {"type": "string"}, "minContains": 1}',
+        '{"type": "array", "contains": {"type": "string"}, "maxContains": 2}',
+    ):
+        with pytest.raises(Exception):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_array_bounds_enforced() -> None:
+    c_min = _compiler().compile_json_schema('{"type": "array", "minItems": 2}')
+    assert _accepts(c_min, "[1,1]")
+    assert not _accepts(c_min, "[1]")
+    assert not _accepts(c_min, "[]")
+    c_max = _compiler().compile_json_schema('{"type": "array", "maxItems": 2}')
+    assert _accepts(c_max, "[1,1]")
+    assert not _accepts(c_max, "[1,1,1]")
+
+
+def test_numeric_negative_and_maximum_bounds_rejected() -> None:
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"type": "number", "minimum": -1e30}', reject_unsupported=True
+        )
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"type": "number", "maximum": 1e30}', reject_unsupported=True
+        )
+
+
+def test_top_level_multiple_of_rejected() -> None:
+    # multipleOf with no explicit type is caught by the top-level check.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"multipleOf": 5}', reject_unsupported=True
+        )
+
+
+def test_additional_properties_value_kinds_compile() -> None:
+    for value in ("false", "true", '{"type": "string"}'):
+        compiled = _compiler().compile_json_schema(
+            '{"type": "object", "additionalProperties": ' + value + "}"
+        )
+        assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_allof_other_sibling_keywords_rejected() -> None:
+    base = '{"type":"object","allOf":[{"properties":{"a":{"type":"string"}}}],'
+    for sibling in (
+        '"properties":{"b":{"type":"string"}}',
+        '"patternProperties":{"x.*":{"type":"string"}}',
+        '"propertyNames":{"pattern":"a"}',
+        '"minProperties":1',
+        '"maxProperties":3',
+        '"unevaluatedProperties":false',
+    ):
+        with pytest.raises(Exception):
+            _compiler().compile_json_schema(
+                base + sibling + "}", reject_unsupported=True
+            )
+
+
+def test_allof_single_enforceable_branch_enforced() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": [{"type": "string", "minLength": 2}]}'
+    )
+    assert _accepts(compiled, '"ab"')
+    assert not _accepts(compiled, '"a"')
+
+
+def test_allof_enforceable_plus_noop_member_enforced() -> None:
+    # A no-op member (annotation-only) must not tip the enforceable count past
+    # one, so the single real branch still compiles and binds.
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": [{"type": "string", "minLength": 2}, {"title": "x"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"ab"')
+    assert not _accepts(compiled, '"a"')
+
+
+def test_allof_annotation_only_member_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": [{"title": "ignored", "description": "x"}]}'
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_allof_lone_if_member_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": [{"if": {"minLength": 5}}]}'
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_allof_active_conditional_member_rejected() -> None:
+    # An active if/then member is enforceable; paired with another enforceable
+    # branch it must reject as multi-option (proves it is not dropped as no-op).
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"type": "string", "minLength": 1}, '
+            '{"if": {"minLength": 5}, "then": {"pattern": "a"}}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_zero_enforceable_with_object_sibling_compiles() -> None:
+    # allOf is all no-op (0 enforceable) so the sibling-reject guard is skipped;
+    # the object siblings are the effective schema and it compiles.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "allOf": [{}], "required": ["a"], '
+        '"properties": {"a": {"type": "string"}}}'
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_anyof_boolean_branch_without_base_compiles() -> None:
+    # With no base siblings the boolean-branch reject is skipped; a true branch
+    # is the accept-any arm.
+    compiled = _compiler().compile_json_schema(
+        '{"anyOf": [{"type": "string"}, true]}'
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_typeless_inference_enforced() -> None:
+    c_num = _compiler().compile_json_schema('{"minimum": 0}')
+    assert _accepts(c_num, "1")
+    assert not _accepts(c_num, '"a"')
+    c_str = _compiler().compile_json_schema('{"minLength": 1}')
+    assert _accepts(c_str, '"a"')
+    assert not _accepts(c_str, "1")
+
+
+def test_ambiguous_object_number_keywords_rejected() -> None:
+    # required implies object, minimum implies number -> ambiguous.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"required": ["a"], "minimum": 0}', reject_unsupported=True
+        )
+
+
+def test_tool_call_rejects_non_multiple_of_keyword() -> None:
+    # The tool-call path (triggered tags -> JSONSchemaFormat content) carries
+    # reject_unsupported through the tag JSON, so an unenforceable arg schema
+    # (oneOf is only approximated) is rejected there too.
+    tag = xgr.StructuralTag(
+        format=TriggeredTagsFormat(
+            triggers=["<t>"],
+            tags=[
+                TagFormat(
+                    begin="<t>",
+                    content=JSONSchemaFormat(
+                        json_schema={
+                            "oneOf": [{"type": "string"}, {"type": "number"}]
+                        },
+                        reject_unsupported=True,
+                    ),
+                    end="</t>",
+                )
+            ],
+        )
+    )
+    with pytest.raises(Exception):
+        _compiler().compile_structural_tag(tag)
+
+
+def test_or_format_json_schema_rejects_unenforceable() -> None:
+    tag = xgr.StructuralTag(
+        format=OrFormat(
+            elements=[
+                JSONSchemaFormat(
+                    json_schema={"type": "number", "multipleOf": 5},
+                    reject_unsupported=True,
+                ),
+                ConstStringFormat(value="null"),
+            ]
+        )
+    )
+    with pytest.raises(Exception):
+        _compiler().compile_structural_tag(tag)
