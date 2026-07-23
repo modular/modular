@@ -42,6 +42,7 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/LSP/Logging.h"
 #include "llvm/Support/LSP/Protocol.h"
 #include "llvm/Support/ToolOutputFile.h"
@@ -984,8 +985,17 @@ std::optional<lsp::URIForFile> MojoDocument::getURIFromLoc(SMLoc loc) {
   if (containsLocation(loc))
     return getURIFromContainedLoc(loc);
 
-  llvm::Expected<lsp::URIForFile> fileForLoc = lsp::URIForFile::fromFile(
-      sourceMgr.getBufferInfo(bufferId).Buffer->getBufferIdentifier(), "file");
+  // URIForFile::fromFile requires an absolute path.
+  llvm::SmallString<256> absPath(
+      sourceMgr.getBufferInfo(bufferId).Buffer->getBufferIdentifier());
+  if (std::error_code ec = llvm::sys::fs::make_absolute(absPath)) {
+    lsp::Logger::error("Failed to resolve absolute path for include file: {0}",
+                       ec.message());
+    return std::nullopt;
+  }
+
+  llvm::Expected<lsp::URIForFile> fileForLoc =
+      lsp::URIForFile::fromFile(absPath, "file");
   if (fileForLoc)
     return *fileForLoc;
   lsp::Logger::error("Failed to create URI for include file: {0}",
