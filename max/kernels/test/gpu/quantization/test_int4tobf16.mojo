@@ -77,7 +77,7 @@ def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext) raises:
         Int32(0x76543210), out_device, grid_dim=1, block_dim=1
     )
 
-    ctx.enqueue_copy(out_host.ptr, out_device)
+    ctx.enqueue_copy(out_host._storage, out_device)
     ctx.synchronize()
     for i in range(4):
         assert_equal(out_host[2 * i + 0], BFloat16(i + 0))
