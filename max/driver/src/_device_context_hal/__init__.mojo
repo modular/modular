@@ -3955,6 +3955,9 @@ struct _HALBufferInner(Movable):
     # lifetime (a view's own `_buffer` is a non-owning wrapper). A `List` (heap
     # storage) rather than `Optional` so the struct does not embed itself.
     var _parent: List[ArcPointer[_HALBufferInner]]
+    # Same, for views over a `HostBuffer`'s pinned allocation (a different
+    # inner type; see `HostBuffer.create_sub_buffer`).
+    var _parent_host: List[ArcPointer[_HostBufferInner]]
 
     def __del__(deinit self):
         try:
@@ -4035,7 +4038,7 @@ struct DeviceBuffer[dtype: DType](
         self._device_ptr = Self._DevicePtr(unsafe_from_address=Int(addr))
         self._ctx = ctx
         self._inner = ArcPointer(
-            _HALBufferInner(buffer^, ctx._context, addr, [])
+            _HALBufferInner(buffer^, ctx._context, addr, [], [])
         )
 
     @doc_hidden
@@ -4077,7 +4080,7 @@ struct DeviceBuffer[dtype: DType](
             self._device_ptr = Self._DevicePtr(unsafe_from_address=Int(addr))
             self._ctx = ctx
             self._inner = ArcPointer(
-                _HALBufferInner(buffer^, ctx._context, addr, [])
+                _HALBufferInner(buffer^, ctx._context, addr, [], [])
             )
         except e:
             abort("DeviceBuffer: failed to wrap external memory")
@@ -4606,6 +4609,50 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
             .unsafe_origin_cast[origin](),
             length = len(self),
         }
+
+    def create_sub_buffer[
+        view_type: DType
+    ](self, offset: Int, size: Int) raises -> DeviceBuffer[view_type]:
+        """Creates a sub-buffer view of this buffer with a different element dtype.
+
+        This method creates a new buffer that references a subset of the memory in this
+        buffer, potentially with a different element dtype. The sub-buffer shares the
+        underlying memory with the original buffer.
+
+        Parameters:
+            view_type: The data type for elements in the new sub-buffer.
+
+        Args:
+            offset: The starting offset, in view_type elements, from the beginning of this buffer.
+            size: The number of elements in the new sub-buffer.
+
+        Returns:
+            A new DeviceBuffer referencing the specified region with the specified element dtype.
+
+        Raises:
+            If the operation fails.
+        """
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime elem_size = size_of[view_type]()
+        var byte_offset = offset * elem_size
+        var byte_size = size * elem_size
+        if byte_offset + byte_size > len(self) * size_of[Self.dtype]():
+            raise Error("create_sub_buffer: view is out of range")
+        # The view is a plain `DeviceBuffer` over the pinned host region
+        # (host-pinned memory is device-visible), mirroring the legacy
+        # implementation where host sub-buffers are `DeviceBuffer`s. The
+        # wrapper is non-owning; retaining this buffer's inner keeps the
+        # pinned allocation alive for the view's lifetime.
+        var view = DeviceBuffer[view_type](
+            self._ctx,
+            (self._inner[]._host_ptr + byte_offset).bitcast[
+                Scalar[view_type]
+            ](),
+            size,
+            owning=False,
+        )
+        view._inner[]._parent_host = [self._inner]
+        return view^
 
     def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to a device buffer.
