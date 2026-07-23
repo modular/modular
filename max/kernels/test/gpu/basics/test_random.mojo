@@ -72,7 +72,7 @@ def run_elementwise[
     else:
         elementwise[4, target="gpu"](func_normal, Coord(length), ctx)
 
-    ctx.enqueue_copy(out_host.ptr, out_device)
+    ctx.enqueue_copy(out_host._storage, out_device)
     ctx.synchronize()
 
     print("Testing", distribution, "distribution:")
