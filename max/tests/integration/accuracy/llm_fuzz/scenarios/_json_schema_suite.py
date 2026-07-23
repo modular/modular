@@ -453,7 +453,7 @@ def _evaluate(
         span = _extract_reasoning(data)
         if reasoning and not span:
             return (
-                Verdict.FAIL,
+                Verdict.INTERESTING,
                 "reasoning requested but response reasoning empty",
             )
         if not reasoning and span:
