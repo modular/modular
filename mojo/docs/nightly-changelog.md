@@ -533,6 +533,13 @@ This version is still a work in progress.
   displaced = d.insert(1, 20)      # the displaced (1, 10) entry
   ```
 
+- Added `Set.insert(element)` and `Set.clear_with(destroy_func)`, mirroring the
+  `Dict` methods above, so a `Set` whose element type is not
+  `ImplicitlyDeletable` can now be populated and cleared. `insert` moves any
+  displaced equal element out and returns it as an `Optional[T]` instead of
+  destroying it in place; `clear_with` hands each element to `destroy_func`
+  while retaining capacity.
+
 - `Dict.fromkeys(keys, value)` has been generalized from taking a `List` to
   accepting any iterable of keys. Both forms require the key and
   value types to be `ImplicitlyDeletable`.

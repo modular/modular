@@ -551,6 +551,36 @@ struct Set[
         """
         self._data[t^] = None
 
+    def insert(mut self, var t: Self.T) -> Optional[Self.T]:
+        """Insert an element, returning any displaced equal element.
+
+        Unlike `add`, a displaced equal element is moved out and returned
+        rather than destroyed in place, so this works when `T` is not
+        `ImplicitlyDeletable`. The caller owns the returned element.
+
+        Args:
+            t: The element to insert into the set.
+
+        Returns:
+            The previously-present equal element if one was displaced,
+            otherwise an empty `Optional`.
+        """
+
+        # TODO(MOCO-4413): collapse to `self._data.insert(t^, None).map(...)`
+        # once that compiler crash is fixed. Today a mapper closure that
+        # captures `T` (bound by the comptime trait-alias `KeyElement`) crashes
+        # `ClosureEmitter`, so consume the linear `Optional[DictEntry]`
+        # directly: reap the displaced key (its `NoneType` value slot is
+        # trivial) and destroy the emptied `Optional` explicitly — it cannot be
+        # dropped implicitly when `T` is linear.
+        var displaced = self._data.insert(t^, None)
+        if displaced:
+            var entry = displaced.unsafe_take()
+            displaced^.deinit_assert_empty()
+            return entry^.reap_key()
+        displaced^.deinit_assert_empty()
+        return None
+
     def remove(
         mut self, t: Self.T
     ) raises where conforms_to(Self.T, ImplicitlyDeletable):
@@ -844,3 +874,22 @@ struct Set[
             in place.
         """
         self._data.clear()
+
+    def clear_with(mut self, destroy_func: Some[def(var Self.T)], /):
+        """Remove all elements, disposing each with a closure.
+
+        The closure counterpart of `clear`: instead of destroying each element
+        in place, it hands each element to `destroy_func`. Use this to clear a
+        `Set` whose element type is not `ImplicitlyDeletable`. The set's
+        capacity is retained.
+
+        Args:
+            destroy_func: A closure called once per element to destroy it.
+        """
+
+        # The backing `Dict` maps each element to a `NoneType` value, so wrap
+        # the element-only closure to also drop the value slot.
+        def forward(var key: Self.T, var value: NoneType) {imm destroy_func}:
+            destroy_func(key^)
+
+        self._data.clear_with(forward)
