@@ -29,10 +29,10 @@ from max.experimental.nn.module import (
     CompiledModel,
     Module,
     _flatten_input_types,
-    _flatten_named_buffers,
     _InputSlot,
     _OutputSlot,
     _reconstruct_outputs,
+    flatten_distributed_tensors,
     flatten_input_buffers,
     module_dataclass,
 )
@@ -287,20 +287,20 @@ class TestReconstructOutputs:
 
 
 # ═════════════════════════════════════════════════════════════════════════
-#  _flatten_named_buffers
+#  flatten_distributed_tensors
 # ═════════════════════════════════════════════════════════════════════════
 
 
-class TestFlattenNamedBuffers:
+class TestFlattenDistributedTensors:
     def test_single_device(self) -> None:
         t = Tensor.zeros([4, 8], dtype=DType.float32, device=CPU())
-        result = _flatten_named_buffers([("weight", t)])
+        result = flatten_distributed_tensors([("weight", t)])
         assert "weight" in result
         assert len(result) == 1
 
     def test_sharded_expands(self) -> None:
         t = _make_realized_sharded([2, 8], 4, shard_axis=0)
-        result = _flatten_named_buffers([("weight", t)])
+        result = flatten_distributed_tensors([("weight", t)])
         assert len(result) == 4
         assert "weight._shard.0" in result
         assert "weight._shard.1" in result
@@ -310,7 +310,9 @@ class TestFlattenNamedBuffers:
     def test_mixed(self) -> None:
         single = Tensor.zeros([4], dtype=DType.float32, device=CPU())
         sharded = _make_realized_sharded([2, 4], 2)
-        result = _flatten_named_buffers([("bias", single), ("weight", sharded)])
+        result = flatten_distributed_tensors(
+            [("bias", single), ("weight", sharded)]
+        )
         assert "bias" in result
         assert "weight._shard.0" in result
         assert "weight._shard.1" in result
@@ -319,13 +321,13 @@ class TestFlattenNamedBuffers:
     def test_two_shard_naming(self) -> None:
         """Two-shard tensor uses ._shard.N naming, not bare name."""
         t = _make_realized_sharded([4, 4], 2, shard_axis=0)
-        result = _flatten_named_buffers([("W", t)])
+        result = flatten_distributed_tensors([("W", t)])
         assert "W" not in result
         assert "W._shard.0" in result
         assert "W._shard.1" in result
 
     def test_empty_input(self) -> None:
-        result = _flatten_named_buffers([])
+        result = flatten_distributed_tensors([])
         assert result == {}
 
 
