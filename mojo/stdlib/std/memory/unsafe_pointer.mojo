@@ -174,66 +174,6 @@ def pointer_to_int(pointer: OptionalUnsafePointer[...]) -> Int:
 
 
 # ===----------------------------------------------------------------------=== #
-# alloc
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-def alloc[
-    type: AnyType, /
-](count: Int, *, alignment: Int = align_of[type]()) -> UnsafePointer[
-    type, MutUntrackedOrigin
-]:
-    """Allocates contiguous storage for `count` elements of `type` with
-    alignment `alignment`.
-
-    Parameters:
-        type: The type of the elements to allocate storage for.
-
-    Args:
-        count: Number of elements to allocate.
-        alignment: The alignment of the allocation.
-
-    Returns:
-        A pointer to the newly allocated uninitialized array.
-
-    Constraints:
-        `count` must be positive and `size_of[type]()` must be > 0.
-
-    Safety:
-
-    - The returned memory is uninitialized; reading before writing is undefined.
-    - The returned pointer has an empty mutable origin; you must call `free()`
-      to release it.
-
-    Example:
-
-    ```mojo
-    var ptr = alloc[Int32](4)
-    ptr.store(0, Int32(42))
-    ptr.store(1, Int32(7))
-    ptr.store(2, Int32(9))
-    var a = ptr.load(0)
-    print(a[0], ptr.load(1)[0], ptr.load(2)[0])
-    ptr.free()
-    ```
-    """
-    comptime size_of_t = size_of[type]()
-    comptime type_name = reflect[type].name()
-    debug_assert(
-        count >= 0,
-        "alloc[",
-        type_name,
-        "]() count must be non-negative: ",
-        Int(count),
-    )
-    var pointer = _malloc[type](size_of_t * count, alignment=alignment)
-    if unlikely(not pointer):
-        abort("alloc failed: returned a null pointer")
-    return pointer.unsafe_value()
-
-
-# ===----------------------------------------------------------------------=== #
 # UnsafePointer aliases
 # ===----------------------------------------------------------------------=== #
 

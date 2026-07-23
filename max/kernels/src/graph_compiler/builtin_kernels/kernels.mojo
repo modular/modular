@@ -130,7 +130,6 @@ from extensibility import (
     ManagedTensorSlice,
     OutputTensor,
     VariadicTensors,
-    foreach,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
 )

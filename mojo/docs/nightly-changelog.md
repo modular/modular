@@ -363,6 +363,23 @@ This version is still a work in progress.
   dir.nested_dir.package.foo() # error
   ```
 
+- Importing functions with the same name from different modules, combining
+  them into one overload set, is now deprecated and emits a warning. The
+  overload sets still merge for now, but a future release will reject the
+  second import; import the name from a single module instead:
+
+  ```mojo
+  from module1 import foo # e.g., foo(x: Int)
+  from module2 import foo # e.g., foo(x: Bool) - deprecation warning
+  ```
+
+  Requiring an overload set to resolve from one location better corresponds
+  with the pre-existing behaviour for sourcing overload sets in other cases:
+
+  1. local function vs imported function; error
+  2. local function vs wildcard; local definition shadows
+  3. wildcard vs wildcard; last import shadows
+
 ## Library stabilizations
 <!-- rumdl-disable MD013 -->
 

@@ -44,7 +44,6 @@ from std.gpu import (
 from std.gpu.host import DeviceContext
 from std.gpu.intrinsics import ldg
 from linalg.utils import elementwise_epilogue_type
-from std.memory import stack_allocation
 
 from std.utils import StaticTuple
 from std.utils.index import Index

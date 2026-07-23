@@ -74,7 +74,6 @@ from extensibility import (
     ManagedTensorSlice,
     OutputTensor,
     OutputVariadicTensors,
-    foreach,
 )
 from builtin_primitives.primitives import (
     foreach,

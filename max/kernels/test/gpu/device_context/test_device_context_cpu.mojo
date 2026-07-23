@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from std.memory.unsafe_pointer import alloc
+from std.memory import alloc
 from std.testing import assert_equal, assert_true
 
 

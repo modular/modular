@@ -22,7 +22,6 @@ Entry point: AMDMatmul.run()
 from std.bit import log2_floor
 from std.collections import Optional
 from std.sys import align_of, simd_width_of
-from std.memory import stack_allocation
 
 from .._multistage_gemm_gpu import (
     warp_split_k_reduction,
