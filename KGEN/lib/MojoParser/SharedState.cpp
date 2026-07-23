@@ -3117,15 +3117,6 @@ FailureOr<TypedAttr> foldSIMDBinOp(Operation &op,
   return failure();
 }
 
-// Handle a simple binary operation that folds to a `#kgen.param.expr`.
-FailureOr<TypedAttr> foldParamBinOp(POC opcode, Operation &op,
-                                    BuiltinFunctionFolder &folder) {
-  if (auto lhs = folder.findValue(op.getOperand(0)))
-    if (auto rhs = folder.findValue(op.getOperand(1)))
-      return ParamOperatorAttr::get(opcode, lhs, rhs);
-  return failure();
-}
-
 } // end anonymous namespace
 
 /// Process the following operation, doing one of three things:
@@ -3339,21 +3330,21 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
       return POP::SIMDRoundAttr::get(operand);
 
   if (isa<POP::AddOp>(op))
-    return foldParamBinOp(POC::Add, op, *this);
+    return foldBinOp(POC::Add);
   if (isa<POP::SubOp>(op))
     return foldSIMDBinOp<POP::SIMDSubAttr>(op, *this);
   if (isa<POP::MulOp>(op))
-    return foldParamBinOp(POC::Mul, op, *this);
+    return foldBinOp(POC::Mul);
   if (isa<POP::DivOp>(op))
-    return foldParamBinOp(POC::Div, op, *this);
+    return foldBinOp(POC::Div);
   if (isa<POP::FloorDivOp>(op))
-    return foldParamBinOp(POC::FloorDivS, op, *this);
+    return foldBinOp(POC::FloorDivS);
   if (isa<POP::SIMDAndOp>(op))
-    return foldParamBinOp(POC::And, op, *this);
+    return foldBinOp(POC::And);
   if (isa<POP::SIMDXOrOp>(op))
-    return foldParamBinOp(POC::Xor, op, *this);
+    return foldBinOp(POC::Xor);
   if (isa<POP::SIMDOrOp>(op))
-    return foldParamBinOp(POC::Or, op, *this);
+    return foldBinOp(POC::Or);
   if (isa<POP::ShlOp>(op))
     return foldSIMDBinOp<POP::SIMDShlAttr>(op, *this);
   if (isa<POP::ShrOp>(op))

@@ -73,18 +73,6 @@ def POP_GlobalAllocAddressSpaceAttr: EnumAttr<POPDialect,
                                                POP_GlobalAllocAddressSpace,
                                                "global_alloc_addr_space">;
 
-//===----------------------------------------------------------------------===//
-// NormalizedCmpPredicate
-//===----------------------------------------------------------------------===//
-
-// A reduced set of condition codes, mirroring the POC opcodes, to improve
-// canonicalization. Used by the #pop.simd_cmp attribute.
-def POP_NormalizedCmpPredicate : POP_Enum<
-    "NormalizedCmpPredicate", "pop.simd_cmp comparison predicate", [
-      I32EnumAttrCase<"EQ", 0, "eq">,
-      I32EnumAttrCase<"LT", 1, "lt">,
-      I32EnumAttrCase<"LE", 2, "le">,
-    ]>;
 
 //===----------------------------------------------------------------------===//
 // AtomicOrdering
