@@ -53,6 +53,8 @@ class JSONSchemaFormat(BaseModel):
     <parameter=key>value</parameter>), \"minimax_xml\" (MiniMax XML: <parameter name=\"key\">value</parameter>),
     \"deepseek_xml\" (DeepSeek XML(DeepSeek-v3.2): <{dsml_token}parameter name=\"key\" string=\"true|false\">value</{dsml_token}parameter>),
     \"glm_xml\" (GLM XML: <arg_key>key</arg_key><arg_value>value</arg_value>)."""
+    require_object_root: bool = False
+    """Require the schema root to produce a JSON object, coercing an unconstrained root to an empty open object."""
     reject_unsupported: bool = False
     """Reject unenforceable schema keywords rather than fall back to unconstrained decoding."""
 

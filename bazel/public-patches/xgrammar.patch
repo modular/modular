@@ -1,105 +1,114 @@
 diff --git a/cpp/grammar.cc b/cpp/grammar.cc
-index 0eb69c3..c6e6293 100644
+index 0eb69c3..b8364bb 100644
 --- a/cpp/grammar.cc
 +++ b/cpp/grammar.cc
-@@ -48,7 +48,8 @@ Grammar Grammar::FromJSONSchema(
+@@ -48,7 +48,9 @@ Grammar Grammar::FromJSONSchema(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      bool print_converted_ebnf,
 -    bool any_order
 +    bool any_order,
++    bool require_object_root,
 +    bool reject_unsupported
  ) {
    auto ebnf_string = JSONSchemaToEBNF(
        schema,
-@@ -58,7 +59,8 @@ Grammar Grammar::FromJSONSchema(
+@@ -58,7 +60,9 @@ Grammar Grammar::FromJSONSchema(
        strict_mode,
        max_whitespace_cnt,
        JSONFormat::kJSON,
 -      any_order
 +      any_order,
++      require_object_root,
 +      reject_unsupported
    );
    if (print_converted_ebnf) {
      XGRAMMAR_LOG(INFO) << "Converted EBNF: " << ebnf_string << std::endl;
 diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
-index 5cf140d..8426c2e 100644
+index 5cf140d..5d7ef98 100644
 --- a/cpp/grammar_compiler.cc
 +++ b/cpp/grammar_compiler.cc
-@@ -1013,7 +1013,8 @@ class GrammarCompilerSub {
+@@ -1013,7 +1013,9 @@ class GrammarCompilerSub {
        std::optional<std::pair<std::string, std::string>> separators,
        bool strict_mode,
        std::optional<int> max_whitespace_cnt,
 -      bool any_order
 +      bool any_order,
++      bool require_object_root,
 +      bool reject_unsupported
    );
  
    CompiledGrammar CompileRegex(const std::string& regex);
-@@ -1143,7 +1144,8 @@ CompiledGrammar GrammarCompilerSub::CompileJSONSchema(
+@@ -1143,7 +1145,9 @@ CompiledGrammar GrammarCompilerSub::CompileJSONSchema(
      std::optional<std::pair<std::string, std::string>> separators,
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
 -    bool any_order
 +    bool any_order,
++    bool require_object_root,
 +    bool reject_unsupported
  ) {
    return MultiThreadCompileGrammar(Grammar::FromJSONSchema(
        schema,
-@@ -1153,7 +1155,8 @@ CompiledGrammar GrammarCompilerSub::CompileJSONSchema(
+@@ -1153,7 +1157,9 @@ CompiledGrammar GrammarCompilerSub::CompileJSONSchema(
        strict_mode,
        max_whitespace_cnt,
        /*print_converted_ebnf=*/false,
 -      any_order
 +      any_order,
++      require_object_root,
 +      reject_unsupported
    ));
  }
  
-@@ -1246,6 +1249,7 @@ class GrammarCompilerCacheKeys {
+@@ -1246,6 +1252,8 @@ class GrammarCompilerCacheKeys {
      bool strict_mode;
      std::optional<int> max_whitespace_cnt;
      bool any_order;
++    bool require_object_root;
 +    bool reject_unsupported;
  
      XGRAMMAR_EQUAL_BY_MEMBERS(
          SchemaKey,
-@@ -1255,7 +1259,8 @@ class GrammarCompilerCacheKeys {
+@@ -1255,7 +1263,9 @@ class GrammarCompilerCacheKeys {
          &SchemaKey::separators,
          &SchemaKey::strict_mode,
          &SchemaKey::max_whitespace_cnt,
 -        &SchemaKey::any_order
 +        &SchemaKey::any_order,
++        &SchemaKey::require_object_root,
 +        &SchemaKey::reject_unsupported
      );
    };
  
-@@ -1296,7 +1301,8 @@ XGRAMMAR_HASH_BY_MEMBERS(
+@@ -1296,7 +1306,9 @@ XGRAMMAR_HASH_BY_MEMBERS(
      &xgrammar::GrammarCompilerCacheKeys::SchemaKey::separators,
      &xgrammar::GrammarCompilerCacheKeys::SchemaKey::strict_mode,
      &xgrammar::GrammarCompilerCacheKeys::SchemaKey::max_whitespace_cnt,
 -    &xgrammar::GrammarCompilerCacheKeys::SchemaKey::any_order
 +    &xgrammar::GrammarCompilerCacheKeys::SchemaKey::any_order,
++    &xgrammar::GrammarCompilerCacheKeys::SchemaKey::require_object_root,
 +    &xgrammar::GrammarCompilerCacheKeys::SchemaKey::reject_unsupported
  );
  
  XGRAMMAR_HASH_BY_MEMBERS(
-@@ -1362,7 +1368,8 @@ class GrammarCompiler::Impl {
+@@ -1362,7 +1374,9 @@ class GrammarCompiler::Impl {
        std::optional<std::pair<std::string, std::string>> separators,
        bool strict_mode,
        std::optional<int> max_whitespace_cnt,
 -      bool any_order
 +      bool any_order,
++      bool require_object_root,
 +      bool reject_unsupported
    );
  
    CompiledGrammar CompileStructuralTag(const std::string& structural_tag_json);
-@@ -1421,10 +1428,17 @@ CompiledGrammar GrammarCompiler::Impl::Compute(const UnionKey& key) {
+@@ -1421,10 +1435,18 @@ CompiledGrammar GrammarCompiler::Impl::Compute(const UnionKey& key) {
            const auto& [ebnf_str, root_rule_name] = key;
            return this->no_cache_compiler_.CompileGrammar(ebnf_str, root_rule_name);
          } else if constexpr (std::is_same_v<KeyType, SchemaKey>) {
 -          const auto& [schema, any_whitespace, indent, separators, strict_mode, max_whitespace_cnt, any_order] =
-+          const auto& [schema, any_whitespace, indent, separators, strict_mode, max_whitespace_cnt, any_order, reject_unsupported] =
++          const auto& [schema, any_whitespace, indent, separators, strict_mode, max_whitespace_cnt, any_order, require_object_root, reject_unsupported] =
                key;
            return this->no_cache_compiler_.CompileJSONSchema(
 -              schema, any_whitespace, indent, separators, strict_mode, max_whitespace_cnt, any_order
@@ -110,16 +119,18 @@ index 5cf140d..8426c2e 100644
 +              strict_mode,
 +              max_whitespace_cnt,
 +              any_order,
++              require_object_root,
 +              reject_unsupported
            );
          } else if constexpr (std::is_same_v<KeyType, StructuralTagKey>) {
            const auto& [structural_tag_json] = key;
-@@ -1456,15 +1470,30 @@ CompiledGrammar GrammarCompiler::Impl::CompileJSONSchema(
+@@ -1456,15 +1478,33 @@ CompiledGrammar GrammarCompiler::Impl::CompileJSONSchema(
      std::optional<std::pair<std::string, std::string>> separators,
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
 -    bool any_order
 +    bool any_order,
++    bool require_object_root,
 +    bool reject_unsupported
  ) {
    if (!cache_enabled_) {
@@ -132,6 +143,7 @@ index 5cf140d..8426c2e 100644
 +        strict_mode,
 +        max_whitespace_cnt,
 +        any_order,
++        require_object_root,
 +        reject_unsupported
      );
    }
@@ -144,16 +156,18 @@ index 5cf140d..8426c2e 100644
 +      strict_mode,
 +      max_whitespace_cnt,
 +      any_order,
++      require_object_root,
 +      reject_unsupported
    });
  }
  
-@@ -1537,10 +1566,18 @@ CompiledGrammar GrammarCompiler::CompileJSONSchema(
+@@ -1537,10 +1577,20 @@ CompiledGrammar GrammarCompiler::CompileJSONSchema(
      std::optional<std::pair<std::string, std::string>> separators,
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
 -    bool any_order
 +    bool any_order,
++    bool require_object_root,
 +    bool reject_unsupported
  ) {
    return pimpl_->CompileJSONSchema(
@@ -165,23 +179,25 @@ index 5cf140d..8426c2e 100644
 +      strict_mode,
 +      max_whitespace_cnt,
 +      any_order,
++      require_object_root,
 +      reject_unsupported
    );
  }
  
 diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
-index da8b516..3fb1593 100644
+index da8b516..314257b 100644
 --- a/cpp/json_schema_converter.cc
 +++ b/cpp/json_schema_converter.cc
-@@ -149,6 +149,7 @@ class SchemaParser {
+@@ -149,6 +149,8 @@ class SchemaParser {
    struct Config {
      bool strict_mode = false;
      JSONFormat json_format;
++    bool require_object_root = false;
 +    bool reject_unsupported = false;
    };
  
    explicit SchemaParser(const picojson::value& root_schema, const Config& config)
-@@ -190,6 +191,13 @@ class SchemaParser {
+@@ -190,6 +192,13 @@ class SchemaParser {
        const picojson::object& schema, const std::vector<std::string>& keywords, bool verbose = false
    );
  
@@ -195,7 +211,7 @@ index da8b516..3fb1593 100644
    Config config_;
    picojson::value root_schema_;
    std::unordered_map<std::string, SchemaSpecPtr> ref_cache_;
-@@ -257,6 +265,52 @@ void SchemaParser::WarnUnsupportedKeywords(
+@@ -257,6 +266,52 @@ void SchemaParser::WarnUnsupportedKeywords(
    }
  }
  
@@ -248,7 +264,7 @@ index da8b516..3fb1593 100644
  Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
      const picojson::value& schema,
      const std::string& rule_name_hint,
-@@ -286,9 +340,81 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
+@@ -286,9 +341,81 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
    }
  
    const auto& schema_obj = schema.get<picojson::object>();
@@ -333,7 +349,7 @@ index da8b516..3fb1593 100644
  
    SchemaSpecPtr result;
  
-@@ -358,18 +484,77 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
+@@ -358,18 +485,77 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
          );
        }
      }
@@ -422,7 +438,7 @@ index da8b516..3fb1593 100644
    }
  
    schema_cache_[cache_key] = result;
-@@ -377,7 +562,9 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
+@@ -377,7 +563,9 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
  }
  
  Result<IntegerSpec, SchemaError> SchemaParser::ParseInteger(const picojson::object& schema) {
@@ -433,7 +449,7 @@ index da8b516..3fb1593 100644
    IntegerSpec spec;
  
    auto checkAndConvertIntegerBound = [](const picojson::value& value
-@@ -462,14 +649,24 @@ Result<IntegerSpec, SchemaError> SchemaParser::ParseInteger(const picojson::obje
+@@ -462,14 +650,24 @@ Result<IntegerSpec, SchemaError> SchemaParser::ParseInteger(const picojson::obje
  }
  
  Result<NumberSpec, SchemaError> SchemaParser::ParseNumber(const picojson::object& schema) {
@@ -461,7 +477,7 @@ index da8b516..3fb1593 100644
    };
  
    if (schema.count("minimum")) {
-@@ -521,10 +718,39 @@ Result<NumberSpec, SchemaError> SchemaParser::ParseNumber(const picojson::object
+@@ -521,10 +719,39 @@ Result<NumberSpec, SchemaError> SchemaParser::ParseNumber(const picojson::object
    return ResultOk(std::move(spec));
  }
  
@@ -503,7 +519,7 @@ index da8b516..3fb1593 100644
    if (schema.count("minLength")) {
      if (!schema.at("minLength").is<int64_t>()) {
        return ResultErr<SchemaError>(
-@@ -560,7 +786,18 @@ Result<NullSpec, SchemaError> SchemaParser::ParseNull(const picojson::object&) {
+@@ -560,7 +787,18 @@ Result<NullSpec, SchemaError> SchemaParser::ParseNull(const picojson::object&) {
  }
  
  Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object& schema) {
@@ -523,7 +539,7 @@ index da8b516..3fb1593 100644
    ArraySpec spec;
  
    if (schema.count("prefixItems")) {
-@@ -615,7 +852,12 @@ Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object&
+@@ -615,7 +853,12 @@ Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object&
        if (items_result.IsErr()) return ResultErr(std::move(items_result).UnwrapErr());
        spec.additional_items = std::move(items_result).Unwrap();
      }
@@ -537,7 +553,7 @@ index da8b516..3fb1593 100644
      spec.allow_additional_items = true;
      spec.additional_items = SchemaSpec::Make(AnySpec{}, "", "any");
    } else {
-@@ -684,6 +926,15 @@ Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object&
+@@ -684,6 +927,15 @@ Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object&
  Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object& schema) {
    ObjectSpec spec;
  
@@ -553,7 +569,7 @@ index da8b516..3fb1593 100644
    if (schema.count("properties")) {
      if (!schema.at("properties").is<picojson::object>()) {
        return ResultErr<SchemaError>(
-@@ -692,21 +943,24 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+@@ -692,21 +944,24 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
      }
      auto properties_obj = schema.at("properties").get<picojson::object>();
      for (const auto& key : properties_obj.ordered_keys()) {
@@ -588,7 +604,7 @@ index da8b516..3fb1593 100644
    if (schema.count("patternProperties")) {
      if (!schema.at("patternProperties").is<picojson::object>()) {
        return ResultErr<SchemaError>(
-@@ -714,6 +968,27 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+@@ -714,6 +969,27 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
        );
      }
      auto pattern_props = schema.at("patternProperties").get<picojson::object>();
@@ -616,7 +632,7 @@ index da8b516..3fb1593 100644
      for (const auto& key : pattern_props.ordered_keys()) {
        auto prop_result = Parse(pattern_props.at(key), "pattern_prop");
        if (prop_result.IsErr()) return ResultErr(std::move(prop_result).UnwrapErr());
-@@ -740,7 +1015,8 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+@@ -740,7 +1016,8 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
      spec.property_names = std::move(prop_names_result).Unwrap();
    }
  
@@ -626,7 +642,7 @@ index da8b516..3fb1593 100644
    if (schema.count("additionalProperties")) {
      auto add_props = schema.at("additionalProperties");
      if (add_props.is<bool>()) {
-@@ -911,13 +1187,58 @@ Result<AnyOfSpec, SchemaError> SchemaParser::ParseAnyOf(const picojson::object&
+@@ -911,13 +1188,58 @@ Result<AnyOfSpec, SchemaError> SchemaParser::ParseAnyOf(const picojson::object&
          SchemaErrorType::kInvalidSchema, std::string(anyof_key) + " must be an array"
      );
    }
@@ -686,7 +702,7 @@ index da8b516..3fb1593 100644
    return ResultOk(std::move(spec));
  }
  
-@@ -928,6 +1249,13 @@ Result<AllOfSpec, SchemaError> SchemaParser::ParseAllOf(const picojson::object&
+@@ -928,6 +1250,13 @@ Result<AllOfSpec, SchemaError> SchemaParser::ParseAllOf(const picojson::object&
    }
    int idx = 0;
    for (const auto& sub_schema : schema.at("allOf").get<picojson::array>()) {
@@ -700,7 +716,111 @@ index da8b516..3fb1593 100644
      auto sub_result = Parse(sub_schema, "all_" + std::to_string(idx));
      if (sub_result.IsErr()) return ResultErr(std::move(sub_result).UnwrapErr());
      spec.schemas.push_back(std::move(sub_result).Unwrap());
-@@ -1500,14 +1828,14 @@ std::string JSONSchemaConverter::GenerateString(
+@@ -1318,6 +1647,103 @@ std::string BuildTrieBody(const TrieNode& node) {
+   return "(" + result + ")";
+ }
+ 
++// Returns true if `json_str` parses as a JSON object, false otherwise.
++bool IsJsonObjectLiteral(const std::string& json_str) {
++  picojson::value v;
++  std::string err = picojson::parse(v, json_str);
++  return err.empty() && v.is<picojson::object>();
++}
++
++// Whether the schema spec can ONLY produce a JSON object (used for nested
++// require_object_root checks; does not coerce). Recurses through Ref/AnyOf/
++// AllOf/TypeArray. Cycles through $ref are treated conservatively as an error.
++Result<bool, SchemaError> MustBeObject(
++    const SchemaSpecPtr& spec,
++    const JSONSchemaConverter::RefResolver& resolver,
++    std::unordered_set<std::string>& visited_refs
++) {
++  return std::visit(
++      [&](const auto& s) -> Result<bool, SchemaError> {
++        using T = std::decay_t<decltype(s)>;
++        if constexpr (std::is_same_v<T, ObjectSpec>) {
++          return ResultOk(true);
++        } else if constexpr (std::is_same_v<T, AnySpec>) {
++          // Nested Any is not coerced: it can be a non-object, so it is not
++          // guaranteed to be an object.
++          return ResultOk(false);
++        } else if constexpr (std::is_same_v<T, ConstSpec>) {
++          return ResultOk(IsJsonObjectLiteral(s.json_value));
++        } else if constexpr (std::is_same_v<T, EnumSpec>) {
++          for (const auto& v : s.json_values) {
++            if (!IsJsonObjectLiteral(v)) return ResultOk(false);
++          }
++          return ResultOk(!s.json_values.empty());
++        } else if constexpr (std::is_same_v<T, TypeArraySpec>) {
++          for (const auto& sub : s.type_schemas) {
++            auto r = MustBeObject(sub, resolver, visited_refs);
++            if (r.IsErr()) return ResultErr(std::move(r).UnwrapErr());
++            if (!std::move(r).Unwrap()) return ResultOk(false);
++          }
++          return ResultOk(!s.type_schemas.empty());
++        } else if constexpr (std::is_same_v<T, AnyOfSpec>) {
++          for (const auto& opt : s.options) {
++            auto r = MustBeObject(opt, resolver, visited_refs);
++            if (r.IsErr()) return ResultErr(std::move(r).UnwrapErr());
++            if (!std::move(r).Unwrap()) return ResultOk(false);
++          }
++          return ResultOk(!s.options.empty());
++        } else if constexpr (std::is_same_v<T, AllOfSpec>) {
++          for (const auto& sub : s.schemas) {
++            auto r = MustBeObject(sub, resolver, visited_refs);
++            if (r.IsErr()) return ResultErr(std::move(r).UnwrapErr());
++            if (std::move(r).Unwrap()) return ResultOk(true);
++          }
++          return ResultOk(false);
++        } else if constexpr (std::is_same_v<T, RefSpec>) {
++          if (visited_refs.count(s.uri)) {
++            return ResultErr<SchemaError>(
++                SchemaErrorType::kUnsatisfiableSchema,
++                "tool-call arguments schema has a $ref cycle; cannot verify an object root"
++            );
++          }
++          visited_refs.insert(s.uri);
++          auto resolved = resolver(s.uri, "root");
++          auto r = MustBeObject(resolved, resolver, visited_refs);
++          visited_refs.erase(s.uri);
++          return r;
++        } else {
++          // Integer/Number/String/Boolean/Null: never an object.
++          return ResultOk(false);
++        }
++      },
++      spec->spec
++  );
++}
++
++// Enforce that the ROOT schema produces a JSON object. Any at the root is
++// coerced to an empty open object; other scalar/array roots error.
++Result<SchemaSpecPtr, SchemaError> EnsureObjectRoot(
++    const SchemaSpecPtr& root, const JSONSchemaConverter::RefResolver& resolver
++) {
++  std::unordered_set<std::string> visited_refs;
++  // AnySpec at the root is coerced to an empty open object.
++  if (std::holds_alternative<AnySpec>(root->spec)) {
++    ObjectSpec obj;
++    obj.allow_additional_properties = true;
++    obj.additional_properties_schema = SchemaSpec::Make(AnySpec{}, "{}", "any");
++    return ResultOk(SchemaSpec::Make(std::move(obj), "", "root"));
++  }
++  auto r = MustBeObject(root, resolver, visited_refs);
++  if (r.IsErr()) return ResultErr(std::move(r).UnwrapErr());
++  if (!std::move(r).Unwrap()) {
++    return ResultErr<SchemaError>(
++        SchemaErrorType::kUnsatisfiableSchema,
++        "tool-call arguments must be a JSON object; schema forbids an object root"
++    );
++  }
++  return ResultOk(root);
++}
++
+ }  // namespace
+ 
+ std::string JSONSchemaConverter::GetKeyPatternExcluding(
+@@ -1500,14 +1926,14 @@ std::string JSONSchemaConverter::GenerateString(
      auto regex_pattern = JSONFormatToRegexPattern(format);
  
      if (regex_pattern.has_value()) {
@@ -717,7 +837,7 @@ index da8b516..3fb1593 100644
      return "\"\\\"\" " + converted_regex + " \"\\\"\"";
    }
  
-@@ -2391,7 +2719,10 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
+@@ -2391,7 +2817,10 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
          ")";
      m["email"] = "^(" + dot_string + "|" + quoted_string + ")@" + domain + "$";
  
@@ -729,64 +849,216 @@ index da8b516..3fb1593 100644
      m["time"] =
          "^([01]\\d|2[0-3]):[0-5]\\d:([0-5]\\d|60)(\\.\\d+)?(Z|[+-]([01]\\d|2[0-3]):[0-5]\\d)$";
      m["date-time"] =
-@@ -3328,7 +3659,8 @@ std::string JSONSchemaToEBNF(
+@@ -3328,7 +3757,9 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
 -    bool any_order
 +    bool any_order,
++    bool require_object_root,
 +    bool reject_unsupported
  ) {
    picojson::value schema_value;
    std::string err = picojson::parse(schema_value, schema);
-@@ -3342,7 +3674,8 @@ std::string JSONSchemaToEBNF(
+@@ -3342,7 +3773,9 @@ std::string JSONSchemaToEBNF(
        strict_mode,
        max_whitespace_cnt,
        json_format,
 -      any_order
 +      any_order,
++      require_object_root,
 +      reject_unsupported
    );
  }
  
-@@ -3354,10 +3687,11 @@ std::string JSONSchemaToEBNF(
+@@ -3354,10 +3787,12 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
 -    bool any_order
 +    bool any_order,
++    bool require_object_root,
 +    bool reject_unsupported
  ) {
    // Parse JSON Schema to SchemaSpec
 -  SchemaParser parser(schema, {strict_mode, json_format});
-+  SchemaParser parser(schema, {strict_mode, json_format, reject_unsupported});
++  SchemaParser parser(schema, {strict_mode, json_format, require_object_root, reject_unsupported});
    auto spec_result = parser.Parse(schema, "root");
    if (spec_result.IsErr()) {
      XGRAMMAR_LOG(FATAL) << std::move(spec_result).UnwrapErr().what();
+@@ -3372,6 +3807,14 @@ std::string JSONSchemaToEBNF(
+     return std::move(r).Unwrap();
+   };
+ 
++  if (require_object_root) {
++    auto root_result = EnsureObjectRoot(spec, ref_resolver);
++    if (root_result.IsErr()) {
++      XGRAMMAR_LOG(FATAL) << std::move(root_result).UnwrapErr().what();
++    }
++    spec = std::move(root_result).Unwrap();
++  }
++
+   // Create converter based on format
+   switch (json_format) {
+     case JSONFormat::kJSON: {
+@@ -3414,7 +3857,9 @@ std::string GenerateFloatRangeRegex(
+   );
+ }
+ 
+-std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
++std::string QwenXMLToolCallingToEBNF(
++    const std::string& schema, bool any_order, bool require_object_root, bool reject_unsupported
++) {
+   picojson::value json_value;
+   std::string err = picojson::parse(json_value, schema);
+   if (!err.empty()) {
+@@ -3428,11 +3873,15 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order)
+       true,
+       std::nullopt,
+       JSONFormat::kQwenXML,
+-      any_order
++      any_order,
++      require_object_root,
++      reject_unsupported
+   );
+ }
+ 
+-std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
++std::string MiniMaxXMLToolCallingToEBNF(
++    const std::string& schema, bool any_order, bool require_object_root, bool reject_unsupported
++) {
+   picojson::value json_value;
+   std::string err = picojson::parse(json_value, schema);
+   if (!err.empty()) {
+@@ -3446,11 +3895,15 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
+       true,
+       std::nullopt,
+       JSONFormat::kMiniMaxXML,
+-      any_order
++      any_order,
++      require_object_root,
++      reject_unsupported
+   );
+ }
+ 
+-std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
++std::string DeepSeekXMLToolCallingToEBNF(
++    const std::string& schema, bool any_order, bool require_object_root, bool reject_unsupported
++) {
+   picojson::value json_value;
+   std::string err = picojson::parse(json_value, schema);
+   if (!err.empty()) {
+@@ -3464,11 +3917,15 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
+       true,
+       std::nullopt,
+       JSONFormat::kDeepSeekXML,
+-      any_order
++      any_order,
++      require_object_root,
++      reject_unsupported
+   );
+ }
+ 
+-std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
++std::string GlmXMLToolCallingToEBNF(
++    const std::string& schema, bool any_order, bool require_object_root, bool reject_unsupported
++) {
+   picojson::value json_value;
+   std::string err = picojson::parse(json_value, schema);
+   if (!err.empty()) {
+@@ -3482,7 +3939,9 @@ std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
+       true,
+       std::nullopt,
+       JSONFormat::kGlmXML,
+-      any_order
++      any_order,
++      require_object_root,
++      reject_unsupported
+   );
+ }
+ 
 diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
-index f0175ba..f000203 100644
+index f0175ba..a7710bf 100644
 --- a/cpp/json_schema_converter.h
 +++ b/cpp/json_schema_converter.h
-@@ -499,7 +499,8 @@ std::string JSONSchemaToEBNF(
+@@ -499,7 +499,9 @@ std::string JSONSchemaToEBNF(
      bool strict_mode = true,
      std::optional<int> max_whitespace_cnt = std::nullopt,
      JSONFormat json_format = JSONFormat::kJSON,
 -    bool any_order = false
 +    bool any_order = false,
++    bool require_object_root = false,
 +    bool reject_unsupported = false
  );
  
  /*!
-@@ -535,7 +536,8 @@ std::string JSONSchemaToEBNF(
+@@ -535,7 +537,9 @@ std::string JSONSchemaToEBNF(
      bool strict_mode = true,
      std::optional<int> max_whitespace_cnt = std::nullopt,
      JSONFormat json_format = JSONFormat::kJSON,
 -    bool any_order = false
 +    bool any_order = false,
++    bool require_object_root = false,
 +    bool reject_unsupported = false
  );
  
  /*!
+@@ -559,7 +563,12 @@ std::string GenerateFloatRangeRegex(
+  * \return The ebnf-grammar to match the requirements of the schema, and
+  * in Qwen xml style.
+  */
+-std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order = false);
++std::string QwenXMLToolCallingToEBNF(
++    const std::string& schema,
++    bool any_order = false,
++    bool require_object_root = false,
++    bool reject_unsupported = false
++);
+ 
+ /*!
+  * \brief Convert a function call to a Grammar.
+@@ -567,7 +576,12 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order =
+  * \return The ebnf-grammar to match the requirements of the schema, and
+  * in MiniMax xml style.
+  */
+-std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_order = false);
++std::string MiniMaxXMLToolCallingToEBNF(
++    const std::string& schema,
++    bool any_order = false,
++    bool require_object_root = false,
++    bool reject_unsupported = false
++);
+ 
+ /*!
+  * \brief Convert a function call to a Grammar.
+@@ -575,7 +589,12 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
+  * \return The ebnf-grammar to match the requirements of the schema, and
+  * in DeepSeek xml style.
+  */
+-std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_order = false);
++std::string DeepSeekXMLToolCallingToEBNF(
++    const std::string& schema,
++    bool any_order = false,
++    bool require_object_root = false,
++    bool reject_unsupported = false
++);
+ 
+ /*!
+  * \brief Convert a function call to a Grammar.
+@@ -583,7 +602,12 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
+  * \return The ebnf-grammar to match the requirements of the schema, and
+  * in GLM xml style (<arg_key>key</arg_key><arg_value>value</arg_value>).
+  */
+-std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order = false);
++std::string GlmXMLToolCallingToEBNF(
++    const std::string& schema,
++    bool any_order = false,
++    bool require_object_root = false,
++    bool reject_unsupported = false
++);
+ 
+ }  // namespace xgrammar
+ 
 diff --git a/cpp/regex_converter.cc b/cpp/regex_converter.cc
 index 76a0f4c..b95bbbc 100644
 --- a/cpp/regex_converter.cc
@@ -1104,21 +1376,31 @@ index fcb3442..69fed83 100644
  }  // namespace xgrammar
  
 diff --git a/cpp/structural_tag.cc b/cpp/structural_tag.cc
-index 592de70..f060a05 100644
+index 592de70..ec43ce8 100644
 --- a/cpp/structural_tag.cc
 +++ b/cpp/structural_tag.cc
-@@ -101,6 +101,7 @@ picojson::value JSONSchemaFormat::ToJSON() const {
+@@ -101,6 +101,8 @@ picojson::value JSONSchemaFormat::ToJSON() const {
    }
    obj["style"] = picojson::value(style);
    obj["any_order"] = picojson::value(any_order);
++  obj["require_object_root"] = picojson::value(require_object_root);
 +  obj["reject_unsupported"] = picojson::value(reject_unsupported);
    return picojson::value(std::move(obj));
  }
  
-@@ -555,8 +556,19 @@ Result<JSONSchemaFormat, ISTError> StructuralTagParser::ParseJSONSchemaFormat(
+@@ -555,8 +557,29 @@ Result<JSONSchemaFormat, ISTError> StructuralTagParser::ParseJSONSchemaFormat(
      any_order = any_order_it->second.get<bool>();
    }
  
++  bool require_object_root = false;
++  auto require_object_root_it = obj.find("require_object_root");
++  if (require_object_root_it != obj.end()) {
++    if (!require_object_root_it->second.is<bool>()) {
++      return ResultErr<ISTError>("require_object_root must be a boolean");
++    }
++    require_object_root = require_object_root_it->second.get<bool>();
++  }
++
 +  bool reject_unsupported = false;
 +  auto reject_it = obj.find("reject_unsupported");
 +  if (reject_it != obj.end()) {
@@ -1131,98 +1413,110 @@ index 592de70..f060a05 100644
    // here introduces a serialization/deserialization overhead; try to avoid it in the future.
 -  return ResultOk<JSONSchemaFormat>(json_schema_it->second.serialize(false), style, any_order);
 +  return ResultOk<JSONSchemaFormat>(
-+      json_schema_it->second.serialize(false), style, any_order, reject_unsupported
++      json_schema_it->second.serialize(false), style, any_order, require_object_root,
++      reject_unsupported
 +  );
  }
  
  Result<AnyTextFormat, ISTError> StructuralTagParser::ParseAnyTextFormat(const picojson::object& obj
-@@ -1834,43 +1846,43 @@ Result<int, ISTError> StructuralTagGrammarConverter::VisitSub(const ConstStringF
+@@ -1834,10 +1857,15 @@ Result<int, ISTError> StructuralTagGrammarConverter::VisitSub(const ConstStringF
  }
  
  Result<int, ISTError> StructuralTagGrammarConverter::VisitSub(const JSONSchemaFormat& format) {
 -  const static std::unordered_map<std::string, std::function<std::string(const std::string&, bool)>>
--      style_to_grammar_converter = {
--          {"json",
++  const static std::unordered_map<
++      std::string,
++      std::function<std::string(const std::string&, bool, bool, bool)>>
+       style_to_grammar_converter = {
+           {"json",
 -           [](const std::string& json_schema, bool any_order) -> std::string {
--             return JSONSchemaToEBNF(
--                 json_schema,
--                 /*any_whitespace=*/true,
--                 /*indent=*/std::nullopt,
--                 /*separators=*/std::nullopt,
--                 /*strict_mode=*/true,
--                 /*max_whitespace_cnt=*/std::nullopt,
--                 /*json_format=*/JSONFormat::kJSON,
++           [](const std::string& json_schema,
++              bool any_order,
++              bool require_object_root,
++              bool reject_unsupported) -> std::string {
+              return JSONSchemaToEBNF(
+                  json_schema,
+                  /*any_whitespace=*/true,
+@@ -1846,31 +1874,55 @@ Result<int, ISTError> StructuralTagGrammarConverter::VisitSub(const JSONSchemaFo
+                  /*strict_mode=*/true,
+                  /*max_whitespace_cnt=*/std::nullopt,
+                  /*json_format=*/JSONFormat::kJSON,
 -                 any_order
--             );
--           }},
--          {"qwen_xml",
++                 any_order,
++                 require_object_root,
++                 reject_unsupported
+              );
+            }},
+           {"qwen_xml",
 -           [](const std::string& json_schema, bool any_order) -> std::string {
 -             return QwenXMLToolCallingToEBNF(json_schema, any_order);
--           }},
--          {"minimax_xml",
++           [](const std::string& json_schema,
++              bool any_order,
++              bool require_object_root,
++              bool reject_unsupported) -> std::string {
++             return QwenXMLToolCallingToEBNF(
++                 json_schema, any_order, require_object_root, reject_unsupported
++             );
+            }},
+           {"minimax_xml",
 -           [](const std::string& json_schema, bool any_order) -> std::string {
 -             return MiniMaxXMLToolCallingToEBNF(json_schema, any_order);
--           }},
--          {"deepseek_xml",
++           [](const std::string& json_schema,
++              bool any_order,
++              bool require_object_root,
++              bool reject_unsupported) -> std::string {
++             return MiniMaxXMLToolCallingToEBNF(
++                 json_schema, any_order, require_object_root, reject_unsupported
++             );
+            }},
+           {"deepseek_xml",
 -           [](const std::string& json_schema, bool any_order) -> std::string {
 -             return DeepSeekXMLToolCallingToEBNF(json_schema, any_order);
--           }},
--          {"glm_xml",
++           [](const std::string& json_schema,
++              bool any_order,
++              bool require_object_root,
++              bool reject_unsupported) -> std::string {
++             return DeepSeekXMLToolCallingToEBNF(
++                 json_schema, any_order, require_object_root, reject_unsupported
++             );
+            }},
+           {"glm_xml",
 -           [](const std::string& json_schema, bool any_order) -> std::string {
 -             return GlmXMLToolCallingToEBNF(json_schema, any_order);
--           }},
--      };
-+  const static std::
-+      unordered_map<std::string, std::function<std::string(const std::string&, bool, bool)>>
-+          style_to_grammar_converter = {
-+              {"json",
-+               [](const std::string& json_schema, bool any_order, bool reject_unsupported
-+               ) -> std::string {
-+                 return JSONSchemaToEBNF(
-+                     json_schema,
-+                     /*any_whitespace=*/true,
-+                     /*indent=*/std::nullopt,
-+                     /*separators=*/std::nullopt,
-+                     /*strict_mode=*/true,
-+                     /*max_whitespace_cnt=*/std::nullopt,
-+                     /*json_format=*/JSONFormat::kJSON,
-+                     any_order,
-+                     reject_unsupported
-+                 );
-+               }},
-+              {"qwen_xml",
-+               [](const std::string& json_schema, bool any_order, bool /*reject_unsupported*/
-+               ) -> std::string { return QwenXMLToolCallingToEBNF(json_schema, any_order); }},
-+              {"minimax_xml",
-+               [](const std::string& json_schema, bool any_order, bool /*reject_unsupported*/
-+               ) -> std::string { return MiniMaxXMLToolCallingToEBNF(json_schema, any_order); }},
-+              {"deepseek_xml",
-+               [](const std::string& json_schema, bool any_order, bool /*reject_unsupported*/
-+               ) -> std::string { return DeepSeekXMLToolCallingToEBNF(json_schema, any_order); }},
-+              {"glm_xml",
-+               [](const std::string& json_schema, bool any_order, bool /*reject_unsupported*/
-+               ) -> std::string { return GlmXMLToolCallingToEBNF(json_schema, any_order); }},
-+          };
++           [](const std::string& json_schema,
++              bool any_order,
++              bool require_object_root,
++              bool reject_unsupported) -> std::string {
++             return GlmXMLToolCallingToEBNF(
++                 json_schema, any_order, require_object_root, reject_unsupported
++             );
+            }},
+       };
    auto converter = style_to_grammar_converter.find(format.style);
    if (converter == style_to_grammar_converter.end()) {
      return ResultErr<ISTError>("Unsupported parsing type: " + format.style);
    }
 -  std::string ebnf = converter->second(format.json_schema, format.any_order);
-+  std::string ebnf =
-+      converter->second(format.json_schema, format.any_order, format.reject_unsupported);
++  std::string ebnf = converter->second(
++      format.json_schema, format.any_order, format.require_object_root, format.reject_unsupported
++  );
    auto sub_grammar = Grammar::FromEBNF(ebnf);
    auto added_root_rule_id = SubGrammarAdder().Apply(&grammar_builder_, sub_grammar);
    return ResultOk(added_root_rule_id);
 diff --git a/cpp/structural_tag.h b/cpp/structural_tag.h
-index 88e990e..f59b715 100644
+index 88e990e..5ac1c65 100644
 --- a/cpp/structural_tag.h
 +++ b/cpp/structural_tag.h
-@@ -87,8 +87,19 @@ struct JSONSchemaFormat {
+@@ -87,8 +87,25 @@ struct JSONSchemaFormat {
    // Whether to allow object properties to appear in any order. See
    // Grammar::FromJSONSchema / JSONSchemaToEBNF for the semantics.
    bool any_order = false;
 -  JSONSchemaFormat(std::string json_schema, std::string style = "json", bool any_order = false)
 -      : json_schema(std::move(json_schema)), style(std::move(style)), any_order(any_order) {}
++  // Whether to require the schema root to produce a JSON object (coercing an
++  // unconstrained root to an empty open object). See Grammar::FromJSONSchema /
++  // JSONSchemaToEBNF.
++  bool require_object_root = false;
 +  // Whether to reject unenforceable schema keywords rather than fall back to
 +  // unconstrained decoding. See Grammar::FromJSONSchema / JSONSchemaToEBNF.
 +  bool reject_unsupported = false;
@@ -1230,39 +1524,43 @@ index 88e990e..f59b715 100644
 +      std::string json_schema,
 +      std::string style = "json",
 +      bool any_order = false,
++      bool require_object_root = false,
 +      bool reject_unsupported = false
 +  )
 +      : json_schema(std::move(json_schema)),
 +        style(std::move(style)),
 +        any_order(any_order),
++        require_object_root(require_object_root),
 +        reject_unsupported(reject_unsupported) {}
    picojson::value ToJSON() const;
  };
  
 diff --git a/include/xgrammar/compiler.h b/include/xgrammar/compiler.h
-index 9f2caf2..a65f48d 100644
+index 9f2caf2..6cc094b 100644
 --- a/include/xgrammar/compiler.h
 +++ b/include/xgrammar/compiler.h
-@@ -79,7 +79,8 @@ class GrammarCompiler {
+@@ -79,7 +79,9 @@ class GrammarCompiler {
        std::optional<std::pair<std::string, std::string>> separators = std::nullopt,
        bool strict_mode = true,
        std::optional<int> max_whitespace_cnt = std::nullopt,
 -      bool any_order = false
 +      bool any_order = false,
++      bool require_object_root = false,
 +      bool reject_unsupported = false
    );
  
    /*! \brief Get the compiled grammar for pure JSON. */
 diff --git a/include/xgrammar/grammar.h b/include/xgrammar/grammar.h
-index 4796b62..b64056c 100644
+index 4796b62..14e3016 100644
 --- a/include/xgrammar/grammar.h
 +++ b/include/xgrammar/grammar.h
-@@ -119,7 +119,8 @@ class Grammar {
+@@ -119,7 +119,9 @@ class Grammar {
        bool strict_mode = true,
        std::optional<int> max_whitespace_cnt = std::nullopt,
        bool print_converted_ebnf = false,
 -      bool any_order = false
 +      bool any_order = false,
++      bool require_object_root = false,
 +      bool reject_unsupported = false
    );
  

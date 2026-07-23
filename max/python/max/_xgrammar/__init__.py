@@ -296,12 +296,14 @@ class GrammarCompiler:
         schema: str,
         any_whitespace: bool = True,
         strict_mode: bool = True,
+        require_object_root: bool = False,
         reject_unsupported: bool = False,
     ) -> CompiledGrammar:
         return self._impl.compile_json_schema(
             schema,
             any_whitespace=any_whitespace,
             strict_mode=strict_mode,
+            require_object_root=require_object_root,
             reject_unsupported=reject_unsupported,
         )
 

@@ -75,6 +75,7 @@ class GrammarCompiler:
         schema: str,
         any_whitespace: bool = True,
         strict_mode: bool = True,
+        require_object_root: bool = False,
         reject_unsupported: bool = False,
     ) -> CompiledGrammar: ...
     def compile_grammar(

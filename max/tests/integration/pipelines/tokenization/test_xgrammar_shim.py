@@ -23,6 +23,7 @@ path.
 import importlib.util
 import math
 import sys
+from typing import Any
 
 import numpy as np
 import pytest
@@ -66,6 +67,42 @@ def _accepts(compiled: xgr.CompiledGrammar, s: str) -> bool:
     # Whether the grammar accepts s as a complete value.
     matcher = xgr.GrammarMatcher(compiled)
     return matcher.accept_string(s) and matcher.is_completed()
+
+
+def _toolcall(schema: dict[str, Any]) -> xgr.StructuralTag:
+    # Build a tool-call structural tag wrapping one JSON-schema arg. Tool-call
+    # arguments are always a JSON object, so opt into require_object_root on the
+    # JSONSchemaFormat (the flag defaults false on the general path).
+    return xgr.StructuralTag(
+        format=TriggeredTagsFormat(
+            triggers=["<t>"],
+            tags=[
+                TagFormat(
+                    begin="<t>",
+                    content=JSONSchemaFormat(
+                        json_schema=schema,
+                        require_object_root=True,
+                    ),
+                    end="</t>",
+                )
+            ],
+        )
+    )
+
+
+def _set_require_object_root(fmt: Any) -> None:
+    # Recursively opt every JSONSchemaFormat in a tag tree into
+    # require_object_root (the flag defaults false); mirrors what a model's
+    # tool-call tag would set. Walks the container fields of the format models.
+    if isinstance(fmt, JSONSchemaFormat):
+        fmt.require_object_root = True
+    for child_field in ("content",):
+        child = getattr(fmt, child_field, None)
+        if child is not None:
+            _set_require_object_root(child)
+    for list_field in ("elements", "tags"):
+        for child in getattr(fmt, list_field, None) or []:
+            _set_require_object_root(child)
 
 
 def test_shim_is_torch_free() -> None:
@@ -674,6 +711,71 @@ def test_properties_with_pattern_properties_rejected() -> None:
         _compiler().compile_json_schema(schema, reject_unsupported=True)
 
 
+def _qwen_tool(params: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {"type": "function", "function": {"name": "f", "parameters": params}}
+    ]
+
+
+def _qwen_compiler() -> xgr.GrammarCompiler:
+    # A full printable-ASCII vocab so the qwen tag's literal begin/end markers
+    # (``<tool_call>\n<function=...``) can be byte-tokenized.
+    vocab = [chr(c) for c in range(32, 127)] + ["\n", "<eos>"]
+    info = xgr.TokenizerInfo(
+        vocab,
+        vocab_type=xgr.VocabType.RAW,
+        stop_token_ids=[len(vocab) - 1],
+    )
+    return xgr.GrammarCompiler(info)
+
+
+def _compile_qwen_tool(params: dict[str, Any]) -> xgr.CompiledGrammar:
+    # The qwen_xml tool path routes through QwenXMLToolCallingToEBNF, which
+    # reads require_object_root from the JSONSchemaFormat. Tool-call arguments
+    # are always a JSON object, so opt into require_object_root on the tag's
+    # JSON-schema contents (the flag defaults false). A non-object root is then
+    # rejected during schema parse (before vocab tokenization), so the reject
+    # tests do not depend on the vocab; the compile test needs the markers to
+    # tokenize.
+    tag = xgr.get_builtin_structural_tag(
+        "qwen_3_5",
+        tools=_qwen_tool(params),
+        tool_choice="required",
+        reasoning=False,
+    )
+    _set_require_object_root(tag.format)
+    return _qwen_compiler().compile_structural_tag(tag)
+
+
+def test_tool_call_array_root_rejected() -> None:
+    # An array-root tool-argument schema violates require_object_root.
+    with pytest.raises(Exception):
+        _compile_qwen_tool({"type": "array", "items": {"type": "string"}})
+
+
+def test_tool_call_string_root_rejected() -> None:
+    # A string-root tool-argument schema likewise violates require_object_root.
+    with pytest.raises(Exception):
+        _compile_qwen_tool({"type": "string"})
+
+
+def test_tool_call_object_root_compiles() -> None:
+    # An object-root tool-argument schema is well-formed and compiles.
+    compiled = _compile_qwen_tool(
+        {"type": "object", "properties": {"x": {"type": "string"}}}
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_response_format_array_root_compiles() -> None:
+    # The response_format path does not require an object root, so an array
+    # root compiles (it must NOT be rejected the way a tool-call root is).
+    compiled = _compiler().compile_json_schema(
+        '{"type": "array", "items": {"type": "string"}}'
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
 def test_structural_tag_bridge() -> None:
     tag = xgr.StructuralTag.from_legacy_structural_tag(
         [xgr.StructuralTagItem(begin="a", schema={"type": "object"}, end="b")],
@@ -1068,3 +1170,42 @@ def test_or_format_json_schema_rejects_unenforceable() -> None:
     )
     with pytest.raises(Exception):
         _compiler().compile_structural_tag(tag)
+
+
+def test_tool_call_requires_object_root() -> None:
+    # Every tool-call argument schema must be a JSON object; non-object roots
+    # (string / array / number) are rejected.
+    obj = _compiler().compile_structural_tag(
+        _toolcall({"type": "object", "properties": {"a": {"type": "string"}}})
+    )
+    assert isinstance(obj, xgr.CompiledGrammar)
+    for non_object in (
+        {"type": "string"},
+        {"type": "array", "items": {"type": "string"}},
+        {"type": "number"},
+    ):
+        with pytest.raises(Exception):
+            _compiler().compile_structural_tag(_toolcall(non_object))
+
+
+def test_tool_call_empty_schema_coerced_to_object() -> None:
+    # An empty (any) tool-call schema is coerced to an open object, not rejected.
+    compiled = _compiler().compile_structural_tag(_toolcall({}))
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_tool_call_anyof_non_object_branch_rejected() -> None:
+    # Object-root verification recurses through anyOf: if any branch could be a
+    # non-object, the root is not guaranteed to be an object, so reject.
+    with pytest.raises(Exception):
+        _compiler().compile_structural_tag(
+            _toolcall({"anyOf": [{"type": "object"}, {"type": "string"}]})
+        )
+
+
+def test_general_path_allows_non_object_root() -> None:
+    # The general compile_json_schema path does NOT require an object root
+    # (require_object_root=false), unlike the tool-call path.
+    for schema in ('{"type": "string"}', '{"type": "number"}'):
+        compiled = _compiler().compile_json_schema(schema)
+        assert isinstance(compiled, xgr.CompiledGrammar)
