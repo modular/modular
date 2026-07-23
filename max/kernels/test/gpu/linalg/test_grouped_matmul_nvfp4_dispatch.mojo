@@ -222,16 +222,16 @@ def _test_dispatch[
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # --- Initialize data ---
-    rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
-    rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
+    rand(a_host._storage, a_host.num_elements(), min=0, max=255)
+    rand(b_host._storage, b_host.num_elements(), min=0, max=255)
 
     var a_scales_tensor_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_tensor_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     # Initialize a_scales to 0, then set valid regions to power-of-2 values
     for i in range(a_scales_host.num_elements()):
-        a_scales_host.ptr[i] = Scalar[scales_dtype](0.0)
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+        a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
+    rand(b_scales_host._storage, b_scales_host.num_elements())
 
     # Set a_scales for active expert regions
     for i in range(num_active_experts):
@@ -369,22 +369,22 @@ def _test_dispatch[
             continue
 
         var c_slice = TileTensor(
-            c_ref_tensor.ptr + start * c_row_stride,
+            c_ref_tensor._storage + start * c_row_stride,
             row_major((end - start, Idx[N])),
         )
 
         var new_a_tensor = TileTensor(
-            a_tensor.ptr + start * a_row_stride,
+            a_tensor._storage + start * a_row_stride,
             row_major((end - start, Idx[packed_K])),
         )
 
         var new_b_tensor = TileTensor(
-            b_tensor.ptr + Int(expert_id) * b_expert_stride,
+            b_tensor._storage + Int(expert_id) * b_expert_stride,
             row_major((Idx[N], Idx[packed_K])),
         )
 
         var new_b_scales_tensor = TileTensor(
-            b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
+            b_scales_tensor._storage + Int(expert_id) * b_scales_expert_stride,
             row_major(
                 Coord(
                     Idx[n_groups],
@@ -400,7 +400,7 @@ def _test_dispatch[
             a_scale_offsets_ptr[i]
         )
         var new_a_scales_tensor = TileTensor(
-            a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
+            a_scales_tensor._storage + a_scales_start * a_scales_row_stride,
             row_major(
                 Coord(
                     ceildiv(end - start, SF_MN_GROUP_SIZE),
@@ -441,8 +441,8 @@ def _test_dispatch[
                 c_host_ref_ptr[j] = Scalar[c_type](0)
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,

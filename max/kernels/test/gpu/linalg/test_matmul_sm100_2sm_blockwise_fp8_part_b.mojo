@@ -195,10 +195,10 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
                 ](0.5)
 
     else:
-        rand(a_host.ptr, a_host.num_elements())
-        rand(b_host.ptr, b_host.num_elements())
-        rand(a_scales_host.ptr, a_scales_host.num_elements())
-        rand(b_scales_host.ptr, b_scales_host.num_elements())
+        rand(a_host._storage, a_host.num_elements())
+        rand(b_host._storage, b_host.num_elements())
+        rand(a_scales_host._storage, a_scales_host.num_elements())
+        rand(b_scales_host._storage, b_scales_host.num_elements())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -258,12 +258,15 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host.ptr, c_host_ref.ptr, c_host.num_elements(), threshold=0.001
+        c_host._storage,
+        c_host_ref._storage,
+        c_host.num_elements(),
+        threshold=0.001,
     )
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,

@@ -129,8 +129,8 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
                         b_type
                     ]()
     else:
-        rand(a_host.ptr, a_host.num_elements(), min=-1.0, max=1.0)
-        rand(b_host.ptr, b_host.num_elements(), min=-1.0, max=1.0)
+        rand(a_host._storage, a_host.num_elements(), min=-1.0, max=1.0)
+        rand(b_host._storage, b_host.num_elements(), min=-1.0, max=1.0)
 
     # Move operands to device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -156,15 +156,15 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     # Reference: per-batch vendor_blas.matmul
     for b in range(B):
         var a_2d = TileTensor(
-            a_tensor.ptr + b * M * K,
+            a_tensor._storage + b * M * K,
             row_major((M, K)),
         )
         var b_2d = TileTensor(
-            b_tensor.ptr + b * N * K,
+            b_tensor._storage + b * N * K,
             row_major((N, K)),
         )
         var c_ref_2d = TileTensor(
-            c_ref_tensor.ptr + b * M * N,
+            c_ref_tensor._storage + b * M * N,
             row_major((M, N)),
         )
 

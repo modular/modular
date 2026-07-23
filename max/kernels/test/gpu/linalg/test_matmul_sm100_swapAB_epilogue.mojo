@@ -133,8 +133,8 @@ def test_matmul_sm100_epilogue[
         return y
 
     seed(1234)
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
 
     var scales: List[Int32] = [-2, -1, 0, 1, 2]
 
@@ -241,8 +241,8 @@ def test_matmul_sm100_epilogue[
 
         comptime rtol = 1e-2
         assert_almost_equal(
-            c_host.ptr,
-            c_host_ref.ptr,
+            c_host._storage,
+            c_host_ref._storage,
             c_host.num_elements(),
             atol=0.0001,
             rtol=rtol,

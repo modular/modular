@@ -144,8 +144,8 @@ def test_matmul_sm100_epilogue[
         # while also testing arithmetic operations
         return val + c_tensor_lt.load[width=width](idx).cast[_dtype]()
 
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
 
     for i in range(Int(m.value())):
         for j in range(Int(n.value())):
@@ -235,8 +235,8 @@ def test_matmul_sm100_epilogue[
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,

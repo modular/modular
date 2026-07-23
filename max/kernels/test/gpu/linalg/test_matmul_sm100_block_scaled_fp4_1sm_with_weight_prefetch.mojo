@@ -198,11 +198,11 @@ def _test_impl[
                 comptime assert b_host.flat_rank == 2
                 b_host[n, k] = UInt8(n).cast[b_type]()
     else:
-        rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
-        rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
+        rand(a_host._storage, a_host.num_elements(), min=0, max=255)
+        rand(b_host._storage, b_host.num_elements(), min=0, max=255)
 
-    rand(a_scales_host.ptr, a_scales_host.num_elements())
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+    rand(a_scales_host._storage, a_scales_host.num_elements())
+    rand(b_scales_host._storage, b_scales_host.num_elements())
     for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
         for idx1 in range(
             0,
@@ -341,11 +341,11 @@ def _test_impl[
 
     comptime if normal_epilogue:
         for i in range(c_host_ref.num_elements()):
-            c_host_ref.ptr[i] = c_host_ref.ptr[i] * Scalar[c_type](2)
+            c_host_ref._storage[i] = c_host_ref._storage[i] * Scalar[c_type](2)
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
