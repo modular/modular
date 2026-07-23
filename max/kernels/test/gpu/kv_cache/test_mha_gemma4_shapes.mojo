@@ -41,7 +41,7 @@ from kv_cache.types import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from kv_cache_test_utils import (
     assert_no_nan_inf,
     padded_lut_cols,

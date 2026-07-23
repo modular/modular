@@ -17,7 +17,7 @@ from std.math.uutils import udivmod
 from std.gpu import AddressSpace, barrier, block_idx, global_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.memory import (
-    memset_zero,
+    unsafe_memset_zero,
     stack_allocation,
 )
 from layout import Coord, Idx, TileTensor, row_major
@@ -62,7 +62,7 @@ def matmul(
     # Privatization of the C matrix.
     var c_reg = stack_allocation[TILE_SZ_B, DType.int]()
 
-    memset_zero(c_reg, TILE_SZ_B)
+    unsafe_memset_zero(c_reg, TILE_SZ_B)
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):

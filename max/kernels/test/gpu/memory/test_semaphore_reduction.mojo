@@ -16,7 +16,7 @@ from std.random import rand
 from std.gpu import block_dim, block_idx, grid_dim, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.sync.semaphore import Semaphore
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from std.testing import assert_equal
 
 
@@ -65,8 +65,8 @@ def run_vector_reduction[
     var c_host_ref = alloc[Scalar[dtype]](N)
 
     rand[dtype](a_host, PN)
-    memset_zero(c_host, N)
-    memset_zero(c_host_ref, N)
+    unsafe_memset_zero(c_host, N)
+    unsafe_memset_zero(c_host_ref, N)
 
     var a_device = ctx.enqueue_create_buffer[dtype](PN)
     var c_device = ctx.enqueue_create_buffer[dtype](N)
@@ -153,8 +153,8 @@ def run_matrix_reduction[
     var c_host_ref = alloc[Scalar[dtype]](M * N)
 
     rand[dtype](a_host, PX)
-    memset_zero(c_host, M * N)
-    memset_zero(c_host_ref, M * N)
+    unsafe_memset_zero(c_host, M * N)
+    unsafe_memset_zero(c_host_ref, M * N)
 
     var a_device = ctx.enqueue_create_buffer[dtype](PX)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)

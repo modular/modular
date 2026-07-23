@@ -34,7 +34,7 @@ from kv_cache.types import (
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
-from std.memory import unsafe_memcpy, memset_zero
+from std.memory import unsafe_memcpy, unsafe_memset_zero
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalMask
 from std.sys import has_amd_gpu_accelerator

@@ -36,7 +36,7 @@ GQA, NullMask/CausalMask/SlidingWindowCausalMask, fp16/bf16, and depth 64/128.
 from std.collections import OptionalReg
 from std.gpu.host import DeviceContext
 from std.math import ceildiv, exp, sqrt
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from std.random import seed, shuffle
 from std.sys import has_apple_gpu_accelerator
 
@@ -302,7 +302,7 @@ def _run[
     var kv_block_elems = (
         num_paged_blocks * 2 * num_layers * page_size * kv_heads * depth
     )
-    memset_zero(kv_block_host.ptr, kv_block_elems)
+    unsafe_memset_zero(kv_block_host.ptr, kv_block_elems)
 
     comptime lut_layout = Layout.row_major[2]()
     var max_pages = _padded_lut_cols(num_pages_per_batch)

@@ -161,8 +161,8 @@ def unsafe_memcmp[
 def memcmp[
     type: AnyType, address_space: AddressSpace
 ](
-    s1: UnsafePointer[mut=False, type, _, address_space=address_space],
-    s2: UnsafePointer[mut=False, type, _, address_space=address_space],
+    s1: Pointer[mut=False, type, _, address_space=address_space],
+    s2: Pointer[mut=False, type, _, address_space=address_space],
     count: Int,
 ) -> Int:
     """Compares two buffers. Both strings are assumed to be of the same length.
@@ -277,7 +277,7 @@ def unsafe_memcpy[
     """Copy `count * size_of[T]()` bytes from src to dest.
 
     The dest and src memory must **not** overlap. For potentially
-    overlapping memory regions, use `memmove`.
+    overlapping memory regions, use `unsafe_memmove`.
 
     Parameters:
         T: The element type.
@@ -320,7 +320,7 @@ def memcpy[
     """Copy `count * size_of[T]()` bytes from src to dest.
 
     The dest and src memory must **not** overlap. For potentially
-    overlapping memory regions, use `memmove`.
+    overlapping memory regions, use `unsafe_memmove`.
 
     Parameters:
         T: The element type.
@@ -417,7 +417,7 @@ def _memset_impl(ptr: Pointer[mut=True, Byte, ...], value: Byte, count: Int):
 
 
 @always_inline
-def memset(ptr: Pointer[mut=True, ...], value: Byte, count: Int):
+def unsafe_memset(ptr: Pointer[mut=True, ...], value: Byte, count: Int):
     """Fills memory with the given value.
 
     Args:
@@ -428,24 +428,37 @@ def memset(ptr: Pointer[mut=True, ...], value: Byte, count: Int):
     _memset_impl(ptr.unsafe_bitcast[Byte](), value, count * size_of[ptr.T]())
 
 
+@always_inline
+@deprecated(use=unsafe_memset)
+def memset(ptr: Pointer[mut=True, ...], value: Byte, count: Int):
+    """Fills memory with the given value.
+
+    Args:
+        ptr: Pointer to the beginning of the memory block to fill.
+        value: The value to fill with.
+        count: Number of elements to fill (in elements, not bytes).
+    """
+    unsafe_memset(ptr, value, count)
+
+
 # ===-----------------------------------------------------------------------===#
 # memset_zero
 # ===-----------------------------------------------------------------------===#
 
 
 @always_inline
-def memset_zero(ptr: Pointer[mut=True, ...], count: Int):
+def unsafe_memset_zero(ptr: Pointer[mut=True, ...], count: Int):
     """Fills memory with zeros.
 
     Args:
         ptr: Pointer to the beginning of the memory block to fill.
         count: Number of elements to fill (in elements, not bytes).
     """
-    memset(ptr, 0, count)
+    unsafe_memset(ptr, 0, count)
 
 
 @always_inline
-def memset_zero[
+def unsafe_memset_zero[
     dtype: DType, //, *, count: Int
 ](ptr: Pointer[mut=True, Scalar[dtype], ...]):
     """Fills memory with zeros.
@@ -459,12 +472,41 @@ def memset_zero[
     """
 
     comptime if count > 128:
-        return memset_zero(ptr, count)
+        return unsafe_memset_zero(ptr, count)
 
     def fill[width: Int](offset: Int) {imm}:
         ptr.unsafe_store(offset, SIMD[dtype, width](0))
 
     vectorize[simd_width_of[dtype]()](count, fill)
+
+
+@always_inline
+@deprecated(use=unsafe_memset_zero)
+def memset_zero(ptr: Pointer[mut=True, ...], count: Int):
+    """Fills memory with zeros.
+
+    Args:
+        ptr: Pointer to the beginning of the memory block to fill.
+        count: Number of elements to fill (in elements, not bytes).
+    """
+    unsafe_memset_zero(ptr, count)
+
+
+@always_inline
+@deprecated(use=unsafe_memset_zero)
+def memset_zero[
+    dtype: DType, //, *, count: Int
+](ptr: Pointer[mut=True, Scalar[dtype], ...]):
+    """Fills memory with zeros.
+
+    Parameters:
+        dtype: The element type.
+        count: Number of elements to fill (in elements, not bytes).
+
+    Args:
+        ptr: Pointer to the beginning of the memory block to fill.
+    """
+    unsafe_memset_zero[count=count](ptr)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -875,7 +917,7 @@ def unsafe_destroy_n[
 @deprecated(use=unsafe_destroy_n)
 def destroy_n[
     T: ImplicitlyDeletable
-](pointer: UnsafePointer[mut=True, T, _], count: Int):
+](pointer: Pointer[mut=True, T, _], count: Int):
     """Destroy `count` initialized values at `pointer`.
 
     This function runs the destructor for each of the `count` values, leaving

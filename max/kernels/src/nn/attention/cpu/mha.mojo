@@ -47,7 +47,7 @@ from linalg.matmul.cpu.apple_accelerate import (
 )
 from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
-from std.memory import alloc, dealloc, memset_zero, stack_allocation
+from std.memory import alloc, dealloc, unsafe_memset_zero, stack_allocation
 from std.memory.alloc import DeletableAllocation, Layout as AllocLayout
 from nn.attention.mha_mask import MHAMask
 from std.runtime.asyncrt import parallelism_level
@@ -304,7 +304,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
 
         if aligned_n != N:
             for k in range(K):
-                memset_zero(packed_ptr + k * aligned_n + N, aligned_n - N)
+                unsafe_memset_zero(
+                    packed_ptr + k * aligned_n + N, aligned_n - N
+                )
 
     @no_inline
     @staticmethod
@@ -329,7 +331,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             tile[packed_copy, Self._matmul_config.pack_sizes](0, N)
 
             if aligned_n != N:
-                memset_zero(output_ptr + N, aligned_n - N)
+                unsafe_memset_zero(output_ptr + N, aligned_n - N)
 
             output_ptr += aligned_n
 

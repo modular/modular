@@ -27,7 +27,7 @@ from std.benchmark import (
     keep,
     run,
 )
-from std.memory import unsafe_memcpy, memset_zero
+from std.memory import unsafe_memcpy, unsafe_memset_zero
 from std.testing import assert_equal
 
 
@@ -232,11 +232,11 @@ struct StringDict[
             self.key_hashes = alloc[Scalar[Self.KeyCountType]](0)
         self.values = List[Self.V](capacity=capacity)
         self.slot_to_index = alloc[Scalar[Self.KeyCountType]](self.capacity)
-        memset_zero(self.slot_to_index, self.capacity)
+        unsafe_memset_zero(self.slot_to_index, self.capacity)
 
         comptime if Self.destructive:
             self.deleted_mask = alloc[UInt8](self.capacity >> 3)
-            memset_zero(self.deleted_mask, self.capacity >> 3)
+            unsafe_memset_zero(self.deleted_mask, self.capacity >> 3)
         else:
             self.deleted_mask = alloc[UInt8](0)
 
@@ -361,7 +361,7 @@ struct StringDict[
         self.capacity <<= 1
         var mask_capacity = self.capacity >> 3
         self.slot_to_index = alloc[Scalar[Self.KeyCountType]](self.capacity)
-        memset_zero(self.slot_to_index, self.capacity)
+        unsafe_memset_zero(self.slot_to_index, self.capacity)
 
         var key_hashes = self.key_hashes
 
@@ -370,7 +370,7 @@ struct StringDict[
 
         comptime if Self.destructive:
             var deleted_mask = alloc[UInt8](mask_capacity)
-            memset_zero(deleted_mask, mask_capacity)
+            unsafe_memset_zero(deleted_mask, mask_capacity)
             unsafe_memcpy(
                 dest=deleted_mask,
                 src=self.deleted_mask,
@@ -459,10 +459,10 @@ struct StringDict[
     def clear(mut self):
         self.values.clear()
         self.keys.clear()
-        memset_zero(self.slot_to_index, self.capacity)
+        unsafe_memset_zero(self.slot_to_index, self.capacity)
 
         comptime if Self.destructive:
-            memset_zero(self.deleted_mask, self.capacity >> 3)
+            unsafe_memset_zero(self.deleted_mask, self.capacity >> 3)
         self.count = 0
 
     @always_inline

@@ -13,7 +13,7 @@
 
 from std.hashlib._ahash import AHasher
 
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from test_utils import (
     assert_dif_hashes,
     assert_fill_factor,
@@ -60,14 +60,14 @@ def test_avalanche() raises:
     # test that values which differ just in one bit,
     # produce significatly different hash values
     var data = InlineArray[UInt8, 256](uninitialized=True)
-    memset_zero(data.unsafe_ptr(), 256)
+    unsafe_memset_zero(data.unsafe_ptr(), 256)
     var hashes0 = List[UInt64]()
     var hashes1 = List[UInt64]()
     hashes0.append(hash[hasher0](data.unsafe_ptr(), 256))
     hashes1.append(hash[hasher1](data.unsafe_ptr(), 256))
 
     for i in range(256):
-        memset_zero(data.unsafe_ptr(), 256)
+        unsafe_memset_zero(data.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
         data[i >> 3] = UInt8(v)
         hashes0.append(hash[hasher0](data.unsafe_ptr(), 256))
@@ -90,7 +90,7 @@ def test_trailing_zeros() raises:
     # checks that a value with different amount of trailing zeros,
     # results in significantly different hash values
     var data = InlineArray[UInt8, 8](uninitialized=True)
-    memset_zero(data.unsafe_ptr(), 8)
+    unsafe_memset_zero(data.unsafe_ptr(), 8)
     data[0] = 23
     var hashes0 = List[UInt64]()
     var hashes1 = List[UInt64]()

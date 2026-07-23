@@ -44,7 +44,7 @@ from std.builtin.rebind import downcast
 from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
 import std.format._utils as fmt
 
-from std.memory import alloc, dealloc, ThinAllocation, memset
+from std.memory import alloc, dealloc, ThinAllocation, unsafe_memset
 from std.memory.alloc import Layout
 
 from ._swisstable import (
@@ -1900,7 +1900,7 @@ struct Dict[
         var relocated_set = alloc(
             Layout[UInt8](count=old_capacity)
         ).unsafe_leak()
-        memset(relocated_set, 0, old_capacity)
+        unsafe_memset(relocated_set, 0, old_capacity)
         for i in range(len(relocations)):
             slot_map[relocations[i][0]] = Int32(relocations[i][1])
             relocated_set[relocations[i][0]] = 1

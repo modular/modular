@@ -14,7 +14,7 @@
 from std.format import Writable, Writer
 from std.format._utils import _hex_digits_to_hex_chars, _write_hex
 from std.collections import Span
-from std.memory.memory import memset_zero
+from std.memory.memory import unsafe_memset_zero
 from std.testing import assert_equal, TestSuite
 
 
@@ -165,10 +165,10 @@ def test_hex_digits_to_hex_chars() raises:
     ptr = items.unsafe_ptr()
     ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
     assert_equal("0001f525", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=8)))
-    memset_zero(ptr, len(items))
+    unsafe_memset_zero(ptr, len(items))
     ptr.store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
     assert_equal("4f60", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=4)))
-    memset_zero(ptr, len(items))
+    unsafe_memset_zero(ptr, len(items))
     ptr.store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
     assert_equal("d6", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=2)))
     ptr.store(_hex_digits_to_hex_chars(UInt8(0)))

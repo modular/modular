@@ -31,7 +31,7 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.compile import _compile_code
-from std.memory import memset_zero, stack_allocation
+from std.memory import unsafe_memset_zero, stack_allocation
 from std.testing import *
 
 from std.utils.coord import Coord
@@ -303,7 +303,7 @@ def gemm(
     # Privatization of the C matrix.
     var c_reg = stack_allocation[TILE_SZ_B, DType.float32]()
 
-    memset_zero(c_reg, TILE_SZ_B)
+    unsafe_memset_zero(c_reg, TILE_SZ_B)
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):

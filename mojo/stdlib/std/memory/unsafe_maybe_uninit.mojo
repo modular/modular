@@ -14,7 +14,11 @@
 
 from std.builtin.rebind import downcast
 from std.os import abort
-from std.memory import is_trivially_copyable, is_trivially_movable, memset_zero
+from std.memory import (
+    is_trivially_copyable,
+    is_trivially_movable,
+    unsafe_memset_zero,
+)
 
 
 struct UnsafeMaybeUninit[T: AnyType](
@@ -103,7 +107,7 @@ struct UnsafeMaybeUninit[T: AnyType](
             An `UnsafeMaybeUninit` with the memory set to all 0 bytes.
         """
         var result = Self()
-        memset_zero(Pointer(to=result), 1)
+        unsafe_memset_zero(Pointer(to=result), 1)
         return result^
 
     def __init__(out self, *, copy: Self):

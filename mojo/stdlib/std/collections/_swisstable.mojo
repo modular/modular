@@ -29,7 +29,7 @@ from std.memory import (
     dealloc,
     ThinAllocation,
     unsafe_memcpy,
-    memset,
+    unsafe_memset,
     pack_bits,
     is_trivially_deletable,
 )
@@ -434,7 +434,7 @@ struct SwissTable[
         self._ctrl = alloc(
             Layout[UInt8](count=self._capacity + GROUP_WIDTH)
         ).unsafe_leak()
-        memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
+        unsafe_memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
         self._slots = alloc(
             Layout[SwissTableEntry[Self.K, Self.V, Self.H]](
                 count=self._capacity
@@ -738,7 +738,7 @@ struct SwissTable[
 
         self._delete_occupied_entries()
 
-        memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
+        unsafe_memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
         self._len = 0
         self._growth_left = self._capacity * 7 // 8
 
@@ -756,7 +756,7 @@ struct SwissTable[
 
         self._delete_occupied_entries_with(destroy_func)
 
-        memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
+        unsafe_memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
         self._len = 0
         self._growth_left = self._capacity * 7 // 8
 
@@ -795,7 +795,7 @@ struct SwissTable[
         self._ctrl = alloc(
             Layout[UInt8](count=new_capacity + GROUP_WIDTH)
         ).unsafe_leak()
-        memset(self._ctrl, CTRL_EMPTY, new_capacity + GROUP_WIDTH)
+        unsafe_memset(self._ctrl, CTRL_EMPTY, new_capacity + GROUP_WIDTH)
         self._slots = alloc(
             Layout[SwissTableEntry[Self.K, Self.V, Self.H]](count=new_capacity)
         ).unsafe_leak()

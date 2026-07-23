@@ -588,7 +588,7 @@ def _hex_digits_to_hex_chars(
     Examples:
 
     ```mojo
-    from std.memory import memset_zero
+    from std.memory import unsafe_memset_zero
     from std.testing import assert_equal
     from std.utils import StringSlice
     from std.format._utils import _hex_digits_to_hex_chars
@@ -622,7 +622,7 @@ def _write_hex[
     Examples:
 
     ```mojo
-    from std.memory import memset_zero
+    from std.memory import unsafe_memset_zero
     from std.testing import assert_equal
     from std.utils import StringSlice
     from std.format._utils import _write_hex

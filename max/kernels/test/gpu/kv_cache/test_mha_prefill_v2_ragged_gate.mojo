@@ -50,7 +50,7 @@ from kv_cache_test_utils import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from std.memory import unsafe_memcpy, memset_zero
+from std.memory import unsafe_memcpy, unsafe_memset_zero
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import (
     CausalMask,
@@ -333,7 +333,7 @@ def _run_ragged_at[
                     count=n_cpy,
                 )
                 if block_sz < page_size:
-                    memset_zero(
+                    unsafe_memset_zero(
                         kv_block_paged_tensor.ptr + paged_offset + n_cpy,
                         (page_size - block_sz)
                         * kv_params.num_heads

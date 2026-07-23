@@ -25,7 +25,7 @@ from layout import TileTensor
 from layout.tile_layout import row_major
 from std.memory import (
     unsafe_memcpy,
-    memset_zero,
+    unsafe_memset_zero,
     stack_allocation,
 )
 
@@ -608,7 +608,7 @@ def dot_at_b(
 
     unsafe_memcpy(dest=a_buffer, src=a_pointer, count=num_elements)
     unsafe_memcpy(dest=b_buffer, src=b_pointer, count=num_elements)
-    memset_zero(c_buffer, num_elements)
+    unsafe_memset_zero(c_buffer, num_elements)
 
     # _set() has the side effect of clearing the z tile
     _set()

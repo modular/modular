@@ -27,7 +27,7 @@ from std.sys import prefetch
 from layout.tile_layout import TensorLayout, row_major
 from std.memory import (
     unsafe_memcpy,
-    memset_zero,
+    unsafe_memset_zero,
     stack_allocation,
 )
 
@@ -680,7 +680,7 @@ def pack_b[
     # Strip extra type params from existential `...` pattern.
     var src_tt = TileTensor(src.ptr, src.layout)
     var dst_tt = TileTensor(dst.ptr, dst.layout)
-    memset_zero(
+    unsafe_memset_zero(
         dst_tt.ptr, dst_tt.num_elements()
     )  # zero the padding to be safe
     var dst_flat_ptr = dst_tt.ptr

@@ -47,7 +47,7 @@ from std.memory import (
     dealloc,
     unsafe_memcmp,
     unsafe_memcpy,
-    memset,
+    unsafe_memset,
 )
 from std.python import ConvertibleFromPython, PythonObject
 
@@ -2232,7 +2232,7 @@ struct String(
         self._clear_nul_terminator()
         var old_len = self.byte_length()
         if length > old_len:
-            memset(
+            unsafe_memset(
                 self.unsafe_ptr_mut(length) + old_len,
                 fill_byte,
                 length - old_len,

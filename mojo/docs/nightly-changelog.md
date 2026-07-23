@@ -516,6 +516,10 @@ This version is still a work in progress.
 - Renamed `memmove` to `unsafe_memmove` to make its unsafety explicit. The old
   `memmove` name is deprecated and will be removed in a future release.
 
+- Renamed `memset` and `memset_zero` to `unsafe_memset` and
+  `unsafe_memset_zero` to make their unsafety explicit. The old names are
+  deprecated and will be removed in a future release.
+
 - Renamed `memcmp` to `unsafe_memcmp` to make its unsafety explicit. The old
   `memcmp` name is deprecated and will be removed in a future release.
 

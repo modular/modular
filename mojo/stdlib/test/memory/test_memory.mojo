@@ -18,8 +18,8 @@ from std.memory import (
     unsafe_memcmp,
     unsafe_memcpy,
     unsafe_memmove,
-    memset,
-    memset_zero,
+    unsafe_memset,
+    unsafe_memset_zero,
     unsafe_destroy_n,
     unsafe_uninit_copy_n,
     unsafe_uninit_move_n,
@@ -70,7 +70,7 @@ def test_memcpy() raises:
     @parameter
     def _test_memcpy_buf[size: Int]() raises:
         var buf = alloc[UInt8](size * 2)
-        memset_zero(buf + size, size)
+        unsafe_memset_zero(buf + size, size)
         var src = alloc[UInt8](size * 2)
         var dst = alloc[UInt8](size * 2)
         for i in range(size * 2):
@@ -177,8 +177,8 @@ def test_memcmp_simd() raises:
 
     var p1 = alloc[Int8](length)
     var p2 = alloc[Int8](length)
-    memset_zero(p1, length)
-    memset_zero(p2, length)
+    unsafe_memset_zero(p1, length)
+    unsafe_memset_zero(p2, length)
     p1.store(120)
     p1.store(1, 100)
     p2.store(120)
@@ -190,8 +190,8 @@ def test_memcmp_simd() raises:
     c = unsafe_memcmp(p2, p1, length)
     assert_equal(c, -1, "[120, 90, 0, ...] is smaller than [120, 100, 0, ...]")
 
-    memset_zero(p1, length)
-    memset_zero(p2, length)
+    unsafe_memset_zero(p1, length)
+    unsafe_memset_zero(p2, length)
 
     p1.store(length - 2, 120)
     p1.store(length - 1, 100)
@@ -526,8 +526,8 @@ def test_memcmp_simd_zero_bytes() raises:
     var ptr2 = alloc[Int8](size)
 
     # Fill with zeros
-    memset_zero(ptr1, size)
-    memset_zero(ptr2, size)
+    unsafe_memset_zero(ptr1, size)
+    unsafe_memset_zero(ptr2, size)
 
     var result = unsafe_memcmp(ptr1, ptr2, size)
     assert_equal(result, 0, "Zero-filled buffers should be equal")
@@ -539,8 +539,8 @@ def test_memcmp_simd_zero_bytes() raises:
         var pos = test_positions[i]
 
         # Reset to zeros
-        memset_zero(ptr1, size)
-        memset_zero(ptr2, size)
+        unsafe_memset_zero(ptr1, size)
+        unsafe_memset_zero(ptr2, size)
 
         # Create difference at position
         ptr2[pos] = 1
@@ -569,33 +569,33 @@ def test_memset() raises:
     var pair = Pair(1, 2)
 
     var ptr = Pointer(to=pair)
-    memset_zero(ptr, 1)
+    unsafe_memset_zero(ptr, 1)
 
     assert_equal(pair.lo, 0)
     assert_equal(pair.hi, 0)
 
     pair.lo = 1
     pair.hi = 2
-    memset_zero(ptr, 1)
+    unsafe_memset_zero(ptr, 1)
 
     assert_equal(pair.lo, 0)
     assert_equal(pair.hi, 0)
 
     var buf0 = alloc[Int32](2)
-    memset(buf0, 1, 2)
+    unsafe_memset(buf0, 1, 2)
     assert_equal(buf0.load(0), 16843009)
-    memset(buf0, -1, 2)
+    unsafe_memset(buf0, -1, 2)
     assert_equal(buf0.load(0), -1)
     buf0.free()
 
     var buf1 = alloc[Int8](2)
-    memset(buf1, 5, 2)
+    unsafe_memset(buf1, 5, 2)
     assert_equal(buf1.load(0), 5)
     buf1.free()
 
     var buf3 = alloc[Int32](2)
-    memset(buf3, 1, 2)
-    memset_zero[count=2](buf3)
+    unsafe_memset(buf3, 1, 2)
+    unsafe_memset_zero[count=2](buf3)
     assert_equal(buf3.load(0), 0)
     assert_equal(buf3.load(1), 0)
     buf3.free()
