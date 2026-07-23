@@ -70,6 +70,7 @@ def test_apply_packed_bitmask(ctx: DeviceContext) raises:
 
     var out_stack = InlineArray[Float32, batch * vocab](uninitialized=True)
     ctx.enqueue_copy(Span(out_stack), out_gpu_buf)
+    ctx.synchronize()
     var out = TileTensor(out_stack, row_major[batch, vocab]())
 
     for b in range(batch):

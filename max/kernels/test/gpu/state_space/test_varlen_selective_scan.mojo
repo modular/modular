@@ -537,6 +537,7 @@ def run_varlen_selective_scan_fwd_gpu[
     var output_to_check = z_d if has_z else output_gpu_d
     var output_to_check_host = z_gpu_h if has_z else output_gpu_h
     ctx.enqueue_copy(output_to_check_host, output_to_check)
+    ctx.synchronize()
 
     # Compare outputs
     var output_to_check_cpu = z_cpu_h if has_z else output_cpu_h

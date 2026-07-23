@@ -344,6 +344,7 @@ def check_ldmatrix(
 
     ctx.synchronize()
     ctx.enqueue_copy(c_host_ref, c_device_ref)
+    ctx.synchronize()
 
     for i in range(M * N):
         var out_val = c_host[i]

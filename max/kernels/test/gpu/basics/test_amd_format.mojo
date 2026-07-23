@@ -88,3 +88,4 @@ def main() raises:
         print("== test_format_float8_e4m3fn")
         comptime kernel_1 = test_format_float8_e4m3fn
         ctx.enqueue_function[kernel_1](grid_dim=1, block_dim=1)
+        ctx.synchronize()

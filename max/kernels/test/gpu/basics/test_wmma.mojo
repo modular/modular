@@ -513,6 +513,7 @@ def run_mma_fp32_bf16(
     print()
 
     ctx.enqueue_copy(c_host_ref, c_device_ref)
+    ctx.synchronize()
 
     # Check correctness.
     var failed = False
@@ -679,6 +680,7 @@ def run_mma_fp32_bf16_2(
     print()
 
     ctx.enqueue_copy(c_host_ref, c_device_ref)
+    ctx.synchronize()
 
     # Check correctness.
     var failed = False
@@ -845,6 +847,7 @@ def run_mma_fp32_fp16(
     print()
 
     ctx.enqueue_copy(c_host_ref, c_device_ref)
+    ctx.synchronize()
 
     # Check correctness.
     var failed = False
@@ -1011,6 +1014,7 @@ def run_mma_fp16_fp16(
     print()
 
     ctx.enqueue_copy(c_host_ref, c_device_ref)
+    ctx.synchronize()
 
     # Check correctness.
     var failed = False

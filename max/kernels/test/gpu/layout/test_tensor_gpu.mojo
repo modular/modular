@@ -70,6 +70,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
         grid_dim=(4),
         block_dim=(1),
     )
+    ctx.synchronize()
     assert_true(check_state, "Inconsistent values in shared memory")
 
 

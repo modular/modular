@@ -59,6 +59,7 @@ def test_scatter_set_constant(ctx: DeviceContext) raises:
     )
 
     ctx.enqueue_copy(Span(data_stack), data_ptr_gpu)
+    ctx.synchronize()
 
     for i in range(3):
         for j in range(3):

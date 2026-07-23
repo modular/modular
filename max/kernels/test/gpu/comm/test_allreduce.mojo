@@ -247,6 +247,7 @@ def allreduce_test[
             # Verify RCCL results
             for i in range(ngpus):
                 list_of_ctx[i].enqueue_copy(host_buffers[i], out_dev_vendor[i])
+                list_of_ctx[i].synchronize()
             for i in range(ngpus):
                 for j in range(length):
                     assert_almost_equal(host_buffers[i][j], expected_sum)
@@ -257,6 +258,7 @@ def allreduce_test[
     # Copy results back and verify
     for i in range(ngpus):
         list_of_ctx[i].enqueue_copy(host_buffers[i], out_dev[i])
+        list_of_ctx[i].synchronize()
 
     var mocl_expected_sum = (
         expected_sum if not use_custom_epilogue else -expected_sum
@@ -383,6 +385,7 @@ def allreduce_naive_test() raises -> None:
     for i in range(ngpus):
         expected += Float32(i + 1)
         ctxs[i].enqueue_copy(host_ptrs[i], out_dev[i])
+        ctxs[i].synchronize()
 
     for i in range(ngpus):
         for j in range(length):
