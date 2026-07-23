@@ -1027,6 +1027,14 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
     }
   }
 
+  // `param_list.get` projections line up when their indices match
+  if (auto actualGet = dyn_cast<ParamListGetAttr>(actualAttr)) {
+    if (auto expectedGet = dyn_cast<ParamListGetAttr>(expectedAttr)) {
+      PROP(matchParams(actualGet.getIndex(), expectedGet.getIndex()));
+      return matchParams(actualGet.getParamList(), expectedGet.getParamList());
+    }
+  }
+
   if (auto actualSet = dyn_cast<OriginSetAttr>(actualAttr)) {
     if (auto expectedSet = dyn_cast<OriginSetAttr>(expectedAttr)) {
       // HACK: To phase this in, permit implicitly downcasting to the empty set.

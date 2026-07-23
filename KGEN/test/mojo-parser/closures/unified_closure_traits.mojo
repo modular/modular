@@ -13,6 +13,7 @@
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S6 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S7 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S8 < %t.mlir
+# RUN: FileCheck %s --enable-var-scope --check-prefixes=S9 < %t.mlir
 # COM: Verify ParamOperatorAttr and LITStructAttr matching: Pair(tag, 0) lowers
 # COM: to #kgen.param.expr<apply, ...> containing #lit.struct constants, which
 # COM: requires recursive matching through both composite attr types.
@@ -265,3 +266,49 @@ def s8_call_inner[
         return f(y) + payload.value
 
     return outer(x)
+
+# COM: Verify lazy conformance fires for a parametric closure trait whose
+# COM: argument type is a (`param_list.get`).
+
+# S9: kgen.conformance @"def[idx: Int](var elt: _[idx]) -> None{1}" {
+# S9:   kgen.witness "__call__{{.*}} capturing -> !kgen.none>
+# S9:   kgen.witness "element_types.values`" : param_list<{{.*}}> = [!String, !Int]
+
+struct s9_MiniTuple[*element_types: Movable & ImplicitlyDeletable](Movable):
+    comptime _mlir_type = __mlir_type[
+        `!kgen.struct<:`,
+        type_of(Self.element_types.values),
+        Self.element_types.values,
+        ` isParamPack>`,
+    ]
+
+    var _mlir_value: Self._mlir_type
+
+    @always_inline("nodebug")
+    def __getitem_param__[
+        idx: Int
+    ](ref self) -> ref [self] Self.element_types[idx]:
+        var storage_kgen_ptr = UnsafePointer(
+            to=self._mlir_value
+        )._get_kgen_pointer()
+        var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
+            index = idx.__mlir_index__(),
+            _type = UnsafePointer[
+                Self.element_types[idx], origin_of(self)
+            ]._mlir_type,
+        ](storage_kgen_ptr)
+        return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
+
+    @always_inline("nodebug")
+    def consume_elements[
+        EltHandler: def[idx: Int](var elt: Self.element_types[idx])
+    ](deinit self, elt_handler: EltHandler, /):
+        var ptr = UnsafePointer(to=self[0])
+        elt_handler[0](__get_address_as_owned_value(ptr._get_kgen_pointer()))
+
+
+def s9(var t: s9_MiniTuple[String, Int]):
+    def handler[idx: Int](var elt: t.element_types[idx]) {var}:
+        _ = elt^
+
+    t^.consume_elements(handler)
