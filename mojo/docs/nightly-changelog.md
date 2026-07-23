@@ -422,6 +422,18 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added
+  [`runtime.initialize_runtime()`](/docs/std/runtime/asyncrt/initialize_runtime/),
+  which initializes the Mojo runtime when Mojo code built as a shared library
+  (`mojo build --emit shared-lib`) is called from a non-Mojo host program such
+  as C or C++. In that situation no Mojo `main()` function runs, so the runtime
+  was never initialized and parallel or asynchronous APIs such as
+  `parallelize()` crashed. Call `initialize_runtime()` before using any
+  runtime-dependent API; the call is idempotent, and a single call covers all
+  threads in the process. See
+  [Call a Mojo shared library from C or C++](/docs/tools/compilation/#call-a-mojo-shared-library-from-c-or-c)
+  for details.
+
 - When an unhandled error propagates out of `main` and no stack trace was
   collected, Mojo now prints a hint to set
   `MODULAR_DEBUG=stack-trace-on-error` to enable stack trace collection,

@@ -22,6 +22,7 @@ from std.builtin.coroutine import (
     _coro_resume_fn,
     _suspend_async,
 )
+from std.builtin._startup import _ensure_runtime_init
 
 # RaisingCoroutine is a builtin type, available without explicit import.
 from std.gpu.host import DeviceContext
@@ -118,6 +119,48 @@ def _async_wait_timeout(
 # ===-----------------------------------------------------------------------===#
 # Global Runtime
 # ===-----------------------------------------------------------------------===#
+
+
+def initialize_runtime():
+    """Initializes the global Mojo runtime if it is not already initialized.
+
+    The Mojo runtime manages the thread pool used by parallel and
+    asynchronous APIs such as `parallelize()` and `TaskGroup`. Programs with
+    a Mojo `main()` function initialize the runtime automatically at startup,
+    so most programs never need to call this function.
+
+    However, when Mojo code is compiled into a shared library (with
+    `mojo build --emit shared-lib`) and called from a non-Mojo host program
+    (such as C or C++), no Mojo `main()` function runs and the runtime is
+    never initialized. In that case, call this function before using any API
+    that depends on the runtime — for example, at the start of each function
+    exported with `@export`. This function is idempotent and inexpensive when
+    the runtime is already initialized.
+
+    Initializing the runtime once covers all threads in the process. The
+    runtime remains alive for the remainder of the process.
+
+    Examples:
+
+    ```mojo
+    from std.algorithm import parallelize
+    from std.runtime import initialize_runtime
+
+
+    @export("fill_squares")
+    def fill_squares(
+        data: UnsafePointer[Int64, MutUntrackedOrigin], len: Int
+    ) abi("C"):
+        initialize_runtime()
+
+        @parameter
+        def fill(i: Int):
+            data[i] = Int64(i * i)
+
+        parallelize[fill](len)
+    ```
+    """
+    _ensure_runtime_init()
 
 
 @always_inline
