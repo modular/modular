@@ -1449,38 +1449,6 @@ TypedAttr SIMDTruncAttr::get(MLIRContext *ctx, TypedAttr operand) {
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
-// SIMDAndAttr
-//===----------------------------------------------------------------------===//
-
-TypedAttr SIMDAndAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
-  return ParamOperatorAttr::get(POC::And, {lhs, rhs});
-}
-
-//===----------------------------------------------------------------------===//
-// SIMDXorAttr
-//===----------------------------------------------------------------------===//
-
-TypedAttr SIMDXorAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
-  return ParamOperatorAttr::get(POC::Xor, {lhs, rhs});
-}
-
-//===----------------------------------------------------------------------===//
-// SIMDOrAttr
-//===----------------------------------------------------------------------===//
-
-TypedAttr SIMDOrAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
-  return ParamOperatorAttr::get(POC::Or, {lhs, rhs});
-}
-
-//===----------------------------------------------------------------------===//
-// SIMDAddAttr
-//===----------------------------------------------------------------------===//
-
-TypedAttr SIMDAddAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
-  return ParamOperatorAttr::get(POC::Add, {lhs, rhs});
-}
-
-//===----------------------------------------------------------------------===//
 // SIMDSubAttr
 //===----------------------------------------------------------------------===//
 
@@ -1506,22 +1474,6 @@ TypedAttr SIMDSubAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
 }
 
 //===----------------------------------------------------------------------===//
-// SIMDMulAttr
-//===----------------------------------------------------------------------===//
-
-TypedAttr SIMDMulAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
-  return ParamOperatorAttr::get(POC::Mul, {lhs, rhs});
-}
-
-//===----------------------------------------------------------------------===//
-// SIMDDivAttr
-//===----------------------------------------------------------------------===//
-
-TypedAttr SIMDDivAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
-  return ParamOperatorAttr::get(POC::Div, {lhs, rhs});
-}
-
-//===----------------------------------------------------------------------===//
 // SIMDAbsAttr
 //===----------------------------------------------------------------------===//
 
@@ -1544,62 +1496,6 @@ TypedAttr SIMDRoundAttr::get(MLIRContext *ctx, TypedAttr operand) {
       return ret;
   }
   return Base::get(ctx, operand);
-}
-
-//===----------------------------------------------------------------------===//
-// SIMDFloorDivAttr
-//===----------------------------------------------------------------------===//
-
-TypedAttr SIMDFloorDivAttr::get(MLIRContext *ctx, TypedAttr lhs,
-                                TypedAttr rhs) {
-  return ParamOperatorAttr::get(POC::FloorDivS, {lhs, rhs});
-}
-
-//===----------------------------------------------------------------------===//
-// SIMDCmpAttr
-//===----------------------------------------------------------------------===//
-
-TypedAttr SIMDCmpAttr::get(MLIRContext *ctx, NormalizedCmpPredicate cc,
-                           TypedAttr lhs, TypedAttr rhs, SIMDType outType) {
-  auto toPOC = [cc]() {
-    switch (cc) {
-    case NormalizedCmpPredicate::EQ:
-      return POC::EQ;
-    case NormalizedCmpPredicate::LT:
-      return POC::LT;
-    case NormalizedCmpPredicate::LE:
-      return POC::LE;
-    }
-  };
-  return ParamOperatorAttr::get(toPOC(), {lhs, rhs});
-}
-
-TypedAttr SIMDCmpAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                                  MLIRContext *context,
-                                  NormalizedCmpPredicate cc, TypedAttr lhs,
-                                  TypedAttr rhs, SIMDType outType) {
-  if (failed(verify(emitError, cc, lhs, rhs, outType)))
-    return {};
-  return SIMDCmpAttr::get(context, cc, lhs, rhs, outType);
-}
-
-bool SIMDCmpAttr::isConstant() const { return false; }
-
-LogicalResult SIMDCmpAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  NormalizedCmpPredicate cc, TypedAttr lhs,
-                                  TypedAttr rhs, SIMDType outType) {
-  if (lhs.getType() != rhs.getType())
-    return emitError() << "requires two equally-typed SIMD operands";
-
-  auto outSIMDType = dyn_cast<SIMDType>(outType);
-  auto inSIMDType = dyn_cast<SIMDType>(lhs.getType());
-  if (!inSIMDType || !outSIMDType)
-    return emitError() << "requires two equally-typed SIMD operands";
-
-  if (inSIMDType.getSize() != outSIMDType.getSize())
-    return emitError() << "mismatched size between operands and result";
-
-  return success();
 }
 
 //===----------------------------------------------------------------------===//

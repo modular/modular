@@ -73,7 +73,7 @@ kgen.func @union_constants() {
 } : () -> ()
 
 // CHECK: f0 = #kgen.param.expr<and, #kgen<simd -1> : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
-"simd_and.attr"() { f0 = #pop.simd_and<#kgen.unknown : !kgen.simd<4, si32>, #kgen<simd -1> : !kgen.simd<4, si32>> } : () -> ()
+"simd_and.attr"() { f0 = #kgen.param.expr<and,#kgen.unknown : !kgen.simd<4, si32>, #kgen<simd -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32> } : () -> ()
 
 // CHECK: f0 = #pop.cast<#kgen.unknown : !kgen.scalar<si32>> : !kgen.scalar<ui32>
 "pop_cast.op"() { f0 = #pop.cast< #kgen.unknown : !kgen.scalar<si32>> : !kgen.scalar<ui32> } : () -> ()
@@ -94,10 +94,10 @@ kgen.func @union_constants() {
 "pop_dtype_from_ui8.op"() { f0 = #pop.dtype_from_ui8<#kgen.unknown : ui8> : !kgen.dtype } : () -> ()
 
 // CHECK: f0 = #kgen.param.expr<xor, #kgen<simd -1> : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
-"simd_xor.attr"() { f0 = #pop.simd_xor<#kgen.unknown : !kgen.simd<4, si32>, #kgen<simd -1> : !kgen.simd<4, si32>> } : () -> ()
+"simd_xor.attr"() { f0 = #kgen.param.expr<xor,#kgen.unknown : !kgen.simd<4, si32>, #kgen<simd -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32> } : () -> ()
 
 // CHECK: f0 = #kgen<simd false> : !kgen.simd<4, bool>
-"simd_cmp.attr"() { f0 = #pop.simd_cmp<eq, #kgen.unknown : !kgen.simd<4, si32>, #kgen<simd -1> : !kgen.simd<4, si32>> : !kgen.simd<4, bool> } : () -> ()
+"simd_cmp.attr"() { f0 = #kgen.param.expr<eq, #kgen.unknown : !kgen.simd<4, si32>, #kgen<simd -1> : !kgen.simd<4, si32>> : !kgen.simd<4, bool> } : () -> ()
 
 // CHECK: f0 = #pop.simd_reduce_or<#kgen.unknown : !kgen.simd<4, si32>> : !kgen.scalar<si32>
 "simd_reduce_or.attr"() { f0 = #pop.simd_reduce_or<#kgen.unknown : !kgen.simd<4, si32>> : !kgen.scalar<si32> } : () -> ()
