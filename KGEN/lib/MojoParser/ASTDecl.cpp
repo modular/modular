@@ -133,6 +133,7 @@ ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
     return result;
 
   ArrayRef<ASTDecl *> foundAstDecls = lookupResult.getIfSuccess();
+  SymbolRefAttr typeSymbol = astDecl->getSymbolRef();
   for (ASTDecl *foundAstDecl : foundAstDecls) {
     if (failed(shared.declResolver->resolveBody(*foundAstDecl, callLoc))) {
       // Do nothing, skip it. Errors were already printed out, and we don't
@@ -140,7 +141,13 @@ ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
       continue;
     }
 
-    if (isa_and_nonnull<ExtensionDeclOp>(foundAstDecl->getIfOperation()))
+    // The bucket is keyed by the target's leaf name only, so extensions of
+    // distinct types that share a name land together; keep only those whose
+    // resolved target is this type's own decl, as
+    // findExtensionsInScopeForStruct does.
+    auto extOp =
+        dyn_cast_or_null<ExtensionDeclOp>(foundAstDecl->getIfOperation());
+    if (extOp && extOp.getTargetStructAttr() == typeSymbol)
       result.push_back(foundAstDecl);
   }
 

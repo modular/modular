@@ -6,22 +6,17 @@
 
 # RUN: %parse-mojo-isolated -I %S/inputs -verify-diagnostics %s
 
-# Extensions must apply only to the struct decl they were declared on, not to
-# any struct that shares its name. `ext_ident_x` and `ext_ident_y` each define
+# Extensions apply only to the struct decl they were declared on, not to any
+# struct that shares its name. `ext_ident_x` and `ext_ident_y` each define
 # their own `Foo` plus an extension of it; the explicit import below makes
-# `ext_ident_y`'s `Foo` the visible one, but both extensions sit in scope under
-# the name key "extension:Foo". Member lookup currently matches extensions to
-# the type by name only, so `ext_ident_x`'s members leak onto the wrong `Foo`:
-# the static resolves silently to the other module's function, and the
-# instance method fails self-unification with a baffling "cannot be converted
-# from 'Foo' to 'Foo'" instead of a missing-attribute error.
-
-# See MOCO-4406.
+# `ext_ident_y`'s `Foo` the visible one, while both extensions sit in scope
+# under the name key "extension:Foo". Member lookup must only apply the
+# extension whose resolved target is the visible `Foo`. Previously the other
+# module's static resolved silently to a function of the wrong struct, and its
+# instance method died in self-unification with "cannot be converted from
+# 'Foo' to 'Foo'" instead of a missing-attribute error.
 #
-# TODO: Remove the XFAIL once member lookup filters collected extensions by
-# their resolved target decl (compare ExtensionDeclOp::getTargetStruct against
-# the type's own symbol, as findExtensionsInScopeForStruct already does).
-# XFAIL: *
+# See MOCO-4406.
 
 from ext_ident_x import *
 from ext_ident_y import Foo
