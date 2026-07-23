@@ -40,6 +40,9 @@ filegroup(
         "//max/kernels/src/linalg:matmul/gpu/sm100_structured/default/tuning_sm100.mojo.snippet",
         "//max/kernels/src/linalg:matmul/gpu/sm100_structured/default/tuning_table_sm100_bf16.yaml",
         "//max/kernels/src/linalg:matmul/gpu/sm100_structured/default/tuning_table_sm100_fp8.yaml",
+        "//max/kernels/src/linalg:matmul/gpu/sm100_structured/default/tuning_table_sm100_mxfp4.yaml",
+        "//max/kernels/src/linalg:matmul/gpu/sm100_structured/default/tuning_table_sm100_mxfp8.yaml",
+        "//max/kernels/src/linalg:matmul/gpu/sm100_structured/default/tuning_table_sm100_nvfp4.yaml",
         "//max/kernels/src/linalg:matmul/gpu/sm90/tuning.mojo.snippet",
         "//max/kernels/src/linalg:matmul/gpu/sm90/tuning_configs.mojo",
         "//max/kernels/src/linalg:matmul/gpu/sm90/tuning_custom.mojo.snippet",
@@ -76,6 +79,51 @@ modular_run_binary_test(
         "--begin-marker=BEGIN-TUNING-LIST-SM100-BF16",
         "--end-marker=END-TUNING-LIST-SM100-BF16",
         "--source-label=tuning_table_sm100_bf16.yaml",
+    ],
+    binary = ":tuning_codegen",
+    data = [":tuning_codegen_table_data"],
+)
+
+modular_run_binary_test(
+    name = "sm100_nvfp4_tuning_codegen_test",
+    args = [
+        "--check",
+        "--manifest=max/kernels/src/linalg/matmul/gpu/sm100_structured/default/tuning_table_sm100_nvfp4.yaml",
+        "--snippet=max/kernels/src/linalg/matmul/gpu/sm100_structured/default/tuning_sm100.mojo.snippet",
+        "--target=max/kernels/src/linalg/matmul/gpu/sm100_structured/default/tuning_configs.mojo",
+        "--begin-marker=BEGIN-TUNING-LIST-SM100-NVFP4",
+        "--end-marker=END-TUNING-LIST-SM100-NVFP4",
+        "--source-label=tuning_table_sm100_nvfp4.yaml",
+    ],
+    binary = ":tuning_codegen",
+    data = [":tuning_codegen_table_data"],
+)
+
+modular_run_binary_test(
+    name = "sm100_mxfp4_tuning_codegen_test",
+    args = [
+        "--check",
+        "--manifest=max/kernels/src/linalg/matmul/gpu/sm100_structured/default/tuning_table_sm100_mxfp4.yaml",
+        "--snippet=max/kernels/src/linalg/matmul/gpu/sm100_structured/default/tuning_sm100.mojo.snippet",
+        "--target=max/kernels/src/linalg/matmul/gpu/sm100_structured/default/tuning_configs.mojo",
+        "--begin-marker=BEGIN-TUNING-LIST-SM100-MXFP4",
+        "--end-marker=END-TUNING-LIST-SM100-MXFP4",
+        "--source-label=tuning_table_sm100_mxfp4.yaml",
+    ],
+    binary = ":tuning_codegen",
+    data = [":tuning_codegen_table_data"],
+)
+
+modular_run_binary_test(
+    name = "sm100_mxfp8_tuning_codegen_test",
+    args = [
+        "--check",
+        "--manifest=max/kernels/src/linalg/matmul/gpu/sm100_structured/default/tuning_table_sm100_mxfp8.yaml",
+        "--snippet=max/kernels/src/linalg/matmul/gpu/sm100_structured/default/tuning_sm100.mojo.snippet",
+        "--target=max/kernels/src/linalg/matmul/gpu/sm100_structured/default/tuning_configs.mojo",
+        "--begin-marker=BEGIN-TUNING-LIST-SM100-MXFP8",
+        "--end-marker=END-TUNING-LIST-SM100-MXFP8",
+        "--source-label=tuning_table_sm100_mxfp8.yaml",
     ],
     binary = ":tuning_codegen",
     data = [":tuning_codegen_table_data"],

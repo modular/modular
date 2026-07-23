@@ -2086,9 +2086,12 @@ def _get_tuning_list_sm100_fp8[
 
 def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
     comptime config_list = [
+        # ----------------BEGIN-TUNING-LIST-SM100-NVFP4----------------
+        # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
+        # index: [0]
         TuningConfigSM100(
             M=1,
-            M_end=16 + 1,
+            M_end=17,
             N=18432,
             K=7168,
             mma_shape=Index(256, 16, 32),
@@ -2100,11 +2103,16 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             k_group_size=2,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
             is_small_bn=True,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
+        # index: [1]
         TuningConfigSM100(
             M=17,
-            M_end=32 + 1,
+            M_end=33,
             N=18432,
             K=7168,
             mma_shape=Index(256, 32, 32),
@@ -2116,8 +2124,13 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             k_group_size=2,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
             is_small_bn=True,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
+        # index: [2]
         TuningConfigSM100(
             M=32,
             M_end=129,
@@ -2129,9 +2142,16 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=1,
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
+        # index: [3]
         TuningConfigSM100(
             M=65,
             M_end=129,
@@ -2143,9 +2163,16 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=1,
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
+        # index: [4]
         TuningConfigSM100(
             M=2,
             M_end=32,
@@ -2157,9 +2184,16 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=1,
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
+        # index: [5]
         TuningConfigSM100(
             M=64,
             M_end=129,
@@ -2171,9 +2205,16 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=1,
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
+        # index: [6]
         TuningConfigSM100(
             M=1,
             M_end=9,
@@ -2182,15 +2223,19 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             mma_shape=Index(128, 8, 32),
             cta_group=1,
             cluster_shape=Index(1, 1, 1),
-            swapAB=True,
-            num_accum_pipeline_stages=2,
-            num_clc_pipeline_stages=2,
-            num_pipeline_stages=8,
-            is_small_bn=True,
-            k_group_size=2,
             block_swizzle_size=8,
             rasterize_order=RasterOrder(1),
+            swapAB=True,
+            k_group_size=2,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=8,
+            is_small_bn=True,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
+        # index: [7]
         TuningConfigSM100(
             M=9,
             M_end=17,
@@ -2199,15 +2244,19 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             mma_shape=Index(128, 16, 32),
             cta_group=1,
             cluster_shape=Index(1, 1, 1),
-            swapAB=True,
-            num_accum_pipeline_stages=2,
-            num_clc_pipeline_stages=2,
-            num_pipeline_stages=8,
-            is_small_bn=True,
-            k_group_size=2,
             block_swizzle_size=8,
             rasterize_order=RasterOrder(1),
+            swapAB=True,
+            k_group_size=2,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=8,
+            is_small_bn=True,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
+        # index: [8]
         TuningConfigSM100(
             M=17,
             M_end=25,
@@ -2216,15 +2265,19 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             mma_shape=Index(128, 24, 32),
             cta_group=1,
             cluster_shape=Index(1, 1, 1),
-            swapAB=True,
-            num_accum_pipeline_stages=2,
-            num_clc_pipeline_stages=2,
-            num_pipeline_stages=8,
-            is_small_bn=True,
-            k_group_size=2,
             block_swizzle_size=8,
             rasterize_order=RasterOrder(1),
+            swapAB=True,
+            k_group_size=2,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=8,
+            is_small_bn=True,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
+        # index: [9]
         TuningConfigSM100(
             M=25,
             M_end=33,
@@ -2233,15 +2286,19 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             mma_shape=Index(128, 32, 32),
             cta_group=1,
             cluster_shape=Index(1, 1, 1),
-            swapAB=True,
-            num_accum_pipeline_stages=2,
-            num_clc_pipeline_stages=2,
-            num_pipeline_stages=8,
-            is_small_bn=True,
-            k_group_size=2,
             block_swizzle_size=8,
             rasterize_order=RasterOrder(1),
+            swapAB=True,
+            k_group_size=2,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_split_k=1,
+            num_pipeline_stages=8,
+            is_small_bn=True,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
+        # index: [10]
         TuningConfigSM100(
             M=33,
             M_end=65,
@@ -2250,14 +2307,19 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             mma_shape=Index(256, 64, 32),
             cta_group=2,
             cluster_shape=Index(2, 1, 1),
-            swapAB=True,
-            num_accum_pipeline_stages=2,
-            num_clc_pipeline_stages=0,
-            is_small_bn=True,
-            k_group_size=2,
             block_swizzle_size=8,
             rasterize_order=RasterOrder(1),
+            swapAB=True,
+            k_group_size=2,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=True,
+            batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
+        # index: [11]
         TuningConfigSM100(
             M=65,
             M_end=69,
@@ -2266,14 +2328,18 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             mma_shape=Index(256, 96, 32),
             cta_group=2,
             cluster_shape=Index(2, 1, 1),
-            swapAB=True,
-            num_accum_pipeline_stages=2,
-            num_clc_pipeline_stages=0,
-            is_small_bn=True,
-            k_group_size=2,
             block_swizzle_size=8,
             rasterize_order=RasterOrder(1),
+            swapAB=True,
+            k_group_size=2,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=True,
+            batch_size=1,
         ),
+        # ----------------END-TUNING-LIST-SM100-NVFP4----------------
     ]
 
     return materialize[config_list]()
@@ -2283,6 +2349,9 @@ def _get_tuning_list_sm100_mxfp4() -> List[TuningConfigSM100]:
     # MXFP4 uses SF_VEC=32 like MXFP8 and KIND_MXF4 at the hardware level.
     # Start with MXFP8 tuning configs; tune later.
     comptime config_list = [
+        # ----------------BEGIN-TUNING-LIST-SM100-MXFP4----------------
+        # Automatically generated from [tuning_table_sm100_mxfp4.yaml]
+        # index: [0]
         TuningConfigSM100(
             M=1,
             M_end=2,
@@ -2294,9 +2363,15 @@ def _get_tuning_list_sm100_mxfp4() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=1,
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # ----------------END-TUNING-LIST-SM100-MXFP4----------------
     ]
 
     return materialize[config_list]()
@@ -2304,6 +2379,9 @@ def _get_tuning_list_sm100_mxfp4() -> List[TuningConfigSM100]:
 
 def _get_tuning_list_sm100_mxfp8() -> List[TuningConfigSM100]:
     comptime config_list = [
+        # ----------------BEGIN-TUNING-LIST-SM100-MXFP8----------------
+        # Automatically generated from [tuning_table_sm100_mxfp8.yaml]
+        # index: [0]
         TuningConfigSM100(
             M=1,
             M_end=2,
@@ -2315,9 +2393,15 @@ def _get_tuning_list_sm100_mxfp8() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=1,
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
         ),
+        # ----------------END-TUNING-LIST-SM100-MXFP8----------------
     ]
 
     return materialize[config_list]()
