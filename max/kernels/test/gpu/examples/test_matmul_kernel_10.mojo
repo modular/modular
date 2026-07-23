@@ -27,7 +27,7 @@ from layout import (
     Coord,
     TileTensor,
     TensorLayout,
-    TensorStorage,
+    PointerStorage,
     Idx,
     row_major,
     stack_allocation,
@@ -71,9 +71,6 @@ def sgemm_warp_tiling_kernel[
     ALayoutType: TensorLayout,
     b_type: DType,
     BLayoutType: TensorLayout,
-    c_storage: TensorStorage,
-    a_storage: TensorStorage,
-    b_storage: TensorStorage,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -86,9 +83,24 @@ def sgemm_warp_tiling_kernel[
     NUM_THREADS: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    mat_c: TileTensor[c_type, CLayoutType, MutAnyOrigin, Storage=c_storage],
-    mat_a: TileTensor[a_type, ALayoutType, MutAnyOrigin, Storage=a_storage],
-    mat_b: TileTensor[b_type, BLayoutType, MutAnyOrigin, Storage=b_storage],
+    mat_c: TileTensor[
+        c_type,
+        CLayoutType,
+        MutAnyOrigin,
+        Storage=PointerStorage[element_width=1],
+    ],
+    mat_a: TileTensor[
+        a_type,
+        ALayoutType,
+        MutAnyOrigin,
+        Storage=PointerStorage[element_width=1],
+    ],
+    mat_b: TileTensor[
+        b_type,
+        BLayoutType,
+        MutAnyOrigin,
+        Storage=PointerStorage[element_width=1],
+    ],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
 ) where (a_type.is_numeric() and b_type.is_numeric()):
@@ -125,12 +137,12 @@ def sgemm_warp_tiling_kernel[
     )
 
     # Move blocktile to beginning of A's row and B's column.
-    var aa_ptr = mat_a.ptr + c_row * BM * K
-    var bb_ptr = mat_b.ptr + c_col * BN
+    var aa_ptr = mat_a._storage + c_row * BM * K
+    var bb_ptr = mat_b._storage + c_col * BN
     # Move C_ptr to warp's output tile
     var M_offset_warp = c_row * BM + warp_row * WM
     var N_offset_warp = c_col * BN + warp_col * WN
-    var cc_ptr = mat_c.ptr + M_offset_warp * N + N_offset_warp
+    var cc_ptr = mat_c._storage + M_offset_warp * N + N_offset_warp
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.
@@ -399,9 +411,6 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         type_of(a_layout),
         DType.float32,
         type_of(b_layout),
-        c_storage=type_of(c_buffer).Storage,
-        a_storage=type_of(a_buffer).Storage,
-        b_storage=type_of(b_buffer).Storage,
         BM=K10_BM,
         BN=K10_BN,
         BK=K10_BK,
