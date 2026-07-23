@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import os
 import socket
 import sys
@@ -36,6 +37,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 
 import pytest
+import pytest_asyncio
 from max.experimental.cascade import (
     GenerateRequest,
     LocalRuntime,
@@ -62,26 +64,90 @@ from max.experimental.cascade.pipelines.dummy_textgen import (
 from max.serve.process_control import subprocess_manager
 from pydantic import BaseModel
 
-# Each entry is a zero-arg factory whose ``async with`` yields a connected
-# :py:class:`Runtime`. Parameterizing the fixture by factory (rather than by
-# instance) keeps each test case lifecycle-isolated.
-_RUNTIME_FACTORIES: list[Callable[[], Runtime]] = [
-    LocalRuntime,
-    SubprocGrpcRuntimeClient,
-    SubprocHttpRuntime,
-]
+# The transports the shared-runtime suite runs against. ``LocalRuntime`` is
+# in-process; the other two are backed by a server subprocess (see
+# ``_shared_server``).
+_RUNTIME_TRANSPORTS = ["local", "grpc", "http"]
 
 
-@pytest.fixture(
-    params=_RUNTIME_FACTORIES,
-    ids=lambda factory: factory.__name__,
+async def _grpc_ready(target: str) -> None:
+    """Block until the gRPC server at ``target`` answers (``__aenter__`` polls)."""
+    async with GrpcRuntimeClient(target):
+        pass
+
+
+async def _http_ready(address: str) -> None:
+    """Block until the HTTP server at ``address`` reports alive."""
+    proxy = HttpRuntimeProxy(address)
+    async with proxy.session() as session:
+        await _http_wait_until_alive(session, proxy._base_url)
+
+
+@pytest_asyncio.fixture(
+    params=_RUNTIME_TRANSPORTS,
+    ids=lambda transport: transport,
+    scope="module",
 )
-async def runtime(
+async def _shared_server(
     request: pytest.FixtureRequest,
+) -> AsyncIterator[Callable[[], Runtime]]:
+    """Boot one server per subprocess-backed transport, shared across the module.
+
+    Yields a zero-arg opener returning an *unentered* :py:class:`Runtime`
+    pointed at the shared server (or a fresh in-process :py:class:`LocalRuntime`,
+    which is cheap enough to build per test). Booting the server once per module
+    -- rather than once per test case -- avoids ~40 subprocess spawn/teardown
+    cycles across this file, each of which pays the subprocess SIGTERM-grace
+    teardown (especially costly under ASAN). The subprocess lifecycle is owned
+    by :py:func:`~max.serve.process_control.subprocess_manager` (the same code
+    the real runtimes use); tests just dial the server with lightweight
+    per-test clients.
+    """
+    transport: str = request.param
+    if transport == "local":
+        yield LocalRuntime
+        return
+
+    sock_path = f"/tmp/max-test-{uuid.uuid4().hex[:12]}.sock"
+    address = f"unix://{sock_path}"
+    if transport == "grpc":
+        server_fn: Callable[[str], None] = grpc_server.serve
+        opener: Callable[[], Runtime] = functools.partial(
+            GrpcRuntimeClient, f"unix:{sock_path}"
+        )
+        ready = _grpc_ready(f"unix:{sock_path}")
+    else:
+        server_fn = http_server.serve
+        opener = functools.partial(HttpRuntimeProxy, address)
+        ready = _http_ready(address)
+
+    # Manage the server subprocess (loop-agnostic, module-lived) and its client
+    # (event-loop-bound, per-test) separately rather than reusing the bundled
+    # ``Subproc*Runtime`` classes, whose single ``async with`` opens a client on
+    # this fixture's loop that the per-function test loops then can't await.
+    try:
+        async with subprocess_manager(
+            f"cascade {transport} test server"
+        ) as proc:
+            proc.start(server_fn, address)
+            await asyncio.wait_for(ready, timeout=30.0)
+            yield opener
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(sock_path)
+
+
+@pytest_asyncio.fixture
+async def runtime(
+    _shared_server: Callable[[], Runtime],
 ) -> AsyncIterator[Runtime]:
-    """Yield an opened runtime for each factory under test."""
-    factory: Callable[[], Runtime] = request.param
-    async with factory() as rt:
+    """Open a per-test client to the module's shared runtime.
+
+    The client (a gRPC channel / aiohttp session, or a fresh in-process
+    ``LocalRuntime``) is cheap; the server subprocess it talks to is shared
+    across the whole module by :py:func:`_shared_server`.
+    """
+    async with _shared_server() as rt:
         yield rt
 
 
