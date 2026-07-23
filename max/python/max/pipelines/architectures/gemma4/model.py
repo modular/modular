@@ -37,19 +37,14 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
-from max.pipelines.lib.vision_encoder_cache import (
-    VisionEncoderCache,
-    VisionEncodeResult,
-)
+from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.profiler import traced
 
 from .batch_processor import Gemma4BatchProcessor
 from .batch_vision_inputs import (
-    VideoInputs,
     VisionRawInputs,
     create_empty_embeddings,
     create_empty_indices,
-    merge_per_device_buffers,
     pack_uncached_images,
 )
 from .context import Gemma4Context
@@ -79,10 +74,9 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         return_n_logits: Number of logits to return.
         signal_buffers: Device buffers for distributed communication.
         kv_cache_inputs: Combined KV cache inputs (sliding-window + global).
-        video: Inputs to the video encoder.
 
-    Image embeddings come from the pipeline-driven encoder cache on the base
-    ``vision_embeddings`` / ``vision_scatter_indices`` fields.
+    Image (and video-frame) embeddings come from the pipeline-driven encoder
+    cache on the base ``vision_embeddings`` / ``vision_scatter_indices`` fields.
     """
 
     tokens: npt.NDArray[np.integer[Any]] | Buffer
@@ -90,23 +84,25 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     signal_buffers: list[Buffer]
     return_n_logits: Buffer
 
-    video: VideoInputs | None = None
-
-    combined_embeds: list[Buffer] | None = None
-    combined_indices: list[Buffer] | None = None
+    empty_vision_embeds: list[Buffer] | None = None
+    empty_vision_indices: list[Buffer] | None = None
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        """Returns positional Buffer inputs for the language model ABI."""
-        assert self.combined_embeds is not None
-        assert self.combined_indices is not None
+        """Positional Buffer inputs for the language-model ABI."""
+        assert self.vision_embeddings is None, (
+            "buffers is the no-vision ABI path; a batch with vision embeddings "
+            "must be run through execute(), not model_inputs.buffers."
+        )
+        assert self.empty_vision_embeds is not None
+        assert self.empty_vision_indices is not None
         assert self.kv_cache_inputs is not None
         return (
             self.tokens,
             self.return_n_logits,
             *self.input_row_offsets,
-            *self.combined_embeds,
-            *self.combined_indices,
+            *self.empty_vision_embeds,
+            *self.empty_vision_indices,
             *self.signal_buffers,
             *self.kv_cache_inputs.flatten(),
         )
@@ -186,11 +182,6 @@ class Gemma3_MultiModalModel(
 
         self.vision_model, self.language_model = self.load_model(session)
 
-        # Images are cached by the pipeline-owned VisionEncoderCache. The
-        # pipeline hands its cache here via set_video_cache() for the video
-        # branch's store (transitional — see execute()).
-        self._video_cache: VisionEncoderCache[Gemma4Context] | None = None
-
         assert isinstance(self.kv_params, MultiKVCacheParams)
 
         if self._batch_processor is not None:
@@ -205,15 +196,6 @@ class Gemma3_MultiModalModel(
         during prefill only.
         """
         return self.language_model
-
-    def set_video_cache(self, cache: VisionEncoderCache[Gemma4Context]) -> None:
-        """Transitional: receive the pipeline-owned cache for the video store.
-
-        Video is a separate scatter path not yet unified into the images
-        machinery; until it is, the pipeline hands the single owner's cache
-        here so freshly-encoded videos are stored (and released) through it.
-        """
-        self._video_cache = cache
 
     def pack_vision_inputs(
         self,
@@ -515,56 +497,14 @@ class Gemma3_MultiModalModel(
             image_embeddings = self.empty_vision_embeddings(self.devices)
             image_scatter = self._empty_indices()
 
-        # --- video embeddings ---
-        video_embeddings: list[Buffer]
-        video_scatter: list[Buffer]
-        vid = model_inputs.video
-        if vid is not None and vid.cached_embeddings is not None:
-            # Cache hit: embeddings pre-assembled in build_video_inputs.
-            video_embeddings = vid.cached_embeddings
-        elif vid is not None and vid.raw is not None:
-            # Cache miss: encode, then store so future requests hit the cache.
-            video_embeddings = self._run_vision_encoder(vid.raw)
-            if vid.cache_hashes:
-                assert vid.cache_per_video_token_counts is not None
-                assert vid.cache_req_ids is not None
-                assert self._video_cache is not None, (
-                    "video cache not bound; pipeline must call set_video_cache"
-                )
-                self._video_cache._cache_and_split(
-                    vision_outputs=video_embeddings,
-                    per_image_token_counts=vid.cache_per_video_token_counts,
-                    image_hashes=vid.cache_hashes,
-                    request_ids=vid.cache_req_ids,
-                )
-        else:
-            video_embeddings = self.empty_vision_embeddings(self.devices)
-
-        if vid is not None:
-            if vid.token_indices is not None:
-                video_scatter = vid.token_indices
-            else:
-                assert vid.token_indices_np is not None
-                video_scatter = self._scatter_to_devices(vid.token_indices_np)
-        else:
-            video_scatter = self._empty_indices()
-
-        # --- merge image + video ---
-        combined_embeds = merge_per_device_buffers(
-            image_embeddings, video_embeddings
-        )
-        combined_indices = merge_per_device_buffers(
-            image_scatter, video_scatter
-        )
-
         assert model_inputs.kv_cache_inputs
 
         model_outputs = self.language_model.execute(
             model_inputs.tokens,
             model_inputs.return_n_logits,
             *model_inputs.input_row_offsets,
-            *combined_embeds,
-            *combined_indices,
+            *image_embeddings,
+            *image_scatter,
             *model_inputs.signal_buffers,
             *model_inputs.kv_cache_inputs.flatten(),
         )

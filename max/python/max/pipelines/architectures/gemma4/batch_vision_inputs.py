@@ -27,9 +27,7 @@ from max.graph.buffer_utils import cast_tensor_to
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib.vision_encoder_cache import (
     VisionEncoderCache,
-    concat_device_buffers,
 )
-from max.pipelines.request import RequestID
 from max.profiler import traced
 
 from .context import Gemma4Context
@@ -74,31 +72,6 @@ class ImageInputs:
     cached_embeddings: list[Buffer] | None = None
     cached_token_indices: list[Buffer] | None = None
     cached_token_indices_np: npt.NDArray[np.int32] | None = None
-
-
-@dataclass
-class VideoInputs:
-    """Video-specific inputs attached to a model-input batch.
-
-    Exactly one of ``raw`` or ``cached_embeddings`` is populated:
-
-    * ``raw`` — at least one video needs encoding.  ``cache_hashes`` and
-      ``cache_req_ids`` carry metadata so ``execute`` can store the result.
-    * ``cached_embeddings`` — every video was already in the cache; embeddings
-      are pre-assembled and ready to use directly.
-    """
-
-    raw: VisionRawInputs | None = None
-    token_indices: list[Buffer] | None = None
-    token_indices_np: npt.NDArray[np.int32] | None = None
-
-    # Metadata for caching freshly-encoded videos in execute().
-    cache_hashes: list[int] | None = None
-    cache_req_ids: list[RequestID] | None = None
-    cache_per_video_token_counts: list[int] | None = None
-
-    # Cache-hit path: all videos already cached.
-    cached_embeddings: list[Buffer] | None = None
 
 
 def create_empty_embeddings(
@@ -379,117 +352,3 @@ def build_image_inputs(
         )
 
     return None
-
-
-@traced
-def build_video_inputs(
-    context_batch: Sequence[Gemma4Context],
-    devices: list[Device],
-    pooling_kernel_size: int,
-    dtype: DType,
-    ve_cache: VisionEncoderCache[Gemma4Context] | None = None,
-    empty_embeddings: list[Buffer] | None = None,
-) -> VideoInputs | None:
-    """Assemble ``VideoInputs`` from pre-unpacked per-frame context data.
-
-    When *ve_cache* is provided, videos already in the cache skip encoding.
-    Scatter indices are always rebuilt per chunk — they depend on
-    ``processed_length``, not on whether encoding was skipped.
-    """
-    video_ctxs = [ctx for ctx in context_batch if ctx.video_frame_patches]
-    if not video_ctxs:
-        return None
-
-    # Build chunked-prefill-aware scatter indices for all video contexts.
-    # Absolute token positions are mapped into the current chunk's active
-    # window; positions outside the window get the int32-min sentinel so
-    # scatter_nd_skip_oob_indices ignores them.
-    oob_idx = np.iinfo(np.int32).min
-    batch_offset = 0
-    scatter_parts: list[npt.NDArray[np.int32]] = []
-    for ctx in context_batch:
-        processed_length = ctx.tokens.processed_length
-        active_len = ctx.tokens.active_length
-        for start, end in ctx.video_token_ranges:
-            rel = np.arange(start, end, dtype=np.int64) - processed_length
-            valid = (rel >= 0) & (rel < active_len)
-            scatter_parts.append(
-                np.where(
-                    valid,
-                    (rel + batch_offset).astype(np.int32),
-                    np.int32(oob_idx),
-                )
-            )
-        batch_offset += active_len
-    scatter_np = np.concatenate(scatter_parts).astype(np.int32)
-
-    # Cache-aware path: check each video against the cache.
-    if ve_cache is not None and ve_cache.enabled:
-        uncached_ctxs: list[Gemma4Context] = []
-        for ctx in video_ctxs:
-            for vh in ctx.video_hashes:
-                if ve_cache.lookup(vh):
-                    ve_cache.acquire(ctx.request_id, vh)
-                else:
-                    uncached_ctxs.append(ctx)
-                    break  # miss on at least one video — encode this ctx
-
-        if not uncached_ctxs:
-            # All videos cached — assemble embeddings from cache entries.
-            assert empty_embeddings is not None
-            all_device_bufs: list[list[Buffer]] = [[] for _ in devices]
-            for ctx in video_ctxs:
-                for vh in ctx.video_hashes:
-                    if entry := ve_cache.lookup(vh):
-                        for d in range(len(devices)):
-                            all_device_bufs[d].append(entry.embeddings[d])
-            if any(bufs for bufs in all_device_bufs):
-                cached_embs: list[Buffer] = (
-                    [dl[0] for dl in all_device_bufs]
-                    if all(len(dl) == 1 for dl in all_device_bufs)
-                    else [concat_device_buffers(dl) for dl in all_device_bufs]
-                )
-            else:
-                cached_embs = empty_embeddings
-            return VideoInputs(
-                cached_embeddings=cached_embs, token_indices_np=scatter_np
-            )
-
-        video_ctxs = uncached_ctxs  # encode only uncached contexts
-
-    # Raw (encode) path: pack pixel buffers and collect cache metadata.
-    all_frame_patches: list[npt.NDArray[np.floating[Any]]] = []
-    all_frame_pos_ids: list[npt.NDArray[np.integer[Any]]] = []
-    frame_patch_counts: list[int] = []
-    frame_soft_token_counts: list[int] = []
-    cache_hashes: list[int] = []
-    cache_req_ids: list[RequestID] = []
-    cache_per_video_token_counts: list[int] = []
-    for ctx in video_ctxs:
-        all_frame_patches.extend(ctx.video_frame_patches)
-        all_frame_pos_ids.extend(ctx.video_frame_pos_ids)
-        frame_patch_counts.extend(ctx.video_frame_patch_counts)
-        frame_soft_token_counts.extend(ctx.video_frame_soft_token_counts)
-        for i, (start, end) in enumerate(ctx.video_token_ranges):
-            cache_hashes.append(
-                ctx.video_hashes[i] if i < len(ctx.video_hashes) else 0
-            )
-            cache_req_ids.append(ctx.request_id)
-            cache_per_video_token_counts.append(end - start)
-
-    raw = pack_vision_buffers(
-        devices,
-        pooling_kernel_size,
-        all_frame_patches,
-        all_frame_pos_ids,
-        frame_patch_counts,
-        frame_soft_token_counts,
-        dtype,
-    )
-    return VideoInputs(
-        raw=raw,
-        token_indices_np=scatter_np,
-        cache_hashes=cache_hashes,
-        cache_req_ids=cache_req_ids,
-        cache_per_video_token_counts=cache_per_video_token_counts,
-    )

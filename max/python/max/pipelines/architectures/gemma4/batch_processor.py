@@ -32,7 +32,6 @@ from max.pipelines.lib.interfaces.pipeline_model import ModelOutputs
 from max.profiler import traced
 
 from .batch_vision_inputs import (
-    build_video_inputs,
     create_empty_embeddings,
     create_empty_indices,
 )
@@ -153,41 +152,14 @@ class Gemma4BatchProcessor(
         copy_pinned_to_destinations(host_tokens, [device_tokens])
         copy_pinned_to_destinations(host_row_offsets, device_row_offsets)
 
-        # Images are selected, encoded, and cached by the pipeline-owned
-        # VisionEncoderCache between prep and execute; this processor only
-        # builds tokens/offsets and video inputs.
-        k = (
-            self._config.vision_config.pooling_kernel_size
-            if self._config.vision_config is not None
-            else 1
-        )
-        needs_video = (
-            any(
-                getattr(ctx, "needs_video_encoding", False)
-                for ctx in context_batch
-            )
-            if context_batch
-            else False
-        )
-        if needs_video:
-            video_inputs = build_video_inputs(
-                context_batch=context_batch,
-                devices=devices,
-                pooling_kernel_size=k,
-                dtype=self._config.unquantized_dtype,
-            )
-        else:
-            video_inputs = None
-
         return Gemma3MultiModalModelInputs(
             tokens=device_tokens,
             input_row_offsets=device_row_offsets,
             return_n_logits=return_n_logits_buf,
             signal_buffers=list(self.runtime.signal_buffers),
             kv_cache_inputs=kv_cache_inputs,
-            video=video_inputs,
-            combined_embeds=self._empty_embeddings(),
-            combined_indices=self._empty_indices(),
+            empty_vision_embeds=self._empty_embeddings(),
+            empty_vision_indices=self._empty_indices(),
         )
 
     def _empty_embeddings(self) -> list[Buffer]:

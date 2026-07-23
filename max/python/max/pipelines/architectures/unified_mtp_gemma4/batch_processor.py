@@ -33,7 +33,6 @@ from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 
 from ..gemma4.batch_vision_inputs import (
     build_image_inputs,
-    build_video_inputs,
     create_empty_embeddings,
     create_empty_indices,
 )
@@ -194,19 +193,8 @@ class UnifiedMTPGemma4BatchProcessor(
         else:
             image_inputs = None
 
-        needs_video = any(
-            getattr(ctx, "needs_video_encoding", False) for ctx in context_batch
-        )
-        if needs_video:
-            video_inputs = build_video_inputs(
-                context_batch=context_batch,
-                devices=devices,
-                pooling_kernel_size=k,
-                dtype=self._config.unquantized_dtype,
-            )
-        else:
-            video_inputs = None
-
+        # Video frames flow through the image path above (each frame is an
+        # image entry in ctx.images).
         return UnifiedMTPGemma4Inputs(
             tokens=device_tokens,
             input_row_offsets=device_row_offsets,
@@ -219,7 +207,6 @@ class UnifiedMTPGemma4BatchProcessor(
             draft_tokens=None,
             structured_output=self.runtime.pipeline_config.needs_bitmask_constraints,
             images=image_inputs,
-            video=video_inputs,
             combined_embeds=self._empty_embeddings(),
             combined_indices=self._empty_indices(),
         )

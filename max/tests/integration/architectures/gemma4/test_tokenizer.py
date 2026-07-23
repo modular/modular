@@ -163,7 +163,6 @@ async def test_text_only_smoke(
 
     assert context is not None
     assert len(context.images) == 0
-    assert len(context.video_token_ranges) == 0
     # All token_type_ids should be 0 (text)
     assert np.all(context.mm_token_type_ids == 0)
 
@@ -554,16 +553,69 @@ async def test_video_tokens_inserted(
     vid_mask = tokens == VIDEO_TOKEN_ID
     assert vid_mask.sum() == num_video_soft_tokens * num_frames
 
-    # token_type_ids mark video tokens as 2
     assert np.all(context.mm_token_type_ids[vid_mask] == 2)
 
-    # Video token ranges are populated
-    assert len(context.video_token_ranges) > 0
-    for start, end in context.video_token_ranges:
-        assert all(tokens[start:end] == VIDEO_TOKEN_ID)
+    assert len(context.images) == num_frames
+    assert len(context.pixel_position_ids) == num_frames
+    for img in context.images:
+        assert all(tokens[img.start_idx : img.end_idx] == VIDEO_TOKEN_ID)
 
-    # No image metadata for a video-only request
-    assert len(context.images) == 0
+
+@pytest.mark.asyncio
+async def test_video_frames_get_per_frame_content_hashes(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """With caching on, each frame entry carries a distinct non-zero hash."""
+    mock_pipeline_config.model.kv_cache.enable_prefix_caching = True
+    delegate = _make_mock_delegate()
+
+    n_soft, n_frames = 2, 3
+    frame_tokens = [
+        tok
+        for _ in range(n_frames)
+        for tok in ([BOI_TOKEN_ID, *([VIDEO_TOKEN_ID] * n_soft), EOI_TOKEN_ID])
+    ]
+    input_ids = np.array(
+        [2, 100, *frame_tokens, 3],
+        dtype=np.int64,
+    )
+    delegate.return_value = {"input_ids": [input_ids.tolist()]}
+    delegate.apply_chat_template.return_value = "Describe <|video|> this."
+    _patch_tokenizer_deps(mocker, delegate)
+
+    video_processor_mock = MagicMock(
+        return_value=(
+            [np.zeros((n_frames, 36, 768), dtype=np.float32)],
+            [np.zeros((n_frames, 36, 2), dtype=np.int32)],
+            [n_soft],
+            [VideoMetadata(timestamps=[0.0, 1.0, 2.0])],
+        ),
+        pooling_kernel_size=3,
+    )
+    mocker.patch(
+        "max.pipelines.architectures.gemma4.tokenizer.Gemma4VideoProcessor",
+        return_value=video_processor_mock,
+    )
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+    request = TextGenerationRequest(
+        messages=[
+            TextGenerationRequestMessage(
+                role="user",
+                content=[VideoContentPart(), TextContentPart(text="hi")],
+            )
+        ],
+        videos=[_make_image_bytes()],
+        request_id=RequestID("test-vid-frame-hash"),
+        model_name="test-model",
+    )
+    context = await tokenizer.new_context(request)
+
+    hashes = [img.image_hash for img in context.images]
+    assert len(hashes) == n_frames
+    assert all(h is not None and h != 0 for h in hashes)  # content-derived
+    assert len(set(hashes)) == n_frames  # distinct per frame (frame index)
 
 
 @pytest.mark.asyncio
@@ -590,9 +642,7 @@ async def test_text_only_no_images_or_videos(
     context = await tokenizer.new_context(request)
 
     assert len(context.pixel_position_ids) == 0
-    assert len(context.video_frame_patches) == 0
-    assert len(context.video_frame_pos_ids) == 0
-    assert len(context.video_token_ranges) == 0
+    assert len(context.images) == 0
 
 
 @pytest.mark.asyncio
@@ -779,3 +829,49 @@ def test_apply_chat_template_no_double_prefill(
 
     out = tokenizer.apply_chat_template(msgs, enable_thinking=True)
     assert out.count("<|channel>thought") == 1
+
+
+@pytest.mark.asyncio
+async def test_video_frame_count_mismatch_raises(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """A prompt whose <video> runs don't match the processor's frame count
+    raises (rather than silently indexing past the frame data)."""
+    delegate = _make_mock_delegate()
+    input_ids = np.array(
+        [2, 100, BOI_TOKEN_ID, VIDEO_TOKEN_ID, VIDEO_TOKEN_ID, EOI_TOKEN_ID, 3],
+        dtype=np.int64,
+    )
+    delegate.return_value = {"input_ids": [input_ids.tolist()]}
+    delegate.apply_chat_template.return_value = "Describe <|video|> this."
+    _patch_tokenizer_deps(mocker, delegate)
+
+    video_processor_mock = MagicMock(
+        return_value=(
+            [np.zeros((2, 36, 768), dtype=np.float32)],
+            [np.zeros((2, 36, 2), dtype=np.int32)],
+            [2],
+            [VideoMetadata(timestamps=[0.0, 1.0])],
+        ),
+        pooling_kernel_size=3,
+    )
+    mocker.patch(
+        "max.pipelines.architectures.gemma4.tokenizer.Gemma4VideoProcessor",
+        return_value=video_processor_mock,
+    )
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+    request = TextGenerationRequest(
+        messages=[
+            TextGenerationRequestMessage(
+                role="user",
+                content=[VideoContentPart(), TextContentPart(text="hi")],
+            )
+        ],
+        videos=[_make_image_bytes()],
+        request_id=RequestID("test-vid-mismatch"),
+        model_name="test-model",
+    )
+    with pytest.raises(ValueError, match="Video placeholder mismatch"):
+        await tokenizer.new_context(request)

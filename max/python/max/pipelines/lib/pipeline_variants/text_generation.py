@@ -250,10 +250,6 @@ class TextGenerationPipeline(
             available_cache_memory=available_cache_memory,
         )
 
-        # Build the vision-encoder cache owner alongside the KV manager, for
-        # models that implement the encode contract. The transitional
-        # video-cache bridge hands the same owned cache to the model's video
-        # branch (removed once video routes through the interface).
         self._encoder_cache: VisionEncoderCache[TextAndVisionContext] | None = (
             None
         )
@@ -262,11 +258,6 @@ class TextGenerationPipeline(
                 max_entries=pipeline_config.runtime.max_vision_cache_entries,
                 n_devices=len(self._devices),
             )
-            set_video_cache = getattr(
-                self._pipeline_model, "set_video_cache", None
-            )
-            if set_video_cache is not None:
-                set_video_cache(self._encoder_cache)
 
         # Device the sampler runs on. ``sample_on_host`` routes sampling to the
         # host CPU.

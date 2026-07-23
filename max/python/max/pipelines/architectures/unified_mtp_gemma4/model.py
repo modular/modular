@@ -60,11 +60,9 @@ from typing_extensions import override
 
 from ..gemma4.batch_vision_inputs import (
     ImageInputs,
-    VideoInputs,
     VisionRawInputs,
     create_empty_embeddings,
     create_empty_indices,
-    merge_per_device_buffers,
 )
 from ..gemma4.context import Gemma4Context
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
@@ -105,7 +103,6 @@ class UnifiedMTPGemma4Inputs(UnifiedSpecDecodeInputs):
     # projected soft-token embeddings and scatter indices bound to the graph
     # (empty for text-only and decode steps).
     images: ImageInputs | None = None
-    video: VideoInputs | None = None
     combined_embeds: list[Buffer] | None = None
     combined_indices: list[Buffer] | None = None
 
@@ -470,42 +467,8 @@ class UnifiedMTPGemma4Model(
             image_embeddings = self._empty_embeddings()
             image_scatter = self._empty_indices()
 
-        # --- video embeddings ---
-        video_embeddings: list[Buffer]
-        video_scatter: list[Buffer]
-        vid = model_inputs.video
-        if vid is not None and vid.cached_embeddings is not None:
-            video_embeddings = vid.cached_embeddings
-        elif vid is not None and vid.raw is not None:
-            video_embeddings = self._run_vision_encoder(vid.raw)
-            if vid.cache_hashes:
-                assert vid.cache_per_video_token_counts is not None
-                assert vid.cache_req_ids is not None
-                self._ve_cache._cache_and_split(
-                    vision_outputs=video_embeddings,
-                    per_image_token_counts=vid.cache_per_video_token_counts,
-                    image_hashes=vid.cache_hashes,
-                    request_ids=vid.cache_req_ids,
-                )
-        else:
-            video_embeddings = self._empty_embeddings()
-
-        if vid is not None:
-            if vid.token_indices is not None:
-                video_scatter = vid.token_indices
-            else:
-                assert vid.token_indices_np is not None
-                video_scatter = self._scatter_to_devices(vid.token_indices_np)
-        else:
-            video_scatter = self._empty_indices()
-
-        # --- merge image + video into the graph-bound buffers ---
-        model_inputs.combined_embeds = merge_per_device_buffers(
-            image_embeddings, video_embeddings
-        )
-        model_inputs.combined_indices = merge_per_device_buffers(
-            image_scatter, video_scatter
-        )
+        model_inputs.combined_embeds = image_embeddings
+        model_inputs.combined_indices = image_scatter
 
         model_outputs = self.model.execute(*model_inputs.buffers)
         assert len(model_outputs) == 3, (

@@ -1692,10 +1692,6 @@ class OverlapTextGenerationPipeline(
                     self._pipeline_config.speculative.synthetic_acceptance_rate,
                 )
 
-        # Build the vision-encoder cache owner alongside the KV manager, for
-        # models that implement the encode contract. The transitional
-        # video-cache bridge hands the same owned cache to the model's video
-        # branch (removed once video routes through the interface).
         self._encoder_cache: VisionEncoderCache[TextAndVisionContext] | None = (
             None
         )
@@ -1704,11 +1700,6 @@ class OverlapTextGenerationPipeline(
                 max_entries=pipeline_config.runtime.max_vision_cache_entries,
                 n_devices=len(self._devices),
             )
-            set_video_cache = getattr(
-                self._pipeline_model, "set_video_cache", None
-            )
-            if set_video_cache is not None:
-                set_video_cache(self._encoder_cache)
 
         # Load sampler(s) for the non-spec-decode path. The bitmask-aware
         # sampler is loaded when constrained decoding could fire (see
