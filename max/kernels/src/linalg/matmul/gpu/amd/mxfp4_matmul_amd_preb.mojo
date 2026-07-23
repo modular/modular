@@ -122,6 +122,7 @@ struct BlockScaledMmaOp_PreB[
     mma_shape: IndexList[3],  # (16, 16, 128) for MXFP4
     warp_tile: IndexList[3],  # (WM, WN, BK_ELEMS) in MFMA-native element units
     num_b_slots: Int = 1,
+    num_scale_slots: Int = 1,
 ]:
     """Per-warp register state + MFMA dispatch for the preb (preshuffled-B,
     preshuffled-scale) kernel.
@@ -147,6 +148,11 @@ struct BlockScaledMmaOp_PreB[
         num_b_slots: Number of `_b_reg` slots for software pipelining
             (defaults to 1). Set to 2 to double-buffer B fragments
             across outer-K iterations.
+        num_scale_slots: Number of A/B scale-register ring slots for
+            software pipelining (defaults to 1). At the depth-2 default
+            this is 1 (1-deep, unchanged behavior); the depth-3
+            co-deepened prefetch sets it to 2 so the scale ring
+            double-buffers alongside the B fragments.
     """
 
     comptime MMA_M = Self.mma_shape[0]
@@ -185,11 +191,12 @@ struct BlockScaledMmaOp_PreB[
     # 2x2 (mn_pack × k_pack) cell packing: one Int32 per (mi_pair, k_pair).
     # ceildiv so odd num_m_mmas/num_n_mmas (e.g. WM=16) still allocate a cell;
     # the unused mn_pack=1 byte is loaded but never OPSEL'd.
+    # Slot-outermost so the S-deep scale ring toggles the leading index (1-deep default).
     comptime _a_scale_layout = row_major[
-        ceildiv(Self.num_m_mmas, 2), Self.num_k_mmas // 2
+        Self.num_scale_slots, ceildiv(Self.num_m_mmas, 2), Self.num_k_mmas // 2
     ]()
     comptime _b_scale_layout = row_major[
-        ceildiv(Self.num_n_mmas, 2), Self.num_k_mmas // 2
+        Self.num_scale_slots, ceildiv(Self.num_n_mmas, 2), Self.num_k_mmas // 2
     ]()
 
     var _a_reg: TileTensor[
@@ -377,7 +384,7 @@ struct BlockScaledMmaOp_PreB[
 
     @always_inline
     def load_a_scales_preshuffled[
-        k_pair: Int
+        k_pair: Int, slot: Int = 0
     ](
         mut self,
         a_scale_loader: PreshuffledScaleLoader[_, _],
@@ -393,6 +400,7 @@ struct BlockScaledMmaOp_PreB[
         Parameters:
             k_pair: Index of the k_pair slot within the current outer-K
                 tile, in `[0, num_k_mmas // 2)`.
+            slot: Scale-ring slot (comptime; 0 at the 1-deep default).
 
         Args:
             a_scale_loader: The `PreshuffledScaleLoader` for the A
@@ -403,6 +411,7 @@ struct BlockScaledMmaOp_PreB[
                 k_pair`; each step advances by 8 K-scales.
         """
         comptime assert k_pair < Self.num_k_mmas // 2, "k_pair out of range"
+        comptime assert slot < Self.num_scale_slots, "scale slot out of range"
 
         var lane_klane, lane_mn = udivmod(lane_id(), Self.MMA_M)
 
@@ -411,12 +420,12 @@ struct BlockScaledMmaOp_PreB[
         comptime for m_pack_idx in range(ceildiv(Self.num_m_mmas, 2)):
             var mn_log = warp_m_off + m_pack_idx * 32 + lane_mn
             self._a_scale_packed[
-                m_pack_idx, k_pair
+                slot, m_pack_idx, k_pair
             ] = a_scale_loader.load_packed(mn_log, k_scale_idx)
 
     @always_inline
     def load_b_scales_preshuffled[
-        k_pair: Int
+        k_pair: Int, slot: Int = 0
     ](
         mut self,
         b_scale_loader: PreshuffledScaleLoader[_, _],
@@ -428,6 +437,7 @@ struct BlockScaledMmaOp_PreB[
         Parameters:
             k_pair: Index of the k_pair slot within the current outer-K
                 tile, in `[0, num_k_mmas // 2)`.
+            slot: Scale-ring slot (comptime; 0 at the 1-deep default).
 
         Args:
             b_scale_loader: The `PreshuffledScaleLoader` for the B
@@ -438,6 +448,7 @@ struct BlockScaledMmaOp_PreB[
                 k_pair`; each step advances by 8 K-scales.
         """
         comptime assert k_pair < Self.num_k_mmas // 2, "k_pair out of range"
+        comptime assert slot < Self.num_scale_slots, "scale slot out of range"
 
         var lane_klane, lane_mn = udivmod(lane_id(), Self.MMA_N)
 
@@ -446,11 +457,11 @@ struct BlockScaledMmaOp_PreB[
         comptime for n_pack_idx in range(ceildiv(Self.num_n_mmas, 2)):
             var mn_log = warp_n_off + n_pack_idx * 32 + lane_mn
             self._b_scale_packed[
-                n_pack_idx, k_pair
+                slot, n_pack_idx, k_pair
             ] = b_scale_loader.load_packed(mn_log, k_scale_idx)
 
     @always_inline
-    def mma[mma_k_idx: Int, slot: Int = 0](self):
+    def mma[mma_k_idx: Int, slot: Int = 0, scale_slot: Int = 0](self):
         """Block-scaled MFMA at MFMA-K position `mma_k_idx` using B from `slot`.
 
         B-major / n-outer / m-inner: hoist the B fragment + b_byte + b_scale
@@ -470,8 +481,14 @@ struct BlockScaledMmaOp_PreB[
                 tile, in `[0, num_k_mmas)`.
             slot: The `_b_reg` slot to read B fragments from (defaults
                 to 0).
+            scale_slot: The scale-ring slot to read A/B scales from
+                (defaults to 0; non-zero only under the depth-3
+                co-deepened prefetch).
         """
         comptime assert slot < Self.num_b_slots, "slot out of range"
+        comptime assert (
+            scale_slot < Self.num_scale_slots
+        ), "scale slot out of range"
         var a_reg_v = self._a_reg.vectorize[1, 1, Self.mma_frag_width_bytes]()
         var b_reg_v = self._b_reg.vectorize[
             1, 1, 1, Self.mma_frag_width_bytes
@@ -487,7 +504,7 @@ struct BlockScaledMmaOp_PreB[
 
             comptime b_byte = (mma_k_idx % 2) * 2 + (n % 2)
             var b_scale = rebind[Int32](
-                self._b_scale_packed[n // 2, mma_k_idx // 2]
+                self._b_scale_packed[scale_slot, n // 2, mma_k_idx // 2]
             )
             comptime if Self.warp_tile[1] == 16:
                 b_scale = Int32(UInt32(b_scale) >> self._b_scale_shift)
@@ -499,7 +516,7 @@ struct BlockScaledMmaOp_PreB[
 
                 comptime a_byte = (mma_k_idx % 2) * 2 + (m % 2)
                 var a_scale = rebind[Int32](
-                    self._a_scale_packed[m // 2, mma_k_idx // 2]
+                    self._a_scale_packed[scale_slot, m // 2, mma_k_idx // 2]
                 )
                 comptime if Self.warp_tile[0] == 16:
                     a_scale = Int32(UInt32(a_scale) >> self._a_scale_shift)
@@ -531,6 +548,7 @@ struct MXFP4MatmulAMD_PreB[
     cluster_drain_sched: Bool = False,
     mfma_cluster: Int = 4,
     deep_prime: Bool = False,
+    pipeline_depth: Int = 2,
 ]:
     """Preshuffled-B variant of `MXFP4MatmulAMD`.
 
@@ -562,6 +580,14 @@ struct MXFP4MatmulAMD_PreB[
     (the MFMA chain is unchanged). Falls back to the 1-deep path when num_tiles < 2.
     Default off: existing callers are bit-identical.
 
+    `pipeline_depth` sizes the B-fragment register ring (`num_b_slots`) and,
+    when > 2, switches the b_prefetch steady loop's end-of-iter sync to the
+    non-draining `s_waitcnt[lgkmcnt=0]` + bare `s_barrier` so in-flight B DMAs
+    are NOT drained every iteration. At the default (2) the ring is the same
+    2 slots and the draining `barrier()` is kept — bit-identical to before.
+    The deeper prefetch *schedule* that consumes slots >= 2 is a follow-up; this
+    param only plumbs the depth + the non-draining-barrier seam.
+
     MFMA consumption order is B-major (n-outer / m-inner): the B fragment is
     held resident across the m-loop for better MFMA ILP. See `mma`.
 
@@ -591,6 +617,12 @@ struct MXFP4MatmulAMD_PreB[
         deep_prime: Deepens the A pipeline to 2-tiles-ahead on the
             prefetch path, staging two A tiles in the prologue
             (defaults to `False`).
+        pipeline_depth: Depth of the B-fragment register ring
+            (`num_b_slots`) on the prefetch path (defaults to 2). When
+            `> 2` it also switches the steady loop's end-of-iter sync to
+            the non-draining `s_waitcnt[lgkmcnt=0]` + bare `s_barrier`
+            and co-deepens the A/scale rings. At the default (2) the
+            behavior is bit-identical to before.
     """
 
     # WM is locked to BM — single warp along M for the preb (no-LDS-B) path.
@@ -600,15 +632,18 @@ struct MXFP4MatmulAMD_PreB[
     comptime MMA_N = 16
     comptime MMA_K = 128
 
-    comptime num_b_slots = 2 if Self.b_prefetch else 1
-    # A LDS is double-buffered on the prefetch path so iter i+1's tile is
-    # written into the alternate slot while iter i reads the current one
+    comptime num_b_slots = Self.pipeline_depth if Self.b_prefetch else 1
+    # A LDS stays double-buffered; the scale + A-register rings deepen to S
+    # only on the co-deepened (pipeline_depth>2) path so consumed loads are old.
     comptime num_a_slots = 2 if Self.b_prefetch else 1
+    comptime num_scale_slots = Self.pipeline_depth if Self.pipeline_depth > 2 else 1
+    comptime num_a_load_slots = Self.pipeline_depth if Self.pipeline_depth > 2 else 1
 
     comptime MmaOpType = BlockScaledMmaOp_PreB[
         mma_shape=IndexList[3](Self.MMA_M, Self.MMA_N, Self.MMA_K),
         warp_tile=IndexList[3](Self.WM, Self.WN, Self.BK_ELEMS),
         num_b_slots=Self.num_b_slots,
+        num_scale_slots=Self.num_scale_slots,
     ]
 
     comptime num_m_mmas = Self.MmaOpType.num_m_mmas
@@ -720,8 +755,9 @@ struct MXFP4MatmulAMD_PreB[
         # this is of size BM x The entire matrix row
         var a_blockrow = a.tile[Self.BM, K_BYTES](m_tile_idx, 0)
 
+        # A DRAM-load landing ring (num_a_load_slots; 1 at the depth-2 default).
         var a_load_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
-            row_major[1, a_reg_elems]()
+            row_major[Self.num_a_load_slots, a_reg_elems]()
         )
 
         var a_loader = RegTileLoader[DType.uint8, load_layout](
@@ -755,9 +791,8 @@ struct MXFP4MatmulAMD_PreB[
 
         @always_inline
         @parameter
-        def load_a_tile_from_dram():
-            # Register-bounce load. In dram_to_lds mode the DMA and the position
-            # advance both live in copy_a_tile_to_smem, so this is a no-op.
+        def load_a_tile_from_dram[reg_slot: Int = 0]():
+            # Register-bounce load into landing-ring slot `reg_slot` (no-op in dram_to_lds mode).
             comptime if not Self.dram_to_lds:
                 var a_block = a_blockrow.tile[Self.BM, Self.BK_BYTES](
                     0, k_counter
@@ -767,7 +802,8 @@ struct MXFP4MatmulAMD_PreB[
                 # BM=16 with many warps_n).
                 if thread_idx.x < load_active_threads:
                     a_loader.load(
-                        a_load_reg, a_block.vectorize[1, Self.simd_width]()
+                        a_load_reg.tile[1, a_reg_elems](reg_slot, 0),
+                        a_block.vectorize[1, Self.simd_width](),
                     )
                 k_counter += 1
 
@@ -780,7 +816,7 @@ struct MXFP4MatmulAMD_PreB[
 
         @always_inline
         @parameter
-        def copy_a_tile_to_smem(slot: Int):
+        def copy_a_tile_to_smem[reg_slot: Int = 0](slot: Int):
             comptime if Self.dram_to_lds:
                 # DRAM->LDS via the shared swizzled loader (TileLoaderLDS does
                 # the readfirstlane->m0 base + source-side byte swizzle +
@@ -811,26 +847,26 @@ struct MXFP4MatmulAMD_PreB[
                         a_smem_dst.raw_store[width=Self.simd_width](
                             off,
                             a_load_reg.raw_load[width=Self.simd_width](
-                                v * Self.simd_width
+                                reg_slot * a_reg_elems + v * Self.simd_width
                             ),
                         )
 
         @always_inline
         @parameter
-        def load_scales_for_iter(k_pair_base: Int):
+        def load_scales_for_iter[slot: Int = 0](k_pair_base: Int):
             """Issue all A+B preshuffled scale-dword loads for one outer-K iter.
 
             `k_pair_base = k_iter * mma_k_pair_per_tile` is the absolute
             scale-pack offset; each k_pair advances by 1 (S_K_BLOCK = 8
-            K-scales = 2 k_tiles).
+            K-scales = 2 k_tiles). `slot` selects the scale-ring slot (comptime).
             """
             comptime for k_pair in range(mma_k_pair_per_tile):
-                mma_op.load_a_scales_preshuffled[k_pair=k_pair](
+                mma_op.load_a_scales_preshuffled[k_pair=k_pair, slot=slot](
                     a_scale_loader,
                     warp_m_off_global,
                     k_pair_base + k_pair,
                 )
-                mma_op.load_b_scales_preshuffled[k_pair=k_pair](
+                mma_op.load_b_scales_preshuffled[k_pair=k_pair, slot=slot](
                     b_scale_loader,
                     warp_n_off_global,
                     k_pair_base + k_pair,
@@ -869,14 +905,18 @@ struct MXFP4MatmulAMD_PreB[
 
         @always_inline
         @parameter
-        def mma_chain_plain[slot: Int]():
-            var a_warp = a_smem_slot(slot).tile[Self.WM, Self.BK_BYTES](
+        def mma_chain_plain[
+            b_slot: Int, a_slot: Int = b_slot, scale_slot: Int = 0
+        ]():
+            # a_slot/scale_slot default to b_slot/0 (unchanged callers); the
+            # co-deepened path passes distinct ring indices.
+            var a_warp = a_smem_slot(a_slot).tile[Self.WM, Self.BK_BYTES](
                 warp_m, 0
             )
             s_setprio[1]()
             comptime for k in range(Self.num_k_mmas):
                 mma_op.load_a_frag_from_smem[k](a_warp)
-                mma_op.mma[k, slot=slot]()
+                mma_op.mma[k, slot=b_slot, scale_slot=scale_slot]()
             s_setprio[0]()
 
         @always_inline
@@ -938,7 +978,53 @@ struct MXFP4MatmulAMD_PreB[
 
         # TODO use comptime pipeline scheduler
 
-        comptime if Self.b_prefetch and Self.deep_prime and num_tiles >= 2:
+        comptime if (
+            Self.b_prefetch
+            and Self.pipeline_depth > 2
+            and num_tiles >= Self.pipeline_depth
+        ):
+            # Co-deepened S-deep prefetch: B-frag, scales, and the A DRAM landing
+            # are all issued S-1 tiles ahead so the vmcnt wait at consume leaves
+            # the newer loads outstanding; the A LDS store stays 1-ahead, published
+            # by the non-draining barrier (lgkmcnt + bare s_barrier, no vmcnt drain).
+            comptime S = Self.pipeline_depth
+
+            # Prologue: prime tiles [0, S-2] of {A-dram, B-frag, scales}.
+            comptime for t in range(S - 1):
+                load_a_tile_from_dram[reg_slot=t]()
+                comptime for k in range(Self.num_k_mmas):
+                    mma_op.load_b_frag_preshuffled[k, slot=t](
+                        b_loader, warp_n_off_global, t * Self.BK_BYTES
+                    )
+                load_scales_for_iter[slot=t](t * mma_k_pair_per_tile)
+            copy_a_tile_to_smem[reg_slot=0](0)
+            s_waitcnt[lgkmcnt=0]()
+            _s_barrier_raw()
+
+            # Steady: MFMA tile i; prefetch tile i+S-1; store tile i+1's A.
+            comptime for i in range(num_tiles):
+                comptime b_pf = i + S - 1
+                comptime if b_pf < num_tiles:
+                    load_a_tile_from_dram[reg_slot=b_pf % S]()
+                    comptime for k in range(Self.num_k_mmas):
+                        mma_op.load_b_frag_preshuffled[k, slot=b_pf % S](
+                            b_loader,
+                            warp_n_off_global,
+                            b_pf * Self.BK_BYTES,
+                        )
+                    load_scales_for_iter[slot=b_pf % S](
+                        b_pf * mma_k_pair_per_tile
+                    )
+
+                mma_chain_plain[b_slot=i % S, a_slot=i % 2, scale_slot=i % S]()
+
+                comptime if i + 1 < num_tiles:
+                    # Store tile i+1's A (already in a_load_reg) via non-draining publish.
+                    copy_a_tile_to_smem[reg_slot=(i + 1) % S]((i + 1) % 2)
+                    s_waitcnt[lgkmcnt=0]()
+                    _s_barrier_raw()
+            barrier()
+        elif Self.b_prefetch and Self.deep_prime and num_tiles >= 2:
             # Depth-2 outer-K pipeline with a 2-tiles-ahead A stream.
             #
             # Prologue: stage BOTH tile0 -> slot0 and tile1 -> slot1 into LDS
@@ -1052,6 +1138,10 @@ struct MXFP4MatmulAMD_PreB[
                 comptime if Self.cluster_drain_sched:
                     # Publish the A LDS tile cross-wave (lgkmcnt) but let the
                     # next-tile B DMAs keep streaming across the barrier.
+                    s_waitcnt[lgkmcnt=0]()
+                    _s_barrier_raw()
+                elif Self.pipeline_depth > 2:
+                    # Non-draining sync so in-flight B DMAs survive the barrier.
                     s_waitcnt[lgkmcnt=0]()
                     _s_barrier_raw()
                 else:
