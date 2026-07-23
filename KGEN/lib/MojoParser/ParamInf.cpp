@@ -2262,7 +2262,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
   if (failed(finalizeWithUnbound()))
     return {};
 
-  if (failed(checkBodyConstraints()))
+  if (failed(checkBodyConstraints(paramBindings.additionalConstraints)))
     return {};
 
   ParameterExprArrayAttr rawBindings = ParameterExprArrayAttr::get(

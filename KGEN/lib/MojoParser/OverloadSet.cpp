@@ -1083,6 +1083,11 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
   }
 
   SMLoc callLoc = expr->getLoc();
+  if (auto genAttr = sugarDynCast<GeneratorAttr>(PValue(type));
+      genAttr && LIT::isTypeExpr(genAttr.getBody()))
+    // If this is a type generator, peel it off to expose the partially bound
+    // type it encodes.
+    type = ASTType(genAttr.getBody());
 
   // For struct types, we need to look in both the struct and its extensions.
   if (sugarIsa<LIT::StructType>(type)) {

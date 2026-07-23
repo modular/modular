@@ -197,3 +197,24 @@ def use_param_bad():
 def use_variadic_bad():
     # expected-error @+1 {{invalid call to 'take_variadic': violated constraint}}
     take_variadic(Tag[-1]())
+
+
+##===----------------------------------------------------------------------===##
+# Handle type alias with extra constraints
+##===----------------------------------------------------------------------===##
+
+struct Iter[Cond: Bool]:
+    # expected-note @+1 {{function declared here}}
+    def __init__(out self: Iter[False]):
+        pass
+
+
+struct Collection[Cond: Bool]:
+    # expected-note @+1 {{constraint declared here evaluated to False, expected 'Cond'}}
+    comptime Alias[Cond: Bool]: AnyType where Cond = Iter[Cond]
+
+    def iter(self) where Self.Cond:
+        # Inferring to `Iter[False]` violates the constraint imposed on `Alias`
+        #
+        # expected-error @+1 {{invalid initialization: violated constraint}}
+        _ = Self.Alias()

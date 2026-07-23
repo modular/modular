@@ -479,17 +479,27 @@ static bool isMetaTypeForUserDefinedType(Type type) {
       type);
 }
 
-/// If this is a user declared type, return the declaration that this came
-/// from.  If this is a raw MLIR type or a metatype, return null.
-ASTDecl *ASTType::getDecl(SharedState &shared) const {
+/// Unwrap a type to the **first level type** that is defined by user
+/// (either a trait type or a struct type or a module type).
+static ASTType getDeclDefineType(ASTType t) {
+  if (!t)
+    return {};
+
+  // Peels off the generator to see the body type, the metatype of the generator
+  // type might not be accurate E.g., `comptime T : AnyType = MyStruct`, we want
+  // the `MyStruct` declaration instead of the `AnyType`.
+  if (auto genAttr = sugarDynCast<GeneratorAttr>(PValue(t));
+      genAttr && LIT::isTypeExpr(genAttr.getBody()))
+    return getDeclDefineType(ASTType(genAttr.getBody()));
+
   // We get the declaration from the metatype of the type.  For example, if we
   // have a parametric type like "T" where "T: AnyType", we can know that T has
   // AnyType bound.
   // Canonicalize the type first to strip sugar rebind which could hide things
   // like `upcast` which would otherwise be looked through.
-  Type type = ASTType(getCanonicalType(*this)).extractMetaType();
+  Type type = ASTType(getCanonicalType(t)).extractMetaType();
   if (!isMetaTypeForUserDefinedType(type))
-    return nullptr;
+    return {};
 
   // If our metatype is itself parametric, for example, we have something like:
   //     !kgen.param<:!lit.anytrait<<@Movable>> elt_trait>
@@ -500,22 +510,37 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
     type = sugarCast<AnyTraitType>(paramRef.getParam().getType());
   }
 
-  if (auto generator = dyn_cast<GeneratorType>(type))
-    return ASTType(generator.getBody()).getDecl(shared);
-
   if (auto anyStruct = dyn_cast<StructMetaType>(type))
-    return &shared.declResolver->getDeclForTypeSymbol(anyStruct.getSymbol());
+    return anyStruct.getType();
 
   if (auto anyMeta = dyn_cast<StructMetaMetaType>(type))
-    return &shared.declResolver->getDeclForTypeSymbol(anyMeta.getSymbol());
+    return anyMeta.getType().getType();
 
   if (auto anyTrait = dyn_cast<AnyTraitType>(type))
     type = anyTrait.getTraitType();
 
-  if (auto traitType = dyn_cast<TraitType>(type))
+  return type;
+}
+
+/// If this is a user declared type, return the declaration that this came
+/// from.  If this is a raw MLIR type or a metatype, return null.
+ASTDecl *ASTType::getDecl(SharedState &shared) const {
+  // We get the declaration from the metatype of the type.  For example, if we
+  // have a parametric type like "T" where "T: AnyType", we can know that T has
+  // AnyType bound.
+  // Canonicalize the type first to strip sugar rebind which could hide things
+  // like `upcast` which would otherwise be looked through.
+  ASTType strippedType = getDeclDefineType(*this);
+  if (!strippedType)
+    return {};
+
+  if (auto anyStruct = dyn_cast<StructType>(strippedType))
+    return &shared.declResolver->getDeclForTypeSymbol(anyStruct.getSymbol());
+
+  if (auto traitType = dyn_cast<TraitType>(strippedType))
     return shared.declResolver->getTraitDecl(traitType);
 
-  if (auto module = dyn_cast<ModuleType>(type))
+  if (auto module = dyn_cast<ModuleType>(strippedType))
     return &shared.declResolver->getDeclForTypeSymbol(module.getSymbol());
 
   return nullptr;
@@ -527,8 +552,9 @@ ArrayRef<TypedAttr> ASTType::getParamBindings() const {
     return metaType.getParamValues();
   if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(metatype))
     return mmType.getParamValues();
-  if (auto generator = dyn_cast_or_null<GeneratorType>(metatype))
-    return ASTType(generator.getBody()).getParamBindings();
+  if (auto genAttr = sugarDynCastIfPresent<GeneratorAttr>(PValue(*this));
+      genAttr && LIT::isTypeExpr(genAttr.getBody()))
+    return ASTType(genAttr.getBody()).getParamBindings();
 
   return {};
 }
@@ -539,8 +565,9 @@ TypeSignatureType ASTType::getSignature() const {
     return metaType.getSignature();
   if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(metatype))
     return mmType.getSignature();
-  if (auto generator = dyn_cast_or_null<GeneratorType>(metatype))
-    return ASTType(generator.getBody()).getSignature();
+  if (auto genAttr = sugarDynCastIfPresent<GeneratorAttr>(PValue(*this));
+      genAttr && LIT::isTypeExpr(genAttr.getBody()))
+    return ASTType(genAttr.getBody()).getSignature();
 
   return {};
 }
@@ -550,18 +577,20 @@ ASTType ASTType::getWithoutParameters(SharedState &shared) const {
   if (!mlirType)
     return {};
 
-  Type type = SugarAttr::strip(mlirType);
-  if (auto declRef = dyn_cast<StructType>(type))
-    return cast<StructDeclOp>(getDecl(shared)->getIfOperation())
-        .bindReference();
-  if (auto metaType = dyn_cast_or_null<StructMetaType>(type))
-    return MetaType::get(
-        ASTType(metaType.getType()).getWithoutParameters(shared));
-  if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(type))
-    return MetaType::get(
-        ASTType(mmType.getType()).getWithoutParameters(shared));
-  if (auto generator = dyn_cast_or_null<GeneratorType>(type))
-    return ASTType(generator.getBody()).getWithoutParameters(shared);
+  ASTType firstLevelType = getDeclDefineType(*this);
+  if (!firstLevelType)
+    return {};
+
+  if (auto declRef = dyn_cast<StructType>(firstLevelType)) {
+    auto unboundType =
+        cast<StructDeclOp>(getDecl(shared)->getIfOperation()).bindReference();
+    // Wrap it back to the original meta type.
+    if (isa<StructMetaType>(*this))
+      return StructMetaType::get(unboundType);
+    if (isa<StructMetaMetaType>(*this))
+      return StructMetaMetaType::get(StructMetaType::get(unboundType));
+    return unboundType;
+  }
 
   // Not parameterized.
   return *this;

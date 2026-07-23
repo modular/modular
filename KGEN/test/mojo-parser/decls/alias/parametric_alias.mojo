@@ -340,3 +340,22 @@ def where_param[p: WherePositive]():
 # CHECK-SAME: {<sugar_preserved({{.*}}@std::@builtin::@stubs::@SIMD::@"__gt__(::SIMD[$0, $1],::SIMD[$0, $1])"{{.*}}
 def where_variadic(*p: WherePositive):
     pass
+
+
+##===----------------------------------------------------------------------===##
+# Handle type alias with extra constraints
+##===----------------------------------------------------------------------===##
+
+struct Iter[Cond: Bool]:
+    def __init__(out self):
+        pass
+
+
+struct Collection[Cond: Bool]:
+    comptime Alias: AnyType where Self.Cond = Iter[Self.Cond]
+
+    # CHECK: lit.fn @"iter
+    # CHECK: lit.var.decl "__call_result_tmp__" synth : !lit.ref<!lit.struct<#Iter <:!Bool Cond>>
+    # CHECK: lit.call @parametric_alias::@Iter::@"__init__()"{{.*}}<:!Bool Cond>
+    def iter(self) where Self.Cond:
+        _ = Self.Alias()
