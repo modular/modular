@@ -380,6 +380,16 @@ This version is still a work in progress.
   2. local function vs wildcard; local definition shadows
   3. wildcard vs wildcard; last import shadows
 
+- Mojo now resolves wildcard imports latest first, textually. This means that
+  those imported last "win" when shadowing other decls. Notably this includes
+  those implicitly imported into programs from `std.prelude`:
+
+  ```mojo
+  from a import *
+  from b import *
+  from a import * # <- decls here shadow those from b and from std.prelude
+  ```
+
 ## Library stabilizations
 <!-- rumdl-disable MD013 -->
 
