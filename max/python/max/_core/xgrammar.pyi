@@ -71,7 +71,11 @@ class GrammarCompiler:
         max_memory_bytes: int = -1,
     ) -> None: ...
     def compile_json_schema(
-        self, schema: str, any_whitespace: bool = True, strict_mode: bool = True
+        self,
+        schema: str,
+        any_whitespace: bool = True,
+        strict_mode: bool = True,
+        reject_unsupported: bool = False,
     ) -> CompiledGrammar: ...
     def compile_grammar(
         self, ebnf_str: str, root_rule_name: str = "root"

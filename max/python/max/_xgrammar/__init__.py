@@ -292,10 +292,17 @@ class GrammarCompiler:
         )
 
     def compile_json_schema(
-        self, schema: str, any_whitespace: bool = True, strict_mode: bool = True
+        self,
+        schema: str,
+        any_whitespace: bool = True,
+        strict_mode: bool = True,
+        reject_unsupported: bool = False,
     ) -> CompiledGrammar:
         return self._impl.compile_json_schema(
-            schema, any_whitespace=any_whitespace, strict_mode=strict_mode
+            schema,
+            any_whitespace=any_whitespace,
+            strict_mode=strict_mode,
+            reject_unsupported=reject_unsupported,
         )
 
     def compile_grammar(
