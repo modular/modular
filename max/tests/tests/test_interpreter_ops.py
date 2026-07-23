@@ -7234,9 +7234,7 @@ class TestTopKOp:
             np.from_dlpack(idxs), np.array([[0, 3, 1, 2]])
         )
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES + INT_DTYPES)
     def test_dtypes(self, dtype: DType) -> None:
         """Test top-2 with numeric dtypes."""
         np_dtype = dtype.to_numpy()
@@ -7342,9 +7340,7 @@ class TestBottomKOp:
             np.from_dlpack(idxs), np.array([[2, 1, 3, 0]])
         )
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES + INT_DTYPES)
     def test_dtypes(self, dtype: DType) -> None:
         """Test bottom-2 with numeric dtypes."""
         np_dtype = dtype.to_numpy()

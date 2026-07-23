@@ -593,6 +593,13 @@ This version is still a work in progress.
   a graph-compiler gap. CPU float16 isn't supported (a graph-compiler
   limitation); GPU float16 still works.
 
+- The eager interpreter's `top_k`/`bottom_k` ops now run through pre-compiled
+  graph-compiler models instead of hand-written Mojo bindings. `k` stays a
+  runtime operand, so one compiled graph per `(op, device, dtype)` serves
+  every `k`. CPU float16 isn't supported (a graph-compiler limitation); GPU
+  narrows integers to 32/64-bit (the same shuffle-kernel limitation as the
+  reduce migration).
+
 - Added a `max warm-interpreter-cache` command that batch-compiles the full
   eager interpreter model matrix into the on-disk cache for the current
   machine's devices and drops a stamp. A later lazy eager process on the same

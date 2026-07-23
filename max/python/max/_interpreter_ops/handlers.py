@@ -36,6 +36,7 @@ from max._interpreter_ops import (
     reduce_axis_gc,
     resize_gc,
     shape_rearrange_gc,
+    topk_gc,
     unary_elementwise_gc,
 )
 from max.driver import CPU, Buffer, Device
@@ -2704,140 +2705,62 @@ def _handle_roi_align(
     return [output]
 
 
-# Top-K operation
+# Top-K / Bottom-K operations
 
 
-@register_op_handler(mo.TopKOp)
-def _handle_top_k(
-    op: mo.TopKOp, inputs: Sequence[Buffer | None]
+def _handle_topk(
+    op: _core.Operation, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.top_k by dispatching to Mojo top-k kernel.
+    """Dispatches an eager top_k/bottom_k op to its GC model.
 
-    Operands (per MO_SingleDeviceWithHostOperands<["k", "axis", "sorted"]>):
-      inputs[0]: input tensor (device)
-      inputs[1]: k scalar (host, int64)
-      inputs[2]: axis scalar (host, int64)
-      inputs[3]: sorted scalar (host, bool)
+    ``k`` passes straight through as a runtime operand (see topk_gc's module
+    docstring); ``sorted`` (``inputs[3]``) is unused since the GC graph always
+    sorts. The operand is view-shimmed to canonical rank 3 and both results
+    view-shimmed back to their real MLIR result shapes, all zero-copy.
 
-    Returns two buffers: values (same dtype as input) and indices (int64),
-    both of shape input_shape with shape[axis] replaced by k.
+    Args:
+        op: The top_k/bottom_k operation being handled.
+        inputs: The realized input buffers -- operand, ``k``, ``axis``, and
+            ``sorted`` (host scalars per ``MO_SelectKLikeOp``).
 
-    Note: values are always returned in descending order; the ``sorted``
-    flag is accepted but currently ignored since the implementation always
-    sorts.
+    Returns:
+        A two-element list holding the values and indices buffers.
     """
-    target_device = _get_target_device(op)
-
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
     assert isinstance(inputs[2], Buffer)
-    assert isinstance(inputs[3], Buffer)
 
-    input_buffer = inputs[0]
-    k = int(inputs[1].to_numpy().item())
+    x = inputs[0]
+    k = inputs[1]
     axis = int(inputs[2].to_numpy().item())
 
-    in_shape = list(input_buffer.shape)
-    ndim = len(in_shape)
-    if axis < 0:
-        axis += ndim
+    model = topk_gc.topk_model(type(op), x.device, x.dtype)
 
-    out_shape = list(in_shape)
-    out_shape[axis] = k
+    d0, d1, d2 = topk_gc.canonical_rank3(x.shape, axis)
+    x_view = x.view(x.dtype, (d0, d1, d2))
+    vals, idxs = model(x_view, k)
 
-    dim0 = prod(in_shape[:axis]) if axis > 0 else 1
-    dim1 = in_shape[axis]
-    dim2 = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
+    vals_type = graph.Type.from_mlir(list(op.results)[0].type)
+    idxs_type = graph.Type.from_mlir(list(op.results)[1].type)
+    assert isinstance(vals_type, graph.TensorType)
+    assert isinstance(idxs_type, graph.TensorType)
 
-    out_vals = Buffer(
-        shape=out_shape,
-        dtype=input_buffer.dtype,
-        device=target_device,
-    )
-    out_idxs = Buffer(
-        shape=out_shape,
-        dtype=DType.int64,
-        device=target_device,
-    )
-
-    ctx_ptr = target_device._device_context_ptr()
-    ops.topk_ops.TopK(
-        out_vals,
-        out_idxs,
-        input_buffer,
-        (dim0, dim1, dim2, k),
-        ctx_ptr,
-    )
-
-    return [out_vals, out_idxs]
+    vals_shape = tuple(int(dim) for dim in vals_type.shape)
+    idxs_shape = tuple(int(dim) for dim in idxs_type.shape)
+    return [
+        vals.view(vals_type.dtype, vals_shape),
+        idxs.view(idxs_type.dtype, idxs_shape),
+    ]
 
 
-# Bottom-K operation
+# Wrapped in a function so the TOPK_GC_OPS access is deferred past the import
+# cycle between this module and topk_gc (via the package).
+def _register_topk_handlers() -> None:
+    for op_type in topk_gc.TOPK_GC_OPS:
+        register_op_handler(op_type)(_handle_topk)
 
 
-@register_op_handler(mo.BottomKOp)
-def _handle_bottom_k(
-    op: mo.BottomKOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.bottom_k by dispatching to Mojo bottom-k kernel.
-
-    Operands (per MO_SingleDeviceWithHostOperands<["k", "axis", "sorted"]>):
-      inputs[0]: input tensor (device)
-      inputs[1]: k scalar (host, int64)
-      inputs[2]: axis scalar (host, int64)
-      inputs[3]: sorted scalar (host, bool)
-
-    Returns two buffers: values (same dtype as input) and indices (int64),
-    both of shape input_shape with shape[axis] replaced by k.
-
-    Note: values are always returned in ascending order; the ``sorted``
-    flag is accepted but currently ignored since the implementation always
-    sorts.
-    """
-    target_device = _get_target_device(op)
-
-    assert isinstance(inputs[0], Buffer)
-    assert isinstance(inputs[1], Buffer)
-    assert isinstance(inputs[2], Buffer)
-    assert isinstance(inputs[3], Buffer)
-
-    input_buffer = inputs[0]
-    k = int(inputs[1].to_numpy().item())
-    axis = int(inputs[2].to_numpy().item())
-
-    in_shape = list(input_buffer.shape)
-    ndim = len(in_shape)
-    if axis < 0:
-        axis += ndim
-
-    out_shape = list(in_shape)
-    out_shape[axis] = k
-
-    dim0 = prod(in_shape[:axis]) if axis > 0 else 1
-    dim1 = in_shape[axis]
-    dim2 = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
-
-    out_vals = Buffer(
-        shape=out_shape,
-        dtype=input_buffer.dtype,
-        device=target_device,
-    )
-    out_idxs = Buffer(
-        shape=out_shape,
-        dtype=DType.int64,
-        device=target_device,
-    )
-
-    ctx_ptr = target_device._device_context_ptr()
-    ops.bottomk_ops.BottomK(
-        out_vals,
-        out_idxs,
-        input_buffer,
-        (dim0, dim1, dim2, k),
-        ctx_ptr,
-    )
-
-    return [out_vals, out_idxs]
+_register_topk_handlers()
 
 
 # Arg-NonZero operation
