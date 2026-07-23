@@ -22,7 +22,7 @@ modular_run_binary_test(
     size = "enormous",
     binary = "logit_comparison",
     # This test downloads ~1.2GB of Qwen3-0.6B-Base weights from Hugging Face
-    # and requires a GPU. Run manually with `bt-b200 //oss/modular/docs/max/develop/_examples/logit-comparison:logit_comparison_test`.
+    # and requires a GPU. Run manually with `bt-b200 //oss/modular/docs/code/develop/logit-comparison:logit_comparison_test`.
     tags = ["manual"],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],

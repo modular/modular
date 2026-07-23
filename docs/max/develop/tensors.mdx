@@ -47,7 +47,7 @@ You can create a tensor from a Python list using the
 [`Tensor()`](/max/api/python/generated/max.experimental.tensor.Tensor)
 constructor:
 
-{/* @sync: _examples/tensors/create_first_tensor.py */}
+{/* @sync: ../../code/develop/tensors/create_first_tensor.py */}
 
 ```python
 from max.experimental.tensor import Tensor
@@ -99,7 +99,7 @@ the tensor will be stored. We'll cover dtypes and devices in more detail in the
 
 You can also create tensors with any number of dimensions by nesting lists:
 
-{/* @sync: _examples/tensors/create_multi_dim.py */}
+{/* @sync: ../../code/develop/tensors/create_multi_dim.py */}
 
 ```python
 from max.experimental.tensor import Tensor
@@ -126,7 +126,7 @@ such as
 and
 [`zeros()`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.zeros):
 
-{/* @sync: _examples/tensors/create_factory.py */}
+{/* @sync: ../../code/develop/tensors/create_factory.py */}
 
 ```python
 from max.driver import CPU
@@ -153,7 +153,7 @@ For random data, you can use one of several functions from the
 [`random`](/max/api/python/experimental.random) module, such as
 [`random.normal()`](/max/api/python/generated/max.experimental.random.normal):
 
-{/* @sync: _examples/tensors/create_random.py */}
+{/* @sync: ../../code/develop/tensors/create_random.py */}
 
 ```python
 from max.experimental import random
@@ -202,7 +202,7 @@ contents.
 The *shape* tells you the size of each dimension of the tensor. It's a list
 where each number represents the size along that dimension:
 
-{/* @sync: _examples/tensors/properties_shape.py */}
+{/* @sync: ../../code/develop/tensors/properties_shape.py */}
 
 ```python
 from max.experimental.tensor import Tensor
@@ -238,7 +238,7 @@ dimension.
 The *rank* (also called number of dimensions) tells you how many axes the
 tensor has:
 
-{/* @sync: _examples/tensors/properties_rank.py */}
+{/* @sync: ../../code/develop/tensors/properties_rank.py */}
 
 ```python
 from max.experimental.tensor import Tensor
@@ -259,7 +259,7 @@ print(cube.rank)  # 3
 data stored in the tensor. For example, a tensor can contain integers: `int32`,
 floating-point numbers: `float32`, or booleans: `bool`.
 
-{/* @sync: _examples/tensors/properties_dtype.py */}
+{/* @sync: ../../code/develop/tensors/properties_dtype.py */}
 
 ```python
 from max.dtype import DType
@@ -280,7 +280,7 @@ dtypes. You will learn more about dtypes in the
 
 The *device* tells you where the tensor operation occurs and is stored:
 
-{/* @sync: _examples/tensors/properties_device.py */}
+{/* @sync: ../../code/develop/tensors/properties_device.py */}
 
 ```python
 from max.driver import CPU
@@ -298,7 +298,7 @@ specifying either the `CPU()` or `Accelerator()` class.
 
 You can check how many numbers are stored in the tensor:
 
-{/* @sync: _examples/tensors/properties_num_elements.py */}
+{/* @sync: ../../code/develop/tensors/properties_num_elements.py */}
 
 ```python
 from max.experimental.tensor import Tensor

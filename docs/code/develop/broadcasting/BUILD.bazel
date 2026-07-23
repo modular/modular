@@ -16,7 +16,7 @@ modular_run_binary_test(
     name = "auto_broadcast_test",
     size = "large",
     binary = "auto_broadcast",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -37,7 +37,7 @@ modular_run_binary_test(
     name = "mask_broadcast_test",
     size = "large",
     binary = "mask_broadcast",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -58,7 +58,7 @@ modular_run_binary_test(
     name = "explicit_broadcast_test",
     size = "large",
     binary = "explicit_broadcast",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -79,7 +79,7 @@ modular_run_binary_test(
     name = "fix_rank_test",
     size = "large",
     binary = "fix_rank",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],

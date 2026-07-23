@@ -16,7 +16,7 @@ modular_run_binary_test(
     name = "create_first_tensor_test",
     size = "large",
     binary = "create_first_tensor",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -37,7 +37,7 @@ modular_run_binary_test(
     name = "create_multi_dim_test",
     size = "large",
     binary = "create_multi_dim",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -60,7 +60,7 @@ modular_run_binary_test(
     name = "create_factory_test",
     size = "large",
     binary = "create_factory",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -81,7 +81,7 @@ modular_run_binary_test(
     name = "create_random_test",
     size = "large",
     binary = "create_random",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -102,7 +102,7 @@ modular_run_binary_test(
     name = "properties_shape_test",
     size = "large",
     binary = "properties_shape",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -123,7 +123,7 @@ modular_run_binary_test(
     name = "properties_rank_test",
     size = "large",
     binary = "properties_rank",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -145,7 +145,7 @@ modular_run_binary_test(
     name = "properties_dtype_test",
     size = "large",
     binary = "properties_dtype",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -167,7 +167,7 @@ modular_run_binary_test(
     name = "properties_device_test",
     size = "large",
     binary = "properties_device",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -188,7 +188,7 @@ modular_run_binary_test(
     name = "properties_num_elements_test",
     size = "large",
     binary = "properties_num_elements",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],

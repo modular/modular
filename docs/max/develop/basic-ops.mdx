@@ -66,7 +66,7 @@ The `+`, `-`, `*`, and `/` operators perform element-wise operations on
 tensors of matching shapes. The following example adds and multiplies two
 1-D tensors:
 
-{/* @sync: _examples/basic-ops/arithmetic.py */}
+{/* @sync: ../../code/develop/basic-ops/arithmetic.py */}
 
 ```python
 from max.experimental.tensor import Tensor
@@ -96,7 +96,7 @@ For operations without built-in Python equivalents, use the functional API.
 uses the functional API since there's no built-in function or tensor method for
 square root:
 
-{/* @sync: _examples/basic-ops/tensor_math_ops.py */}
+{/* @sync: ../../code/develop/basic-ops/tensor_math_ops.py */}
 
 ```python
 import max.experimental.functional as F
@@ -133,7 +133,7 @@ neural networks.
 changes the shape of a tensor while preserving the total number of elements. The
 following example transforms a 12-element vector into three different layouts:
 
-{/* @sync: _examples/basic-ops/tensor_reshape.py */}
+{/* @sync: ../../code/develop/basic-ops/tensor_reshape.py */}
 
 ```python
 from max.experimental.tensor import Tensor
@@ -166,7 +166,7 @@ Reshaped to 2x2x3: [Dim(2), Dim(2), Dim(3)]
 swaps two dimensions of a tensor. The following example converts a 2×3 matrix to
 3×2:
 
-{/* @sync: _examples/basic-ops/tensor_transpose.py */}
+{/* @sync: ../../code/develop/basic-ops/tensor_transpose.py */}
 
 ```python
 from max.experimental.tensor import Tensor
@@ -198,7 +198,7 @@ The element at position `[i, j]` in the original tensor moves to position
 For the common case of transposing the last two dimensions, use the `.T`
 property:
 
-{/* @sync: _examples/basic-ops/tensor_transpose_t.py */}
+{/* @sync: ../../code/develop/basic-ops/tensor_transpose_t.py */}
 
 ```python
 from max.experimental.tensor import Tensor
@@ -227,7 +227,7 @@ specifies a new order for all dimensions as a list of indices. The following
 example converts a `(batch, channels, length)` tensor to
 `(batch, length, channels)`:
 
-{/* @sync: _examples/basic-ops/tensor_permute.py */}
+{/* @sync: ../../code/develop/basic-ops/tensor_permute.py */}
 
 ```python
 from max.experimental.tensor import Tensor
@@ -255,7 +255,7 @@ Permuted shape: [Dim(2), Dim(4), Dim(3)]
 joins multiple tensors along a specified dimension. The following example
 concatenates two 2×2 matrices along each axis:
 
-{/* @sync: _examples/basic-ops/concat.py */}
+{/* @sync: ../../code/develop/basic-ops/concat.py */}
 
 ```python
 import max.experimental.functional as F
@@ -302,7 +302,7 @@ drop it by default).
 The following example shows `sum`, `mean`, `max`, and `min` along axis 0,
 summing across rows to get per-column results:
 
-{/* @sync: _examples/basic-ops/tensor_reductions.py */}
+{/* @sync: ../../code/develop/basic-ops/tensor_reductions.py */}
 
 ```python
 import max.experimental.functional as F
@@ -349,7 +349,7 @@ and
 The `@` operator multiplies two matrices. The following example multiplies a
 2×2 input matrix by a 2×2 weight matrix:
 
-{/* @sync: _examples/basic-ops/tensor_matmul.py */}
+{/* @sync: ../../code/develop/basic-ops/tensor_matmul.py */}
 
 ```python
 from max.experimental.tensor import Tensor
@@ -383,7 +383,7 @@ maps values to (0, 1), and
 [`F.tanh()`](/max/api/python/experimental.functional#max.experimental.functional.tanh)
 maps values to (-1, 1):
 
-{/* @sync: _examples/basic-ops/functional_activations.py */}
+{/* @sync: ../../code/develop/basic-ops/functional_activations.py */}
 
 ```python
 import max.experimental.functional as F
@@ -421,7 +421,7 @@ generates values uniformly distributed over a range;
 generates values from a Gaussian distribution with the specified mean and
 standard deviation. Values vary each run:
 
-{/* @sync: _examples/basic-ops/random_basic.py */}
+{/* @sync: ../../code/develop/basic-ops/random_basic.py */}
 
 ```python
 from max.experimental import random
@@ -447,7 +447,7 @@ for the activation step. Pre-built layers like
 Understanding the operations gives you the foundation for custom layers when
 standard ones don't fit:
 
-{/* @sync: _examples/basic-ops/compose_linear_layer.py */}
+{/* @sync: ../../code/develop/basic-ops/compose_linear_layer.py */}
 
 ```python
 import max.experimental.functional as F

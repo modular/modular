@@ -38,7 +38,7 @@ what differs. That's how MAX implements Gemma 3's norm, `Gemma3RMSNorm` in
 The norm is a plain `RMSNorm` that scales by `1 + weight` instead of `weight`,
 so the subclass changes a single constructor argument:
 
-{/* @sync: _examples/layers/subclass_rms_norm.py */}
+{/* @sync: ../../code/develop/layers/subclass_rms_norm.py */}
 
 ```python
 from max.dtype import DType
@@ -78,7 +78,7 @@ Declare each parameter as a
 `__init__()`, then use it in `__call__()` to build the forward pass. Here a
 learnable per-channel scale owns one weight and multiplies it into the input:
 
-{/* @sync: _examples/layers/define_module.py */}
+{/* @sync: ../../code/develop/layers/define_module.py */}
 
 ```python
 from max.dtype import DType
@@ -130,7 +130,7 @@ assigning it to an attribute beside a `Linear` and calling it in `__call__()`.
 `MiniDecoder` stacks the blocks. Every layer reads the same module-level
 `device`, so one accelerator check configures the whole model:
 
-{/* @sync: _examples/layers/compose_and_run.py */}
+{/* @sync: ../../code/develop/layers/compose_and_run.py */}
 
 ```python
 from max import nn

@@ -16,7 +16,7 @@ modular_run_binary_test(
     name = "arithmetic_test",
     size = "large",
     binary = "arithmetic",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -58,7 +58,7 @@ modular_run_binary_test(
     name = "tensor_reshape_test",
     size = "large",
     binary = "tensor_reshape",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -79,7 +79,7 @@ modular_run_binary_test(
     name = "tensor_transpose_test",
     size = "large",
     binary = "tensor_transpose",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -100,7 +100,7 @@ modular_run_binary_test(
     name = "tensor_transpose_t_test",
     size = "large",
     binary = "tensor_transpose_t",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -121,7 +121,7 @@ modular_run_binary_test(
     name = "tensor_permute_test",
     size = "large",
     binary = "tensor_permute",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -142,7 +142,7 @@ modular_run_binary_test(
     name = "concat_test",
     size = "large",
     binary = "concat",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -184,7 +184,7 @@ modular_run_binary_test(
     name = "tensor_matmul_test",
     size = "large",
     binary = "tensor_matmul",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -226,7 +226,7 @@ modular_run_binary_test(
     name = "random_basic_test",
     size = "large",
     binary = "random_basic",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],

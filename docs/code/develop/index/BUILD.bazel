@@ -17,7 +17,7 @@ modular_run_binary_test(
     name = "eager_simple_test",
     size = "large",
     binary = "eager_simple",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -42,7 +42,7 @@ modular_run_binary_test(
     name = "graph_simple_test",
     size = "large",
     binary = "graph_simple",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -63,7 +63,7 @@ modular_run_binary_test(
     name = "arithmetic_ops_test",
     size = "large",
     binary = "arithmetic_ops",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -85,7 +85,7 @@ modular_run_binary_test(
     name = "functional_api_test",
     size = "large",
     binary = "functional_api",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -108,7 +108,7 @@ modular_run_binary_test(
     name = "when_to_use_eager_test",
     size = "large",
     binary = "when_to_use_eager",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -131,7 +131,7 @@ modular_run_binary_test(
     name = "eager_workflow_test",
     size = "large",
     binary = "eager_workflow",
-    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
