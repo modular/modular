@@ -289,7 +289,6 @@ class PagedKVCacheManager:
             devices=devices,
             replica_kv_memory=replica_kv_memory,
             total_num_host_blocks=total_num_host_pages,
-            kv_hash_algo=params.kv_hash_algo,
             params=params,
         )
 
@@ -837,6 +836,16 @@ class PagedKVCacheManager:
         self._block_manager.reset_prefix_cache()
         for replica in self._replica:
             replica.connector.reset_prefix_cache()
+
+    def shutdown(self) -> None:
+        """Releases the KV connector's external resources.
+
+        Drains in-flight host/disk transfers and frees the shared pinned host
+        buffer; for the tiered connector this also removes the on-disk offload
+        directory. A single connector backs every replica, so this shuts it
+        down once. A no-op for the ``null`` connector.
+        """
+        self._connector.shutdown()
 
     def get_metrics_aggregated(self) -> KVCacheMetrics:
         """Returns aggregated metrics across all replicas."""

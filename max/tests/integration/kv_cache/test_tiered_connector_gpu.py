@@ -401,29 +401,21 @@ def test_reset_prefix_cache_clears_cpu_and_disk() -> None:
         connector.shutdown()
 
 
-# -- Warm restart --
+# -- Shutdown removes the disk offload directory --
 
 
-def test_warm_restart_loads_disk_cache() -> None:
-    """Verify a new TieredConnector finds blocks persisted by a previous one."""
-    with tempfile.TemporaryDirectory(prefix="tiered_warm_") as disk_dir:
-        # First connector: write blocks to disk
-        c1 = create_tiered_connector(disk_cache_dir=disk_dir)
-        c1.offload([0, 1], _hs(100, 200))
-        c1.wait_for_offloads()
-        c1._disk_tier.wait_for_writes()
-        c1.shutdown()  # saves metadata
+def test_shutdown_removes_disk_cache_dir() -> None:
+    """The disk tier is ephemeral: shutdown deletes its cache directory."""
+    with tempfile.TemporaryDirectory(prefix="tiered_shutdown_") as parent:
+        disk_dir = str(Path(parent) / "offload")
+        connector = create_tiered_connector(disk_cache_dir=disk_dir)
+        connector.offload([0, 1], _hs(100, 200))
+        connector.wait_for_offloads()
+        connector._disk_tier.wait_for_writes()
+        assert Path(disk_dir).exists()
 
-        # Second connector: same disk dir -> should load metadata
-        c2 = create_tiered_connector(disk_cache_dir=disk_dir)
-        assert c2._disk_tier.contains(_b(100))
-        assert c2._disk_tier.contains(_b(200))
-
-        # Should be able to promote from disk
-        loaded = c2.load([10, 11], _hs(100, 200))
-        assert loaded == 2
-
-        c2.shutdown()
+        connector.shutdown()
+        assert not Path(disk_dir).exists()
 
 
 # -- Zero-copy disk writes (Change 4) --

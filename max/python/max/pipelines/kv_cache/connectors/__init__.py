@@ -31,7 +31,6 @@ from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
     KVCacheParamInterface,
     KVConnectorType,
-    KVHashAlgo,
 )
 from max.pipelines.kv_cache.kv_connector import KVConnector
 
@@ -51,7 +50,6 @@ def create_connector(
     devices: Sequence[Device],
     replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
     total_num_host_blocks: int,
-    kv_hash_algo: KVHashAlgo,
     params: KVCacheParamInterface,
 ) -> KVConnector:
     """Create a KV cache connector instance based on ``kv_connector``.
@@ -71,9 +69,6 @@ def create_connector(
             sequence per DP replica).
         total_num_host_blocks: Total number of host blocks for swapping (the
             full shared pool across replicas for ``local``/``tiered``).
-        kv_hash_algo: KV-cache hash algorithm; forwarded to connectors that
-            persist hash-keyed state on disk so they can refuse to start
-            against a directory locked to a different algorithm.
         params: KV-cache parameters; the ``dkv`` connector uses them to derive
             its multi-tenant per-GPU handshake identity.
 
@@ -124,7 +119,6 @@ def create_connector(
             total_num_host_blocks=total_num_host_blocks,
             disk_cache_dir=cfg.disk_offload_dir,
             max_disk_size_gb=cfg.disk_offload_max_gb,
-            kv_hash_algo=kv_hash_algo,
         )
 
     if connector == KVConnectorType.local:

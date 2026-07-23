@@ -14,9 +14,10 @@
 """Three-tier KV cache connector: GPU <-> CPU (pinned) <-> Disk.
 
 Composes the CPU tier (pinned host ``Buffer`` + ``BlockOffloadEngine``) with a
-``DiskTier`` that provides flat-file persistence. Write-through policy ensures
-every block saved to CPU is also written to disk asynchronously, so CPU
-eviction is always safe and disk coverage is maximised for warm restarts.
+``DiskTier`` that provides flat-file scratch storage. Write-through policy
+ensures every block saved to CPU is also written to disk asynchronously, so CPU
+eviction is always safe. The disk tier is ephemeral: it is removed on shutdown
+and never reloaded across restarts.
 """
 
 from __future__ import annotations
@@ -79,7 +80,6 @@ class TieredConnector:
         total_num_host_blocks: int,
         disk_cache_dir: str,
         max_disk_size_gb: float,
-        kv_hash_algo: KVHashAlgo = "ahash64",
         synchronous_d2h_copy_mode: bool = False,
     ) -> None:
         if total_num_host_blocks <= 0:
@@ -117,7 +117,6 @@ class TieredConnector:
             cache_dir=disk_cache_dir,
             block_nbytes=self._block_disk_bytes,
             max_disk_size_bytes=int(max_disk_size_gb * GiB),
-            kv_hash_algo=kv_hash_algo,
         )
 
         logger.info(
