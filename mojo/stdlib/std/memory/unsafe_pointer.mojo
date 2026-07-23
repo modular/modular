@@ -20,7 +20,14 @@ low-level memory operations, interfacing with C code, and building custom data
 structures.
 """
 
-from std.sys import align_of, is_apple_gpu, is_gpu, is_nvidia_gpu, size_of
+from std.sys import (
+    align_of,
+    bit_width_of,
+    is_apple_gpu,
+    is_gpu,
+    is_nvidia_gpu,
+    size_of,
+)
 from std.sys.intrinsics import (
     gather,
     scatter,
@@ -524,6 +531,18 @@ struct Pointer[
             must also ensure the pointer's origin and mutability is valid for
             the address, failure to do may result in undefined behavior.
         """
+        # Some address spaces have pointers narrower than `Int` (for example,
+        # AMDGPU `SHARED` is 32-bit); reject addresses that don't fit. The
+        # guard also keeps `1 << bit_width_of[Self]()` from overflowing when
+        # the pointer is as wide as `Int`.
+        comptime if bit_width_of[Self]() < bit_width_of[Int]():
+            debug_assert(
+                UInt(unsafe_from_address)
+                <= (UInt(1) << UInt(bit_width_of[Self]())) - 1,
+                "address ",
+                unsafe_from_address,
+                " does not fit in this pointer's address space",
+            )
         self = UnsafePointer(to=unsafe_from_address).bitcast[type_of(self)]()[]
 
     @always_inline

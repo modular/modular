@@ -1,6 +1,12 @@
-load("//bazel:api.bzl", "mojo_test")
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
 package(default_visibility = ["//visibility:private"])
+
+# Death test: the assert only fires for address spaces narrower than `Int`,
+# which requires a GPU (`SHARED` pointers are 32-bit).
+_GPU_FILECHECK_TESTS = [
+    "test_unsafe_from_address_overflow.mojo",
+]
 
 [
     mojo_test(
@@ -19,5 +25,27 @@ package(default_visibility = ["//visibility:private"])
             "@mojo//:test_utils",
         ],
     )
-    for src in glob(["*.mojo"])
+    for src in glob(
+        ["*.mojo"],
+        exclude = _GPU_FILECHECK_TESTS,
+    )
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        expect_crash = True,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"],
+        deps = [
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _GPU_FILECHECK_TESTS
 ]
