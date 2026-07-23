@@ -32,8 +32,8 @@ from std.memory import (
     Pointer,
     destroy_n,
     unsafe_memcpy,
-    uninit_copy_n,
-    uninit_move_n,
+    unsafe_uninit_copy_n,
+    unsafe_uninit_move_n,
 )
 from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
@@ -839,7 +839,7 @@ struct List[T: Movable, /](
     def _realloc(mut self, new_capacity: Int):
         var new_data = alloc(Layout[Self.T](count=new_capacity)).unsafe_leak()
 
-        uninit_move_n[overlapping=False](
+        unsafe_uninit_move_n[overlapping=False](
             dest=new_data, src=self._data, count=len(self)
         )
 
@@ -943,7 +943,7 @@ struct List[T: Movable, /](
         var src_ptr = other.unsafe_ptr()
         self._annotate_increase(other_len)
 
-        uninit_move_n[overlapping=False](
+        unsafe_uninit_move_n[overlapping=False](
             dest=dest_ptr, src=src_ptr, count=other_len
         )
 
@@ -982,7 +982,7 @@ struct List[T: Movable, /](
         var i = self._len
         self._len = new_num_elts
 
-        uninit_copy_n[overlapping=False](
+        unsafe_uninit_copy_n[overlapping=False](
             dest=self._data.unsafe_offset(i),
             src=elements.unsafe_ptr(),
             count=elements_len,
@@ -1092,7 +1092,7 @@ struct List[T: Movable, /](
         """
         check_bounds(i, len(self))
         var ret_val = self._data.unsafe_offset(i).unsafe_take_pointee()
-        uninit_move_n[overlapping=True](
+        unsafe_uninit_move_n[overlapping=True](
             dest=self._data.unsafe_offset(i),
             src=self._data.unsafe_offset(i + 1),
             count=len(self) - i - 1,

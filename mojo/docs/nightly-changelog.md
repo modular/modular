@@ -510,6 +510,10 @@ This version is still a work in progress.
 - Renamed `memmove` to `unsafe_memmove` to make its unsafety explicit. The old
   `memmove` name is deprecated and will be removed in a future release.
 
+- Renamed `uninit_move_n` and `uninit_copy_n` to `unsafe_uninit_move_n` and
+  `unsafe_uninit_copy_n` to make their unsafety explicit. The old names are
+  deprecated and will be removed in a future release.
+
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
   `destroy_func`, so it can clear a `Dict` whose key or value type is not

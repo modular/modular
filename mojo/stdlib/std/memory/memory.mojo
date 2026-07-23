@@ -575,7 +575,7 @@ def is_trivially_deletable[T: AnyType]() -> Bool:
 
 
 @always_inline
-def uninit_move_n[
+def unsafe_uninit_move_n[
     T: Movable,
     //,
     *,
@@ -634,7 +634,66 @@ def uninit_move_n[
 
 
 @always_inline
-def uninit_copy_n[
+@deprecated(use=unsafe_uninit_move_n)
+def uninit_move_n[
+    T: Movable,
+    //,
+    *,
+    overlapping: Bool,
+](
+    *,
+    dest: UnsafePointer[mut=True, T, _],
+    src: UnsafePointer[mut=True, T, _],
+    count: Int,
+):
+    """Move `count` values from `src` into memory at `dest`.
+
+    This function transfers ownership of `count` values from the source memory
+    to the destination memory. After this call, the source values should be
+    treated as uninitialized, and the destination values are valid and
+    initialized.
+
+    For types with trivial move constructors, this is optimized to a single
+    `unsafe_memcpy` (or `memmove` when `overlapping=True`) operation. Otherwise,
+    it manually moves each element.
+
+    The destination memory is treated as a raw span of bits to write to. Any
+    existing values at `dest` are silently overwritten without being destroyed.
+    For types with non-trivial destructors, this can cause memory leaks. Call
+    `destroy_n()` on the destination region first if it contains initialized
+    values that need cleanup. For trivial types like `Int`, this is not a
+    concern.
+
+    Parameters:
+        T: The type of values to move, which must be `Movable`.
+        overlapping: If False, the function assumes `src` and `dest` do not
+            overlap and uses `unsafe_memcpy`. If True, the function assumes
+            `src` and `dest` may overlap and uses `memmove` to handle this
+            safely.
+
+    Args:
+        dest: Pointer to the destination memory region.
+        src: Pointer to the source memory region. Must point to initialized
+            values.
+        count: The number of elements to move.
+
+    Safety:
+
+    - `dest` must point to a valid memory region with space for at least
+        `count` elements of type `T`.
+    - `src` must point to a valid memory region containing at least `count`
+        **initialized** elements of type `T`.
+    - If `overlapping=False`, the `src` and `dest` memory regions must **not**
+        overlap. Overlapping regions with `overlapping=False` is undefined
+        behavior.
+    """
+    unsafe_uninit_move_n[overlapping=overlapping](
+        dest=dest, src=src, count=count
+    )
+
+
+@always_inline
+def unsafe_uninit_copy_n[
     T: Copyable,
     //,
     *,
@@ -689,6 +748,64 @@ def uninit_copy_n[
     else:
         for i in range(count):
             dest.unsafe_offset(i).unsafe_write(copy=src.unsafe_offset(i)[])
+
+
+@always_inline
+@deprecated(use=unsafe_uninit_copy_n)
+def uninit_copy_n[
+    T: Copyable,
+    //,
+    *,
+    overlapping: Bool,
+](
+    *,
+    dest: UnsafePointer[mut=True, T, _],
+    src: UnsafePointer[mut=False, T, _],
+    count: Int,
+):
+    """Copy `count` values from `src` into memory at `dest`.
+
+    This function creates copies of `count` values from the source memory in the
+    destination memory. After this call, both source and destination values are
+    valid and initialized.
+
+    For types with trivial copy constructors, this is optimized to a single
+    `unsafe_memcpy` (or `memmove` when `overlapping=True`) operation. Otherwise,
+    it calls `unsafe_write()` on each element.
+
+    The destination memory is treated as a raw span of bits to write to. Any
+    existing values at `dest` are silently overwritten without being destroyed.
+    For types with non-trivial destructors, this can cause memory leaks. Call
+    `destroy_n()` on the destination region first if it contains initialized
+    values that need cleanup. For trivial types like `Int`, this is not a
+    concern.
+
+    Parameters:
+        T: The type of values to copy, which must be `Copyable`.
+        overlapping: If False, the function assumes `src` and `dest` do not
+            overlap and uses `unsafe_memcpy`. If True, the function assumes
+            `src` and `dest` may overlap and uses `memmove` to handle this
+            safely.
+
+    Args:
+        dest: Pointer to the destination memory region.
+        src: Pointer to the source memory region. Must point to initialized
+            values.
+        count: The number of elements to copy.
+
+    Safety:
+
+    - `dest` must point to a valid memory region with space for at least
+        `count` elements of type `T`.
+    - `src` must point to a valid memory region containing at least `count`
+        **initialized** elements of type `T`.
+    - If `overlapping=False`, the `src` and `dest` memory regions must **not**
+        overlap. Overlapping regions with `overlapping=False` is undefined
+        behavior.
+    """
+    unsafe_uninit_copy_n[overlapping=overlapping](
+        dest=dest, src=src, count=count
+    )
 
 
 @always_inline

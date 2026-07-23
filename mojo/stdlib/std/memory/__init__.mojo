@@ -43,6 +43,8 @@ from .memory import (
     is_trivially_movable,
     uninit_copy_n,
     uninit_move_n,
+    unsafe_uninit_copy_n,
+    unsafe_uninit_move_n,
     forget_deinit,
 )
 from .stack_allocation import stack_allocation

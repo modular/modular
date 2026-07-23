@@ -21,8 +21,8 @@ from std.memory import (
     unsafe_memmove,
     memset,
     memset_zero,
-    uninit_copy_n,
-    uninit_move_n,
+    unsafe_uninit_copy_n,
+    unsafe_uninit_move_n,
     forget_deinit,
 )
 from std.testing import TestSuite
@@ -822,7 +822,7 @@ def test_uninit_move_n_trivial() raises:
 
     var dest = alloc[Counter](3)
 
-    uninit_move_n[overlapping=False](dest=dest, src=src, count=3)
+    unsafe_uninit_move_n[overlapping=False](dest=dest, src=src, count=3)
 
     # Verify values were moved
     assert_equal(dest[0].value, 10)
@@ -849,7 +849,7 @@ def test_uninit_move_n_nontrivial() raises:
 
     var dest = alloc[MoveCounter[String]](3)
 
-    uninit_move_n[overlapping=False](dest=dest, src=src, count=3)
+    unsafe_uninit_move_n[overlapping=False](dest=dest, src=src, count=3)
 
     # Verify values were moved
     assert_equal(dest[0].value, "foo")
@@ -879,7 +879,7 @@ def test_uninit_copy_n_trivial() raises:
 
     var dest = alloc[Counter](3)
 
-    uninit_copy_n[overlapping=False](dest=dest, src=src, count=3)
+    unsafe_uninit_copy_n[overlapping=False](dest=dest, src=src, count=3)
 
     # Both src and dest should have the values
     assert_equal(src[0].value, 0)
@@ -907,7 +907,7 @@ def test_uninit_copy_n_nontrivial() raises:
 
     var dest = alloc[CopyCounter[String]](3)
 
-    uninit_copy_n[overlapping=False](dest=dest, src=src, count=3)
+    unsafe_uninit_copy_n[overlapping=False](dest=dest, src=src, count=3)
 
     # Verify values were copied
     assert_equal(dest[0].value, "alpha")
@@ -979,7 +979,7 @@ def test_uninit_move_n_zero_count() raises:
 
     var dest = alloc[MoveCounter[String]](1)
 
-    uninit_move_n[overlapping=False](dest=dest, src=src, count=0)
+    unsafe_uninit_move_n[overlapping=False](dest=dest, src=src, count=0)
 
     # Nothing should have happened - move count should still be 0
     assert_equal(src[0].move_count, 0)
@@ -997,7 +997,7 @@ def test_uninit_copy_n_zero_count() raises:
 
     var dest = alloc[CopyCounter[String]](1)
 
-    uninit_copy_n[overlapping=False](dest=dest, src=src, count=0)
+    unsafe_uninit_copy_n[overlapping=False](dest=dest, src=src, count=0)
 
     # Nothing should have happened - copy count should still be 0
     assert_equal(src[0].copy_count, 0)

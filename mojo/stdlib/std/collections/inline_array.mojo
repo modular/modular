@@ -47,7 +47,7 @@ from std.memory import (
     is_trivially_copyable,
     is_trivially_deletable,
     is_trivially_movable,
-    uninit_move_n,
+    unsafe_uninit_move_n,
 )
 from std.memory.unsafe_maybe_uninit import (
     _is_trivially_copyable,
@@ -168,7 +168,7 @@ struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
         """
         self._index = move._index
         self._array = InlineArray[Self.T, Self.length](uninitialized=True)
-        uninit_move_n[overlapping=False](
+        unsafe_uninit_move_n[overlapping=False](
             dest=self._array.unsafe_ptr() + move._index,
             src=move._array.unsafe_ptr() + move._index,
             count=Self.length - move._index,

@@ -27,7 +27,7 @@ from std.memory import (
     is_trivially_copyable,
     is_trivially_deletable,
     pack_bits,
-    uninit_copy_n,
+    unsafe_uninit_copy_n,
 )
 from std.collections import check_bounds
 from std.builtin.rebind import downcast
@@ -608,14 +608,14 @@ struct Span[
             other: The `Span` to copy all elements from.
         """
         assert len(self) == len(other), "Spans must be of equal length"
-        # For trivial types, uninit_copy_n is a single memcpy (no destroy
+        # For trivial types, unsafe_uninit_copy_n is a single memcpy (no destroy
         # needed). For non-trivial types, we keep the single-pass assignment
-        # loop rather than destroy_n + uninit_copy_n, which would be two
+        # loop rather than destroy_n + unsafe_uninit_copy_n, which would be two
         # passes over memory with worse cache locality.
         comptime if is_trivially_copyable[Self.T]() and is_trivially_deletable[
             Self.T
         ]():
-            uninit_copy_n[overlapping=False](
+            unsafe_uninit_copy_n[overlapping=False](
                 # TODO(MOCO-4220) once fixed remove the unsafe_mut_cast
                 dest=self.unsafe_ptr().unsafe_mut_cast[True](),
                 src=other.unsafe_ptr(),
