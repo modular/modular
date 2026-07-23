@@ -824,6 +824,13 @@ This version is still a work in progress.
     - Consuming iteration (`for x in set^`) is likewise conditional, requiring
       `ElementType` to be `ImplicitlyDeletable`.
 
+- `OwnedPointer[T]` now *conditionally* conforms to `ImplicitlyDeletable`,
+  conforming only when `T` does, so it can hold a non-`ImplicitlyDeletable`
+  (linear) value. Such an `OwnedPointer` is itself linear and must be consumed
+  explicitly with `take()` (for a `Movable` `T`) or `steal_data()` rather than
+  dropped implicitly. For deletable element types (the common case) this is
+  transparent.
+
 - `InlineArray`'s element type bound loosened from `Movable` to `AnyType`, so an
   `InlineArray` can now hold a non-`Movable` element type. The `Movable`
   conformance is now conditional on the element: move construction (including
