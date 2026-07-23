@@ -55,6 +55,11 @@ description: {% if decl.summary
 
 {{ decl.description }}
 
+{% if decl.deprecated %}
+
+**Deprecated:** {{ decl.deprecated }}
+{% endif %}
+
 {% if decl.constraints %}
 
 **Constraints:**
@@ -136,11 +141,6 @@ description: {% if decl.summary
 
 {{ process_decl_body(decl) }}
 
-{% endif %}
-
-{% if decl.deprecated %}
-
-**Deprecated:** {{ decl.deprecated }}
 {% endif %}
 
 {% if decl.parameters and not decl.kind == 'function' %}
