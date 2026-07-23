@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.algorithm import vectorize
-from std.memory import memcmp
+from std.memory import unsafe_memcmp
 from std.testing import assert_equal
 from std.testing import TestSuite
 from std.math import iota
@@ -139,7 +139,7 @@ def test_vectorize_unroll() raises:
     vectorize[simd_width, unroll_factor=unroll_factor](len(vec), double_vec)
     vectorize[simd_width](len(buf), double_buf)
 
-    var err = memcmp(vec.unsafe_ptr(), buf.unsafe_ptr(), len(buf))
+    var err = unsafe_memcmp(vec.unsafe_ptr(), buf.unsafe_ptr(), len(buf))
     assert_equal(err, 0)
 
 

@@ -34,7 +34,7 @@ def main() raises:
 from std.math import isclose
 
 from std.reflection import call_location, SourceLocation
-from std.memory import memcmp
+from std.memory import unsafe_memcmp
 from std.python import PythonObject
 from std.utils._ansi import Color, Text
 

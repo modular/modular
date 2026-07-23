@@ -15,7 +15,7 @@ from std.sys import simd_width_of, size_of
 from std.os import abort
 
 from std.memory import (
-    memcmp,
+    unsafe_memcmp,
     unsafe_memcpy,
     unsafe_memmove,
     memset,
@@ -78,7 +78,7 @@ def test_memcpy() raises:
             dst[i] = 0
 
         unsafe_memcpy(dest=dst, src=src, count=size)
-        var err = memcmp(dst, buf, size)
+        var err = unsafe_memcmp(dst, buf, size)
 
         assert_equal(err, 0)
         buf.free()
@@ -127,7 +127,7 @@ def test_memcmp() raises:
     var ptr1 = Pointer(to=pair1)
     var ptr2 = Pointer(to=pair2)
 
-    var errors = memcmp(ptr1, ptr2, 1)
+    var errors = unsafe_memcmp(ptr1, ptr2, 1)
 
     assert_equal(errors, 0)
     _ = pair1
@@ -149,7 +149,7 @@ def test_memcmp_non_multiple_of_int32() raises:
 
     var ptr1 = Pointer(to=triple1)
     var ptr2 = Pointer(to=triple2)
-    var errors = memcmp(ptr1, ptr2, 1)
+    var errors = unsafe_memcmp(ptr1, ptr2, 1)
     assert_equal(errors, -1)
 
     _ = triple1
@@ -162,10 +162,10 @@ def test_memcmp_overflow() raises:
     p1.store(-120)
     p2.store(120)
 
-    c = memcmp(p1, p2, 1)
+    c = unsafe_memcmp(p1, p2, 1)
     assert_equal(c, 1)
 
-    c = memcmp(p2, p1, 1)
+    c = unsafe_memcmp(p2, p1, 1)
     assert_equal(c, -1)
 
     p1.free()
@@ -184,10 +184,10 @@ def test_memcmp_simd() raises:
     p2.store(120)
     p2.store(1, 90)
 
-    var c = memcmp(p1, p2, length)
+    var c = unsafe_memcmp(p1, p2, length)
     assert_equal(c, 1, "[120, 100, 0, ...] is bigger than [120, 90, 0, ...]")
 
-    c = memcmp(p2, p1, length)
+    c = unsafe_memcmp(p2, p1, length)
     assert_equal(c, -1, "[120, 90, 0, ...] is smaller than [120, 100, 0, ...]")
 
     memset_zero(p1, length)
@@ -198,10 +198,10 @@ def test_memcmp_simd() raises:
     p2.store(length - 2, 120)
     p2.store(length - 1, 90)
 
-    c = memcmp(p1, p2, length)
+    c = unsafe_memcmp(p1, p2, length)
     assert_equal(c, 1, "[..., 0, 120, 100] is bigger than [..., 0, 120, 90]")
 
-    c = memcmp(p2, p1, length)
+    c = unsafe_memcmp(p2, p1, length)
     assert_equal(c, -1, "[..., 0, 120, 90] is smaller than [..., 120, 100]")
 
     p1.free()
@@ -232,33 +232,33 @@ def _test_memcmp_extensive[
             dptr2[i] = Scalar[dtype].MAX
 
     assert_equal(
-        memcmp(ptr1, ptr1, count),
+        unsafe_memcmp(ptr1, ptr1, count),
         0,
         String("for dtype=", dtype, ";count=", count),
     )
     assert_equal(
-        memcmp(ptr1, ptr2, count),
+        unsafe_memcmp(ptr1, ptr2, count),
         -1,
         String("for dtype=", dtype, ";count=", count),
     )
     assert_equal(
-        memcmp(ptr2, ptr1, count),
+        unsafe_memcmp(ptr2, ptr1, count),
         1,
         String("for dtype=", dtype, ";count=", count),
     )
 
     assert_equal(
-        memcmp(dptr1, dptr1, count),
+        unsafe_memcmp(dptr1, dptr1, count),
         0,
         String("for dtype=", dtype, ";extremes=", extremes, ";count=", count),
     )
     assert_equal(
-        memcmp(dptr1, dptr2, count),
+        unsafe_memcmp(dptr1, dptr2, count),
         -1,
         String("for dtype=", dtype, ";extremes=", extremes, ";count=", count),
     )
     assert_equal(
-        memcmp(dptr2, dptr1, count),
+        unsafe_memcmp(dptr2, dptr1, count),
         1,
         String("for dtype=", dtype, ";extremes=", extremes, ";count=", count),
     )
@@ -315,13 +315,13 @@ def test_memcmp_simd_boundary() raises:
     # Make difference at SIMD boundary
     ptr2[simd_width] = 43
 
-    var result = memcmp(ptr1, ptr2, size)
+    var result = unsafe_memcmp(ptr1, ptr2, size)
     assert_equal(result, -1, "Should detect difference at SIMD boundary")
 
     # Test opposite direction
     ptr1[simd_width] = 44
     ptr2[simd_width] = 42
-    result = memcmp(ptr1, ptr2, size)
+    result = unsafe_memcmp(ptr1, ptr2, size)
     assert_equal(
         result, 1, "Should detect difference at SIMD boundary (reverse)"
     )
@@ -353,12 +353,12 @@ def test_memcmp_simd_overlap() raises:
             ptr2[j] = 42
 
         # Should be equal
-        var result = memcmp(ptr1, ptr2, size)
+        var result = unsafe_memcmp(ptr1, ptr2, size)
         assert_equal(result, 0, "Overlapping regions should be equal")
 
         # Make difference in overlap region
         ptr2[size - 1] = ptr2[size - 1] + 1
-        result = memcmp(ptr1, ptr2, size)
+        result = unsafe_memcmp(ptr1, ptr2, size)
         assert_equal(result, -1, "Should detect difference in overlap region")
 
         ptr1.free()
@@ -382,7 +382,7 @@ def test_memcmp_simd_index_finding() raises:
         # Create difference at specific lane
         ptr2[lane] = 101
 
-        var result = memcmp(ptr1, ptr2, simd_width)
+        var result = unsafe_memcmp(ptr1, ptr2, simd_width)
         assert_equal(
             result, -1, "Should detect difference at lane " + String(lane)
         )
@@ -390,7 +390,7 @@ def test_memcmp_simd_index_finding() raises:
         # Test opposite direction
         ptr1[lane] = 102
         ptr2[lane] = 100
-        result = memcmp(ptr1, ptr2, simd_width)
+        result = unsafe_memcmp(ptr1, ptr2, simd_width)
         assert_equal(
             result,
             1,
@@ -417,14 +417,14 @@ def test_memcmp_simd_signed_overflow() raises:
     ptr2[2] = 0
     ptr2[3] = 127
 
-    var result = memcmp(ptr1, ptr2, 4)
+    var result = unsafe_memcmp(ptr1, ptr2, 4)
     assert_equal(result, 0, "Identical extreme values should be equal")
 
     # Test signed comparison edge cases
     ptr1[0] = -1  # 0xFF as unsigned
     ptr2[0] = 1  # 0x01 as unsigned
 
-    result = memcmp(ptr1, ptr2, 4)
+    result = unsafe_memcmp(ptr1, ptr2, 4)
     assert_equal(
         result, 1, "0xFF should be greater than 0x01 in unsigned comparison"
     )
@@ -450,7 +450,7 @@ def test_memcmp_simd_alignment() raises:
         var ptr2 = large_ptr2 + offset
         var test_size = size - offset - 8
 
-        var result = memcmp(ptr1, ptr2, test_size)
+        var result = unsafe_memcmp(ptr1, ptr2, test_size)
         assert_equal(
             result,
             0,
@@ -459,7 +459,7 @@ def test_memcmp_simd_alignment() raises:
 
         # Create difference and test
         ptr2[test_size - 1] = ptr2[test_size - 1] + 1
-        result = memcmp(ptr1, ptr2, test_size)
+        result = unsafe_memcmp(ptr1, ptr2, test_size)
         assert_equal(
             result, -1, "Should detect difference with unaligned access"
         )
@@ -498,7 +498,7 @@ def test_memcmp_simd_width_edge_cases() raises:
             ptr1[j] = Int8(j % 256)
             ptr2[j] = Int8(j % 256)
 
-        var result = memcmp(ptr1, ptr2, size)
+        var result = unsafe_memcmp(ptr1, ptr2, size)
         assert_equal(
             result,
             0,
@@ -508,7 +508,7 @@ def test_memcmp_simd_width_edge_cases() raises:
         # Test difference at end
         if size > 0:
             ptr2[size - 1] = ptr2[size - 1] + 1
-            result = memcmp(ptr1, ptr2, size)
+            result = unsafe_memcmp(ptr1, ptr2, size)
             assert_equal(
                 result,
                 -1,
@@ -529,7 +529,7 @@ def test_memcmp_simd_zero_bytes() raises:
     memset_zero(ptr1, size)
     memset_zero(ptr2, size)
 
-    var result = memcmp(ptr1, ptr2, size)
+    var result = unsafe_memcmp(ptr1, ptr2, size)
     assert_equal(result, 0, "Zero-filled buffers should be equal")
 
     # Test zero vs non-zero at different positions
@@ -544,7 +544,7 @@ def test_memcmp_simd_zero_bytes() raises:
 
         # Create difference at position
         ptr2[pos] = 1
-        result = memcmp(ptr1, ptr2, size)
+        result = unsafe_memcmp(ptr1, ptr2, size)
         assert_equal(
             result,
             -1,
@@ -554,7 +554,7 @@ def test_memcmp_simd_zero_bytes() raises:
         # Test opposite
         ptr1[pos] = 2
         ptr2[pos] = 0
-        result = memcmp(ptr1, ptr2, size)
+        result = unsafe_memcmp(ptr1, ptr2, size)
         assert_equal(
             result,
             1,

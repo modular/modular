@@ -49,7 +49,7 @@ from std.sys.intrinsics import likely, unlikely
 from std.bit import count_trailing_zeros
 from std.bit.mask import is_negative, splat
 from std.memory import (
-    memcmp,
+    unsafe_memcmp,
     unsafe_memcpy,
     pack_bits,
 )
@@ -713,7 +713,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         # same pointer and length, so equal
         elif s_len == 0 or s_ptr == rhs_ptr:
             return True
-        return memcmp(s_ptr, rhs_ptr, s_len) == 0
+        return unsafe_memcmp(s_ptr, rhs_ptr, s_len) == 0
 
     @__unsafe_nested_origins_read_only
     def __ne__(self, rhs_same: Self) -> Bool:
@@ -757,7 +757,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         var len1 = self.byte_length()
         var len2 = rhs.byte_length()
-        return Int(len1 < len2) > memcmp(
+        return Int(len1 < len2) > unsafe_memcmp(
             self.unsafe_ptr(), rhs.unsafe_ptr(), min(len1, len2)
         )
 
@@ -2775,7 +2775,7 @@ def _memmem[
                 continue
 
             if (
-                memcmp(
+                unsafe_memcmp(
                     haystack.unsafe_offset(i + 1), needle + 1, needle_len - 1
                 )
                 == 0
@@ -2832,7 +2832,7 @@ def _memmem_impl[
         while mask:
             var offset = i + Int(count_trailing_zeros(mask))
             if (
-                memcmp(
+                unsafe_memcmp(
                     haystack.unsafe_offset(offset + 1),
                     needle + 1,
                     needle_len - 1,
@@ -2847,7 +2847,9 @@ def _memmem_impl[
             continue
 
         if (
-            memcmp(haystack.unsafe_offset(i + 1), needle + 1, needle_len - 1)
+            unsafe_memcmp(
+                haystack.unsafe_offset(i + 1), needle + 1, needle_len - 1
+            )
             == 0
         ):
             return haystack.unsafe_offset(i)
@@ -2886,7 +2888,7 @@ def _memrmem[
         if haystack.unsafe_get(i) != needle.unsafe_get(0):
             continue
         if (
-            memcmp(
+            unsafe_memcmp(
                 hp.unsafe_offset(i + 1),
                 needle.unsafe_ptr() + 1,
                 len(needle) - 1,

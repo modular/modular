@@ -45,7 +45,7 @@ from std.memory import (
     Layout,
     ThinAllocation,
     dealloc,
-    memcmp,
+    unsafe_memcmp,
     unsafe_memcpy,
     memset,
 )
@@ -975,7 +975,7 @@ struct String(
         if self_len == 0 or self_ptr == rhs_ptr:
             return True
         # Compare memory directly
-        return memcmp(self_ptr, rhs_ptr, self_len) == 0
+        return unsafe_memcmp(self_ptr, rhs_ptr, self_len) == 0
 
     @always_inline("nodebug")
     def __eq__(self, other: StringSlice) -> Bool:

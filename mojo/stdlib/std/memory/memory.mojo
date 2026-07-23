@@ -119,7 +119,7 @@ def _memcmp_impl[
 
 
 @always_inline
-def memcmp[
+def unsafe_memcmp[
     type: AnyType, address_space: AddressSpace
 ](
     s1: Pointer[mut=False, type, _, address_space=address_space],
@@ -154,6 +154,34 @@ def memcmp[
     return _memcmp_impl(
         s1.unsafe_bitcast[Byte](), s2.unsafe_bitcast[Byte](), byte_count
     )
+
+
+@always_inline
+@deprecated(use=unsafe_memcmp)
+def memcmp[
+    type: AnyType, address_space: AddressSpace
+](
+    s1: UnsafePointer[mut=False, type, _, address_space=address_space],
+    s2: UnsafePointer[mut=False, type, _, address_space=address_space],
+    count: Int,
+) -> Int:
+    """Compares two buffers. Both strings are assumed to be of the same length.
+
+    Parameters:
+        type: The element type.
+        address_space: The address space of the pointer.
+
+    Args:
+        s1: The first buffer address.
+        s2: The second buffer address.
+        count: The number of elements in the buffers.
+
+    Returns:
+        Returns 0 if the bytes strings are identical, 1 if s1 > s2, and -1 if
+        s1 < s2. The comparison is performed by the first different byte in the
+        byte strings.
+    """
+    return unsafe_memcmp(s1, s2, count)
 
 
 # ===-----------------------------------------------------------------------===#

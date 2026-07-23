@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import simd_width_of
-from std.memory import memcmp, unsafe_memcpy
+from std.memory import unsafe_memcmp, unsafe_memcpy
 
 from .constants import CONTAINER_SIZE, MAXIMUM_UINT64_AS_STRING
 
@@ -94,7 +94,10 @@ def to_integer(
         CONTAINER_SIZE, "0"
     )
     var too_large = (
-        memcmp(std_x_ptr, max_standardized_x.unsafe_ptr(), CONTAINER_SIZE) == 1
+        unsafe_memcmp(
+            std_x_ptr, max_standardized_x.unsafe_ptr(), CONTAINER_SIZE
+        )
+        == 1
     )
     if too_large:
         var num_str = StringSlice(

@@ -17,7 +17,7 @@ from std.sys import simd_width_of
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.bit import count_trailing_zeros
-from std.memory import memcmp, pack_bits
+from std.memory import unsafe_memcmp, pack_bits
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
@@ -174,7 +174,7 @@ def _memmem_baseline[
         while mask:
             var offset = Int(type_of(mask)(i) + count_trailing_zeros(mask))
             if (
-                memcmp(
+                unsafe_memcmp(
                     haystack.unsafe_ptr() + offset + 1,
                     needle.unsafe_ptr() + 1,
                     len(needle) - 1,
@@ -189,7 +189,7 @@ def _memmem_baseline[
             continue
 
         if (
-            memcmp(
+            unsafe_memcmp(
                 haystack.unsafe_ptr() + i + 1,
                 needle.unsafe_ptr() + 1,
                 len(needle) - 1,
