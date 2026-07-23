@@ -695,10 +695,10 @@ This version is still a work in progress.
 - The `value` argument of `List.resize` has been renamed to `fill` to match
   List's constructor.
 
-- `List.insert()` no longer normalizes negative indices. Mojo collections are
-  moving away from negative indexing, so the valid index range is now
-  `[0, len(self)]`; a negative index is out of bounds and aborts (checked when
-  asserts are enabled).
+- `List.insert()` and `LinkedList.insert()` no longer normalize negative
+  indices. Mojo collections are moving away from negative indexing, so the
+  valid index range is now `[0, len(self)]`; a negative index is out of bounds
+  and aborts (checked when asserts are enabled).
 
 - The `Reflected.field_type[name]` reflection member has been renamed to
   `Reflected.field[name]`, because it returns a chainable `Reflected` handle

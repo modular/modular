@@ -639,19 +639,16 @@ struct LinkedList[ElementType: Movable](
             I: The type of index to use.
 
         Args:
-            idx: The index to insert `elem` at `-len(self) <= idx <= len(self)`.
+            idx: The index to insert `elem` at. Must be in the range
+                `[0, len(self)]`.
             elem: The item to insert into the list.
 
         Notes:
             Time Complexity: O(n) in len(self).
         """
 
-        # `insert` follows Python's list.insert() semantics: negative indices
-        # clamp to 0 (head). Bounds-check after clamping, since `check_bounds`
-        # rejects negatives; the valid range is `[0, len(self)]` (an index of
-        # `len(self)` appends, anything past the tail aborts).
+        # Valid range is `[0, len(self)]` (an index of `len(self)` appends).
         var i = index(idx)
-        i = max(i if i >= 0 else i + len(self), 0)
         check_bounds(i, len(self) + 1)
 
         if i == 0:
