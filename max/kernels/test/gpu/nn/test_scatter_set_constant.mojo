@@ -38,7 +38,7 @@ def test_scatter_set_constant(ctx: DeviceContext) raises:
     indices[3, 1] = 0
 
     var indices_ptr_gpu = ctx.enqueue_create_buffer[DType.int32](4 * 2)
-    ctx.enqueue_copy(indices_ptr_gpu, indices.ptr)
+    ctx.enqueue_copy(indices_ptr_gpu, indices._storage)
     var indices_gpu = TileTensor(indices_ptr_gpu, row_major[4, 2]())
 
     var fill_value: Float32 = 5.0

@@ -165,7 +165,7 @@ def _test_rope_ragged_gpu_impl[
         type_of(position_ids_device_tensor_static).LayoutType,
         ImmutAnyOrigin,
     ](
-        position_ids_device_tensor_static.ptr.as_immutable().unsafe_origin_cast[
+        position_ids_device_tensor_static._storage.as_immutable().unsafe_origin_cast[
             ImmutAnyOrigin
         ](),
         position_ids_device_tensor_static.layout,

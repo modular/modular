@@ -50,13 +50,13 @@ def test_apply_packed_bitmask(ctx: DeviceContext) raises:
 
     # Copy inputs to device.
     var logits_gpu_buf = ctx.enqueue_create_buffer[DType.float32](batch * vocab)
-    ctx.enqueue_copy(logits_gpu_buf, logits.ptr)
+    ctx.enqueue_copy(logits_gpu_buf, logits._storage)
     var logits_gpu = TileTensor(logits_gpu_buf, row_major[batch, vocab]())
 
     var packed_gpu_buf = ctx.enqueue_create_buffer[DType.int32](
         batch * packed_vocab
     )
-    ctx.enqueue_copy(packed_gpu_buf, packed.ptr)
+    ctx.enqueue_copy(packed_gpu_buf, packed._storage)
     var packed_gpu = TileTensor(
         packed_gpu_buf, row_major[batch, packed_vocab]()
     )

@@ -247,7 +247,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         type_of(valid_lengths_static).LayoutType,
         MutAnyOrigin,
     ](
-        valid_lengths_static.ptr.unsafe_origin_cast[MutAnyOrigin](),
+        valid_lengths_static._storage.unsafe_origin_cast[MutAnyOrigin](),
         valid_lengths_static.layout,
     ).make_dynamic[
         DType.int64
