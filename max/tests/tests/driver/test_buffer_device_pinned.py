@@ -12,12 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 """Test DevicePinnedBuffer class."""
 
+import threading
+
 import numpy as np
 import pytest
 from max.driver import (
     CPU,
     Accelerator,
     Buffer,
+    CompletionFlag,
     DevicePinnedBuffer,
     accelerator_count,
 )
@@ -201,3 +204,87 @@ def test_device_pinned_buffer_with_events() -> None:
     result_np = result_buffer.to_numpy()
     expected = np.arange(1000, dtype=np.float32)
     assert np.allclose(result_np, expected)
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0,
+    reason="DevicePinnedBuffer sync-contract tests require GPU",
+)
+def test_device_pinned_buffer_to_numpy_does_not_synchronize() -> None:
+    """``to_numpy`` on a pinned buffer returns without synchronizing (DRIV-311).
+
+    Contract 4a: ``DevicePinnedBuffer`` overrides ``__dlpack__`` to skip the
+    device synchronize a plain ``Buffer`` does, so the read proceeds while the
+    default stream is gated. A full ``device.synchronize()`` is the positive
+    control: it must stay blocked while the gate is held, proving the gate is
+    engaged and the pinned result meaningful.
+    """
+    gpu = Accelerator()
+    if gpu.api not in ("cuda", "hip"):
+        pytest.skip("stream host-value gating requires CUDA/HIP")
+
+    sentinel = np.arange(1, 5, dtype=np.float32)
+    pinned = DevicePinnedBuffer(dtype=DType.float32, shape=[4], device=gpu)
+    pinned.to_numpy()[:] = sentinel
+
+    flag = CompletionFlag(gpu)
+    gate_stream = gpu.default_stream
+    pinned_done = threading.Event()
+    control_done = threading.Event()
+    pinned_box: dict[str, object] = {}
+
+    def read_pinned() -> None:
+        try:
+            pinned_box["value"] = pinned.to_numpy()
+        finally:
+            pinned_done.set()
+
+    def sync_device() -> None:
+        try:
+            gpu.synchronize()
+        finally:
+            control_done.set()
+
+    pinned_thread = threading.Thread(target=read_pinned, daemon=True)
+    control_thread = threading.Thread(target=sync_device, daemon=True)
+
+    gate_stream.wait_for_host_value(flag, 1)
+    try:
+        pinned_thread.start()
+        control_thread.start()
+        assert pinned_done.wait(timeout=10.0), (
+            "pinned to_numpy blocked on the gated stream; it synchronized"
+        )
+        assert not control_done.wait(timeout=2.0), (
+            "device.synchronize() returned while gated; the gate is not"
+            " engaged so the pinned result is not meaningful"
+        )
+    finally:
+        flag.signal(1)
+        pinned_thread.join(timeout=60.0)
+        control_thread.join(timeout=60.0)
+
+    assert not pinned_thread.is_alive() and not control_thread.is_alive()
+    np.testing.assert_array_equal(pinned_box["value"], sentinel)
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0,
+    reason="DevicePinnedBuffer sync-contract tests require GPU",
+)
+def test_device_pinned_buffer_to_numpy_is_zero_copy_view() -> None:
+    """``to_numpy`` on a pinned buffer aliases its memory (DRIV-311).
+
+    Pins contract 4b: because the export is zero-copy, the numpy array does not
+    own its data and a later host write to the pinned buffer is visible through
+    the array returned earlier.
+    """
+    gpu = Accelerator()
+    pinned = DevicePinnedBuffer(dtype=DType.int32, shape=[8], device=gpu)
+
+    view = pinned.to_numpy()
+    assert not view.flags.owndata
+
+    written = np.arange(10, 18, dtype=np.int32)
+    pinned.to_numpy()[:] = written
+    np.testing.assert_array_equal(view, written)
