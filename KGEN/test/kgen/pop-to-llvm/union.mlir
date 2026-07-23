@@ -357,4 +357,13 @@ kgen.func @union_unwrap_nonempty_with_empty_sibling(%arg0: !pop.union<struct<(i8
   kgen.return %0 : !kgen.struct<(i8)>
 }
 
+// Regression test: `f80`'s alloc size (padded for alignment) is wider than
+// its store size, which previously undersized the tail array and crashed.
+// CHECK-LABEL: @union_f80
+// CHECK-SAME:  -> !llvm.struct<(f80)>
+kgen.func @union_f80(%arg0: !pop.union<f80>) -> !pop.union<f80> {
+  // CHECK: llvm.return %arg0 : !llvm.struct<(f80)>
+  kgen.return %arg0 : !pop.union<f80>
+}
+
 }
