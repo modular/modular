@@ -1055,6 +1055,16 @@ This version is still a work in progress.
   to re-enable the previous behavior. We plan to make this checking more
   robust and re-enable it by default over time.
 
+- Added a `--fp-mode` CLI flag that controls floating-point behavior as a
+  comma-separated list of items. The only supported feature now is `contract`,
+  one of `fast` (default) or `off`. `contract=fast` is like Clang's
+  `-ffp-contract=fast`: `a + b*c` can fuse into a fused multiply-add across
+  statements and breaking strict IEEE compliance;
+  `contract=off` disables contraction for stricter floating-point semantics.
+  The same `contract=fast|off` item is also accepted in the `emission_option`
+  of a `kgen.compile_offload` operation, to control contraction of an
+  individual offload kernel.
+
 ## GPU programming
 
 - Added programmatic Metal GPU frame capture in `std.gpu.host`:
