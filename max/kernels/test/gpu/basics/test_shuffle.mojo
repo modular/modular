@@ -112,6 +112,14 @@ def test_shuffle_idx_int64(ctx: DeviceContext) raises:
     _shuffle_idx_launch_helper[DType.int64, 1](ctx)
 
 
+def test_shuffle_idx_int(ctx: DeviceContext) raises:
+    _shuffle_idx_launch_helper[DType.int, 1](ctx)
+
+
+def test_shuffle_idx_uint(ctx: DeviceContext) raises:
+    _shuffle_idx_launch_helper[DType.uint, 1](ctx)
+
+
 def _shuffle_up_launch_helper[
     dtype: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
@@ -172,6 +180,14 @@ def test_shuffle_up_fp16_packed(ctx: DeviceContext) raises:
 
 def test_shuffle_up_int64(ctx: DeviceContext) raises:
     _shuffle_up_launch_helper[DType.int64, 1](ctx)
+
+
+def test_shuffle_up_int(ctx: DeviceContext) raises:
+    _shuffle_up_launch_helper[DType.int, 1](ctx)
+
+
+def test_shuffle_up_uint(ctx: DeviceContext) raises:
+    _shuffle_up_launch_helper[DType.uint, 1](ctx)
 
 
 def _shuffle_down_launch_helper[
@@ -236,6 +252,14 @@ def test_shuffle_down_int64(ctx: DeviceContext) raises:
     _shuffle_down_launch_helper[DType.int64, 1](ctx)
 
 
+def test_shuffle_down_int(ctx: DeviceContext) raises:
+    _shuffle_down_launch_helper[DType.int, 1](ctx)
+
+
+def test_shuffle_down_uint(ctx: DeviceContext) raises:
+    _shuffle_down_launch_helper[DType.uint, 1](ctx)
+
+
 def _shuffle_xor_launch_helper[
     dtype: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
@@ -290,6 +314,14 @@ def test_shuffle_xor_fp16_packed(ctx: DeviceContext) raises:
 
 def test_shuffle_xor_int64(ctx: DeviceContext) raises:
     _shuffle_xor_launch_helper[DType.int64, 1](ctx)
+
+
+def test_shuffle_xor_int(ctx: DeviceContext) raises:
+    _shuffle_xor_launch_helper[DType.int, 1](ctx)
+
+
+def test_shuffle_xor_uint(ctx: DeviceContext) raises:
+    _shuffle_xor_launch_helper[DType.uint, 1](ctx)
 
 
 def _warp_reduce_launch_helper[
@@ -638,24 +670,32 @@ def main() raises:
         test_shuffle_idx_fp16(ctx)
         test_shuffle_idx_fp16_packed(ctx)
         test_shuffle_idx_int64(ctx)
+        test_shuffle_idx_int(ctx)
+        test_shuffle_idx_uint(ctx)
         test_shuffle_up_fp32(ctx)
         test_shuffle_up_bf16(ctx)
         test_shuffle_up_bf16_packed(ctx)
         test_shuffle_up_fp16(ctx)
         test_shuffle_up_fp16_packed(ctx)
         test_shuffle_up_int64(ctx)
+        test_shuffle_up_int(ctx)
+        test_shuffle_up_uint(ctx)
         test_shuffle_down_fp32(ctx)
         test_shuffle_down_bf16(ctx)
         test_shuffle_down_bf16_packed(ctx)
         test_shuffle_down_fp16(ctx)
         test_shuffle_down_fp16_packed(ctx)
         test_shuffle_down_int64(ctx)
+        test_shuffle_down_int(ctx)
+        test_shuffle_down_uint(ctx)
         test_shuffle_xor_fp32(ctx)
         test_shuffle_xor_bf16(ctx)
         test_shuffle_xor_bf16_packed(ctx)
         test_shuffle_xor_fp16(ctx)
         test_shuffle_xor_fp16_packed(ctx)
         test_shuffle_xor_int64(ctx)
+        test_shuffle_xor_int(ctx)
+        test_shuffle_xor_uint(ctx)
         test_warp_reduce_fp32(ctx)
         test_warp_reduce_bf16(ctx)
         test_warp_reduce_bf16_packed(ctx)

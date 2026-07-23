@@ -326,7 +326,7 @@ def _shuffle[
         return llvm_intrinsic[
             "llvm.nvvm.shfl.sync." + mnemonic + ".i32", Scalar[dtype]
         ](Int32(mask), val, offset, WIDTH_MASK)
-    elif dtype in (DType.int64, DType.uint64):
+    elif dtype.is_integral() and bit_width_of[dtype]() == 64:
         var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
         var val_half1, val_half2 = val_bitcast.deinterleave()
         var shuffle1 = _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
@@ -417,7 +417,7 @@ def _shuffle_apple_helper[
 
     var arg = UInt16(offset)  # AIR intrinsics use 16-bit offsets
 
-    comptime if dtype in (DType.int64, DType.uint64):
+    comptime if dtype.is_integral() and bit_width_of[dtype]() == 64:
         var bits = bitcast[DType.uint32, simd_width * 2](val)
         var half1, half2 = bits.deinterleave()
 
