@@ -18,7 +18,7 @@
 """Defines all structural tag formats."""
 
 import json
-from typing import Any, Dict, List, Literal, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 try:
     # Python 3.9+
@@ -48,15 +48,41 @@ class JSONSchemaFormat(BaseModel):
     """The type of the format."""
     json_schema: Union[bool, Dict[str, Any]]
     """The JSON schema."""
-    style: Literal["json", "qwen_xml", "minimax_xml", "deepseek_xml", "glm_xml"] = "json"
+    style: Literal[
+        "json", "qwen_xml", "minimax_xml", "deepseek_xml", "glm_xml"
+    ] = "json"
     """How to parse the content. Valid values: \"json\" (standard JSON), \"qwen_xml\" (Qwen XML:
     <parameter=key>value</parameter>), \"minimax_xml\" (MiniMax XML: <parameter name=\"key\">value</parameter>),
     \"deepseek_xml\" (DeepSeek XML(DeepSeek-v3.2): <{dsml_token}parameter name=\"key\" string=\"true|false\">value</{dsml_token}parameter>),
     \"glm_xml\" (GLM XML: <arg_key>key</arg_key><arg_value>value</arg_value>)."""
+    any_order: bool = False
+    """Allow object properties to appear in any order."""
+    string_value_delimiter_token: Optional[Union[str, int]] = None
+    """Delimiter token (string or id) wrapping string *values*. None = default JSON double-quote byte."""
+    string_value_exclude_tokens: List[Union[str, int]] = []
+    """Token strings/ids a string value's body must never contain. Requires
+    ``string_value_delimiter_token`` (token-level exclusion applies only to token-delimited
+    string values); rejected if set without it."""
+    bare_key_terminal: str = ""
+    """Raw EBNF terminal for declared/additional bare keys. Empty = quoted keys."""
+    bare_key_literal_forbidden: str = ""
+    """EBNF char-class body a bare literal key must avoid. Empty = quoted keys / no constraint."""
+    bare_key_pattern_forbidden: str = ""
+    """EBNF char-class body a bare pattern-derived key must avoid. Empty = quoted keys / no constraint."""
+    max_whitespace_cnt: Optional[int] = None
+    """Maximum inter-token whitespace count. None = unbounded."""
     require_object_root: bool = False
     """Require the schema root to produce a JSON object, coercing an unconstrained root to an empty open object."""
     reject_unsupported: bool = False
     """Reject unenforceable schema keywords rather than fall back to unconstrained decoding."""
+    strict_mode: bool = True
+    """Disallow properties and items not specified in the schema."""
+    any_whitespace: bool = True
+    """Allow any whitespace between JSON elements."""
+    indent: Optional[int] = None
+    """Number of spaces for indentation. None = single line."""
+    separators: Optional[Tuple[str, str]] = None
+    """Comma and colon separators. None = defaults."""
 
 
 class AnyTextFormat(BaseModel):

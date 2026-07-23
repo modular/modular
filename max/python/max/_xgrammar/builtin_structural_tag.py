@@ -1593,9 +1593,7 @@ def get_glm_4_7_structural_tag(
     return StructuralTag(format=SequenceFormat(elements=[prefix_tag, suffix_tag]))
 
 
-# TODO: We are dropping Gemma support because its parameter format is special and not supported
-# yet: the string are wrapped by <|"|> instead of ". We will support it later and get it back.
-# @register_model_structural_tag("gemma_4")
+@register_model_structural_tag("gemma_4")
 def _get_gemma_4_structural_tag(
     tools: Optional[List[FunctionToolParam]] = None,
     builtin_tools: Optional[List[BuiltinToolParam]] = None,
@@ -1644,7 +1642,19 @@ def _get_gemma_4_structural_tag(
     TOOL_CALL_TRIGGER = "<|tool_call>"
     THINK_TAG_BEGIN = "<|channel>thought\n"
     THINK_TAG_END = "<channel|>"
-    GEMMA4_EXCLUDE_TOKENS = ["<|channel>", "<channel|>"]
+    EXCLUDE_TOKENS = ["<|channel>", "<channel|>"]
+    JSON_CONFIG: dict[str, Any] = {
+        "style": "json",
+        "string_value_delimiter_token": '<|"|>',
+        "string_value_exclude_tokens": ["<|tool_call>", "<tool_call|>"],
+        "bare_key_terminal": r"[a-zA-Z_][-a-zA-Z0-9_.]*",
+        "bare_key_literal_forbidden": r":{},\x00-\x20\x7f",
+        "bare_key_pattern_forbidden": r' \t\n\r\f:{},\"\\\x00-\x1f',
+        "max_whitespace_cnt": 1,
+        # TODO(CENG-813): these per-model enables become redundant once the flags default on for all models.
+        "require_object_root": True,
+        "reject_unsupported": True,
+    }
 
     tools = tools or []
     builtin_tools = builtin_tools or []
@@ -1657,17 +1667,19 @@ def _get_gemma_4_structural_tag(
             tags.append(
                 TagFormat(
                     begin=TOOL_CALL_BEGIN_PREFIX + name,
-                    content=JSONSchemaFormat(json_schema=parameters),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters, **JSON_CONFIG
+                    ),
                     end=TOOL_CALL_END,
                 )
             )
 
         if len(tags) > 0:
             suffix_tag = TriggeredTagsFormat(
-                triggers=[TOOL_CALL_TRIGGER], tags=tags, excludes=GEMMA4_EXCLUDE_TOKENS
+                triggers=[TOOL_CALL_TRIGGER], tags=tags, excludes=EXCLUDE_TOKENS
             )
         else:
-            suffix_tag = AnyTextFormat(excludes=GEMMA4_EXCLUDE_TOKENS)
+            suffix_tag = AnyTextFormat(excludes=EXCLUDE_TOKENS)
 
     elif tool_choice == "forced":
         if not tools:
@@ -1675,7 +1687,10 @@ def _get_gemma_4_structural_tag(
         function = tools[0].function
         suffix_tag = TagFormat(
             begin=TOOL_CALL_BEGIN_PREFIX + function.name,
-            content=JSONSchemaFormat(json_schema=_get_function_parameters(function)),
+            content=JSONSchemaFormat(
+                json_schema=_get_function_parameters(function),
+                **JSON_CONFIG,
+            ),
             end=TOOL_CALL_END,
         )
 
@@ -1688,7 +1703,9 @@ def _get_gemma_4_structural_tag(
             tags.append(
                 TagFormat(
                     begin=TOOL_CALL_BEGIN_PREFIX + name,
-                    content=JSONSchemaFormat(json_schema=parameters),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters, **JSON_CONFIG
+                    ),
                     end=TOOL_CALL_END,
                 )
             )

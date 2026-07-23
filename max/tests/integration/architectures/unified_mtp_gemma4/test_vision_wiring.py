@@ -70,18 +70,17 @@ def test_unified_mtp_gemma4_arch_is_multimodal() -> None:
     assert unified_mtp_gemma4_arch.pipeline_model is UnifiedMTPGemma4Model
 
 
-def test_unified_mtp_gemma4_pins_llguidance_backend() -> None:
-    """The MTP arch must pin the llguidance structured-output backend.
+def test_unified_mtp_gemma4_defaults_to_xgrammar_backend() -> None:
+    """The MTP arch defaults to the xgrammar structured-output backend.
 
-    gemma4's tool parser emits llguidance-format grammars xgrammar cannot
-    compile. gemma4 + MTP speculative decoding resolves the target to this
-    arch (see ``test_config_pure.py::TestSpeculativeArchitectureOverride``), so
-    without the pin the backend silently defaults to xgrammar and the worker
-    crashes on the first tool-call grammar.
+    gemma4 structured output compiles through the xgrammar StructuralTag path
+    (config-driven bare keys and <|"|> string delimiters), and the speculative
+    decoding fixes make that path safe under MTP, so the MTP arch tracks the
+    base gemma4 default of xgrammar rather than pinning llguidance. Override
+    with --structured-output-backend.
     """
     assert (
-        unified_mtp_gemma4_arch.default_structured_output_backend
-        == "llguidance"
+        unified_mtp_gemma4_arch.default_structured_output_backend == "xgrammar"
     )
 
 

@@ -311,9 +311,11 @@ class StructuralTagToolParser(ABC):
                 cursor = section_end + len(self.SECTION_END)
 
         if not tool_calls:
+            # Do not embed the raw model output -- it may contain PII and is
+            # surfaced to logs. Report only the length for debugging.
             raise ValueError(
                 "Tool calls section found but no valid tool calls parsed "
-                f"from: {response[first_marker_idx:]}"
+                f"(section length: {len(response) - first_marker_idx} chars)"
             )
 
         return ParsedToolResponse(content=content_before, tool_calls=tool_calls)

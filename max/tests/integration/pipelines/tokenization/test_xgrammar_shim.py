@@ -1035,6 +1035,32 @@ def test_additional_properties_value_kinds_compile() -> None:
         assert isinstance(compiled, xgr.CompiledGrammar)
 
 
+def test_required_undeclared_key_additional_properties_false_rejected() -> None:
+    # A required key absent from `properties` is an additional property;
+    # additionalProperties:false forbids it, so requiring it is unsatisfiable.
+    # Reject rather than fall back to an unconstrained (any-value) property that
+    # would accept objects the schema forbids.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"type": "object", "required": ["k"], "additionalProperties": false}',
+            reject_unsupported=True,
+        )
+
+
+def test_required_undeclared_key_open_object_compiles() -> None:
+    # With additionalProperties absent/true (or a schema), a required key not in
+    # `properties` is genuinely constrained by additionalProperties (any when
+    # absent/true), so it compiles rather than being rejected.
+    for schema in (
+        '{"type": "object", "required": ["k"]}',
+        '{"type": "object", "required": ["k"], "additionalProperties": true}',
+        '{"type": "object", "required": ["k"], '
+        '"additionalProperties": {"type": "string"}}',
+    ):
+        compiled = _compiler().compile_json_schema(schema)
+        assert isinstance(compiled, xgr.CompiledGrammar)
+
+
 def test_allof_other_sibling_keywords_rejected() -> None:
     base = '{"type":"object","allOf":[{"properties":{"a":{"type":"string"}}}],'
     for sibling in (
@@ -1172,6 +1198,20 @@ def test_or_format_json_schema_rejects_unenforceable() -> None:
         _compiler().compile_structural_tag(tag)
 
 
+def test_string_value_exclude_tokens_without_delimiter_rejected() -> None:
+    # Token-level string-content exclusion only applies to token-delimited string
+    # values, so string_value_exclude_tokens without string_value_delimiter_token
+    # is a misconfiguration and is rejected rather than silently ignored.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={"type": "object"},
+            string_value_exclude_tokens=["<x>"],
+        )
+    )
+    with pytest.raises(Exception):
+        _compiler().compile_structural_tag(tag)
+
+
 def test_tool_call_requires_object_root() -> None:
     # Every tool-call argument schema must be a JSON object; non-object roots
     # (string / array / number) are rejected.
@@ -1209,3 +1249,536 @@ def test_general_path_allows_non_object_root() -> None:
     for schema in ('{"type": "string"}', '{"type": "number"}'):
         compiled = _compiler().compile_json_schema(schema)
         assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+_GEMMA_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {"type": "string"},
+                    "days": {"type": "integer"},
+                    "unit": {
+                        "type": "string",
+                        "enum": ["celsius", "fahrenheit"],
+                    },
+                    "opts": {
+                        "type": "object",
+                        "properties": {"verbose": {"type": "boolean"}},
+                    },
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["location"],
+            },
+        },
+    }
+]
+
+
+def test_gemma_4_builtin_tag_registered() -> None:
+    # Previously raised "Unknown format type: gemma_4".
+    tag = xgr.get_builtin_structural_tag(
+        "gemma_4", tools=_GEMMA_TOOLS, tool_choice="auto", reasoning=False
+    )
+    assert isinstance(tag, xgr.StructuralTag)
+    # The arguments are constrained with the Gemma string style, now carried by
+    # the JSON style plus the delimiter/bare-key config on the format.
+    dumped = tag.model_dump_json().replace(" ", "")
+    assert '"style":"json"' in dumped
+    assert '"string_value_delimiter_token":"<|\\"|>"' in dumped
+    assert '"bare_key_terminal":"[a-zA-Z_][-a-zA-Z0-9_.]*"' in dumped
+
+
+# The real Gemma tokenizer encodes <|"|>, <|tool_call>, and <tool_call|> as
+# SINGLE tokens, and the "gemma" style now references <|"|> by token ID
+# (Token()/ExcludeToken()) — there is no byte-literal fallback. So the test
+# vocab must contain those delimiters as single entries; spelling them out as
+# separate byte tokens is a hard error at compile time (delimiter not found).
+_GEMMA_VOCAB = (
+    [chr(c) for c in range(32, 127)]
+    + ["<|tool_call>", "<tool_call|>", '<|"|>']
+    + ["<eos>"]
+)
+_GEMMA_SPECIALS = ("<|tool_call>", "<tool_call|>", '<|"|>')
+_GEMMA_ID = {tok: i for i, tok in enumerate(_GEMMA_VOCAB)}
+
+
+def _gemma_encode(s: str) -> list[int]:
+    """Tokenize s, emitting the multi-char Gemma specials as single tokens."""
+    out: list[int] = []
+    i = 0
+    while i < len(s):
+        for sp in _GEMMA_SPECIALS:
+            if s.startswith(sp, i):
+                out.append(_GEMMA_ID[sp])
+                i += len(sp)
+                break
+        else:
+            out.append(_GEMMA_ID[s[i]])
+            i += 1
+    return out
+
+
+def _gemma_compiler() -> xgr.GrammarCompiler:
+    info = xgr.TokenizerInfo(
+        _GEMMA_VOCAB,
+        vocab_type=xgr.VocabType.RAW,
+        stop_token_ids=[_GEMMA_ID["<eos>"]],
+    )
+    return xgr.GrammarCompiler(info)
+
+
+def _gemma_matcher(
+    tools: list[dict[str, Any]], tool_choice: str = "required"
+) -> xgr.GrammarMatcher:
+    tag = xgr.get_builtin_structural_tag(
+        "gemma_4", tools=tools, tool_choice=tool_choice, reasoning=False
+    )
+    return xgr.GrammarMatcher(_gemma_compiler().compile_structural_tag(tag))
+
+
+def _accept_ids(matcher: xgr.GrammarMatcher, ids: list[int]) -> bool:
+    return all(matcher.accept_token(tid) for tid in ids)
+
+
+_SIMPLE_TOOL: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "f",
+            "parameters": {
+                "type": "object",
+                "properties": {"x": {"type": "string"}},
+                "required": ["x"],
+            },
+        },
+    }
+]
+
+
+def test_gemma_4_style_compiles() -> None:
+    # The rich schema (string, integer, enum, nested object, array) must lower
+    # to valid EBNF and compile against a vocab that contains the <|"|>
+    # delimiter token.
+    tag = xgr.get_builtin_structural_tag(
+        "gemma_4", tools=_GEMMA_TOOLS, tool_choice="required", reasoning=False
+    )
+    compiled = _gemma_compiler().compile_structural_tag(tag)
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_gemma_4_accepts_delimiters_as_single_tokens() -> None:
+    # Feed <|"|>, <|tool_call>, <tool_call|> as single token IDs (as the real
+    # tokenizer emits them); the Token()-referenced grammar must accept them.
+    matcher = _gemma_matcher(_SIMPLE_TOOL)
+    good = '<|tool_call>call:f{x:<|"|>v<|"|>}<tool_call|>'
+    assert _accept_ids(matcher, _gemma_encode(good))
+    assert matcher.is_completed()
+
+
+def test_gemma_4_string_content_excludes_marker_token_not_text() -> None:
+    # Inside a string body the tool-call marker is excluded as a single TOKEN,
+    # but the same characters emitted as ordinary text tokens are allowed -- a
+    # split marker is handled by the structural-tag envelope, not ExcludeToken.
+    into_string = _gemma_encode('<|tool_call>call:f{x:<|"|>')
+    marker = "<|tool_call>"
+
+    rejected = _gemma_matcher(_SIMPLE_TOOL)
+    assert _accept_ids(rejected, into_string)
+    assert not rejected.accept_token(_GEMMA_ID[marker])
+
+    as_text = _gemma_matcher(_SIMPLE_TOOL)
+    assert _accept_ids(as_text, into_string)
+    assert _accept_ids(as_text, [_GEMMA_ID[ch] for ch in marker])
+
+
+def test_gemma_4_max_length_string_excludes_marker_token() -> None:
+    # A maxLength-bounded string body must still exclude the tool-call marker
+    # as a single token.
+    tool = [
+        {
+            "type": "function",
+            "function": {
+                "name": "f",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"x": {"type": "string", "maxLength": 20}},
+                    "required": ["x"],
+                },
+            },
+        }
+    ]
+    matcher = _gemma_matcher(tool)
+    assert _accept_ids(matcher, _gemma_encode('<|tool_call>call:f{x:<|"|>'))
+    assert not matcher.accept_token(_GEMMA_ID["<|tool_call>"])
+
+
+def test_gemma_4_matcher_rejects_json_quoting() -> None:
+    # Standard-JSON quoted key `"x"` must be rejected: Gemma keys are bare.
+    matcher = _gemma_matcher(_SIMPLE_TOOL)
+    assert not _accept_ids(matcher, _gemma_encode('<|tool_call>call:f{"x"'))
+
+
+def test_gemma_4_requires_delimiter_token_in_vocab() -> None:
+    # No byte-literal fallback: a vocab without the <|"|> token is a hard error.
+    info = xgr.TokenizerInfo(
+        [chr(c) for c in range(32, 127)] + ["<eos>"],
+        vocab_type=xgr.VocabType.RAW,
+        stop_token_ids=[95],
+    )
+    tag = xgr.get_builtin_structural_tag(
+        "gemma_4", tools=_SIMPLE_TOOL, tool_choice="required", reasoning=False
+    )
+    with pytest.raises(Exception, match=r'<\|"\|>'):
+        xgr.GrammarCompiler(info).compile_structural_tag(tag)
+
+
+def _gemma_tool_with_params(params: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {"type": "function", "function": {"name": "f", "parameters": params}}
+    ]
+
+
+def _gemma_compile(params: dict[str, Any]) -> xgr.CompiledGrammar:
+    # No test-level flag walker: the gemma_4 builtin tag already sets
+    # require_object_root and reject_unsupported on every arg-schema
+    # JSONSchemaFormat (model-scoped enable in JSON_CONFIG), so the flags are
+    # real on the gemma path without a stand-in.
+    tag = xgr.get_builtin_structural_tag(
+        "gemma_4",
+        tools=_gemma_tool_with_params(params),
+        tool_choice="required",
+        reasoning=False,
+    )
+    return _gemma_compiler().compile_structural_tag(tag)
+
+
+def test_gemma_4_tool_call_rejects_unsupported_keyword_without_walker() -> None:
+    # The JSON_CONFIG enable makes reject_unsupported real on the gemma path:
+    # an unenforceable keyword (multipleOf) in an arg schema is rejected
+    # fail-closed, with NO test-level flag walker.
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "properties": {"n": {"type": "number", "multipleOf": 5}},
+            }
+        )
+
+
+def test_gemma_4_tool_call_non_object_root_rejected_without_walker() -> None:
+    # The JSON_CONFIG enable makes require_object_root real on the gemma path:
+    # a non-object (array) arg-schema root is rejected, with NO test-level
+    # flag walker.
+    with pytest.raises(Exception):
+        _gemma_compile({"type": "array", "items": {"type": "string"}})
+
+
+def test_qwen_tool_call_permits_unsupported_keyword_by_default() -> None:
+    # Scoping: the enable is gemma-only. A non-gemma model's builtin tag leaves
+    # reject_unsupported at its False default, so an unenforceable keyword
+    # (multipleOf) falls back to unconstrained decoding and still compiles.
+    tag = xgr.get_builtin_structural_tag(
+        "qwen_3_5",
+        tools=_qwen_tool(
+            {
+                "type": "object",
+                "properties": {"n": {"type": "number", "multipleOf": 5}},
+            }
+        ),
+        tool_choice="required",
+        reasoning=False,
+    )
+    compiled = _qwen_compiler().compile_structural_tag(tag)
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_gemma_4_pattern_properties_bare_safe_compiles() -> None:
+    # A bare-key-safe patternProperties pattern (only lowercase/underscore, all
+    # in the bare-key alphabet) compiles on the gemma path.
+    compiled = _gemma_compile(
+        {
+            "type": "object",
+            "patternProperties": {"^[a-z_]+$": {"type": "string"}},
+        }
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_gemma_4_property_names_bare_safe_compiles() -> None:
+    # A bare-key-safe propertyNames pattern compiles on the gemma path.
+    compiled = _gemma_compile(
+        {
+            "type": "object",
+            "propertyNames": {"type": "string", "pattern": "^[a-z_]+$"},
+            "additionalProperties": {"type": "string"},
+        }
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_gemma_4_structural_char_pattern_rejected() -> None:
+    # A pattern that can positively match a structural byte (`:`) would let a
+    # bare key over-run its boundary; the sound guard must reject it fail-closed.
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "patternProperties": {"^[a:b]+$": {"type": "string"}},
+            }
+        )
+    # A bare literal `:` in the pattern is likewise rejected.
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "propertyNames": {"type": "string", "pattern": "^a:b$"},
+                "additionalProperties": {"type": "string"},
+            }
+        )
+
+
+def test_gemma_4_pattern_properties_format_agnostic_rejects_preserved() -> None:
+    # The format-agnostic intersection limits still reject on the gemma path:
+    # multiple simultaneous patternProperties patterns, and `properties`
+    # combined with `patternProperties`.
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "patternProperties": {
+                    "^[a-z]+$": {"type": "string"},
+                    "^[a-z_]+$": {"type": "string"},
+                },
+            }
+        )
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "properties": {"foo": {"type": "string"}},
+                "patternProperties": {"^[a-z_]+$": {"type": "string"}},
+            }
+        )
+
+
+def _gemma_matcher_params(params: dict[str, Any]) -> xgr.GrammarMatcher:
+    return _gemma_matcher(
+        _gemma_tool_with_params(params), tool_choice="required"
+    )
+
+
+def test_gemma_4_property_names_format_enforced() -> None:
+    # propertyNames with a bare-safe `format` (date) constrains the bare key on
+    # the gemma path: a date-shaped key is accepted, a non-date key is rejected.
+    params = {
+        "type": "object",
+        "propertyNames": {"format": "date"},
+        "additionalProperties": {"type": "string"},
+    }
+    # Compiles (bare-safe format).
+    assert isinstance(_gemma_compile(params), xgr.CompiledGrammar)
+    # A date-shaped key is accepted.
+    good = '<|tool_call>call:f{2020-01-01:<|"|>v<|"|>}<tool_call|>'
+    m = _gemma_matcher_params(params)
+    assert _accept_ids(m, _gemma_encode(good))
+    assert m.is_completed()
+    # A non-date key is rejected (the key format is enforced).
+    m2 = _gemma_matcher_params(params)
+    assert not _accept_ids(m2, _gemma_encode("<|tool_call>call:f{abc:"))
+
+
+def test_gemma_4_property_names_format_with_colon_rejected() -> None:
+    # A propertyNames `format` whose regex needs a byte forbidden in a bare key
+    # (date-time / time contain `:`) fails CLOSED at compile.
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "propertyNames": {"format": "date-time"},
+                "additionalProperties": {"type": "string"},
+            }
+        )
+
+
+def test_gemma_4_property_names_const_bare_representability() -> None:
+    # A propertyNames const/enum key carrying a bare-key-forbidden byte (`:`) is
+    # rejected; a bare-safe const key compiles.
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "propertyNames": {"const": "a:b"},
+                "additionalProperties": {"type": "string"},
+            }
+        )
+    assert isinstance(
+        _gemma_compile(
+            {
+                "type": "object",
+                "propertyNames": {"const": "abc"},
+                "additionalProperties": {"type": "string"},
+            }
+        ),
+        xgr.CompiledGrammar,
+    )
+
+
+def test_gemma_4_property_names_true_compiles() -> None:
+    # propertyNames: true is a no-op key constraint (accept, no bare-key
+    # narrowing) rather than a hard reject; it compiles on the gemma path.
+    compiled = _gemma_compile(
+        {
+            "type": "object",
+            "propertyNames": True,
+            "additionalProperties": {"type": "string"},
+        }
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_gemma_4_property_names_false_rejected() -> None:
+    # propertyNames: false remains rejected (out of scope for the no-op path).
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "propertyNames": False,
+                "additionalProperties": {"type": "string"},
+            }
+        )
+
+
+def test_gemma_4_pattern_properties_full_match() -> None:
+    # gemma patternProperties anchors to a FULL match (no unanchored bare*
+    # padding), so a key with a leading/trailing byte outside the pattern is
+    # rejected; an exact match is accepted.
+    params = {
+        "type": "object",
+        "patternProperties": {"[a-z]+": {"type": "string"}},
+    }
+    assert isinstance(_gemma_compile(params), xgr.CompiledGrammar)
+    good = '<|tool_call>call:f{abc:<|"|>v<|"|>}<tool_call|>'
+    m = _gemma_matcher_params(params)
+    assert _accept_ids(m, _gemma_encode(good))
+    assert m.is_completed()
+    # Leading digit: full match now rejects `9abc`.
+    m2 = _gemma_matcher_params(params)
+    assert not _accept_ids(m2, _gemma_encode("<|tool_call>call:f{9abc:"))
+    # Trailing digit: full match now rejects `a9`.
+    m3 = _gemma_matcher_params(params)
+    assert not _accept_ids(m3, _gemma_encode("<|tool_call>call:f{a9:"))
+
+
+# A single-char printable vocab so base-path JSON strings can be fed
+# byte-by-byte through the matcher.
+_JSON_VOCAB = [chr(c) for c in range(32, 127)] + ["<eos>"]
+_JSON_ID = {tok: i for i, tok in enumerate(_JSON_VOCAB)}
+
+
+def _json_compiler() -> xgr.GrammarCompiler:
+    info = xgr.TokenizerInfo(
+        _JSON_VOCAB,
+        vocab_type=xgr.VocabType.RAW,
+        stop_token_ids=[_JSON_ID["<eos>"]],
+    )
+    return xgr.GrammarCompiler(info)
+
+
+def _json_encode(s: str) -> list[int]:
+    return [_JSON_ID[ch] for ch in s]
+
+
+def _json_matcher(schema: str) -> xgr.GrammarMatcher:
+    return xgr.GrammarMatcher(_json_compiler().compile_json_schema(schema))
+
+
+def test_refactor_base_string_pattern_accept_reject() -> None:
+    # Base GenerateString `pattern` branch (shared ladder). The string is JSON
+    # quoted; the body is constrained to the pattern alphabet.
+    schema = '{"type": "string", "pattern": "[ab]+"}'
+    assert _accept_ids(_json_matcher(schema), _json_encode('"abba"'))
+    # A byte outside the pattern alphabet is rejected inside the body.
+    assert not _accept_ids(_json_matcher(schema), _json_encode('"abc'))
+
+
+def test_refactor_base_string_length_accept_reject() -> None:
+    # Base GenerateString length branch (shared GenerateStringLengthBody).
+    schema = '{"type": "string", "minLength": 2, "maxLength": 3}'
+    assert _accept_ids(_json_matcher(schema), _json_encode('"ab"'))
+    # Below minLength: a 1-char string cannot close.
+    assert not _accept_ids(_json_matcher(schema), _json_encode('"a"'))
+
+
+def test_refactor_base_const_enum_object_accept_reject() -> None:
+    # Base GenerateConst/GenerateEnum object literal (unchanged serialize()-based
+    # path). Exact serialized object is accepted; a wrong value is rejected.
+    const_schema = '{"const": {"a": "b"}}'
+    assert _accept_ids(_json_matcher(const_schema), _json_encode('{"a":"b"}'))
+    assert not _accept_ids(
+        _json_matcher(const_schema), _json_encode('{"a":"c"')
+    )
+
+    enum_schema = '{"enum": [{"a": "b"}, {"c": "d"}]}'
+    assert _accept_ids(_json_matcher(enum_schema), _json_encode('{"c":"d"}'))
+    assert not _accept_ids(_json_matcher(enum_schema), _json_encode('{"a":"z"'))
+
+
+def test_refactor_gemma_string_pattern_accept_reject() -> None:
+    # Gemma GenerateString `pattern` branch: the <|"|> token delimiters wrap a
+    # pattern-constrained byte body.
+    params = {
+        "type": "object",
+        "properties": {"x": {"type": "string", "pattern": "[ab]+"}},
+        "required": ["x"],
+    }
+    good = '<|tool_call>call:f{x:<|"|>abba<|"|>}<tool_call|>'
+    assert _accept_ids(_gemma_matcher_params(params), _gemma_encode(good))
+    # A byte outside the pattern alphabet is rejected inside the body.
+    bad = '<|tool_call>call:f{x:<|"|>abc'
+    assert not _accept_ids(_gemma_matcher_params(params), _gemma_encode(bad))
+
+
+def test_refactor_gemma_string_length_accept_reject() -> None:
+    # Gemma GenerateString length branch via the shared GenerateStringLengthBody
+    # override ({min}-prefix workaround) wrapped in <|"|> tokens.
+    params = {
+        "type": "object",
+        "properties": {"x": {"type": "string", "minLength": 2, "maxLength": 3}},
+        "required": ["x"],
+    }
+    good = '<|tool_call>call:f{x:<|"|>ab<|"|>}<tool_call|>'
+    assert _accept_ids(_gemma_matcher_params(params), _gemma_encode(good))
+    # Below minLength: a 1-char value cannot close.
+    bad = '<|tool_call>call:f{x:<|"|>a<|"|>'
+    assert not _accept_ids(_gemma_matcher_params(params), _gemma_encode(bad))
+
+
+def test_refactor_gemma_const_enum_object_accept_reject() -> None:
+    # Gemma GenerateConst/GenerateEnum object literal now routes through the
+    # shared RenderJSONValueLiteral (bare keys, <|"|>-wrapped string values).
+    const_params = {
+        "type": "object",
+        "properties": {"x": {"const": {"a": "b"}}},
+        "required": ["x"],
+    }
+    good = '<|tool_call>call:f{x:{a:<|"|>b<|"|>}}<tool_call|>'
+    assert _accept_ids(_gemma_matcher_params(const_params), _gemma_encode(good))
+    # Wrong nested string value is rejected.
+    bad = '<|tool_call>call:f{x:{a:<|"|>c<|"|>'
+    assert not _accept_ids(
+        _gemma_matcher_params(const_params), _gemma_encode(bad)
+    )
+
+    enum_params = {
+        "type": "object",
+        "properties": {"x": {"enum": [{"a": "b"}, {"c": "d"}]}},
+        "required": ["x"],
+    }
+    good_enum = '<|tool_call>call:f{x:{c:<|"|>d<|"|>}}<tool_call|>'
+    assert _accept_ids(
+        _gemma_matcher_params(enum_params), _gemma_encode(good_enum)
+    )

@@ -390,14 +390,22 @@ class XgrammarBackend(GrammarBackend[Any]):
 
     name = "xgrammar"
 
-    def __init__(self, compiler: Any) -> None:
+    def __init__(
+        self,
+        compiler: Any,
+        # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
+        reject_unsupported: bool = False,
+    ) -> None:
         self._compiler = compiler
+        self._reject_unsupported = reject_unsupported
 
     @classmethod
     def from_tokenizer_delegate(
         cls,
         tokenizer_delegate: PreTrainedTokenizerBase,
         vocab_size: int,
+        # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
+        reject_unsupported: bool = False,
     ) -> XgrammarBackend:
         """Build the xgrammar tokenizer info and compiler from a delegate."""
         if isinstance(tokenizer_delegate, PreTrainedTokenizerFast):
@@ -420,7 +428,8 @@ class XgrammarBackend(GrammarBackend[Any]):
         return cls(
             xgrammar.GrammarCompiler(
                 tokenizer_info, max_memory_bytes=_xgrammar_cache_limit_bytes()
-            )
+            ),
+            reject_unsupported=reject_unsupported,
         )
 
     @_log_if_slow
@@ -435,7 +444,12 @@ class XgrammarBackend(GrammarBackend[Any]):
         # enforces the schema structure without blocking valid JSON. NOTE:
         # any_whitespace=False is NOT "compact" — it mandates a space after
         # ':'/',' and would reject compact output. This matches vLLM's default.
-        return self._compiler.compile_json_schema(schema, any_whitespace=True)
+        return self._compiler.compile_json_schema(
+            schema,
+            any_whitespace=True,
+            # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
+            reject_unsupported=self._reject_unsupported,
+        )
 
     @_log_if_slow
     def create_matcher(self, grammar: Any) -> GrammarMatcher:
@@ -529,7 +543,11 @@ def build_xgrammar_tool_grammar(
         # Accept a complete tool call or a schema-conforming JSON response, with
         # an optional reasoning prefix allowed before EITHER. Factor the prefix
         # out of the alternation -- Sequence([prefix, Or([tool_section, json])]).
-        json_branch = JSONSchemaFormat(json_schema=response_format_schema)
+        json_branch = JSONSchemaFormat(
+            json_schema=response_format_schema,
+            # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
+            reject_unsupported=(model_format == "gemma_4"),
+        )
         fmt = tag.format
         if isinstance(fmt, SequenceFormat):
             *prefix_elements, tool_section = fmt.elements
@@ -550,6 +568,8 @@ def make_grammar_backend(
     name: str,
     tokenizer_delegate: PreTrainedTokenizerBase,
     vocab_size: int,
+    # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
+    reject_unsupported: bool = False,
 ) -> GrammarBackend[Any]:
     """Construct the structured-output backend selected by ``name``.
 
@@ -557,6 +577,8 @@ def make_grammar_backend(
         name: Backend identifier (``"llguidance"`` or ``"xgrammar"``).
         tokenizer_delegate: HuggingFace/TikToken tokenizer to build vocab info.
         vocab_size: Vocabulary size from the tokenizer.
+        reject_unsupported: Whether the xgrammar backend rejects unenforceable
+            schema keywords instead of falling back to unconstrained decoding.
 
     Returns:
         A configured :class:`GrammarBackend`.
@@ -570,7 +592,9 @@ def make_grammar_backend(
         )
     if name == "xgrammar":
         return XgrammarBackend.from_tokenizer_delegate(
-            tokenizer_delegate, vocab_size
+            tokenizer_delegate,
+            vocab_size,
+            reject_unsupported=reject_unsupported,
         )
     raise ValueError(
         f"unknown structured output backend: {name!r} "
@@ -582,6 +606,8 @@ def make_grammar_validator(
     backend_name: str | None,
     tokenizer_delegate: PreTrainedTokenizerBase,
     vocab_size: int,
+    # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
+    reject_unsupported: bool = False,
 ) -> GrammarValidator:
     """Build the admission-time :class:`GrammarValidator` for a backend.
 
@@ -606,4 +632,5 @@ def make_grammar_validator(
         backend_name or DEFAULT_STRUCTURED_OUTPUT_BACKEND,
         tokenizer_delegate,
         vocab_size,
+        reject_unsupported=reject_unsupported,
     )
