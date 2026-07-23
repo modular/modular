@@ -33,6 +33,17 @@ def : JoinedOrSeparate<["-"], "O">, Group<CompilationOptionGroup>,
 def : Flag<["--", "-"], "no-optimization">, Group<CompilationOptionGroup>,
   Index<2>, Alias<optimization_level>, AliasArgs<["0"]>;
 
+defm fp_mode : CommandOption<["--", "-"], "fp-mode",
+  CompilationOptionGroup, Index<17>, MetaVarName<"MODE">,
+  HelpText<
+    "Controls floating-point behavior as a comma-separated list of "
+    "`feature=value` items (may be given more than once). The only feature is "
+    "`contract`, one of `fast` (default) or `off`. `contract=fast` is like "
+    "Clang's `-ffp-contract=fast`: it fuses `a + b*c` into an FMA across "
+    "statements and breaking strict IEEE compliance. "
+    "`contract=off` disables contraction."
+  >>;
+
 def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<3>,
   MetaVarName<"PATH">,
   HelpText<"Appends the given path to the list of directories to search for "

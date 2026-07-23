@@ -16,12 +16,61 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/TargetParser/Host.h"
 #include <cstddef>
 
 namespace M::KGEN {
+
+/// Floating-point mode (`-fp-mode`). `contract` (FMA fusion of `a + b*c`) is on
+/// by default.
+struct FpMode {
+  bool contract = true;
+};
+
+enum class FpModeItemStatus { Ok, UnknownFeature, InvalidValue };
+
+/// Parses one `-fp-mode` item of the form `contract=fast|off` into `mode`.
+inline FpModeItemStatus parseFpModeItem(llvm::StringRef item, FpMode &mode) {
+  auto [feature, value] = item.split('=');
+  if (feature != "contract")
+    return FpModeItemStatus::UnknownFeature;
+  if (value == "fast" || value == "off") {
+    mode.contract = value == "fast";
+    return FpModeItemStatus::Ok;
+  }
+  return FpModeItemStatus::InvalidValue;
+}
+
+/// Splits the fp-mode items (e.g. `contract=off`) out of the comma-separated
+/// emission-option list `options`, applying them to `mode`. Non-fp-mode items
+/// are rejoined into `rest`. Returns the offending item if an fp-mode feature
+/// carries an invalid value; nullopt otherwise.
+inline std::optional<std::string>
+splitFpModeEmissionOptions(llvm::StringRef options, FpMode &mode,
+                           std::string &rest) {
+  llvm::SmallVector<llvm::StringRef> items;
+  options.split(items, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+  llvm::SmallVector<llvm::StringRef> kept;
+  for (llvm::StringRef item : items) {
+    FpMode trial = mode;
+    switch (parseFpModeItem(item, trial)) {
+    case FpModeItemStatus::Ok:
+      mode = trial;
+      break;
+    case FpModeItemStatus::UnknownFeature:
+      kept.push_back(item);
+      break;
+    case FpModeItemStatus::InvalidValue:
+      return item.str();
+    }
+  }
+  rest = llvm::join(kept, ",");
+  return std::nullopt;
+}
+
 /// This class provides a set of options used to control the compilation of
 /// KGEN modules.
 class CompilationOptions {
@@ -99,6 +148,7 @@ public:
   void setSaveTemps(std::string prefix) { saveTempsPrefix = prefix; }
 
   unsigned optimizationLevel = 3;
+  FpMode fpMode;
   DebugInfoLevel debugLevel = kNoDebug;
   std::optional<DebugAtLevel> debugAtLevel;
   Sanitizers sanitizers = Sanitizers();

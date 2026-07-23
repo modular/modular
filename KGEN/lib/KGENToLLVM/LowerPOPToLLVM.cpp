@@ -67,7 +67,7 @@ struct ConvertPOPNeg : public ConvertPOPToLLVMPattern<NegOp> {
     KGENDType dtype = *op.getType().getResolvedDType();
     if (!dtype.isInt() && !dtype.isIndex() && !dtype.isUIndex()) {
       rewriter.replaceOpWithNewOp<LLVM::FNegOp>(op, adaptor.getOperand(),
-                                                LLVM_FASTMATH_FLAGS);
+                                                fastmathFlagsOrDefault(op));
       return success();
     }
 
@@ -374,7 +374,7 @@ public:
       }
       rewriter.replaceOpWithNewOp<LLVM::FCmpOp>(
           op, i1Type, getFCmpPredicate(op.getPred()), adaptor.getLhs(),
-          adaptor.getRhs(), LLVM_FASTMATH_FLAGS);
+          adaptor.getRhs(), fastmathFlagsOrDefault(op));
     }
     return success();
   }
@@ -529,7 +529,7 @@ struct ConvertPOPSIMDSelect : public ConvertPOPToLLVMPattern<SIMDSelectOp> {
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<LLVM::SelectOp>(
         op, adaptor.getCondition(), adaptor.getTrueValue(),
-        adaptor.getFalseValue(), LLVM_FASTMATH_FLAGS);
+        adaptor.getFalseValue(), fastmathFlagsOrDefault(op));
     return success();
   }
 };
@@ -716,7 +716,7 @@ struct ConvertPOPSelect : public ConvertPOPToLLVMPattern<SelectOp> {
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<LLVM::SelectOp>(
         op, adaptor.getCondition(), adaptor.getTrueValue(),
-        adaptor.getFalseValue(), LLVM_FASTMATH_FLAGS);
+        adaptor.getFalseValue(), fastmathFlagsOrDefault(op));
     return success();
   }
 };

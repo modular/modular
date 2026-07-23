@@ -114,7 +114,7 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
           optionIDs.elaborationErrorLimit,
           optionIDs.elaborationErrorIncludePrelude,
           optionIDs.elaborationErrorVerbose, optionIDs.elaborationMaxDepth,
-          optionIDs.ignoreIncompatiblePrecompiledFileErrors))
+          optionIDs.ignoreIncompatiblePrecompiledFileErrors, optionIDs.fpMode))
     return err.takeError();
 
   // Parse target options.
@@ -163,7 +163,8 @@ ErrorOrSuccess M::parseCompilationOptions(
     llvm::opt::OptSpecifier elaborationErrorIncludePreludeId,
     llvm::opt::OptSpecifier elaborationErrorVerboseId,
     llvm::opt::OptSpecifier elaborationMaxDepthId,
-    llvm::opt::OptSpecifier ignoreIncompatiblePrecompiledFileErrorsId) {
+    llvm::opt::OptSpecifier ignoreIncompatiblePrecompiledFileErrorsId,
+    llvm::opt::OptSpecifier fpModeId) {
 
   // Process the sanitizers.
   if (sanitizeId.isValid()) {
@@ -243,6 +244,29 @@ ErrorOrSuccess M::parseCompilationOptions(
       return Error(llvm::formatv("invalid optimization level '{0}', expected "
                                  "number from 0-3 inclusive",
                                  levelStr));
+    }
+  }
+
+  // Set up the floating-point mode from a list of `feature=on|off` items.
+  if (fpModeId.isValid()) {
+    for (StringRef value : args.getAllArgValues(fpModeId)) {
+      SmallVector<StringRef> items;
+      value.split(items, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+      for (StringRef item : items) {
+        switch (parseFpModeItem(item, compilationOptions.fpMode)) {
+        case FpModeItemStatus::Ok:
+          break;
+        case FpModeItemStatus::UnknownFeature:
+          return Error(
+              llvm::formatv("invalid fp-mode '{0}', the only supported "
+                            "feature is 'contract'",
+                            item));
+        case FpModeItemStatus::InvalidValue:
+          return Error(llvm::formatv("invalid fp-mode '{0}', expected "
+                                     "'contract=fast' or 'contract=off'",
+                                     item));
+        }
+      }
     }
   }
 

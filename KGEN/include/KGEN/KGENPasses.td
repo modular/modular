@@ -350,6 +350,27 @@ def LowerPOPToLLVM : Pass<"lower-pop-to-llvm"> {
 }
 
 //===----------------------------------------------------------------------===//
+// SetFastMathFlags
+//===----------------------------------------------------------------------===//
+
+def SetFastMathFlags : Pass<"set-fastmath"> {
+  let summary = "Apply the `-fp-mode` fast-math policy to `pop.mul`/`add`/`sub`.";
+  let description = [{
+    Implements the `-fp-mode` compiler option. The FP arithmetic ops
+    (`pop.mul`/`add`/`sub`) enable FP contraction by default (their `contract`
+    flag lets `a + b*c` fuse into an FMA). When `contract` is false the flag is
+    cleared so no value-changing contraction happens.
+  }];
+
+  let options = [
+    Option<"contract", "contract", "bool", "true",
+           "Keep FP contraction (fuse `a + b*c` into an FMA).">,
+  ];
+
+  let dependentDialects = ["POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // LowerGlobalPOPToLLVM
 //===----------------------------------------------------------------------===//
 

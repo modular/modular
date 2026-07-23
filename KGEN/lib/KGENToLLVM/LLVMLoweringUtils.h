@@ -123,24 +123,11 @@ private:
 // LLVMBuilder
 //===----------------------------------------------------------------------===//
 
-/// These are the default LLVM fastmath flags that are always set.
-static constexpr mlir::LLVM::FastmathFlags LLVM_FASTMATH_FLAGS =
-    mlir::LLVM::FastmathFlags::contract;
-
-/// Return true if call is allowed to have fastmath flags. Specifically, expect
-/// that result value is either scalar or vector FP or homogeneous aggregate
-/// with scalar or vector FP.
-bool canCallHaveFastmathFlags(mlir::LLVM::CallOp call);
-
-/// Create an `LLVM::CallOp` with the default fastmath flags if needed
+/// Create an `LLVM::CallOp`. Fast-math flags are governed by the `-fp-mode`
+/// pass on the POP ops, so none are attached here.
 template <typename... Args>
 auto createLLVMCall(OpBuilder &b, Location loc, Args &&...args) {
-  auto call = mlir::LLVM::CallOp::create(b, loc, std::forward<Args>(args)...);
-  if (canCallHaveFastmathFlags(call)) {
-    // Attach the default fastmath flags.
-    call.setFastmathFlags(LLVM_FASTMATH_FLAGS);
-  }
-  return call;
+  return mlir::LLVM::CallOp::create(b, loc, std::forward<Args>(args)...);
 }
 
 /// Attach `target-cpu` and `target-features` to the LLVM function attributes,
@@ -465,7 +452,7 @@ static inline mlir::LLVM::FastmathFlags fastmathFlagsOrDefault(OpT &op) {
   if constexpr (has_getFastmathFlags<OpT>::value)
     return static_cast<mlir::LLVM::FastmathFlags>(op.getFastmathFlags());
   else
-    return LLVM_FASTMATH_FLAGS;
+    return mlir::LLVM::FastmathFlags::none;
 }
 
 /// This patterns converts a scalar POP dialect operation to either an integer
@@ -490,8 +477,7 @@ struct OneToOneFloatOrIntConversion : public ConvertPOPToLLVMPattern<Op> {
         rewriter.replaceOpWithNewOp<UIntOp>(op, type, adaptor.getLhs(),
                                             adaptor.getRhs());
     } else {
-      // Take flags from a `getFastmathFlags()` accessor if present.
-      // Otherwise, default to `contract`.
+      // Take flags from a `getFastmathFlags()` accessor if present, else none.
       mlir::LLVM::FastmathFlags fastmathFlags = fastmathFlagsOrDefault(op);
       rewriter.replaceOpWithNewOp<FloatOp>(op, type, adaptor.getLhs(),
                                            adaptor.getRhs(), fastmathFlags);
