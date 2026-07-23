@@ -158,33 +158,105 @@ def make_repeat_samples(
     ]
 
 
+def select_rows(
+    dataset: list[dict[str, Any]],
+    sample_size: int | None,
+    row_ids: str | None,
+) -> list[tuple[int, dict[str, Any]]]:
+    """Selects which rows of ``dataset`` to evaluate, keeping original indices.
+
+    Pass at most one of ``sample_size`` (an evenly-strided subset) or
+    ``row_ids`` (explicit comma-separated indices into the full dataset,
+    order and duplicates preserved) — passing both is an error. Neither set
+    returns the full dataset. Every row comes back as
+    ``(original_index, item)`` so it stays traceable to the same dataset row
+    regardless of which selection switch was used — e.g. to re-run exactly
+    the rows that looked wrong last time via ``row_ids``.
+
+    Raises:
+        ValueError: ``sample_size`` and ``row_ids`` are both set, or a
+            ``row_ids`` index is out of range.
+    """
+    if sample_size and row_ids:
+        raise ValueError(
+            "sample_size and row_ids are mutually exclusive — set only one."
+        )
+    if row_ids:
+        ids = [int(x) for x in row_ids.split(",") if x.strip()]
+        bad = [i for i in ids if not (0 <= i < len(dataset))]
+        if bad:
+            raise ValueError(
+                f"row_ids {bad} out of range for dataset of size {len(dataset)}"
+            )
+        return [(i, dataset[i]) for i in ids]
+    if sample_size:
+        step = max(1, len(dataset) // sample_size)
+        return list(enumerate(dataset))[::step][:sample_size]
+    return list(enumerate(dataset))
+
+
+def expand_repeats(
+    indexed_dataset: list[tuple[int, dict[str, Any]]], repeats: int
+) -> list[tuple[int, int, dict[str, Any]]]:
+    """Expands ``(index, item)`` pairs into ``(repeat_index, index, item)``.
+
+    Like :func:`make_repeat_samples`, but for a dataset already narrowed by
+    :func:`select_rows`, so ``index`` stays the original full-dataset index
+    instead of a position in the narrowed subset.
+    """
+    return [
+        (rep, idx, item)
+        for rep in range(repeats)
+        for idx, item in indexed_dataset
+    ]
+
+
 def run_parallel(
     items: list[Any],
     fn: Callable[[Any], dict[str, Any]],
     on_error: Callable[[Any, Exception], dict[str, Any]],
     workers: int,
     desc: str,
+    out_dir: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Runs ``fn`` over ``items`` on a thread pool with a tqdm progress bar.
 
     On error, ``on_error(item, exc)`` builds a row that is RECORDED (never
     dropped) so dropping the hardest items can't inflate accuracy.
 
+    When ``out_dir`` is set, each row is written to ``results.jsonl`` and
+    flushed as soon as its future resolves, so a killed/crashed run still
+    leaves every completed sample on disk rather than losing everything
+    because the file would otherwise only be written after the slowest
+    request finishes.
+
     Returns:
         A ``(results, errors)`` tuple.
     """
     results: list[dict[str, Any]] = []
     errors = 0
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = {ex.submit(fn, it): it for it in items}
-        for fut in tqdm(as_completed(futures), total=len(items), desc=desc):
-            it = futures[fut]
-            try:
-                results.append(fut.result())
-            except Exception as e:
-                errors += 1
-                print(f"Error: {e}")
-                results.append(on_error(it, e))
+    out_f = None
+    if out_dir is not None:
+        os.makedirs(out_dir, exist_ok=True)
+        out_f = open(os.path.join(out_dir, "results.jsonl"), "w")
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            futures = {ex.submit(fn, it): it for it in items}
+            for fut in tqdm(as_completed(futures), total=len(items), desc=desc):
+                it = futures[fut]
+                try:
+                    r = fut.result()
+                except Exception as e:
+                    errors += 1
+                    print(f"Error: {e}")
+                    r = on_error(it, e)
+                results.append(r)
+                if out_f is not None:
+                    out_f.write(json.dumps(r) + "\n")
+                    out_f.flush()
+    finally:
+        if out_f is not None:
+            out_f.close()
     return results, errors
 
 

@@ -31,6 +31,15 @@ Run locally against a server on ``localhost:8000``::
     ./bazelw run //max/tests/integration/accuracy/model_evals:aa_lcr_eval -- \\
         --base-url http://localhost:8000 --model MiniMaxAI/MiniMax-M3-MXFP8 \\
         --sample-size 2 --out-dir /tmp/aa-lcr
+
+Results stream to ``<out-dir>/results.jsonl`` as each request completes, so a
+killed/crashed run keeps everything already finished. To debug specific
+questions (e.g. re-run exactly the ones that errored or looked wrong last
+time), pass ``--row-ids`` instead of ``--sample-size``::
+
+    ./bazelw run //max/tests/integration/accuracy/model_evals:aa_lcr_eval -- \\
+        --base-url http://localhost:8000 --model MiniMaxAI/MiniMax-M3-MXFP8 \\
+        --row-ids 3,17,42 --out-dir /tmp/aa-lcr-debug
 """
 
 from __future__ import annotations
@@ -46,12 +55,12 @@ from eval_common import (
     GenParams,
     build_chat_kwargs,
     exact_match_score,
+    expand_repeats,
     make_client,
-    make_repeat_samples,
     run_parallel,
+    select_rows,
     self_judge,
     strip_think,
-    subsample,
     write_outputs,
 )
 from huggingface_hub import hf_hub_download
@@ -211,25 +220,28 @@ def infer(
 
 def run_eval(
     client: ChatClient,
-    dataset: list[dict[str, Any]],
+    indexed_dataset: list[tuple[int, dict[str, Any]]],
     model: str,
     repeats: int,
     workers: int,
     params: GenParams,
     system_prompt: str,
     doc_text: dict[tuple[str, str], str],
+    out_dir: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Runs AA-LCR over ``dataset`` with ``repeats`` and returns results + score.
+    """Runs AA-LCR over ``indexed_dataset`` with ``repeats``.
 
     A failed/timed-out request is recorded as an incorrect row, never dropped.
+    When ``out_dir`` is set, results stream to ``results.jsonl`` as they
+    complete, so a crash mid-run doesn't lose already-finished samples.
 
     Returns:
         A ``(results, score)`` tuple.
     """
-    samples = make_repeat_samples(dataset, repeats)
+    samples = expand_repeats(indexed_dataset, repeats)
     print(
-        f"AA-LCR: evaluating {len(dataset)} questions x {repeats} repeats "
-        f"= {len(samples)} total samples (self-judge)"
+        f"AA-LCR: evaluating {len(indexed_dataset)} questions x {repeats} "
+        f"repeats = {len(samples)} total samples (self-judge)"
     )
 
     def fn(item: tuple[int, int, dict[str, Any]]) -> dict[str, Any]:
@@ -249,7 +261,9 @@ def run_eval(
             "correct": False,
         }
 
-    results, errors = run_parallel(samples, fn, on_error, workers, "AA-LCR")
+    results, errors = run_parallel(
+        samples, fn, on_error, workers, "AA-LCR", out_dir=out_dir
+    )
     return results, exact_match_score(results, len(samples), errors)
 
 
@@ -264,7 +278,16 @@ def run_eval(
     "--sample-size",
     type=int,
     default=None,
-    help="Max questions (evenly sampled). Empty = full dataset. Applied before repeats.",
+    help="Max questions (evenly sampled). Empty = full dataset. Applied "
+    "before repeats. Mutually exclusive with --row-ids.",
+)
+@click.option(
+    "--row-ids",
+    default=None,
+    help="Explicit comma-separated dataset row indices to evaluate, e.g. "
+    "'3,17,42' (indices into the full dataset, order/duplicates preserved). "
+    "Mutually exclusive with --sample-size — use this to re-run exactly the "
+    "questions that errored or looked wrong last time.",
 )
 @click.option("--repeats", type=int, default=5, help="Repeats per question.")
 @click.option(
@@ -295,6 +318,7 @@ def main(
     base_url: str,
     model: str,
     sample_size: int | None,
+    row_ids: str | None,
     repeats: int,
     seed: int | None,
     workers: int,
@@ -308,22 +332,24 @@ def main(
     """Runs AA-LCR against a running OpenAI-compatible server and scores it."""
     client = make_client(base_url)
     doc_text = build_doc_index(download_context_zip())
-    dataset = subsample(
+    indexed_dataset = select_rows(
         list(load_dataset("ArtificialAnalysis/AA-LCR", split="test")),
         sample_size,
+        row_ids,
     )
     params = GenParams(
         max_tokens=max_tokens, temperature=temperature, top_p=top_p, seed=seed
     )
     results, summary = run_eval(
         client,
-        dataset,
+        indexed_dataset,
         model,
         repeats,
         workers,
         params,
         system_prompt,
         doc_text,
+        out_dir=out_dir,
     )
     write_outputs(out_dir, results, summary, metric_prefix, label="AA-LCR")
 
