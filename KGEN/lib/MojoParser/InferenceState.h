@@ -169,7 +169,8 @@ public:
 
   /// Verify the body constraints declared on the signature against the
   /// current parameter bindings.
-  LogicalResult checkBodyConstraints();
+  LogicalResult
+  checkBodyConstraints(ArrayRef<ConstraintAttr> extraConstraints = {});
 
   /// Unprovable constraints from body constraints. These are considered "soft"
   /// errors that won't fail inference by default. Users of InferenceState can

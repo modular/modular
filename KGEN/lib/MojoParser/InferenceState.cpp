@@ -147,9 +147,20 @@ private:
 };
 } // namespace
 
-LogicalResult InferenceState::checkBodyConstraints() {
+LogicalResult InferenceState::checkBodyConstraints(
+    ArrayRef<ConstraintAttr> extraConstraints) {
+  // Check the extra constraints first.
+  if (LIT::canDischargeConstraints(declScope, declaredParamPogs,
+                                   extraConstraints,
+                                   /*origConstraints=*/{}, diag.getDiag(),
+                                   &bodyUnprovableConstraints, &evaluator)
+          .isFalse())
+    return failure();
+
   ArrayRef<ConstraintAttr> bodyConstraints =
       declaredParamPogs.getBodyConstraints();
+  dischargedBodyConstraints.resize(bodyConstraints.size());
+
   if (bodyConstraints.empty())
     return success();
 
@@ -160,7 +171,6 @@ LogicalResult InferenceState::checkBodyConstraints() {
   SmallVector<size_t> concreteConstraintIndices;
   concreteConstraints.reserve(bodyConstraints.size());
   concreteConstraintIndices.reserve(bodyConstraints.size());
-  dischargedBodyConstraints.resize(bodyConstraints.size());
   for (auto [idx, constraint] : llvm::enumerate(bodyConstraints)) {
     if (concreteness.isConcrete(constraint.getProposition())) {
       concreteConstraints.push_back(constraint);

@@ -115,7 +115,8 @@ ParamBindings::ParamBindings(ASTDecl &declScope, const ExprNode *expr)
 /// because we have
 void ParamBindings::operator=(ParamBindings &&other) {
   parameters = std::move(other.parameters);
-  ctadPogs = other.ctadPogs;
+  additionalConstraints = std::move(other.additionalConstraints);
+  ctadPogs = std::move(other.ctadPogs);
   numKwOnlyCtadParams = other.numKwOnlyCtadParams;
   numPosCtadParams = other.numPosCtadParams;
   bindingKind = other.bindingKind;
@@ -188,7 +189,6 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
 
   ArrayRef<TypedAttr> paramValues = type.getParamBindings();
   if (!paramValues.empty()) {
-    type = isa<ParamType>(type) ? ASTType(type.extractMetaType()) : type;
     ArrayRef<PogMetadataAttr> pogs =
         type.getWithoutParameters(declScope.getShared())
             .getSignature()
@@ -200,7 +200,8 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
     // here to make sure we can verify the pog list correctly.
     for (auto [value, pog] : llvm::zip(paramValues, pogs)) {
       if (auto idxRef = dyn_cast<ParamIndexRefAttr>(value);
-          idxRef && idxRef.getDepth() == 0 && sugarIsa<GeneratorType>(type)) {
+          idxRef && idxRef.getDepth() == 0 &&
+          sugarIsa<GeneratorType>(type.extractMetaType())) {
         // This is a index ref reference to the generator input, it means it
         // has an unknown value.
         paramBindings.add(expr, UnboundAttr::get(idxRef.getType()),
@@ -210,6 +211,12 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
       }
     }
   }
+
+  // Since we are peeling off a generator type to extract the binding, we need
+  // to propagate the body constraints as well, we don't need to adjust index
+  // offset here since Self parameter are always prepended.
+  if (auto genType = sugarDynCast<GeneratorType>(type.extractMetaType()))
+    paramBindings.additionalConstraints.assign(genType.getBodyConstraints());
 
   return paramBindings;
 }

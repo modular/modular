@@ -130,7 +130,17 @@ private:
   size_t numPosCtadParams = 0;
   size_t numKwOnlyCtadParams = 0;
 
+  /// This is a list of additional constraints that need to be satisfied by the
+  /// bindings, consider:
+  /// ```
+  /// comptime T where condition = MyStruct
+  /// _ = T()
+  /// ```
+  /// In order to emit the call `T()`, we need `condition` to be satisfied.
+  SmallVector<ConstraintAttr> additionalConstraints;
+
   friend class ParamInf;
+  friend class CallParamInf;
   friend TypedAttr getBoundConstAttrForFn(ASTDecl &, const ParamBindings &);
 };
 
