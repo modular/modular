@@ -484,8 +484,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
           ErrorOrSuccess result = clOptions.setDefaultCPU();
           if (result.isError())
             return failure(clOptions.reportError(result.getError()));
-          else
-            return mlir::success();
         }
 
         if (clOptions.targetFeatures == getHostCPUFeatures())
