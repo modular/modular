@@ -1696,6 +1696,39 @@ LogicalResult CallParamInf::inferCTADParams() {
                          selfType, selfConvention);
 }
 
+LogicalResult CallParamInf::inferOptionalLiteralSize() {
+  if (callOperands.values.empty())
+    return success();
+
+  // TODO: we can potentially generalize it to other literals too, for
+  // now just support __list_literal__, as we haven't finalized the
+  // decision on how to expose the feature to the user yet.
+  if (auto literalMarker = callOperands.values.back().keyword;
+      !literalMarker || literalMarker.strref() != "__list_literal__") {
+    return success();
+  }
+
+  for (auto [idx, pog] : llvm::enumerate(declaredParamPogs.getPogs())) {
+    if (pog.getName().strref() == "__literal_size__") {
+      IREmitter emitter(getDeclScope(), ExprContext::EC_ParameterList);
+      SyntheticNode dummyNode(callOperands.getExprLoc());
+      auto size = IntegerAttr::get(IndexType::get(getShared().getContext()),
+                                   callOperands.values.size() - 1);
+      PValue literalSize =
+          emitter
+              .emitInt({ASTExprAnd<AnyValue>(size, &dummyNode)},
+                       ExprContext::EC_ParameterList)
+              .getIfPValue();
+      if (!literalSize)
+        return failure();
+
+      setInferredValue(idx, literalSize);
+      return success();
+    }
+  }
+  return success();
+}
+
 VerifiedParamBindings CallParamInf::inferForCall() {
   isInferForStruct = false;
 
@@ -1704,6 +1737,9 @@ VerifiedParamBindings CallParamInf::inferForCall() {
 
   // First try to infer parameters from the already provided bindings.
   if (failed(inferFromParamList()))
+    return {};
+
+  if (failed(inferOptionalLiteralSize()))
     return {};
 
   // Match up the operands provided by the call to the input arguments.  Keep in
