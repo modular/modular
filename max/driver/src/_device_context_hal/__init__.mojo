@@ -5339,7 +5339,7 @@ struct CompletionFlag(ImplicitlyCopyable):
         )
 
 
-struct DeviceContextList[size: Int](Copyable, ImplicitlyCopyable, Sized):
+struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
     """A fixed-size collection of `DeviceContext` values.
 
     Used by multi-device custom-op `execute` methods to receive one
@@ -5348,15 +5348,23 @@ struct DeviceContextList[size: Int](Copyable, ImplicitlyCopyable, Sized):
     operation.
 
     Parameters:
-        size: The number of `DeviceContext` values in the collection.
+        length: The number of `DeviceContext` values in the collection.
     """
 
-    var device_contexts: InlineArray[DeviceContext, Self.size]
+    @deprecated(
+        "`DeviceContextArray.size` is deprecated, use"
+        " `DeviceContextArray.length`."
+    )
+    comptime size = Self.length
+    """The number of `DeviceContext` values in the collection. Deprecated
+    alias for `length`."""
+
+    var device_contexts: InlineArray[DeviceContext, Self.length]
     """The underlying storage for the per-device contexts."""
 
     @always_inline
     def __init__(
-        out self, device_contexts: InlineArray[DeviceContext, Self.size]
+        out self, device_contexts: InlineArray[DeviceContext, Self.length]
     ):
         """Initialize from an `InlineArray` of `DeviceContext` values.
 
@@ -5374,15 +5382,15 @@ struct DeviceContextList[size: Int](Copyable, ImplicitlyCopyable, Sized):
         """Initialize from a variadic sequence of `DeviceContext` values.
 
         Args:
-            device_contexts: One `DeviceContext` per device, exactly `size` of
-                them.
+            device_contexts: One `DeviceContext` per device, exactly `length`
+                of them.
             __list_literal__: Marker that lets this constructor accept
                 list-literal syntax.
         """
         assert (
-            len(device_contexts) == Self.size
+            len(device_contexts) == Self.length
         ), "mismatch in the number of elements"
-        self.device_contexts = InlineArray[DeviceContext, Self.size](
+        self.device_contexts = InlineArray[DeviceContext, Self.length](
             *device_contexts^, __list_literal__=None
         )
 
@@ -5415,16 +5423,16 @@ struct DeviceContextList[size: Int](Copyable, ImplicitlyCopyable, Sized):
         """Get the number of `DeviceContext` values in the collection.
 
         Returns:
-            The size of the collection as specified by the `size` parameter.
+            The size of the collection as specified by the `length` parameter.
         """
-        return Self.size
+        return Self.length
 
     def filter_gpu_contexts[
         num_gpu_devices: Int
     ](self) raises -> InlineArray[DeviceContext, num_gpu_devices]:
         """Filters CPU contexts out and returns the GPU contexts in order.
 
-        Some kernels receive a `DeviceContextList` that mixes GPU contexts
+        Some kernels receive a `DeviceContextArray` that mixes GPU contexts
         with CPU contexts carrying host-side pointers. Most kernels only
         want the GPU contexts in launch order, packed into a fixed-size
         `InlineArray`.
@@ -5445,7 +5453,7 @@ struct DeviceContextList[size: Int](Copyable, ImplicitlyCopyable, Sized):
         # array to `unsafe_assume_initialized=` would still be UB at the
         # eventual destruction of the returned `InlineArray`.
         var gpu_count = 0
-        for i in range(Self.size):
+        for i in range(Self.length):
             if self[i].api() != "cpu":
                 gpu_count += 1
         if gpu_count != num_gpu_devices:
@@ -5460,13 +5468,21 @@ struct DeviceContextList[size: Int](Copyable, ImplicitlyCopyable, Sized):
             UnsafeMaybeUninit[DeviceContext], num_gpu_devices
         ](uninitialized=True)
         var dev_idx = 0
-        for i in range(Self.size):
+        for i in range(Self.length):
             if self[i].api() != "cpu":
                 staging[dev_idx].init_from(DeviceContext(copy=self[i]))
                 dev_idx += 1
         return InlineArray[DeviceContext, num_gpu_devices](
             unsafe_assume_initialized=staging^
         )
+
+
+@deprecated(use=DeviceContextArray)
+comptime DeviceContextList = DeviceContextArray
+"""Deprecated: A fixed-size collection of `DeviceContext` values.
+
+This struct has been renamed to `DeviceContextArray`. This alias will be
+removed in a future version of Mojo."""
 
 
 struct DeviceMulticastBuffer[dtype: DType]:

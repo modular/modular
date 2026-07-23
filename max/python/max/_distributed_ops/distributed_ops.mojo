@@ -14,7 +14,7 @@
 from std.collections import InlineArray
 from std.memory import OpaquePointer, UnsafePointer
 from std.os import abort
-from std.gpu.host import DeviceContext, DeviceContextList
+from std.gpu.host import DeviceContext, DeviceContextArray
 from std.python import Python, PythonObject
 from std.python._cpython import GILReleased
 from std.python.bindings import PythonModuleBuilder
@@ -116,7 +116,7 @@ def _do_broadcast[
                 OpaquePointer[MutUntrackedOrigin](unsafe_from_address=ctx_addr)
             )
         )
-    var dev_ctxs = DeviceContextList[ngpus](ctx_array^)
+    var dev_ctxs = DeviceContextArray[ngpus](ctx_array^)
 
     @always_inline
     def launch_broadcast[
@@ -141,5 +141,5 @@ def _do_broadcast[
     # launch_broadcast borrows dev_ctxs, which the call below moves.
     with GILReleased(Python()):
         _launch_device_collective[ngpus](
-            launch_broadcast, DeviceContextList[ngpus](copy=dev_ctxs)
+            launch_broadcast, DeviceContextArray[ngpus](copy=dev_ctxs)
         )

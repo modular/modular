@@ -476,6 +476,12 @@ This version is still a work in progress.
   must ensure the pointer addresses at least `length` valid elements. Update
   `Span(ptr=..., length=...)` to `Span(unsafe_ptr=..., length=...)`.
 
+- `DeviceContextList` is renamed to `DeviceContextArray`, and its parameter is
+  renamed from `size` to `length`. The old struct name remains as a
+  deprecated alias, and `DeviceContextArray.size` remains as a deprecated
+  alias for `DeviceContextArray.length`; update any explicit
+  `DeviceContextList[size=N]` to `DeviceContextArray[length=N]`.
+
 - `List.capacity` is now a `capacity()` method instead of a public field. This
   keeps the allocated capacity out of the stable public field surface, since it
   should only change indirectly through operations like `append()`. Replace

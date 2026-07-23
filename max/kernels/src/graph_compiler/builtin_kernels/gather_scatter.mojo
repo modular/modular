@@ -27,7 +27,7 @@ import extensibility
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
 
-from std.gpu.host import DeviceContext, DeviceContextList
+from std.gpu.host import DeviceContext, DeviceContextArray
 from std.gpu.host.info import is_cpu
 from layout import IntTuple, TileTensor, UNKNOWN_VALUE, coord_to_index_list
 from layout.int_tuple import _IntTupleToCoordLike
@@ -1664,7 +1664,7 @@ struct ShardWeights:
             rank=outputs.rank - 1,
             ...,
         ],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) raises:
         shard_and_stack[axis](outputs, inputs, dev_ctxs_input)
 

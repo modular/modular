@@ -13,7 +13,7 @@
 """Helpers for dispatching collective operations across devices."""
 
 from std.collections import InlineArray, Optional
-from std.gpu.host import DeviceContext, DeviceContextList
+from std.gpu.host import DeviceContext, DeviceContextArray
 from std.runtime.asyncrt import TaskGroup, task_id_for_device
 
 
@@ -59,15 +59,15 @@ def _launch_device_collective[
 def _launch_device_collective[
     num_devices: Int,
     F: def[Int]() raises -> None,
-](func: F, var dev_ctxs: DeviceContextList) raises:
+](func: F, var dev_ctxs: DeviceContextArray) raises:
     """Dispatch async tasks to call func[i]() for each device in dev_ctxs.
 
-    `DeviceContextList` overload. Forwards to the `InlineArray` overload
-    by unpacking the list's underlying storage.
+    `DeviceContextArray` overload. Forwards to the `InlineArray` overload
+    by unpacking the array's underlying storage.
     """
 
     comptime assert (
-        dev_ctxs.size == num_devices
+        dev_ctxs.length == num_devices
     ), "expected dev_ctxs to have the same number of elements as num_devices"
 
     _launch_device_collective[num_devices](

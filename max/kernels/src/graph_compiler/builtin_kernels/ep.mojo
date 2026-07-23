@@ -19,7 +19,7 @@ Expert Parallelism (EP) Communication Kernel.
 import extensibility
 from comm.sync import is_p2p_enabled
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextList
+from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
 from std.gpu.host.info import is_gpu
 from std.memory.unsafe_pointer import pointer_to_int
 from layout.tile_tensor import row_major
@@ -1325,7 +1325,7 @@ struct DistributedEPDispatchBlockScaledNV:
         atomic_counters: MutableInputVariadicTensors[
             dtype=DType.int32, rank=1, ...
         ],
-        dev_ctxs: DeviceContextList,
+        dev_ctxs: DeviceContextArray,
     ) capturing raises:
         """Multi-device fused Expert Parallelism NVFP4 dispatch.
 
@@ -1488,7 +1488,7 @@ struct DistributedEPDispatchMXFP4:
         atomic_counters: MutableInputVariadicTensors[
             dtype=DType.int32, rank=1, ...
         ],
-        dev_ctxs: DeviceContextList,
+        dev_ctxs: DeviceContextArray,
     ) capturing raises:
         """Multi-device fused Expert Parallelism MXFP4 dispatch.
 
@@ -1631,7 +1631,7 @@ struct DistributedEPDispatch:
         atomic_counters: MutableInputVariadicTensors[
             dtype=DType.int32, rank=1, ...
         ],
-        dev_ctxs: DeviceContextList,
+        dev_ctxs: DeviceContextArray,
     ) capturing raises:
         """Multi-device fused Expert Parallelism BF16 dispatch.
 
@@ -1759,7 +1759,7 @@ struct DistributedEPDispatchFP8:
         atomic_counters: MutableInputVariadicTensors[
             dtype=DType.int32, rank=1, ...
         ],
-        dev_ctxs: DeviceContextList,
+        dev_ctxs: DeviceContextArray,
     ) capturing raises:
         """Multi-device fused Expert Parallelism FP8 dispatch.
 
@@ -1901,7 +1901,7 @@ struct DistributedEPCombine:
         atomic_counters: MutableInputVariadicTensors[
             dtype=DType.int32, rank=1, ...
         ],
-        dev_ctxs: DeviceContextList,
+        dev_ctxs: DeviceContextArray,
     ) capturing raises:
         """Multi-device fused Expert Parallelism combine with output fusion.
 

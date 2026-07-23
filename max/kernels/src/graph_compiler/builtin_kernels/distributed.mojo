@@ -40,7 +40,7 @@ from comm.broadcast import broadcast
 from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
-from std.gpu.host import DeviceContext, DeviceContextList
+from std.gpu.host import DeviceContext, DeviceContextArray
 from layout.tile_tensor import row_major
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from extensibility import (
@@ -101,7 +101,7 @@ struct DistributedAllReduceSum:
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
         """Distributed allreduce operation implementation for sum reduction.
 
@@ -267,7 +267,7 @@ struct DistributedReduceScatterSum:
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
         """Distributed reduce-scatter operation implementation for sum reduction.
 
@@ -405,7 +405,7 @@ struct DistributedAllGather:
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
         """Distributed allgather operation implementation.
 
@@ -537,7 +537,7 @@ struct DistributedBroadcast:
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
         """Execute distributed broadcast operation.
 
@@ -640,7 +640,7 @@ struct DistributedScatter:
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
         comptime ngpus = signal_buffers.size
         comptime assert (
@@ -732,7 +732,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         epsilons: InputVariadicTensors[dtype=DType.float32, ...],
         weight_offsets: InputVariadicTensors[dtype=dtype, ...],
         scales_ub: InputVariadicTensors[dtype=DType.float32, ...],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
         comptime num_devices = inputs.size
         comptime assert signal_buffers.size == num_devices, (
@@ -868,7 +868,7 @@ struct DistributedReduceScatterRMSNorm:
         gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
         epsilons: InputVariadicTensors[dtype=DType.float32, ...],
         weight_offsets: InputVariadicTensors[dtype=dtype, ...],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
         """Fused reduce-scatter sum + RMSNorm (bf16 in/out, no quantization).
 
@@ -1032,7 +1032,7 @@ struct DistributedMatmulReduceScatterSum:
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
         comptime num_devices = inputs_a.size
         comptime assert (
