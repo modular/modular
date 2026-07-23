@@ -508,7 +508,7 @@ SIMDAttr foldBitwiseSIMDReduceOp(Attribute operand, OpFns &&...ops) {
                                          std::forward<OpFns>(ops)...);
 }
 
-/// Convert a NormalizedCmpPredicate to the full CmpPredicate.
+/// Convert a POC to the full CmpPredicate.
 inline CmpPredicate toCmpPredicate(POC cc) {
   switch (cc) {
   case POC::EQ:
