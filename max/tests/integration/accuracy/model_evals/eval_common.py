@@ -31,7 +31,7 @@ import json
 import os
 import re
 import statistics
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -113,12 +113,14 @@ def strip_think(content: str | None) -> str:
 
 
 def build_chat_kwargs(
-    model: str, messages: list[dict[str, str]], params: GenParams
+    model: str, messages: Sequence[Mapping[str, Any]], params: GenParams
 ) -> dict[str, Any]:
     """Assembles ``chat.completions.create`` kwargs.
 
-    Omits ``top_p`` when ``None`` (judges send no ``top_p``) and ``seed`` when
-    ``None`` (server default).
+    ``messages`` is typed permissively (``Mapping`` values are ``Any``) so both
+    the text evals' plain ``str`` content and the multimodal evals' list-of-parts
+    content type-check through the same helper. Omits ``top_p`` when ``None``
+    (judges send no ``top_p``) and ``seed`` when ``None`` (server default).
     """
     kwargs: dict[str, Any] = {
         "model": model,
