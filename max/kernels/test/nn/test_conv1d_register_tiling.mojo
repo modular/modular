@@ -127,10 +127,10 @@ def test_conv1d_register_tiling() raises:
     var w = wo * stride_w - pad_left
 
     # FRSCf
-    var filter_ptr = filter.ptr + f_tile_offset * R * S * C
+    var filter_ptr = filter._storage + f_tile_offset * R * S * C
     # NHWC
-    var input_ptr = input.ptr + c_tile_offset + C * w
-    var output_ptr = output.ptr + f_tile_offset + F * (wo)
+    var input_ptr = input._storage + c_tile_offset + C * w
+    var output_ptr = output._storage + f_tile_offset + F * (wo)
 
     conv1d_register_tiling(
         output_ptr,

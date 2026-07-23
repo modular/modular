@@ -29,7 +29,7 @@ def test_cumsum_1d():
     var matrix_stack = InlineArray[Float64, 5](uninitialized=True)
     var matrix = TileTensor(matrix_stack, row_major[5]())
 
-    iota(matrix.ptr, 5, 1)
+    iota(matrix._storage, 5, 1)
 
     var cumsum_stack = InlineArray[Float64, 5](uninitialized=True)
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[5]())
@@ -89,7 +89,7 @@ def test_cumsum_1d_exclusive():
     var matrix_stack = InlineArray[Float64, 5](uninitialized=True)
     var matrix = TileTensor(matrix_stack, row_major[5]())
 
-    iota(matrix.ptr, 5, 1)
+    iota(matrix._storage, 5, 1)
 
     var cumsum_stack = InlineArray[Float64, 5](uninitialized=True)
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[5]())
@@ -112,7 +112,7 @@ def test_cumsum_1d_reverse():
     var matrix_stack = InlineArray[Float64, 5](uninitialized=True)
     var matrix = TileTensor(matrix_stack, row_major[5]())
 
-    iota(matrix.ptr, 5, 1)
+    iota(matrix._storage, 5, 1)
 
     var cumsum_stack = InlineArray[Float64, 5](uninitialized=True)
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[5]())
@@ -135,7 +135,7 @@ def test_cumsum_1d_reverse_exclusive():
     var matrix_stack = InlineArray[Float64, 5](uninitialized=True)
     var matrix = TileTensor(matrix_stack, row_major[5]())
 
-    iota(matrix.ptr, 5, 1)
+    iota(matrix._storage, 5, 1)
 
     var cumsum_stack = InlineArray[Float64, 5](uninitialized=True)
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[5]())
@@ -158,7 +158,7 @@ def test_cumsum_2d_axis_0():
     var matrix_stack = InlineArray[Float64, 6](uninitialized=True)
     var matrix = TileTensor(matrix_stack, row_major[2, 3]())
 
-    iota(matrix.ptr, 6, 1)
+    iota(matrix._storage, 6, 1)
 
     var cumsum_stack = InlineArray[Float64, 6](uninitialized=True)
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[2, 3]())
@@ -182,7 +182,7 @@ def test_cumsum_2d_axis_1():
     var matrix_stack = InlineArray[Float64, 6](uninitialized=True)
     var matrix = TileTensor(matrix_stack, row_major[2, 3]())
 
-    iota(matrix.ptr, 6, 1)
+    iota(matrix._storage, 6, 1)
 
     var cumsum_stack = InlineArray[Float64, 6](uninitialized=True)
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[2, 3]())
@@ -206,7 +206,7 @@ def test_cumsum_2d_negative_axis():
     var matrix_stack = InlineArray[Float64, 6](uninitialized=True)
     var matrix = TileTensor(matrix_stack, row_major[2, 3]())
 
-    iota(matrix.ptr, 6, 1)
+    iota(matrix._storage, 6, 1)
 
     var cumsum_stack = InlineArray[Float64, 6](uninitialized=True)
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[2, 3]())

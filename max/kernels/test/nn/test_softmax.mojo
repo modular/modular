@@ -61,7 +61,7 @@ def test_logsoftmax() raises:
                 ).fill(0)
                 logsoftmax[type, simd_width, rank](in_tt, out_tt, rank - 1)
                 # Print as flat 1D
-                var out_flat = TileTensor(out_tt.ptr, row_major[sz]())
+                var out_flat = TileTensor(out_tt._storage, row_major[sz]())
                 for i in range(out_flat.num_elements()):
                     print(out_flat[i])
 

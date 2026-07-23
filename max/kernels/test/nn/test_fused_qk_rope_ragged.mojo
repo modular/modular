@@ -213,16 +213,16 @@ def test_fused_qk_rope[
                 )
                 # Verify unroped region: First (head_dim - rope_dim) elements should remain unchanged
                 assert_almost_equal(
-                    q_out.ptr + base_offset,
-                    q.ptr + base_offset,
+                    q_out._storage + base_offset,
+                    q._storage + base_offset,
                     head_dim - rope_dim,
                 )
 
                 # Verify roped region: Last rope_dim elements should match expected output
                 roped_offset = base_offset + (head_dim - rope_dim)
                 assert_almost_equal(
-                    q_out.ptr + roped_offset,
-                    expected_q_out.ptr + roped_offset,
+                    q_out._storage + roped_offset,
+                    expected_q_out._storage + roped_offset,
                     rope_dim,
                 )
 

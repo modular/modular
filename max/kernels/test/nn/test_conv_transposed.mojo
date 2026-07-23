@@ -225,7 +225,7 @@ def test_conv_transposed[
     var output_image_size = output_dims.flattened_length()
     for n in range(N):
         for i in range(output_image_size):
-            var output_ref_ptr = output_ref.ptr + F * (
+            var output_ref_ptr = output_ref._storage + F * (
                 i + output_image_size * n
             )
 

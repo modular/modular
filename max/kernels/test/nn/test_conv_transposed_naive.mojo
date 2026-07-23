@@ -65,15 +65,15 @@ def test_convtranspose_pads():
 
     conv_transpose_naive[type](
         TileTensor(
-            output.ptr,
+            output._storage,
             row_major(Coord(IndexList[5](1, 1, 7, 3, 2))),
         ),
         TileTensor(
-            input.ptr,
+            input._storage,
             row_major(Coord(IndexList[5](1, 1, 3, 3, 1))),
         ),
         TileTensor(
-            filter.ptr,
+            filter._storage,
             row_major(Coord(IndexList[5](1, 3, 3, 2, 1))),
         ),
         stride,
@@ -137,15 +137,15 @@ def test_convtranspose():
 
     conv_transpose_naive[type](
         TileTensor(
-            output.ptr,
+            output._storage,
             row_major(Coord(IndexList[5](1, 1, 5, 5, 2))),
         ),
         TileTensor(
-            input.ptr,
+            input._storage,
             row_major(Coord(IndexList[5](1, 1, 3, 3, 1))),
         ),
         TileTensor(
-            filter.ptr,
+            filter._storage,
             row_major(Coord(IndexList[5](1, 3, 3, 2, 1))),
         ),
         stride,
@@ -213,15 +213,15 @@ def test_convtranspose_dilation():
 
     conv_transpose_naive[type](
         TileTensor(
-            output.ptr,
+            output._storage,
             row_major(Coord(IndexList[5](1, 1, 5, 5, 1))),
         ),
         TileTensor(
-            input.ptr,
+            input._storage,
             row_major(Coord(IndexList[5](1, 1, 3, 3, 1))),
         ),
         TileTensor(
-            filter.ptr,
+            filter._storage,
             row_major(Coord(IndexList[5](1, 2, 2, 1, 1))),
         ),
         stride,
@@ -295,15 +295,15 @@ def test_convtranspose_attributes():
 
     conv_transpose_naive[type](
         TileTensor(
-            output.ptr,
+            output._storage,
             row_major(Coord(IndexList[5](1, 1, 10, 8, 2))),
         ),
         TileTensor(
-            input.ptr,
+            input._storage,
             row_major(Coord(IndexList[5](1, 1, 3, 3, 1))),
         ),
         TileTensor(
-            filter.ptr,
+            filter._storage,
             row_major(Coord(IndexList[5](1, 3, 3, 2, 1))),
         ),
         stride,

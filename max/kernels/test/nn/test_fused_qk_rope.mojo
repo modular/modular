@@ -185,7 +185,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
 
     # Compare output and expected query tensors.
     assert_almost_equal(
-        q_out.ptr, expected_q_out.ptr, expected_q_out.num_elements()
+        q_out._storage, expected_q_out._storage, expected_q_out.num_elements()
     )
 
     # Compare output and expected key cache buffers.
