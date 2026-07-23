@@ -170,7 +170,7 @@ index 5cf140d..8426c2e 100644
  }
  
 diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
-index da8b516..676ab50 100644
+index da8b516..7baa330 100644
 --- a/cpp/json_schema_converter.cc
 +++ b/cpp/json_schema_converter.cc
 @@ -149,6 +149,7 @@ class SchemaParser {
@@ -195,7 +195,7 @@ index da8b516..676ab50 100644
    Config config_;
    picojson::value root_schema_;
    std::unordered_map<std::string, SchemaSpecPtr> ref_cache_;
-@@ -257,6 +265,23 @@ void SchemaParser::WarnUnsupportedKeywords(
+@@ -257,6 +265,52 @@ void SchemaParser::WarnUnsupportedKeywords(
    }
  }
  
@@ -216,10 +216,39 @@ index da8b516..676ab50 100644
 +  return std::nullopt;
 +}
 +
++// Keywords that impose no enforceable constraint: annotations
++// plus core/identifier bookkeeping (URIs, dialect, $defs containers,
++// anchor definitions) that only take effect when referenced elsewhere.
++static const std::unordered_set<std::string>& NoConstraintKeywords() {
++  static const std::unordered_set<std::string> kNoConstraintKeywords = {
++      "title",       "description",  "default",           "examples",
++      "$comment",    "readOnly",     "writeOnly",         "deprecated",
++      "$id",         "$schema",      "$defs",             "definitions",
++      "$anchor",     "$vocabulary",  "$dynamicAnchor",    "$recursiveAnchor",
++      "contentEncoding", "contentMediaType", "contentSchema",
++      "if",          "then",         "else"};
++  return kNoConstraintKeywords;
++}
++
++static bool IsNoConstraintKeyword(const std::string& key) {
++  return NoConstraintKeywords().count(key) > 0;
++}
++
++static bool SubschemaIsNoOp(const picojson::value& v) {
++  if (v.is<bool>()) return v.get<bool>();
++  if (!v.is<picojson::object>()) return false;
++  const auto& o = v.get<picojson::object>();
++  if (o.count("if") && (o.count("then") || o.count("else"))) return false;
++  for (const auto& k : o.ordered_keys()) {
++    if (!IsNoConstraintKeyword(k)) return false;
++  }
++  return true;
++}
++
  Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
      const picojson::value& schema,
      const std::string& rule_name_hint,
-@@ -286,9 +311,26 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
+@@ -286,9 +340,81 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
    }
  
    const auto& schema_obj = schema.get<picojson::object>();
@@ -228,10 +257,65 @@ index da8b516..676ab50 100644
 -  );
 +  if (auto err = CheckUnsupportedKeywords(
 +          schema_obj,
-+          {"not", "if", "then", "else", "dependentRequired", "dependentSchemas", "multipleOf",
++          {"not",
++           "dependentRequired",
++           "dependentSchemas",
++           "multipleOf",
 +           "dependencies"}
 +      )) {
 +    return ResultErr(std::move(*err));
++  }
++  // A draft-7 if/then/else conditional constrains the instance only when "if"
++  // is paired with a "then" or "else". If/then/else is not supported.
++  if (config_.reject_unsupported && schema_obj.count("if") &&
++      (schema_obj.count("then") || schema_obj.count("else"))) {
++    return ResultErr<SchemaError>(
++        SchemaErrorType::kUnsatisfiableSchema, "unsupported schema keyword: if/then/else"
++    );
++  }
++  // oneOf is silently approximated as anyOf; reject it when asked to be strict.
++  if (config_.reject_unsupported && schema_obj.count("oneOf")) {
++    return ResultErr<SchemaError>(
++        SchemaErrorType::kUnsatisfiableSchema, "unsupported schema keyword: oneOf"
++    );
++  }
++  // Multi-branch allOf is not enforced (falls back to unconstrained); reject it.
++  // No-op members (lone if/then/else, empty {}/true) impose nothing and are
++  // dropped, so they do NOT count: 0 enforceable branches (e.g. allOf:[] or
++  // allOf:[{}]) is no constraint to apply -- accepted, not "cannot enforce".
++  if (config_.reject_unsupported && schema_obj.count("allOf") &&
++      schema_obj.at("allOf").is<picojson::array>()) {
++    size_t enforceable = 0;
++    for (const auto& sub : schema_obj.at("allOf").get<picojson::array>()) {
++      if (!SubschemaIsNoOp(sub)) ++enforceable;
++    }
++    if (enforceable > 1) {
++      return ResultErr<SchemaError>(
++          SchemaErrorType::kUnsatisfiableSchema,
++          "unsupported schema keyword: allOf with multiple options"
++      );
++    }
++    // Sibling object applicator: xgrammar has no allOf-merge pass, so a
++    // co-occurring object keyword is silently ignored and cannot be faithfully
++    // enforced; reject the combination.
++    if (enforceable > 0) {
++      for (const char* sibling :
++           {"properties",
++            "additionalProperties",
++            "required",
++            "patternProperties",
++            "propertyNames",
++            "minProperties",
++            "maxProperties",
++            "unevaluatedProperties"}) {
++        if (schema_obj.count(sibling)) {
++          return ResultErr<SchemaError>(
++              SchemaErrorType::kUnsatisfiableSchema,
++              std::string("unsupported schema: allOf with a sibling ") + sibling
++          );
++        }
++      }
++    }
 +  }
 +  // Only local JSON-pointer $refs can be faithfully resolved here: exactly "#"
 +  // (the root) or a "#/..." pointer. A "#foo" plain-name anchor is NOT a
@@ -249,7 +333,7 @@ index da8b516..676ab50 100644
  
    SchemaSpecPtr result;
  
-@@ -358,18 +400,81 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
+@@ -358,18 +484,77 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
          );
        }
      }
@@ -316,18 +400,14 @@ index da8b516..676ab50 100644
 +    } else {
 +      // The single unconstrained-fallback choke point. Reached only when NO
 +      // type-specific validation keyword is present, so the any-value grammar is
-+      // emitted only for a genuinely unconstrained schema (empty, or ignored
-+      // keywords only). Under reject_unsupported, never SILENTLY fall back to
-+      // unconstrained for a schema that carries an unrecognized keyword: reject
-+      // so an unenforceable request is an honest error, not best-effort decoding.
-+      static const std::unordered_set<std::string> kNoConstraintKeywords = {
-+          "title", "description", "default", "examples", "$comment", "readOnly", "writeOnly",
-+          "deprecated", "$id", "$schema", "$defs", "definitions", "$anchor", "$vocabulary",
-+          "$dynamicAnchor", "$dynamicRef", "$recursiveAnchor", "$recursiveRef",
-+          "contentEncoding", "contentMediaType", "contentSchema"};
++      // emitted only for a genuinely unconstrained schema (empty, or
++      // no-constraint keywords only). Under reject_unsupported, never SILENTLY
++      // fall back to unconstrained for a schema that carries an unrecognized
++      // keyword: reject so an unenforceable request is an honest error, not
++      // best-effort decoding.
 +      if (config_.reject_unsupported) {
 +        for (const auto& key : schema_obj.ordered_keys()) {
-+          if (!kNoConstraintKeywords.count(key)) {
++          if (!IsNoConstraintKeyword(key)) {
 +            return ResultErr<SchemaError>(
 +                SchemaErrorType::kUnsatisfiableSchema,
 +                "schema keyword cannot be enforced and would fall back to unconstrained "
@@ -342,7 +422,7 @@ index da8b516..676ab50 100644
    }
  
    schema_cache_[cache_key] = result;
-@@ -377,7 +482,9 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
+@@ -377,7 +562,9 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
  }
  
  Result<IntegerSpec, SchemaError> SchemaParser::ParseInteger(const picojson::object& schema) {
@@ -353,7 +433,7 @@ index da8b516..676ab50 100644
    IntegerSpec spec;
  
    auto checkAndConvertIntegerBound = [](const picojson::value& value
-@@ -462,7 +569,9 @@ Result<IntegerSpec, SchemaError> SchemaParser::ParseInteger(const picojson::obje
+@@ -462,7 +649,9 @@ Result<IntegerSpec, SchemaError> SchemaParser::ParseInteger(const picojson::obje
  }
  
  Result<NumberSpec, SchemaError> SchemaParser::ParseNumber(const picojson::object& schema) {
@@ -364,7 +444,7 @@ index da8b516..676ab50 100644
    NumberSpec spec;
  
    auto getDouble = [](const picojson::value& value) -> Result<double, SchemaError> {
-@@ -560,7 +669,18 @@ Result<NullSpec, SchemaError> SchemaParser::ParseNull(const picojson::object&) {
+@@ -560,7 +749,18 @@ Result<NullSpec, SchemaError> SchemaParser::ParseNull(const picojson::object&) {
  }
  
  Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object& schema) {
@@ -384,7 +464,7 @@ index da8b516..676ab50 100644
    ArraySpec spec;
  
    if (schema.count("prefixItems")) {
-@@ -615,7 +735,12 @@ Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object&
+@@ -615,7 +815,12 @@ Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object&
        if (items_result.IsErr()) return ResultErr(std::move(items_result).UnwrapErr());
        spec.additional_items = std::move(items_result).Unwrap();
      }
@@ -398,7 +478,58 @@ index da8b516..676ab50 100644
      spec.allow_additional_items = true;
      spec.additional_items = SchemaSpec::Make(AnySpec{}, "", "any");
    } else {
-@@ -740,7 +865,8 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+@@ -684,6 +889,15 @@ Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object&
+ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object& schema) {
+   ObjectSpec spec;
+ 
++  if (schema.count("required")) {
++    if (!schema.at("required").is<picojson::array>()) {
++      return ResultErr<SchemaError>(SchemaErrorType::kInvalidSchema, "required must be an array");
++    }
++    for (const auto& req : schema.at("required").get<picojson::array>()) {
++      spec.required.insert(req.get<std::string>());
++    }
++  }
++
+   if (schema.count("properties")) {
+     if (!schema.at("properties").is<picojson::object>()) {
+       return ResultErr<SchemaError>(
+@@ -692,21 +906,24 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+     }
+     auto properties_obj = schema.at("properties").get<picojson::object>();
+     for (const auto& key : properties_obj.ordered_keys()) {
+-      auto prop_result = Parse(properties_obj.at(key), key);
++      const auto& prop_schema = properties_obj.at(key);
++      if (prop_schema.is<bool>() && !prop_schema.get<bool>()) {
++        // A false property schema forbids that key. If it is required the
++        // object is unsatisfiable; otherwise skip it (never emit the key).
++        if (spec.required.count(key)) {
++          return ResultErr<SchemaError>(
++              SchemaErrorType::kUnsatisfiableSchema,
++              "required property \"" + key + "\" is forbidden by a false schema"
++          );
++        }
++        continue;
++      }
++      auto prop_result = Parse(prop_schema, key);
+       if (prop_result.IsErr()) return ResultErr(std::move(prop_result).UnwrapErr());
+       spec.properties.push_back({key, std::move(prop_result).Unwrap()});
+     }
+   }
+ 
+-  if (schema.count("required")) {
+-    if (!schema.at("required").is<picojson::array>()) {
+-      return ResultErr<SchemaError>(SchemaErrorType::kInvalidSchema, "required must be an array");
+-    }
+-    for (const auto& req : schema.at("required").get<picojson::array>()) {
+-      spec.required.insert(req.get<std::string>());
+-    }
+-  }
+-
+   if (schema.count("patternProperties")) {
+     if (!schema.at("patternProperties").is<picojson::object>()) {
+       return ResultErr<SchemaError>(
+@@ -740,7 +957,8 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
      spec.property_names = std::move(prop_names_result).Unwrap();
    }
  
@@ -408,7 +539,81 @@ index da8b516..676ab50 100644
    if (schema.count("additionalProperties")) {
      auto add_props = schema.at("additionalProperties");
      if (add_props.is<bool>()) {
-@@ -3328,7 +3454,8 @@ std::string JSONSchemaToEBNF(
+@@ -911,13 +1129,58 @@ Result<AnyOfSpec, SchemaError> SchemaParser::ParseAnyOf(const picojson::object&
+         SchemaErrorType::kInvalidSchema, std::string(anyof_key) + " must be an array"
+     );
+   }
++  // An instance must satisfy the base schema (every
++  // sibling keyword) AND at least one branch. xgrammar has no schema-merge pass,
++  // so fold the base keywords into each branch by union.
++  std::vector<std::string> base_keys;
++  for (const auto& k : schema.ordered_keys()) {
++    if (k != "anyOf" && k != "oneOf") base_keys.push_back(k);
++  }
+   int idx = 0;
+   for (const auto& option : schema.at(anyof_key).get<picojson::array>()) {
+-    auto option_result = Parse(option, "case_" + std::to_string(idx));
++    if (option.is<bool>() && !option.get<bool>()) {
++      // A false branch accepts nothing; drop it from the union instead of
++      // aborting. If every branch drops out, the check below rejects.
++      ++idx;
++      continue;
++    }
++    picojson::value merged = option;
++    if (!base_keys.empty() && option.is<picojson::object>()) {
++      picojson::object m = option.get<picojson::object>();
++      for (const auto& k : base_keys) {
++        if (m.count(k)) {
++          if (config_.reject_unsupported) {
++            return ResultErr<SchemaError>(
++                SchemaErrorType::kUnsatisfiableSchema,
++                std::string(anyof_key) + " branch and base schema both set \"" + k + "\""
++            );
++          }
++          continue;  // branch value wins when not strict
++        }
++        m[k] = schema.at(k);
++      }
++      merged = picojson::value(m);
++    } else if (!base_keys.empty() && option.is<bool>() && config_.reject_unsupported) {
++      // A boolean branch IS representable (true collapses the anyOf to the base
++      // schema; false drops out of the union), but the merge above only folds
++      // base keys into an object branch. Rather than special-case bools, reject
++      // conservatively.
++      return ResultErr<SchemaError>(
++          SchemaErrorType::kUnsatisfiableSchema,
++          std::string(anyof_key) + " boolean branch cannot carry a base schema"
++      );
++    }
++    auto option_result = Parse(merged, "case_" + std::to_string(idx));
+     if (option_result.IsErr()) return ResultErr(std::move(option_result).UnwrapErr());
+     spec.options.push_back(std::move(option_result).Unwrap());
+     ++idx;
+   }
++  if (spec.options.empty()) {
++    return ResultErr<SchemaError>(
++        SchemaErrorType::kUnsatisfiableSchema,
++        std::string(anyof_key) + " has no satisfiable branch"
++    );
++  }
+   return ResultOk(std::move(spec));
+ }
+ 
+@@ -928,6 +1191,13 @@ Result<AllOfSpec, SchemaError> SchemaParser::ParseAllOf(const picojson::object&
+   }
+   int idx = 0;
+   for (const auto& sub_schema : schema.at("allOf").get<picojson::array>()) {
++    // Drop no-op members (lone if/then/else, empty {}/true): they impose no
++    // constraint, and keeping them would push the member count past 1 and make
++    // GenerateAllOf fall back to unconstrained.
++    if (config_.reject_unsupported && SubschemaIsNoOp(sub_schema)) {
++      ++idx;
++      continue;
++    }
+     auto sub_result = Parse(sub_schema, "all_" + std::to_string(idx));
+     if (sub_result.IsErr()) return ResultErr(std::move(sub_result).UnwrapErr());
+     spec.schemas.push_back(std::move(sub_result).Unwrap());
+@@ -3328,7 +3598,8 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
@@ -418,7 +623,7 @@ index da8b516..676ab50 100644
  ) {
    picojson::value schema_value;
    std::string err = picojson::parse(schema_value, schema);
-@@ -3342,7 +3469,8 @@ std::string JSONSchemaToEBNF(
+@@ -3342,7 +3613,8 @@ std::string JSONSchemaToEBNF(
        strict_mode,
        max_whitespace_cnt,
        json_format,
@@ -428,7 +633,7 @@ index da8b516..676ab50 100644
    );
  }
  
-@@ -3354,10 +3482,11 @@ std::string JSONSchemaToEBNF(
+@@ -3354,10 +3626,11 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
