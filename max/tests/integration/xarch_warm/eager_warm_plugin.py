@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Pytest plugin that points the eager warm cache at the build-warmed dir."""
+
 from __future__ import annotations
 
 import os
 import sys
 
-# Adopt the build-warmed GC cache via MODULAR_DERIVED_PATH before import-time
-# precompile, to avoid cold-compiling on this timed critical path (MXF-533).
+from python.runfiles import runfiles
+
 _warm_rloc = os.environ.get("XARCH_WARM_RLOCATION")
 if _warm_rloc:
-    from python.runfiles import runfiles
-
     _runfiles = runfiles.Create()
     _resolved = _runfiles.Rlocation(_warm_rloc) if _runfiles else None
     if _resolved:

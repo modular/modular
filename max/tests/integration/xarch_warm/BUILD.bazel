@@ -69,6 +69,17 @@ modular_py_library(
     visibility = ["//visibility:public"],
 )
 
+# Warm-adoption pytest plugin auto-registered by modular_eager_py_test via
+# `-p eager_warm_plugin`. imports = ["."] so it loads by bare module name.
+modular_py_library(
+    name = "eager_warm_plugin",
+    testonly = True,
+    srcs = ["eager_warm_plugin.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = ["@rules_python//python/runfiles"],
+)
+
 # Shared producer helpers (per-slot compile+export loop + stamp/manifest
 # writers) for warm_cpu and warm_accelerators. _interpreter_ops is imported via
 # importlib inside its functions (the virtual knobs must be set before it
