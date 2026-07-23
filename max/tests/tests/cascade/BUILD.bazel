@@ -183,6 +183,28 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_arch_import_layering",
+    size = "medium",
+    srcs = ["test_arch_import_layering.py"],
+    # The architecture module is imported dynamically (importlib, inside the
+    # test) so the static scanner can't see the dependency.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/llama3",
+    ],
+    # Importing the Llama architecture pulls max.pipelines.lib, which alone can
+    # blow the 300s budget on the shared BuildBuddy macOS workers (times out in
+    # pytest collection); the layering invariant is platform-independent, so
+    # run on Linux only.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/pipelines/architectures/llama3",
+    ],
+)
+
+modular_py_test(
     name = "test_max_model_worker_integration",
     size = "large",
     srcs = ["test_max_model_worker_integration.py"],

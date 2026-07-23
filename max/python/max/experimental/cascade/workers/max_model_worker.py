@@ -43,19 +43,10 @@ from max.pipelines.context import (
 )
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.modeling.types import RequestID
-from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
-from max.serve.worker_interface import ModelWorkerProxy
-from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
-from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 
 logger = logging.getLogger(__name__)
 
 Int32Array = npt.NDArray[np.int32]
-
-_ModelWorkerProxy = ModelWorkerProxy[
-    TextAndVisionContext | TextContext, TextGenerationOutput
-]
 
 
 def _sampling_params_input(req: GenerateRequest) -> SamplingParamsInput:
@@ -113,7 +104,17 @@ class MAXModelWorker(Worker):
         self.max_length: int | None = None
         self._eos_token_ids: set[int] = set(eos_token_ids)
         self._model_factory = model_factory
-        self._proxy: _ModelWorkerProxy | None = None
+
+        # lazy import to avoid circular imports when defining
+        # CascadePipelines in model arch.py layers
+        from max.serve.worker_interface import ModelWorkerProxy
+
+        self._proxy: (
+            ModelWorkerProxy[
+                TextAndVisionContext | TextContext, TextGenerationOutput
+            ]
+            | None
+        ) = None
 
     @contextlib.asynccontextmanager
     async def open(self) -> AsyncIterator[MAXModelWorker]:
@@ -130,6 +131,18 @@ class MAXModelWorker(Worker):
         context managers used by ``max.entrypoints.LLM`` and
         ``max.serve.api_server``.
         """
+        # lazy import to avoid circular imports when defining
+        # CascadePipelines in model arch.py layers
+        from max.serve.config import MetricRecordingMethod, Settings
+        from max.serve.pipelines.model_worker import start_model_worker
+        from max.serve.pipelines.telemetry_worker import (
+            start_telemetry_consumer,
+        )
+        from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
+        from max.serve.worker_interface.zmq_interface import (
+            ZmqModelWorkerInterface,
+        )
+
         assert self._model_factory is not None, (
             "MAXModelWorker needs a model_factory to deploy; construct it via "
             "build_pipeline, which resolves the config and builds the factory."
@@ -159,12 +172,6 @@ class MAXModelWorker(Worker):
             pipeline_task,
             context_type=context_type,
         )
-
-        # Deferred to break an import cycle: architectures that declare a
-        # cascade_pipeline_factory import this module, and register_all_models()
-        # can reach those architectures while max.serve.pipelines.model_worker
-        # is still initializing.
-        from max.serve.pipelines.model_worker import start_model_worker
 
         async with contextlib.AsyncExitStack() as exit_stack:
             metric_client = await exit_stack.enter_async_context(
