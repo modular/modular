@@ -89,6 +89,10 @@ HF_MODELS: dict[str, set[str]] = {
     "microsoft/Phi-3.5-mini-instruct": MULTI,
     "microsoft/phi-4": MULTI,
     "MiniMaxAI/MiniMax-M2.7": NON_XL | {"4xMI355", "sglang"},
+    # MODELS-1611: MXFP8 runs on 8xB200 only (MI355 comes later). max-ci
+    # exercises the private M3 arch; sglang serves the HF checkpoint as a
+    # reference. vLLM and released MAX are excluded.
+    "MiniMaxAI/MiniMax-M3-MXFP8": NON_XL | {"4xMI355", "max", "vllm"},
     "lukealonso/MiniMax-M2.7-NVFP4": NON_XL | {"4xMI355", "sglang"},
     "mistralai/Mistral-Nemo-Instruct-2407": MULTI | {"vllm"},
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503": MULTI | {"vllm"},
