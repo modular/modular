@@ -29,6 +29,7 @@ enum class PassingKind : uint32_t;
 namespace M::KGEN::LIT {
 class AliasDeclOp;
 class ASTDecl;
+struct UnresolvedWildcardImport;
 class FileModuleOp;
 class FnOp;
 class PackageOp;
@@ -198,10 +199,8 @@ public:
   /// Import decls from the given module into the provided destination context
   /// using a wild-card import. If `isFullImport` is true, all decls are
   /// imported, otherwise only decls that don't start with an `_` are imported.
-  LogicalResult importWildCardDeclsFromModule(ASTDecl &context,
-                                              StringAttr moduleName,
-                                              bool isFullImport,
-                                              llvm::SMLoc loc);
+  LogicalResult importWildcardDeclsFromModule(
+      ASTDecl &context, const UnresolvedWildcardImport &unresolvedImport);
 
   //===--------------------------------------------------------------------===//
   // Decl Resolution
