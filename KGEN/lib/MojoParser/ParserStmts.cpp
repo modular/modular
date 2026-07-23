@@ -3138,8 +3138,8 @@ ParseResult StmtParser::parseFromImportStmt(bool hasStableOverride) {
     LIT::UnresolvedWildcardImportOp::create(builder,
                                             translateLocation(importLoc),
                                             moduleAttr, /*isFullImport=*/false);
-    getParentDecl().addUnresolvedWildCardImport(
-        moduleAttr, /*isFullImport=*/false, importLoc);
+    getParentDecl().addUnresolvedWildcardImport(UnresolvedWildcardImport{
+        moduleAttr, importLoc, /*isFullImport=*/false});
     return success();
   }
 

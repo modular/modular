@@ -33,6 +33,12 @@ class TraitType;
 
 using DeclIRValue = SmartVariant<Operation *, CValue, std::nullopt_t>;
 
+struct UnresolvedWildcardImport {
+  StringAttr moduleName;
+  SMLoc importLoc;
+  bool isFullImport;
+};
+
 /// This is the AST representation (as opposed to the MLIR representation) of a
 /// declaration in a program.  These maintain type checking and other
 /// information that is irrelevant by the time the parser has created a complete
@@ -155,8 +161,7 @@ public:
   static Type computeSelfTypeForTrait(TraitDeclOp traitOp);
 
   /// Add an unresolved wild card import into this scope.
-  void addUnresolvedWildCardImport(StringAttr importedModule, bool isFullImport,
-                                   SMLoc loc);
+  void addUnresolvedWildcardImport(UnresolvedWildcardImport unresolvedImport);
 
   /// Record that `name` was imported with @stable(recursive=True) into this
   /// scope, suppressing stability warnings for that name and its members.
@@ -314,6 +319,11 @@ public:
   /// Dump the underlying IR value.
   void dump() const;
 
+  /// Remove and return the newest pending wildcard import that could provide
+  /// `lookupName`. An empty `lookupName` takes the newest unconditionally.
+  std::optional<UnresolvedWildcardImport>
+  popLatestUnresolvedWildcardImport(StringRef lookupName = "");
+
 private:
   friend class DeclResolver;
   friend class SharedState;
@@ -418,11 +428,10 @@ private:
   using DeclInScopeType = llvm::MapVector<StringAttr, TinyPtrVector<ASTDecl *>>;
   std::unique_ptr<DeclInScopeType> declsInScope;
 
-  /// A set of modules with unresolved wildcard imports into this decl, mapped
-  /// to the location of the import and whether it's a full import.  This is
+  /// A set of modules with unresolved wildcard imports into this decl. This is
   /// lazily initialized because it is very rarely needed (~0.6% of all decls).
   using UnresolvedWildcardImportsType =
-      llvm::MapVector<StringAttr, std::pair<SMLoc, bool>>;
+      llvm::SmallVector<UnresolvedWildcardImport>;
   std::unique_ptr<UnresolvedWildcardImportsType> unresolvedWildcardImports;
 
   /// Lazily-allocated set of import names that were imported with

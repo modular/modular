@@ -1403,10 +1403,9 @@ LogicalResult DeclResolver::importDeclFromModule(
   return success();
 }
 
-LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
-                                                          StringAttr moduleName,
-                                                          bool isFullImport,
-                                                          llvm::SMLoc loc) {
+LogicalResult DeclResolver::importWildcardDeclsFromModule(
+    ASTDecl &context, const UnresolvedWildcardImport &unresolvedImport) {
+  auto [moduleName, loc, isFullImport] = unresolvedImport;
   PackageOp currentPackage =
       dyn_cast_or_null<PackageOp>(context.getIfOperation());
   if (!currentPackage && context.getIfOperation())
@@ -1892,14 +1891,11 @@ LogicalResult DeclResolver::resolveAllWildcardImports(ASTDecl &module) {
   if (!module.unresolvedWildcardImports)
     return success();
 
-  while (!module.unresolvedWildcardImports->empty()) {
-    auto it = module.unresolvedWildcardImports->begin();
-    auto [moduleName, locAndIsFullImport] = *it;
-    module.unresolvedWildcardImports->erase(it);
-
-    if (failed(importWildCardDeclsFromModule(module, moduleName,
-                                             locAndIsFullImport.second,
-                                             locAndIsFullImport.first)))
+  // Resolve wildcard imports from last to first, thereby meaning the last one
+  // "wins" in terms of shadowing; subsequent colliding decls won't be brought
+  // into scope.
+  while (auto unresolvedImport = module.popLatestUnresolvedWildcardImport()) {
+    if (failed(importWildcardDeclsFromModule(module, *unresolvedImport)))
       return failure();
   }
   return success();

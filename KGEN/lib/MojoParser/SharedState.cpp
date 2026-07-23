@@ -793,33 +793,18 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
     // If the lookup failed, try to resolve any wildcard imports in the scope.
     // We don't know if these imports will actually provide the decl we are
     // looking for, so we have to try until we find one that does.
-    if (!scope.unresolvedWildcardImports)
-      return {};
-
-    for (size_t i = 0, e = scope.unresolvedWildcardImports->size(); i < e;) {
-      auto it = std::next(scope.unresolvedWildcardImports->begin(), i);
-      auto [moduleName, locAndIsFullImport] = *it;
-      auto [loc, isFullImport] = locAndIsFullImport;
-
-      // Don't try wildcard imports if we wouldn't import this name anyways.
-      if (!isFullImport && isInternalName(name)) {
-        ++i;
-        continue;
-      }
-      --e;
-      scope.unresolvedWildcardImports->erase(it);
-
+    while (auto unresolvedImport =
+               scope.popLatestUnresolvedWildcardImport(name)) {
       // Resolve the import. If it fails, don't fail the search immediately,
       // keep checking for something that can resolve the decl we care about.
-      if (succeeded(declResolver->importWildCardDeclsFromModule(
-              scope, moduleName, isFullImport, loc))) {
+      if (succeeded(declResolver->importWildcardDeclsFromModule(
+              scope, *unresolvedImport))) {
         // Re-check the lookup in the scope now that the wildcard import has
         // been resolved.
         result = scope.lookupInCurrentScope(nameAttr);
         if (!result.empty())
           return result;
       }
-      e = scope.unresolvedWildcardImports->size();
     }
 
     return {};
@@ -940,25 +925,11 @@ auto SharedState::lookupAllDeclsWithName(StringRef name, SMLoc loc,
     // If the lookup failed, try to resolve any wildcard imports in the scope.
     // We don't know if these imports will actually provide the decl we are
     // looking for, so we have to try until we find one that does.
-    if (searchScope.unresolvedWildcardImports) {
-      // Note no i++ here because we sometimes remove in the iteration.
-      for (size_t i = 0; i < searchScope.unresolvedWildcardImports->size();) {
-        auto it = searchScope.unresolvedWildcardImports->begin() + i;
-        auto [moduleName, locAndIsFullImport] = *it;
-        auto [importLoc, isFullImport] = locAndIsFullImport;
-
-        // Don't try wildcard imports if we wouldn't import this name anyways.
-        if (!isFullImport && isInternalName(name)) {
-          ++i; // Skip this import, leave it intact.
-          continue;
-        }
-
-        searchScope.unresolvedWildcardImports->erase(it);
-        // Resolve the import. If it fails, proceed anyway.
-        (void)declResolver->importWildCardDeclsFromModule(
-            searchScope, moduleName, isFullImport, importLoc);
-        // Don't increment i here; after erase, the next element is now at i.
-      }
+    while (auto unresolvedImport =
+               searchScope.popLatestUnresolvedWildcardImport(name)) {
+      // Resolve the import. If it fails, proceed anyway.
+      (void)declResolver->importWildcardDeclsFromModule(searchScope,
+                                                        *unresolvedImport);
     }
   };
 
@@ -1674,9 +1645,10 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
                                /*realModuleName=*/stdAttr,
                                translateLocation(moduleDecl.getLoc()));
 
-  for (StringAttr import : impl->implicitBuiltinImports)
-    moduleDecl.addUnresolvedWildCardImport(import, /*isFullImport=*/false,
-                                           moduleDecl.getLoc());
+  for (StringAttr import : impl->implicitBuiltinImports) {
+    moduleDecl.addUnresolvedWildcardImport(UnresolvedWildcardImport{
+        import, moduleDecl.getLoc(), /*isFullImport=*/false});
+  }
 }
 
 ASTDecl &SharedState::createModule(StringRef moduleName,
@@ -2278,8 +2250,8 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             addDeclForOp(op, op.getImportNameAttr());
           })
           .Case([&](UnresolvedWildcardImportOp op) {
-            decl.addUnresolvedWildCardImport(op.getModuleNameAttr(),
-                                             op.getFullImport(), decl.getLoc());
+            decl.addUnresolvedWildcardImport(UnresolvedWildcardImport{
+                op.getModuleNameAttr(), decl.getLoc(), op.getFullImport()});
           })
           .Case([&](StructDeclOp op) {
             ASTDecl &structDecl = addDeclForOp(op, op.getSymNameAttr());
