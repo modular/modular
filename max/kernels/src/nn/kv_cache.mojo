@@ -1978,10 +1978,11 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
     comptime assert (
         input_row_offsets.flat_rank == 1
     ), "input_row_offsets must be rank 1"
-    comptime assert main_cache_dtype == dtype and index_cache_dtype == dtype, (
-        "fused_dual_qk_rms_norm_rope_ragged_paged requires Q and both K caches"
-        " to share the Q dtype"
-    )
+    # The Q compute dtype may differ from either K cache dtype: the kernel
+    # loads each band's K in fp32, applies norm + RoPE, and saturating-casts
+    # it back to that band's own cache dtype in the epilogue (Q and both DPS
+    # Q outputs are written out at `dtype`), so e.g. an FP8 main-K cache can
+    # pair with a BF16 index-K cache and BF16 Q.
 
     # Both bands must share the per-head RoPE geometry for a single kernel
     # instantiation (one freqs table, one comptime `rope_dim`) to be valid.
