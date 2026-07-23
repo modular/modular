@@ -2902,20 +2902,23 @@ def msa_sparse_attention_ragged(
     """Computes MiniMax-M3 block-sparse attention over the main paged KV cache.
 
     Gathers ``topk`` 128-token KV blocks per (kv head, query token) using the
-    block ids produced by :func:`msa_sparse_indexer`, then runs SM100 BF16
-    block-sparse MHA. ``head_dim`` is 128. The op selects the prefill or decode
-    kernel at runtime from the main KV cache's ``max_seq_length``, so the same
-    call serves both paths.
+    block ids produced by :func:`msa_sparse_indexer`, then runs SM100
+    block-sparse MHA. The main KV cache is BF16 or native FP8 e4m3; ``input``
+    (the query) must match its dtype, and the output is always BF16.
+    ``head_dim`` is 128. The op selects the prefill or decode kernel at runtime
+    from the main KV cache's ``max_seq_length``, so the same call serves both
+    paths.
 
     Args:
         kv_params: Key-value cache parameters for the main KV cache.
-        input: Query tensor ``[total_q, n_heads, head_dim]`` BF16 (prefill) or
-            ``[batch, n_heads, head_dim]`` BF16 (decode).
+        input: Query tensor ``[total_q, n_heads, head_dim]`` (prefill) or
+            ``[batch, n_heads, head_dim]`` (decode); dtype matches the KV cache
+            (BF16 or FP8 e4m3).
         input_row_offsets: Ragged query offsets ``[batch + 1]`` uint32.
         cache_row_offsets: Ragged valid-cache offsets ``[batch + 1]`` uint32.
         total_context_length: Total padded cache length for the batch, CPU
             scalar ``[1]`` uint32.
-        kv_collection: Main paged KV cache (BF16, no scales).
+        kv_collection: Main paged KV cache (BF16 or FP8 e4m3, no scales).
         layer_idx: Layer index, uint32, on CPU.
         block_indices: Selected block ids. Prefill: ``[n_kv_heads, total_q,
             topk]``; decode: ``[n_kv_heads, batch, topk]``. int32.
@@ -2927,10 +2930,17 @@ def msa_sparse_attention_ragged(
         Output tensor ``[total_q, n_heads, head_dim]`` (prefill) or
         ``[batch, n_heads, head_dim]`` (decode), BF16.
     """
+    # The KV cache dtype selects the kernel's compute dtype. `input` (the query)
+    # must match `kv_collection.kv_blocks`: BF16, or native FP8 e4m3 for an FP8
+    # KV cache. The kernel infers `kv_type` from these operands and always emits
+    # a BF16 output.
+    if input.dtype not in (DType.bfloat16, DType.float8_e4m3fn):
+        raise ValueError(
+            f"input must be bfloat16 or float8_e4m3fn, got {input.dtype}"
+        )
     _validate_argument_tensor(
         "input",
         input,
-        dtype=DType.bfloat16,
         rank=3,
         device_type=DeviceKind.GPU,
     )
@@ -2955,10 +2965,14 @@ def msa_sparse_attention_ragged(
         rank=1,
         device=DeviceRef.CPU(),
     )
+    if kv_collection.kv_blocks.dtype != input.dtype:
+        raise ValueError(
+            "kv_collection.kv_blocks must have the same dtype as input"
+            f" ({input.dtype}), got {kv_collection.kv_blocks.dtype}"
+        )
     _validate_argument_tensor(
         "kv_collection.kv_blocks",
         kv_collection.kv_blocks,
-        dtype=DType.bfloat16,
         rank=6,
         device=input.device,
     )

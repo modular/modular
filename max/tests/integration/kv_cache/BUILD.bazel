@@ -98,6 +98,7 @@ modular_py_test(
             "*_distributed_gpu.py",
             "test_lora_*.py",
             "test_fused_qk_rms_norm_rope_fusion_gpu.py",  # disabled: QUA-780 / MXSERV-283
+            "test_msa_fp8_kv_store_gpu.py",
         ],
     ) + ["conftest.py"],
     exec_properties = {
@@ -120,6 +121,33 @@ modular_py_test(
         "//max/tests/integration/test_common:context_utils",
         requirement("hypothesis"),
         requirement("numpy"),
+    ],
+)
+
+# Dedicated target for the FP8 KV store round-trip test
+modular_py_test(
+    name = "test_msa_fp8_kv_store_gpu",
+    srcs = [
+        "test_msa_fp8_kv_store_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/tests/integration/test_common:context_utils",
+        "//max/tests/integration/test_common:graph_utils",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 

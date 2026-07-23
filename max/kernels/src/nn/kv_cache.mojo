@@ -43,6 +43,7 @@ from layout import (
     row_major,
     stack_allocation,
 )
+from internal_utils.fp8_utils import cast_saturating
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.attention.cpu.mha import (
@@ -1357,7 +1358,7 @@ def _fused_qk_rms_norm_rope_process_row[
                 tok_idx=post_seq_idx,
                 head_idx=head_idx,
                 head_dim_idx=idx,
-                val=res.cast[cache_t.dtype](),
+                val=cast_saturating[cache_t.dtype](res),
             )
         else:
             q_output.store[width=simd_width](
@@ -1378,7 +1379,7 @@ def _fused_qk_rms_norm_rope_process_row[
                         tok_idx=post_seq_idx,
                         head_idx=head_idx,
                         head_dim_idx=idx,
-                        val=passthrough.cast[cache_t.dtype](),
+                        val=cast_saturating[cache_t.dtype](passthrough),
                     )
                 else:
                     q_output.store[width=simd_width](
@@ -1412,14 +1413,14 @@ def _fused_qk_rms_norm_rope_process_row[
                 tok_idx=post_seq_idx,
                 head_idx=head_idx,
                 head_dim_idx=h_re,
-                val=output_re.cast[cache_t.dtype](),
+                val=cast_saturating[cache_t.dtype](output_re),
             )
             k_cache.store(
                 bs=batch_idx,
                 tok_idx=post_seq_idx,
                 head_idx=head_idx,
                 head_dim_idx=h_im,
-                val=output_im.cast[cache_t.dtype](),
+                val=cast_saturating[cache_t.dtype](output_im),
             )
         else:
             q_output.store(
@@ -1587,10 +1588,10 @@ def fused_qk_rms_norm_rope_ragged_paged[
     comptime assert (
         input_row_offsets.flat_rank == 1
     ), "input_row_offsets must be rank 1"
-    comptime assert cache_dtype == dtype, (
-        "fused_qk_rms_norm_rope_ragged_paged requires Q and K cache dtype to"
-        " match"
-    )
+    # The Q compute dtype may differ from the K cache dtype: the
+    # kernel loads K in fp32, applies norm + RoPE, and saturating-casts it back
+    # to `cache_dtype` in the epilogue (Q is written out at `dtype`), so an FP8
+    # K cache pairs with a BF16 Q.
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     # Derived from `q_output` (identical shape to Q) rather than passed in, so

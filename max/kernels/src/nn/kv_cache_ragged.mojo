@@ -51,6 +51,7 @@ from layout import (
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
 from linalg.fp4_quantization import block_scaled_matmul
+from internal_utils.fp8_utils import cast_saturating
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.attention.cpu.mha import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
@@ -1408,7 +1409,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
             h_idx,
             cache_token_idx,
             hd_idx,
-            rebind[SIMD[kv_type, width]](output_val_out.cast[kv_type]()),
+            rebind[SIMD[kv_type, width]](cast_saturating[kv_type](val)),
         )
 
     comptime assert (
@@ -1420,7 +1421,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
     ](), "Blockwise scaled fp4 matmul only works on GPU."
 
     _matmul_blockwise_scaled_fp4_common[
-        output_dtype=cache_t.dtype,
+        output_dtype=output_dtype,
         target=target,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         elementwise_lambda_fn=write_to_cache,
@@ -1734,9 +1735,12 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
     comptime index_kv_type = index_cache_t.dtype
     comptime index_kv_params = index_cache_t.kv_params
 
+    # `index_kv_type` and `output_dtype` share the GEMM scratch buffer, so they
+    # must match. The main cache dtype may differ: the epilogue below
+    # saturating-casts K/V into `kv_type`.
     comptime assert (
-        kv_type == index_kv_type == output_dtype
-    ), "Main/index KV cache dtype must match the output dtype."
+        index_kv_type == output_dtype
+    ), "Index KV cache dtype must match the output dtype."
 
     # Boundaries over the concatenated N dimension. Q lands in `q_output`
     # ([M, q_dim]) and IndexQ in `iq_output` ([M, iq_dim]):
@@ -1839,7 +1843,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
                 h_idx,
                 cache_token_idx,
                 hd_idx,
-                rebind[SIMD[kv_type, width]](output_val_out.cast[kv_type]()),
+                rebind[SIMD[kv_type, width]](cast_saturating[kv_type](val)),
             )
         else:
             # IndexK band -> index cache, single shared head (head == 0).
