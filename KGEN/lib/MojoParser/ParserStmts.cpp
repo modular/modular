@@ -3497,10 +3497,16 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
 
   SMLoc loc;
   StringAttr baseName;
+  // Reject a hard keyword as a free-function name
+  bool nameIsKeyword = getToken().isKeyword();
   if (parseIdentifier(baseName, "expected function name", &loc,
                       /*forbidStartOfLine=*/true,
                       /*allowKeyword=*/true))
     return failure();
+  if (nameIsKeyword && !isInTypeBody()) {
+    emitError(loc) << "'" << baseName.getValue()
+                   << "' cannot be used as a function name in this context";
+  }
 
   // The parameter/argument list must begin on the same line as the function
   // name. Otherwise the decl-extent scan below (skipUntilIndentation) stops at
