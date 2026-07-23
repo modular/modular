@@ -22,6 +22,7 @@ from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import YarnScalingParams
 from max.nn.transformer import ReturnLogits
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
@@ -196,7 +197,9 @@ class GptOssConfig(
         # but are initialized separately via StackedMoE._init_mxfp4_weights.
         if quantization_encoding == "float4_e2m1fnx2":
             dtype = DType.bfloat16
-        cache_dtype = model_config.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding, model_config.kv_cache.kv_cache_format
+        )
 
         _weights_format = weights_format(model_config.weight_path)
         interleaved_rope_weights = (

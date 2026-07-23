@@ -38,7 +38,10 @@ from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
 )
-from max.pipelines.kv_cache.config import KVCacheConfig
+from max.pipelines.kv_cache.config import (
+    KVCacheConfig,
+    cache_dtype_for_encoding,
+)
 from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
@@ -335,7 +338,10 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
                 DeviceRef(device_type=d.device_type, id=d.id)
                 for d in model_config.device_specs
             ],
-            cache_dtype=model_config.kv_cache.cache_dtype,
+            cache_dtype=cache_dtype_for_encoding(
+                model_config.quantization_encoding,
+                model_config.kv_cache.kv_cache_format,
+            ),
             kv_cache=model_config.kv_cache,
             data_parallel_degree=model_config.data_parallel_degree,
             user_provided_max_length=model_config.max_length,

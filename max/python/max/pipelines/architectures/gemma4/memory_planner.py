@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
 from transformers import AutoConfig
@@ -56,9 +57,11 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
         # based on available blocks, so it targets larger concurrent batches
         # whose activation tensors need proportionally more headroom.
         # TODO(MODELS-1544): investigate high activation memory estimates
-        base = (
-            30 // pipeline_config.model.kv_cache.cache_dtype.size_in_bytes
-        ) * 1024**3
+        cache_dtype = cache_dtype_for_encoding(
+            pipeline_config.model.quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
+        base = (30 // cache_dtype.size_in_bytes) * 1024**3
         if pipeline_config.runtime.device_graph_capture:
             base += _GRAPH_CAPTURE_HEADROOM_BYTES
         return base * len(pipeline_config.model.device_specs)

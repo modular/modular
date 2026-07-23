@@ -41,7 +41,10 @@ from max.nn.kv_cache import (
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContextType, LogProbabilities
-from max.pipelines.kv_cache.config import KVCacheConfig
+from max.pipelines.kv_cache.config import (
+    KVCacheConfig,
+    cache_dtype_for_encoding,
+)
 from max.pipelines.lib.utils import (
     CompilationTimer,
     parse_state_dict_from_weights,
@@ -756,7 +759,10 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             pipeline_config=self.pipeline_config,
             devices=self.device_refs,
             kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
+            cache_dtype=cache_dtype_for_encoding(
+                self.pipeline_config.model.quantization_encoding,
+                self.pipeline_config.model.kv_cache.kv_cache_format,
+            ),
         )
 
     def _unflatten_kv_inputs(

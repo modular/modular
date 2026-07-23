@@ -640,6 +640,7 @@ class TestCacheDtypeResolution:
     def test_cache_dtype_bf16_for_bf16_encoding(self) -> None:
         """BF16 encoding should result in bfloat16 cache dtype."""
         from max.dtype import DType
+        from max.pipelines.kv_cache import cache_dtype_for_encoding
 
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -650,7 +651,13 @@ class TestCacheDtypeResolution:
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
                 _resolve_config(config)
-            assert _model(config).kv_cache._cache_dtype == DType.bfloat16
+            assert (
+                cache_dtype_for_encoding(
+                    _model(config).quantization_encoding,
+                    _model(config).kv_cache.kv_cache_format,
+                )
+                == DType.bfloat16
+            )
 
 
 # ---------------------------------------------------------------------------

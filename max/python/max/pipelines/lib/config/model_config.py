@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, Any
 from huggingface_hub import constants as hf_hub_constants
 from max.config import ConfigFileModel
 from max.driver import DeviceSpec
-from max.dtype import DType
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import (
     WeightsFormat,
@@ -32,7 +31,10 @@ from max.graph.weights import (
 )
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.context import SamplingParamsGenerationConfigDefaults
-from max.pipelines.kv_cache.config import KVCacheConfig
+from max.pipelines.kv_cache.config import (
+    KVCacheConfig,
+    cache_dtype_for_encoding,
+)
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.device_specs import (
     _default_device_specs,
@@ -818,7 +820,7 @@ class MAXModelConfig(MAXModelConfigBase):
         # `_weights_repo_id` is a PrivateAttr. Some construction paths (notably
         # unpickling) can bypass __init__, so the PrivateAttr may be absent.
         weights_repo_id: str | None = getattr(self, "_weights_repo_id", None)
-        return weights_repo_id if weights_repo_id else self.model_path
+        return weights_repo_id or self.model_path
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -1480,81 +1482,6 @@ class MAXModelConfig(MAXModelConfigBase):
                 - cache_dtype: Override for the cache data type
         """
         self.kv_cache = KVCacheConfig(**kv_cache_kwargs)
-        # Note: the quantization_encoding is possibly not set yet here, so we first check for an explicit override.
-        if cache_dtype := self._get_cache_override():
-            # Handled by `create_kv_cache_config` but we set it again here to ensure it takes precedence over quantization encoding.
-            self.kv_cache._cache_dtype = cache_dtype
-
-    def set_cache_dtype_given_quantization_encoding(
-        self,
-    ) -> None:
-        """Determines the KV cache dtype based on quantization encoding configuration.
-
-        The dtype is determined in the following priority order:
-
-        1. Explicit override from ``kv_cache.kv_cache_format`` (if set).
-        2. Derived from the model's ``quantization_encoding``.
-        3. Falls back to ``float32`` if no encoding is specified.
-        """
-        # First check for an explicit override.
-        if cache_dtype := self._get_cache_override():
-            self.kv_cache._cache_dtype = cache_dtype
-            return
-
-        # If there's no quantization encoding return a default value.
-        if not self.quantization_encoding:
-            self.kv_cache._cache_dtype = DType.float32
-            return
-
-        # Otherwise select the default KV cache dtype based on the quantization encoding.
-        supported_encoding_to_cache_dtype = {
-            "float32": DType.float32,
-            "float16": DType.float16,
-            "bfloat16": DType.bfloat16,
-            "float8_e4m3fn": DType.bfloat16,
-            "float4_e2m1fnx2": DType.bfloat16,
-            "q4_k": DType.float32,
-            "q4_0": DType.float32,
-            "q6_k": DType.float32,
-            "gptq": DType.bfloat16,
-        }
-        if self.quantization_encoding in supported_encoding_to_cache_dtype:
-            self.kv_cache._cache_dtype = supported_encoding_to_cache_dtype[
-                self.quantization_encoding
-            ]
-            return
-        else:
-            raise ValueError(
-                f"Unsupported quantization encoding for KV cache dtype resolution: {self.quantization_encoding}"
-            )
-
-    def _get_cache_override(self) -> DType | None:
-        """Check for an explicit KV cache dtype override from kv_cache_format.
-
-        Parses the kv_cache.kv_cache_format string (if set) and converts it
-        to the corresponding DType.
-
-        Returns:
-            The DType corresponding to the override string, or None if no
-            override is set or the string is not recognized. Supported values
-            are 'float32', 'bfloat16', and 'float8_e4m3fn' (case-insensitive).
-        """
-        if self.kv_cache.kv_cache_format is None:
-            return None
-
-        dtype_str = self.kv_cache.kv_cache_format.lower()
-        cache_format_to_dtype = {
-            "float32": DType.float32,
-            "bfloat16": DType.bfloat16,
-            "float8_e4m3fn": DType.float8_e4m3fn,
-        }
-        if dtype_str in cache_format_to_dtype:
-            return cache_format_to_dtype[dtype_str]
-        else:
-            raise ValueError(
-                f"Unrecognized kv_cache_format override: '{self.kv_cache.kv_cache_format}'. "
-                "Supported values are 'float32', 'bfloat16', and 'float8_e4m3fn'."
-            )
 
     def log_model_info(self, role: str) -> None:
         """Logs model configuration information for this config.
@@ -1615,7 +1542,12 @@ class MAXModelConfig(MAXModelConfigBase):
         logger.info("  %s KV Cache %s", sub_separator, sub_separator)
 
         entries: list[tuple[str, Any]] = [
-            ("cache_dtype", kv_config.cache_dtype),
+            (
+                "cache_dtype",
+                cache_dtype_for_encoding(
+                    self.quantization_encoding, kv_config.kv_cache_format
+                ),
+            ),
             ("page_size", f"{kv_config.kv_cache_page_size} tokens"),
             ("prefix_caching", kv_config.enable_prefix_caching),
             ("kv_connector", kv_config.kv_connector or "null"),

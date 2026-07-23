@@ -14,10 +14,10 @@
 
 from __future__ import annotations
 
-__all__ = ["KVCacheConfig", "KVConnectorConfig"]
+__all__ = ["KVCacheConfig", "KVConnectorConfig", "cache_dtype_for_encoding"]
 
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from max.config import ConfigFileModel
 from max.dtype import DType
@@ -35,6 +35,69 @@ from max.pipelines.kv_cache.paged_kv_cache._seed_helpers import (
     resolve_kv_hash_seed,
 )
 from pydantic import ConfigDict, Field, PrivateAttr
+
+if TYPE_CHECKING:
+    from max.pipelines.modeling.config_enums import SupportedEncoding
+
+# KV-cache dtype by explicit `kv_cache_format` override.
+_KV_CACHE_FORMAT_TO_DTYPE: dict[str, DType] = {
+    "float32": DType.float32,
+    "bfloat16": DType.bfloat16,
+    "float8_e4m3fn": DType.float8_e4m3fn,
+}
+
+# Default KV-cache dtype for each quantization encoding. Quantized weight
+# formats keep the cache in a compute dtype (bf16/f32) rather than the weight
+# dtype.
+_ENCODING_TO_KV_CACHE_DTYPE: dict[str, DType] = {
+    "float32": DType.float32,
+    "float16": DType.float16,
+    "bfloat16": DType.bfloat16,
+    "float8_e4m3fn": DType.bfloat16,
+    "float4_e2m1fnx2": DType.bfloat16,
+    "q4_k": DType.float32,
+    "q4_0": DType.float32,
+    "q6_k": DType.float32,
+    "gptq": DType.bfloat16,
+}
+
+
+def cache_dtype_for_encoding(
+    quantization_encoding: SupportedEncoding | None,
+    kv_cache_format: str | None,
+) -> DType:
+    """Returns the KV-cache dtype for a quantization encoding.
+
+    An explicit ``kv_cache_format`` override takes precedence; otherwise the
+    dtype is derived from ``quantization_encoding`` (``float32`` when unset).
+
+    Args:
+        quantization_encoding: The resolved weight encoding, or ``None``.
+        kv_cache_format: An explicit override string, or ``None``.
+
+    Returns:
+        The KV-cache ``DType``.
+
+    Raises:
+        ValueError: If the override string or encoding is unrecognized.
+    """
+    if kv_cache_format is not None:
+        dtype = _KV_CACHE_FORMAT_TO_DTYPE.get(kv_cache_format.lower())
+        if dtype is None:
+            raise ValueError(
+                f"Unrecognized kv_cache_format override: '{kv_cache_format}'. "
+                "Supported values are 'float32', 'bfloat16', and 'float8_e4m3fn'."
+            )
+        return dtype
+    if not quantization_encoding:
+        return DType.float32
+    try:
+        return _ENCODING_TO_KV_CACHE_DTYPE[quantization_encoding]
+    except KeyError:
+        raise ValueError(
+            "Unsupported quantization encoding for KV cache dtype resolution: "
+            f"{quantization_encoding}"
+        ) from None
 
 
 class KVConnectorConfig(ConfigFileModel):
@@ -161,9 +224,6 @@ class KVCacheConfig(ConfigFileModel):
     )
     """Default for :meth:`to_params`'s ``allow_kv_head_replication`` argument."""
 
-    _cache_dtype: DType = PrivateAttr(default=DType.float32)
-    "The data type of the KV cache. The cache dtype is determined by the model's quantization encoding, and can be overridden from CLI by the kv_cache_format parameter."
-
     kv_cache_format: str | None = Field(
         default=None,
         description=(
@@ -201,11 +261,6 @@ class KVCacheConfig(ConfigFileModel):
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
-
-    @property
-    def cache_dtype(self) -> DType:
-        """Returns the data type used for KV cache storage."""
-        return self._cache_dtype
 
     def to_params(
         self,

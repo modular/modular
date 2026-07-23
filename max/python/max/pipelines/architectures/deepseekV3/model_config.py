@@ -23,6 +23,7 @@ from max.nn.comm.ep import EPConfig
 from max.nn.kv_cache import KVCacheParamInterface, KVCacheQuantizationConfig
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
@@ -149,7 +150,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     ) -> KVCacheParamInterface:
         data_parallel_degree = pipeline_config.model.data_parallel_degree
         kvcache_quant_config = None
-        if kv_cache_config.cache_dtype in (
+        if cache_dtype in (
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
         ):
@@ -217,7 +218,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = model_config.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding, model_config.kv_cache.kv_cache_format
+        )
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)

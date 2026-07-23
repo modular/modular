@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -123,7 +124,10 @@ class Qwen3Config(Llama3Config):
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
         n_devices = len(pipeline_config.model.device_specs)
 
         device_refs = [
