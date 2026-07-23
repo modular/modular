@@ -19,15 +19,6 @@ using namespace KGEN;
 using namespace POP;
 
 //===----------------------------------------------------------------------===//
-// SIMDCmpAttr
-//===----------------------------------------------------------------------===//
-
-FailureOr<TypedAttr>
-SIMDCmpAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
-  llvm_unreachable("should have been folded to kgen.param.expr");
-}
-
-//===----------------------------------------------------------------------===//
 // SIMDAbsAttr
 //===----------------------------------------------------------------------===//
 
@@ -35,26 +26,6 @@ FailureOr<TypedAttr>
 SIMDAbsAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
   Attribute operands[] = {getOperand()};
   return foldAttrWithTarget(context, operands, foldSIMDAbs);
-}
-
-//===----------------------------------------------------------------------===//
-// SIMDDivAttr
-//===----------------------------------------------------------------------===//
-
-FailureOr<TypedAttr>
-SIMDDivAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
-  Attribute operands[] = {getLhs(), getRhs()};
-  return foldAttrWithTarget(context, operands, foldSIMDDiv);
-}
-
-//===----------------------------------------------------------------------===//
-// SIMDFloorDivAttr
-//===----------------------------------------------------------------------===//
-
-FailureOr<TypedAttr> SIMDFloorDivAttr::evaluateWithContext(
-    ParameterEvaluationContext &context) const {
-  Attribute operands[] = {getLhs(), getRhs()};
-  return foldAttrWithTarget(context, operands, foldSIMDFloorDiv);
 }
 
 //===----------------------------------------------------------------------===//

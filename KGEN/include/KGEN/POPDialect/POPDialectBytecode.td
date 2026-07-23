@@ -143,24 +143,10 @@ def GlobalAllocAddressSpaceAttr : DialectAttribute<(attr
   EnumAttr<"GlobalAllocAddressSpace">:$value
 )>;
 
-def SIMDAndAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
-def SIMDXorAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
-def SIMDOrAttr  : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
-def SIMDAddAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
 def SIMDSubAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
-def SIMDMulAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
-def SIMDDivAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
-def SIMDFloorDivAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
 
 def SIMDShlAttr : DialectAttribute<(attr TypedAttr:$val, TypedAttr:$shft)>;
 def SIMDShrAttr : DialectAttribute<(attr TypedAttr:$val, TypedAttr:$shft)>;
-
-def SIMDCmpAttr : DialectAttribute<(attr
-  EnumAttr<"NormalizedCmpPredicate">:$cc,
-  TypedAttr:$lhs,
-  TypedAttr:$rhs,
-  ConcreteType<"SIMDType">:$type
-)>;
 
 def CastAttr : DialectAttribute<(attr
   TypedAttr:$arg, Type:$type
@@ -204,14 +190,7 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     IntLiteralAttr,
     FloatLiteralAttr,
 
-    SIMDAndAttr,
-    SIMDXorAttr,
-    SIMDOrAttr,
-    SIMDAddAttr,
     SIMDSubAttr,
-    SIMDMulAttr,
-    SIMDDivAttr,
-    SIMDFloorDivAttr,
 
     SIMDShlAttr,
     SIMDShrAttr,
@@ -227,7 +206,6 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     SIMDAbsAttr,
     SIMDRoundAttr,
 
-    SIMDCmpAttr,
     SIMDReduceOrAttr,
     SIMDReduceAndAttr,
     VariadicToArrayAttr,

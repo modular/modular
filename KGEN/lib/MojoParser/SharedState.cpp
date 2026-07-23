@@ -3117,6 +3117,15 @@ FailureOr<TypedAttr> foldSIMDBinOp(Operation &op,
   return failure();
 }
 
+// Handle a simple binary operation that folds to a `#kgen.param.expr`.
+FailureOr<TypedAttr> foldParamBinOp(POC opcode, Operation &op,
+                                    BuiltinFunctionFolder &folder) {
+  if (auto lhs = folder.findValue(op.getOperand(0)))
+    if (auto rhs = folder.findValue(op.getOperand(1)))
+      return ParamOperatorAttr::get(opcode, lhs, rhs);
+  return failure();
+}
+
 } // end anonymous namespace
 
 /// Process the following operation, doing one of three things:
@@ -3264,32 +3273,32 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   if (auto cmpOp = dyn_cast<POP::CmpOp>(op)) {
     if (auto lhs = findValue(cmpOp.getLhs())) {
       if (auto rhs = findValue(cmpOp.getRhs())) {
-        POP::NormalizedCmpPredicate cc;
+        POC cc;
         switch (cmpOp.getPred()) {
         case KGEN::CmpPredicate::EQ:
-          cc = POP::NormalizedCmpPredicate::EQ;
+          cc = POC::EQ;
           break;
         case KGEN::CmpPredicate::NE:
-          cc = POP::NormalizedCmpPredicate::EQ;
+          cc = POC::EQ;
           break;
         case KGEN::CmpPredicate::LT:
-          cc = POP::NormalizedCmpPredicate::LT;
+          cc = POC::LT;
           break;
         case KGEN::CmpPredicate::LE:
-          cc = POP::NormalizedCmpPredicate::LE;
+          cc = POC::LE;
           break;
         case KGEN::CmpPredicate::GT:
-          cc = POP::NormalizedCmpPredicate::LT;
+          cc = POC::LT;
           std::swap(lhs, rhs);
           break;
         case KGEN::CmpPredicate::GE:
-          cc = POP::NormalizedCmpPredicate::LE;
+          cc = POC::LE;
           std::swap(lhs, rhs);
           break;
         }
         auto resultType =
             cast<SIMDType>(evaluator.getReboundType(cmpOp.getType()));
-        auto cmp = POP::SIMDCmpAttr::get(cc, lhs, rhs, resultType);
+        TypedAttr cmp = ParamOperatorAttr::get(cc, lhs, rhs);
 
         // For NE comparisons, negate the EQ result with an XOR
         if (cmpOp.getPred() == KGEN::CmpPredicate::NE) {
@@ -3302,7 +3311,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
                   DTypeConstantAttr::get(cmpOp.getContext(), DType::kBool)));
           auto oneVecVal =
               KGEN::SIMDSplatAttr::get(oneVal, cast<SIMDType>(resultType));
-          cmp = POP::SIMDXorAttr::get(cmp, oneVecVal);
+          cmp = ParamOperatorAttr::get(POC::Xor, cmp, oneVecVal);
         }
 
         return cmp;
@@ -3330,21 +3339,21 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
       return POP::SIMDRoundAttr::get(operand);
 
   if (isa<POP::AddOp>(op))
-    return foldSIMDBinOp<POP::SIMDAddAttr>(op, *this);
+    return foldParamBinOp(POC::Add, op, *this);
   if (isa<POP::SubOp>(op))
     return foldSIMDBinOp<POP::SIMDSubAttr>(op, *this);
   if (isa<POP::MulOp>(op))
-    return foldSIMDBinOp<POP::SIMDMulAttr>(op, *this);
+    return foldParamBinOp(POC::Mul, op, *this);
   if (isa<POP::DivOp>(op))
-    return foldSIMDBinOp<POP::SIMDDivAttr>(op, *this);
+    return foldParamBinOp(POC::Div, op, *this);
   if (isa<POP::FloorDivOp>(op))
-    return foldSIMDBinOp<POP::SIMDFloorDivAttr>(op, *this);
+    return foldParamBinOp(POC::FloorDivS, op, *this);
   if (isa<POP::SIMDAndOp>(op))
-    return foldSIMDBinOp<POP::SIMDAndAttr>(op, *this);
+    return foldParamBinOp(POC::And, op, *this);
   if (isa<POP::SIMDXOrOp>(op))
-    return foldSIMDBinOp<POP::SIMDXorAttr>(op, *this);
+    return foldParamBinOp(POC::Xor, op, *this);
   if (isa<POP::SIMDOrOp>(op))
-    return foldSIMDBinOp<POP::SIMDOrAttr>(op, *this);
+    return foldParamBinOp(POC::Or, op, *this);
   if (isa<POP::ShlOp>(op))
     return foldSIMDBinOp<POP::SIMDShlAttr>(op, *this);
   if (isa<POP::ShrOp>(op))

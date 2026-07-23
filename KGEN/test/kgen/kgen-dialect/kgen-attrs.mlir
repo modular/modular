@@ -275,57 +275,57 @@ kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
 
 "some.op"() {
   // CHECK: a = #kgen<simd 0> : !kgen.scalar<si32>
-  a = #pop.simd_and< #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
+  a = #kgen.param.expr<and, #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
   // CHECK: b = #kgen.simd<2, 42, 1024, 0>
-  b = #pop.simd_and< #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
+  b = #kgen.param.expr<and, #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
                      #kgen.simd<2, -1, 1024, -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
   // CHECK: c = #kgen.unknown : !kgen.simd<4, si32>
-  c = #pop.simd_and< #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>>
+  c = #kgen.param.expr<and, #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
 } : () -> ()
 
 "some.op"() {
   // CHECK: a = #kgen<simd 3> : !kgen.scalar<si32>
-  a = #pop.simd_xor< #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
+  a = #kgen.param.expr<xor, #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
   // CHECK: b = #kgen.simd<5, -43, -1025, -1>
-  b = #pop.simd_xor< #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
+  b = #kgen.param.expr<xor, #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
                      #kgen.simd<2, -1, 1024, -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
   // CHECK: c = #kgen.param.expr<xor, #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
-  c = #pop.simd_xor< #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>>
+  c = #kgen.param.expr<xor, #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
 } : () -> ()
 
 "some.op"() {
   // CHECK: a = #kgen<simd 3> : !kgen.scalar<si32>
-  a = #pop.simd_or< #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
+  a = #kgen.param.expr<or, #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
   // CHECK: b = #kgen.simd<7, -1, -1, -1>
-  b = #pop.simd_or< #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
+  b = #kgen.param.expr<or, #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
                      #kgen.simd<2, -1, 1024, -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
   // CHECK: c = #kgen.unknown : !kgen.simd<4, si32>
-  c = #pop.simd_or< #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>>
+  c = #kgen.param.expr<or, #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
 } : () -> ()
 
 "some.op"() {
   // CHECK: a = #kgen<simd 3> : !kgen.scalar<si32>
-  a = #pop.simd_add< #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
+  a = #kgen.param.expr<add, #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
   // CHECK: b = #kgen.simd<9, 41, 1023, -1>
-  b = #pop.simd_add< #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
+  b = #kgen.param.expr<add, #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
                      #kgen.simd<2, -1, 1024, -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
   // CHECK: c = #kgen.param.expr<mul, #kgen<simd 2> : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
-  c = #pop.simd_add< #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>>,
+  c = #kgen.param.expr<add, #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
 
   // CHECK: d = #kgen<simd false> : !kgen.scalar<bool>
-  d = #pop.simd_add< #kgen<simd true> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
+  d = #kgen.param.expr<add, #kgen<simd true> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
   // CHECK: e = #kgen<simd true> : !kgen.scalar<bool>
-  e = #pop.simd_add< #kgen<simd false> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
+  e = #kgen.param.expr<add, #kgen<simd false> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
   // CHECK: f = #kgen<simd false> : !kgen.scalar<bool>
-  f = #pop.simd_add< #kgen<simd false> : !kgen.scalar<bool>, #kgen<simd false> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
+  f = #kgen.param.expr<add, #kgen<simd false> : !kgen.scalar<bool>, #kgen<simd false> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
 
   // CHECK: g = #kgen<simd "3.5"> : !kgen.scalar<f32>
-  g = #pop.simd_add< #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "2.5"> : !kgen.scalar<f32>> : !kgen.scalar<f32>,
+  g = #kgen.param.expr<add, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "2.5"> : !kgen.scalar<f32>> : !kgen.scalar<f32>,
   // CHECK: h = #kgen<simd "NaN"> : !kgen.scalar<f32>
-  h = #pop.simd_add< #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "NaN"> : !kgen.scalar<f32>> : !kgen.scalar<f32>,
+  h = #kgen.param.expr<add, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "NaN"> : !kgen.scalar<f32>> : !kgen.scalar<f32>,
 
   // CHECK: i = #kgen<simd 6> : !kgen.scalar<index>
-  i = #pop.simd_add< #kgen<simd 2> : !kgen.scalar<index>, #kgen<simd 4> : !kgen.scalar<index>> : !kgen.scalar<index>
+  i = #kgen.param.expr<add, #kgen<simd 2> : !kgen.scalar<index>, #kgen<simd 4> : !kgen.scalar<index>> : !kgen.scalar<index>
 } : () -> ()
 
 "some.op"() {
@@ -356,112 +356,112 @@ kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
 
 "some.op"() {
   // CHECK: a = #kgen<simd 2> : !kgen.scalar<si32>
-  a = #pop.simd_mul< #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
+  a = #kgen.param.expr<mul, #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
   // CHECK: b = #kgen.simd<14, -42, -1024, 0>
-  b = #pop.simd_mul< #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
+  b = #kgen.param.expr<mul, #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
                      #kgen.simd<2, -1, 1024, -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
   // CHECK: c = #kgen.param.expr<mul, #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
-  c = #pop.simd_mul< #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>>,
+  c = #kgen.param.expr<mul, #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
 
   // CHECK: d = #kgen<simd true> : !kgen.scalar<bool>
-  d = #pop.simd_mul< #kgen<simd true> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
+  d = #kgen.param.expr<mul, #kgen<simd true> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
   // CHECK: e = #kgen<simd false> : !kgen.scalar<bool>
-  e = #pop.simd_mul< #kgen<simd false> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
+  e = #kgen.param.expr<mul, #kgen<simd false> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
   // CHECK: f = #kgen<simd false> : !kgen.scalar<bool>
-  f = #pop.simd_mul< #kgen<simd false> : !kgen.scalar<bool>, #kgen<simd false> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
+  f = #kgen.param.expr<mul, #kgen<simd false> : !kgen.scalar<bool>, #kgen<simd false> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
 
   // CHECK: g = #kgen<simd "5"> : !kgen.scalar<f32>
-  g = #pop.simd_mul< #kgen<simd "2.0"> : !kgen.scalar<f32>, #kgen<simd "2.5"> : !kgen.scalar<f32>> : !kgen.scalar<f32>,
+  g = #kgen.param.expr<mul, #kgen<simd "2.0"> : !kgen.scalar<f32>, #kgen<simd "2.5"> : !kgen.scalar<f32>> : !kgen.scalar<f32>,
   // CHECK: h = #kgen<simd "NaN"> : !kgen.scalar<f32>
-  h = #pop.simd_mul< #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "NaN"> : !kgen.scalar<f32>> : !kgen.scalar<f32>,
+  h = #kgen.param.expr<mul, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "NaN"> : !kgen.scalar<f32>> : !kgen.scalar<f32>,
 
   // CHECK: i = #kgen<simd 8> : !kgen.scalar<index>
-  i = #pop.simd_mul< #kgen<simd 2> : !kgen.scalar<index>, #kgen<simd 4> : !kgen.scalar<index>> : !kgen.scalar<index>
+  i = #kgen.param.expr<mul, #kgen<simd 2> : !kgen.scalar<index>, #kgen<simd 4> : !kgen.scalar<index>> : !kgen.scalar<index>
 } : () -> ()
 
 "some.op"() {
   // CHECK: a = #kgen<simd 3> : !kgen.scalar<si32>
-  a = #pop.simd_div< #kgen<simd 6> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
+  a = #kgen.param.expr<div, #kgen<simd 6> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
   // CHECK: b = #kgen.simd<3, -42, 0, 0>
-  b = #pop.simd_div< #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
+  b = #kgen.param.expr<div, #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
                      #kgen.simd<2, -1, 1024, -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
   // CHECK: c = #kgen.param.expr<div, #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
-  c = #pop.simd_div< #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>>,
+  c = #kgen.param.expr<div, #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
 
   // Integer division by zero should not fold (undefined behavior)
   // CHECK: d = #kgen.param.expr<div, #kgen<simd 6> : !kgen.scalar<si32>, #kgen<simd 0> : !kgen.scalar<si32>> : !kgen.scalar<si32>
-  d = #pop.simd_div< #kgen<simd 6> : !kgen.scalar<si32>, #kgen<simd 0> : !kgen.scalar<si32>>,
+  d = #kgen.param.expr<div, #kgen<simd 6> : !kgen.scalar<si32>, #kgen<simd 0> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
 
   // CHECK: e = #kgen<simd "2.5"> : !kgen.scalar<f32>
-  e = #pop.simd_div< #kgen<simd "5.0"> : !kgen.scalar<f32>, #kgen<simd "2.0"> : !kgen.scalar<f32>> : !kgen.scalar<f32>,
+  e = #kgen.param.expr<div, #kgen<simd "5.0"> : !kgen.scalar<f32>, #kgen<simd "2.0"> : !kgen.scalar<f32>> : !kgen.scalar<f32>,
 
   // Float division by zero folds to inf (IEEE 754)
   // CHECK: f = #kgen<simd "+Inf"> : !kgen.scalar<f32>
-  f = #pop.simd_div< #kgen<simd "5.0"> : !kgen.scalar<f32>, #kgen<simd "0.0"> : !kgen.scalar<f32>> : !kgen.scalar<f32>,
+  f = #kgen.param.expr<div, #kgen<simd "5.0"> : !kgen.scalar<f32>, #kgen<simd "0.0"> : !kgen.scalar<f32>> : !kgen.scalar<f32>,
 
   // CHECK: g = #kgen<simd 2> : !kgen.scalar<index>
-  g = #pop.simd_div< #kgen<simd 8> : !kgen.scalar<index>, #kgen<simd 4> : !kgen.scalar<index>> : !kgen.scalar<index>,
+  g = #kgen.param.expr<div, #kgen<simd 8> : !kgen.scalar<index>, #kgen<simd 4> : !kgen.scalar<index>> : !kgen.scalar<index>,
 
   // CHECK: h = #kgen<simd true> : !kgen.scalar<bool>
-  h = #pop.simd_div< #kgen<simd true> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
+  h = #kgen.param.expr<div, #kgen<simd true> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
   // CHECK: i = #kgen<simd false> : !kgen.scalar<bool>
-  i = #pop.simd_div< #kgen<simd false> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
+  i = #kgen.param.expr<div, #kgen<simd false> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
   // Bool division by zero (false) should not fold
   // CHECK: j = #kgen.param.expr<div, #kgen<simd true> : !kgen.scalar<bool>, #kgen<simd false> : !kgen.scalar<bool>> : !kgen.scalar<bool>
-  j = #pop.simd_div< #kgen<simd true> : !kgen.scalar<bool>, #kgen<simd false> : !kgen.scalar<bool>>
+  j = #kgen.param.expr<div, #kgen<simd true> : !kgen.scalar<bool>, #kgen<simd false> : !kgen.scalar<bool>> : !kgen.scalar<bool>
 } : () -> ()
 
 "some.op"() {
   // CHECK: a = #kgen<simd false> : !kgen.scalar<bool>
-  a = #pop.simd_cmp<eq, #kgen.unknown : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
+  a = #kgen.param.expr<eq, #kgen.unknown : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
   // CHECK: b = #kgen<simd false> : !kgen.scalar<bool>
-  b = #pop.simd_cmp<eq, #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
+  b = #kgen.param.expr<eq, #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
   // CHECK: c = #kgen<simd true> : !kgen.scalar<bool>
-  c = #pop.simd_cmp<eq, #kgen<simd 42> : !kgen.scalar<si32>, #kgen<simd 42> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
+  c = #kgen.param.expr<eq, #kgen<simd 42> : !kgen.scalar<si32>, #kgen<simd 42> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
   // CHECK: d = #kgen<simd false> : !kgen.scalar<bool>
-  d = #pop.simd_cmp<lt, #kgen<simd 42> : !kgen.scalar<si32>, #kgen<simd 42> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
+  d = #kgen.param.expr<lt, #kgen<simd 42> : !kgen.scalar<si32>, #kgen<simd 42> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
   // CHECK: e = #kgen<simd true> : !kgen.scalar<bool>
-  e = #pop.simd_cmp<le, #kgen<simd 42> : !kgen.scalar<si32>, #kgen<simd 42> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
+  e = #kgen.param.expr<le, #kgen<simd 42> : !kgen.scalar<si32>, #kgen<simd 42> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
   // CHECK: f = #kgen<simd true> : !kgen.scalar<bool>
-  f = #pop.simd_cmp<eq, #kgen<sugar alias, !kgen.scalar<ui8>, *?, #kgen<simd 5>>, #kgen<simd 5> : !kgen.scalar<ui8>> : !kgen.scalar<bool>
+  f = #kgen.param.expr<eq, #kgen<sugar alias, !kgen.scalar<ui8>, *?, #kgen<simd 5>>, #kgen<simd 5> : !kgen.scalar<ui8>> : !kgen.scalar<bool>
 } : () -> ()
 
 "some.op"() {
   // CHECK: a0 = #kgen<simd true> : !kgen.scalar<bool>
-  a0 = #pop.simd_cmp<eq, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "1.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
+  a0 = #kgen.param.expr<eq, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "1.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
   // CHECK: a1 = #kgen<simd false> : !kgen.scalar<bool>
-  a1 = #pop.simd_cmp<eq, #kgen<simd "1.5"> : !kgen.scalar<f32>, #kgen<simd "1.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
+  a1 = #kgen.param.expr<eq, #kgen<simd "1.5"> : !kgen.scalar<f32>, #kgen<simd "1.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
   // CHECK: a2 = #kgen<simd false> : !kgen.scalar<bool>
-  a2 = #pop.simd_cmp<eq, #kgen<simd "NaN"> : !kgen.scalar<f32>, #kgen<simd "NaN"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
+  a2 = #kgen.param.expr<eq, #kgen<simd "NaN"> : !kgen.scalar<f32>, #kgen<simd "NaN"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
   // CHECK: b0 = #kgen<simd false> : !kgen.scalar<bool>
-  b0 = #pop.simd_cmp<lt, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "1.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
+  b0 = #kgen.param.expr<lt, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "1.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
   // CHECK: b1 = #kgen<simd true> : !kgen.scalar<bool>
-  b1 = #pop.simd_cmp<lt, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "1.01"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
+  b1 = #kgen.param.expr<lt, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "1.01"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
   // CHECK: b2 = #kgen<simd false> : !kgen.scalar<bool>
-  b2 = #pop.simd_cmp<lt, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "NaN"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
+  b2 = #kgen.param.expr<lt, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "NaN"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
   // CHECK: b3 = #kgen<simd false> : !kgen.scalar<bool>
-  b3 = #pop.simd_cmp<lt, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "NaN"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
+  b3 = #kgen.param.expr<lt, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "NaN"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
   // CHECK: b4 = #kgen<simd false> : !kgen.scalar<bool>
-  b4 = #pop.simd_cmp<lt, #kgen<simd "NaN"> : !kgen.scalar<f32>, #kgen<simd "1.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
+  b4 = #kgen.param.expr<lt, #kgen<simd "NaN"> : !kgen.scalar<f32>, #kgen<simd "1.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
   // CHECK: c0 = #kgen<simd true> : !kgen.scalar<bool>
-  c0 = #pop.simd_cmp<le, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "1.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
+  c0 = #kgen.param.expr<le, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "1.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
   // CHECK: c1 = #kgen<simd true> : !kgen.scalar<bool>
-  c1 = #pop.simd_cmp<le, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "1.01"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
+  c1 = #kgen.param.expr<le, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "1.01"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
   // CHECK: c2 = #kgen<simd false> : !kgen.scalar<bool>
-  c2 = #pop.simd_cmp<le, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "NaN"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
+  c2 = #kgen.param.expr<le, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "NaN"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
   // CHECK: c3 = #kgen<simd false> : !kgen.scalar<bool>
-  c3 = #pop.simd_cmp<le, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "NaN"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
+  c3 = #kgen.param.expr<le, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "NaN"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,
   // CHECK: c4 = #kgen<simd false> : !kgen.scalar<bool>
-  c4 = #pop.simd_cmp<le, #kgen<simd "NaN"> : !kgen.scalar<f32>, #kgen<simd "1.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>
+  c4 = #kgen.param.expr<le, #kgen<simd "NaN"> : !kgen.scalar<f32>, #kgen<simd "1.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>
 } : () -> ()
 
 // Index comparisons fold when 32-bit and 64-bit results agree.
 // Comparisons that disagree remain unfolded (require target info).
 "some.op"() {
   // CHECK: a = #kgen<simd true> : !kgen.scalar<bool>
-  a = #pop.simd_cmp<eq, #kgen<simd 5> : !kgen.scalar<index>, #kgen<simd 5> : !kgen.scalar<index>> : !kgen.scalar<bool>,
+  a = #kgen.param.expr<eq, #kgen<simd 5> : !kgen.scalar<index>, #kgen<simd 5> : !kgen.scalar<index>> : !kgen.scalar<bool>,
   // CHECK: b = #kgen.param.expr<lt, #kgen<simd 3000000000> : !kgen.scalar<index>, #kgen<simd 0> : !kgen.scalar<index>> : !kgen.scalar<bool>
-  b = #pop.simd_cmp<lt, #kgen<simd 3000000000> : !kgen.scalar<index>, #kgen<simd 0> : !kgen.scalar<index>> : !kgen.scalar<bool>
+  b = #kgen.param.expr<lt, #kgen<simd 3000000000> : !kgen.scalar<index>, #kgen<simd 0> : !kgen.scalar<index>> : !kgen.scalar<bool>
 } : () -> ()
 
 "some.op"() {
@@ -587,18 +587,18 @@ kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
 
 "some.op"() {
   // CHECK: a = #kgen.simd<2, -3, -1, 0>
-  a = #pop.simd_floordiv< #kgen.simd<7, 7, -1, 0> : !kgen.simd<4, si32>,
+  a = #kgen.param.expr<floor_div_s, #kgen.simd<7, 7, -1, 0> : !kgen.simd<4, si32>,
                           #kgen.simd<3, -3, 1024, -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
   // CHECK: b = #kgen.simd<"2", "-3">
-  b = #pop.simd_floordiv< #kgen.simd<"7", "7"> : !kgen.simd<2, f32>,
+  b = #kgen.param.expr<floor_div_s, #kgen.simd<"7", "7"> : !kgen.simd<2, f32>,
                           #kgen.simd<"3", "-3"> : !kgen.simd<2, f32>> : !kgen.simd<2, f32>,
   // `floor_div_s(x, 1)` folds to `x`.
   // CHECK: c = #kgen.unknown : !kgen.scalar<si32>
-  c = #pop.simd_floordiv< #kgen.unknown : !kgen.scalar<si32>, #kgen.simd<1> : !kgen.scalar<si32>>,
+  c = #kgen.param.expr<floor_div_s, #kgen.unknown : !kgen.scalar<si32>, #kgen.simd<1> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
   // CHECK: d = #kgen.param.expr<floor_div_s, #kgen<simd 1> : !kgen.scalar<si32>, #kgen.unknown
-  d = #pop.simd_floordiv<  #kgen.simd<1> : !kgen.scalar<si32>, #kgen.unknown : !kgen.scalar<si32>>,
+  d = #kgen.param.expr<floor_div_s,  #kgen.simd<1> : !kgen.scalar<si32>, #kgen.unknown : !kgen.scalar<si32>> : !kgen.scalar<si32>,
   // CHECK: e = #kgen<simd -3>
-  e = #pop.simd_floordiv<  #kgen.simd<7> : !kgen.scalar<index>, #kgen.simd<-3> : !kgen.scalar<index>>,
+  e = #kgen.param.expr<floor_div_s,  #kgen.simd<7> : !kgen.scalar<index>, #kgen.simd<-3> : !kgen.scalar<index>> : !kgen.scalar<index>,
   // CHECK: f = #kgen.param.expr<floor_div_s, #kgen<simd 9223372036854775807>
-  f = #pop.simd_floordiv<  #kgen.simd<9223372036854775807> : !kgen.scalar<index>, #kgen.simd<-3> : !kgen.scalar<index>>
+  f = #kgen.param.expr<floor_div_s,  #kgen.simd<9223372036854775807> : !kgen.scalar<index>, #kgen.simd<-3> : !kgen.scalar<index>> : !kgen.scalar<index>
 } : () -> ()

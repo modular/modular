@@ -737,19 +737,10 @@ class POP_SIMDBinaryAttr<string name, list<Trait> traits = []>
   }];
 }
 
-def POP_SIMDAndAttr : POP_SIMDBinaryAttr<"And">;
-def POP_SIMDXorAttr : POP_SIMDBinaryAttr<"Xor">;
-def POP_SIMDOrAttr  : POP_SIMDBinaryAttr<"Or">;
-
-def POP_SIMDAddAttr : POP_SIMDBinaryAttr<"Add">;
+// Add, Mul, Div, FloorDiv, And, Or, Xor and the comparisons are all created
+// directly as `#kgen.param.expr` (see `ParamOperatorAttr`), so only the
+// operators without an equivalent `POC` opcode need a dedicated attribute.
 def POP_SIMDSubAttr : POP_SIMDBinaryAttr<"Sub">;
-def POP_SIMDMulAttr : POP_SIMDBinaryAttr<"Mul">;
-def POP_SIMDDivAttr : POP_SIMDBinaryAttr<"Div",
-    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
-                                 ["evaluateWithContext"]>]>;
-def POP_SIMDFloorDivAttr : POP_SIMDBinaryAttr<"FloorDiv",
-    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
-                                 ["evaluateWithContext"]>]>;
 
 //===----------------------------------------------------------------------===//
 // SIMD Shift Operation Attributes
@@ -832,42 +823,6 @@ def POP_SIMDShrAttr : POP_SIMDShiftAttr<"Shr"> {
     arguments are vectors, each vector element of the shifted value is shifted
     by the corresponding shift amount in the shift amount.
   }];
-}
-
-//===----------------------------------------------------------------------===//
-// SIMDCmp
-//===----------------------------------------------------------------------===//
-
-def POP_SIMDCmpAttr : POP_ExprAttr<"SIMDCmp", "simd_cmp",
-    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
-                                 ["evaluateWithContext"]>]> {
-  let summary = "SIMD cmp.";
-  let description = [{
-    The `#pop.simd_cmp` attribute performs a comparison between two SIMD
-    vectors.
-  }];
-
-  let parameters = (ins "NormalizedCmpPredicate":$cc,
-                        "TypedAttr":$lhs, "TypedAttr":$rhs,
-                        AttributeSelfTypeParameter<"", "SIMDType">:$type);
-
-  let assemblyFormat = " `<` $cc `,` $lhs `,` $rhs `>` ";
-
-  let genVerifyDecl = 1;
-  let skipDefaultBuilders = 1;
-  let builders = [
-    // Override the default builder used by the generated parser because this
-    // may not return a SIMDAndAttr.
-    AttrBuilder<(ins "NormalizedCmpPredicate":$cc, "TypedAttr":$lhs, "TypedAttr":$rhs,
-                     "SIMDType":$type),
-                "", "TypedAttr">,
-
-    AttrBuilderWithInferredContext<(
-        ins "NormalizedCmpPredicate":$cc, "TypedAttr":$lhs, "TypedAttr":$rhs,
-            "SIMDType":$type), [{
-      return get(lhs.getContext(), cc, lhs, rhs, type);
-    }], "TypedAttr">
-  ];
 }
 
 class POP_SIMDReduceAttr<string name>

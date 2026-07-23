@@ -485,30 +485,30 @@ kgen.func @illegal_applied_struct_param_length(%arg0: !kgen.struct_inst<"Bar"[el
 
 // -----
 
-// expected-error @+2 {{requires two equally-typed SIMD operands}}
+// expected-error @+2 {{operand type mismatch}}
 "some.op"() {
-  a = #pop.simd_and< #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<ui32>> : !kgen.scalar<si32>
+  a = #kgen.param.expr<and, #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<ui32>> : !kgen.scalar<si32>
 } : () -> ()
 
 // -----
 
-// expected-error @+2 {{requires two equally-typed SIMD operands}}
+// expected-error @+2 {{operand type mismatch}}
 "some.op"() {
-  a = #pop.simd_xor< #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<ui32>> : !kgen.scalar<si32>
+  a = #kgen.param.expr<xor, #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<ui32>> : !kgen.scalar<si32>
 } : () -> ()
 
 // -----
 
-// expected-error @+2 {{requires two equally-typed SIMD operands}}
+// expected-error @+2 {{operand type mismatch}}
 "some.op"() {
-  b = #pop.simd_cmp<eq, #kgen<simd "1.0"> : !kgen.scalar<f64>, #kgen<simd "2.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>
+  b = #kgen.param.expr<eq, #kgen<simd "1.0"> : !kgen.scalar<f64>, #kgen<simd "2.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>
 } : () -> ()
 
 // -----
 
-// expected-error @+2 {{mismatched size between operands and result}}
+// expected-error @+2 {{comparisons return simd<bool>}}
 "some.op"() {
-  b = #pop.simd_cmp<eq, #kgen<simd 1> : !kgen.scalar<ui8>, #kgen<simd 2> : !kgen.scalar<ui8>> : !kgen.simd<3, ui8>
+  b = #kgen.param.expr<eq, #kgen<simd 1> : !kgen.scalar<ui8>, #kgen<simd 2> : !kgen.scalar<ui8>> : !kgen.simd<3, ui8>
 } : () -> ()
 
 // -----
