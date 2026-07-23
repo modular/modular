@@ -886,4 +886,11 @@ This version is still a work in progress.
   budget against filesystem free space, raising an actionable error before
   allocating.
 
+- Fixed grouped (`groups > 1`) `ops.conv2d`/`ops.conv3d` on CPU raising
+  `grouped conv requires packed filter` whenever the filter was a non-constant
+  graph value, even with a fully static graph. The compiler only pre-packed
+  the filter into the layout the grouped-conv kernel requires when the filter
+  traced back to a compile-time constant; it now also packs a non-constant
+  filter when `groups > 1`, since the kernel cannot run without one.
+
 ## Mojo language
