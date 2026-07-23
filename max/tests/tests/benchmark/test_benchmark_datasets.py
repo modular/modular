@@ -872,6 +872,30 @@ def test_synthetic_pixel_dataset_sample_requests_for_image_to_image() -> None:
         assert request.image_options.guidance_scale == 3.0
 
 
+def test_synthetic_pixel_dataset_sample_requests_for_image_to_video() -> None:
+    dataset = BenchmarkDataset.from_flags(dataset_name="synthetic-pixel")
+    assert isinstance(dataset, SyntheticPixelBenchmarkDataset)
+
+    samples = dataset.sample_requests(
+        num_requests=2,
+        tokenizer=None,
+        benchmark_task="image-to-video",
+        image_width=832,
+        image_height=480,
+        num_frames=81,
+    )
+
+    assert len(samples.requests) == 2
+    for request in samples.requests:
+        assert isinstance(request, PixelGenerationSampledRequest)
+        assert request.prompt_formatted.startswith("Random prompt")
+        # image-to-video still attaches an input image, like image-to-image.
+        assert len(request.input_image_paths) == 1
+        assert Path(request.input_image_paths[0]).exists()
+        assert request.image_options is not None
+        assert request.image_options.num_frames == 81
+
+
 def test_random_multiturn_emits_zero_prefix_turns() -> None:
     """gen_multiturn_random_requests always emits prefix_turns=0; the runner
     owns warmup prefix-turn assignment via _pick_warmup_population."""
