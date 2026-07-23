@@ -440,9 +440,10 @@ DeclResolver::aliasImportDecls(ArrayRef<ASTDecl *> decls, StringAttr name,
 
 // Check whether the incoming decls conflict with existing decls under the same
 // name, applying the same rules as `attachDeclToParentNameTable` does for local
-// declarations: functions may freely overload each other, but a function and a
-// non-function (struct, alias, MLIR type, …) under the same name is an error,
-// as are two distinct non-functions.
+// declarations: functions may overload each other (deprecated when they come
+// from different origins), but a function and a non-function (struct, alias,
+// MLIR type, …) under the same name is an error, as are two distinct
+// non-functions.
 LogicalResult DeclResolver::checkImportNamingConflict(
     ArrayRef<ASTDecl *> incoming, ArrayRef<ASTDecl *> existing, StringAttr name,
     llvm::SMLoc aliasLoc, bool emitDiagnostics) {
@@ -500,6 +501,19 @@ LogicalResult DeclResolver::checkImportNamingConflict(
             canMergeSingleNamespaceDecls({incomingNonFn}, {existingNonFn}))) {
       conflictA = existingNonFn;
       conflictB = incomingNonFn;
+    }
+  } else if (incomingFn && existingFn && incomingFn != existingFn) {
+    // Two functions from different origins merge into one overload set, but
+    // this is deprecated: an overload set resolves from one place only. Warn
+    // and let the merge proceed. The pointer check keeps re-imports of the
+    // same decls through different routes (e.g. a module and a package that
+    // re-exports it) quiet.
+    if (emitDiagnostics) {
+      auto diag = emitWarning(aliasLoc, "importing ")
+                  << name << " from multiple modules is deprecated; import "
+                  << name << " from a single module";
+      diag.attachNote(*existingFn) << name << " declared here";
+      diag.attachNote(*incomingFn) << name << " also declared here";
     }
   }
 

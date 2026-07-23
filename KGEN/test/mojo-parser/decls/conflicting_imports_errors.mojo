@@ -54,16 +54,21 @@ def use_alias[x: Foo]():
 # // -----
 
 # ---------------------------------------------------------------------------
-# Functions: importing functions with the same name from different modules is
-# legal at import time — they form an overload set. No import-time error.
+# Functions: an overload set resolves from a single origin, so importing
+# functions with the same name from different modules is deprecated. Unlike
+# the non-function cases above this is a warning, not an error: the overload
+# sets still merge as they always have.
 
 from fn_a import Foo
+
+# @expected-warning @below {{importing 'Foo' from multiple modules is deprecated; import 'Foo' from a single module}}
 from fn_b import Foo
 
 
-# Foo() unambiguously calls fn_a.Foo (no args); fn_b.Foo requires an i1 arg.
+# The overload sets merge, so both overloads remain callable.
 def call_it():
     Foo()
+    Foo(True)
 
 
 # // -----
