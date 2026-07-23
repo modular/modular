@@ -44,10 +44,10 @@ export class LanguageServer {
   private diagnosticEmitter: Emitter<PublishDiagnosticsParams>;
   public onDiagnosticsPublished: Event<PublishDiagnosticsParams>;
 
-  constructor() {
+  constructor(extraArgs: string[] = []) {
     this.serverProcess = spawn(
       process.env["MODULAR_MOJO_MAX_LSP_SERVER_PATH"]!,
-      ["-wait-on-shutdown"],
+      ["-wait-on-shutdown", ...extraArgs],
       {
         stdio: ["pipe", "pipe", "inherit"],
       }
