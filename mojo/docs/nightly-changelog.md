@@ -1298,3 +1298,15 @@ This version is still a work in progress.
   later `import util` would silently bind the cached failure even when a real
   `util.mojo` exists on the search path, making the module unimportable with
   no diagnostic.
+
+- Struct extensions are no longer imported onto structs which happen to share a
+  name with their intended struct, when the extensions' intended struct is
+  shadowed by another:
+
+  ```mojo
+  from pkg_a import *   # defines a Foo and extensions on it
+  from pkg_b import Foo # defines another Foo and extensions on it
+  ```
+
+  Previously in the above example, the extensions defined by `pkg_a` would be
+  imported and callable on the unrelated `Foo` struct imported from `pkg_b`.
