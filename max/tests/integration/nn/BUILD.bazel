@@ -129,6 +129,12 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     imports = ["."],
+    # Distinct MXFP8 / FP8-KV graphs are compiled. Shard so
+    # they run as parallel processes instead of serializing in one (keeps the
+    # per-shard wall-clock and peak memory down).
+    per_test_shard_count = {
+        "test_fused_qkv_mxfp8_matmul_gpu.py": 3,
+    },
     tags = [
         "gpu",
     ],

@@ -316,71 +316,37 @@ def test_fused_qkv_mxfp8_matmul(
     assert kv_cos > 0.99, f"{label}: K/V cosine {kv_cos:.5f} too low"
     assert kv_rel < 0.1, f"{label}: K/V rel-L2 {kv_rel:.5f} too high"
 
-
-def test_fused_qkv_mxfp8_matmul_fp8_cache() -> None:
-    """The MXFP8 fused-QKV store writes into a scale-free FP8 cache.
-
-    This is the dense-layer write op for a block-sparse MSA FP8 KV. Dense MXFP8 layers
-    route through ``quantized_fused_qkv_matmul`` ->
-    ``mo.fused_qkv_matmul.ragged.paged.scale.mxfp8``. The GEMM outputs the BF16
-    Q scratch and the epilogue saturating-casts K/V into the FP8 cache (the
-    kernel passes ``output_dtype`` (bf16) to the GEMM).
-    Confirms the stored K/V match a BF16-cache run within FP8 rounding.
-    """
-    _skip_if_not_supported()
-
-    seq_len, num_heads, num_kv_heads, head_dim, hidden = 96, 16, 4, 128, 768
-    qkv_dim = (num_heads + 2 * num_kv_heads) * head_dim
-
-    rng = np.random.default_rng(0)
-    a_np = (rng.standard_normal((seq_len, hidden)) * 0.1).astype(np.float32)
-    wqkv_np = (rng.standard_normal((qkv_dim, hidden)) * 0.1).astype(np.float32)
-
-    device = Accelerator()
-    device_ref = DeviceRef(device.label, device.id)
-    session = InferenceSession(devices=[device])
-
-    def _params(dtype: DType) -> MHAKVCacheParams:
-        return MHAKVCacheParams(
-            dtype=dtype,
+    # Dense-layer FP8 KV-cache store (the write op a block-sparse MSA FP8 KV
+    # uses for its dense layers): the same MXFP8 projection stored into a
+    # scale-free FP8 cache must match the BF16-cache store within FP8 rounding.
+    # Checked on the prefill shape only, reusing the MXFP8 K/V computed above as
+    # the BF16 baseline so no extra reference graph is compiled.
+    if label == "prefill":
+        fp8_params = MHAKVCacheParams(
+            dtype=DType.float8_e4m3fn,
             page_size=128,
             n_kv_heads=num_kv_heads,
             head_dim=head_dim,
             num_layers=1,
             devices=[device_ref],
         )
-
-    fp8_params = _params(DType.float8_e4m3fn)
-    # Scale-free FP8: the MSA/M3 config never attaches a kvcache_quant_config.
-    assert fp8_params.is_fp8_kv_dtype
-    assert not fp8_params.quantized_kv_cache
-
-    def _kv(kv_params: MHAKVCacheParams) -> np.ndarray:
-        return _run_path(
+        assert fp8_params.is_fp8_kv_dtype
+        assert not fp8_params.quantized_kv_cache
+        _q_fp8, kv_fp8 = _run_path(
             is_mxfp8=True,
             a_np=a_np,
             wqkv_np=wqkv_np,
             seq_len=seq_len,
             num_heads=num_heads,
-            kv_params=kv_params,
+            kv_params=fp8_params,
             device=device,
             device_ref=device_ref,
             session=session,
-        )[1]
-
-    kv_fp8 = _kv(fp8_params)
-    kv_bf16 = _kv(_params(DType.bfloat16))
-
-    kv_cos, kv_rel = _cosine_and_rel_l2(kv_fp8, kv_bf16)
-    print(
-        f"\n=== fused_qkv_mxfp8 fp8-cache store ===\n"
-        f"  K/V cosine / rel-L2 : {kv_cos:.5f} / {kv_rel:.5f}",
-        flush=True,
-    )
-
-    assert np.all(np.isfinite(kv_fp8)), "FP8 KV cache has non-finite values"
-    assert np.any(kv_fp8 != 0.0), "FP8 KV cache is all zeros"
-    assert kv_cos > 0.99, f"FP8 vs BF16 K/V cosine {kv_cos:.5f} too low"
+        )
+        fp8_cos, _ = _cosine_and_rel_l2(kv_fp8, kv_mxfp8)
+        assert np.all(np.isfinite(kv_fp8)), "FP8 KV cache has non-finite values"
+        assert np.any(kv_fp8 != 0.0), "FP8 KV cache is all zeros"
+        assert fp8_cos > 0.99, f"FP8 vs BF16 K/V cosine {fp8_cos:.5f} too low"
 
 
 def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
