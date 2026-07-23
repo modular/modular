@@ -276,12 +276,12 @@ def run_one_case(
     )
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
 
     # A scales: zero everything, then fill the in-range region per active expert.
     for i in range(a_scales_host.num_elements()):
-        a_scales_host.ptr[i] = Scalar[scales_dtype](0.0)
+        a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
     for i in range(num_active_experts):
         var start = Int(a_offsets_host_ptr[i])
         var actual_start = (
@@ -446,17 +446,18 @@ def run_one_case(
             var expert_id = Int(expert_ids_host_ptr[i])
 
             var c_slice = TileTensor(
-                c_ref_tensor.ptr + start * N, row_major((end - start, Idx[N]))
+                c_ref_tensor._storage + start * N,
+                row_major((end - start, Idx[N])),
             )
             var a_slice = TileTensor(
-                a_tensor.ptr + start * K, row_major((end - start, Idx[K]))
+                a_tensor._storage + start * K, row_major((end - start, Idx[K]))
             )
             var b_slice = TileTensor(
-                b_tensor.ptr + expert_id * b_expert_stride,
+                b_tensor._storage + expert_id * b_expert_stride,
                 row_major((Idx[N], Idx[K])),
             )
             var b_scales_slice = TileTensor(
-                b_scales_tensor.ptr + expert_id * b_expert_scale_count,
+                b_scales_tensor._storage + expert_id * b_expert_scale_count,
                 row_major(
                     Coord(
                         Idx[n_groups],
@@ -471,7 +472,7 @@ def run_one_case(
                 a_scale_offsets_ptr[i]
             )
             var a_scales_slice = TileTensor(
-                a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
+                a_scales_tensor._storage + a_scales_start * a_scales_row_stride,
                 row_major(
                     Coord(
                         ceildiv(end - start, SF_MN_GROUP_SIZE),
@@ -688,7 +689,7 @@ def _run_batch_composition(
 
     # B weights + B scales: seeded from `b_seed` (identical across compositions).
     seed(b_seed)
-    rand(b_host.ptr, b_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
     comptime b_expert_scale_count = (
         n_groups * k_groups * SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
     )
@@ -724,14 +725,14 @@ def _run_batch_composition(
     # A rows: the probe rows [0, m_probe*K) from `probe_seed`, the fillers after
     # from `filler_seed`. The probe rows are byte-identical across compositions.
     seed(probe_seed)
-    rand(a_host.ptr, m_probe * K)
+    rand(a_host._storage, m_probe * K)
     if total_num_tokens > m_probe:
         seed(filler_seed)
-        rand(a_host.ptr + m_probe * K, (total_num_tokens - m_probe) * K)
+        rand(a_host._storage + m_probe * K, (total_num_tokens - m_probe) * K)
 
     # A scales: zero, then fill fillers (filler_seed) and the probe (probe_seed).
     for i in range(a_scales_host.num_elements()):
-        a_scales_host.ptr[i] = Scalar[scales_dtype](0.0)
+        a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
 
     # Fillers (slots 1..) from the filler stream.
     seed(filler_seed)
