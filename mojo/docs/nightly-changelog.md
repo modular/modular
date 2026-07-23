@@ -168,6 +168,11 @@ This version is still a work in progress.
 
 ## Language changes
 
+- Predefined and reserved words (for example `class`, `del`, `match`, `yield`)
+  can no longer be used as the name of a free function. Doing so now errors at
+  the declaration instead of silently producing a function that could never be
+  called.
+
 - User-written structs must now explicitly declare closure-trait conformance
   in their inheritance list to satisfy a `def(...) -> ...` closure trait.
   Previously a struct with a compatible `__call__` was accepted implicitly
