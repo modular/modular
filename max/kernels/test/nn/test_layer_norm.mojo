@@ -118,3 +118,13 @@ def main() raises:
     run_layer_norm_cpu[DType.float32](Index(3, 4, 10, 20, 8))
     print("8")
     run_layer_norm_cpu[DType.float32](Index(1, 5, 6, 10, 128))
+
+    # float64 regression for KERN-3270: simd_width is 4 on AVX2, so
+    # num_cols=5 hits the vector loop plus a scalar tail, the shape that
+    # segfaulted.
+    print("9")
+    run_layer_norm_cpu[DType.float64](Index(4, 5))
+    print("10")
+    run_layer_norm_cpu[DType.float64](Index(3, 5))
+    print("11")
+    run_layer_norm_cpu[DType.float64](Index(7, 33))

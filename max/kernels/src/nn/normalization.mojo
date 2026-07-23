@@ -16,12 +16,11 @@ from std.math.uutils import umod, ufloordiv, uceildiv
 from std.sys.info import align_of, simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
-from std.algorithm import map_reduce, mean, variance, vectorize
+from std.algorithm import mean, variance, vectorize
 from std.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     sync_parallelize,
 )
-from std.algorithm.reduction import _simd_sum, _simd_sum_elementwise
 from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
@@ -748,16 +747,6 @@ def layer_norm_cpu[
 
     for var row in range(num_rows):
 
-        @always_inline
-        @parameter
-        @__copy_capture(row)
-        def output_fn_1d[
-            dtype_: DType, simd_width: SIMDLength, alignment: Int
-        ](idx: Int, val: SIMD[dtype_, simd_width]):
-            output_fn[simd_width, alignment](
-                row, idx, rebind[SIMD[dtype, simd_width]](val)
-            )
-
         @__copy_capture(row)
         @parameter
         def input_gen_wrapper[
@@ -765,17 +754,16 @@ def layer_norm_cpu[
         ](col: Int) -> SIMD[dtype, simd_width]:
             return input_fn[simd_width, alignment=1](row, col).cast[dtype]()
 
-        var sum_val = map_reduce[
-            simd_width,
-            dtype,
-            dtype,
-            origin_of()._mlir_origin,
-            input_gen_wrapper,
-            origin_of()._mlir_origin,
-            _simd_sum_elementwise,
-            _simd_sum,
-            output_fn_1d,
-        ](num_cols, 0)
+        # map_reduce (used previously) also stores each value to output_fn as
+        # an aligned vector store, which faults on unaligned output buffers
+        # (KERN-3270). Sum it directly instead, like rms_norm_cpu below.
+        var simd_loop_end = align_down(num_cols, simd_width)
+        var sum_simd = SIMD[dtype, simd_width]()
+        for col in range(0, simd_loop_end, simd_width):
+            sum_simd += input_gen_wrapper[dtype, simd_width](col)
+        var sum_val = sum_simd.reduce_add()
+        for col in range(simd_loop_end, num_cols):
+            sum_val += input_gen_wrapper[dtype, 1](col)
 
         var mean_val = _sum_to_mean(sum_val, num_cols)
         var var_val = variance[dtype, input_gen_wrapper](
