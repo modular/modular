@@ -116,6 +116,7 @@ from max.nn.transformer import ReturnLogits
 from max.pipelines.context import (
     EOSTracker,
     SpecDecodingState,
+    TextAndVisionContext,
     TextContext,
     TextGenerationContextType,
     TextGenerationOutput,
@@ -129,6 +130,11 @@ from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
     _contiguous_prefix_2d,
     cache_valid_length_for_context,
     prompt_tokens_for_context,
+)
+from max.pipelines.lib.vision_encoder_cache import (
+    SupportsVisionEncoding,
+    VisionEncoderCache,
+    as_vision_context_batches,
 )
 from max.pipelines.modeling.types import (
     BatchType,
@@ -1686,6 +1692,24 @@ class OverlapTextGenerationPipeline(
                     self._pipeline_config.speculative.synthetic_acceptance_rate,
                 )
 
+        # Build the vision-encoder cache owner alongside the KV manager, for
+        # models that implement the encode contract. The transitional
+        # video-cache bridge hands the same owned cache to the model's video
+        # branch (removed once video routes through the interface).
+        self._encoder_cache: VisionEncoderCache[TextAndVisionContext] | None = (
+            None
+        )
+        if isinstance(self._pipeline_model, SupportsVisionEncoding):
+            self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
+                max_entries=pipeline_config.runtime.max_vision_cache_entries,
+                n_devices=len(self._devices),
+            )
+            set_video_cache = getattr(
+                self._pipeline_model, "set_video_cache", None
+            )
+            if set_video_cache is not None:
+                set_video_cache(self._encoder_cache)
+
         # Load sampler(s) for the non-spec-decode path. The bitmask-aware
         # sampler is loaded when constrained decoding could fire (see
         # ``needs_bitmask_constraints``). The bitmask-free sampler is
@@ -2459,6 +2483,19 @@ class OverlapTextGenerationPipeline(
                 kv_cache_inputs=kv_cache_inputs,
                 return_n_logits=return_n_logits,
             )
+
+        if self._encoder_cache is not None:
+            assert isinstance(self._pipeline_model, SupportsVisionEncoding)
+            vision = self._encoder_cache.run_vision_encode(
+                self._pipeline_model,
+                as_vision_context_batches(inputs.batches),
+                self._devices,
+            )
+            if vision is not None:
+                (
+                    model_inputs.vision_embeddings,
+                    model_inputs.vision_scatter_indices,
+                ) = vision
 
         if debug_verify_replay_enabled:
             # Reuse non-KV buffers from replay inputs and only swap the
@@ -3834,7 +3871,8 @@ class OverlapTextGenerationPipeline(
         for DeepSeekV3.2).
         """
         # Primary KV cache release is handled by the scheduler via batch_constructor.
-        # Pipeline model may have extra KV caches to release.
+        if self._encoder_cache is not None:
+            self._encoder_cache.release_request(request_id)
         if hasattr(self._pipeline_model, "release"):
             self._pipeline_model.release(request_id)
 
@@ -3848,12 +3886,11 @@ class OverlapTextGenerationPipeline(
 
         Returns ``None`` for text-only models and for batches that did no
         vision encoding (e.g. decode steps). The metrics come from the
-        underlying model's :class:`VisionEncoderCache`, if it has one.
+        pipeline-owned :class:`VisionEncoderCache`, if this pipeline has one.
         """
-        cache = getattr(self._pipeline_model, "_ve_cache", None)
-        if cache is None:
+        if self._encoder_cache is None:
             return None
-        return cache.pop_metrics()
+        return self._encoder_cache.pop_metrics()
 
     def batch_spec_decode_metrics(
         self,

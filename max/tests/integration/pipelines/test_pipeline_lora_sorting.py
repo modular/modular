@@ -279,6 +279,7 @@ def create_pipeline_with_lora(
         self._pinned_new_tokens = None
         self._identity_logit_offsets = None
         self._structured_output = StructuredOutputHelper(enabled=False)
+        self._encoder_cache = None
 
     with patch.object(TextGenerationPipeline, "__init__", mock_text_init):
         return TextGenerationPipeline(

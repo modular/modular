@@ -222,6 +222,72 @@ def pack_vision_buffers(
 
 
 @traced
+def pack_uncached_images(
+    selection: Sequence[tuple[Gemma4Context, Sequence[ImageMetadata]]],
+    devices: list[Device],
+    pooling_kernel_size: int,
+    dtype: DType,
+) -> VisionRawInputs | None:
+    """Pack a batch's pipeline-selected cache-miss image pixels to device.
+
+    Takes the ``(context, miss-images)`` pairs the pipeline's ``select``
+    returned and does the pinned host-to-device copy via
+    :func:`pack_vision_buffers`. Slices ``pixel_position_ids[ctx.image_idx:]``
+    so the full per-image position list realigns with ``next_images`` under
+    chunked prefill, and validates each image's patch count. Returns ``None``
+    when nothing needs encoding.
+
+    Safety invariant: ``select`` and this packer must see the SAME image objects
+    within one ``run_vision_encode`` call. The miss set is matched by object
+    identity (``id(img)``) while iterating ``next_images`` (so each image keeps
+    its ``pixel_position_ids`` slot). Rebuilding or copying ``ctx.images``
+    between select and pack raises here instead of silently dropping images.
+    """
+    k = pooling_kernel_size
+    all_patches: list[npt.NDArray[np.floating[Any]]] = []
+    all_pos_ids: list[npt.NDArray[np.integer[Any]]] = []
+    patch_counts: list[int] = []
+    soft_token_counts: list[int] = []
+    for ctx, miss_images in selection:
+        ctx_pos_ids = ctx.pixel_position_ids[ctx.image_idx :]
+        uncached_ids = {id(img) for img in miss_images}
+        consumed = 0
+        for j, img in enumerate(ctx.next_images):
+            if id(img) not in uncached_ids:
+                continue
+            consumed += 1
+            num_soft = img.end_idx - img.start_idx
+            num_patches = num_soft * k * k
+            if num_patches != len(img.pixel_values):
+                raise ValueError(
+                    f"Expected {num_patches} patches, "
+                    f"got {len(img.pixel_values)}"
+                )
+            all_patches.append(img.pixel_values)
+            all_pos_ids.append(ctx_pos_ids[j])
+            patch_counts.append(num_patches)
+            soft_token_counts.append(num_soft)
+        if consumed != len(miss_images):
+            raise ValueError(
+                f"{len(miss_images) - consumed} of {len(miss_images)} selected "
+                f"image(s) for request {ctx.request_id} are not present in "
+                "ctx.next_images. The selection must hold the same "
+                "ImageMetadata objects as the context."
+            )
+    if not all_patches:
+        return None
+    return pack_vision_buffers(
+        devices,
+        k,
+        all_patches,
+        all_pos_ids,
+        patch_counts,
+        soft_token_counts,
+        dtype,
+    )
+
+
+@traced
 def build_image_inputs(
     context_batch: Sequence[Gemma4Context],
     uncached: Sequence[Gemma4Context],

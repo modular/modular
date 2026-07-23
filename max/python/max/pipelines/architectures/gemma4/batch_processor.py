@@ -29,11 +29,9 @@ from max.pipelines.lib.interfaces.batch_processor import (
     ragged_kv_symbolic_inputs,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelOutputs
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.profiler import traced
 
 from .batch_vision_inputs import (
-    build_image_inputs,
     build_video_inputs,
     create_empty_embeddings,
     create_empty_indices,
@@ -51,22 +49,21 @@ class Gemma4BatchProcessor(
     """Ragged batching with optional vision inputs for Gemma4 models."""
 
     _config: Gemma4ForConditionalGenerationConfig | None = None
-    _ve_cache: VisionEncoderCache[Gemma4Context] | None = None
 
     def bind_model_state(
         self,
         *,
         config: Gemma4ForConditionalGenerationConfig,
-        ve_cache: VisionEncoderCache[Gemma4Context],
     ) -> None:
-        """Wire model config and vision encoder cache from ``load_model``.
+        """Wire the model config from ``load_model``.
+
+        Images go through the pipeline-owned ``VisionEncoderCache``; this
+        processor only builds tokens/offsets and video inputs.
 
         Args:
             config: Fully-initialised Gemma4 model configuration.
-            ve_cache: Shared vision encoder result cache for this pipeline.
         """
         self._config = config
-        self._ve_cache = ve_cache
 
     def get_symbolic_inputs(
         self,
@@ -96,10 +93,6 @@ class Gemma4BatchProcessor(
 
         assert self._config is not None, (
             "config must be bound before prepare_initial_token_inputs(); "
-            "call bind_model_state() in load_model()"
-        )
-        assert self._ve_cache is not None, (
-            "ve_cache must be bound before prepare_initial_token_inputs(); "
             "call bind_model_state() in load_model()"
         )
         assert kv_cache_inputs is not None
@@ -160,33 +153,14 @@ class Gemma4BatchProcessor(
         copy_pinned_to_destinations(host_tokens, [device_tokens])
         copy_pinned_to_destinations(host_row_offsets, device_row_offsets)
 
-        needs_images = (
-            any(
-                getattr(ctx, "needs_vision_encoding", False)
-                for ctx in context_batch
-            )
-            if context_batch
-            else False
-        )
+        # Images are selected, encoded, and cached by the pipeline-owned
+        # VisionEncoderCache between prep and execute; this processor only
+        # builds tokens/offsets and video inputs.
         k = (
             self._config.vision_config.pooling_kernel_size
             if self._config.vision_config is not None
             else 1
         )
-        if needs_images:
-            uncached = self._ve_cache.get_uncached_contexts(context_batch)
-            image_inputs = build_image_inputs(
-                context_batch=context_batch,
-                uncached=uncached,
-                devices=devices,
-                pooling_kernel_size=k,
-                ve_cache=self._ve_cache,
-                empty_embeddings=self._empty_embeddings(),
-                dtype=self._config.unquantized_dtype,
-            )
-        else:
-            image_inputs = None
-
         needs_video = (
             any(
                 getattr(ctx, "needs_video_encoding", False)
@@ -211,7 +185,6 @@ class Gemma4BatchProcessor(
             return_n_logits=return_n_logits_buf,
             signal_buffers=list(self.runtime.signal_buffers),
             kv_cache_inputs=kv_cache_inputs,
-            images=image_inputs,
             video=video_inputs,
             combined_embeds=self._empty_embeddings(),
             combined_indices=self._empty_indices(),

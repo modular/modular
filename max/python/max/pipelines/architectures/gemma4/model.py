@@ -28,6 +28,7 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
+from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     KVCacheConfig,
@@ -36,18 +37,20 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
-from max.pipelines.modeling.types import RequestID
+from max.pipelines.lib.vision_encoder_cache import (
+    VisionEncoderCache,
+    VisionEncodeResult,
+)
 from max.profiler import traced
 
 from .batch_processor import Gemma4BatchProcessor
 from .batch_vision_inputs import (
-    ImageInputs,
     VideoInputs,
     VisionRawInputs,
     create_empty_embeddings,
     create_empty_indices,
     merge_per_device_buffers,
+    pack_uncached_images,
 )
 from .context import Gemma4Context
 from .gemma4 import Gemma4TextModel
@@ -76,8 +79,10 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         return_n_logits: Number of logits to return.
         signal_buffers: Device buffers for distributed communication.
         kv_cache_inputs: Combined KV cache inputs (sliding-window + global).
-        images: Inputs to the image encoder.
         video: Inputs to the video encoder.
+
+    Image embeddings come from the pipeline-driven encoder cache on the base
+    ``vision_embeddings`` / ``vision_scatter_indices`` fields.
     """
 
     tokens: npt.NDArray[np.integer[Any]] | Buffer
@@ -85,7 +90,6 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     signal_buffers: list[Buffer]
     return_n_logits: Buffer
 
-    images: ImageInputs | None = None
     video: VideoInputs | None = None
 
     combined_embeds: list[Buffer] | None = None
@@ -182,18 +186,16 @@ class Gemma3_MultiModalModel(
 
         self.vision_model, self.language_model = self.load_model(session)
 
-        self._ve_cache: VisionEncoderCache[Gemma4Context] = VisionEncoderCache(
-            max_entries=pipeline_config.runtime.max_vision_cache_entries
-        )
+        # Images are cached by the pipeline-owned VisionEncoderCache. The
+        # pipeline hands its cache here via set_video_cache() for the video
+        # branch's store (transitional — see execute()).
+        self._video_cache: VisionEncoderCache[Gemma4Context] | None = None
 
         assert isinstance(self.kv_params, MultiKVCacheParams)
 
         if self._batch_processor is not None:
             assert isinstance(self._batch_processor, Gemma4BatchProcessor)
-            self._batch_processor.bind_model_state(
-                config=self.config,
-                ve_cache=self._ve_cache,
-            )
+            self._batch_processor.bind_model_state(config=self.config)
 
     @property
     def model(self) -> Model:
@@ -204,9 +206,66 @@ class Gemma3_MultiModalModel(
         """
         return self.language_model
 
-    def release(self, request_id: RequestID) -> None:
-        """Release vision encoder cache for a completed request."""
-        self._ve_cache.release_request(request_id)
+    def set_video_cache(self, cache: VisionEncoderCache[Gemma4Context]) -> None:
+        """Transitional: receive the pipeline-owned cache for the video store.
+
+        Video is a separate scatter path not yet unified into the images
+        machinery; until it is, the pipeline hands the single owner's cache
+        here so freshly-encoded videos are stored (and released) through it.
+        """
+        self._video_cache = cache
+
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[tuple[Gemma4Context, Sequence[ImageMetadata]]],
+        devices: list[Device],
+    ) -> VisionRawInputs | None:
+        """Pack the pipeline-selected uncached image pixels to device.
+
+        Runs in the pipeline's prep-ahead window (pinned host-to-device copy)
+        so it overlaps the prior batch, delegating to the shared
+        :func:`pack_uncached_images`.
+        """
+        assert self.config.vision_config is not None
+        return pack_uncached_images(
+            selection,
+            devices,
+            self.config.vision_config.pooling_kernel_size,
+            self.config.unquantized_dtype,
+        )
+
+    def vision_execute(
+        self,
+        selection: Sequence[tuple[Gemma4Context, Sequence[ImageMetadata]]],
+        devices: list[Device],
+        packed: VisionRawInputs | None,
+    ) -> VisionEncodeResult:
+        """Run the vision encoder on the pixels packed by ``pack_vision_inputs``.
+
+        Returns embeddings only; the pipeline derives per-image counts from its
+        selection. When ``pack_vision_inputs`` had no packable patches
+        (``packed is None``), returns an empty result so the pipeline assembles
+        from the cache.
+        """
+        if packed is None:
+            return VisionEncodeResult(
+                embeddings=self.empty_vision_embeddings(self.devices)
+            )
+        return VisionEncodeResult(embeddings=self._run_vision_encoder(packed))
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Per-device zero-row image embeddings for cached / text-only batches.
+
+        Cached: hit on every text-only / decode step, so it must not allocate
+        per call.
+        """
+        if not hasattr(self, "_cached_empty_embeddings"):
+            self._cached_empty_embeddings = create_empty_embeddings(
+                devices,
+                self.huggingface_config.text_config.hidden_size,
+                self.config.unquantized_dtype,
+            )
+        return self._cached_empty_embeddings
 
     def _load_state_dict(self) -> dict[str, Any]:
         assert self._max_batch_size, "Expected max_batch_size to be set"
@@ -443,43 +502,17 @@ class Gemma3_MultiModalModel(
         """Execute the vision model (if needed), then the language model."""
         model_inputs = cast(Gemma3MultiModalModelInputs, model_inputs)
 
-        # --- image embeddings ---
         image_embeddings: list[Buffer]
         image_scatter: list[Buffer]
-        img = model_inputs.images
-        if img is not None and img.raw is not None:
-            raw_embeds = self._run_vision_encoder(img.raw)
-
-            assert img.cache_context_batch is not None
-            assert img.cache_uncached_contexts is not None
-            assert img.cache_uncached_images is not None
-            assert img.cache_per_image_token_counts is not None
-            image_embeddings, scatter_np = (
-                self._ve_cache.prepare_vision_outputs(
-                    context_batch=img.cache_context_batch,
-                    uncached_contexts=img.cache_uncached_contexts,
-                    uncached_images=img.cache_uncached_images,
-                    vision_embeds=raw_embeds,
-                    per_image_token_counts=img.cache_per_image_token_counts,
-                    n_devices=len(self.devices),
-                    empty_embeddings=self._empty_embeddings(),
-                )
-            )
-            if len(scatter_np) > 0:
+        if model_inputs.vision_embeddings is not None:
+            image_embeddings = model_inputs.vision_embeddings
+            scatter_np = model_inputs.vision_scatter_indices
+            if scatter_np is not None and len(scatter_np) > 0:
                 image_scatter = self._scatter_to_devices(scatter_np)
             else:
                 image_scatter = self._empty_indices()
-        elif img is not None and img.cached_embeddings is not None:
-            image_embeddings = img.cached_embeddings
-            if img.cached_token_indices is not None:
-                image_scatter = img.cached_token_indices
-            else:
-                assert img.cached_token_indices_np is not None
-                image_scatter = self._scatter_to_devices(
-                    img.cached_token_indices_np
-                )
         else:
-            image_embeddings = self._empty_embeddings()
+            image_embeddings = self.empty_vision_embeddings(self.devices)
             image_scatter = self._empty_indices()
 
         # --- video embeddings ---
@@ -495,14 +528,17 @@ class Gemma3_MultiModalModel(
             if vid.cache_hashes:
                 assert vid.cache_per_video_token_counts is not None
                 assert vid.cache_req_ids is not None
-                self._ve_cache._cache_and_split(
+                assert self._video_cache is not None, (
+                    "video cache not bound; pipeline must call set_video_cache"
+                )
+                self._video_cache._cache_and_split(
                     vision_outputs=video_embeddings,
                     per_image_token_counts=vid.cache_per_video_token_counts,
                     image_hashes=vid.cache_hashes,
                     request_ids=vid.cache_req_ids,
                 )
         else:
-            video_embeddings = self._empty_embeddings()
+            video_embeddings = self.empty_vision_embeddings(self.devices)
 
         if vid is not None:
             if vid.token_indices is not None:
@@ -548,15 +584,6 @@ class Gemma3_MultiModalModel(
                 logits=model_outputs[0],
                 next_token_logits=model_outputs[0],
             )
-
-    def _empty_embeddings(self) -> list[Buffer]:
-        if not hasattr(self, "_cached_empty_embeddings"):
-            self._cached_empty_embeddings = create_empty_embeddings(
-                self.devices,
-                self.huggingface_config.text_config.hidden_size,
-                self.config.unquantized_dtype,
-            )
-        return self._cached_empty_embeddings
 
     def _empty_indices(self) -> list[Buffer]:
         if not hasattr(self, "_cached_empty_indices"):
