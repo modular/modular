@@ -2409,10 +2409,12 @@ def _get_tuning_list_sm100_mxfp8() -> List[TuningConfigSM100]:
 
 def _get_tuning_list_sm100_batched_bf16() -> List[TuningConfigSM100]:
     comptime config_list = [
+        # ----------------BEGIN-TUNING-LIST-SM100-BATCHED-BF16----------------
+        # Automatically generated from [tuning_table_sm100_batched_bf16.yaml]
+        # index: [0]
         TuningConfigSM100(
-            batch_size=64,
             M=1,
-            M_end=16 + 1,
+            M_end=17,
             N=128,
             K=512,
             mma_shape=Index(128, 16, 16),
@@ -2421,10 +2423,15 @@ def _get_tuning_list_sm100_batched_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=4,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
-            k_group_size=4,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=64,
         ),
+        # ----------------END-TUNING-LIST-SM100-BATCHED-BF16----------------
     ]
 
     return materialize[config_list]()
@@ -2432,10 +2439,12 @@ def _get_tuning_list_sm100_batched_bf16() -> List[TuningConfigSM100]:
 
 def _get_tuning_list_sm100_batched_fp8() -> List[TuningConfigSM100]:
     comptime config_list = [
+        # ----------------BEGIN-TUNING-LIST-SM100-BATCHED-FP8----------------
+        # Automatically generated from [tuning_table_sm100_batched_fp8.yaml]
+        # index: [0]
         TuningConfigSM100(
-            batch_size=64,
             M=1,
-            M_end=16 + 1,
+            M_end=17,
             N=128,
             K=512,
             mma_shape=Index(128, 16, 32),
@@ -2444,10 +2453,15 @@ def _get_tuning_list_sm100_batched_fp8() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
+            k_group_size=4,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
-            k_group_size=4,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=64,
         ),
+        # ----------------END-TUNING-LIST-SM100-BATCHED-FP8----------------
     ]
 
     return materialize[config_list]()
@@ -2469,6 +2483,9 @@ def _get_tuning_list_sm100_batched_fp32() -> List[TuningConfigSM100]:
 
 def _get_tuning_list_small_MN_gemms_bf16() -> List[TuningConfigSmallMNGemms]:
     return [
+        # ----------------BEGIN-TUNING-LIST-SM100-SMALL-MN-BF16----------------
+        # Automatically generated from [tuning_table_sm100_small_mn_bf16.yaml]
+        # index: [0]
         TuningConfigSmallMNGemms(
             M=2,
             M_end=5,
@@ -2478,7 +2495,12 @@ def _get_tuning_list_small_MN_gemms_bf16() -> List[TuningConfigSmallMNGemms]:
             tile_n=2,
             num_threads=256,
             kernel_kind=GEMVAlgorithm.GEMV_SPLIT_K,
+            unroll_factor=1,
+            tile_k=128,
+            swapAB=False,
         ),
+        # Automatically generated from [tuning_table_sm100_small_mn_bf16.yaml]
+        # index: [1]
         TuningConfigSmallMNGemms(
             M=5,
             M_end=9,
@@ -2487,9 +2509,13 @@ def _get_tuning_list_small_MN_gemms_bf16() -> List[TuningConfigSmallMNGemms]:
             tile_m=2,
             tile_n=2,
             num_threads=128,
-            unroll_factor=2,
             kernel_kind=GEMVAlgorithm.GEMV_SPLIT_K,
+            unroll_factor=2,
+            tile_k=128,
+            swapAB=False,
         ),
+        # Automatically generated from [tuning_table_sm100_small_mn_bf16.yaml]
+        # index: [2]
         TuningConfigSmallMNGemms(
             M=9,
             M_end=13,
@@ -2500,7 +2526,11 @@ def _get_tuning_list_small_MN_gemms_bf16() -> List[TuningConfigSmallMNGemms]:
             num_threads=128,
             kernel_kind=GEMVAlgorithm.GEMV_SPLIT_K,
             unroll_factor=2,
+            tile_k=128,
+            swapAB=False,
         ),
+        # Automatically generated from [tuning_table_sm100_small_mn_bf16.yaml]
+        # index: [3]
         TuningConfigSmallMNGemms(
             M=13,
             M_end=17,
@@ -2510,7 +2540,12 @@ def _get_tuning_list_small_MN_gemms_bf16() -> List[TuningConfigSmallMNGemms]:
             tile_n=2,
             num_threads=128,
             kernel_kind=GEMVAlgorithm.GEMV_SPLIT_K,
+            unroll_factor=1,
+            tile_k=128,
+            swapAB=False,
         ),
+        # Automatically generated from [tuning_table_sm100_small_mn_bf16.yaml]
+        # index: [4]
         TuningConfigSmallMNGemms(
             M=17,
             M_end=25,
@@ -2521,7 +2556,11 @@ def _get_tuning_list_small_MN_gemms_bf16() -> List[TuningConfigSmallMNGemms]:
             num_threads=128,
             kernel_kind=GEMVAlgorithm.GEMV_SPLIT_K,
             unroll_factor=2,
+            tile_k=128,
+            swapAB=False,
         ),
+        # Automatically generated from [tuning_table_sm100_small_mn_bf16.yaml]
+        # index: [5]
         TuningConfigSmallMNGemms(
             M=25,
             M_end=33,
@@ -2531,6 +2570,9 @@ def _get_tuning_list_small_MN_gemms_bf16() -> List[TuningConfigSmallMNGemms]:
             tile_n=8,
             num_threads=256,
             kernel_kind=GEMVAlgorithm.GEMM_MMA_CPASYNC,
+            unroll_factor=1,
             tile_k=256,
+            swapAB=False,
         ),
+        # ----------------END-TUNING-LIST-SM100-SMALL-MN-BF16----------------
     ]
