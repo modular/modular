@@ -131,7 +131,7 @@ def _resolve_kvconnector_config(kv: KVCacheConfig) -> None:
     # Ensure a config object exists for connectors that need one.
     cfg = kv.kv_connector_config or KVConnectorConfig()
 
-    if connector == KVConnectorType.tiered:
+    if connector in (KVConnectorType.tiered, KVConnectorType.rust_tiered):
         if cfg.disk_offload_dir is None:
             cfg.disk_offload_dir = tempfile.mkdtemp(prefix="max_kv_tiered_")
             logger.info(
@@ -465,6 +465,7 @@ class PipelineConfig(ConfigFileModel):
         if self.model.kv_cache.kv_connector in {
             KVConnectorType.tiered,
             KVConnectorType.local,
+            KVConnectorType.rust_tiered,
         }:
             # BlockOffloadEngine only allocates signal buffers when its
             # broadcast path is active (replicate_kv_across_tp = is_mla AND

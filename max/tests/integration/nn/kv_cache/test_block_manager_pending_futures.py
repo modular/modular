@@ -180,5 +180,5 @@ def test_commit_never_commits_placeholder_block() -> None:
         bm.req_to_hashes[RequestID("req-reuser")][:2]
         == bm.req_to_hashes[ctx.request_id]
     )
-    reused = bm.get_full_blocks_from_prefix_cache(ctx_b)
+    reused, _ = bm.get_full_blocks_from_prefix_cache(ctx_b)
     assert len(reused) == 2

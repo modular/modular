@@ -23,6 +23,10 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.kv_cache import InsufficientBlocksError
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    TransferDirection,
+)
 from max.pipelines.kv_cache.paged_kv_cache import PrefixCacheHits
 from max.pipelines.modeling.types import (
     Pipeline,
@@ -83,11 +87,12 @@ def create_mock_kv_cache() -> Mock:
     cache.get_total_num_pages = Mock(return_value=128)
     cache.get_free_blocks_pct = Mock(return_value=0.5)
 
-    cache.alloc = Mock(return_value=0)
+    cache.alloc = Mock(return_value=CompletedTransfer(TransferDirection.LOAD))
     cache.claim = Mock()
     cache.release = Mock()
     cache.contains = Mock(return_value=False)
     cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.94)
+    cache.pending_transfers_exist = Mock(return_value=False)
 
     return cache
 
@@ -156,7 +161,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
 
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = 0
+    kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock()
@@ -259,7 +264,7 @@ def test_text_batch_constructor__batch_construction_no_requests(
 
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = 0
+    kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock()
@@ -290,6 +295,7 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.0)
+    kv_cache.pending_transfers_exist = Mock(return_value=False)
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
@@ -330,7 +336,13 @@ def test_text_batch_constructor__insufficient_blocks_defers_then_retries(
     )
     kv_cache = Mock()
     # First alloc call fails; subsequent calls succeed (blocks freed).
-    kv_cache.alloc = Mock(side_effect=[InsufficientBlocksError, 0, 0])
+    kv_cache.alloc = Mock(
+        side_effect=[
+            InsufficientBlocksError,
+            CompletedTransfer(TransferDirection.LOAD),
+            CompletedTransfer(TransferDirection.LOAD),
+        ]
+    )
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.0)
@@ -378,7 +390,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     )
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = 0
+    kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock()
@@ -466,11 +478,11 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     # then succeeding and returning 0 (no prefix cache skip) for the remaining calls.
     kv_cache.alloc.side_effect = [
         InsufficientBlocksError(),
-        0,
-        0,
-        0,
-        0,
-        0,
+        CompletedTransfer(TransferDirection.LOAD),
+        CompletedTransfer(TransferDirection.LOAD),
+        CompletedTransfer(TransferDirection.LOAD),
+        CompletedTransfer(TransferDirection.LOAD),
+        CompletedTransfer(TransferDirection.LOAD),
     ]
 
     last_request_id = list(batch_constructor.replicas[0].tg_reqs.keys())[-1]
@@ -508,7 +520,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
     )
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = 0
+    kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock()
@@ -573,7 +585,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     )
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = 0
+    kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock()
@@ -837,7 +849,11 @@ def test_tg_pure_age_based_preemption() -> None:
     kv_cache = create_mock_kv_cache()
 
     kv_cache.alloc = Mock(
-        side_effect=[0, InsufficientBlocksError, InsufficientBlocksError]
+        side_effect=[
+            CompletedTransfer(TransferDirection.LOAD),
+            InsufficientBlocksError,
+            InsufficientBlocksError,
+        ]
     )
 
     config = TokenGenerationSchedulerConfig(
@@ -1842,3 +1858,150 @@ def test_dp_ce_balance__quota_never_below_floor() -> None:
     batch_constructor.construct_batch()
     assert batch_constructor._ce_step_quota == [96, 60]
     assert batch_constructor._ce_deferred_replicas == set()
+
+
+# ---------------------------------------------------------------------------
+# Async KV onload cordon / re-admit (SERVOPT-1036) tests
+# ---------------------------------------------------------------------------
+
+
+class _IncompleteOnload:
+    """A ``KVConnectorTransfer`` whose onload has not yet landed.
+
+    Models the ``rust_tiered`` connector's async handle: ``is_complete`` stays
+    ``False`` until the test flips it (via ``synchronize``), so the batch
+    constructor cordons the request instead of scheduling it.
+    """
+
+    def __init__(self) -> None:
+        self.complete = False
+
+    @property
+    def direction(self) -> TransferDirection:
+        return TransferDirection.LOAD
+
+    @property
+    def g0_blocks(self) -> list[int]:
+        return []
+
+    def is_complete(self) -> bool:
+        return self.complete
+
+    def synchronize(self) -> None:
+        self.complete = True
+
+
+def _make_cordon_kv_cache(alloc: Mock) -> Mock:
+    """A minimal KV cache mock for the cordon path with a custom ``alloc``."""
+    kv_cache = Mock()
+    kv_cache.alloc = alloc
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock(return_value=False)
+    kv_cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.0)
+    kv_cache.pending_transfers_exist = Mock(return_value=False)
+    return kv_cache
+
+
+def _ce_ctx() -> TextContext:
+    return TextContext(
+        request_id=RequestID(),
+        tokens=TokenBuffer(np.ones(9, dtype=np.int64)),
+        max_length=100,
+    )
+
+
+def _cordon_config() -> TokenGenerationSchedulerConfig:
+    return TokenGenerationSchedulerConfig(
+        max_batch_size=5,
+        max_batch_total_tokens=None,
+        enable_in_flight_batching=False,
+        enable_chunked_prefill=False,
+        target_tokens_per_batch_ce=30,
+    )
+
+
+def test_text_batch_constructor__cordons_request_with_incomplete_onload(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """A CE request whose KV onload is still in flight is held out of the batch.
+
+    The request is allocated (its blocks pinned) but cordoned: it must not be
+    scheduled until the H2D lands, so the GPU can run other ready work meanwhile.
+    """
+    onload = _IncompleteOnload()
+    kv_cache = _make_cordon_kv_cache(Mock(return_value=onload))
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=_cordon_config(),
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+    ctx = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert len(inputs.batches[0]) == 0
+    assert ctx.request_id in batch_constructor._onloading_reqs
+    assert ctx.request_id not in batch_constructor.replicas[0].ce_reqs
+
+
+def test_text_batch_constructor__readmits_request_when_onload_completes(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """A cordoned request is re-admitted and scheduled once its onload lands."""
+    onload = _IncompleteOnload()
+    # First alloc cordons (incomplete); the re-admit pass re-allocs and the
+    # prefix is now device-resident, so the second alloc completes immediately.
+    kv_cache = _make_cordon_kv_cache(
+        Mock(side_effect=[onload, CompletedTransfer(TransferDirection.LOAD)])
+    )
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=_cordon_config(),
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+    ctx = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx)
+
+    # Iteration 1: cordoned, empty batch.
+    inputs = batch_constructor.construct_batch()
+    assert len(inputs.batches[0]) == 0
+    assert ctx.request_id in batch_constructor._onloading_reqs
+
+    # The onload lands; the next iteration re-admits and schedules it.
+    onload.synchronize()
+    inputs = batch_constructor.construct_batch()
+    assert has_request(inputs.batches[0], ctx.request_id)
+    assert ctx.request_id not in batch_constructor._onloading_reqs
+
+
+def test_text_batch_constructor__oom_deferred_while_onload_in_flight(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """OOM does not crash the server while a cordoned onload is in flight.
+
+    The first request is cordoned (onload in flight); the second hits
+    ``InsufficientBlocksError`` but is deferred rather than raised, because the
+    in-flight transfer will free blocks once it lands (its blocks are pinned now
+    but released by ``poll_transfers`` on completion).
+    """
+    onload = _IncompleteOnload()
+    kv_cache = _make_cordon_kv_cache(
+        Mock(side_effect=[onload, InsufficientBlocksError])
+    )
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=_cordon_config(),
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+    ctx_a = _ce_ctx()
+    ctx_b = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx_a)
+    batch_constructor.enqueue_new_request(ctx_b)
+
+    # Must not raise: A cordons, B's OOM is deferred (an onload is in flight).
+    inputs = batch_constructor.construct_batch()
+
+    assert len(inputs.batches[0]) == 0
+    assert ctx_a.request_id in batch_constructor._onloading_reqs
+    assert ctx_b.request_id in batch_constructor.replicas[0].ce_reqs

@@ -45,7 +45,10 @@ from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.nn.kv_cache.utils import build_max_lengths_tensors
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.kv_connector import KVConnector
+from max.pipelines.kv_cache.kv_connector import (
+    KVConnector,
+    KVConnectorTransfer,
+)
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
@@ -403,7 +406,7 @@ class PagedKVCacheManager:
         self,
         data: TextContext,
         replica_idx: int,
-    ) -> None:
+    ) -> KVConnectorTransfer:
         """Allocates blocks for a request.
 
         When prefix caching is enabled, some of the allocated blocks may be
@@ -415,11 +418,23 @@ class PagedKVCacheManager:
                 must already be assigned to a replica via ``claim``.
             replica_idx: Index of the replica to allocate on.
 
+        Returns:
+            The async onload transfer for the request's reused prefix -- an
+            already-complete :class:`CompletedTransfer` when nothing was onloaded
+            asynchronously (device hits and synchronous connectors). The caller
+            polls ``is_complete()`` to hold the request out of a batch until its
+            onloaded KV has landed -- an asynchronous connector's H2D runs off
+            the forward stream.
+
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
             satisfy the allocation.
         """
-        self._block_manager.reuse_blocks_from_prefix_cache(
+        # Drain completed async KV transfers first to release any g0 blocks of
+        # completed transfers.
+        self._block_manager.poll_transfers()
+
+        _, load_event = self._block_manager.reuse_blocks_from_prefix_cache(
             data, replica_idx=replica_idx
         )
         self._block_manager.allocate_new_blocks(
@@ -428,6 +443,7 @@ class PagedKVCacheManager:
             self.params.num_draft_tokens_per_step,
             replica_idx=replica_idx,
         )
+        return load_event
 
     def _does_req_need_more_blocks(
         self,
@@ -617,11 +633,12 @@ class PagedKVCacheManager:
                 ),
             )
 
-        # Order in-flight loads before the forward pass, since this runs before
-        # the model executes. For dKV's off-stream remote (NIXL) READs this is a
-        # host wait until they land; for dKV's same-host loads it enqueues a
-        # cross-stream CUDA event wait so the compute stream is GPU-ordered after
-        # the copies (no host block). No-op for host/disk tiers.
+        # Pre-forward load barrier (deprecated, dKV-only): dKV posts its READs in
+        # ``load`` and orders them here before the forward reads their KV.
+        # Asynchronous connectors instead hold a request out of the batch until
+        # its onload event polls complete (``poll_transfers`` + the batch
+        # constructor cordon), so the forward never reads KV that has not landed
+        # and this is a no-op for them.
         replica.connector.wait_for_loads()
 
         # Initiate saves to external cache tiers.
@@ -815,12 +832,28 @@ class PagedKVCacheManager:
         for replica_idx, (replica, ctxs) in enumerate(
             zip(self._replica, batches, strict=True)
         ):
-            # Drain offloads posted this iteration (post-forward-pass): the
-            # host/disk tiers wait on their D2H copies and post disk writes; the
-            # dKV connector awaits its NIXL WRITEs and registers the blocks.
+            # Post-forward offload barrier (deprecated, dKV-only): dKV awaits its
+            # NIXL WRITEs here and registers the blocks. Asynchronous connectors
+            # settle offloads via ``poll_transfers`` (which unpins the D2H source
+            # blocks once the copy lands), so this is a no-op for them.
             replica.connector.wait_for_offloads()
             for ctx in ctxs:
                 self._block_manager.step(ctx, replica_idx)
+
+    def poll_transfers(self) -> None:
+        """Drains completed async KV transfers (onloads and offloads).
+
+        Unpins the device blocks of completed transfers, commits completed
+        onloads into the device prefix cache, and lets asynchronous connectors
+        reclaim their host-side resources. Cheap to call every scheduler
+        iteration; a no-op unless an asynchronous connector (``rust_tiered``)
+        is in use.
+        """
+        self._block_manager.poll_transfers()
+
+    def pending_transfers_exist(self, replica_idx: int = 0) -> bool:
+        """Returns whether any async KV transfer is in flight on the replica."""
+        return self._block_manager.pending_transfers_exist(replica_idx)
 
     def contains(self, request_id: RequestID, replica_idx: int) -> bool:
         """Returns whether the request is present on the given replica."""

@@ -31,6 +31,11 @@ from max.nn.kv_cache import KVHashAlgo
 from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    KVConnectorTransfer,
+    TransferDirection,
+)
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.kv_cache.paged_kv_cache.block_pool import BlockPool
@@ -73,8 +78,9 @@ class RecordingConnector:
         block_hashes: Sequence[bytes],
         parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
-    ) -> None:
+    ) -> KVConnectorTransfer:
         self.offloads.append((block_ids, list(block_hashes), parent_seq_hash))
+        return CompletedTransfer(TransferDirection.OFFLOAD, list(block_ids))
 
     def touch(
         self,
@@ -89,9 +95,12 @@ class RecordingConnector:
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
-    ) -> int:
+    ) -> KVConnectorTransfer:
         self.calls.append("load")
-        return min(len(block_hashes), self.num_blocks_to_load)
+        num_loaded = min(len(block_hashes), self.num_blocks_to_load)
+        return CompletedTransfer(
+            TransferDirection.LOAD, list(device_block_ids[:num_loaded])
+        )
 
     def count_cached_prefix(
         self, block_hashes: Sequence[bytes]
@@ -332,7 +341,7 @@ def test_touch_fires_on_device_hit_with_full_root_anchored_hashes() -> None:
     _commit_device_block(bm.device_block_pool, 333)
     _commit_device_block(bm.device_block_pool, 444)
 
-    device_blocks = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+    device_blocks, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
 
     assert len(device_blocks) == 2  # the two uncommitted device hits
     assert connector.calls == ["touch"]  # fires once; no host load
@@ -356,7 +365,7 @@ def test_touch_anchor_not_fired_on_fully_cold_request() -> None:
         _b(222),
     ]  # nothing on device, nothing in host
 
-    served = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+    served, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
 
     assert served == []  # nothing served
     assert connector.calls == ["load"]  # load ran; gate suppressed the touch
@@ -380,7 +389,7 @@ def test_touch_fires_on_cross_replica_hit_keyed_to_serving_replica() -> None:
     _commit_device_block(bm.device_block_pools[1], 111)
     _commit_device_block(bm.device_block_pools[1], 222)
 
-    device_blocks = bm.get_full_blocks_from_prefix_cache(
+    device_blocks, _ = bm.get_full_blocks_from_prefix_cache(
         _make_ctx(rid), replica_idx=0
     )
 
@@ -406,7 +415,9 @@ def test_cross_replica_copy_disabled_serves_from_external_tier() -> None:
     _commit_device_block(bm.device_block_pools[1], 111)
     _commit_device_block(bm.device_block_pools[1], 222)
 
-    served = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid), replica_idx=0)
+    served, _ = bm.get_full_blocks_from_prefix_cache(
+        _make_ctx(rid), replica_idx=0
+    )
 
     assert len(served) == 2  # served, but by the external tier
     assert connector.calls == ["load", "touch"]  # host load, no device hit
@@ -459,7 +470,7 @@ def test_touch_not_fired_without_external_tier() -> None:
     _commit_device_block(bm.device_block_pool, 111)
     _commit_device_block(bm.device_block_pool, 222)
 
-    device_blocks = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+    device_blocks, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
 
     assert len(device_blocks) == 2
     assert connector.touches == []
@@ -484,7 +495,7 @@ def test_touch_anchor_fires_after_load_on_host_only_hit() -> None:
         _b(222),
     ]  # nothing committed, nothing on device
 
-    served = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+    served, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
 
     assert len(served) == 2  # both served from the host tier (no device hit)
     assert connector.calls == ["load", "touch"]  # touch after load, once
@@ -508,7 +519,7 @@ def test_touch_anchor_payload_trims_uncached_tail() -> None:
     bm.req_to_committed_idx[rid] = 1 * bm.block_size
     _commit_device_block(bm.device_block_pool, 222)  # 333 stays uncached
 
-    served = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+    served, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
 
     assert len(served) == 1  # only 222 hit; 333 is the uncached tail
     assert connector.touches == [([_b(111), _b(222)], 0)]  # root in, tail out

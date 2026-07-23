@@ -32,6 +32,11 @@ from max.driver import Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.nn.kv_cache.cache_params import KVCacheMemory, KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    KVConnectorTransfer,
+    TransferDirection,
+)
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import Tracer, traced
 
@@ -70,6 +75,15 @@ class TieredConnector:
 
     Uses write-through: every block saved to CPU is also async-written to disk.
     Blocks are stored in the native paged format at every tier — no reshape.
+
+    .. deprecated::
+        Superseded by the Rust ``rust_tiered`` connector, which runs its
+        disk/copy work on dedicated background threads + a separate copy engine
+        and reports completion through :class:`KVConnectorTransfer`, so onloads
+        overlap GPU compute. This connector drives its H2D on the forward stream
+        (ordered by the deprecated :meth:`wait_for_loads` barrier) and does disk
+        I/O on the scheduler thread, so a disk-bound onload stalls the GPU. Kept
+        for backward compatibility.
     """
 
     @traced
@@ -179,11 +193,14 @@ class TieredConnector:
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
-    ) -> int:
+    ) -> KVConnectorTransfer:
         """Load data from host or disk cache into ``replica_idx``'s blocks.
 
         Returns:
-            Number of blocks loaded from host cache.
+            A :class:`CompletedTransfer` whose ``g0_blocks`` are the device
+            blocks loaded: the H2D is stream-ordered ahead of the forward by the
+            deprecated :meth:`wait_for_loads` barrier, so from the manager's
+            perspective it is already complete (no cordoning).
         """
 
         host_cache = self._host_block_pool.prefix_cache
@@ -296,7 +313,10 @@ class TieredConnector:
         if remaining:
             wait(remaining)
 
-        return num_loaded
+        return CompletedTransfer(
+            TransferDirection.LOAD,
+            [h.device_block_id for h in hits[:num_loaded]],
+        )
 
     def count_cached_prefix(
         self, block_hashes: Sequence[bytes]
@@ -386,7 +406,7 @@ class TieredConnector:
         block_hashes: Sequence[bytes],
         parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
-    ) -> None:
+    ) -> KVConnectorTransfer:
         """Offload ``replica_idx``'s device blocks to the external cache.
 
         ``parent_seq_hash`` is ignored: blocks are keyed by hash at each tier.
@@ -396,6 +416,10 @@ class TieredConnector:
         ``wait_for_loads``; ``offload`` is now called once per request
         (multiple times per forward pass), so syncing here would re-serialize
         the copies against the forward pass and destroy the overlap.
+
+        Returns:
+            A :class:`CompletedTransfer`: the D2H is stream-ordered, so the
+            manager keeps no pin. ``g0_blocks`` are the offloaded device blocks.
         """
         host_blocks: list[KVCacheBlock] = []
         dsts: list[int] = []
@@ -424,6 +448,8 @@ class TieredConnector:
             # If flag is set, immediately synchronize the event.
             if self._synchronous_d2h_copy_mode:
                 pending_disk_write.d2h_copy_complete_event.synchronize()
+
+        return CompletedTransfer(TransferDirection.OFFLOAD, srcs)
 
     def touch(
         self,

@@ -98,6 +98,16 @@ class KVConnectorType(str, Enum):
     and a ``disk_offload_dir`` on the connector config.
     """
 
+    rust_tiered = "rust_tiered"
+    """Tiers evicted pages across host memory and disk, backed by the Rust
+    ``kv_tier_connector`` extension.
+
+    The performant, CUDA-only successor to :attr:`tiered`: it runs its copies
+    and disk I/O on Rust threads (no GIL contention) and overlaps onloads with
+    GPU compute via asynchronous transfer handles. Same config requirements as
+    :attr:`tiered`. Falls back with an error on non-CUDA devices.
+    """
+
     dkv = "dkv"
     """Routes pages through a distributed KV block store.
 
@@ -713,6 +723,7 @@ class KVCacheParams(KVCacheParamInterface):
         if self.kv_connector in (
             KVConnectorType.local,
             KVConnectorType.tiered,
+            KVConnectorType.rust_tiered,
         ):
             if not self.enable_prefix_caching:
                 raise ValueError(
@@ -983,6 +994,7 @@ class KVCacheParams(KVCacheParamInterface):
             if self.kv_connector in (
                 KVConnectorType.local,
                 KVConnectorType.tiered,
+                KVConnectorType.rust_tiered,
                 KVConnectorType.dkv,
             ):
                 # KVCacheBuffer.all_buffers / to_memory enumerate only the
@@ -2072,6 +2084,7 @@ def compute_num_host_blocks(params: KVCacheParamInterface) -> int:
     if params.kv_connector not in (
         KVConnectorType.local,
         KVConnectorType.tiered,
+        KVConnectorType.rust_tiered,
     ):
         return 0
     assert params.host_kvcache_swap_space_gb is not None

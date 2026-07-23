@@ -37,7 +37,12 @@ from max.pipelines.context import (
     TextContext,
     TokenHashOverride,
 )
-from max.pipelines.kv_cache.kv_connector import KVConnector
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    KVConnector,
+    KVConnectorTransfer,
+    TransferDirection,
+)
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
@@ -52,6 +57,25 @@ from .block_utils import (
 )
 
 logger = logging.getLogger("max.pipelines")
+
+
+@dataclass
+class _PendingTransfer:
+    """A device-side async transfer tracked on the main (scheduler) thread.
+
+    ``blocks`` are the device blocks pinned for the transfer's duration (a
+    load's H2D destinations, an offload's D2H sources); they are unpinned when
+    ``event`` completes. ``commit_hashes`` is set for onloads only: the onloaded
+    blocks are committed into the device prefix cache on completion (deferred so
+    a concurrent request cannot read them before the H2D lands), keyed by these
+    hashes in ``blocks`` order. Only asynchronous connectors (``rust_tiered``)
+    produce these; synchronous connectors' transfers are already complete and
+    never tracked.
+    """
+
+    event: KVConnectorTransfer
+    blocks: list[KVCacheBlock]
+    commit_hashes: list[bytes] | None = None
 
 
 def _compute_seq_len(
@@ -242,6 +266,14 @@ class BlockManager:
             [] for _ in range(self.num_replicas)
         ]
 
+        # In-flight async transfers (host/disk onloads and offloads) per
+        # replica, each pinning its device blocks until it completes. Only
+        # asynchronous connectors (``rust_tiered``) populate this; drained on
+        # the main thread by ``poll_transfers``.
+        self._pending_transfers: list[list[_PendingTransfer]] = [
+            [] for _ in range(self.num_replicas)
+        ]
+
         # One pool of device blocks per replica.
         self.device_block_pools: list[BlockPool] = [
             BlockPool(
@@ -420,7 +452,7 @@ class BlockManager:
         ctx: TextContext,
         replica_idx: int = 0,
         skip_tokens: bool = True,
-    ) -> int:
+    ) -> tuple[int, KVConnectorTransfer]:
         """Reuses blocks from prefix cache.
 
         Full blocks are directly reused and appended to the request's blocks.
@@ -436,14 +468,18 @@ class BlockManager:
                 skip separately.
 
         Returns:
-            The number of tokens that were (or should be) skipped due to
-            prefix-cache reuse.  Returns 0 when no blocks were reused.
+            ``(skip_amount, event)`` where ``skip_amount`` is the number of
+            tokens skipped due to prefix-cache reuse (0 when no blocks were
+            reused) and ``event`` is the async onload transfer for the reused
+            prefix -- an already-complete :class:`CompletedTransfer` when nothing
+            was onloaded asynchronously (the common case: device hits and
+            synchronous connectors), so callers can just poll ``is_complete()``.
         """
         self._register_replica(ctx.request_id, replica_idx)
         self.assert_runtime_invariants(ctx, replica_idx)
 
         if not self.enable_prefix_caching or ctx.tokens.active_length == 1:
-            return 0
+            return 0, CompletedTransfer(TransferDirection.LOAD)
 
         # Identify a request's first admission so we record one cache-hit
         # observation per request, not one per chunked-prefill chunk.
@@ -455,8 +491,8 @@ class BlockManager:
         self.compute_hashes_for_request(ctx)
 
         # Query prefix cache for full blocks.
-        prefix_cache_blocks = self.get_full_blocks_from_prefix_cache(
-            ctx, replica_idx
+        prefix_cache_blocks, load_event = (
+            self.get_full_blocks_from_prefix_cache(ctx, replica_idx)
         )
 
         if len(prefix_cache_blocks) > 0:
@@ -488,11 +524,11 @@ class BlockManager:
                 )
             if is_first_admission:
                 ctx.cached_prefix_length = skip_amount
-            return skip_amount
+            return skip_amount, load_event
 
         if is_first_admission:
             ctx.cached_prefix_length = 0
-        return 0
+        return 0, load_event
 
     @traced
     def _count_full_blocks_from_prefix_cache(
@@ -644,16 +680,31 @@ class BlockManager:
         self,
         desired_hashes: Sequence[bytes],
         replica_idx: int = 0,
-    ) -> list[KVCacheBlock]:
-        """Returns a list of device blocks with the desired hashes.
+    ) -> tuple[list[KVCacheBlock], KVConnectorTransfer]:
+        """Onloads device blocks with the desired hashes from the connector.
 
-        These device blocks are newly allocated and initialized with the
-        contents of the host blocks via the connector.
+        The device blocks are newly allocated and initialized with the contents
+        of the host/external blocks via the connector's ``load``.
+
+        For a synchronous / stream-ordered connector the H2D is already ordered
+        ahead of the forward, so the onloaded blocks are committed into the
+        device prefix cache immediately and the (already-complete) transfer is
+        returned unchanged.
+
+        For an asynchronous connector (``rust_tiered``) the H2D runs on a
+        separate copy engine: the destination blocks are pinned and their
+        prefix-cache commit is deferred until the copy lands (``poll_transfers``)
+        so a concurrent request in the same batch cannot read them early.
+
+        Returns:
+            ``(loaded_blocks, event)``; ``event`` is an already-complete
+            :class:`CompletedTransfer` when nothing was onloaded or the onload
+            was synchronous, otherwise the in-flight transfer.
         """
         connector = self.connector
         pool = self.device_block_pools[replica_idx]
         if connector.num_host_blocks == 0 or not desired_hashes:
-            return []
+            return [], CompletedTransfer(TransferDirection.LOAD)
 
         # Limit by available device blocks.
         num_hashes_to_load = min(len(desired_hashes), pool.num_free_blocks)
@@ -665,30 +716,44 @@ class BlockManager:
 
         # Query connector for available blocks from host cache.
         block_ids = [b.bid for b in blocks]
-        num_loaded = connector.load(
+        event = connector.load(
             block_ids,
             desired_hashes,
             replica_idx=replica_idx,
         )
 
-        # The connector may return fewer hashes than requested.
+        # The connector may load fewer blocks than requested; its event reports
+        # the loaded device blocks in ``g0_blocks``.
+        num_loaded = len(event.g0_blocks)
         for surplus_block in blocks[num_loaded:]:
             pool.free_block(surplus_block)
         loaded_blocks = blocks[:num_loaded]
-        loaded_hashes = desired_hashes[:num_loaded]
+        loaded_hashes = list(desired_hashes[:num_loaded])
 
-        # Commit the device blocks into the device prefix cache.
-        for block, block_hash in zip(loaded_blocks, loaded_hashes, strict=True):
-            if block_hash in pool.prefix_cache:
-                # When this env var is set, we may perform host/disk -> device
-                # transfers of blocks already resident in the device prefix cache.
-                # If the block is already in the device prefix cache, we skip the
-                # commit.
-                assert self._only_use_kv_connector_last_level_cache
-                continue
-            pool.commit_into_prefix_cache(block_hash, block)
+        if not loaded_blocks:
+            return [], CompletedTransfer(TransferDirection.LOAD)
 
-        return loaded_blocks
+        if event.is_complete():
+            # Synchronous / stream-ordered connector (host, tiered, dKV): the
+            # H2D is already ordered ahead of the forward, so commit into the
+            # device prefix cache now.
+            for block, block_hash in zip(
+                loaded_blocks, loaded_hashes, strict=True
+            ):
+                if block_hash in pool.prefix_cache:
+                    # With this env var set, we may transfer blocks already
+                    # resident in the device prefix cache; skip the commit.
+                    assert self._only_use_kv_connector_last_level_cache
+                    continue
+                pool.commit_into_prefix_cache(block_hash, block)
+        else:
+            # Asynchronous connector (``rust_tiered``): pin the destination
+            # blocks and defer their prefix-cache commit until the H2D lands, so
+            # a concurrent request cannot read them before the data arrives.
+            self._track_transfer(
+                event, loaded_blocks, replica_idx, commit_hashes=loaded_hashes
+            )
+        return loaded_blocks, event
 
     @traced
     def count_full_blocks_from_prefix_caches(
@@ -766,10 +831,16 @@ class BlockManager:
     @traced
     def get_full_blocks_from_prefix_cache(
         self, ctx: TextContext, replica_idx: int = 0
-    ) -> list[KVCacheBlock]:
+    ) -> tuple[list[KVCacheBlock], KVConnectorTransfer]:
         """Gets the computed (cached) blocks for the request.
 
         Note that the computed blocks must be full.
+
+        Returns:
+            ``(blocks, event)`` where ``event`` is the async onload transfer for
+            the host-tier portion, or an already-complete
+            :class:`CompletedTransfer` when nothing was onloaded asynchronously
+            (device / cross-replica hits are served synchronously).
         """
         assert self.enable_prefix_caching
 
@@ -785,14 +856,14 @@ class BlockManager:
         )
 
         if self.connector.num_host_blocks == 0:
-            return device_blocks
+            return device_blocks, CompletedTransfer(TransferDirection.LOAD)
 
         # remove the hashes that were found in the device prefix cache
         if len(device_blocks) > 0:
             uncommitted_hashes = uncommitted_hashes[len(device_blocks) :]
 
         # query the host prefix cache for full blocks via connector
-        host_blocks = self._get_full_blocks_from_host_prefix_cache(
+        host_blocks, load_event = self._get_full_blocks_from_host_prefix_cache(
             uncommitted_hashes, replica_idx
         )
 
@@ -831,7 +902,7 @@ class BlockManager:
                 replica_idx=replica_idx,
             )
 
-        return device_blocks + host_blocks
+        return device_blocks + host_blocks, load_event
 
     @traced
     def commit_to_prefix_cache(
@@ -914,20 +985,90 @@ class BlockManager:
         for parent_seq_hash, hashes in self._pending_offloads[replica_idx]:
             block_ids = []
             block_hashes = []
+            src_blocks = []
             for block_hash in hashes:
                 if block_hash not in prefix_cache:
                     # Block evicted since commit; truncate the run here.
                     break
-                block_ids.append(prefix_cache[block_hash].bid)
+                block = prefix_cache[block_hash]
+                block_ids.append(block.bid)
                 block_hashes.append(block_hash)
+                src_blocks.append(block)
             if block_hashes:
-                connector.offload(
+                event = connector.offload(
                     block_ids,
                     block_hashes,
                     parent_seq_hash,
                     replica_idx=replica_idx,
                 )
+                # Asynchronous connector: pin the device source blocks until the
+                # D2H lands so they are not evicted / reused mid-copy. Synchronous
+                # connectors report the offload already complete (no pin).
+                if not event.is_complete():
+                    self._track_transfer(event, src_blocks, replica_idx)
         self._pending_offloads[replica_idx].clear()
+
+    def _track_transfer(
+        self,
+        event: KVConnectorTransfer,
+        blocks: list[KVCacheBlock],
+        replica_idx: int,
+        commit_hashes: list[bytes] | None = None,
+    ) -> None:
+        """Pins ``blocks`` and records an in-flight transfer to drain later.
+
+        Pinning (a ``ref_cnt`` bump via ``touch``) keeps the blocks out of the
+        eviction / free path until ``poll_transfers`` observes ``event``
+        complete and unpins them. Only asynchronous connectors reach here; a
+        no-op for an empty block list.
+        """
+        if not blocks:
+            return
+        pool = self.device_block_pools[replica_idx]
+        for block in blocks:
+            pool.touch(block)
+        self._pending_transfers[replica_idx].append(
+            _PendingTransfer(
+                event=event, blocks=blocks, commit_hashes=commit_hashes
+            )
+        )
+
+    def poll_transfers(self) -> None:
+        """Drains completed async transfers on the main (scheduler) thread.
+
+        For each completed transfer: commits any deferred onload blocks into the
+        device prefix cache (now safe for cross-request reuse) and unpins the
+        transfer's device blocks. Cheap to call every scheduler iteration -- an
+        ``is_complete`` poll per in-flight transfer. A no-op unless an
+        asynchronous connector (``rust_tiered``) is in use.
+        """
+        for replica_idx, pending_list in enumerate(self._pending_transfers):
+            if not pending_list:
+                continue
+            pool = self.device_block_pools[replica_idx]
+            still_pending: list[_PendingTransfer] = []
+            for pending in pending_list:
+                if not pending.event.is_complete():
+                    still_pending.append(pending)
+                    continue
+                if pending.commit_hashes is not None:
+                    for block, block_hash in zip(
+                        pending.blocks, pending.commit_hashes, strict=True
+                    ):
+                        # Guard against a concurrent commit of the same hash
+                        # (an ignored same-block onload race).
+                        if (
+                            block.block_hash is None
+                            and block_hash not in pool.prefix_cache
+                        ):
+                            pool.commit_into_prefix_cache(block_hash, block)
+                for block in pending.blocks:
+                    pool.free_block(block)
+            self._pending_transfers[replica_idx] = still_pending
+
+    def pending_transfers_exist(self, replica_idx: int = 0) -> bool:
+        """Returns whether any async transfer is in flight on the replica."""
+        return bool(self._pending_transfers[replica_idx])
 
     def release(self, request_id: RequestID, replica_idx: int = 0) -> None:
         """Release the blocks for the request."""

@@ -25,7 +25,7 @@ import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from max.driver import Device
+from max.driver import Device, accelerator_api
 from max.nn.kv_cache.cache_params import (
     KVCacheBufferInterface,
     KVCacheMemory,
@@ -117,6 +117,37 @@ def create_connector(
             devices=devices,
             replica_kv_memory=replica_kv_memory,
             total_num_host_blocks=total_num_host_blocks,
+            disk_cache_dir=cfg.disk_offload_dir,
+            max_disk_size_gb=cfg.disk_offload_max_gb,
+        )
+
+    if connector == KVConnectorType.rust_tiered:
+        cfg = kv_connector_config
+        if cfg is None or cfg.disk_offload_dir is None:
+            raise ValueError(
+                "kv_connector_config must include 'disk_offload_dir' "
+                "when kv_connector is 'rust_tiered'"
+            )
+        # The Rust connector drives CUDA copy engines directly (cudarc); it has
+        # no HIP/Metal backend, so it is CUDA-only.
+        api = accelerator_api()
+        if api != "cuda":
+            raise ValueError(
+                f"kv_connector 'rust_tiered' requires a CUDA device, but the "
+                f"accelerator API is '{api}'. Use 'tiered' instead."
+            )
+        from .rust_tier_connector import RustTierConnector
+
+        logger.debug(
+            "Creating RustTierConnector: "
+            f"host_blocks={total_num_host_blocks}, "
+            f"disk_dir={cfg.disk_offload_dir}, "
+            f"disk_max_gb={cfg.disk_offload_max_gb}"
+        )
+        return RustTierConnector(
+            replica_kv_memory=replica_kv_memory,
+            total_num_host_blocks=total_num_host_blocks,
+            kv_hash_algo=params.kv_hash_algo,
             disk_cache_dir=cfg.disk_offload_dir,
             max_disk_size_gb=cfg.disk_offload_max_gb,
         )

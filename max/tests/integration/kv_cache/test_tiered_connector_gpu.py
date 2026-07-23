@@ -156,7 +156,7 @@ def test_duplicate_hash_not_saved_twice() -> None:
 def test_load_returns_zero_for_empty_cache() -> None:
     connector = create_tiered_connector(page_size=16)
     loaded = connector.load([0, 1, 2], _hs(100, 200, 300))
-    assert loaded == 0
+    assert len(loaded.g0_blocks) == 0
     connector.shutdown()
 
 
@@ -165,7 +165,7 @@ def test_load_finds_cached_blocks() -> None:
     connector.offload([0, 1, 2], _hs(100, 200, 300))
 
     loaded = connector.load([3, 4, 5], _hs(100, 200, 300))
-    assert loaded == 3
+    assert len(loaded.g0_blocks) == 3
     connector.shutdown()
 
 
@@ -175,7 +175,7 @@ def test_load_stops_at_first_miss() -> None:
     connector.offload([2], _hs(300))
 
     loaded = connector.load([3, 4, 5], _hs(100, 200, 300))
-    assert loaded == 1
+    assert len(loaded.g0_blocks) == 1
     connector.shutdown()
 
 
@@ -185,7 +185,7 @@ def test_load_full_round_trip() -> None:
     connector.offload([0, 1], _hs(100, 200))
 
     loaded = connector.load([10, 11], _hs(100, 200))
-    assert loaded == 2
+    assert len(loaded.g0_blocks) == 2
     connector.shutdown()
 
 
@@ -272,7 +272,7 @@ def test_disk_promotion_to_cpu() -> None:
 
         # Load hash 100 -> should find it on disk and promote to CPU
         loaded = connector.load([10], _hs(100))
-        assert loaded == 1  # disk hit
+        assert len(loaded.g0_blocks) == 1  # disk hit
 
         connector.shutdown()
 
@@ -306,7 +306,7 @@ def test_full_round_trip() -> None:
 
         # Load [100, 200] -> both promoted from disk
         loaded = connector.load([20, 21], _hs(100, 200))
-        assert loaded == 2
+        assert len(loaded.g0_blocks) == 2
 
         connector.shutdown()
 
@@ -363,7 +363,7 @@ def test_load_breaks_chain_at_disk_miss() -> None:
 
         # Load [100, 200, 300] -> should stop at 200 (miss)
         loaded = connector.load([10, 11, 12], _hs(100, 200, 300))
-        assert loaded == 1  # only hash 100
+        assert len(loaded.g0_blocks) == 1  # only hash 100
 
         connector.shutdown()
 
@@ -728,8 +728,8 @@ def test_disk_round_trip_is_bit_exact(use_fp8: bool) -> None:
                 _write_block_pattern(b, bid, seed=0)
 
         loaded = connector.load(dst_blocks, hashes)
-        assert loaded == len(hashes), (
-            f"expected all {len(hashes)} blocks loaded from disk, got {loaded}"
+        assert len(loaded.g0_blocks) == len(hashes), (
+            f"expected all {len(hashes)} blocks loaded from disk, got {len(loaded.g0_blocks)}"
         )
 
         for dst_bid, h in zip(dst_blocks, hashes, strict=False):
@@ -818,7 +818,7 @@ def test_mixed_cpu_and_disk_chain_is_bit_exact(use_fp8: bool) -> None:
                 _write_block_pattern(b, bid, seed=0)
 
         loaded = connector.load(dst_blocks, hashes)
-        assert loaded == len(hashes)
+        assert len(loaded.g0_blocks) == len(hashes)
 
         for dst_bid, h in zip(dst_blocks, hashes, strict=False):
             actual = np.concatenate(
@@ -1007,7 +1007,7 @@ def test_multi_cache_disk_round_trip_restores_all_caches() -> None:
         }
 
         loaded = connector.load([bid], [block_hash])
-        assert loaded == 1
+        assert len(loaded.g0_blocks) == 1
 
         for i, b in enumerate(all_bufs):
             got = _read_block_bytes(b, bid)

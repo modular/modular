@@ -119,7 +119,7 @@ def test_load_returns_zero_for_empty_cache() -> None:
 
     loaded = connector.load([0, 1, 2], _hs(100, 200, 300))
 
-    assert loaded == 0
+    assert len(loaded.g0_blocks) == 0
 
 
 def test_load_finds_cached_blocks() -> None:
@@ -130,7 +130,7 @@ def test_load_finds_cached_blocks() -> None:
 
     loaded = connector.load([3, 4, 5], _hs(100, 200, 300))
 
-    assert loaded == 3
+    assert len(loaded.g0_blocks) == 3
 
 
 def test_load_stops_at_first_miss() -> None:
@@ -142,7 +142,7 @@ def test_load_stops_at_first_miss() -> None:
 
     loaded = connector.load([3, 4], _hs(100, 200))
 
-    assert loaded == 1
+    assert len(loaded.g0_blocks) == 1
 
 
 def test_load_full_round_trip() -> None:
@@ -153,7 +153,7 @@ def test_load_full_round_trip() -> None:
     assert connector.num_used_host_blocks == 3
 
     loaded = connector.load([10, 11, 12], _hs(100, 200, 300))
-    assert loaded == 3
+    assert len(loaded.g0_blocks) == 3
 
     assert connector.num_used_host_blocks == 3
 
@@ -165,7 +165,7 @@ def test_load_partial_hit() -> None:
     connector.offload([0, 1], _hs(100, 200))
 
     loaded = connector.load([10, 11, 12], _hs(100, 200, 300))
-    assert loaded == 2
+    assert len(loaded.g0_blocks) == 2
 
 
 def test_load_miss_at_start() -> None:
@@ -175,7 +175,7 @@ def test_load_miss_at_start() -> None:
     connector.offload([1, 2], _hs(200, 300))
 
     loaded = connector.load([10, 11, 12], _hs(100, 200, 300))
-    assert loaded == 0
+    assert len(loaded.g0_blocks) == 0
 
 
 def test_reset_prefix_cache_clears_host_cache() -> None:
@@ -209,7 +209,7 @@ def test_repeated_load_does_not_leak() -> None:
 
     for _i in range(5):
         loaded = connector.load([10], _hs(100))
-        assert loaded == 1
+        assert len(loaded.g0_blocks) == 1
 
     free_after_cycles = (
         connector._host_block_pool.free_block_queue.num_free_blocks

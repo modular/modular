@@ -108,7 +108,7 @@ def test_multi_cache_connector_offloads_all_caches() -> None:
     device.synchronize()
 
     loaded = connector.load([0], [(42).to_bytes(8, "big", signed=True)])
-    assert loaded == 1
+    assert len(loaded.g0_blocks) == 1
     connector.wait_for_offloads()
 
     np.testing.assert_array_equal(sliding_cache.to_numpy()[0], 1.0)
