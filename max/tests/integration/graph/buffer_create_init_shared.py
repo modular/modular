@@ -37,10 +37,18 @@ from max.graph.ops import buffer_load, buffer_store
 
 
 def make_session() -> InferenceSession:
-    """Creates a session over the available accelerators plus the CPU."""
-    devices: list[md.Device] = [
-        md.Accelerator(i) for i in range(md.accelerator_count())
-    ]
+    """Creates a session over a single accelerator (when present) plus the CPU.
+
+    The checks only ever use the first accelerator (see ``_device``) and read
+    results back on the CPU, so the session needs just those two devices.
+    Spanning *every* accelerator made the first ``session.load`` do per-device
+    setup for GPUs the graph never touches, so its cost scaled with the GPU
+    count (~10s on 2 GPUs, worse on an 8-GPU CI host). Under load that pushed
+    the test past its timeout -- the flake that disabled it (GEX-3994/QUA-786).
+    """
+    devices: list[md.Device] = []
+    if md.accelerator_count() > 0:
+        devices.append(md.Accelerator(0))
     devices.append(md.CPU())
     return InferenceSession(devices=devices)
 
