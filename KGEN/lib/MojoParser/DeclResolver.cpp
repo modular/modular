@@ -1332,6 +1332,16 @@ LogicalResult DeclResolver::importDeclFromModule(
   // that module so they're available in the destination scope.
   // All extensions known to their parents as e.g. `extension:MyStruct` but
   // also as `extension:` so asking for `extension:` will get all extensions.
+  // The aggregate `extension:` entry is a union over every wildcard import in
+  // the source scope, so resolve them all first. A lazy lookup would stop at
+  // the first wildcard that provides any extension and miss the rest. A
+  // failing wildcard reports at its own import site; it shouldn't fail this
+  // explicit import.
+  if (FailureOr<ASTDecl *> srcInit =
+          bodyResolvePackageInit(module, sourceNameLoc);
+      succeeded(srcInit)) {
+    (void)resolveAllWildcardImports(*srcInit ? **srcInit : module);
+  }
   StringAttr extensionNameAttr = shared.extensionsScopeMarker;
   auto requestedModuleExts =
       shared.lookupAndResolveDecl(extensionNameAttr, sourceNameLoc, module,
