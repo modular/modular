@@ -400,7 +400,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     SmallVector<Type, 2> structElemTp;
     structElemTp.push_back(maxAlignTp);
 
-    int64_t remLen = maxSize - getTypeStoreSize(maxAlignTp);
+    int64_t remLen = maxSize - getTypeAllocSize(maxAlignTp);
     if (remLen != 0) {
       structElemTp.push_back(
           LLVM::LLVMArrayType::get(IntegerType::get(&getContext(), 8), remLen));
