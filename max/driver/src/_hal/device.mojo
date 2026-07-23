@@ -35,8 +35,8 @@ from std.gpu.host.info import GPUInfo
 from ._machine import MachineDefinition, DeviceRef, DeviceSpec
 
 # Buffer size for string-valued device properties; must match
-# M_DRIVER_DEVICE_PROPERTY_NAME_MAX_LEN in SDK/include/HAL/M_driver_device.h.
-comptime _DEVICE_NAME_MAX_LEN = 256
+# M_DRIVER_DEVICE_PROPERTY_MAX_LEN in SDK/include/HAL/M_driver_device.h.
+comptime _DEVICE_PROPERTY_MAX_LEN = 256
 
 
 def get_machine_definition() -> MachineDefinition:
@@ -155,7 +155,7 @@ struct Device[spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def get_name(self) raises HALError -> String:
         """Queries the device's human-readable name."""
-        var buf = InlineArray[Int8, _DEVICE_NAME_MAX_LEN](fill=0)
+        var buf = InlineArray[Int8, _DEVICE_PROPERTY_MAX_LEN](fill=0)
         self._raw[].get_device_property_string["name"](
             self._handle, buf.unsafe_ptr()
         )
@@ -168,7 +168,7 @@ struct Device[spec: DeviceSpec](ImplicitlyDeletable, Movable):
         is derived host-side (e.g. CUDA `sm_<cc>`) need not implement this
         plugin property.
         """
-        var buf = InlineArray[Int8, _DEVICE_NAME_MAX_LEN](fill=0)
+        var buf = InlineArray[Int8, _DEVICE_PROPERTY_MAX_LEN](fill=0)
         self._raw[].get_device_property_string["arch"](
             self._handle, buf.unsafe_ptr()
         )

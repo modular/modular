@@ -2232,13 +2232,7 @@ struct DeviceContext(
 
         This is a private method intended for internal use only.
         """
-        if self.api() == "hip":
-            return self._device[].get_arch()
-        var cc = self.compute_capability()
-        var arch = String("sm_", cc)
-        if cc >= 90:
-            arch += "a"
-        return arch
+        return self._device[].get_arch()
 
 
 struct _DeviceContextScopeHAL(Movable):
