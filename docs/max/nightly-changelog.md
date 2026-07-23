@@ -721,6 +721,16 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed MAX Serve container pods ignoring `SIGTERM` during the model
+  cold-start window. The serving image ran Python directly as PID 1, and the
+  Linux kernel silently discards a default-disposition signal sent to a
+  namespaced PID 1 — so a `SIGTERM` arriving before the server installed its
+  handler (for example, during the long graph compile) was dropped, leaving
+  pods stuck `Terminating` until the termination grace period elapsed (holding
+  GPUs during rollouts). The container now runs under `dumb-init` as PID 1,
+  which handles `SIGTERM` (a signal the kernel otherwise drops when sent to
+  PID 1) and reaps the process tree, so the pod shuts down promptly and
+  releases its GPU.
 - Fixed a graph-compilation failure on B200 (`constraint failed: split-K (M2)
   supports only check_mask==False masks`) for models whose attention uses a
   materialized attention mask, such as the padded text encoders in diffusion
