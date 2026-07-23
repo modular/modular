@@ -480,8 +480,9 @@ LogicalResult StackAllocationOp::verify() {
   // private, NVPTX local); the required value comes from the target's
   // TargetTraits. TODO: Re-enable this check (guarded by `if (0`) when stdlib
   // is updated.
-  const TargetTraits *traits =
+  ErrorOr<const TargetTraits *> traitsOr =
       TargetTraitsRegistry::get().lookup(target.getTriple());
+  const TargetTraits *traits = traitsOr.isError() ? nullptr : *traitsOr;
   std::optional<unsigned> expected =
       traits ? traits->requiredStackAllocationAddressSpace() : std::nullopt;
   if (0 && expected && *addressSpace != *expected) {

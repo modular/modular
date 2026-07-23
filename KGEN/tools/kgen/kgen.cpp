@@ -109,7 +109,7 @@ public:
   void addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr);
 
   /// Set default CPU value.
-  void setDefaultCPU();
+  ErrorOrSuccess setDefaultCPU();
 };
 } // namespace
 
@@ -141,14 +141,18 @@ void CLOptions::addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr) {
     exit(reportError(err.getError()));
 }
 
-void CLOptions::setDefaultCPU() {
+ErrorOrSuccess CLOptions::setDefaultCPU() {
   llvm::Triple triple(targetTriple);
   // A registered target supplies its own default CPU (e.g. the host target's
   // ARM baseline, or a plugin target); otherwise default to `generic`.
-  const TargetTraits *traits = TargetTraitsRegistry::get().lookup(triple);
-  llvm::StringRef targetDefault =
-      traits ? traits->defaultCPU(triple) : llvm::StringRef();
+  ErrorOr<const TargetTraits *> traits =
+      TargetTraitsRegistry::get().lookup(triple);
+  if (traits.isError())
+    return traits.takeError();
+
+  llvm::StringRef targetDefault = (*traits)->defaultCPU(triple);
   targetCpu = targetDefault.empty() ? "generic" : targetDefault.str();
+  return M::success();
 }
 
 /// Emit the IR for `theModule` to a file.
@@ -476,8 +480,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
           clOptions.mtune, clOptions.targetAccelerator, options.relocModel);
     } else {
       if (clOptions.targetTriple != llvm::sys::getDefaultTargetTriple()) {
-        if (clOptions.targetCpu == llvm::sys::getHostCPUName())
-          clOptions.setDefaultCPU();
+        if (clOptions.targetCpu == llvm::sys::getHostCPUName()) {
+          ErrorOrSuccess result = clOptions.setDefaultCPU();
+          if (result.isError())
+            return failure(clOptions.reportError(result.getError()));
+          else
+            return mlir::success();
+        }
 
         if (clOptions.targetFeatures == getHostCPUFeatures())
           clOptions.targetFeatures = "";

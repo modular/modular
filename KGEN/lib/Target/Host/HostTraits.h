@@ -25,6 +25,10 @@ struct HostTraits final : TargetTraits {
 
   /// Shared stateless instance for the backend `traits()`.
   static const HostTraits &get();
+
+protected:
+  // bast target that is always registered
+  bool isBaseTarget() const override { return true; }
 };
 
 } // namespace M::KGEN

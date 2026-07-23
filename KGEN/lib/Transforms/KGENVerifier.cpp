@@ -63,9 +63,12 @@ struct KGENVerifierPass : public impl::KGENVerifierPassBase<KGENVerifierPass> {
     }
 
     TargetInfoAttr target = lookupTargetInfo(op);
-    const TargetLowering *lowering =
-        target ? TargetLoweringRegistry::get().lookup(target.getTriple())
-               : nullptr;
+    const TargetLowering *lowering = nullptr;
+    if (target) {
+      ErrorOr<const TargetLowering *> loweringOr =
+          TargetLoweringRegistry::get().lookup(target.getTriple());
+      lowering = loweringOr.isError() ? nullptr : *loweringOr;
+    }
     if (useMLIRVerifierOnly || !lowering || !lowering->needsVerification()) {
       if (numErrors > 0)
         signalPassFailure();

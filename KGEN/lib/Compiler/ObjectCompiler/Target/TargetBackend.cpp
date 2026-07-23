@@ -5,6 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Compiler/Target/TargetBackend.h"
+#include "Support/Configuration.h"
+#include "Target/TargetTraits.h"
 
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -105,21 +107,30 @@ void TargetBackendRegistry::add(std::unique_ptr<TargetBackend> backend) {
   Backends.push_back(std::move(backend));
 }
 
-const TargetBackend *
+ErrorOr<const TargetBackend *>
 TargetBackendRegistry::lookup(const llvm::Triple &triple) const {
-  // A backend that resolves `triple` to a different backend (one it owns,
-  // e.g. discovered at runtime) takes precedence over a direct self-match.
-  const TargetBackend *directMatch = nullptr;
-  for (const std::unique_ptr<TargetBackend> &backend : Backends) {
-    const TargetBackend *resolved = backend->resolve(triple);
-    if (!resolved)
-      continue;
-    if (resolved != backend.get())
-      return resolved;
-    if (!directMatch)
-      directMatch = resolved;
+  // A backend that resolves `triple` to one it owns takes precedence over a
+  // direct self-match.
+  const TargetBackend *result = [&]() -> const TargetBackend * {
+    const TargetBackend *directMatch = nullptr;
+    for (const std::unique_ptr<TargetBackend> &backend : Backends) {
+      const TargetBackend *resolved = backend->resolve(triple);
+      if (!resolved)
+        continue;
+      if (resolved != backend.get())
+        return resolved;
+      if (!directMatch)
+        directMatch = resolved;
+    }
+    return directMatch;
+  }();
+  if (!result) {
+    return Error("target '" + triple.str() +
+                 "' is not supported by this build");
   }
-  return directMatch;
+  if (ErrorOrSuccess e = requireMaxForAccelerator(!result->isBaseTarget()))
+    return Error(e.getError());
+  return result;
 }
 
 } // namespace M::KGEN

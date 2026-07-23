@@ -36,6 +36,10 @@ CompilationOptions::CompilationOptions(
       elaborationErrorVerbose(elaborationErrorVerbose),
       elaborationMaxDepth(elaborationMaxDepth) {
 
+  // An explicit `--target-accelerator` requires MAX; fail before any target
+  // lookup.
+  requireMaxForAcceleratorRequest(this->targetAccelerator);
+
   if (this->targetCpu.empty())
     setDefaultCPU();
 }
@@ -139,7 +143,9 @@ void CompilationOptions::setDefaultCPU() {
   llvm::Triple triple(targetTriple);
   // A registered target supplies its own default CPU (e.g. the host target's
   // ARM baseline, or a plugin target); otherwise use the host/cross fallback.
-  const TargetTraits *traits = TargetTraitsRegistry::get().lookup(triple);
+  ErrorOr<const TargetTraits *> traitsOr =
+      TargetTraitsRegistry::get().lookup(triple);
+  const TargetTraits *traits = traitsOr.isError() ? nullptr : *traitsOr;
   llvm::StringRef targetDefault =
       traits ? traits->defaultCPU(triple) : llvm::StringRef();
   if (!targetDefault.empty()) {
@@ -162,7 +168,9 @@ void CompilationOptions::setDefaultCPU() {
 bool M::KGEN::isGPUTriple(const llvm::Triple &triple) {
   // GPU-ness lives in the registered TargetTraits, so dropping a target's
   // sources drops it here too.
-  const TargetTraits *traits = TargetTraitsRegistry::get().lookup(triple);
+  ErrorOr<const TargetTraits *> traitsOr =
+      TargetTraitsRegistry::get().lookup(triple);
+  const TargetTraits *traits = traitsOr.isError() ? nullptr : *traitsOr;
   return traits && traits->isGPU();
 }
 

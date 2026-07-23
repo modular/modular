@@ -7,6 +7,7 @@
 #include "Target/TargetLowering.h"
 
 #include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
+#include "Target/TargetTraits.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/TargetParser/Triple.h"
 
@@ -30,21 +31,30 @@ void TargetLoweringRegistry::add(std::unique_ptr<TargetLowering> lowering) {
   Targets.push_back(std::move(lowering));
 }
 
-const TargetLowering *
+ErrorOr<const TargetLowering *>
 TargetLoweringRegistry::lookup(const llvm::Triple &triple) const {
-  // A lowering that resolves `triple` to a different lowering (one it owns,
-  // e.g. discovered at runtime) takes precedence over a direct self-match.
-  const TargetLowering *directMatch = nullptr;
-  for (const std::unique_ptr<TargetLowering> &target : Targets) {
-    const TargetLowering *resolved = target->resolve(triple);
-    if (!resolved)
-      continue;
-    if (resolved != target.get())
-      return resolved;
-    if (!directMatch)
-      directMatch = resolved;
+  // A lowering that resolves `triple` to one it owns takes precedence over a
+  // direct self-match.
+  const TargetLowering *result = [&]() -> const TargetLowering * {
+    const TargetLowering *directMatch = nullptr;
+    for (const std::unique_ptr<TargetLowering> &target : Targets) {
+      const TargetLowering *resolved = target->resolve(triple);
+      if (!resolved)
+        continue;
+      if (resolved != target.get())
+        return resolved;
+      if (!directMatch)
+        directMatch = resolved;
+    }
+    return directMatch;
+  }();
+  if (!result) {
+    return Error("target '" + triple.str() +
+                 "' is not supported by this build");
   }
-  return directMatch;
+  if (ErrorOrSuccess e = requireMaxForAccelerator(!result->isBaseTarget()))
+    return Error(e.getError());
+  return result;
 }
 
 } // namespace M::KGEN

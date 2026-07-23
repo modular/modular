@@ -218,9 +218,10 @@ buildPipeline(PassBuilder &pb, const CLOptions &clOptions, Triple triple) {
 // Normalize a target triple for codegen via its registered TargetTraits (a
 // target may compile through a different LLVM triple).
 static std::string fixTargetTriple(StringRef triple) {
-  if (const M::KGEN::TargetTraits *traits =
-          M::KGEN::TargetTraitsRegistry::get().lookup(Triple(triple)))
-    return traits->codegenTriple(triple);
+  if (M::ErrorOr<const M::KGEN::TargetTraits *> traitsOr =
+          M::KGEN::TargetTraitsRegistry::get().lookup(Triple(triple));
+      !traitsOr.isError())
+    return (*traitsOr)->codegenTriple(triple);
   return triple.str();
 }
 
@@ -353,8 +354,10 @@ int main(int argc, char **argv) {
   if (!clOptions.targetTriple.empty())
     module->setTargetTriple(Triple(Triple::normalize(clOptions.targetTriple)));
 
-  const M::KGEN::TargetTraits *traits =
+  M::ErrorOr<const M::KGEN::TargetTraits *> traitsOr =
       M::KGEN::TargetTraitsRegistry::get().lookup(module->getTargetTriple());
+  const M::KGEN::TargetTraits *traits =
+      traitsOr.isError() ? nullptr : *traitsOr;
 
   // A target may force a specific bitcode version, overriding any CLI
   // selection.

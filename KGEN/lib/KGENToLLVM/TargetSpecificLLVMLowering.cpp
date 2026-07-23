@@ -49,8 +49,9 @@ void TargetSpecificLLVMLoweringPass::runOnOperation() {
   if (!targetInfo)
     return; // No target info — nothing to attach.
 
-  const TargetLowering *lowering =
+  ErrorOr<const TargetLowering *> loweringOr =
       TargetLoweringRegistry::get().lookup(targetInfo.getTriple());
+  const TargetLowering *lowering = loweringOr.isError() ? nullptr : *loweringOr;
   if (!lowering)
     return;
 

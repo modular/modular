@@ -133,12 +133,11 @@ ObjectCompiler::create(StringRef basePath, CompilationOptions options,
   // Resolve the target backend once, up front. A missing backend means the
   // target is not supported by this build; fail here rather than silently
   // falling back deeper in the pipeline.
-  const TargetBackend *backend =
+  ErrorOr<const TargetBackend *> backendOr =
       TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
-  if (!backend)
-    return Error(Twine("no compiler backend is registered for target '") +
-                 options.targetTriple +
-                 "'; this target is not supported by this build");
+  if (backendOr.isError())
+    return Error(backendOr.getError());
+  const TargetBackend *backend = *backendOr;
 
   return std::unique_ptr<ObjectCompiler>(new ObjectCompiler(
       std::move(*transformCache), std::move(options), *backend, isJIT, context,
@@ -604,13 +603,11 @@ static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 KGEN::createTargetMachine(const CompilationOptions &options, bool isJIT) {
   // Each backend owns how its TargetMachine is built.
-  const TargetBackend *backend =
+  ErrorOr<const TargetBackend *> backendOr =
       TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
-  if (!backend) {
-    return Error(
-        Twine("no backend registered for target " + options.targetTriple));
-  }
-  return backend->createTargetMachine(options, isJIT);
+  if (backendOr.isError())
+    return Error(backendOr.getError());
+  return (*backendOr)->createTargetMachine(options, isJIT);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1095,12 +1092,14 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
 
             WriteableBufferRef linkedObj = *mcLinkResult;
             if (emitAssembly) {
-              const TargetTraits *traits = TargetTraitsRegistry::get().lookup(
-                  llvm::Triple(options.targetTriple));
-              if (!traits)
+              ErrorOr<const TargetTraits *> traitsOr =
+                  TargetTraitsRegistry::get().lookup(
+                      llvm::Triple(options.targetTriple));
+              if (traitsOr.isError()) {
                 return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-                    "no target traits registered for target", moduleLoc));
-              std::string postfix = traits->getAsmExtension().str();
+                    Error(traitsOr.getError()), moduleLoc));
+              }
+              std::string postfix = (*traitsOr)->getAsmExtension().str();
               StringRef toEmit(linkedObj->getBufferStart(),
                                linkedObj->getBufferSize());
               if (failed(writeBytesToTempWithHash(options.saveTempsPrefix,
@@ -1289,13 +1288,11 @@ ErrorOrSuccess ObjectCompiler::emitBitcode(llvm::Module &llvmModule,
                                            llvm::raw_pwrite_stream &os) {
   CompilerTimeTraceScope traceScope("emitBitcode");
   // The backend owns the bitcode format (e.g. Metal emits AIR bitcode).
-  const TargetBackend *backend =
+  ErrorOr<const TargetBackend *> backendOr =
       TargetBackendRegistry::get().lookup(llvmModule.getTargetTriple());
-  if (!backend) {
-    return Error(Twine("no backend registered for target " +
-                       llvmModule.getTargetTriple().str()));
-  }
-  backend->emitBitcode(llvmModule, os);
+  if (backendOr.isError())
+    return Error(backendOr.getError());
+  (*backendOr)->emitBitcode(llvmModule, os);
   return success();
 }
 

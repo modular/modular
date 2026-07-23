@@ -130,9 +130,9 @@ static bool functionRequiresByVal(LLVM::LLVMFuncOp func,
   if (func.getLinkage() != LLVM::Linkage::External)
     return false;
 
-  const TargetLowering *lowering =
+  ErrorOr<const TargetLowering *> loweringOr =
       TargetLoweringRegistry::get().lookup(target.getTriple());
-  return lowering && lowering->isExportedKernel(func);
+  return !loweringOr.isError() && (*loweringOr)->isExportedKernel(func);
 }
 
 /// Map `llvm.` attribute passed via `@__llvm_metadata` decorator to either
@@ -408,8 +408,9 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
   SmallVector<Attribute> passthrough =
       llvm::to_vector(func.getPassthroughAttr());
   Builder b(func.getContext());
-  const TargetLowering *lowering =
+  ErrorOr<const TargetLowering *> loweringOr =
       TargetLoweringRegistry::get().lookup(target.getTriple());
+  const TargetLowering *lowering = loweringOr.isError() ? nullptr : *loweringOr;
 
   for (const NamedAttribute &attr : metadata) {
     // Treat `llvm.*` metadata attributes as passthrough function attributes.
@@ -727,10 +728,10 @@ public:
 
       // Let the target lowering apply any target-specific marking to exported
       // functions so the backend can recognize them.
-      if (const TargetLowering *lowering =
-              TargetLoweringRegistry::get().lookup(target.getTriple())) {
-        lowering->markExportedKernel(funcOp);
-      }
+      if (ErrorOr<const TargetLowering *> loweringOr =
+              TargetLoweringRegistry::get().lookup(target.getTriple());
+          !loweringOr.isError())
+        (*loweringOr)->markExportedKernel(funcOp);
     }
     if (failed(convertLLVMMetadata(
             funcOp, func.getFuncTypeGenerator().getBody(),
@@ -1313,8 +1314,11 @@ void LowerKGENToLLVMPass::runOnOperation() {
 
   // Let the target lowering apply any target-specific finalization to each
   // converted function.
-  if (const TargetLowering *lowering = TargetLoweringRegistry::get().lookup(
-          typeConverter.getTarget().getTriple())) {
+  if (ErrorOr<const TargetLowering *> loweringOr =
+          TargetLoweringRegistry::get().lookup(
+              typeConverter.getTarget().getTriple());
+      !loweringOr.isError()) {
+    const TargetLowering *lowering = *loweringOr;
     for (auto funcOp : theModule.getOps<LLVM::LLVMFuncOp>())
       lowering->finalizeConvertedFunction(funcOp);
   }

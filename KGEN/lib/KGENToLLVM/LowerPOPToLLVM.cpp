@@ -2005,8 +2005,9 @@ void LowerPOPToLLVMPass::runOnOperation() {
     return signalPassFailure();
   }
 
-  const TargetLowering *lowering =
+  ErrorOr<const TargetLowering *> loweringOr =
       TargetLoweringRegistry::get().lookup(targetInfo.getTriple());
+  const TargetLowering *lowering = loweringOr.isError() ? nullptr : *loweringOr;
 
   // Ops the target lowers in the global pass are left legal (skipped) here.
   target.addDynamicallyLegalOp<POP::MaxOp, POP::MinOp, POP::AtomicRMWOp,
@@ -2458,8 +2459,9 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
     return signalPassFailure();
   }
 
-  const TargetLowering *lowering =
+  ErrorOr<const TargetLowering *> loweringOr =
       TargetLoweringRegistry::get().lookup(targetInfo.getTriple());
+  const TargetLowering *lowering = loweringOr.isError() ? nullptr : *loweringOr;
 
   POPToLLVMTypeConverter typeConverter(targetInfo);
   InterpreterMemoryConverter imc(symtab, typeConverter);

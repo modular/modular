@@ -130,9 +130,12 @@ void InferFunctionAttrsPass::runOnOperation() {
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   TargetInfoAttr target = lookupTargetInfo(getOperation());
-  const TargetLowering *lowering =
-      target ? TargetLoweringRegistry::get().lookup(target.getTriple())
-             : nullptr;
+  const TargetLowering *lowering = nullptr;
+  if (target) {
+    ErrorOr<const TargetLowering *> loweringOr =
+        TargetLoweringRegistry::get().lookup(target.getTriple());
+    lowering = loweringOr.isError() ? nullptr : *loweringOr;
+  }
   CallGraph cg(symtab, lowering);
   cg.build(getOperation(), symtab);
   cg.run(cpuDevice);

@@ -194,6 +194,11 @@ private:
 /// file does not exist in those paths, returns std::nullopt. If the file does
 /// exist, returns the full path to that file.
 std::optional<std::filesystem::path> findModularFile(StringRef fileName);
+
+/// Returns true if the MAX package is present in this install, i.e.
+/// `max.package_root` points at a tree containing libmax. Returns true when
+/// no package root is configured (bazel/dev builds).
+bool isMaxInstalled();
 } // namespace M
 
 #endif // SUPPORT_CONFIGURATION_H

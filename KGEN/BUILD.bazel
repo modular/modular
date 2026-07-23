@@ -1103,6 +1103,7 @@ modular_cc_library(
     ],
     deps = [
         ":Support",
+        "//Support:Configuration",
         "@llvm-project//llvm:Support",
     ],
     # TargetTraits implementations self-register via a static initializer and
