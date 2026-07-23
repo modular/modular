@@ -185,6 +185,8 @@ private:
   const CallOperands::PogAssignment &pogAssignment;
   OperandsNeedingOriginsList &operandsNeedingOrigins;
 
+  LogicalResult inferOptionalLiteralSize();
+
   /// Given an incomplete parameter binding set, try to infer parameters on
   /// Self of a method from the first argument.
   LogicalResult inferCTADParams();

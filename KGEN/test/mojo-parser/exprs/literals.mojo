@@ -451,3 +451,25 @@ def test_moco_3801_pack_of_literals():
     # independently.
     # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@List<:!AnyType_Copyable_Movable !Int>, {{.*}}@Set<:!AnyType !Int>]
     _moco_3801_pack([1, 2], {3, 4})
+
+
+# ===----------------------------------------------------------------------=== #
+# Support optional __literal_size__ parameter
+# ===----------------------------------------------------------------------=== #
+
+
+struct InlineArray[n: Int, T: AnyType]:
+    def __init__[
+        __literal_size__: Int
+    ](
+        out self: InlineArray[__literal_size__, Self.T],
+        *x: Self.T,
+        __list_literal__: NoneType,
+    ):
+        pass
+
+
+# CHECK-LABEL: lit.fn @"foo()"
+def foo():
+    # CHECK: lit.var.decl "v" var : !lit.ref<!lit.struct<#InlineArray <:!Int {:scalar<index> 3}, :!AnyType !Int>>
+    var v: InlineArray[_, _] = [1, 2, 3]
