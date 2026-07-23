@@ -610,8 +610,8 @@ struct Span[
         assert len(self) == len(other), "Spans must be of equal length"
         # For trivial types, unsafe_uninit_copy_n is a single memcpy (no destroy
         # needed). For non-trivial types, we keep the single-pass assignment
-        # loop rather than destroy_n + unsafe_uninit_copy_n, which would be two
-        # passes over memory with worse cache locality.
+        # loop rather than unsafe_destroy_n + unsafe_uninit_copy_n, which would
+        # be two passes over memory with worse cache locality.
         comptime if is_trivially_copyable[Self.T]() and is_trivially_deletable[
             Self.T
         ]():

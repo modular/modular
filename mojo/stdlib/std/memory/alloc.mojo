@@ -44,7 +44,7 @@ Allocate, use, and free storage through the `Allocation` returned by `alloc`:
 
 ```mojo
 from std.memory.alloc import alloc, dealloc, Layout
-from std.memory import destroy_n
+from std.memory import unsafe_destroy_n
 
 var allocation = alloc(Layout[String](count=4))
 var ptr = allocation.unsafe_ptr()
@@ -58,7 +58,7 @@ for string in allocation.unsafe_span():
     print(string) # prints "🔥"
 
 # deinitialize the values
-destroy_n(allocation.unsafe_ptr(), allocation.layout().count())
+unsafe_destroy_n(allocation.unsafe_ptr(), allocation.layout().count())
 
 # deallocate the memory
 dealloc(allocation^)
@@ -276,8 +276,8 @@ struct Allocation[T: AnyType](
         you have initialized in the storage: no element destructors are run,
         either by this conversion or when the `DeletableAllocation` is later
         destroyed. If the elements need their destructors run, destroy them
-        yourself (for example with `destroy_n`) before the `DeletableAllocation`
-        is destroyed.
+        yourself (for example with `unsafe_destroy_n`) before the
+        `DeletableAllocation` is destroyed.
 
         Returns:
             A `DeletableAllocation` owning this storage.
@@ -292,7 +292,7 @@ struct Allocation[T: AnyType](
 
         # Even though the allocation is automatically cleaned up, destructors
         # must still be manually run!
-        std.memory.destroy_n(deletable.unsafe_ptr(), 1)
+        std.memory.unsafe_destroy_n(deletable.unsafe_ptr(), 1)
 
         # No `dealloc` needed: `deletable` frees its storage when destroyed.
         ```
@@ -341,8 +341,8 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
 
     Like `dealloc`, the destructor frees the storage but does not run the
     destructors of any elements written into it. If the elements need their
-    destructors run, destroy them yourself (for example with `destroy_n`) before
-    the `DeletableAllocation` is destroyed.
+    destructors run, destroy them yourself (for example with
+    `unsafe_destroy_n`) before the `DeletableAllocation` is destroyed.
 
     Parameters:
         T: The type of the elements stored in the allocation.
@@ -383,7 +383,7 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
         Releases the storage owned by the wrapped `Allocation` by passing it to
         `dealloc`. Like `dealloc`, this frees the storage but does not run the
         destructors of any elements written into it; destroy them yourself (for
-        example with `destroy_n`) beforehand if they need it.
+        example with `unsafe_destroy_n`) beforehand if they need it.
         """
         dealloc(self._alloc^)
 

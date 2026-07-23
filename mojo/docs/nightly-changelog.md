@@ -520,6 +520,9 @@ This version is still a work in progress.
   `unsafe_uninit_copy_n` to make their unsafety explicit. The old names are
   deprecated and will be removed in a future release.
 
+- Renamed `destroy_n` to `unsafe_destroy_n` to make its unsafety explicit. The
+  old `destroy_n` name is deprecated and will be removed in a future release.
+
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
   `destroy_func`, so it can clear a `Dict` whose key or value type is not

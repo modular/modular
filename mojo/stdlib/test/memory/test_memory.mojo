@@ -15,12 +15,12 @@ from std.sys import simd_width_of, size_of
 from std.os import abort
 
 from std.memory import (
-    destroy_n,
     memcmp,
     unsafe_memcpy,
     unsafe_memmove,
     memset,
     memset_zero,
+    unsafe_destroy_n,
     unsafe_uninit_copy_n,
     unsafe_uninit_move_n,
     forget_deinit,
@@ -836,7 +836,7 @@ def test_uninit_move_n_trivial() raises:
 
     # Don't destroy src - it's uninitialized after move
     src.free()
-    destroy_n(dest, count=3)
+    unsafe_destroy_n(dest, count=3)
     dest.free()
 
 
@@ -865,7 +865,7 @@ def test_uninit_move_n_nontrivial() raises:
 
     # Don't destroy src - it's uninitialized after move
     src.free()
-    destroy_n(dest, count=3)
+    unsafe_destroy_n(dest, count=3)
     dest.free()
 
 
@@ -927,8 +927,8 @@ def test_uninit_copy_n_nontrivial() raises:
     assert_equal(src[1].copy_count, 0)
     assert_equal(src[2].copy_count, 0)
 
-    destroy_n(src, count=3)
-    destroy_n(dest, count=3)
+    unsafe_destroy_n(src, count=3)
+    unsafe_destroy_n(dest, count=3)
     src.free()
     dest.free()
 
@@ -945,7 +945,7 @@ def test_destroy_n_trivial() raises:
     (ptr + 2).unsafe_write(Counter(counter_ptr))
 
     # This should compile to nothing for trivial destructors
-    destroy_n(ptr, count=3)
+    unsafe_destroy_n(ptr, count=3)
     # Verify destructor was NOT called (trivial destructor is no-op)
     assert_equal(del_count, 0)
 
@@ -963,7 +963,7 @@ def test_destroy_n_nontrivial() raises:
     (ptr + 1).unsafe_write(Counter(counter_ptr))
     (ptr + 2).unsafe_write(Counter(counter_ptr))
 
-    destroy_n(ptr, count=3)
+    unsafe_destroy_n(ptr, count=3)
     # Verify destructor was called for all 3 elements
     assert_equal(del_count, 3)
 
@@ -985,7 +985,7 @@ def test_uninit_move_n_zero_count() raises:
     assert_equal(src[0].move_count, 0)
 
     # Cleanup/free the memory
-    destroy_n(src, count=1)
+    unsafe_destroy_n(src, count=1)
     src.free()
     dest.free()
 
@@ -1003,7 +1003,7 @@ def test_uninit_copy_n_zero_count() raises:
     assert_equal(src[0].copy_count, 0)
 
     # Cleanup/free the memory
-    destroy_n(src, count=1)
+    unsafe_destroy_n(src, count=1)
     src.free()
     dest.free()
 
@@ -1017,12 +1017,12 @@ def test_destroy_n_zero_count() raises:
     var ptr = alloc[Counter](1)
     ptr.unsafe_write(Counter(counter_ptr))
 
-    destroy_n(ptr, count=0)
+    unsafe_destroy_n(ptr, count=0)
     # Destructor should NOT have been called - del_count should still be 0
     assert_equal(del_count, 0)
 
     # Cleanup/free the memory
-    destroy_n(ptr, count=1)
+    unsafe_destroy_n(ptr, count=1)
     ptr.free()
 
 

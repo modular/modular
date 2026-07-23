@@ -38,6 +38,7 @@ from .memory import (
     memset,
     memset_zero,
     destroy_n,
+    unsafe_destroy_n,
     is_trivially_copyable,
     is_trivially_deletable,
     is_trivially_movable,

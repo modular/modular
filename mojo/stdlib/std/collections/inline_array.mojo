@@ -42,11 +42,11 @@ from std.reflection import reflect
 from std.hashlib.hasher import Hasher
 from std.memory import (
     UnsafeMaybeUninit,
-    destroy_n,
     forget_deinit,
     is_trivially_copyable,
     is_trivially_deletable,
     is_trivially_movable,
+    unsafe_destroy_n,
     unsafe_uninit_move_n,
 )
 from std.memory.unsafe_maybe_uninit import (
@@ -182,7 +182,7 @@ struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
 
         # Destroy the remaining elements that have not yet been
         # iterated over.
-        destroy_n(array.unsafe_ptr() + idx, Self.length - idx)
+        unsafe_destroy_n(array.unsafe_ptr() + idx, Self.length - idx)
 
         # Mark the array as destroyed so InlineArray.__del__ doesn't
         # double-destroy the elements we already handled.
@@ -567,7 +567,7 @@ struct InlineArray[T: AnyType, length: Int](
         deinit self,
     ) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroys the array's elements."""
-        destroy_n(self.unsafe_ptr(), Self.length)
+        unsafe_destroy_n(self.unsafe_ptr(), Self.length)
 
     def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
         """Consumes this array and deinitializes its elements using the provided

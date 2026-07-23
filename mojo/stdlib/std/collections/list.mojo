@@ -30,7 +30,7 @@ from std.sys import size_of
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 from std.memory import (
     Pointer,
-    destroy_n,
+    unsafe_destroy_n,
     unsafe_memcpy,
     unsafe_uninit_copy_n,
     unsafe_uninit_move_n,
@@ -120,7 +120,7 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
     def __del__(deinit self):
         # Destroy the remaining elements that have not yet been
         # iterated over.
-        destroy_n(
+        unsafe_destroy_n(
             self._list.unsafe_ptr() + self._index,
             count=len(self._list) - self._index,
         )
@@ -529,7 +529,7 @@ struct List[T: Movable, /](
     @stable(since="1.0")
     def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroy all elements in the list and free its memory."""
-        destroy_n(
+        unsafe_destroy_n(
             self._data,
             count=len(self),
         )
@@ -1215,7 +1215,7 @@ struct List[T: Movable, /](
                 " size is smaller than the current size."
             )
 
-        destroy_n(
+        unsafe_destroy_n(
             self._data.unsafe_offset(new_length),
             count=len(self) - new_length,
         )
@@ -1318,7 +1318,7 @@ struct List[T: Movable, /](
         print(len(list))  # 0
         ```
         """
-        destroy_n(self._data, count=self._len)
+        unsafe_destroy_n(self._data, count=self._len)
         var old_size: Int = self._len
         self._len = 0
         self._annotate_shrink(old_size)

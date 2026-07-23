@@ -595,9 +595,9 @@ def unsafe_uninit_move_n[
     The destination memory is treated as a raw span of bits to write to. Any
     existing values at `dest` are silently overwritten without being destroyed.
     For types with non-trivial destructors, this can cause memory leaks. Call
-    `destroy_n()` on the destination region first if it contains initialized
-    values that need cleanup. For trivial types like `Int`, this is not a
-    concern.
+    `unsafe_destroy_n()` on the destination region first if it contains
+    initialized values that need cleanup. For trivial types like `Int`, this is
+    not a concern.
 
     Parameters:
         T: The type of values to move, which must be `Movable`.
@@ -660,9 +660,9 @@ def uninit_move_n[
     The destination memory is treated as a raw span of bits to write to. Any
     existing values at `dest` are silently overwritten without being destroyed.
     For types with non-trivial destructors, this can cause memory leaks. Call
-    `destroy_n()` on the destination region first if it contains initialized
-    values that need cleanup. For trivial types like `Int`, this is not a
-    concern.
+    `unsafe_destroy_n()` on the destination region first if it contains
+    initialized values that need cleanup. For trivial types like `Int`, this is
+    not a concern.
 
     Parameters:
         T: The type of values to move, which must be `Movable`.
@@ -712,9 +712,9 @@ def unsafe_uninit_copy_n[
     The destination memory is treated as a raw span of bits to write to. Any
     existing values at `dest` are silently overwritten without being destroyed.
     For types with non-trivial destructors, this can cause memory leaks. Call
-    `destroy_n()` on the destination region first if it contains initialized
-    values that need cleanup. For trivial types like `Int`, this is not a
-    concern.
+    `unsafe_destroy_n()` on the destination region first if it contains
+    initialized values that need cleanup. For trivial types like `Int`, this is
+    not a concern.
 
     Parameters:
         T: The type of values to copy, which must be `Copyable`.
@@ -776,9 +776,9 @@ def uninit_copy_n[
     The destination memory is treated as a raw span of bits to write to. Any
     existing values at `dest` are silently overwritten without being destroyed.
     For types with non-trivial destructors, this can cause memory leaks. Call
-    `destroy_n()` on the destination region first if it contains initialized
-    values that need cleanup. For trivial types like `Int`, this is not a
-    concern.
+    `unsafe_destroy_n()` on the destination region first if it contains
+    initialized values that need cleanup. For trivial types like `Int`, this is
+    not a concern.
 
     Parameters:
         T: The type of values to copy, which must be `Copyable`.
@@ -809,7 +809,7 @@ def uninit_copy_n[
 
 
 @always_inline
-def destroy_n[
+def unsafe_destroy_n[
     T: ImplicitlyDeletable
 ](pointer: Pointer[mut=True, T, _], count: Int):
     """Destroy `count` initialized values at `pointer`.
@@ -841,6 +841,37 @@ def destroy_n[
     else:
         for i in range(count):
             pointer.unsafe_offset(i).unsafe_deinit_pointee()
+
+
+@always_inline
+@deprecated(use=unsafe_destroy_n)
+def destroy_n[
+    T: ImplicitlyDeletable
+](pointer: UnsafePointer[mut=True, T, _], count: Int):
+    """Destroy `count` initialized values at `pointer`.
+
+    This function runs the destructor for each of the `count` values, leaving
+    the memory uninitialized.
+
+    For types with trivial destructors, this is a no-op and generates no code.
+    Otherwise, it calls `unsafe_deinit_pointee()` on each element.
+
+    Parameters:
+        T: The type of values to destroy, which must be `ImplicitlyDeletable`.
+
+    Args:
+        pointer: Pointer to the memory region containing values to destroy.
+        count: The number of elements to destroy.
+
+    Safety:
+
+    - `pointer` must point to a valid memory region containing at least `count`
+        **initialized** elements of type `T`.
+    - After this call, the values at `pointer[0:count]` are uninitialized and
+        must not be read or destroyed again until re-initialized.
+    """
+
+    unsafe_destroy_n(pointer, count)
 
 
 # ===-----------------------------------------------------------------------===#
