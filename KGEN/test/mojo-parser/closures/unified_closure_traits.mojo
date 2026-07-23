@@ -23,7 +23,6 @@
 # S0-SAME: <:!Int {:scalar<index> 2}
 
 
-
 @fieldwise_init
 struct Pair(RegisterPassable):
     var a: Int
@@ -45,17 +44,17 @@ def struct_callee[
 def repro_struct_attr():
     var x = 10
 
-    def my_fn() {read x} -> Container[Pair(2, 0)]:
+    def my_fn() {imm x} -> Container[Pair(2, 0)]:
         return Container[Pair(2, 0)](x)
 
     struct_callee[2, type_of(my_fn)](my_fn)
+
 
 # COM: Verify SymbolConstantAttr matching: closure returning a type
 # COM: parameterized by a function reference (exercises symbol recursion).
 # S1-LABEL: lit.fn @"repro_symbol_attr()"
 # S1-DAG: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}} <:trait<@"def() -> Dispatch[identity]"
 # S1-DAG: lit.call @unified_closure_traits::@"symbol_callee[::SIMD[::DType(int), ::SIMDLength(1)],def() -> Dispatch[identity] & ::AnyType & ::ImplicitlyDeletable & ::Movable]($1)"{{.*}}<:!Int {:scalar<index> 1}
-
 
 
 struct Dispatch[F: def(Int) thin -> Int]:
@@ -79,10 +78,11 @@ def symbol_callee[
 def repro_symbol_attr():
     var x = 10
 
-    def my_fn() {read x} -> Dispatch[identity]:
+    def my_fn() {imm x} -> Dispatch[identity]:
         return Dispatch[identity](x)
 
     symbol_callee[1, type_of(my_fn)](my_fn)
+
 
 # COM: Ensure non-ref closure call operands are transformed/rebound in wrapper
 # COM: __call__ before dispatching to impl witness call.
@@ -91,7 +91,6 @@ def repro_symbol_attr():
 # S2-SAME: to !lit.struct<#Vec <:!Int #kgen.get_witness<:{{.*}} impl, "def[tag: Int, //, w: Int](val: Vec[tag, w]) -> Bool{1}", "tag">
 # S2: lit.call[{{.*}}"val": !lit.struct<#Vec <:!Int #kgen.get_witness<:{{.*}} impl, "def[tag: Int, //, w: Int](val: Vec[tag, w]) -> Bool{1}", "tag">
 # S2-SAME: ]{{.*}}(%{{.*}}, [[S2_REBIND]])
-
 
 
 struct Width(TrivialRegisterPassable):
@@ -115,14 +114,16 @@ def repro_rebind_nonref_operand[
     tag: Int,
     F: def[w: Width](v: Vec[tag, w]) -> Bool,
 ](func: F):
-    def body[w: Int](val: Vec[tag, w]) {read func} -> Bool:
+    def body[w: Int](val: Vec[tag, w]) {imm func} -> Bool:
         return func[w=w](val)
 
     _ = body
 
+
 # S3: lit.struct.decl @"def() -> None_{{.*}}"
 # S3: kgen.conformance @"std::builtin::{{.*}}::Copyable"
 # S3-NEXT: kgen.witness "__init__(copy:$0)" : !lit.generator<[2](*, "copy":
+
 
 struct s3_Foo(ImplicitlyCopyable, Movable):
     var x: Int
@@ -137,9 +138,9 @@ def thing(foo: s3_Foo):
     def thing() {var}:
         _ = foo
 
+
 # COM: Overload resolution with a closure overload must not crash when the
 # COM: non-closure argument's struct is not yet body-resolved.
-
 
 
 @always_inline
@@ -161,6 +162,7 @@ def test(x: s4_Foo):
 struct s4_Foo:
     var x: Int
 
+
 # COM: Verify generic map where the actual closure returns in-register but the
 # COM: trait signature expects a memory-only ByRefResult slot.
 # S5-DAG: [[S5_INT:!Int.*]] = !lit.struct<#SIMD <{{.*}}>>
@@ -168,8 +170,6 @@ struct s4_Foo:
 # S5-DAG:   kgen.witness "__call__{{.*}}" : !lit.generator
 # S5-DAG:   kgen.witness "T" : {{.*}} = [[S5_INT]]
 # S5-DAG:   kgen.witness "U" : {{.*}} = [[S5_INT]]
-
-
 
 
 comptime CollectionElement = ImplicitlyDeletable & ImplicitlyCopyable
@@ -188,11 +188,11 @@ def s5_foo(x: Int):
 
     _ = map[Int, Int, type_of(double)](x, double)
 
+
 # COM: Verify names match cache keys to avoid collisions.
 # S6-DAG: lit.trait.decl @"def[U: DoB, //](y: U) -> None{1}"
 # S6-DAG: lit.trait.decl @"def[T: DoA](y: T) -> None"
 # S6-DAG: lit.trait.decl @"def[T: DoA, //](y: T) -> None{1}"
-
 
 
 trait DoA:
@@ -206,7 +206,7 @@ trait DoB:
 
 
 def s6_foo[T: DoA](x: T):
-    def closure(y: T) {read x}:
+    def closure(y: T) {imm x}:
         _ = x
 
     def closure2[T: DoA](y: T) {var}:
@@ -217,12 +217,11 @@ def bar[U: DoB](x: U):
     def closure(y: U) {var}:
         pass
 
+
 # COM: Verify that a register_passable closure capturing a generic
 # COM: register_passable closure and a concrete register_passable struct gets
 # COM: convention register_passable (not trivial)
 # S7-DAG: lit.struct.decl @"def(y: Int) -> Int_{{.*}}"{{.*}} register_passable attributes
-
-
 
 
 struct NonTrivialPayload(ImplicitlyCopyable, RegisterPassable):
@@ -242,12 +241,11 @@ def s7_call_inner[
 
     return outer(x)
 
+
 # COM: Verify that a register_passable closure capturing a trivially
 # COM: register_passable callback and a trivial struct gets convention
 # COM: register_passable_trivial.
 # S8-DAG: lit.struct.decl @"def(y: Int) -> Int_{{.*}}"{{.*}} register_passable_trivial attributes
-
-
 
 
 struct TrivialPayload(TrivialRegisterPassable):
@@ -267,12 +265,14 @@ def s8_call_inner[
 
     return outer(x)
 
+
 # COM: Verify lazy conformance fires for a parametric closure trait whose
 # COM: argument type is a (`param_list.get`).
 
-# S9: kgen.conformance @"def[idx: Int](var elt: _[idx]) -> None{1}" {
+# S9: kgen.conformance @"def[idx: Int](var elt: *?[idx]) -> None{1}" {
 # S9:   kgen.witness "__call__{{.*}} capturing -> !kgen.none>
 # S9:   kgen.witness "element_types.values`" : param_list<{{.*}}> = [!String, !Int]
+
 
 struct s9_MiniTuple[*element_types: Movable & ImplicitlyDeletable](Movable):
     comptime _mlir_type = __mlir_type[
@@ -287,13 +287,13 @@ struct s9_MiniTuple[*element_types: Movable & ImplicitlyDeletable](Movable):
     @always_inline("nodebug")
     def __getitem_param__[
         idx: Int
-    ](ref self) -> ref [self] Self.element_types[idx]:
+    ](ref self) -> ref[self] Self.element_types[idx]:
         var storage_kgen_ptr = UnsafePointer(
             to=self._mlir_value
         )._get_kgen_pointer()
         var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
-            index = idx.__mlir_index__(),
-            _type = UnsafePointer[
+            index=idx.__mlir_index__(),
+            _type=UnsafePointer[
                 Self.element_types[idx], origin_of(self)
             ]._mlir_type,
         ](storage_kgen_ptr)

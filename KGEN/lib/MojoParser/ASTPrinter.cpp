@@ -396,7 +396,11 @@ printGeneratorInterface(raw_ostream &os, ArrayRef<Type> inputParamTypes,
       }
       // Any direct use of this should print as _ since we're not going to show
       // the declaration.
-      evaluator.appendIndexBinding(UnboundAttr::get(reboundType));
+      // Use UnknownAttr instead of UnboundAttr here since UnboundAttr are
+      // treated specially in a lot of places. E.g., by `BindParamAttr`. In this
+      // case, we mean a concrete value that we don't care (instead of a
+      // unprovided parameter values).
+      evaluator.appendIndexBinding(UnknownAttr::get(reboundType));
       continue;
     }
 
