@@ -24,7 +24,14 @@ _APPLE_GPU_INCOMPATIBLE = select({
 
 _EXTRA_CONSTRAINTS = {
     "test_batch_kv_cache_flash_attention.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
-    "test_kv_cache_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
+    "test_kv_cache_matmul.mojo": select({
+        # KERN-3272: ~20min compile/test time on B200 (ASSERT=all + SM100
+        # matmul tactic explosion, same root cause as KERN-3210). Disabled on
+        # B200 until fixed forward or the test is split like the ragged variant.
+        "//:b200_gpu": ["@platforms//:incompatible"],
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: PRDT-506
+        "//conditions:default": [],
+    }),
     "test_batch_kv_cache_flash_attention_causal_mask.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_kv_cache_ragged_matmul_scale.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2318
     "test_fused_qkv_index_matmul_scale_mxfp8.mojo": select({
