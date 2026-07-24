@@ -389,9 +389,6 @@ struct Conv:
             stride_tuple[i] = Int(strides._ptr[i])
             dilation_tuple[i] = Int(dilation._ptr[i])
 
-        if dilation_tuple != IndexList[input.rank - 2](1):
-            raise Error("Non-unit dilation is not supported yet.")
-
         var pad_d_tuple = IndexList[2](0)
         var pad_h_tuple = IndexList[2](0)
         var pad_w_tuple = IndexList[2](0)

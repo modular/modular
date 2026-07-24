@@ -913,7 +913,8 @@ struct ConvDirectNHWC[
         for r in range(self.conv_shape.r()):
             for s in range(self.conv_shape.s()):
                 var input_offset = self.conv_shape.c * (
-                    s + self.conv_shape.w() * r
+                    s * self.conv_shape.dilation[1]
+                    + self.conv_shape.w() * r * self.conv_shape.dilation[0]
                 )
 
                 # Unpacked version. For each (r, s), we first offset the

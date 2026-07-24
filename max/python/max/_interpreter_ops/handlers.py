@@ -2420,10 +2420,6 @@ def _handle_conv(
         List containing the convolution output buffer.
 
     Raises:
-        NotImplementedError: If dilation != 1 -- the GC-compiled kernel
-            hard-errors at runtime with "Non-unit dilation is not
-            supported yet"; pre-checked here for a clear error instead.
-            TODO(KERN-3238): add kernel support.
         NotImplementedError: If groups != 1 -- grouped conv needs a
             pre-packed filter layout, and there's no Python-exposed op to
             produce one (the packing kernel is only invoked by an internal
@@ -2439,11 +2435,6 @@ def _handle_conv(
     assert isinstance(paddings, Buffer)
     assert isinstance(num_groups, Buffer)
 
-    dilations_np = dilations.to_numpy().flatten()
-    if any(int(d) != 1 for d in dilations_np):
-        raise NotImplementedError(
-            f"conv: dilation != 1 is not supported (got {dilations_np.tolist()})"
-        )
     groups = int(num_groups.to_numpy().item())
     if groups != 1:
         raise NotImplementedError(
