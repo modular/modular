@@ -82,9 +82,9 @@ def test_string() raises:
 def test_pointers() raises:
     # reach into a container's raw buffer, then vectorize it (the escape hatch)
     var r = List(range(4))
-    var vec = r.unsafe_ptr().load[width=4]()  # 4 elements -> one SIMD
+    var vec = r.unsafe_ptr().unsafe_load[width=4]()  # 4 elements -> one SIMD
     assert_equal(vec.reduce_add(), 6)  # 0+1+2+3
-    assert_equal(r.unsafe_ptr()[0], 0)  # deref one element
+    assert_equal(r.unsafe_ptr()[unsafe_offset=0], 0)  # deref one element
 
 
 def test_list() raises:

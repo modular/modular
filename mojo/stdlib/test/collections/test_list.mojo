@@ -1147,8 +1147,8 @@ def test_uninit_ctor() raises:
     # Resize with uninitialized memory.
     var list2 = List[String]()
     list2.resize(unsafe_uninit_length=2)
-    (list2.unsafe_ptr() + 0).unsafe_write("hello ")
-    (list2.unsafe_ptr() + 1).unsafe_write("world")
+    list2.unsafe_ptr().unsafe_offset(0).unsafe_write("hello ")
+    list2.unsafe_ptr().unsafe_offset(1).unsafe_write("world")
     assert_equal(list2[0], "hello ")
     assert_equal(list2[1], "world")
 

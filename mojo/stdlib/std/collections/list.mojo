@@ -121,7 +121,7 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
         # Destroy the remaining elements that have not yet been
         # iterated over.
         unsafe_destroy_n(
-            self._list.unsafe_ptr() + self._index,
+            self._list.unsafe_ptr().unsafe_offset(self._index),
             count=len(self._list) - self._index,
         )
         self._list._len = 0
@@ -134,7 +134,11 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
         if self._index >= len(self._list):
             raise StopIteration()
         self._index += 1
-        return (self._list.unsafe_ptr() + self._index - 1).unsafe_take_pointee()
+        return (
+            self._list.unsafe_ptr()
+            .unsafe_offset(self._index - 1)
+            .unsafe_take_pointee()
+        )
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -1579,7 +1583,7 @@ struct List[T: Movable, /](
 
     def unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
-    ](ref[origin, address_space] self) -> UnsafePointer[
+    ](ref[origin, address_space] self) -> Pointer[
         Self.T, origin, address_space=address_space
     ]:
         """Retrieves a pointer to the underlying memory, or a dangling pointer

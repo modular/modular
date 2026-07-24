@@ -40,16 +40,16 @@ def test_compressed_store() raises:
 
     compressed_store(iota_4, vector.unsafe_ptr(), iota_4.ge(2))
     assert_equal(
-        vector.unsafe_ptr().load[width=4](0), F32x4(2.0, 3.0, 0.0, 0.0)
+        vector.unsafe_ptr().unsafe_load[width=4](0), F32x4(2.0, 3.0, 0.0, 0.0)
     )
 
     # Just clear the buffer.
-    vector.unsafe_ptr().store(0, SIMD[DType.float32, 4](0))
+    vector.unsafe_ptr().unsafe_store(0, SIMD[DType.float32, 4](0))
 
     var val = F32x4(0.0, 1.0, 3.0, 0.0)
     compressed_store(val, vector.unsafe_ptr(), val.ne(0))
     assert_equal(
-        vector.unsafe_ptr().load[width=4](0), F32x4(1.0, 3.0, 0.0, 0.0)
+        vector.unsafe_ptr().unsafe_load[width=4](0), F32x4(1.0, 3.0, 0.0, 0.0)
     )
 
 
@@ -92,7 +92,7 @@ def test_masked_store() raises:
 
     masked_store[4](iota_4, vector.unsafe_ptr(), iota_4.lt(5))
     assert_equal(
-        vector.unsafe_ptr().load[width=4](0), F32x4(0.0, 1.0, 2.0, 3.0)
+        vector.unsafe_ptr().unsafe_load[width=4](0), F32x4(0.0, 1.0, 2.0, 3.0)
     )
 
     masked_store[8](iota_8, vector.unsafe_ptr(), iota_8.lt(5))

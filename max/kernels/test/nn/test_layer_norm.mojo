@@ -82,9 +82,12 @@ def run_layer_norm_cpu[
 
     layer_norm_cpu[input_fn, gamma_fn, output_fn](shape, beta, epsilon)
 
+    var input_ptr_ptr: UnsafePointer[
+        input_ptr.T, origin_of(input_ptr)
+    ] = input_ptr.unsafe_ptr()
     for r, c in product(range(rows), range(cols)):
         var vec = TileTensor(
-            input_ptr.unsafe_ptr() + r * cols,
+            input_ptr_ptr + r * cols,
             row_major(cols),
         )
         var mean_ref = mean(vec)

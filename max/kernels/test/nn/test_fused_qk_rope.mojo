@@ -27,7 +27,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from std.memory import unsafe_memcpy
+from std.memory import UnsafePointer, unsafe_memcpy
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
@@ -82,14 +82,22 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     kv_cache_block_buffer = List[Scalar[dtype]](
         length=block_shape.flattened_length(), fill=0
     )
+    # TODO(MOCO-4334): a safe `Pointer` from `unsafe_ptr()` collapses to an
+    # immutable origin in the tensor ctor; pin to a mutable `UnsafePointer`.
+    var kv_cache_block_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(kv_cache_block_buffer)
+    ] = kv_cache_block_buffer.unsafe_ptr()
     kv_cache_block = LayoutTensor[dtype, Layout.row_major[6]()](
-        kv_cache_block_buffer.unsafe_ptr(),
+        kv_cache_block_ptr,
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
 
     # Initialize KV cache block buffer with golden values.
     start_positions_dyn = materialize[start_positions]()
     k_cache_input_buffer = k_cache_input[dtype]()
+    var k_cache_input_buffer_ptr: UnsafePointer[
+        k_cache_input_buffer.T, origin_of(k_cache_input_buffer)
+    ] = k_cache_input_buffer.unsafe_ptr()
     var max_cache_len_in_batch = 0
     for batch_idx in range(batch_size):
         unsafe_memcpy(
@@ -99,7 +107,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
                     batch_idx, 0, 0, Int(start_positions_dyn[batch_idx]), 0, 0
                 )
             ),
-            src=k_cache_input_buffer.unsafe_ptr() + (batch_idx * seq_len * dim),
+            src=k_cache_input_buffer_ptr + (batch_idx * seq_len * dim),
             count=seq_len * dim,
         )
         max_cache_len_in_batch = max(
@@ -157,6 +165,9 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     assert (
         len(expected_k_out_buffer) == batch_size * seq_len * dim
     ), "invalid expected k out init"
+    var expected_k_out_buffer_ptr: UnsafePointer[
+        expected_k_out_buffer.T, origin_of(expected_k_out_buffer)
+    ] = expected_k_out_buffer.unsafe_ptr()
 
     # Create output buffer.
     q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
@@ -197,7 +208,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
                     batch_idx, 0, 0, Int(start_positions_dyn[batch_idx]), 0, 0
                 )
             ),
-            expected_k_out_buffer.unsafe_ptr() + (batch_idx * seq_len * dim),
+            expected_k_out_buffer_ptr + (batch_idx * seq_len * dim),
             # Number of elements in one batch item.
             len(expected_k_out_buffer) // batch_size,
         )

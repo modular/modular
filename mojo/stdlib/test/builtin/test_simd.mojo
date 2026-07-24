@@ -398,7 +398,7 @@ def test_issue_1625() raises:
     for i in range(size):
         data[i] = Int64(i)
 
-    var x = data.unsafe_ptr().load[width=2 * simd_width](0)
+    var x = data.unsafe_ptr().unsafe_load[width=2 * simd_width](0)
     var evens_and_odds = x.deinterleave()
 
     # FIXME (40568) should directly use the SIMD assert_equal

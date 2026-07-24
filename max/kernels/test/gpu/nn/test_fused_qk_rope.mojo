@@ -130,6 +130,9 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
 
     # Initialize KV cache block buffer with golden values.
     k_cache_input_buffer = k_cache_input[dtype]()
+    var k_cache_input_buffer_ptr: UnsafePointer[
+        k_cache_input_buffer.T, origin_of(k_cache_input_buffer)
+    ] = k_cache_input_buffer.unsafe_ptr()
     with kv_block_device.map_to_host() as kv_block_host:
         var kv_block_tensor = LayoutTensor[dtype, kv_block_layout](
             kv_block_host, kv_block_runtime_layout
@@ -141,8 +144,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
             )
             unsafe_memcpy(
                 dest=kv_block_tensor.ptr + dest_offset,
-                src=k_cache_input_buffer.unsafe_ptr()
-                + (batch_idx * seq_len * dim),
+                src=k_cache_input_buffer_ptr + (batch_idx * seq_len * dim),
                 count=seq_len * dim,
             )
 
@@ -229,6 +231,9 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     assert (
         len(expected_k_out_buffer) == batch_size * seq_len * dim
     ), "invalid expected k out init"
+    var expected_k_out_buffer_ptr: UnsafePointer[
+        expected_k_out_buffer.T, origin_of(expected_k_out_buffer)
+    ] = expected_k_out_buffer.unsafe_ptr()
 
     # Create valid_lengths device buffer - all sequences have full seq_len valid
     var valid_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
@@ -284,8 +289,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
             )
             assert_almost_equal(
                 kv_block_out_tensor.ptr + src_offset,
-                expected_k_out_buffer.unsafe_ptr()
-                + (batch_idx * seq_len * dim),
+                expected_k_out_buffer_ptr + (batch_idx * seq_len * dim),
                 # Number of elements in one batch item.
                 len(expected_k_out_buffer) // batch_size,
             )

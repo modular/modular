@@ -2669,10 +2669,13 @@ struct DeviceFunction[
         # dropping it faults the launch.
         var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
         if len(attributes) > 0:
+            var attributes_ptr: UnsafePointer[
+                attributes.T, origin_of(attributes)
+            ] = attributes.unsafe_ptr()
             attr_ptr = OptionalReg(
-                attributes.unsafe_ptr()
-                .bitcast[NoneType]()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
+                attributes_ptr.bitcast[NoneType]().unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ]()
             )
 
         ctx._hal_stream()[].execute(
@@ -2838,10 +2841,13 @@ struct DeviceFunction[
         # dropping it faults the launch.
         var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
         if len(attributes) > 0:
+            var attributes_ptr: UnsafePointer[
+                attributes.T, origin_of(attributes)
+            ] = attributes.unsafe_ptr()
             attr_ptr = OptionalReg(
-                attributes.unsafe_ptr()
-                .bitcast[NoneType]()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
+                attributes_ptr.bitcast[NoneType]().unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ]()
             )
 
         ctx._hal_stream()[].execute(
@@ -3158,10 +3164,13 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         # dropping it faults the launch.
         var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
         if len(attributes) > 0:
+            var attributes_ptr: UnsafePointer[
+                attributes.T, origin_of(attributes)
+            ] = attributes.unsafe_ptr()
             attr_ptr = OptionalReg(
-                attributes.unsafe_ptr()
-                .bitcast[NoneType]()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
+                attributes_ptr.bitcast[NoneType]().unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ]()
             )
 
         ctx._hal_stream()[].execute(

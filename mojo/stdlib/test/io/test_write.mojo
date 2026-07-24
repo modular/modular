@@ -162,7 +162,9 @@ def test_write_simd_padded() raises:
 def test_hex_digits_to_hex_chars() raises:
     items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
     comptime S = StringSlice[origin_of(items)]
-    ptr = items.unsafe_ptr()
+    # `Span(ptr=...)` and the gated `.store` below both require an `UnsafePointer`;
+    # pin with an explicit origin so mutability is preserved (see MSTDL-2879/2880).
+    ptr: UnsafePointer[Byte, origin_of(items)] = items.unsafe_ptr()
     ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
     assert_equal("0001f525", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=8)))
     unsafe_memset_zero(ptr, len(items))

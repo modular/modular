@@ -402,7 +402,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             var chunk_bytes_to_read = len(result) - num_read
             var chunk_bytes_read = external_call["read", c_ssize_t](
                 fd,
-                result.unsafe_ptr() + num_read,
+                result.unsafe_ptr().unsafe_offset(num_read),
                 chunk_bytes_to_read,
             )
 

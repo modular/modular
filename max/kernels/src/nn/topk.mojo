@@ -349,7 +349,10 @@ def _top_k_cpu[
                             break
                         num_equal += 1
                     if num_equal > 1:
-                        var ptr = idxs.unsafe_ptr() + i
+                        var idxs_ptr: UnsafePointer[
+                            idxs.T, origin_of(idxs)
+                        ] = idxs.unsafe_ptr()
+                        var ptr = idxs_ptr + i
                         sort(
                             Span[idxs.T, origin_of(idxs)](
                                 unsafe_ptr=ptr, length=num_equal
