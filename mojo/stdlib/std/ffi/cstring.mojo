@@ -163,8 +163,8 @@ struct CStringSlice[origin: ImmOrigin](
         while a[] == b[]:
             if a[] == Int8(0):
                 return True
-            a += 1
-            b += 1
+            a = a.unsafe_offset(1)
+            b = b.unsafe_offset(1)
         return False
 
     @always_inline
@@ -208,7 +208,7 @@ struct CStringSlice[origin: ImmOrigin](
         t"CStringSlice({self.as_bytes_with_nul()})".write_to(writer)
 
     @always_inline
-    def unsafe_ptr(self) -> UnsafePointer[Int8, Self.origin]:
+    def unsafe_ptr(self) -> Pointer[Int8, Self.origin]:
         """Get a pointer to the underlying `CStringSlice`.
 
         Returns:
