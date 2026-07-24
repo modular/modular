@@ -32,10 +32,15 @@ served smoke on the real checkpoint):
 
 from __future__ import annotations
 
+import dataclasses
+import inspect
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import MagicMock
 
+import numpy as np
+import pytest
+from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.architectures.gemma4.context import Gemma4Context
@@ -46,14 +51,72 @@ from max.pipelines.architectures.unified_mtp_gemma4.batch_processor import (
     UnifiedMTPGemma4BatchProcessor,
 )
 from max.pipelines.architectures.unified_mtp_gemma4.model import (
+    UnifiedMTPGemma4Inputs,
     UnifiedMTPGemma4Model,
 )
 from max.pipelines.architectures.unified_mtp_gemma4.unified_mtp_gemma4 import (
     UnifiedMTPGemma4,
 )
+from max.pipelines.context import ImageMetadata
+from max.pipelines.context.context import TokenBuffer
 from max.pipelines.modeling.types import InputModality
 
 _HIDDEN_SIZE = 128
+
+
+def _fake_model_for_pack() -> UnifiedMTPGemma4Model:
+    """Duck-typed ``self`` exposing only what ``pack_vision_inputs`` reads.
+
+    ``pack_vision_inputs`` touches only ``self.config``; the rest of the model
+    (weights, graphs) is irrelevant to the pixel-packing logic under test.
+    """
+    return cast(
+        UnifiedMTPGemma4Model,
+        SimpleNamespace(
+            config=SimpleNamespace(
+                vision_config=SimpleNamespace(pooling_kernel_size=1),
+                unquantized_dtype=DType.float32,
+            )
+        ),
+    )
+
+
+def _two_image_context() -> Gemma4Context:
+    """A 2-image context whose first image is already encoded (chunked prefill).
+
+    ``pixel_position_ids`` is the full per-image list; after skipping img0 only
+    img1 remains unencoded (``image_idx == 1``). The pipeline's ``select`` would
+    return this context paired with its cache-miss set. Here every
+    ``next_image`` is a miss.
+    """
+    # fmt: off
+    tokens = np.array(
+        [51, 52, 53, 54, 98, 98, 98, 98, 55, 56, 57, 58, 98, 98, 98, 98, 59, 60],
+        dtype=np.int64,
+    )
+    # fmt: on
+
+    def _pixels() -> np.ndarray:
+        return np.arange(4 * 3, dtype=np.float32).reshape(4, 3)
+
+    pos0 = np.stack([np.arange(4), np.full(4, 0)], axis=1).astype(np.int32)
+    pos1 = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
+
+    ctx = Gemma4Context(
+        max_length=64,
+        tokens=TokenBuffer(tokens),
+        images=[
+            ImageMetadata(start_idx=4, end_idx=8, pixel_values=_pixels()),
+            ImageMetadata(start_idx=12, end_idx=16, pixel_values=_pixels()),
+        ],
+        vision_token_ids=[98],
+        mm_token_type_ids=np.zeros(len(tokens), dtype=np.int64),
+        pixel_position_ids=[pos0, pos1],
+    )
+    ctx.tokens.skip_processing(8)
+    assert ctx.image_idx == 1
+    assert len(ctx.next_images) == 1
+    return ctx
 
 
 def test_unified_mtp_gemma4_arch_is_multimodal() -> None:
@@ -124,3 +187,59 @@ def test_mtp_graph_declares_per_device_vision_inputs() -> None:
 
     for index_type in image_indices:
         assert index_type.dtype == DType.int32
+
+
+def test_pack_vision_inputs_aligns_pos_ids_after_partial_encode() -> None:
+    """pack_vision_inputs must slice ``[image_idx:]`` so the full per-image
+    ``pixel_position_ids`` realigns with ``next_images`` under chunked
+    prefill (``image_idx > 0``) and selects img1's grid, not the
+    already-encoded img0's.
+    """
+    ctx = _two_image_context()
+    raw = UnifiedMTPGemma4Model.pack_vision_inputs(
+        _fake_model_for_pack(), [(ctx, list(ctx.next_images))], [CPU()]
+    )
+    assert raw is not None
+    expected = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
+    np.testing.assert_array_equal(
+        raw.pixel_position_ids[0].to_numpy(), expected
+    )
+
+
+def test_pack_vision_inputs_raises_on_copied_selection() -> None:
+    """A selection holding copies of the context's images raises at the
+    source instead of failing later on a counts mismatch."""
+    ctx = _two_image_context()
+    copies = [dataclasses.replace(img) for img in ctx.next_images]
+    with pytest.raises(ValueError, match=r"not present in ctx\.next_images"):
+        UnifiedMTPGemma4Model.pack_vision_inputs(
+            _fake_model_for_pack(), [(ctx, copies)], [CPU()]
+        )
+
+
+def test_pack_vision_inputs_returns_none_without_miss() -> None:
+    """No cache-miss images (all hits / text-only) means nothing to pack."""
+    ctx = _two_image_context()
+    raw = UnifiedMTPGemma4Model.pack_vision_inputs(
+        _fake_model_for_pack(), [(ctx, [])], [CPU()]
+    )
+    assert raw is None
+
+
+def test_batch_processor_carries_no_vision_plumbing() -> None:
+    """The migrated batch processor owns no cache and emits no image carrier.
+
+    Vision is selected/encoded/assembled by the pipeline's encoder cache
+    (``run_vision_encode``); the batch processor builds only text inputs. A
+    regression that re-adds a model/processor-owned cache or an ``images``
+    carrier to the graph inputs would fail here.
+    """
+    assert not hasattr(UnifiedMTPGemma4BatchProcessor, "_ve_cache")
+    bind_params = inspect.signature(
+        UnifiedMTPGemma4BatchProcessor.bind_model_state
+    ).parameters
+    assert "ve_cache" not in bind_params
+    assert "config" in bind_params
+    field_names = {f.name for f in dataclasses.fields(UnifiedMTPGemma4Inputs)}
+    assert "images" not in field_names
+    assert "combined_embeds" in field_names

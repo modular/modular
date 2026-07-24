@@ -25,9 +25,6 @@ from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.graph.buffer_utils import cast_tensor_to
 from max.pipelines.context import ImageMetadata
-from max.pipelines.lib.vision_encoder_cache import (
-    VisionEncoderCache,
-)
 from max.profiler import traced
 
 from .context import Gemma4Context
@@ -47,31 +44,6 @@ class VisionRawInputs:
     cu_seqlens: list[Buffer]
     pool_gather_index: list[Buffer]
     max_seq_len: Buffer
-
-
-@dataclass
-class ImageInputs:
-    """Image-specific inputs attached to a model-input batch.
-
-    Exactly one of ``raw`` or ``cached`` is populated:
-
-    * ``raw`` — at least one image needs the vision encoder.  The
-      ``cache_*`` fields carry metadata so ``execute`` can update the
-      ``VisionEncoderCache`` after the forward pass.
-    * ``cached`` — every image was already in the cache; pre-assembled
-      embeddings and scatter indices are ready to use directly.
-    """
-
-    raw: VisionRawInputs | None = None
-
-    cache_context_batch: Sequence[Gemma4Context] | None = None
-    cache_uncached_contexts: Sequence[Gemma4Context] | None = None
-    cache_uncached_images: list[list[ImageMetadata]] | None = None
-    cache_per_image_token_counts: list[int] | None = None
-
-    cached_embeddings: list[Buffer] | None = None
-    cached_token_indices: list[Buffer] | None = None
-    cached_token_indices_np: npt.NDArray[np.int32] | None = None
 
 
 def create_empty_embeddings(
@@ -258,97 +230,3 @@ def pack_uncached_images(
         soft_token_counts,
         dtype,
     )
-
-
-@traced
-def build_image_inputs(
-    context_batch: Sequence[Gemma4Context],
-    uncached: Sequence[Gemma4Context],
-    devices: list[Device],
-    pooling_kernel_size: int,
-    ve_cache: VisionEncoderCache[Gemma4Context],
-    empty_embeddings: list[Buffer],
-    dtype: DType,
-) -> ImageInputs | None:
-    """Assemble ``ImageInputs`` — raw or cached — for a batch."""
-    k = pooling_kernel_size
-
-    if uncached:
-        all_patches: list[npt.NDArray[np.floating[Any]]] = []
-        all_pos_ids: list[npt.NDArray[np.integer[Any]]] = []
-        patch_counts: list[int] = []
-        soft_token_counts: list[int] = []
-        # Per-context cache-miss images — the single source shared with the
-        # counts and with prepare_vision_outputs' split.
-        uncached_images: list[list[ImageMetadata]] = []
-
-        for ctx in uncached:
-            # Slice off already-encoded images so pixel_position_ids (the full
-            # per-image list) realigns with next_images under chunked prefill.
-            ctx_pos_ids = ctx.pixel_position_ids[ctx.image_idx :]
-            miss_images: list[ImageMetadata] = []
-            for img_idx, img in enumerate(ctx.next_images):
-                num_soft = img.end_idx - img.start_idx
-                num_patches = num_soft * k * k
-                if num_patches != len(img.pixel_values):
-                    raise ValueError(
-                        f"Expected {num_patches} patches, "
-                        f"got {len(img.pixel_values)}"
-                    )
-                if (
-                    img.image_hash is not None
-                    and ve_cache.lookup(img.image_hash) is not None
-                ):
-                    continue
-                miss_images.append(img)
-                all_patches.append(img.pixel_values)
-                all_pos_ids.append(ctx_pos_ids[img_idx])
-                patch_counts.append(num_patches)
-                soft_token_counts.append(num_soft)
-            uncached_images.append(miss_images)
-
-        per_image_token_counts = [
-            img.end_idx - img.start_idx
-            for miss_images in uncached_images
-            for img in miss_images
-        ]
-
-        raw = (
-            pack_vision_buffers(
-                devices,
-                pooling_kernel_size,
-                all_patches,
-                all_pos_ids,
-                patch_counts,
-                soft_token_counts,
-                dtype,
-            )
-            if all_patches
-            else None
-        )
-
-        return ImageInputs(
-            raw=raw,
-            cache_context_batch=context_batch,
-            cache_uncached_contexts=uncached,
-            cache_uncached_images=uncached_images,
-            cache_per_image_token_counts=per_image_token_counts,
-        )
-
-    # All images are cached (or no images at all).
-    cached_embeds, scatter_np = ve_cache.prepare_vision_outputs(
-        context_batch=context_batch,
-        uncached_contexts=uncached,
-        uncached_images=[],
-        vision_embeds=empty_embeddings,
-        per_image_token_counts=[],
-        n_devices=len(devices),
-        empty_embeddings=empty_embeddings,
-    )
-    if scatter_np is not None and len(scatter_np) > 0:
-        return ImageInputs(
-            cached_embeddings=cached_embeds,
-            cached_token_indices_np=scatter_np.astype(np.int32),
-        )
-
-    return None
