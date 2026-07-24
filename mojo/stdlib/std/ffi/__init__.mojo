@@ -632,7 +632,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             var error_message = dlerror()
             var message = StringSlice(
                 unsafe_from_utf8=CStringSlice(
-                    unsafe_from_ptr=error_message.value().as_immutable()
+                    unsafe_from_ptr=error_message.value().as_imm()
                 )
             ) if error_message else {}
             raise Error("dlopen failed: ", message)

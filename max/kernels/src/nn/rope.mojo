@@ -168,18 +168,18 @@ def rope_ragged[
     # start_pos' (uint32) storage so the captured value has the same type in
     # both branches.
     var has_position_ids: Bool = Bool(position_ids)
-    comptime PtrType = type_of(position_ids.value().ptr.as_immutable())
+    comptime PtrType = type_of(position_ids.value().ptr.as_imm())
     var pos_ids_ptr: PtrType
     var pos_ids_stride: Int
     if has_position_ids:
-        pos_ids_ptr = rebind[PtrType](position_ids.value().ptr.as_immutable())
+        pos_ids_ptr = rebind[PtrType](position_ids.value().ptr.as_imm())
         # Row stride from the layout, not `dim[1]()`: the kernel steps whole
         # position_ids rows (`section_idx * pos_ids_stride`), so use the actual
         # dim-0 stride rather than assuming a row-major-contiguous layout where
         # it happens to equal `dim[1]`.
         pos_ids_stride = Int(position_ids.value().layout.stride[0]().value())
     else:
-        pos_ids_ptr = rebind[PtrType](start_pos.ptr.as_immutable())
+        pos_ids_ptr = rebind[PtrType](start_pos.ptr.as_imm())
         pos_ids_stride = 0
 
     @always_inline

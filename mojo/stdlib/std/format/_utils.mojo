@@ -464,7 +464,7 @@ struct _WriteBufferHeap(Writable, Writer):
 
         return CStringSlice(
             unsafe_from_ptr=self._data.unsafe_bitcast[Int8]()
-            .as_immutable()
+            .as_imm()
             .unsafe_origin_cast[origin_of(self).unsafe_mut_cast[False]()]()
         )
 

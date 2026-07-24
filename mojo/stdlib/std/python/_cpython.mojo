@@ -2719,10 +2719,7 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_DecodeUTF8
         """
         return self._PyUnicode_DecodeUTF8(
-            s.unsafe_ptr()
-            .bitcast[c_char]()
-            .as_immutable()
-            .as_unsafe_any_origin(),
+            s.unsafe_ptr().bitcast[c_char]().as_imm().as_unsafe_any_origin(),
             Py_ssize_t(s.byte_length()),
             "strict".as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
         )

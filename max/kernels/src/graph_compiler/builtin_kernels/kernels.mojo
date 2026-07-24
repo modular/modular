@@ -1850,7 +1850,7 @@ def _execute_mha_ragged_paged_scalar_args[
         max_cache_length,
     )
     var input_row_offsets_lt = as_dynamic_row_major_1d(
-        input_row_offsets.to_layout_tensor().get_immutable()
+        input_row_offsets.to_layout_tensor().as_imm()
     )
 
     comptime if sink:
@@ -3007,11 +3007,11 @@ struct TPoolPatchMerger:
                 out_tt.layout,
             ),
             TileTensor(
-                in_tt.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+                in_tt.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
                 in_tt.layout,
             ),
             TileTensor(
-                grid_tt.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+                grid_tt.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
                 grid_tt.layout,
             ),
             Int(kH),

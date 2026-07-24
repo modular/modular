@@ -271,14 +271,14 @@ def execute_kv_cache_ragged_flash_attention[
             ),
         ),
         LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-            cache_lengths_tensor.ptr.as_immutable().as_unsafe_any_origin(),
+            cache_lengths_tensor.ptr.as_imm().as_unsafe_any_origin(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths_tensor.runtime_layout.shape.value,
                 cache_lengths_tensor.runtime_layout.stride.value,
             ),
         ),
         LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-            lookup_table_tensor.ptr.as_immutable().as_unsafe_any_origin(),
+            lookup_table_tensor.ptr.as_imm().as_unsafe_any_origin(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 lookup_table_tensor.runtime_layout.shape.value,
                 lookup_table_tensor.runtime_layout.stride.value,

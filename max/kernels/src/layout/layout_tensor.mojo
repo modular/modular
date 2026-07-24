@@ -1079,7 +1079,7 @@ struct LayoutTensor[
         )
 
     @always_inline
-    def get_immutable(
+    def as_imm(
         self,
     ) -> Self.OriginCastType[ImmOrigin(Self.origin)]:
         """
@@ -1089,10 +1089,23 @@ struct LayoutTensor[
             A `LayoutTensor` covering the same elements, but without mutability.
         """
         return {
-            self.ptr.as_immutable(),
+            self.ptr.as_imm(),
             self.runtime_layout,
             self.runtime_element_layout,
         }
+
+    @always_inline
+    @deprecated(use=as_imm)
+    def get_immutable(
+        self,
+    ) -> Self.OriginCastType[ImmOrigin(Self.origin)]:
+        """
+        Return an immutable version of this tensor.
+
+        Returns:
+            A `LayoutTensor` covering the same elements, but without mutability.
+        """
+        return self.as_imm()
 
     @always_inline
     def _offset(self, m: Int, n: Int) -> Int:
@@ -4454,7 +4467,7 @@ struct LayoutTensor[
                     self.runtime_layout.stride.value[i] * vector_shape_i
                 )
 
-        var ptr = self.ptr.as_immutable().unsafe_origin_cast[_origin]()
+        var ptr = self.ptr.as_imm().unsafe_origin_cast[_origin]()
 
         comptime if Self.layout.all_dims_known():
             comptime if vectorized_type.masked:

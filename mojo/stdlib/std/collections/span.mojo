@@ -544,13 +544,19 @@ struct Span[
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    def get_immutable(self) -> Self.Immutable:
+    def as_imm(self) -> Self.Immutable:
         """Return an immutable version of this `Span`.
 
         Returns:
             An immutable version of the same `Span`.
         """
         return rebind[Self.Immutable](self)
+
+    @doc_hidden
+    @always_inline
+    @deprecated(use=as_imm)
+    def get_immutable(self) -> Self.Immutable:
+        return self.as_imm()
 
     @always_inline
     def unsafe_get(self, idx: Some[Indexer]) -> ref[Self.origin] Self.T:
@@ -902,7 +908,7 @@ struct Span[
         """
 
         comptime simdwidth = simd_width_of[dtype]()
-        var ptr = self.unsafe_ptr().as_immutable()
+        var ptr = self.unsafe_ptr().as_imm()
         var length = len(self)
         var count = 0
 

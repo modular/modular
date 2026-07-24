@@ -102,7 +102,7 @@ def as_dynamic_row_major_1d[
         by the same storage as `tensor`.
     """
     return {
-        tensor.ptr.as_immutable().as_unsafe_any_origin(),
+        tensor.ptr.as_imm().as_unsafe_any_origin(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             tensor.get_shape()
         ),

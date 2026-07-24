@@ -61,7 +61,7 @@ def _make_view[
 ]:
     var immut_ptr = (
         ptr.address_space_cast[AddressSpace.GENERIC]()
-        .as_immutable()
+        .as_imm()
         .as_unsafe_any_origin()
     )
     comptime ConcLayout = InternalLayout[

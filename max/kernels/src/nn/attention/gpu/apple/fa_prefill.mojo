@@ -957,7 +957,7 @@ def fa_prefill_apple[
     # Flatten the LayoutTensor ABI to 1D TileTensors; the kernel bakes the
     # ragged/BSHD + q_row0 offset into each per-simdgroup tile base.
     var q_flat = TileTensor(
-        q.ptr.as_immutable().as_unsafe_any_origin(),
+        q.ptr.as_imm().as_unsafe_any_origin(),
         row_major(Coord(Int(q.size()))),
     )
     var output_flat = TileTensor(
@@ -965,7 +965,7 @@ def fa_prefill_apple[
         row_major(Coord(Int(output.size()))),
     )
     var valid_length_flat = TileTensor(
-        valid_length.ptr.as_immutable().as_unsafe_any_origin(),
+        valid_length.ptr.as_imm().as_unsafe_any_origin(),
         row_major(Coord(Int(valid_length.size()))),
     )
 
@@ -981,7 +981,7 @@ def fa_prefill_apple[
         var sw = sink_weights.value()
         sink_tile = OptionalReg[SinkTile](
             SinkTile(
-                sw.ptr.as_immutable().as_unsafe_any_origin(),
+                sw.ptr.as_imm().as_unsafe_any_origin(),
                 sink_layout_val,
             )
         )

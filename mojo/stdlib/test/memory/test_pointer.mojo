@@ -67,7 +67,7 @@ def test_write_repr_to() raises:
         is_repr=True,
     )
     check_write_to(
-        Pointer(to=n).as_immutable(),
+        Pointer(to=n).as_imm(),
         contains=(
             "Pointer[mut=False, SIMD[DType.int, 1],"
             " address_space=AddressSpace.GENERIC](0x"
@@ -157,7 +157,7 @@ def test_nicheable() raises:
 
 # We don't actually need to run this,
 # but Mojo's exclusivity check shouldn't complain
-def _test_get_immutable() raises -> Int:
+def _test_get_imm() raises -> Int:
     def foo(
         x: Pointer[mut=False, Int, ...], y: Pointer[mut=False, Int, ...]
     ) -> Int:

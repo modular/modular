@@ -448,6 +448,13 @@ This version is still a work in progress.
   on the result should switch to the ungated `unsafe_*` spelling, for example
   `ptr + i` becomes `ptr.unsafe_offset(i)`.
 
+- The `as_immutable()` method on `UnsafePointer` and the
+  `get_immutable()` method on `Span`, `StringSlice`, and `UnsafePointer`
+  have all been renamed to a single `as_imm()` method, embracing the
+  shorter `imm` spelling for a consistent immutability API. The old
+  names remain as `@deprecated` aliases and will be removed in a future
+  release.
+
 - Added
   [`runtime.initialize_runtime()`](/docs/std/runtime/asyncrt/initialize_runtime/),
   which initializes the Mojo runtime when Mojo code built as a shared library

@@ -391,8 +391,8 @@ def winograd_conv2d_gpu_launcher[
     ]
 
     ctx.enqueue_function[kernel](
-        input.get_immutable().as_unsafe_any_origin(),
-        filter.get_immutable().as_unsafe_any_origin(),
+        input.as_imm().as_unsafe_any_origin(),
+        filter.as_imm().as_unsafe_any_origin(),
         output.as_unsafe_any_origin(),
         stride,
         dilation,

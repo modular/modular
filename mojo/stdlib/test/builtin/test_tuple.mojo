@@ -423,7 +423,7 @@ def test_tuple_consume_elements_move_only() raises:
 
 def test_tuple_consume_elements_destroys_once() raises:
     var actions = List[String]()
-    var actions_ptr = Pointer(to=actions).as_immutable()
+    var actions_ptr = Pointer(to=actions).as_imm()
     comptime Observed = ObservableMoveOnly[actions_ptr.origin]
 
     var t = (

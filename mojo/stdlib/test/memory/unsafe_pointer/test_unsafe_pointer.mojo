@@ -67,7 +67,7 @@ def test_mutable_conversions() raises:
 
 def test_immutable_conversions() raises:
     var x = 42
-    var p = UnsafePointer(to=x).as_immutable()
+    var p = UnsafePointer(to=x).as_imm()
     _named_origin[mut=False, origin_of(x)](p)
     _immutable_pointer(p)
     _parameterized_pointer(p)
@@ -83,7 +83,7 @@ def test_mutable_any_conversions() raises:
 
 def test_immutable_any_conversions() raises:
     var x = 42
-    var p = UnsafePointer(to=x).as_immutable().as_unsafe_any_origin()
+    var p = UnsafePointer(to=x).as_imm().as_unsafe_any_origin()
     _immutable_pointer(p)
     _parameterized_pointer(p)
 
@@ -95,7 +95,7 @@ def test_immutable_any_conversions() raises:
 
 def test_unsafepointer_of_move_only_type() raises:
     var actions = List[String]()
-    var actions_ptr = UnsafePointer(to=actions).as_immutable()
+    var actions_ptr = UnsafePointer(to=actions).as_imm()
 
     comptime ObserveType = ObservableMoveOnly[actions_ptr.origin]
 
@@ -210,15 +210,15 @@ def test_unsafepointer_string() raises:
 def test_eq() raises:
     var local = 1
     # FIXME(#5133): should just be UnsafePointer[mut=False](to=local)
-    var p1 = UnsafePointer(to=local).as_immutable()
+    var p1 = UnsafePointer(to=local).as_imm()
     var p2 = p1
     assert_equal(p1, p2)
 
     var other_local = 2
-    var p3 = UnsafePointer(to=other_local).as_immutable()
+    var p3 = UnsafePointer(to=other_local).as_imm()
     assert_not_equal(Int(p1), Int(p3))
 
-    var p4 = UnsafePointer(to=local).as_immutable()
+    var p4 = UnsafePointer(to=local).as_imm()
     assert_equal(p1, p4)
     _ = local
     _ = other_local
@@ -538,7 +538,7 @@ def test_as_unsafe_any_origin_immutable() raises:
     var observer = ObservableDel[origin_of(deleted)](UnsafePointer(to=deleted))
     var x = 42
 
-    var immutable = UnsafePointer(to=x).as_unsafe_any_origin().as_immutable()
+    var immutable = UnsafePointer(to=x).as_unsafe_any_origin().as_imm()
     assert_false(immutable.mut)
     assert_false(deleted)
 
@@ -546,11 +546,11 @@ def test_as_unsafe_any_origin_immutable() raises:
     assert_true(deleted)  # AnyOrigin extends all lifetimes
 
 
-def test_as_immutable() raises:
+def test_as_imm() raises:
     var x = 42
     var mutable = UnsafePointer(to=x)
     assert_true(mutable.mut)
-    assert_false(mutable.as_immutable().mut)
+    assert_false(mutable.as_imm().mut)
 
 
 def test_unsafe_mut_cast() raises:
@@ -642,7 +642,7 @@ def test_write_repr_to() raises:
         is_repr=True,
     )
     check_write_to(
-        UnsafePointer(to=x).as_immutable(),
+        UnsafePointer(to=x).as_imm(),
         contains=(
             "Pointer[mut=False, SIMD[DType.int, 1],"
             " address_space=AddressSpace.GENERIC](0x"

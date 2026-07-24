@@ -17,7 +17,7 @@ Exercises every operation `PointerStorage` provides against a host
 round-trips (with and without an element offset), `offset`, `distance`,
 `unsafe_cast` reinterpretation, and `unsafe_ptr` scalar-pointer extraction.
 `load` and `distance` require immutable (`mut=False`) handles, while `store`
-requires a mutable one, so the tests use `as_immutable()` where a read-only
+requires a mutable one, so the tests use `as_imm()` where a read-only
 handle is needed.
 """
 

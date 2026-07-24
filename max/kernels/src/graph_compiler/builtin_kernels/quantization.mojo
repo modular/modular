@@ -729,7 +729,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                     perm_idx_lt.runtime_layout.shape.value.canonicalize()
                 ),
-            ).get_immutable(),
+            ).as_imm(),
             ctx=ctx,
         )
 

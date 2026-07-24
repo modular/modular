@@ -643,6 +643,10 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- The `LayoutTensor.get_immutable()` method has been renamed to
+  `as_imm()`, matching the shorter `imm` spelling used across the
+  immutability API. The old name remains as a `@deprecated` alias and
+  will be removed in a future release.
 - GPU token sampling with `top_k >= 10` is now 2-4x faster. The softmax,
   temperature scaling, and min-p masking steps are fused into the top-k/top-p
   rejection-sampling kernel, eliminating an intermediate probability buffer

@@ -807,7 +807,7 @@ def _cublas_matmul[
                 Int32(K),
                 UnsafePointer(to=alpha)
                 .bitcast[NoneType]()
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),
                 _ffi_void_ptr(b.ptr),
                 _convert_to_cublas_datatype[b_type](),
@@ -817,7 +817,7 @@ def _cublas_matmul[
                 a_lead,
                 UnsafePointer(to=beta)
                 .bitcast[NoneType]()
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),
                 _ffi_void_ptr(c.ptr),
                 _convert_to_cublas_datatype[c_type](),
@@ -853,7 +853,7 @@ def _cublas_matmul[
             Int32(K),
             UnsafePointer(to=alpha)
             .bitcast[NoneType]()
-            .as_immutable()
+            .as_imm()
             .as_unsafe_any_origin(),
             _ffi_void_ptr(a.ptr),
             _convert_to_cublas_datatype[a_type](),
@@ -863,7 +863,7 @@ def _cublas_matmul[
             Int32(N) if transpose_b else Int32(K),
             UnsafePointer(to=beta)
             .bitcast[NoneType]()
-            .as_immutable()
+            .as_imm()
             .as_unsafe_any_origin(),
             _ffi_void_ptr(c.ptr),
             _convert_to_cublas_datatype[c_type](),
@@ -1122,7 +1122,7 @@ def _cublasLt_matmul[
             cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_TRANSA,
             UnsafePointer(to=transa)
             .bitcast[NoneType]()
-            .as_immutable()
+            .as_imm()
             .as_unsafe_any_origin(),
             size_of[cublasOperation_t](),
         ),
@@ -1134,7 +1134,7 @@ def _cublasLt_matmul[
             cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_TRANSB,
             UnsafePointer(to=transb)
             .bitcast[NoneType]()
-            .as_immutable()
+            .as_imm()
             .as_unsafe_any_origin(),
             size_of[cublasOperation_t](),
         ),
@@ -1234,7 +1234,7 @@ def _cublasLt_matmul[
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_A_SCALE_MODE,
                     UnsafePointer(to=a_scale_mode)
                     .bitcast[NoneType]()
-                    .as_immutable()
+                    .as_imm()
                     .as_unsafe_any_origin(),
                     size_of[Int32](),
                 ),
@@ -1249,7 +1249,7 @@ def _cublasLt_matmul[
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_B_SCALE_MODE,
                     UnsafePointer(to=b_scale_mode)
                     .bitcast[NoneType]()
-                    .as_immutable()
+                    .as_imm()
                     .as_unsafe_any_origin(),
                     size_of[Int32](),
                 ),
@@ -1265,7 +1265,7 @@ def _cublasLt_matmul[
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_A_SCALE_POINTER,
                     UnsafePointer(to=a_scale_ptr)
                     .bitcast[NoneType]()
-                    .as_immutable()
+                    .as_imm()
                     .as_unsafe_any_origin(),
                     size_of[OpaquePointer[UntrackedOrigin[mut=True]]](),
                 ),
@@ -1280,7 +1280,7 @@ def _cublasLt_matmul[
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_B_SCALE_POINTER,
                     UnsafePointer(to=b_scale_ptr)
                     .bitcast[NoneType]()
-                    .as_immutable()
+                    .as_imm()
                     .as_unsafe_any_origin(),
                     size_of[OpaquePointer[UntrackedOrigin[mut=True]]](),
                 ),
@@ -1358,7 +1358,7 @@ def _cublasLt_matmul[
             Preference.MAX_WORKSPACE_BYTES,
             UnsafePointer(to=workspace_size)
             .bitcast[NoneType]()
-            .as_immutable()
+            .as_imm()
             .as_unsafe_any_origin(),
             size_of[Int64](),
         ),
@@ -1400,22 +1400,22 @@ def _cublasLt_matmul[
                 compute_desc,  # compute_desc
                 UnsafePointer(to=alpha)
                 .bitcast[NoneType]()
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),
                 _ffi_void_ptr(b.ptr),
                 _adesc,  # _adesc
-                _ffi_void_ptr(a.ptr).as_immutable(),  # _b
+                _ffi_void_ptr(a.ptr).as_imm(),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta)
                 .bitcast[NoneType]()
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),  # beta
                 None,  # _c
                 _cdesc,  # _cdesc
                 _ffi_void_ptr(d.ptr),  # _d
                 _ddesc,  # _ddesc
                 UnsafePointer(to=heuristic_result.algo)
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),  # algo
                 matmul_workspace.unsafe_ptr()
                 .bitcast[NoneType]()
@@ -1432,22 +1432,22 @@ def _cublasLt_matmul[
                 compute_desc,  # compute_desc
                 UnsafePointer(to=alpha)
                 .bitcast[NoneType]()
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),  # alpha
                 _ffi_void_ptr(a.ptr),  # _a
                 _adesc,  # _adesc
-                _ffi_void_ptr(b.ptr).as_immutable(),  # _b
+                _ffi_void_ptr(b.ptr).as_imm(),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta)
                 .bitcast[NoneType]()
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),  # beta
                 None,  # _c
                 _cdesc,  # _cdesc
                 _ffi_void_ptr(d.ptr),  # _d
                 _ddesc,  # _ddesc
                 UnsafePointer(to=heuristic_result.algo)
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),  # algo
                 matmul_workspace.unsafe_ptr()
                 .bitcast[NoneType]()

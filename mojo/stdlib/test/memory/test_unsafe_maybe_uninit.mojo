@@ -33,7 +33,7 @@ def test_maybe_uninitialized() raises:
     # Every time an Int is destroyed, it's going to be recorded here.
     var destructor_recorder = List[Int]()
 
-    var ptr = Pointer(to=destructor_recorder).as_immutable()
+    var ptr = Pointer(to=destructor_recorder).as_imm()
     var a = UnsafeMaybeUninit[DelRecorder[ptr.origin]]()
     a.init_from(DelRecorder(42, ptr))
 

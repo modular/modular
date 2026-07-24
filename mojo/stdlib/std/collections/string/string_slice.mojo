@@ -302,7 +302,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             An exception is raised if the provided buffer byte values do not
             form valid UTF-8 encoded codepoints.
         """
-        if not _is_valid_utf8(from_utf8.get_immutable()):
+        if not _is_valid_utf8(from_utf8.as_imm()):
             raise Error("StringSlice: buffer is not valid UTF-8")
 
         self = Self(unsafe_from_utf8=from_utf8)
@@ -1131,13 +1131,19 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return {unsafe_from_ptr = self.unsafe_ptr().bitcast[Int8]()}
 
     @always_inline
-    def get_immutable(self) -> Self.Immutable:
+    def as_imm(self) -> Self.Immutable:
         """Return an immutable version of this Span.
 
         Returns:
             An immutable version of the same Span.
         """
         return rebind[Self.Immutable](self)
+
+    @doc_hidden
+    @always_inline
+    @deprecated(use=as_imm)
+    def get_immutable(self) -> Self.Immutable:
+        return self.as_imm()
 
     def replace(self, old: StringSlice, new: StringSlice) -> String:
         """Return a copy of the string with all occurrences of substring `old`
@@ -1944,8 +1950,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var haystack = self.as_bytes()[start:]
 
         var loc = _memmem(
-            haystack.get_immutable(),
-            substr.as_bytes().get_immutable(),
+            haystack.as_imm(),
+            substr.as_bytes().as_imm(),
         )
 
         if not loc:
@@ -2086,7 +2092,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         _ = StringSlice("123").split("") # ['', '1', '2', '3', '']
         ```
         """
-        return _split[has_maxsplit=False](self.get_immutable(), sep, -1)
+        return _split[has_maxsplit=False](self.as_imm(), sep, -1)
 
     @always_inline
     def split(self, sep: StringSlice, maxsplit: Int) -> List[Self.Immutable]:
@@ -2109,7 +2115,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         _ = StringSlice("123").split("", maxsplit=1) # ['', '123']
         ```
         """
-        return _split[has_maxsplit=True](self.get_immutable(), sep, maxsplit)
+        return _split[has_maxsplit=True](self.as_imm(), sep, maxsplit)
 
     @always_inline
     def split(self, sep: NoneType = None) -> List[Self.Immutable]:
@@ -2136,7 +2142,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ).split()  # ["hello", "world"]
         ```
         """
-        return _split[has_maxsplit=False](self.get_immutable(), sep, -1)
+        return _split[has_maxsplit=False](self.as_imm(), sep, -1)
 
     @always_inline
     def split(
@@ -2157,7 +2163,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         _ = StringSlice("1     2  3").split(maxsplit=1) # ['1', '2  3']
         ```
         """
-        return _split[has_maxsplit=True](self.get_immutable(), sep, maxsplit)
+        return _split[has_maxsplit=True](self.as_imm(), sep, maxsplit)
 
     def isnewline[single_character: Bool = False](self) -> Bool:
         """Determines whether every character in the given StringSlice is a
@@ -2209,7 +2215,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         comptime `\n` = UInt8(ord("\n"))
 
         var output = List[Self.Immutable](capacity=128)  # guessing
-        var ptr = self.get_immutable().unsafe_ptr()
+        var ptr = self.as_imm().unsafe_ptr()
         var length = self.byte_length()
         var line_start = 0
         var prev_b0 = Byte(0)
@@ -2908,7 +2914,7 @@ def _split[
     out output: List[type_of(src_str).Immutable],
 ):
     comptime S = type_of(src_str).Immutable
-    var ptr = src_str.unsafe_ptr().as_immutable()
+    var ptr = src_str.unsafe_ptr().as_imm()
     var sep_len = sep.byte_length()
     if sep_len == 0:
         var iterator = src_str.codepoint_slices()
@@ -2970,7 +2976,7 @@ def _split[
     var lhs = 0
     var rhs: Int
     var items = 0
-    var ptr = src_str.unsafe_ptr().as_immutable()
+    var ptr = src_str.unsafe_ptr().as_imm()
 
     comptime PointerType = type_of(ptr)
 

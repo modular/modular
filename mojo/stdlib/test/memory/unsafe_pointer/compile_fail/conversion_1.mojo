@@ -23,7 +23,7 @@ def test_cannot_cast_immutable_to_mutable[
 def main() raises:
     var x = 42
 
-    var p = UnsafePointer(to=x).as_immutable()
+    var p = UnsafePointer(to=x).as_imm()
     # FIXME: this probably should be a parameter inference error, not the type
     # conversion error.
 

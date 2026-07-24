@@ -182,7 +182,7 @@ def test_fused_qk_rope[
         type_of(position_ids_static).LayoutType,
         ImmutAnyOrigin,
     ](
-        position_ids_static._storage.as_immutable().unsafe_origin_cast[
+        position_ids_static._storage.as_imm().unsafe_origin_cast[
             ImmutAnyOrigin
         ](),
         position_ids_static.layout,

@@ -1105,7 +1105,7 @@ struct LayoutTensorMHAOperand[
                 Int(head_dim_idx),
             )
         )
-        return ret_ptr.as_immutable().as_unsafe_any_origin()
+        return ret_ptr.as_imm().as_unsafe_any_origin()
 
     @always_inline
     def scales_block_paged_ptr(
@@ -1125,7 +1125,7 @@ struct LayoutTensorMHAOperand[
                 Int(head_dim_idx // Self.quantization_granularity),
             )
         )
-        return ret_ptr.as_immutable().as_unsafe_any_origin()
+        return ret_ptr.as_imm().as_unsafe_any_origin()
 
     @always_inline
     def load_scale[
@@ -1209,7 +1209,7 @@ struct LayoutTensorMHAOperand[
             row_major=row_major,
         ](
             ctx,
-            self.buffer.ptr.as_immutable().as_unsafe_any_origin(),
+            self.buffer.ptr.as_imm().as_unsafe_any_origin(),
             rows,
             Int(self.buffer.dim[2]()),
         )
@@ -1503,7 +1503,7 @@ struct RaggedMHAOperand[
                 Int(head_dim_idx),
             )
         )
-        return ret_ptr.as_immutable().as_unsafe_any_origin()
+        return ret_ptr.as_imm().as_unsafe_any_origin()
 
     @always_inline
     def scales_block_paged_ptr(
@@ -1597,7 +1597,7 @@ struct RaggedMHAOperand[
             row_major=row_major,
         ](
             ctx,
-            self.buffer.ptr.as_immutable().as_unsafe_any_origin(),
+            self.buffer.ptr.as_imm().as_unsafe_any_origin(),
             rows,
             Int(self.buffer.dim[1]()),
         )

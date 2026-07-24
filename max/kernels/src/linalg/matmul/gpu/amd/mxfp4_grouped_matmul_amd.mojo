@@ -495,27 +495,27 @@ struct PreShuffledBGroupedGEMM[
         comptime K_BYTES = a.static_shape[1]
 
         var a_i = TileTensor(
-            a.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+            a.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
             a.layout,
         )
         var b_pre_i = TileTensor(
-            b_pre.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+            b_pre.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
             b_pre.layout,
         )
         var a_scales_i = TileTensor(
-            a_scales.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+            a_scales.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
             a_scales.layout,
         )
         var b_scales_i = TileTensor(
-            b_scales.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+            b_scales.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
             b_scales.layout,
         )
         var a_off_i = TileTensor(
-            a_offsets.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+            a_offsets.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
             a_offsets.layout,
         )
         var expert_ids_i = TileTensor(
-            expert_ids.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+            expert_ids.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
             expert_ids.layout,
         )
 
@@ -853,27 +853,27 @@ def _launch_mxfp4_grouped[
     comptime K_SCALES = b_scales.static_shape[2]  # K//32
 
     var a_i = TileTensor(
-        a.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        a.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
         a.layout,
     )
     var b_2d = TileTensor(
-        b.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        b.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
         row_major[num_experts * N, K_BYTES](),
     )
     var a_scales_i = TileTensor(
-        a_scales.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        a_scales.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
         a_scales.layout,
     )
     var sfb_2d = TileTensor(
-        b_scales.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        b_scales.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
         row_major[num_experts_sf * N_sf, K_SCALES](),
     )
     var a_off_i = TileTensor(
-        a_offsets.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        a_offsets.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
         a_offsets.layout,
     )
     var expert_ids_i = TileTensor(
-        expert_ids.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        expert_ids.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
         expert_ids.layout,
     )
 

@@ -23,5 +23,5 @@ def test_mut_cast_fails_if_mutabilities_do_not_match[
 
 def main() raises:
     var x = 42
-    var p = UnsafePointer(to=x).as_immutable()
+    var p = UnsafePointer(to=x).as_imm()
     test_mut_cast_fails_if_mutabilities_do_not_match(p)

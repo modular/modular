@@ -4924,7 +4924,7 @@ def _cross_attention_dispatch[
                     Layout.row_major(UNKNOWN_VALUE),
                     ImmutAnyOrigin,
                 ](
-                    kv_input_row_offsets.ptr.as_immutable().as_unsafe_any_origin(),
+                    kv_input_row_offsets.ptr.as_imm().as_unsafe_any_origin(),
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                         kv_input_row_offsets.runtime_layout.shape.value.canonicalize()
                     ),

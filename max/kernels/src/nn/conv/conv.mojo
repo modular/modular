@@ -4543,10 +4543,8 @@ def _conv_miopen[
                 ptr_meta[].input_desc,
                 MIOpenDataType(input_type),
                 Int32(tensor_rank),
-                input_shape.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-                input_strides.unsafe_ptr()
-                .as_immutable()
-                .as_unsafe_any_origin(),
+                input_shape.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+                input_strides.unsafe_ptr().as_imm().as_unsafe_any_origin(),
             )
         )
 
@@ -4557,10 +4555,8 @@ def _conv_miopen[
                 ptr_meta[].filter_desc,
                 MIOpenDataType(filter_type),
                 Int32(tensor_rank),
-                filter_shape.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-                filter_strides.unsafe_ptr()
-                .as_immutable()
-                .as_unsafe_any_origin(),
+                filter_shape.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+                filter_strides.unsafe_ptr().as_imm().as_unsafe_any_origin(),
             )
         )
 
@@ -4570,10 +4566,8 @@ def _conv_miopen[
                 ptr_meta[].output_desc,
                 MIOpenDataType(output_type),
                 Int32(tensor_rank),
-                output_shape.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-                output_strides.unsafe_ptr()
-                .as_immutable()
-                .as_unsafe_any_origin(),
+                output_shape.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+                output_strides.unsafe_ptr().as_imm().as_unsafe_any_origin(),
             )
         )
 
@@ -4582,9 +4576,9 @@ def _conv_miopen[
             miopenInitConvolutionNdDescriptor(
                 ptr_meta[].conv_desc,
                 Int32(conv_rank),
-                padding.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-                stride.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-                dilation.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                padding.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+                stride.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+                dilation.unsafe_ptr().as_imm().as_unsafe_any_origin(),
                 ConvolutionMode.CONVOLUTION,
             )
         )
@@ -4661,14 +4655,14 @@ def _conv_miopen[
     check_miopen_error(
         miopenConvolutionForward(
             ptr_meta[].handle,
-            UnsafePointer(to=alpha).as_immutable().as_unsafe_any_origin(),
+            UnsafePointer(to=alpha).as_imm().as_unsafe_any_origin(),
             ptr_meta[].input_desc,
             input.ptr.bitcast[NoneType](),
             ptr_meta[].filter_desc,
             filter_frsc_ptr.bitcast[NoneType](),
             ptr_meta[].conv_desc,
             ptr_meta[].algo,
-            UnsafePointer(to=beta).as_immutable().as_unsafe_any_origin(),
+            UnsafePointer(to=beta).as_imm().as_unsafe_any_origin(),
             ptr_meta[].output_desc,
             output.ptr.bitcast[NoneType](),
             forward_workspace.unsafe_ptr().bitcast[NoneType](),

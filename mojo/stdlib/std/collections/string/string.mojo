@@ -1419,11 +1419,11 @@ struct String(
             return (
                 Pointer(to=self)
                 .unsafe_bitcast[Byte]()
-                .as_immutable()
+                .as_imm()
                 .unsafe_origin_cast[origin_of(self)]()
             )
         else:
-            return self._ptr_or_data.as_immutable().unsafe_origin_cast[
+            return self._ptr_or_data.as_imm().unsafe_origin_cast[
                 origin_of(self)
             ]()
 

@@ -235,8 +235,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         c_ref_tensor_lt,
         a_lt,
         b_lt,
-        a_scales_lt.get_immutable(),
-        b_scales_lt.get_immutable(),
+        a_scales_lt.as_imm(),
+        b_scales_lt.as_imm(),
         ctx,
     )
 
