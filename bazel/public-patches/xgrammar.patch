@@ -1521,7 +1521,7 @@ index da8b516..50fb6f4 100644
    std::string result = "";
    for (size_t i = 0; i < spec.json_values.size(); ++i) {
      if (i != 0) {
-@@ -2391,7 +3197,10 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
+@@ -2391,10 +3197,16 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
          ")";
      m["email"] = "^(" + dot_string + "|" + quoted_string + ")@" + domain + "$";
  
@@ -1532,7 +1532,16 @@ index da8b516..50fb6f4 100644
 +        "|02-(0[1-9]|1\\d|2[0-9])))$";
      m["time"] =
          "^([01]\\d|2[0-3]):[0-5]\\d:([0-5]\\d|60)(\\.\\d+)?(Z|[+-]([01]\\d|2[0-3]):[0-5]\\d)$";
-     m["date-time"] =
+-    m["date-time"] =
+-        "^(\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[1-2]\\d|3[01]))T([01]\\d|2[0-3]):[0-5]\\d:([0-5]\\d|60)("
+-        "\\.\\d+)?(Z|[+-]([01]\\d|2[0-3]):[0-5]\\d)$";
++    m["date-time"] =  // NB: Feb arm accepts day 29 every year (no leap check in regex)
++        "^(\\d{4}-((0[13578]|1[02])-(0[1-9]|[12]\\d|3[01])"
++        "|(0[469]|11)-(0[1-9]|[12]\\d|30)"
++        "|02-(0[1-9]|1\\d|2[0-9])))"
++        "T([01]\\d|2[0-3]):[0-5]\\d:([0-5]\\d|60)"
++        "(\\.\\d+)?(Z|[+-]([01]\\d|2[0-3]):[0-5]\\d)$";
+     m["duration"] =
 @@ -3328,7 +4137,14 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
