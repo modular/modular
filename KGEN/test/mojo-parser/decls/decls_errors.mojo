@@ -870,6 +870,31 @@ def test_deinit_fn_types():
   # expected-error @+1 {{function types do not support 'deinit'; replace with 'var'}}
   var fp2 : def(deinit self: GoodDtor) thin -> None
 
+# An initializer with a lone Self-typed 'deinit' argument has move-constructor
+# shape, but only the keyword-only name 'move' defines one. Anything else is
+# silently shadowed by the synthesized default move constructor, most commonly
+# code predating the rename of the 'take' argument to 'move'.
+struct MoveCtorShapedInit:
+  def __init__(out self): pass
+  # expected-warning @+1 {{'deinit' argument 'take' does not define a move constructor; declare it as '__init__(*, deinit move)'}}
+  def __init__(out self, *, deinit take: Self): pass
+
+struct MoveCtorShapedPositionalInit:
+  # expected-warning @+1 {{'deinit' argument 'move' does not define a move constructor; declare it as '__init__(*, deinit move)'}}
+  def __init__(out self, deinit move: Self): pass
+
+struct MoveCtorWrongConvention:
+  # expected-error @+1 {{'move' argument must be passed as 'deinit'}}
+  def __init__(out self, *, move: Self): pass
+
+struct MoveCtorShapeNegatives:
+  # A properly-spelled move constructor: no warning.
+  def __init__(out self, *, deinit move: Self): pass
+  # 'deinit' on a non-init consuming method: no warning.
+  def consume(self, deinit other: Self): pass
+  # Additional arguments break move-constructor shape: no warning.
+  def __init__(out self, *, deinit a: Self, x: Int): pass
+
 @fieldwise_init
 struct CantSynthesize(ImplicitlyCopyable):
 # expected-error @below {{cannot synthesize fieldwise init because field 'x' has non-copyable and non-movable type 'InMemStruct'}}

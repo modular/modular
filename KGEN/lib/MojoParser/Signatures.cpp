@@ -1926,6 +1926,19 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     } else if (arg.variadicKind != VariadicKind::None) {
       shared.emitError(arg.loc, "'deinit' arguments must not be variadic");
       arg.convention = ParsedArgument::kConventionVar;
+    } else if (tcSignature.fnInfo.kind == SpecialFunctionKind::kInit &&
+               tcSignature.argList.parsedArgs.size() == 1) {
+      // A lone Self-typed 'deinit' argument gives an initializer
+      // move-constructor shape, but only the keyword-only name 'move' is
+      // recognized as one (see TypeCheckedFnSignature's constructor); any
+      // other spelling is silently shadowed by the synthesized default move
+      // constructor. This most commonly bites code written before the
+      // argument was renamed from 'take' to 'move'.
+      shared.emitWarning(arg.loc, "'deinit' argument '")
+          << arg.name.strref()
+          << "' does not define a move constructor; declare it as '"
+          << SpecialFunctionInfo::get(SpecialFunctionKind::kMoveCtor).name
+          << "'";
     }
   }
 
@@ -2715,7 +2728,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
   }
   case SpecialFunctionKind::kMoveCtor: {
     assert(parsedArgs.size() == 1 && "arg count already checked above");
-    diagnoseSelfForDelAndMoveInit("existing");
+    diagnoseSelfForDelAndMoveInit("move");
     break;
   }
   case SpecialFunctionKind::kDel:
