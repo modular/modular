@@ -84,17 +84,13 @@ required_for_golden:
   #   gpu: 8xB200
   #   reason: "Kimi K2.5 NVFP4 tpep gates golden on 8xB200"
 
-  - model: nvidia/Kimi-K2.5-NVFP4__local_kvconnector_tpep_ar
+  - model: nvidia/Kimi-K2.5-NVFP4__eagle_rust_tiered_kvconnector_tpep_ar
     gpu: 8xB200
-    reason: "Kimi K2.5 NVFP4 local-kv tpep-ar gates golden on 8xB200"
+    reason: "Kimi K2.5 NVFP4 eagle rust-tiered-kv tpep-ar gates golden on 8xB200"
 
-  - model: nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar
+  - model: nvidia/Kimi-K2.5-NVFP4__mha_eagle_rust_tiered_kvconnector_tpep_ar
     gpu: 8xB200
-    reason: "Kimi K2.5 NVFP4 eagle tiered-kv tpep-ar gates golden on 8xB200"
-
-  - model: nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep_ar
-    gpu: 8xB200
-    reason: "Kimi K2.5 NVFP4 mha-eagle tiered-kv tpep-ar gates golden on 8xB200"
+    reason: "Kimi K2.5 NVFP4 mha-eagle rust-tiered-kv tpep-ar gates golden on 8xB200"
 
   - model: nvidia/Kimi-K2.5-NVFP4__internal
     gpu: 8xB200_internal
@@ -105,9 +101,9 @@ required_for_golden:
     gpu: 8xB200
     reason: "Kimi K2.6 NVFP4 eagle-tpep gates golden on 8xB200"
 
-  - model: nvidia/Kimi-K2.6-NVFP4__eagle_tiered_kvconnector_tpep_ar
+  - model: nvidia/Kimi-K2.6-NVFP4__eagle_rust_tiered_kvconnector_tpep_ar
     gpu: 8xB200
-    reason: "Kimi K2.6 NVFP4 eagle tiered-kv tpep-ar gates golden on 8xB200"
+    reason: "Kimi K2.6 NVFP4 eagle rust-tiered-kv tpep-ar gates golden on 8xB200"
 
   # ── DeepSeek V3.1 (8xB200 only in matrix) ───────────────────────────────────
   # NON_XL | {"4xMI355"} → only runs on 8xB200.

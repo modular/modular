@@ -30,7 +30,7 @@ extra_pipelines_args=(
   --kv-connector-config '{"host_kvcache_swap_space_gb":512,"disk_offload_dir":"/tmp/max_kv_tiered","disk_offload_max_gb":1024}'
   --trust-remote-code
   # Eagle3 speculative decoding -- mirrors the stage-1 max-kimi-k26-nvfp4-shadow
-  # deployment and the nvfp4_kimi_k2_6_eagle_tiered_kvconnector_tpep_ar_8x_b200
+  # deployment and the nvfp4_kimi_k2_6_eagle_rust_tiered_kvconnector_tpep_ar_8x_b200
   # recipe (TP attention + EP MoE, allreduce, tiered KV). As with K2.5, eagle3
   # is bundled into the ep-tp config rather than a separate variant.
   # disk_offload_dir is pointed at /tmp here (the deployment uses
